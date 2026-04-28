@@ -41,4 +41,5 @@ struct ContentPageCollectionNavigation: Equatable, Sendable {
     var sortKey: SortKey
     var sortOrder: SortOrder
     var viewLayout: EntryViewLayoutState.Mode
+    var compatibility: CollectionFileCompatibilityMetadata?
 }

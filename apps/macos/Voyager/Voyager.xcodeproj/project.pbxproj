@@ -24,6 +24,8 @@
 		F20000000000000000000023 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		F20000000000000000000025 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
+		F20000000000000000000026 /* VoyagerFeaturesEntryOperations in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000014 /* VoyagerFeaturesEntryOperations */; };
+		F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000015 /* VoyagerEntitiesAppPreferences */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -115,7 +117,6 @@
 /* Begin PBXFileReference section */
 		60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = property_condition_registry.json; path = ../../../shared/property_condition_registry.json; sourceTree = SOURCE_ROOT; };
 		7E14EDCC2E86622C005AC834 /* Voyager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Voyager.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A70000000000000000000002 /* OnboardingHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnboardingHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE232E866E82005AC834 /* VoyagerHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoyagerHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -126,6 +127,16 @@
 		F10000000000000000000002 /* FilterSearchXPC.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = FilterSearchXPC.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AA0000000000000000000001 /* Exceptions for "Voyager" folder in "Voyager" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				06_Shared/Api/SearchXPCTransport.swift,
+			);
+			target = 7E14EDCB2E86622C005AC834 /* Voyager */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		24DD04D6008045F2B081D402 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -134,6 +145,9 @@
 		};
 		7E14EDCE2E86622C005AC834 /* Voyager */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0000000000000000000001 /* Exceptions for "Voyager" folder in "Voyager" target */,
+			);
 			path = Voyager;
 			sourceTree = "<group>";
 		};
@@ -145,11 +159,6 @@
 		7E14EDE82E86622E005AC834 /* VoyagerUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = VoyagerUITests;
-			sourceTree = "<group>";
-		};
-		A70000000000000000000003 /* OnboardingHost */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = OnboardingHost;
 			sourceTree = "<group>";
 		};
 		7E14EE242E866E82005AC834 /* VoyagerHelper */ = {
@@ -184,6 +193,8 @@
 				F20000000000000000000021 /* VoyagerPagesOnboarding in Frameworks */,
 				F20000000000000000000022 /* VoyagerPagesSettings in Frameworks */,
 				F20000000000000000000023 /* VoyagerShared in Frameworks */,
+				F20000000000000000000026 /* VoyagerFeaturesEntryOperations in Frameworks */,
+				F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */,
 				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
 				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
@@ -219,7 +230,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */,
-				A70000000000000000000011 /* VoyagerShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -276,7 +286,6 @@
 				F10000000000000000000040 /* FilterSearchXPC */,
 				7E14EDDE2E86622E005AC834 /* VoyagerTests */,
 				7E14EDE82E86622E005AC834 /* VoyagerUITests */,
-				A70000000000000000000003 /* OnboardingHost */,
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
 				7E14EE322E866E85005AC834 /* VoyagerHelperTests */,
 				7E14EDCD2E86622C005AC834 /* Products */,
@@ -288,7 +297,6 @@
 			isa = PBXGroup;
 			children = (
 				7E14EDCC2E86622C005AC834 /* Voyager.app */,
-				A70000000000000000000002 /* OnboardingHost.app */,
 				7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */,
 				7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */,
 				7E14EE232E866E82005AC834 /* VoyagerHelper.app */,
@@ -328,6 +336,7 @@
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
 				F20000000000000000000012 /* VoyagerPagesSettings */,
 				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000014 /* VoyagerFeaturesEntryOperations */,
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
@@ -362,7 +371,6 @@
 			name = VoyagerTests;
 			packageProductDependencies = (
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
-				F20000000000000000000013 /* VoyagerShared */,
 				F21000000000000000000013 /* CasePaths */,
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
@@ -393,30 +401,6 @@
 			productName = VoyagerUITests;
 			productReference = 7E14EDE52E86622E005AC834 /* VoyagerUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
-		};
-		A70000000000000000000001 /* OnboardingHost */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A70000000000000000000007 /* Build configuration list for PBXNativeTarget "OnboardingHost" */;
-			buildPhases = (
-				A70000000000000000000006 /* Sources */,
-				A70000000000000000000004 /* Frameworks */,
-				A70000000000000000000005 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				A70000000000000000000003 /* OnboardingHost */,
-			);
-			name = OnboardingHost;
-			packageProductDependencies = (
-				F20000000000000000000011 /* VoyagerPagesOnboarding */,
-				F20000000000000000000013 /* VoyagerShared */,
-			);
-			productName = OnboardingHost;
-			productReference = A70000000000000000000002 /* OnboardingHost.app */;
-			productType = "com.apple.product-type.application";
 		};
 		7E14EE222E866E82005AC834 /* VoyagerHelper */ = {
 			isa = PBXNativeTarget;
@@ -546,7 +530,11 @@
 			mainGroup = 7E14EDC32E86622C005AC834;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */,
+				F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */,
+				F20000000000000000000002 /* XCLocalSwiftPackageReference "02_Pages/Settings" */,
+				F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */,
+				F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */,
+				F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -568,7 +556,6 @@
 				7E14EDCB2E86622C005AC834 /* Voyager */,
 				7E14EDDA2E86622E005AC834 /* VoyagerTests */,
 				7E14EDE42E86622E005AC834 /* VoyagerUITests */,
-				A70000000000000000000001 /* OnboardingHost */,
 				7E14EE222E866E82005AC834 /* VoyagerHelper */,
 				7E14EE2E2E866E85005AC834 /* VoyagerHelperTests */,
 				F10000000000000000000001 /* FilterSearchXPC */,
@@ -977,7 +964,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				"OTHER_LDFLAGS[arch=*]" = (
 					"-Xlinker",
 					"-interposable",
@@ -1035,7 +1022,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1060,7 +1047,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1083,7 +1070,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1104,7 +1091,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1125,7 +1112,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1135,74 +1122,6 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TEST_TARGET_NAME = Voyager;
-			};
-			name = Release;
-		};
-		A70000000000000000000008 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APP_ENV = dev;
-				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 0;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Onboarding Host (Debug)";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.OnboardingHost;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
-		};
-		A70000000000000000000009 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APP_ENV = prod;
-				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 0;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Onboarding Host";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.OnboardingHost;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -1240,7 +1159,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1295,7 +1214,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1321,7 +1240,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1344,7 +1263,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.VoyagerHelperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1372,7 +1291,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1401,7 +1320,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager.FilterSearchXPC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1452,15 +1371,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A70000000000000000000007 /* Build configuration list for PBXNativeTarget "OnboardingHost" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A70000000000000000000008 /* Debug */,
-				A70000000000000000000009 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		7E14EE412E866E86005AC834 /* Build configuration list for PBXNativeTarget "VoyagerHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1491,11 +1401,27 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */ = {
+		F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/VoyagerModules;
+			relativePath = ../Packages/02_Pages/Onboarding;
 		};
-/* End XCLocalSwiftPackageReference section */
+		F20000000000000000000002 /* XCLocalSwiftPackageReference "02_Pages/Settings" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/02_Pages/Settings;
+		};
+		F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/EntryOperations;
+		};
+		F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/06_Shared/VoyagerShared;
+		};
+		F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/05_Entities/AppPreferences;
+		};
+		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */ = {
@@ -1674,18 +1600,28 @@
 		};
 		F20000000000000000000011 /* VoyagerPagesOnboarding */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */;
+			package = F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */;
 			productName = VoyagerPagesOnboarding;
 		};
 		F20000000000000000000012 /* VoyagerPagesSettings */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */;
+			package = F20000000000000000000002 /* XCLocalSwiftPackageReference "02_Pages/Settings" */;
 			productName = VoyagerPagesSettings;
 		};
 		F20000000000000000000013 /* VoyagerShared */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F20000000000000000000001 /* XCLocalSwiftPackageReference "VoyagerModules" */;
+			package = F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */;
 			productName = VoyagerShared;
+		};
+		F20000000000000000000014 /* VoyagerFeaturesEntryOperations */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */;
+			productName = VoyagerFeaturesEntryOperations;
+		};
+		F20000000000000000000015 /* VoyagerEntitiesAppPreferences */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */;
+			productName = VoyagerEntitiesAppPreferences;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

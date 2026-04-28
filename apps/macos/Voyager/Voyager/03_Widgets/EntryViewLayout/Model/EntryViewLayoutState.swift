@@ -1,7 +1,10 @@
 import ComposableArchitecture
 import CoreGraphics
 import Foundation
+import IdentifiedCollections
 import SwiftUI
+import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 @ObservableState
@@ -39,6 +42,22 @@ struct EntryViewLayoutState: Equatable {
     var gridIconSize: CGFloat = AppearanceSettingsDefaults.gridIconSize
     var gridTextSize: CGFloat = AppearanceSettingsDefaults.gridTextSize
     var savedScrollOffset: CGPoint?
+
+    /// Items sourced from collection search results.
+    var collectionItems: IdentifiedArrayOf<EntryModel> = []
+
+    /// When true, `displayItems` returns `collectionItems`; otherwise `entryOperations.items`.
+    var isCollectionMode: Bool = false
+
+    /// Canonical display items: `collectionItems` in collection mode, `entryOperations.items` otherwise.
+    var displayItems: IdentifiedArrayOf<EntryModel> {
+        isCollectionMode ? collectionItems : entryOperations.items
+    }
+
+    /// Ordered snapshot of `displayItems` for list/grid rendering.
+    var displayOrderItems: [EntryModel] {
+        Array(displayItems)
+    }
 
     var entries: [EntryModel] = []
 }

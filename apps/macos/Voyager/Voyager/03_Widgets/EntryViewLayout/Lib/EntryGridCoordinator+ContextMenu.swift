@@ -1,5 +1,8 @@
 import AppKit
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 extension EntryGridCoordinator {
     func preloadOpenWithApplications(selectedEntries: [EntryModel]) {
         let selectedFiles = selectedEntries.filter { !$0.isFolder }

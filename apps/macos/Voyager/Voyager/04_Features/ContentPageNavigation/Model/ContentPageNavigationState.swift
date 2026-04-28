@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
 @ObservableState

@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
@@ -73,8 +75,8 @@ final class EntryContextMenuRenameRoutingTests: XCTestCase {
 
         XCTAssertEqual(recorder.actions.count, 1)
         guard recorder.actions.count == 1 else { return }
-        if case let .delegate(.startRename(id, text)) = recorder.actions[0] {
-            XCTAssertEqual(id, rowEntry.id)
+        if case let .delegate(.startRename(item, text)) = recorder.actions[0] {
+            XCTAssertEqual(item.id, rowEntry.id)
             XCTAssertEqual(text, rowEntry.name)
         } else {
             XCTFail("Expected .delegate(.startRename) but got \(recorder.actions[0])")
@@ -105,8 +107,8 @@ final class EntryContextMenuRenameRoutingTests: XCTestCase {
 
         XCTAssertEqual(recorder.actions.count, 1)
         guard recorder.actions.count == 1 else { return }
-        if case let .delegate(.startRename(id, text)) = recorder.actions[0] {
-            XCTAssertEqual(id, selectedItem.id)
+        if case let .delegate(.startRename(item, text)) = recorder.actions[0] {
+            XCTAssertEqual(item.id, selectedItem.id)
             XCTAssertEqual(text, selectedItem.name)
         } else {
             XCTFail("Expected .delegate(.startRename) but got \(recorder.actions[0])")

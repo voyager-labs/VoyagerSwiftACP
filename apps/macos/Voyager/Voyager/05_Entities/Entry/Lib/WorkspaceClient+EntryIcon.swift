@@ -2,6 +2,8 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
+import VoyagerEntitiesEntry
+
 extension WorkspaceClient {
     func entryIcon(for entry: EntryModel, thumbnail: NSImage?) -> NSImage {
         if let thumbnail {

@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import Logging
+import VoyagerShared
 
 private let kComposerLogger = Logger(label: "Voyager")
 
@@ -43,9 +44,6 @@ struct ComposerFeature {
         ComposerScopeReducer()
         ComposerSaveReducer()
 
-        Scope(state: \.collection, action: \.collection) {
-            CollectionFeature()
-        }
         Scope(state: \.propertyPicker, action: \.propertyPicker) {
             ConditionPropertyPickerFeature()
         }
@@ -99,7 +97,6 @@ struct ComposerFeature {
                  .view(.clearAll),
                  .view(.saveCollection),
                  .view(.saveCollectionAs),
-                 .collection,
                  .propertyPicker,
                  .operatorPicker,
                  .valuePicker,
@@ -164,7 +161,7 @@ func applyQueryPhaseTransition(
 }
 
 func applyAppliedFilters(
-    _ appliedFilters: AppliedFiltersPayload?,
+    _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
 ) {
@@ -255,7 +252,7 @@ func applyFiltersIfNeeded(
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = requestID
     let filters = buildFilters(from: state)
-    guard !filters.conditions.isEmpty else {
+    guard !filters.scopes.isEmpty || !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil
@@ -273,20 +270,28 @@ func applyFiltersIfNeeded(
             await send(.filtersResponse(requestID, .failure(error)))
         }
     }
-    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 }
 
-func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {
-    let conditionPayloads: [SearchConditionPayload] = state.conditions.compactMap { condition in
-        guard condition.isActive else { return nil }
-        guard let op = condition.operatorCode else { return nil }
-        if let arity = condition.operatorValueArity, arity == 0 {
-            return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: nil)
+func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
+    let conditionPayloads: [VoyagerShared.SearchConditionPayload] = state.conditions
+        .compactMap { condition -> VoyagerShared.SearchConditionPayload? in
+            guard condition.isActive else { return nil }
+            guard let op = condition.operatorCode else { return nil }
+            if let arity = condition.operatorValueArity, arity == 0 {
+                return VoyagerShared.SearchConditionPayload(
+                    propertyKey: condition.propertyKey,
+                    operator: op,
+                    value: nil,
+                )
+            }
+            guard let values = condition.values, !values.isEmpty else { return nil }
+            guard let encoded = ConditionValueEncoder.encode(condition: condition, values: values) else { return nil }
+            return VoyagerShared.SearchConditionPayload(
+                propertyKey: condition.propertyKey,
+                operator: op,
+                value: encoded,
+            )
         }
-        guard let values = condition.values, !values.isEmpty else { return nil }
-        guard let encoded = ConditionValueEncoder.encode(condition: condition, values: values) else { return nil }
-        return SearchConditionPayload(propertyKey: condition.propertyKey, operator: op, value: encoded)
-    }
     kComposerLogger.debug(
         "Built search filters payload",
         metadata: [
@@ -294,7 +299,7 @@ func buildFilters(from state: ComposerFeature.State) -> SearchFiltersPayload {
             "conditions": .stringConvertible(conditionPayloads.count),
         ],
     )
-    return SearchFiltersPayload(
+    return VoyagerShared.SearchFiltersPayload(
         scopes: state.scopes,
         conditions: conditionPayloads,
     )

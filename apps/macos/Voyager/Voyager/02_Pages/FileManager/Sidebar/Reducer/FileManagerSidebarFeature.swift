@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
+import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
 @Reducer

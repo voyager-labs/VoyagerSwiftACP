@@ -1,5 +1,8 @@
+import VoyagerEntitiesEntry
+import VoyagerShared
+
 enum EntryModelPayloadAdapter {
-    nonisolated static func makeEntry(_ payload: SearchEntryPayload) -> EntryModel {
+    nonisolated static func makeEntry(_ payload: VoyagerShared.SearchEntryPayload) -> EntryModel {
         EntryModel(
             name: payload.name,
             fullPath: payload.fullPath,
@@ -21,7 +24,7 @@ enum EntryModelPayloadAdapter {
     }
 
     private nonisolated static func makeSupplementaryMetadata(
-        _ payload: SearchEntrySupplementaryMetadataPayload?,
+        _ payload: VoyagerShared.SearchEntrySupplementaryMetadataPayload?,
     ) -> EntrySupplementaryMetadata? {
         guard let payload else {
             return nil

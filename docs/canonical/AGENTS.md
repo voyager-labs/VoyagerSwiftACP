@@ -40,6 +40,7 @@ Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdow
 | 기능 스펙 확인/편집   | `PRODUCT/05_FEATURE_SPECS/index.md`                                                   | interaction_id 기반 스펙                   |
 | 유즈케이스 흐름 확인  | `PRODUCT/06_USE_CASES/index.md`                                                       | PREV/NEXT 내비                             |
 | 특정 feature_id 검증  | `.agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md` | 빠른 lookup/정합성 체크                    |
+| Codex 서브에이전트    | `.codex/agents/README.md`                                                             | 프로젝트 전용 custom agents                |
 
 ## CONVENTIONS (THIS REPO)
 

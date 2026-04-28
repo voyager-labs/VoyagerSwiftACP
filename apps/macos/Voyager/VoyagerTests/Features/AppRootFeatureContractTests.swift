@@ -47,10 +47,73 @@ final class AppRootFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .incrementing
         }
+        store.exhaustivity = .off
 
         await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+    }
+
+    func testHelperExternalFileChangeForwardsToWindowManager() async {
+        let windowID = UUID()
+        let paths = ["/tmp/demo"]
+        var initialState = AppRootFeature.State()
+        initialState.windowManager.windows = [
+            WindowSessionState(id: windowID, window: .makeInitial(path: "/tmp")),
+        ]
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
+        await store.receive { action in
+            guard case let .windowManager(.windows(.element(
+                id: id,
+                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
+            ))) = action else {
+                return false
+            }
+            return id == windowID && receivedPaths == paths
+        }
+    }
+
+    func testHelperExternalFileChangeFansOutToAllOpenWindows() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        let paths = ["/tmp/demo"]
+
+        var initialState = AppRootFeature.State()
+        initialState.windowManager.windows = [
+            WindowSessionState(id: firstID, window: .makeInitial(path: "/tmp/one")),
+            WindowSessionState(id: secondID, window: .makeInitial(path: "/tmp/two")),
+        ]
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        }
+
+        await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
+        await store.receive { action in
+            guard case let .windowManager(.windows(.element(
+                id: id,
+                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
+            ))) = action else {
+                return false
+            }
+            return id == firstID && receivedPaths == paths
+        }
+        await store.receive { action in
+            guard case let .windowManager(.windows(.element(
+                id: id,
+                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
+            ))) = action else {
+                return false
+            }
+            return id == secondID && receivedPaths == paths
+        }
     }
 
     func testMenuCommandsStateIsRecomputedAfterWindowManagerChanges() async {
@@ -59,7 +122,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         initialState.windowManager.windows = [
             WindowSessionState(
                 id: windowID,
-                window: .makeInitial(windowID: windowID, path: "/tmp"),
+                window: .makeInitial(path: "/tmp"),
             ),
         ]
         initialState.windowManager.focusedWindowID = windowID
@@ -67,7 +130,13 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         }
+        store.exhaustivity = .off
 
-        XCTAssertTrue(store.state.menuCommands.hasFocusedWindow)
+        XCTAssertFalse(store.state.menuCommands.hasFocusedWindow)
+
+        await store.send(.windowManager(.event(.windowBecameKey(id: windowID)))) {
+            $0.windowManager.focusedWindowID = windowID
+            $0.menuCommands.hasFocusedWindow = true
+        }
     }
 }

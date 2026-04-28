@@ -1,10 +1,11 @@
 @testable import Voyager
+import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class EntryViewLayoutCutClearHeuristicTests: XCTestCase {
+final class EntryOperationsCutClearHeuristicTests: XCTestCase {
     func testKeepsCutWhenPasteboardChangeCountChangedButCutSessionIdStillMatches() {
-        let heuristic = EntryViewLayoutCutClearHeuristic()
+        let heuristic = EntryOperationsCutClearHeuristic()
         let now = Date(timeIntervalSinceReferenceDate: 0)
 
         let session = heuristic.makeInitialSession(
@@ -32,7 +33,7 @@ final class EntryViewLayoutCutClearHeuristicTests: XCTestCase {
     }
 
     func testClearsCutWhenPasteboardChangeCountChangedAndCutSessionIdIsDifferentOrMissing() {
-        let heuristic = EntryViewLayoutCutClearHeuristic()
+        let heuristic = EntryOperationsCutClearHeuristic()
         let now = Date(timeIntervalSinceReferenceDate: 0)
 
         let session = heuristic.makeInitialSession(
@@ -54,7 +55,7 @@ final class EntryViewLayoutCutClearHeuristicTests: XCTestCase {
     }
 
     func testClearsCutWhenBackoffDueAndAnySourcePathIsMissing() {
-        let heuristic = EntryViewLayoutCutClearHeuristic(backoffSchedule: [0.5, 1, 2])
+        let heuristic = EntryOperationsCutClearHeuristic(backoffSchedule: [0.5, 1, 2])
         let start = Date(timeIntervalSinceReferenceDate: 0)
 
         let missingPath = "/missing"

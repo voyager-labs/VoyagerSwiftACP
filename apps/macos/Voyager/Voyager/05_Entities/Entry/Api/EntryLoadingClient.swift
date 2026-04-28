@@ -3,6 +3,8 @@ import CoreServices
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+
+import VoyagerEntitiesEntry
 import VoyagerShared
 
 public struct EntryLoadingClient: Sendable {

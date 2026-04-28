@@ -1,5 +1,7 @@
 import AppKit
 
+import VoyagerEntitiesEntry
+
 struct EntryListEntryCellViewConfiguration {
     let context: Context
 

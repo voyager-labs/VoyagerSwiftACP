@@ -2,19 +2,32 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
+import VoyagerFeaturesEntryOperations
+
 @ObservableState
 struct FileManagerContentState: Equatable {
     var navigation: ContentPageNavigationFeature.State = .init()
     var entryViewLayout: EntryViewLayoutFeature.State = .init()
     var composer: ComposerFeature.State = .init()
+    var collection: CollectionFeature.State = .init()
 
     // 컴포저 관련
-    var collectionContext: CollectionContext?
+    var collectionContext: CollectionContext? {
+        get { collection.collectionContext }
+        set { collection.collectionContext = newValue }
+    }
 
     var resetComposerOnNextDirectoryNavigation: Bool = false
 
     // 콜렉션 관련
-    var collectionSession: CollectionDocumentSessionState = .init()
+    var collectionSession: CollectionDocumentSessionState {
+        get { collection.collectionSession }
+        set { collection.collectionSession = newValue }
+    }
+
+    var isCollectionMode: Bool {
+        entryViewLayout.isCollectionMode
+    }
 
     mutating func resetComposer() {
         composer = .init()
@@ -23,23 +36,36 @@ struct FileManagerContentState: Equatable {
 
     mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
-        composer.openedCollectionURL = collectionSession.openedURL
-        composer.isCollectionMode = entryViewLayout.entryOperations.loadingContext.isCollectionMode
+        composer.openedCollectionURL = collectionSession.document?.url
+        composer.openedCollectionCompatibility = collectionSession.document?.compatibility
+        composer.isCollectionMode = isCollectionMode
     }
 
     var canSaveCollection: Bool {
-        guard entryViewLayout.entryOperations.loadingContext.isCollectionMode, collectionContext != nil else {
+        guard isCollectionMode, collectionContext != nil else {
             return false
         }
-        if collectionSession.baseline == nil {
+        if collectionSession.metadata.baseline == nil {
             return true
         }
         return isOpenedCollectionDirty
     }
 
     var isOpenedCollectionDirty: Bool {
-        guard let baseline = collectionSession.baseline, let context = collectionContext else { return false }
+        guard let baseline = collectionSession.metadata.baseline, let context = collectionContext else { return false }
         if baseline.context != context { return true }
         return false
+    }
+
+    var isOpenedCollectionStale: Bool {
+        isCollectionMode && collectionSession.phase.isStale
+    }
+
+    var refreshBlockingReason: CollectionSessionRefreshBlockingReason? {
+        collection.refreshBlockingReason(
+            isCollectionMode: isCollectionMode,
+            isDirty: isOpenedCollectionDirty,
+            isSearching: composer.isCollectionSearching,
+        )
     }
 }

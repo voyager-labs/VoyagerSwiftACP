@@ -1,9 +1,12 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 struct SearchClient: Sendable {
-    var search: @Sendable (_ request: SearchRequestPayload) async throws -> SearchResponsePayload
-    var applyFilters: @Sendable (_ request: FiltersOnlyRequestPayload) async throws -> SearchResponsePayload
+    var search: @Sendable (_ request: VoyagerShared.SearchRequestPayload) async throws -> VoyagerShared
+        .SearchResponsePayload
+    var applyFilters: @Sendable (_ request: VoyagerShared.FiltersOnlyRequestPayload) async throws -> VoyagerShared
+        .SearchResponsePayload
 }
 
 extension SearchClient: DependencyKey {

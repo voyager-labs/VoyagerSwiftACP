@@ -1,17 +1,18 @@
 import Foundation
+import VoyagerShared
 
 extension VoyagerCollectionFile {
     func resolveCollectionFilters(
         registryClient: RegistryClient,
     ) -> AppliedFiltersUtils.ResolutionResult {
         let conditionPayloads = conditions.map { condition in
-            SearchConditionPayload(
+            VoyagerShared.SearchConditionPayload(
                 propertyKey: condition.propertyKey,
                 operator: condition.operatorCode,
                 value: condition.value,
             )
         }
-        let appliedFilters = AppliedFiltersPayload(
+        let appliedFilters = VoyagerShared.AppliedFiltersPayload(
             scopes: scopes,
             conditions: conditionPayloads,
         )

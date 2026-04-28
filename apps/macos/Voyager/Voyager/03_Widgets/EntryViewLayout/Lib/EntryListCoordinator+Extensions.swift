@@ -2,6 +2,9 @@ import AppKit
 import Combine
 import ComposableArchitecture
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 extension EntryListCoordinator {
     func beginRenaming(row: Int) {
         guard row >= 0, row < tableView.numberOfRows else { return }

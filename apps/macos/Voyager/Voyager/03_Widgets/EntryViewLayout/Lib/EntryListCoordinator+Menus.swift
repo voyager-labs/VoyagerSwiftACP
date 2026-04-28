@@ -1,6 +1,9 @@
 import AppKit
 import ComposableArchitecture
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
+
 extension EntryListCoordinator {
     func configureHeaderMenu() {
         let headerView: EntryListHeaderView
@@ -68,7 +71,7 @@ extension EntryListCoordinator {
         } else if let file = selectedFiles.first {
             state.entryOperations.applicationsForItems[file.fullPath] ?? []
         } else {
-            []
+            [] as [ApplicationInfo]
         }
         return applications
     }

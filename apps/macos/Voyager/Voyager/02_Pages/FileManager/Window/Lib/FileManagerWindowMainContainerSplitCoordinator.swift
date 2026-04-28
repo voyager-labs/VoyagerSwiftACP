@@ -3,6 +3,8 @@ import Combine
 import ComposableArchitecture
 import SwiftUI
 
+import VoyagerFeaturesEntryOperations
+
 @MainActor
 final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {
     private enum Constants {
@@ -321,11 +323,11 @@ private func makeContentOverlayProps(from state: FileManagerWindowState) -> File
             }
             return nil
         },
-        isDiscardEnabled: state.content.entryViewLayout.entryOperations.loadingContext.isCollectionMode
-            && state.content.collectionSession.baseline != nil
+        isDiscardEnabled: state.content.isCollectionMode
+            && state.content.collectionSession.metadata.baseline != nil
             && state.content.isOpenedCollectionDirty,
         canSaveCollection: state.content.canSaveCollection,
-        isTemporaryCollection: state.content.collectionSession.openedURL == nil,
+        isTemporaryCollection: state.content.collectionSession.document?.url == nil,
     )
 }
 

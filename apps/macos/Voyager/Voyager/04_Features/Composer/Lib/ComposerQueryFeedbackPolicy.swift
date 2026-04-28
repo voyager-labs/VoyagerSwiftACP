@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 enum ComposerQueryFeedbackPolicy {
     static let conversionFailureMessage = "Couldn't interpret that query. Try being more specific."
@@ -10,18 +11,18 @@ enum ComposerQueryFeedbackPolicy {
     }
 
     static func normalizedFilters(
-        appliedFilters: AppliedFiltersPayload?,
-        fallback baseline: SearchFiltersPayload,
-    ) -> SearchFiltersPayload {
-        SearchFiltersPayload(
+        appliedFilters: VoyagerShared.AppliedFiltersPayload?,
+        fallback baseline: VoyagerShared.SearchFiltersPayload,
+    ) -> VoyagerShared.SearchFiltersPayload {
+        VoyagerShared.SearchFiltersPayload(
             scopes: appliedFilters?.scopes ?? baseline.scopes,
             conditions: appliedFilters?.conditions ?? baseline.conditions,
         )
     }
 
     static func isNoOp(
-        baseline: SearchFiltersPayload,
-        appliedFilters: AppliedFiltersPayload?,
+        baseline: VoyagerShared.SearchFiltersPayload,
+        appliedFilters: VoyagerShared.AppliedFiltersPayload?,
     ) -> Bool {
         normalizedFilters(appliedFilters: appliedFilters, fallback: baseline) == baseline
     }

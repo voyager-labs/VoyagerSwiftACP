@@ -1,6 +1,6 @@
 ---
 name: voyager-linear-issue-author
-description: Draft Linear feature-implementation issue documents from Voyager SSOT tables. Use when converting one or more feature_id values from PRODUCT/04_FEATURE_INVENTORY into ready-to-paste Linear issue markdown with scope, requirements, and Given/When/Then acceptance criteria. Triggers: Linear issue, 리니어 이슈, feature_id, implementation issue.
+description: "Draft Linear feature-implementation issue documents from Voyager SSOT tables. Use when converting one or more feature_id values from PRODUCT/04_FEATURE_INVENTORY into ready-to-paste Linear issue markdown with scope, requirements, and Given/When/Then acceptance criteria. Triggers: Linear issue, 리니어 이슈, feature_id, implementation issue."
 ---
 
 # Voyager Linear Issue Author

@@ -11,7 +11,7 @@ final class FileManagerContentThumbnailOwnershipTests: XCTestCase {
         } withDependencies: {
             $0.userDefaultsClient = .testValue
             $0.collectionAlertClient = .testValue
-            $0.fileManagerClient = .testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
             $0.notificationCenterClient = .testValue
             $0.thumbnailGeneratorClient = .testValue
             $0.entryThumbnailCacheClient = .testValue

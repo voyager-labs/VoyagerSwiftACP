@@ -1,10 +1,18 @@
 import ComposableArchitecture
+import Foundation
 import IdentifiedCollections
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 
 @Reducer
 struct EntryViewLayoutFeature {
     typealias State = EntryViewLayoutState
     typealias Action = EntryViewLayoutAction
+
+    @Dependency(\.entryLoadingClient)
+    private var entryLoadingClient
+    @Dependency(\.workspaceClient)
+    private var workspaceClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.entryOperations, action: \.entryOperations) {
@@ -174,6 +182,62 @@ struct EntryViewLayoutFeature {
                 state.showHiddenFiles.toggle()
                 return .none
 
+            case let .internal(.setCollectionMode(isCollectionMode)):
+                state.isCollectionMode = isCollectionMode
+                return Self.updateEntriesAndReapply(&state)
+
+            case let .internal(.setCollectionItems(items)):
+                state.collectionItems = IdentifiedArrayOf(uniqueElements: items)
+                return Self.updateEntriesAndReapply(&state)
+
+            case let .internal(.applyCollectionSearchPaths(paths, showHidden)):
+                let converted = EntryViewLayoutCollectionItemsConverter.convert(
+                    paths,
+                    showHidden: showHidden,
+                    entryLoadingClient: entryLoadingClient,
+                    workspaceClient: workspaceClient,
+                )
+                state.collectionItems = IdentifiedArrayOf(uniqueElements: converted)
+                return Self.updateEntriesAndReapply(&state)
+
+            case let .internal(.addCollectionPaths(paths)):
+                guard state.isCollectionMode else { return .none }
+                let restoredItems = EntryViewLayoutCollectionItemsConverter.convert(
+                    paths,
+                    showHidden: state.showHiddenFiles,
+                    entryLoadingClient: entryLoadingClient,
+                    workspaceClient: workspaceClient,
+                )
+                guard !restoredItems.isEmpty else { return .none }
+
+                let existingIDs = Set(state.collectionItems.map(\.id))
+                let appendedItems = restoredItems.filter { !existingIDs.contains($0.id) }
+                guard !appendedItems.isEmpty else { return .none }
+
+                state.collectionItems.append(contentsOf: appendedItems)
+                return Self.updateEntriesAndReapply(&state)
+
+            case let .internal(.removeCollectionPaths(paths)):
+                guard state.isCollectionMode else { return .none }
+                let mutatedPaths = Set(paths.map(Self.normalizedPath(_:)))
+                guard !mutatedPaths.isEmpty else { return .none }
+
+                let remainingItems = state.collectionItems.filter { item in
+                    !Self.matchesAnyMutatedPath(item.fullPath, mutatedPaths: mutatedPaths)
+                }
+                guard remainingItems.count != state.collectionItems.count else {
+                    return .none
+                }
+
+                state.collectionItems = IdentifiedArrayOf(uniqueElements: Array(remainingItems))
+                Self.reconcileSelectionAfterCollectionMutation(&state)
+                return Self.updateEntriesAndReapply(&state)
+
+            case .internal(.clearCollectionPresentation):
+                state.isCollectionMode = false
+                state.collectionItems = []
+                return Self.updateEntriesAndReapply(&state)
+
             case .delegate:
                 return .none
 
@@ -182,11 +246,8 @@ struct EntryViewLayoutFeature {
 
             case let .entryOperations(entryOperationsAction):
                 switch entryOperationsAction {
-                case .loading(.itemsLoaded),
-                     .loading(.collectionItemsLoadedFromSearch),
-                     .loading(.setCollectionMode):
-                    state.entries = state.entryOperations.displayOrderItems
-                    return .send(.entryArrangements(.reapply))
+                case .loading(.itemsLoaded):
+                    return Self.updateEntriesAndReapply(&state)
 
                 default:
                     return .none
@@ -197,16 +258,10 @@ struct EntryViewLayoutFeature {
                 case .delegate(.requestApply):
                     return .send(.entryArrangements(.apply(
                         items: state.entries,
-                        isCollectionMode: state.entryOperations.loadingContext.isCollectionMode,
+                        isCollectionMode: state.isCollectionMode,
                     )))
 
-                case let .delegate(.applied(sortedItems, isCollectionMode)):
-                    if isCollectionMode {
-                        state.entryOperations.loadingContext
-                            .collectionItems = IdentifiedArray(uniqueElements: sortedItems)
-                    } else {
-                        state.entryOperations.loadingContext.items = IdentifiedArray(uniqueElements: sortedItems)
-                    }
+                case let .delegate(.applied(sortedItems, _)):
                     state.entries = sortedItems
                     return .none
 
@@ -214,6 +269,38 @@ struct EntryViewLayoutFeature {
                     return .none
                 }
             }
+        }
+    }
+
+    // MARK: - Helpers
+
+    static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
+        state.entries = state.displayOrderItems
+        return .send(.entryArrangements(.reapply))
+    }
+
+    static func reconcileSelectionAfterCollectionMutation(_ state: inout State) {
+        let remainingIds = Set(state.collectionItems.map(\.id))
+        state.selectedIds = state.selectedIds.intersection(remainingIds)
+
+        if let lastSelectedId = state.lastSelectedId, !remainingIds.contains(lastSelectedId) {
+            state.lastSelectedId = state.collectionItems.first { state.selectedIds.contains($0.id) }?.id
+        }
+        if let rangeAnchorId = state.rangeAnchorId, !remainingIds.contains(rangeAnchorId) {
+            state.rangeAnchorId = state.lastSelectedId
+        }
+        state.shouldScrollToSelection = false
+    }
+
+    static func normalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    static func matchesAnyMutatedPath(_ itemPath: String, mutatedPaths: Set<String>) -> Bool {
+        let normalizedItemPath = normalizedPath(itemPath)
+        return mutatedPaths.contains { mutatedPath in
+            normalizedItemPath == mutatedPath
+                || normalizedItemPath.hasPrefix(mutatedPath == "/" ? "/" : mutatedPath + "/")
         }
     }
 }

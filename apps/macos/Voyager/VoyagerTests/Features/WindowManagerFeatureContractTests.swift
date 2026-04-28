@@ -11,8 +11,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: firstID, window: .makeInitial(windowID: firstID, path: "/a")),
-            WindowSessionState(id: secondID, window: .makeInitial(windowID: secondID, path: "/b")),
+            WindowSessionState(id: firstID, window: .makeInitial(path: "/a")),
+            WindowSessionState(id: secondID, window: .makeInitial(path: "/b")),
         ]
 
         var preferences = AppPreferencesState()
@@ -22,6 +22,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
@@ -37,7 +38,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: focusedID, window: .makeInitial(windowID: focusedID, path: "/tmp")),
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
         ]
         initialState.focusedWindowID = focusedID
 
@@ -54,12 +55,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: focusedID, window: .makeInitial(windowID: focusedID, path: "/tmp")),
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
         ]
         initialState.focusedWindowID = focusedID
 
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient.createFolder = { _, _ in }
         }
         store.exhaustivity = .off
 
@@ -71,7 +74,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: focusedID, window: .makeInitial(windowID: focusedID, path: "/tmp")),
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
         ]
         initialState.focusedWindowID = focusedID
 
@@ -88,7 +91,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         var initialState = WindowManagerFeature.State()
         initialState.windows = [
-            WindowSessionState(id: focusedID, window: .makeInitial(windowID: focusedID, path: "/tmp")),
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
         ]
         initialState.focusedWindowID = focusedID
 

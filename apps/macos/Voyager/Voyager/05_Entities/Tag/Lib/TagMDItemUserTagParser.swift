@@ -1,5 +1,7 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+
 enum TagMDItemUserTagParser {
     // MDItem의 kMDItemUserTags 항목("name\ncolorCode")을 Tag로 변환합니다.
     nonisolated static func parse(_ rawTag: String) -> Tag? {

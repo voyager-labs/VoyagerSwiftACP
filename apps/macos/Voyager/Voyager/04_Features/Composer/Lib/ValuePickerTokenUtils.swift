@@ -1,5 +1,7 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+
 enum ValuePickerTokenUtils {
     static let finderTagPropertyKey = "tag_names"
 

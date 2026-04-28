@@ -11,12 +11,15 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
 
     case entryViewLayout(EntryViewLayoutFeature.Action)
     case composer(ComposerFeature.Action)
+    case collection(CollectionFeature.Action)
+    case externalFileSystemChanged([String])
 
     @CasePathable
     enum View: Sendable {
         case handleKeyCommand(KeyCommand)
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
+        case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
     }
 
@@ -29,6 +32,7 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case startObservingSystemNotifications
         case stopObservingSystemNotifications
         case systemAppDidBecomeActive
+        case syncComposerCollectionState
     }
 
     @CasePathable

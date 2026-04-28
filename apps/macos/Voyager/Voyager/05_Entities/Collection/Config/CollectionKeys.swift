@@ -1,3 +1,4 @@
 enum CollectionKeys {
-    static let lastCollectionSaveDirectory = "lastCollectionSaveDirectory"
+    nonisolated(unsafe) static let lastCollectionSaveDirectory = "lastCollectionSaveDirectory"
+    nonisolated(unsafe) static let stalenessRecords = "collectionStalenessRecords"
 }

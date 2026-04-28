@@ -1,7 +1,9 @@
 import ComposableArchitecture
+import VoyagerShared
 
 struct RecentSearchClient: Sendable {
-    var search: @Sendable (_ request: RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload
+    var search: @Sendable (_ request: VoyagerShared.RecentSearchRequestPayload) async throws -> VoyagerShared
+        .RecentSearchResponsePayload
 }
 
 extension RecentSearchClient: DependencyKey {

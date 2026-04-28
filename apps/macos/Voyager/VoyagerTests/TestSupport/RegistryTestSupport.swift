@@ -63,7 +63,7 @@ enum RegistryTestSupport {
         }
     }
 
-    private static func registryUnitSpecs() -> [String: SystemPropertyUnitSpec] {
+    private nonisolated static func registryUnitSpecs() -> [String: SystemPropertyUnitSpec] {
         MainActor.assumeIsolated {
             registrySnapshot().propertyKeyToUnitSpec
         }

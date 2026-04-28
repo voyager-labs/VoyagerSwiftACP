@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -17,25 +18,31 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
         } withDependencies: {
-            $0.userDefaultsClient = .testValue
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
             $0.collectionAlertClient = .init(
                 showUnsavedNavigationAlert: { .cancel },
                 showCollectionOpenErrorAlert: { title, message in
                     await alerts.record(title: title, message: message)
                 },
             )
-            $0.fileManagerClient = .testValue
-            $0.thumbnailGeneratorClient = .testValue
-            $0.entryThumbnailCacheClient = .testValue
-            $0.notificationCenterClient = .testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
         store.exhaustivity = .off
 
-        await store.send(.composer(.searchResponse(requestID, .failure(GuardrailError.sample))))
-        await store.receive(.delegate(.composerCollectionSearchFailed))
+        await store.send(FileManagerContentAction.composer(ComposerAction.searchResponse(
+            requestID,
+            .failure(GuardrailError.sample),
+        )))
+        await store.receive { action in
+            guard case .delegate(.composerCollectionSearchFailed) = action else { return false }
+            return true
+        }
         await Task.yield()
 
-        await XCTAssertEqual(alerts.count(), 0)
+        XCTAssertEqual(alerts.count(), 0)
         XCTAssertFalse(store.state.collectionSession.isOpening)
         XCTAssertEqual(
             store.state.composer.transientFeedback?.message,
@@ -51,42 +58,78 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
         } withDependencies: {
-            $0.userDefaultsClient = .testValue
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
             $0.collectionAlertClient = .init(
                 showUnsavedNavigationAlert: { .cancel },
                 showCollectionOpenErrorAlert: { title, message in
                     await alerts.record(title: title, message: message)
                 },
             )
-            $0.fileManagerClient = .testValue
-            $0.thumbnailGeneratorClient = .testValue
-            $0.entryThumbnailCacheClient = .testValue
-            $0.notificationCenterClient = .testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
         store.exhaustivity = .off
 
-        await store.send(.composer(.searchResponse(requestID, .failure(GuardrailError.sample))))
-        await store.receive(.internal(.requestNavigation(.internal(.rollbackBackHistoryOnce))))
-        await store.receive(.internal(.requestNavigation(.internal(.setNavigationState(.folder(path: "/tmp"))))))
-        await store.receive(.internal(.requestNavigation(.internal(.setPendingNavigation(nil)))))
-        await store.receive(.entryViewLayout(.entryOperations(.loading(.setCollectionMode(false)))))
-        await store.receive(.entryViewLayout(.entryOperations(.loading(.clearCollectionItems))))
-        await store.receive(.delegate(.composerCollectionSearchFailed))
+        await store.send(FileManagerContentAction.composer(ComposerAction.searchResponse(
+            requestID,
+            .failure(GuardrailError.sample),
+        )))
+        await assertCollectionOpenFailureRollback(store: store)
         await Task.yield()
 
-        await XCTAssertEqual(alerts.count(), 1)
-        await XCTAssertEqual(alerts.lastTitle(), "Unable to Run Collection Search")
-        XCTAssertEqual(store.state.collectionSession, .init())
-        XCTAssertFalse(store.state.entryViewLayout.entryOperations.loadingContext.isCollectionMode)
+        XCTAssertEqual(alerts.count(), 1)
+        XCTAssertEqual(alerts.lastTitle(), "Unable to Run Collection Search")
+        XCTAssertFalse(store.state.collectionSession.phase.isOpening)
+        XCTAssertNil(store.state.collectionSession.document?.name)
+        XCTAssertNil(store.state.collectionSession.document?.url)
+        XCTAssertNil(store.state.collectionSession.metadata.baseline)
+        XCTAssertFalse(store.state.entryViewLayout.isCollectionMode)
         XCTAssertNil(store.state.collectionContext)
     }
 }
 
+private func assertCollectionOpenFailureRollback(
+    store: TestStore<FileManagerContentState, FileManagerContentAction>,
+) async {
+    await store.receive { action in
+        guard case .internal(.requestNavigation(.internal(.rollbackBackHistoryOnce))) = action else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .internal(.requestNavigation(.internal(.setNavigationState(.folder("/tmp"))))) = action
+        else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .internal(.requestNavigation(.internal(.setPendingNavigation(nil)))) = action
+        else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .entryViewLayout(.internal(.setCollectionMode(false))) = action else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .delegate(.composerCollectionSearchFailed) = action else { return false }
+        return true
+    }
+}
+
+@MainActor
 private func makeCollectionOpeningState(requestID: UUID) -> FileManagerContentState {
     var state = FileManagerContentState()
-    state.collectionSession.isOpening = true
-    state.collectionSession.openedName = "Saved Search"
-    state.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/saved-search.voyager-collection")
+    state.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
+    state.collectionSession.document = .init(
+        url: URL(fileURLWithPath: "/tmp/saved-search.voyager-collection"),
+        name: "Saved Search",
+        compatibility: nil,
+    )
     state.composer.pendingSearchQuery = "kind:image"
     state.composer.isLoadingSearch = true
     state.composer.activeSearchRequestID = requestID
@@ -104,12 +147,12 @@ private func makeCollectionOpeningState(requestID: UUID) -> FileManagerContentSt
         ),
     )
     state.navigation.titlePath = "/tmp"
-    state.entryViewLayout.entryOperations.loadingContext.isCollectionMode = true
+    state.entryViewLayout.isCollectionMode = true
     state.syncComposerCollectionState()
     return state
 }
 
-private actor CollectionAlertRecorder {
+private final class CollectionAlertRecorder: @unchecked Sendable {
     private var calls: [(title: String, message: String)] = []
 
     func record(title: String, message: String) {

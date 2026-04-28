@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
@@ -237,8 +239,8 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                 )))
 
                 await store.receive { action in
-                    guard case let .entryViewLayout(.delegate(.startRename(id, text))) = action else { return false }
-                    return id == selected.id && text == "selected"
+                    guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else { return false }
+                    return item.id == selected.id && text == "selected"
                 }
 
                 await store.finish()

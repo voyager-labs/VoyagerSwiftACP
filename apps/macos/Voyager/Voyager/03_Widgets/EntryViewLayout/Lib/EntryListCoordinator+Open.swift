@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerFeaturesEntryOperations
 
 extension EntryListCoordinator {
     @objc

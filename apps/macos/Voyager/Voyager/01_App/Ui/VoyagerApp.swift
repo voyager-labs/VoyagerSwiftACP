@@ -3,6 +3,8 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import SwiftUI
+import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
@@ -35,6 +37,11 @@ struct VoyagerApp: App {
                 return true
             })
             $0.fileManagerWindowClient = fileManagerWindowClient
+            $0.undoManagerClient = .live(resolveUndoManager: { windowID in
+                await MainActor.run {
+                    resolveFileManagerUndoManager(windowID: windowID)
+                }
+            })
         }
 
         configureFileManagerWindowClientLive(
