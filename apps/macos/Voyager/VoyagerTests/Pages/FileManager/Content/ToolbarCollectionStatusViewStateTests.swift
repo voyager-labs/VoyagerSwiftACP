@@ -10,13 +10,14 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: true,
             isOpenedCollectionStale: false,
-            canRefreshStaleCollection: false,
+            refreshBlockingReason: .notStale,
         )
 
         XCTAssertTrue(state.showsUnsavedIndicator)
         XCTAssertFalse(state.showsStaleIndicator)
         XCTAssertFalse(state.showsRefreshAffordance)
         XCTAssertFalse(state.isRefreshEnabled)
+        XCTAssertEqual(state.refreshBlockingReason, .notStale)
     }
 
     func testStaleOnlyShowsStaleIndicator() {
@@ -25,13 +26,14 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: false,
             isOpenedCollectionStale: true,
-            canRefreshStaleCollection: true,
+            refreshBlockingReason: nil,
         )
 
         XCTAssertFalse(state.showsUnsavedIndicator)
         XCTAssertTrue(state.showsStaleIndicator)
         XCTAssertTrue(state.showsRefreshAffordance)
         XCTAssertTrue(state.isRefreshEnabled)
+        XCTAssertNil(state.refreshBlockingReason)
     }
 
     func testDirtyAndStaleShowBothIndicators() {
@@ -40,13 +42,14 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: true,
             isOpenedCollectionStale: true,
-            canRefreshStaleCollection: false,
+            refreshBlockingReason: .dirtyCollection,
         )
 
         XCTAssertTrue(state.showsUnsavedIndicator)
         XCTAssertTrue(state.showsStaleIndicator)
-        XCTAssertTrue(state.showsRefreshAffordance)
+        XCTAssertFalse(state.showsRefreshAffordance)
         XCTAssertFalse(state.isRefreshEnabled)
+        XCTAssertEqual(state.refreshBlockingReason, .dirtyCollection)
     }
 
     func testMissingCollectionPrerequisitesDisableRefreshAffordance() {
@@ -55,11 +58,13 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: true,
             isOpenedCollectionDirty: false,
             isOpenedCollectionStale: true,
-            canRefreshStaleCollection: false,
+            refreshBlockingReason: .missingBaseline,
         )
 
-        XCTAssertTrue(state.showsRefreshAffordance)
+        XCTAssertTrue(state.showsStaleIndicator)
+        XCTAssertFalse(state.showsRefreshAffordance)
         XCTAssertFalse(state.isRefreshEnabled)
+        XCTAssertEqual(state.refreshBlockingReason, .missingBaseline)
     }
 
     func testNonCollectionShowsNoIndicators() {
@@ -68,12 +73,13 @@ final class ToolbarCollectionStatusViewStateTests: XCTestCase {
             openedCollectionURLExists: false,
             isOpenedCollectionDirty: true,
             isOpenedCollectionStale: true,
-            canRefreshStaleCollection: false,
+            refreshBlockingReason: .notInCollectionMode,
         )
 
         XCTAssertFalse(state.showsUnsavedIndicator)
         XCTAssertFalse(state.showsStaleIndicator)
         XCTAssertFalse(state.showsRefreshAffordance)
         XCTAssertFalse(state.isRefreshEnabled)
+        XCTAssertEqual(state.refreshBlockingReason, .notInCollectionMode)
     }
 }

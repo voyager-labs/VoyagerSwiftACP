@@ -64,6 +64,8 @@ enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case setCollectionMode(Bool)
         case setCollectionItems([EntryModel])
         case applyCollectionSearchPaths(paths: [String], showHidden: Bool)
+        case addCollectionPaths([String])
+        case removeCollectionPaths([String])
         case clearCollectionPresentation
     }
 }

@@ -44,9 +44,6 @@ struct ComposerFeature {
         ComposerScopeReducer()
         ComposerSaveReducer()
 
-        Scope(state: \.collection, action: \.collection) {
-            CollectionFeature()
-        }
         Scope(state: \.propertyPicker, action: \.propertyPicker) {
             ConditionPropertyPickerFeature()
         }
@@ -100,7 +97,6 @@ struct ComposerFeature {
                  .view(.clearAll),
                  .view(.saveCollection),
                  .view(.saveCollectionAs),
-                 .collection,
                  .propertyPicker,
                  .operatorPicker,
                  .valuePicker,
@@ -256,7 +252,7 @@ func applyFiltersIfNeeded(
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = requestID
     let filters = buildFilters(from: state)
-    guard !filters.conditions.isEmpty else {
+    guard !filters.scopes.isEmpty || !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil
@@ -274,7 +270,6 @@ func applyFiltersIfNeeded(
             await send(.filtersResponse(requestID, .failure(error)))
         }
     }
-    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 }
 
 func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {

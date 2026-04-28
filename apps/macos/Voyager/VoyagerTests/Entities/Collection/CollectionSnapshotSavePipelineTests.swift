@@ -6,6 +6,7 @@ import XCTest
 
 @MainActor
 final class CollectionSnapshotSavePipelineTests: XCTestCase {
+    // swiftlint:disable:next function_body_length
     func testSaveToExistingPersistsSnapshotAndClearsInvalidationState() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -27,6 +28,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             definitionFingerprint: "fingerprint",
             capturedAt: .distantFuture,
             relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
         )
 
         let store = TestStore(initialState: CollectionFeature.State()) {
@@ -36,7 +38,12 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in kEmptyCollectionFile },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -53,12 +60,9 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         await store.finish()
 
         let saved = await recorder.last()
+        assertSnapshotMeta(saved?.file, itemCount: 1)
         XCTAssertEqual(saved?.file.snapshot?.items, [.string("/tmp/report.txt")])
-        XCTAssertEqual(saved?.file.snapshotMeta?.definitionFingerprint, "fingerprint")
-        XCTAssertEqual(saved?.file.snapshotMeta?.relevanceRoots, ["/tmp"])
-        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 1)
-        XCTAssertNil(stalenessClient.record(url.path)?.lastInvalidatedAt)
-        XCTAssertNil(stalenessClient.record(url.path))
+        assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
     func testDefinitionOnlySaveLeavesSnapshotNil() async {
@@ -74,6 +78,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             definitionFingerprint: "fingerprint",
             capturedAt: .distantFuture,
             relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
         )
 
         let store = TestStore(initialState: CollectionFeature.State()) {
@@ -83,7 +88,12 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in kEmptyCollectionFile },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -101,9 +111,8 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
 
         let saved = await recorder.last()
         XCTAssertNil(saved?.file.snapshot)
-        XCTAssertEqual(saved?.file.snapshotMeta?.definitionFingerprint, "fingerprint")
-        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 0)
-        XCTAssertNil(stalenessClient.record(url.path))
+        XCTAssertNil(saved?.file.snapshotMeta)
+        assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
     func testEmptySnapshotSavePersistsEmptySnapshotArray() async {
@@ -119,6 +128,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             definitionFingerprint: "fingerprint",
             capturedAt: .distantFuture,
             relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
         )
 
         let store = TestStore(initialState: CollectionFeature.State()) {
@@ -128,7 +138,12 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
                 save: { file, url in
                     await recorder.append(file: file, url: url)
                 },
-                load: { _ in kEmptyCollectionFile },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
             )
             $0.userDefaultsClient = .testValue
             $0.collectionStalenessClient = stalenessClient
@@ -146,7 +161,125 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
 
         let saved = await recorder.last()
         XCTAssertEqual(saved?.file.snapshot?.items, [])
-        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 0)
+        assertSnapshotMeta(saved?.file, itemCount: 0)
+        assertRecordUpdated(stalenessClient: stalenessClient, url: url)
+    }
+
+    func testSavePipelinePersistsCanonicalCurrentSchemaVersionForConstructedPayload() async {
+        let recorder = SavedCollectionsRecorder()
+        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        let url = URL(fileURLWithPath: "/tmp/current-save.voycoll")
+
+        let payload = SaveRequestPayload(
+            context: CollectionContext(query: "Current", scopes: ["/tmp"], conditions: []),
+            isSearchLoading: false,
+            isFiltersLoading: false,
+            snapshotItems: nil,
+            definitionFingerprint: "fingerprint",
+            capturedAt: .distantFuture,
+            relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
+        )
+
+        let store = TestStore(initialState: CollectionFeature.State()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient = CollectionFileClient(
+                save: { file, url in
+                    await recorder.append(file: file, url: url)
+                },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
+            )
+            $0.userDefaultsClient = .testValue
+            $0.collectionStalenessClient = stalenessClient
+        }
+        store.exhaustivity = .off
+
+        await store.send(.saveToExisting(payload, url)) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+        }
+        await store.finish()
+
+        let saved = await recorder.last()
+        XCTAssertEqual(saved?.file.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
+        XCTAssertNil(saved?.file.snapshotMeta)
+    }
+
+    func testSaveToExistingIsBlockedForFutureMinorCompatibility() async {
+        let recorder = SavedCollectionsRecorder()
+        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        let url = URL(fileURLWithPath: "/tmp/future-minor.voycoll")
+
+        let payload = SaveRequestPayload(
+            context: CollectionContext(query: "Blocked", scopes: ["/tmp"], conditions: []),
+            isSearchLoading: false,
+            isFiltersLoading: false,
+            snapshotItems: nil,
+            definitionFingerprint: "fingerprint",
+            capturedAt: .distantFuture,
+            relevanceRoots: ["/tmp"],
+            openedCompatibility: .init(
+                sourceSchemaVersion: .init(major: 1, minor: 2),
+                migrationPath: [.currentSchemaV2],
+                warnings: [.futureMinorVersionReadOnly],
+                usedDefinitionFallback: false,
+                writeBackAllowed: false,
+                writeBackReason: .blockedFutureMinorVersion,
+            ),
+        )
+
+        let store = TestStore(initialState: CollectionFeature.State()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient = CollectionFileClient(
+                save: { file, url in
+                    await recorder.append(file: file, url: url)
+                },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
+            )
+            $0.userDefaultsClient = .testValue
+            $0.collectionStalenessClient = stalenessClient
+        }
+        store.exhaustivity = .off
+
+        await store.send(.saveToExisting(payload, url))
+        await store.finish()
+
+        await XCTAssertNil(recorder.last())
+    }
+
+    private func assertSnapshotMeta(_ file: VoyagerCollectionFile?, itemCount: Int) {
+        XCTAssertEqual(file?.snapshotMeta?.definitionFingerprint, "fingerprint")
+        XCTAssertEqual(file?.snapshotMeta?.relevanceRoots, ["/tmp"])
+        XCTAssertEqual(file?.snapshotMeta?.itemCount, itemCount)
+    }
+
+    private func assertRecordUpdated(
+        stalenessClient: CollectionStalenessClient,
+        url: URL,
+    ) {
+        XCTAssertEqual(
+            stalenessClient.record(url.path),
+            .init(
+                definitionFingerprint: "fingerprint",
+                relevanceRoots: ["/tmp"],
+                lastInvalidatedAt: nil,
+            ),
+        )
     }
 }
 
@@ -162,6 +295,19 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
     snapshotMeta: nil,
     appVersion: nil,
 )
+
+private func makeCollectionLoadResult(
+    _ file: VoyagerCollectionFile,
+    sourceSchemaVersion: SchemaVersion?,
+) -> CollectionFileLoadResult {
+    VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
+        file: file,
+        containerFormat: .package,
+        sourceSchemaVersion: sourceSchemaVersion,
+        warning: nil,
+        usedDefinitionFallback: false,
+    )
+}
 
 private actor SavedCollectionsRecorder {
     struct Entry {

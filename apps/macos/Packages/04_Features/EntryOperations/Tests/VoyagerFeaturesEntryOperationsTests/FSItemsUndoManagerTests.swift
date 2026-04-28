@@ -184,6 +184,39 @@ final class FSItemsUndoManagerTests: XCTestCase {
         XCTAssertEqual(store.state.undoRecords, [record])
         XCTAssertEqual(store.state.redoRecords, [])
     }
+
+    func testResolverBackedUndoManagerClientRegistersUndoForWindowID() async throws {
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000014"))
+        let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000015"))
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/tmp/a.txt", afterPath: "/tmp/b.txt")],
+            id: recordId,
+            timestamp: Date(timeIntervalSince1970: 14),
+        )
+
+        let undoManager = UndoManager()
+
+        let store = TestStore(initialState: {
+            var state = EntryOperationsFeature.State()
+            state.windowID = windowID
+            return state
+        }()) {
+            EntryOperationsFeature()
+        } withDependencies: {
+            $0.undoManagerClient = .live(resolveUndoManager: { requestedWindowID in
+                requestedWindowID == windowID ? undoManager : nil
+            })
+        }
+
+        await store.send(.lifecycle(.entryActionCompleted(record))) {
+            $0.undoRecords = [record]
+            $0.redoRecords = []
+        }
+        await store.finish()
+
+        XCTAssertTrue(undoManager.canUndo)
+    }
 }
 
 private actor RegisteredRecords {

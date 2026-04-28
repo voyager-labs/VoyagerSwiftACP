@@ -27,19 +27,13 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
             $0.composer.lastFiltersResponse = response
             $0.composer.isLoadingFilters = false
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = true
+            $0.collectionSession.phase = .opened(
+                kind: .hydratedSnapshot,
+                base: .stale,
+                inflight: .writingBackRefreshedSnapshot,
+            )
         }
-        await store.finish()
-
-        let saved = await recorder.last()
-        XCTAssertEqual(saved?.url, url)
-        XCTAssertEqual(saved?.file.snapshot?.items, [.string("/tmp/report.txt")])
-        XCTAssertEqual(saved?.file.snapshotMeta?.itemCount, 1)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.staleReason)
-        XCTAssertNotNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertEqual(store.state.refreshBlockingReason, .writeBackInFlight)
     }
 
     func testRefreshFailureKeepsStaleAndClearsRefreshFlag() async {
@@ -59,15 +53,15 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.composer(.internal(.filtersResponse(requestID, .failure(RefreshError()))))) {
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .refreshFailed(kind: .hydratedSnapshot)
         }
         await store.finish()
 
-        XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertEqual(store.state.refreshBlockingReason, .missingBaseline)
     }
 
     func testRefreshSuccessSkipsWriteBackWhenCollectionIsDirty() async {
@@ -90,17 +84,84 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
             $0.composer.lastFiltersResponse = response
             $0.composer.isLoadingFilters = false
-            $0.collectionSession.isRefreshingHydratedSnapshot = false
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
         }
         await store.finish()
 
         let saved = await recorder.last()
         XCTAssertNil(saved)
-        XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
         XCTAssertTrue(store.state.collectionSession.isStale)
         XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertNil(store.state.refreshBlockingReason)
+    }
+
+    func testRefreshSuccessSkipsWriteBackWhenCompatibilityBlocksWriteBack() async {
+        let requestID = UUID()
+        let response = makeFiltersResponse(paths: ["/tmp/report.txt"])
+        let recorder = SavedCollectionsRecorder()
+        let store = makeContentStore(
+            initialState: makeRefreshingState(
+                requestID: requestID,
+                openedURL: URL(fileURLWithPath: "/tmp/fallback.voycoll"),
+                query: "report",
+                scopes: ["/tmp"],
+                collectionContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
+                compatibility: .init(
+                    sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+                    migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
+                    warnings: [.droppedMalformedSnapshot],
+                    usedDefinitionFallback: true,
+                    writeBackAllowed: false,
+                    writeBackReason: .blockedDefinitionFallback,
+                ),
+            ),
+            recorder: recorder,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
+            $0.composer.lastFiltersResponse = response
+            $0.composer.isLoadingFilters = false
+            $0.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
+        }
+        await store.finish()
+
+        let saved = await recorder.last()
+        XCTAssertNil(saved)
+        XCTAssertTrue(store.state.collectionSession.isStale)
+        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+    }
+
+    func testCompleteWriteBackUpdatesCompatibilityForDefinitionOnlyCollection() {
+        let url = URL(fileURLWithPath: "/tmp/definition-only.voycoll")
+        let completion = CollectionSaveCompletion(
+            url: url,
+            file: VoyagerCollectionFile(
+                schemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                id: "definition-only",
+                name: "Definition Only",
+                createdAt: .distantPast,
+                updatedAt: .distantFuture,
+                query: "report",
+                scopes: ["/tmp"],
+                conditions: [],
+                snapshot: nil,
+                snapshotMeta: nil,
+                appVersion: nil,
+            ),
+        )
+
+        var state = FileManagerContentState()
+        state.collectionContext = .init(query: "report", scopes: ["/tmp"], conditions: [])
+
+        _ = state.collection.completeWriteBack(completion)
+
+        XCTAssertEqual(state.collectionSession.openedCompatibility?.warnings, [])
+        XCTAssertFalse(state.collectionSession.openedCompatibility?.usedDefinitionFallback ?? true)
+        XCTAssertTrue(state.collectionSession.openedCompatibility?.writeBackAllowed ?? false)
+        XCTAssertEqual(state.collectionSession.openedCompatibility?.writeBackReason, .allowed)
     }
 }
 
@@ -123,25 +184,30 @@ private func makeContentStore(
                 await recorder.append(file: file, url: url)
             },
             load: { _ in
-                VoyagerCollectionFile(
-                    id: "",
-                    name: "",
-                    createdAt: .distantPast,
-                    updatedAt: .distantPast,
-                    query: "",
-                    scopes: [],
-                    conditions: [],
-                    snapshot: nil,
-                    snapshotMeta: nil,
-                    appVersion: nil,
+                makeCollectionLoadResult(
+                    VoyagerCollectionFile(
+                        id: "",
+                        name: "",
+                        createdAt: .distantPast,
+                        updatedAt: .distantPast,
+                        query: "",
+                        scopes: [],
+                        conditions: [],
+                        snapshot: nil,
+                        snapshotMeta: nil,
+                        appVersion: nil,
+                    ),
+                    sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
                 )
             },
         )
         $0.userDefaultsClient = .testValue
         $0.collectionStalenessClient = .testValue
+        $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
     }
 }
 
+@MainActor
 private func makeRefreshingState(
     requestID: UUID,
     openedURL: URL,
@@ -149,15 +215,25 @@ private func makeRefreshingState(
     scopes: [String],
     collectionContext: CollectionContext,
     baselineContext: CollectionContext? = nil,
+    compatibility: CollectionFileCompatibilityMetadata? = .init(
+        sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+        migrationPath: [.currentSchemaV2],
+        warnings: [],
+        usedDefinitionFallback: false,
+        writeBackAllowed: true,
+        writeBackReason: .allowed,
+    ),
 ) -> FileManagerContentState {
     var state = FileManagerContentState()
     state.entryViewLayout.isCollectionMode = true
-    state.collectionSession.isRefreshingHydratedSnapshot = true
-    state.collectionSession.isStale = true
-    state.collectionSession.staleReason = .snapshotHydratedOnOpen
-    state.collectionSession.didHydrateSnapshotOnOpen = true
+    state.collectionSession.phase = .opened(
+        kind: .hydratedSnapshot,
+        base: .stale,
+        inflight: .refreshingHydratedSnapshot,
+    )
     state.collectionSession.openedURL = openedURL
     state.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
+    state.collectionSession.openedCompatibility = compatibility
     state.collectionSession.baseline = baselineContext.map(CollectionBaseline.init(context:))
     state.collectionContext = collectionContext
     state.composer.scopes = scopes
@@ -184,13 +260,26 @@ private actor SavedCollectionsRecorder {
     }
 }
 
-private func makeFiltersResponse(paths: [String]) -> SearchResponsePayload {
-    SearchResponsePayload(
+private func makeFiltersResponse(paths: [String]) -> VoyagerShared.SearchResponsePayload {
+    VoyagerShared.SearchResponsePayload(
         itemCount: paths.count,
         appliedFilters: .init(scopes: ["/tmp"], conditions: []),
         items: paths.map { path in
             .object(["fullPath": .string(path)])
         },
         error: nil,
+    )
+}
+
+private func makeCollectionLoadResult(
+    _ file: VoyagerCollectionFile,
+    sourceSchemaVersion: SchemaVersion?,
+) -> CollectionFileLoadResult {
+    VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
+        file: file,
+        containerFormat: .package,
+        sourceSchemaVersion: sourceSchemaVersion,
+        warning: nil,
+        usedDefinitionFallback: false,
     )
 }

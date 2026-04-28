@@ -39,7 +39,8 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertTrue(fileManager.fileExists(atPath: url.appendingPathComponent("collection.plist").path))
 
         let loaded = try await CollectionFileClient.liveValue.load(url)
-        XCTAssertEqual(loaded, file)
+        XCTAssertEqual(loaded.file, file)
+        XCTAssertEqual(loaded.containerFormat, .package)
     }
 
     func testLoadLegacySingleFileRoundTrips() async throws {
@@ -65,7 +66,8 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         try data.write(to: url)
 
         let loaded = try await CollectionFileClient.liveValue.load(url)
-        XCTAssertEqual(loaded, file)
+        XCTAssertEqual(loaded.file, file)
+        XCTAssertEqual(loaded.containerFormat, .legacySingleFile)
     }
 
     func testLoadMissingPackagePayloadThrows() async {
@@ -138,7 +140,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             let query: String
             let scopes: [String]
             let conditions: [CollectionCondition]
-            let snapshot: [String: [JSONValue]]
+            let snapshot: [String: [VoyagerShared.JSONValue]]
             let snapshotMeta: CollectionSnapshotMeta
             let appVersion: String?
         }
@@ -152,7 +154,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             query: "",
             scopes: [],
             conditions: [],
-            snapshot: ["items": [.number(1)]],
+            snapshot: ["items": [VoyagerShared.JSONValue.number(1)]],
             snapshotMeta: .init(
                 definitionFingerprint: "fingerprint",
                 capturedAt: .distantPast,
@@ -180,7 +182,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             let query: String
             let scopes: [String]
             let conditions: [CollectionCondition]
-            let snapshot: [String: [JSONValue]]
+            let snapshot: [String: [VoyagerShared.JSONValue]]
             let snapshotMeta: CollectionSnapshotMeta
             let appVersion: String?
         }
@@ -198,7 +200,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             query: "query",
             scopes: ["/tmp"],
             conditions: [],
-            snapshot: ["items": [.number(1)]],
+            snapshot: ["items": [VoyagerShared.JSONValue.number(1)]],
             snapshotMeta: .init(
                 definitionFingerprint: "fingerprint",
                 capturedAt: .distantPast,
@@ -212,10 +214,66 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         try data.write(to: url.appendingPathComponent("collection.plist"))
 
         let loaded = try await CollectionFileClient.liveValue.load(url)
-        XCTAssertEqual(loaded.id, invalid.id)
-        XCTAssertEqual(loaded.name, invalid.name)
-        XCTAssertNil(loaded.snapshot)
-        XCTAssertNil(loaded.snapshotMeta)
+        XCTAssertEqual(loaded.file.id, invalid.id)
+        XCTAssertEqual(loaded.file.name, invalid.name)
+        XCTAssertNil(loaded.file.snapshot)
+        XCTAssertNil(loaded.file.snapshotMeta)
+    }
+
+    func testSaveNormalizesLegacyFileToCurrentSchemaVersion() async throws {
+        let url = makeTemporaryCollectionURL(name: "normalize-save")
+        defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
+
+        let legacyFile = VoyagerCollectionFile(
+            schemaVersion: SchemaVersion(legacyInt: 1),
+            id: "legacy-file",
+            name: "Legacy File",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        try await CollectionFileClient.liveValue.save(legacyFile, url)
+
+        let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
+        let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
+    }
+
+    func testSavePreservesCurrentSchemaVersionWithoutAdditionalMigration() async throws {
+        let url = makeTemporaryCollectionURL(name: "preserve-current-save")
+        defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
+
+        let currentFile = VoyagerCollectionFile(
+            id: "current-file",
+            name: "Current File",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "report",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: .init(items: [.string("/tmp/report.txt")]),
+            snapshotMeta: .init(
+                definitionFingerprint: "fingerprint",
+                capturedAt: .distantFuture,
+                itemCount: 1,
+                relevanceRoots: ["/tmp"],
+            ),
+            appVersion: "1.0",
+        )
+
+        try await CollectionFileClient.liveValue.save(currentFile, url)
+
+        let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
+        let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.snapshotBearingCurrent)
+        XCTAssertEqual(loaded.snapshot?.items, [.string("/tmp/report.txt")])
+        XCTAssertEqual(loaded.snapshotMeta?.definitionFingerprint, "fingerprint")
     }
 
     func testEncodeRejectsNonStringSnapshotItems() throws {

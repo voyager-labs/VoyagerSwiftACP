@@ -52,6 +52,9 @@ struct CollectionSavePipelineReducer {
                     userDefaultsClient: userDefaultsClient,
                     collectionStalenessClient: collectionStalenessClient,
                 )
+
+            default:
+                .none
             }
         }
     }
@@ -61,6 +64,7 @@ private enum CollectionSaveValidationError: LocalizedError {
     case emptyContent
     case incompleteCondition(String)
     case invalidConditionValue(String)
+    case saveBlockedFutureMinor
 
     var errorDescription: String? {
         switch self {
@@ -73,6 +77,8 @@ private enum CollectionSaveValidationError: LocalizedError {
                 return "Some filter values are invalid."
             }
             return "Check the value for \"\(label)\" before saving."
+        case .saveBlockedFutureMinor:
+            return "Collections opened from a newer minor schema version are read-only and cannot be saved."
         }
     }
 }
@@ -117,6 +123,10 @@ private func validateCollectionContext(
 ) -> Result<CollectionSaveSnapshot, CollectionSaveValidationError> {
     if query.isEmpty, context.scopes.isEmpty, context.conditions.isEmpty {
         return .failure(.emptyContent)
+    }
+
+    if payload.openedCompatibility?.writeBackReason == .blockedFutureMinorVersion {
+        return .failure(.saveBlockedFutureMinor)
     }
 
     do {
@@ -257,7 +267,15 @@ func handleSaveCompleted(
     switch result {
     case let .success(completion):
         let url = completion.url
-        collectionStalenessClient.clearRecord(url.path)
+        let file = completion.file
+        collectionStalenessClient.upsertRecord(
+            url.path,
+            .init(
+                definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
+                relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
+                lastInvalidatedAt: nil,
+            ),
+        )
         let directory = url.deletingLastPathComponent().path
         userDefaultsClient.setString(directory, CollectionKeys.lastCollectionSaveDirectory)
         return .none
@@ -342,12 +360,14 @@ private func makeCollectionFile(
         scopes: snapshot.scopes,
         conditions: snapshot.conditions,
         snapshot: snapshot.snapshotItems.map(CollectionPersistedSnapshot.init(items:)),
-        snapshotMeta: .init(
-            definitionFingerprint: snapshot.definitionFingerprint,
-            capturedAt: snapshot.capturedAt,
-            itemCount: snapshot.snapshotItems?.count ?? 0,
-            relevanceRoots: snapshot.relevanceRoots,
-        ),
+        snapshotMeta: snapshot.snapshotItems.map { snapshotItems in
+            .init(
+                definitionFingerprint: snapshot.definitionFingerprint,
+                capturedAt: snapshot.capturedAt,
+                itemCount: snapshotItems.count,
+                relevanceRoots: snapshot.relevanceRoots,
+            )
+        },
         appVersion: appVersion,
     )
 }

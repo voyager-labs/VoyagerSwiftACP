@@ -5,17 +5,21 @@ struct ToolbarCollectionStatusViewState: Equatable {
     let showsStaleIndicator: Bool
     let showsRefreshAffordance: Bool
     let isRefreshEnabled: Bool
+    let refreshBlockingReason: CollectionSessionRefreshBlockingReason?
 
     init(
         isCollectionMode: Bool,
         openedCollectionURLExists: Bool,
         isOpenedCollectionDirty: Bool,
         isOpenedCollectionStale: Bool,
-        canRefreshStaleCollection: Bool,
+        refreshBlockingReason: CollectionSessionRefreshBlockingReason?,
     ) {
         showsUnsavedIndicator = isCollectionMode && (!openedCollectionURLExists || isOpenedCollectionDirty)
         showsStaleIndicator = isCollectionMode && isOpenedCollectionStale
-        showsRefreshAffordance = isCollectionMode && isOpenedCollectionStale
-        isRefreshEnabled = canRefreshStaleCollection
+        showsRefreshAffordance = isCollectionMode
+            && isOpenedCollectionStale
+            && refreshBlockingReason == nil
+        isRefreshEnabled = refreshBlockingReason == nil
+        self.refreshBlockingReason = refreshBlockingReason
     }
 }

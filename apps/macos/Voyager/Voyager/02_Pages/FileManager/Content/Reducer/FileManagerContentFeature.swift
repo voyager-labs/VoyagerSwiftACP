@@ -21,12 +21,13 @@ struct FileManagerContentFeature {
     private var fileManagerClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
-    @Dependency(\.date)
-    private var date
-
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
             ComposerFeature()
+        }
+
+        Scope(state: \.collection, action: \.collection) {
+            CollectionFeature()
         }
 
         Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
@@ -50,10 +51,20 @@ struct FileManagerContentFeature {
                 return effect
             }
 
+            if let effect = FileManagerContentCollectionCoordinator.handleCollectionOwnerAction(
+                action,
+                state: &state,
+            ) {
+                return effect
+            }
+
             switch action {
             case let .internal(.applyNavigationState(navigationState)):
-                state.entryViewLayout.currentPath = state.navigation.currentPath
-                state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[state.navigation.currentPath]
+                if !navigationState.isCollection {
+                    state.entryViewLayout.currentPath = state.navigation.currentPath
+                    state.entryViewLayout.savedScrollOffset = state.navigation
+                        .scrollPositions[state.navigation.currentPath]
+                }
                 return applyNavigationStateEffect(navigationState, state: state)
 
             case .view(.selectAllEntries):
@@ -62,28 +73,31 @@ struct FileManagerContentFeature {
                 ))))
 
             case .view(.refreshStaleCollection):
-                guard state.canRefreshStaleCollection else {
+                guard state.refreshBlockingReason == nil else {
                     return .none
                 }
-
-                state.collectionSession.isRefreshingHydratedSnapshot = true
-                state.collectionSession.isWritingBackRefreshedSnapshot = false
-
-                let trimmedQuery = state.collectionContext?.query
+                let trimmedQuery = state.collectionContext?
+                    .query
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-                return trimmedQuery.isEmpty
-                    ? .send(.composer(.applyFilters))
-                    : .concatenate(
-                        .send(.composer(.setText(trimmedQuery))),
-                        .send(.composer(.submit)),
+                if trimmedQuery.isEmpty {
+                    return .concatenate(
+                        .send(.collection(.refreshRequested)),
+                        .send(.composer(.applyFilters)),
                     )
+                }
+
+                return .concatenate(
+                    .send(.collection(.refreshRequested)),
+                    .send(.composer(.setText(trimmedQuery))),
+                    .send(.composer(.submit)),
+                )
 
             case .view(.toggleShowHiddenFilesAndReload):
                 let showHidden = !state.entryViewLayout.showHiddenFiles
                 return .concatenate(
                     .send(.entryViewLayout(.view(.toggleShowHiddenFiles))),
-                    reloadEntryItemsEffect(
+                    FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
                         navigationState: state.navigation.navigationState,
                         showHidden: showHidden,
                     ),
@@ -171,7 +185,10 @@ struct FileManagerContentFeature {
         }
 
         logEntryActionMetricIfNeeded(for: entryOperationsAction)
-        return handleEntryOperationsAction(entryOperationsAction, state: &state)
+        return FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+            entryOperationsAction,
+            state: &state,
+        )
     }
 
     private func handleEntryViewLayoutDelegateBridgeAction(
@@ -202,53 +219,6 @@ struct FileManagerContentFeature {
         }
     }
 
-    func handleEntryOperationsAction(
-        _ action: EntryOperationsAction,
-        state: inout State,
-    ) -> Effect<Action> {
-        switch action {
-        case .loading(.itemsLoaded):
-            .none
-
-        case .lifecycle(.entryActionCompleted):
-            .none
-
-        case .lifecycle(.operationFinished):
-            reloadEntryItemsEffect(state: state)
-
-        case .lifecycle(.emptyTrashCompleted):
-            .send(.delegate(.closeWindow))
-
-        default:
-            .none
-        }
-    }
-
-    private func reloadEntryItemsEffect(state: State) -> Effect<Action> {
-        reloadEntryItemsEffect(
-            navigationState: state.navigation.navigationState,
-            showHidden: state.entryViewLayout.showHiddenFiles,
-        )
-    }
-
-    private func reloadEntryItemsEffect(
-        navigationState: ContentPageNavigationRoute,
-        showHidden: Bool,
-    ) -> Effect<Action> {
-        switch navigationState {
-        case let .folder(path):
-            sendEntryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))
-        case .recents:
-            sendEntryOperations(.loading(.loadRecentItems(showHidden: showHidden)))
-        case let .tags(tagName):
-            sendEntryOperations(.loading(.loadTagItems(tagName: tagName, showHidden: showHidden)))
-        case .computer:
-            sendEntryOperations(.loading(.loadComputerItems))
-        case .collection:
-            .none
-        }
-    }
-
     private func handleComposerAction(
         _ action: Action,
         state: inout State,
@@ -257,15 +227,12 @@ struct FileManagerContentFeature {
             return nil
         }
 
-        let currentDate = date
-
         return FileManagerContentComposerCoordinator.reduce(
             composerAction,
             state: &state,
             dependencies: .init(
                 collectionAlertClient: collectionAlertClient,
                 computerName: fileManagerClient.displayName("/"),
-                currentDate: { currentDate() },
             ),
         )
     }
@@ -326,7 +293,7 @@ struct FileManagerContentFeature {
             )
 
         case .collection:
-            .send(.entryViewLayout(.internal(.setCollectionMode(true))))
+            .none
         }
     }
 

@@ -14,14 +14,10 @@ struct FileManagerContentSyncReducer {
                 switch state.navigation.navigationState {
                 case .collection:
                     let affectsCollection = collectionPathsAffectCurrentContext(paths, state: state)
-                    if affectsCollection {
-                        state.collectionSession.isStale = true
-                        state.collectionSession.lastRefreshAt = nil
-                        if state.collectionSession.staleReason == nil {
-                            state.collectionSession.staleReason = .invalidatedLocally
-                        }
+                    guard affectsCollection else {
+                        return .none
                     }
-                    return .none
+                    return .send(.collection(.externalPathsChanged(paths)))
 
                 case let .folder(path):
                     guard pathsAffectCurrentFolder(paths, currentPath: path) else {
@@ -38,32 +34,6 @@ struct FileManagerContentSyncReducer {
                         showHidden: state.entryViewLayout.showHiddenFiles,
                     )
                 }
-
-            case .delegate(.discardCollectionChanges):
-                guard let baseline = state.collectionSession.baseline,
-                      state.isCollectionMode,
-                      state.isOpenedCollectionDirty
-                else {
-                    return .none
-                }
-
-                let trimmedQuery = baseline.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-                state.composer.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-                state.collectionContext = baseline.context
-                state.syncComposerCollectionState()
-
-                if state.collectionSession.openedURL == nil {
-                    state.composer.text = baseline.context.query
-                } else {
-                    state.composer.text = ""
-                }
-                state.composer.scopes = baseline.context.scopes
-                state.composer.conditions = baseline.context.conditions
-                state.composer.propertyPicker = ConditionPropertyPickerFeature.State()
-                state.composer.operatorPicker = OperatorPickerFeature.State()
-                state.composer.valuePicker = ValuePickerFeature.State()
-                state.composer.clearHistory()
-                return .none
 
             default:
                 return .none
@@ -87,7 +57,7 @@ struct FileManagerContentSyncReducer {
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {
         let relevantPaths = paths.filter {
-            !isOpenedCollectionDocumentPath($0, openedURL: state.collectionSession.openedURL)
+            !isOpenedCollectionDocumentPath($0, openedURL: state.collectionSession.document?.url)
         }
         guard !relevantPaths.isEmpty else {
             return false
