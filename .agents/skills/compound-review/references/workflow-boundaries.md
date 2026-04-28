@@ -14,7 +14,7 @@ It activates only when the operator explicitly invokes it through the skill syst
 
 - Activate on file-save events, git hooks, CI signals, or timer-based schedules.
 - Self-invoke from within another skill's completion handler unless the operator explicitly requests it.
-- Chain automatically from `test-runner`, `pr-review`, `verify-implementation`, or any other skill.
+- Chain automatically from `test-runner`, `pr-review`, `voyager-dev`, or any other Work-phase skill.
 
 **Rationale:** The review → compound workflow reads completed artifacts and synthesizes findings. It must run only after the operator has inspected the completed work and decided a compound review is warranted. Auto-triggering would bypass human judgment about whether the artifact set is ready.
 

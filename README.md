@@ -188,15 +188,9 @@ which cupertino
         3. 동일 변경사항을 `develop` 및 진행 중인 `release/*` 브랜치에도 반영
 
 - Conventional Commits
-    - Subject: `<type>(<scope>): <short description>` (명령형, ≲ 50자)
-    - Scope: 모노레포 명확성을 위해 `(backend)` 또는 `(macos)` 권장
-    - Types: `feat`, `fix`, `ui`, `refactor`, `style`, `docs`, `chore`, `test`, `ci`, `build`
-    - Body: `- ` 불릿으로 WHAT/WHY, 현재형, 영향 범위/파일 필요 시 명시
-    - 예시:
-        - `feat(backend): add asset ingestion endpoint`
-        - `fix(macos): resolve crash on QuickLook preview`
-        - `ui(macos): improve sidebar navigation layout`
-        - `docs: consolidate API contract guidelines`
+    - type/scope 정책과 예시는 `.agents/skills/commit-message/SKILL.md`를 source of truth로 사용
+    - Subject는 Conventional Commit 형식 유지: `<type>(<scope>): <short description>` 또는 `<type>: <short description>`
+    - Body는 필요할 때만 `- ` 불릿으로 WHAT/WHY를 명확히 기재
 
 - Pull Requests
     - PR 설명에 의도/범위/리스크/검증 증거/롤백 포함, 관련 이슈 링크 및 UI 변경 시 스크린샷 첨부

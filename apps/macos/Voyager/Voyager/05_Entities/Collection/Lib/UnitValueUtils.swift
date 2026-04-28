@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesEntry
 
 enum UnitValueUtils {
     struct UnitOption: Equatable, Sendable {
