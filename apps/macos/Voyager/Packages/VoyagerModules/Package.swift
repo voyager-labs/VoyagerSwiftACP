@@ -14,6 +14,8 @@ let package = Package(
         .library(name: "VoyagerFeaturesEntryOperations", targets: ["VoyagerFeaturesEntryOperations"]),
         .library(name: "VoyagerPagesOnboarding", targets: ["VoyagerPagesOnboarding"]),
         .library(name: "VoyagerPagesSettings", targets: ["VoyagerPagesSettings"]),
+        .library(name: "VoyagerFeaturesContentPageNavigation", targets: ["VoyagerFeaturesContentPageNavigation"]),
+        .library(name: "VoyagerFeaturesComposer", targets: ["VoyagerFeaturesComposer"]),
         .library(name: "VoyagerPagesFileManager", targets: ["VoyagerPagesFileManager"]),
         .library(name: "VoyagerWidgetsEntryViewLayout", targets: ["VoyagerWidgetsEntryViewLayout"]),
     ],
@@ -148,9 +150,46 @@ let package = Package(
             ],
         ),
         .target(
+            name: "VoyagerFeaturesContentPageNavigation",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerShared",
+                "VoyagerWidgetsEntryViewLayout",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
+        .testTarget(
+            name: "VoyagerFeaturesContentPageNavigationTests",
+            dependencies: [
+                "VoyagerFeaturesContentPageNavigation",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
+        .target(
+            name: "VoyagerFeaturesComposer",
+            dependencies: [
+                "VoyagerEntitiesEntry",
+                "VoyagerShared",
+                "VoyagerFeaturesEntryOperations",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+        ),
+        .testTarget(
+            name: "VoyagerFeaturesComposerTests",
+            dependencies: [
+                "VoyagerFeaturesComposer",
+                "VoyagerEntitiesEntry",
+                "VoyagerShared",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
+        .target(
             name: "VoyagerPagesFileManager",
             dependencies: [
                 "VoyagerEntitiesEntry",
+                "VoyagerFeaturesComposer",
+                "VoyagerFeaturesContentPageNavigation",
                 "VoyagerFeaturesEntryOperations",
                 "VoyagerShared",
                 "VoyagerWidgetsEntryViewLayout",
@@ -167,6 +206,7 @@ let package = Package(
             dependencies: [
                 "VoyagerPagesFileManager",
                 "VoyagerEntitiesEntry",
+                "VoyagerFeaturesComposer",
                 "VoyagerFeaturesEntryOperations",
                 "VoyagerShared",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),

@@ -9,11 +9,8 @@ import XCTest
 final class FileManagerContentEntryOperationsLifecycleBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
-    // MARK: - Harness
-
-    @MainActor
-    struct LifecycleBridgeHarness: Reducer {
-        @MainActor
+    @Reducer
+    struct LifecycleBridgeHarness {
         struct State: Equatable {
             var content: FileManagerContentState
         }
@@ -27,8 +24,11 @@ final class FileManagerContentEntryOperationsLifecycleBridgeTests: XCTestCase {
             Reduce { state, action in
                 switch action {
                 case let .bridge(entryAction):
-                    FileManagerContentFeature().handleEntryOperationsAction(entryAction, state: &state.content)
-                        .map(Action.forwarded)
+                    FileManagerContentEntryOperationsBridgeReducer().handleEntryOperationsAction(
+                        entryAction,
+                        state: &state.content,
+                    )
+                    .map(Action.forwarded)
                 case .forwarded:
                     .none
                 }

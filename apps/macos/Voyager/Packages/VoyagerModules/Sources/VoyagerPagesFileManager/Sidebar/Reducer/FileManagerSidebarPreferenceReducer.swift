@@ -1,0 +1,42 @@
+import ComposableArchitecture
+import VoyagerShared
+
+@Reducer
+struct FileManagerSidebarPreferenceReducer {
+    @Dependency(\.userDefaultsClient) private var userDefaultsClient
+
+    var body: some Reducer<FileManagerSidebarState, FileManagerSidebarAction> {
+        Reduce { state, action in
+            switch action {
+            case let .view(.setSidebarVisible(visible)):
+                state.sidebarVisible = visible
+                userDefaultsClient.setObject(visible, SettingsKeys.sidebarVisible)
+                return .none
+
+            case let .view(.setSidebarWidth(width)):
+                let clampedWidth = max(150, min(400, width))
+                if abs(state.sidebarWidth - clampedWidth) < 0.5 {
+                    return .none
+                }
+                state.sidebarWidth = clampedWidth
+                userDefaultsClient.setDouble(clampedWidth, SettingsKeys.sidebarWidth)
+                return .none
+
+            case .view(.toggleFavoritesSection):
+                state.isFavoritesCollapsed.toggle()
+                return .none
+
+            case .view(.toggleLocationsSection):
+                state.isLocationsCollapsed.toggle()
+                return .none
+
+            case .view(.toggleTagsSection):
+                state.isTagsCollapsed.toggle()
+                return .none
+
+            default:
+                return .none
+            }
+        }
+    }
+}

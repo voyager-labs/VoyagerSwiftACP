@@ -2,6 +2,8 @@ import ComposableArchitecture
 import Foundation
 
 import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 

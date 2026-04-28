@@ -20,21 +20,15 @@
 
 ## 주요 기능
 
-- [검색 (LLM → 조건 변환)](features/search.md)
-- [인덱싱 (초기/증분)](features/indexing.md)
-- [조건 컴포저](features/composer.md)
-- [엔트리/컬렉션](features/entries-collections.md)
-- [설정](features/settings.md)
-- [업데이트](features/update.md)
-- [온보딩](features/onboarding.md)
-
 ## 통합/연동
 
 - [Helper ↔ Backend 부트스트랩](integration/backend-bootstrap.md)
+- [검색 계약 (LLM → 조건 변환)](integration/search-contract.md)
 
 ## macOS
 
 - [macOS 빌드/실행](macos/build-and-run.md)
+- [Sparkle 업데이트 런타임](macos/sparkle-update-runtime.md)
 - [VoyagerHelper 상세 문서](macos/voyager-helper.md)
 
 ## 개발/테스트/배포

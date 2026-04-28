@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
+import VoyagerShared
 
 struct SidebarFavoritesSectionView: View {
     @State private var dropTargetIndex: Int?
