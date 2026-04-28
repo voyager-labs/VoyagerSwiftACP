@@ -103,6 +103,13 @@ Xcode의 test target 이름을 알면 `-only-testing`으로 좁힐 수 있습니
 xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -only-testing:VoyagerTests/<TestClassName>
 ```
 
+### 2.6 OnboardingHost
+
+OnboardingHost는 현재 별도의 테스트 타겟이 없습니다.
+
+- 프로젝트 경로: `apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj`
+- 온보딩 관련 로직의 테스트는 Voyager 테스트 타겟(VoyagerTests)에 포함되어 있습니다
+
 ---
 
 ## 3. 실패했을 때 체크리스트

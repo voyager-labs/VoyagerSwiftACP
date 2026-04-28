@@ -84,51 +84,60 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
             requestID,
             .failure(GuardrailError.sample),
         )))
-        await store.receive { action in
-            guard case .internal(.requestNavigation(.internal(.rollbackBackHistoryOnce))) = action else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .internal(.requestNavigation(.internal(.setNavigationState(.folder("/tmp"))))) = action
-            else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .internal(.requestNavigation(.internal(.setPendingNavigation(nil)))) = action
-            else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .entryViewLayout(.internal(.setCollectionMode(false))) = action else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .delegate(.composerCollectionSearchFailed) = action else { return false }
-            return true
-        }
+        await assertCollectionOpenFailureRollback(store: store)
         await Task.yield()
 
         XCTAssertEqual(alerts.count(), 1)
         XCTAssertEqual(alerts.lastTitle(), "Unable to Run Collection Search")
-        XCTAssertFalse(store.state.collectionSession.isOpening)
-        XCTAssertNil(store.state.collectionSession.openedName)
-        XCTAssertNil(store.state.collectionSession.openedURL)
-        XCTAssertNil(store.state.collectionSession.baseline)
+        XCTAssertFalse(store.state.collectionSession.phase.isOpening)
+        XCTAssertNil(store.state.collectionSession.document?.name)
+        XCTAssertNil(store.state.collectionSession.document?.url)
+        XCTAssertNil(store.state.collectionSession.metadata.baseline)
         XCTAssertFalse(store.state.entryViewLayout.isCollectionMode)
         XCTAssertNil(store.state.collectionContext)
+    }
+}
+
+private func assertCollectionOpenFailureRollback(
+    store: TestStore<FileManagerContentState, FileManagerContentAction>,
+) async {
+    await store.receive { action in
+        guard case .internal(.requestNavigation(.internal(.rollbackBackHistoryOnce))) = action else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .internal(.requestNavigation(.internal(.setNavigationState(.folder("/tmp"))))) = action
+        else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .internal(.requestNavigation(.internal(.setPendingNavigation(nil)))) = action
+        else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .entryViewLayout(.internal(.setCollectionMode(false))) = action else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
+        return true
+    }
+    await store.receive { action in
+        guard case .delegate(.composerCollectionSearchFailed) = action else { return false }
+        return true
     }
 }
 
 @MainActor
 private func makeCollectionOpeningState(requestID: UUID) -> FileManagerContentState {
     var state = FileManagerContentState()
-    state.collectionSession.isOpening = true
-    state.collectionSession.openedName = "Saved Search"
-    state.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/saved-search.voyager-collection")
+    state.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
+    state.collectionSession.document = .init(
+        url: URL(fileURLWithPath: "/tmp/saved-search.voyager-collection"),
+        name: "Saved Search",
+        compatibility: nil,
+    )
     state.composer.pendingSearchQuery = "kind:image"
     state.composer.isLoadingSearch = true
     state.composer.activeSearchRequestID = requestID

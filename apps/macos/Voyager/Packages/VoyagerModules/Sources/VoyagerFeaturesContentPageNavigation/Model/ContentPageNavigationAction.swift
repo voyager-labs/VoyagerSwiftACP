@@ -1,13 +1,12 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesEntry
 
-public struct ContentPageNavigationErrorFingerprint: Equatable, Sendable {
-    public let domain: String
-    public let code: Int
-    public let message: String
+struct ContentPageNavigationErrorFingerprint: Equatable, Sendable {
+    let domain: String
+    let code: Int
+    let message: String
 
-    public init(error: Error) {
+    init(error: Error) {
         let nsError = error as NSError
         domain = nsError.domain
         code = nsError.code
@@ -15,18 +14,18 @@ public struct ContentPageNavigationErrorFingerprint: Equatable, Sendable {
     }
 }
 
-public enum ContentPageCollectionFileLoadResult: Equatable, Sendable {
-    case success(VoyagerCollectionFile)
+enum ContentPageCollectionFileLoadResult: Equatable, Sendable {
+    case success(CollectionFileLoadResult)
     case failure(ContentPageNavigationErrorFingerprint)
 }
 
 @CasePathable
-public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
+enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
     case view(View)
     case delegate(Delegate)
     case `internal`(Internal)
 
-    public enum View: Equatable, Sendable {
+    enum View: Equatable, Sendable {
         case goBack
         case goForward
         case goToHistoryIndex(Int, isBackHistory: Bool)
@@ -38,7 +37,7 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case openCollectionFile(URL)
     }
 
-    public enum Internal: Equatable, Sendable {
+    enum Internal: Equatable, Sendable {
         case performNavigateToPath(String)
         case performShowRecents
         case performShowComputer
@@ -56,7 +55,7 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case unsavedNavigationAlertResponse(ContentPageNavigationPending, CollectionNavigationChoice)
     }
 
-    public enum Delegate: Equatable, Sendable {
+    enum Delegate: Equatable, Sendable {
         case navigateToState(ContentPageNavigationRoute)
         case logDAUNavigation(
             previous: ContentPageNavigationRoute,

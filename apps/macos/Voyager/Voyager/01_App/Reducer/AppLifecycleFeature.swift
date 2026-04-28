@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import Logging
+import VoyagerEntitiesAppPreferences
 import VoyagerPagesOnboarding
 import VoyagerShared
 

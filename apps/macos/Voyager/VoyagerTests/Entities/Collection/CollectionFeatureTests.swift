@@ -461,6 +461,11 @@ private func makeSavePayload(conditions: [Condition]) -> SaveRequestPayload {
         context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: conditions),
         isSearchLoading: false,
         isFiltersLoading: false,
+        snapshotItems: nil,
+        definitionFingerprint: "",
+        capturedAt: .distantPast,
+        relevanceRoots: ["/tmp"],
+        openedCompatibility: nil,
     )
 }
 
@@ -472,13 +477,19 @@ private func makeCollectionStore(
         save: { file, url in
             await recorder.append(file: file, url: url)
         },
-        load: { _ in kEmptyCollectionFile },
+        load: { _ in
+            makeCollectionLoadResult(
+                kEmptyCollectionFile,
+                sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+            )
+        },
     )
     let store = TestStore(initialState: CollectionFeature.State()) {
         CollectionFeature()
     } withDependencies: {
         $0.collectionFileClient = collectionFileClient
         $0.userDefaultsClient = .testValue
+        $0.collectionStalenessClient = .testValue
     }
     store.exhaustivity = .off
     return store
@@ -495,6 +506,19 @@ private func runSaveToExistingTest(
     await store.finish()
 }
 
+private func makeCollectionLoadResult(
+    _ file: VoyagerCollectionFile,
+    sourceSchemaVersion: SchemaVersion?,
+) -> CollectionFileLoadResult {
+    VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
+        file: file,
+        containerFormat: .package,
+        sourceSchemaVersion: sourceSchemaVersion,
+        warning: nil,
+        usedDefinitionFallback: false,
+    )
+}
+
 private let kEmptySearchResponse = VoyagerShared.SearchResponsePayload(
     itemCount: 0,
     appliedFilters: nil,
@@ -503,7 +527,6 @@ private let kEmptySearchResponse = VoyagerShared.SearchResponsePayload(
 )
 
 private let kEmptyCollectionFile = VoyagerCollectionFile(
-    schemaVersion: 1,
     id: "",
     name: "",
     createdAt: .distantPast,
@@ -511,6 +534,8 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
     query: "",
     scopes: [],
     conditions: [],
+    snapshot: nil,
+    snapshotMeta: nil,
     appVersion: nil,
 )
 

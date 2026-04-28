@@ -118,15 +118,14 @@ public struct ContentPageNavigationDirectReducer {
     }
 
     private func performPrepareCollectionFileOpen(
-        _ url: URL,
+        _: URL,
         state: inout State,
     ) -> Effect<Action> {
         if case .collection = state.navigationState {
             return .none
         }
 
-        let directoryPath = url.deletingLastPathComponent().path
-        let previousSnapshot = ContentPageNavigationHistorySnapshot(navigationState: .folder(directoryPath))
+        let previousSnapshot = state.makeContentPageNavigationHistorySnapshot()
         state.appendBackHistory(previousSnapshot)
         state.forwardHistory = []
         return .none

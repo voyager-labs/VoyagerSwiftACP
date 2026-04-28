@@ -16,6 +16,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
 
     case entryViewLayout(EntryViewLayoutFeature.Action)
     case composer(ComposerFeature.Action)
+    case collection(CollectionFeature.Action)
     case externalFileSystemChanged([String])
 
     @CasePathable
@@ -23,6 +24,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case handleKeyCommand(KeyCommand)
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
+        case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
     }
 

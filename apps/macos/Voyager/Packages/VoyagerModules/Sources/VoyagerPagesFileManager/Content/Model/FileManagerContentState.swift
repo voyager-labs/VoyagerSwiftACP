@@ -2,54 +2,70 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
-import VoyagerEntitiesEntry
-import VoyagerFeaturesComposer
-import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
-import VoyagerWidgetsEntryViewLayout
 
 @ObservableState
-public struct FileManagerContentState: Equatable {
-    public var navigation: ContentPageNavigationFeature.State = .init()
-    public var entryViewLayout: EntryViewLayoutFeature.State = .init()
-    public var composer: ComposerFeature.State = .init()
+struct FileManagerContentState: Equatable {
+    var navigation: ContentPageNavigationFeature.State = .init()
+    var entryViewLayout: EntryViewLayoutFeature.State = .init()
+    var composer: ComposerFeature.State = .init()
+    var collection: CollectionFeature.State = .init()
 
     // 컴포저 관련
-    public var collectionContext: CollectionContext?
+    var collectionContext: CollectionContext? {
+        get { collection.collectionContext }
+        set { collection.collectionContext = newValue }
+    }
 
-    public var resetComposerOnNextDirectoryNavigation: Bool = false
+    var resetComposerOnNextDirectoryNavigation: Bool = false
 
     // 콜렉션 관련
-    public var collectionSession: CollectionDocumentSessionState = .init()
+    var collectionSession: CollectionDocumentSessionState {
+        get { collection.collectionSession }
+        set { collection.collectionSession = newValue }
+    }
 
-    public var isCollectionMode: Bool {
+    var isCollectionMode: Bool {
         entryViewLayout.isCollectionMode
     }
 
-    public mutating func resetComposer() {
+    mutating func resetComposer() {
         composer = .init()
         syncComposerCollectionState()
     }
 
-    public mutating func syncComposerCollectionState() {
+    mutating func syncComposerCollectionState() {
         composer.collectionContext = collectionContext
-        composer.openedCollectionURL = collectionSession.openedURL
+        composer.openedCollectionURL = collectionSession.document?.url
+        composer.openedCollectionCompatibility = collectionSession.document?.compatibility
         composer.isCollectionMode = isCollectionMode
     }
 
-    public var canSaveCollection: Bool {
+    var canSaveCollection: Bool {
         guard isCollectionMode, collectionContext != nil else {
             return false
         }
-        if collectionSession.baseline == nil {
+        if collectionSession.metadata.baseline == nil {
             return true
         }
         return isOpenedCollectionDirty
     }
 
-    public var isOpenedCollectionDirty: Bool {
-        guard let baseline = collectionSession.baseline, let context = collectionContext else { return false }
+    var isOpenedCollectionDirty: Bool {
+        guard let baseline = collectionSession.metadata.baseline, let context = collectionContext else { return false }
         if baseline.context != context { return true }
         return false
+    }
+
+    var isOpenedCollectionStale: Bool {
+        isCollectionMode && collectionSession.phase.isStale
+    }
+
+    var refreshBlockingReason: CollectionSessionRefreshBlockingReason? {
+        collection.refreshBlockingReason(
+            isCollectionMode: isCollectionMode,
+            isDirty: isOpenedCollectionDirty,
+            isSearching: composer.isCollectionSearching,
+        )
     }
 }

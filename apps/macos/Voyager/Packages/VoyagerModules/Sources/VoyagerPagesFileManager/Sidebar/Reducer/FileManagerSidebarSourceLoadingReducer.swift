@@ -1,25 +1,76 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
-import VoyagerEntitiesEntry
+import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
 @Reducer
-struct FileManagerSidebarSourceLoadingReducer {
-    @Dependency(\.entryLoadingClient) private var entryLoadingClient
-    @Dependency(\.userDefaultsClient) private var userDefaultsClient
-    @Dependency(\.fileManagerFavoritesClient) private var favoritesClient
-    @Dependency(\.fileManagerLocationsClient) private var locationsClient
-    @Dependency(\.finderFavoritesTagClient) private var finderFavoritesTagClient
-    @Dependency(\.fileManagerIconClient) private var iconClient
+struct FileManagerSidebarFeature {
+    typealias State = FileManagerSidebarState
+    typealias Action = FileManagerSidebarAction
 
-    var body: some Reducer<FileManagerSidebarState, FileManagerSidebarAction> {
+    enum CancelID {
+        static let systemNotifications = "FileManagerSidebarFeature.systemNotifications"
+    }
+
+    @Dependency(\.entryLoadingClient)
+    private var entryLoadingClient
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
+    @Dependency(\.fileManagerFavoritesClient)
+    private var favoritesClient
+    @Dependency(\.fileManagerLocationsClient)
+    private var locationsClient
+    @Dependency(\.finderFavoritesTagClient)
+    private var finderFavoritesTagClient
+    @Dependency(\.notificationCenterClient)
+    private var notificationCenterClient
+    @Dependency(\.fileManagerIconClient)
+    private var iconClient
+
+    var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .view(.setSidebarVisible(visible)):
+                state.sidebarVisible = visible
+                userDefaultsClient.setObject(visible, SettingsKeys.sidebarVisible)
+                return .none
+
+            case .view(.toggleFavoritesSection):
+                state.isFavoritesCollapsed.toggle()
+                return .none
+
+            case .view(.toggleLocationsSection):
+                state.isLocationsCollapsed.toggle()
+                return .none
+
+            case .view(.toggleTagsSection):
+                state.isTagsCollapsed.toggle()
+                return .none
+
+            case let .view(.setSidebarWidth(width)):
+                let clampedWidth = max(150, min(400, width))
+                if abs(state.sidebarWidth - clampedWidth) < 0.5 {
+                    return .none
+                }
+                state.sidebarWidth = clampedWidth
+                userDefaultsClient.setDouble(clampedWidth, SettingsKeys.sidebarWidth)
+                return .none
+
+            case let .view(.setContextMenuTarget(id, wasSelected)):
+                state.contextMenuTargetId = id
+                state.contextMenuTargetWasSelected = wasSelected
+                return .none
+
+            case .internal(.restoreSidebarSelection):
+                if let restoreSelection = state.pendingSidebarSelectionRestore {
+                    state.selectedSidebarItem = restoreSelection
+                }
+                state.pendingSidebarSelectionRestore = nil
+                return .none
+
             case .internal(.loadFavorites):
-                let favoritesClient = favoritesClient
-                let entryLoadingClient = entryLoadingClient
-                let userDefaultsClient = userDefaultsClient
                 return .run { send in
                     let favorites = await favoritesClient.loadFavorites(entryLoadingClient, userDefaultsClient)
                     await send(.internal(.favoritesLoaded(favorites)))
@@ -50,8 +101,6 @@ struct FileManagerSidebarSourceLoadingReducer {
                 return .none
 
             case .internal(.loadLocations):
-                let locationsClient = locationsClient
-                let entryLoadingClient = entryLoadingClient
                 return .run { send in
                     let locations = await locationsClient.loadLocations(entryLoadingClient)
                     await send(.internal(.locationsLoaded(locations)))
@@ -68,7 +117,26 @@ struct FileManagerSidebarSourceLoadingReducer {
                 state.tags = tags
                 return .none
 
-            default:
+            case .internal(.startObservingSystemNotifications):
+                return .run { send in
+                    for await _ in await notificationCenterClient.notifications(
+                        NSMenu.didEndTrackingNotification,
+                        nil,
+                    ) {
+                        await send(.internal(.systemMenuDidEndTracking))
+                    }
+                }
+                .cancellable(id: CancelID.systemNotifications, cancelInFlight: true)
+
+            case .internal(.stopObservingSystemNotifications):
+                return .cancel(id: CancelID.systemNotifications)
+
+            case .internal(.systemMenuDidEndTracking):
+                state.contextMenuTargetId = nil
+                state.contextMenuTargetWasSelected = false
+                return .none
+
+            case .delegate:
                 return .none
             }
         }
@@ -77,12 +145,11 @@ struct FileManagerSidebarSourceLoadingReducer {
     private func insertFavoriteFromDropEffect(providers: [NSItemProvider], index: Int)
         -> Effect<FileManagerSidebarAction>
     {
-        nonisolated(unsafe) let safeProviders = providers
-        return .run { @MainActor send in
-            for provider in safeProviders
+        .run { @MainActor send in
+            for provider in providers
                 where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
             {
-                let resolvedURL = await Self.resolveURL(from: provider)
+                let resolvedURL = await resolveURL(from: provider)
                 if let resolvedURL {
                     await send(.internal(.insertFavorite(url: resolvedURL, at: index)))
                     return
@@ -91,7 +158,7 @@ struct FileManagerSidebarSourceLoadingReducer {
         }
     }
 
-    private static func resolveURL(from provider: NSItemProvider) async -> URL? {
+    private func resolveURL(from provider: NSItemProvider) async -> URL? {
         await withCheckedContinuation { continuation in
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
                 if let url = item as? URL {

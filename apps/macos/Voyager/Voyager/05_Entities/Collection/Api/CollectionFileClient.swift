@@ -3,7 +3,7 @@ import Foundation
 
 struct CollectionFileClient: Sendable {
     var save: @Sendable (_ file: VoyagerCollectionFile, _ url: URL) async throws -> Void
-    var load: @Sendable (_ url: URL) async throws -> VoyagerCollectionFile
+    var load: @Sendable (_ url: URL) async throws -> CollectionFileLoadResult
 }
 
 extension CollectionFileClient: DependencyKey {
@@ -13,9 +13,7 @@ extension CollectionFileClient: DependencyKey {
         save: { file, url in
             let packagePayloadFilename = "collection.plist"
             let data = try await MainActor.run {
-                let encoder = PropertyListEncoder()
-                encoder.outputFormat = .binary
-                return try encoder.encode(file)
+                try VoyagerCollectionFileCompatibilityOwner.encodeCurrent(file)
             }
             let fileManagerClient = FileManagerClient.liveValue
 
@@ -42,22 +40,18 @@ extension CollectionFileClient: DependencyKey {
                 let payloadURL = url.appendingPathComponent(packagePayloadFilename)
                 let payloadExists = fileManagerClient.fileExists(payloadURL.path)
                 guard payloadExists else {
-                    throw CocoaError(.fileReadNoSuchFile, userInfo: [
-                        NSLocalizedDescriptionKey: "Missing \(packagePayloadFilename) in .voycoll package.",
-                    ])
+                    throw CollectionFileCompatibilityError.missingPackagePayload
                 }
                 let data = try Data(contentsOf: payloadURL)
                 return try await MainActor.run {
-                    let decoder = PropertyListDecoder()
-                    return try decoder.decode(VoyagerCollectionFile.self, from: data)
+                    try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
                 }
             }
 
             // 레거시: 단일 파일로 저장된 `.voycoll`도 열 수 있도록 유지
             let data = try Data(contentsOf: url)
             return try await MainActor.run {
-                let decoder = PropertyListDecoder()
-                return try decoder.decode(VoyagerCollectionFile.self, from: data)
+                try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .legacySingleFile)
             }
         },
     )
@@ -65,16 +59,23 @@ extension CollectionFileClient: DependencyKey {
     nonisolated(unsafe) static var testValue: CollectionFileClient = .init(
         save: { _, _ in },
         load: { _ in
-            VoyagerCollectionFile(
-                schemaVersion: 0,
-                id: "",
-                name: "",
-                createdAt: .distantPast,
-                updatedAt: .distantPast,
-                query: "",
-                scopes: [],
-                conditions: [],
-                appVersion: nil,
+            VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
+                file: VoyagerCollectionFile(
+                    id: "",
+                    name: "",
+                    createdAt: .distantPast,
+                    updatedAt: .distantPast,
+                    query: "",
+                    scopes: [],
+                    conditions: [],
+                    snapshot: nil,
+                    snapshotMeta: nil,
+                    appVersion: nil,
+                ),
+                containerFormat: .package,
+                sourceSchemaVersion: CollectionFileSchemaVersion.current,
+                warning: nil,
+                usedDefinitionFallback: false,
             )
         },
     )

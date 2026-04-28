@@ -1,16 +1,24 @@
 ---
 name: voyager-feature-inventory-checker
-description: Look up and validate Voyager FEATURE_INVENTORY entries (PRODUCT/04_FEATURE_INVENTORY/*). Use for (1) exact feature_id checks, and (2) impact discovery when users ask "which features need updates" from Korean/English requirement text. Triggers: FEATURE_INVENTORY, 기능 인벤토리, feature_id, related features, 영향 범위, 변경 필요한 feature.
+description: 'Look up and validate Voyager FEATURE_INVENTORY entries (PRODUCT/04_FEATURE_INVENTORY/*). Use for (1) exact feature_id checks, and (2) impact discovery when users ask "which features need updates" from Korean/English requirement text. Triggers: FEATURE_INVENTORY, 기능 인벤토리, 피쳐 인벤토리, feature_id, related features, 영향 범위, 변경 필요한 feature.'
 ---
 
 # Voyager Feature Inventory Checker
 
 Check a specific feature entry in `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`.
 
+In this repo, `FI` means `Feature Inventory`.
+This skill validates FI rows only.
+If the user wants one feature bundle checked across `FI` + `IA (Information Architecture)` + `FS (Feature Specs)`, use `voyager-fi-ia-fs-consistency-checker` instead.
+
 This skill supports both:
 
 - Polars-based aggregated search (`scripts/vfi.py`)
 - Deterministic row-level checks (`scripts/check_feature.py`)
+
+For cross-document consistency work spanning `FI` + `IA` + `FS`, do not stretch this skill beyond row-level inventory validation. Use:
+
+- `voyager-fi-ia-fs-consistency-checker`
 
 ## Setup (Polars)
 

@@ -1,26 +1,16 @@
 import ComposableArchitecture
-@testable import VoyagerPagesFileManager
+@testable import Voyager
 import XCTest
 
 @MainActor
 final class FileManagerContentExternalReloadTests: XCTestCase {
-    private func makeStore(
-        initialState: FileManagerContentState = FileManagerContentState(),
-    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
-        TestStore(initialState: initialState) {
-            FileManagerContentFeature()
-        } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
-        }
-    }
-
     func testFileSystemChangedReloadsCurrentFolderForDirectChildPath() async {
-        // TODO(VOY-223): Reducer no longer emits load action on external FS change for direct child
-        XCTExpectFailure("Reducer behavioral mismatch after VOY-223 migration")
         var initialState = FileManagerContentState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
 
-        let store = makeStore(initialState: initialState)
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.receive { action in
@@ -37,12 +27,12 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
     }
 
     func testFileSystemChangedReloadsCurrentFolderForNestedPath() async {
-        // TODO(VOY-223): Reducer no longer emits load action on external FS change for nested path
-        XCTExpectFailure("Reducer behavioral mismatch after VOY-223 migration")
         var initialState = FileManagerContentState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
 
-        let store = makeStore(initialState: initialState)
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/subdir/a.txt"]))
         await store.receive { action in
@@ -62,7 +52,9 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         var initialState = FileManagerContentState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
 
-        let store = makeStore(initialState: initialState)
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
 
         await store.send(.externalFileSystemChanged(["/tmp/other/a.txt"]))
         await store.finish()
@@ -80,19 +72,21 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             ),
         )
 
-        let store = makeStore(initialState: initialState)
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.finish()
     }
 
     func testFileSystemChangedReloadsRecentsRoute() async {
-        // TODO(VOY-223): Reducer no longer emits load action on external FS change for recents
-        XCTExpectFailure("Reducer behavioral mismatch after VOY-223 migration")
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .recents
 
-        let store = makeStore(initialState: initialState)
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.receive { action in
@@ -106,18 +100,18 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
     }
 
     func testFileSystemChangedReloadsTagRoute() async {
-        // TODO(VOY-223): Reducer no longer emits load action on external FS change for tags
-        XCTExpectFailure("Reducer behavioral mismatch after VOY-223 migration")
         var initialState = FileManagerContentState()
-        initialState.navigation.navigationState = .tags("blue")
+        initialState.navigation.navigationState = .tags(tagName: "blue")
 
-        let store = makeStore(initialState: initialState)
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.receive { action in
             guard case let .entryViewLayout(.entryOperations(.loading(.loadTagItems(
-                tagName,
-                showHidden,
+                tagName: tagName,
+                showHidden: showHidden,
             )))) =
                 action
             else {
@@ -128,12 +122,12 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
     }
 
     func testFileSystemChangedReloadsComputerRoute() async {
-        // TODO(VOY-223): Reducer no longer emits load action on external FS change for computer
-        XCTExpectFailure("Reducer behavioral mismatch after VOY-223 migration")
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .computer
 
-        let store = makeStore(initialState: initialState)
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.receive { action in

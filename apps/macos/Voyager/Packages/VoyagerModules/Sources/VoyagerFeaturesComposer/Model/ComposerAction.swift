@@ -1,21 +1,19 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesEntry
 import VoyagerShared
 
 @CasePathable
-public enum ComposerAction: ViewAction, CasePathable, Sendable {
+enum ComposerAction: ViewAction, CasePathable, Sendable {
     case view(View)
     case delegate(Delegate)
     case `internal`(Internal)
 
-    case collection(CollectionAction)
     case propertyPicker(ConditionPropertyPickerFeature.Action)
     case operatorPicker(OperatorPickerFeature.Action)
     case valuePicker(ValuePickerFeature.Action)
 
     @CasePathable
-    public enum View: Sendable {
+    enum View: Sendable {
         case setPresented(Bool)
         case setText(String)
         case focusQueryField
@@ -40,7 +38,7 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
     }
 
     @CasePathable
-    public enum Internal: Sendable {
+    enum Internal: Sendable {
         case searchResponse(UUID, Result<VoyagerShared.SearchResponsePayload, Error>)
         case filtersResponse(UUID, Result<VoyagerShared.SearchResponsePayload, Error>)
         case dismissTransientFeedback(UUID)
@@ -48,10 +46,13 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
     }
 
     @CasePathable
-    public enum Delegate: Sendable {}
+    enum Delegate: Sendable {
+        case saveRequested(SaveRequestPayload)
+        case saveToExisting(SaveRequestPayload, URL)
+    }
 }
 
-public extension ComposerAction {
+extension ComposerAction {
     static func setPresented(_ isPresented: Bool) -> Self { .view(.setPresented(isPresented)) }
     static func setText(_ text: String) -> Self { .view(.setText(text)) }
     static var focusQueryField: Self { .view(.focusQueryField) }

@@ -51,9 +51,27 @@ struct EntryArrangementsApplyReducer {
         order: SortOrder,
     ) -> [EntryModel] {
         items.sorted { item1, item2 in
-            let comparison = compareItems(item1, item2, by: sortKey)
+            let comparison = stableComparison(item1, item2, by: sortKey)
             return order == .ascending ? comparison == .orderedAscending : comparison == .orderedDescending
         }
+    }
+
+    private func stableComparison(
+        _ item1: EntryModel,
+        _ item2: EntryModel,
+        by sortKey: SortKey,
+    ) -> ComparisonResult {
+        let primary = compareItems(item1, item2, by: sortKey)
+        guard primary == .orderedSame else {
+            return primary
+        }
+
+        let nameComparison = item1.name.localizedCaseInsensitiveCompare(item2.name)
+        guard nameComparison == .orderedSame else {
+            return nameComparison
+        }
+
+        return item1.fullPath.localizedCaseInsensitiveCompare(item2.fullPath)
     }
 
     private func compareItems(_ item1: EntryModel, _ item2: EntryModel, by sortKey: SortKey) -> ComparisonResult {
