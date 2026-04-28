@@ -76,8 +76,17 @@ public extension DependencyValues {
 
 public extension UndoManagerClient {
     static func live(undoManager: UndoManager) -> UndoManagerClient {
+        live(resolveUndoManager: { _ in undoManager })
+    }
+
+    static func live(
+        resolveUndoManager: @escaping @Sendable (_ windowID: UUID?) async -> UndoManager?,
+    ) -> UndoManagerClient {
         .init(
-            registerUndo: { _, record, onUndo, onRedo in
+            registerUndo: { windowID, record, onUndo, onRedo in
+                guard let undoManager = await resolveUndoManager(windowID) else {
+                    return
+                }
                 await MainActor.run {
                     let handlerStore = UndoManagerHandlerStore.store(for: undoManager)
                     let handler = UndoManagerHandler(
@@ -92,12 +101,18 @@ public extension UndoManagerClient {
                     }
                 }
             },
-            undo: { _ in
+            undo: { windowID in
+                guard let undoManager = await resolveUndoManager(windowID) else {
+                    return
+                }
                 await MainActor.run {
                     undoManager.undo()
                 }
             },
-            redo: { _ in
+            redo: { windowID in
+                guard let undoManager = await resolveUndoManager(windowID) else {
+                    return
+                }
                 await MainActor.run {
                     undoManager.redo()
                 }
@@ -152,8 +167,7 @@ private final class UndoManagerHandlerStore: @unchecked Sendable {
 
     static func store(for undoManager: UndoManager) -> UndoManagerHandlerStore {
         if let store = objc_getAssociatedObject(undoManager, &UndoManagerHandlerStoreKey.value)
-            as? UndoManagerHandlerStore
-        {
+            as? UndoManagerHandlerStore {
             return store
         }
         let store = UndoManagerHandlerStore()

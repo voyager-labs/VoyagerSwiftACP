@@ -1,0 +1,2 @@
+interaction_title	interaction_id	interaction_type	feature	category_key	feature_id	status	summary	related_region	menu	shortcut
+Show Inspector Status	TKY-001-show_inspector_status	display	Manage Keyed Regions	TKY	TKY-001	드래프트	인스펙터 상태를 표시한다.	test_window.inspector_pane.missing_area	-	-

@@ -46,7 +46,7 @@ shortcut: "⌘⌫"
 
 ## Acceptance Criteria
 
--   -
+- -
 
 ## Permissions / Dependencies
 

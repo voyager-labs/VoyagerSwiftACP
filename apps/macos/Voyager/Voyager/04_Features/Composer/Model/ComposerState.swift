@@ -15,7 +15,6 @@ struct ConditionDisplayState: Equatable {
 
 @ObservableState
 struct ComposerState: Equatable {
-    var collection: CollectionFeature.State = .init()
     var propertyPicker: ConditionPropertyPickerFeature.State = .init()
     var operatorPicker: OperatorPickerFeature.State = .init()
     var valuePicker: ValuePickerFeature.State = .init()
@@ -23,6 +22,7 @@ struct ComposerState: Equatable {
     var isPresented: Bool = false
     var collectionContext: CollectionContext?
     var openedCollectionURL: URL?
+    var openedCollectionCompatibility: CollectionFileCompatibilityMetadata?
     var isCollectionMode: Bool = false
     var pendingSearchQuery: String?
 
@@ -83,5 +83,64 @@ struct ComposerState: Equatable {
     mutating func clearHistory() {
         history.removeAll()
         redoHistory.removeAll()
+    }
+
+    mutating func applyCollectionDraftRestorePayload(_ payload: CollectionDraftRestorePayload) {
+        let trimmedQuery = payload.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
+        if payload.openedURL == nil {
+            text = payload.context.query
+        } else {
+            text = ""
+        }
+        scopes = payload.context.scopes
+        conditions = payload.context.conditions
+        propertyPicker = ConditionPropertyPickerFeature.State()
+        operatorPicker = OperatorPickerFeature.State()
+        valuePicker = ValuePickerFeature.State()
+        clearHistory()
+    }
+
+    mutating func applyCollectionNavigationComposerPayload(_ payload: CollectionNavigationStatePayload) {
+        let trimmedQuery = payload.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
+        text = payload.composerText
+        scopes = payload.scopes
+        conditions = payload.conditions
+        propertyPicker = ConditionPropertyPickerFeature.State()
+        operatorPicker = OperatorPickerFeature.State()
+        valuePicker = ValuePickerFeature.State()
+        clearHistory()
+    }
+
+    mutating func applyCollectionOpenRestorationComposerPayload(
+        _ payload: CollectionOpenRestorationPayload,
+        registryClient: RegistryClient,
+    ) {
+        pendingSearchQuery = payload.context.query.isEmpty ? nil : payload.context.query
+        text = payload.context.query
+        scopes = payload.context.scopes
+        conditions = payload.context.conditions
+        propertyPicker = ConditionPropertyPickerFeature.State()
+        operatorPicker = OperatorPickerFeature.State()
+        valuePicker = ValuePickerFeature.State()
+        clearHistory()
+        let filters = buildFilters(from: self)
+        applyAppliedFilters(
+            .init(scopes: filters.scopes, conditions: filters.conditions),
+            state: &self,
+            registryClient: registryClient,
+        )
+        lastFiltersResponse = nil
+        lastSearchResponse = nil
+    }
+
+    mutating func applyHydratedCollectionOpenComposerPayload(
+        _ payload: CollectionHydratedOpenPayload,
+        navigation: ContentPageCollectionNavigation,
+    ) {
+        lastFiltersResponse = payload.lastFiltersResponse
+        lastSearchResponse = payload
+            .lastSearchResponse ?? (navigation.context.query.isEmpty ? nil : payload.lastFiltersResponse)
     }
 }

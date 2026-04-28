@@ -121,5 +121,4 @@ sequenceDiagram
 - [소스 트리](source-tree.md)
 - [환경 설정](environment.md)
 - [Registry JSON](registries.md)
-- [검색 기능](../features/search.md)
-- [인덱싱 기능](../features/indexing.md)
+- [검색 기능](../integration/search-contract.md)

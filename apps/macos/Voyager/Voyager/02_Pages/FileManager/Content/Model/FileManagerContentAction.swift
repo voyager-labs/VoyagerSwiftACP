@@ -11,6 +11,7 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
 
     case entryViewLayout(EntryViewLayoutFeature.Action)
     case composer(ComposerFeature.Action)
+    case collection(CollectionFeature.Action)
     case externalFileSystemChanged([String])
 
     @CasePathable

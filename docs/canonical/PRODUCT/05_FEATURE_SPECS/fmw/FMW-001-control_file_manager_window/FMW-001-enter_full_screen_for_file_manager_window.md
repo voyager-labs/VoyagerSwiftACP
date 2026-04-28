@@ -39,7 +39,7 @@ shortcut: "⌘⌃F"
 
 ## Edge Cases / Failure Handling
 
--   -
+- -
 
 ## Acceptance Criteria
 

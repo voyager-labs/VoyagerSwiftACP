@@ -4,6 +4,17 @@ import SwiftUI
 
 import VoyagerFeaturesEntryOperations
 
+func showsToolbarRefreshButton(
+    _ collectionStatus: ToolbarCollectionStatusViewState,
+    isTitleAreaHovered: Bool,
+) -> Bool {
+    isTitleAreaHovered && collectionStatus.showsRefreshAffordance
+}
+
+func isToolbarRefreshButtonEnabled(_ collectionStatus: ToolbarCollectionStatusViewState) -> Bool {
+    collectionStatus.isRefreshEnabled
+}
+
 struct ToolbarHistoryItem: Equatable {
     let iconSystemName: String
     let title: String
@@ -144,14 +155,14 @@ struct ToolbarView: View {
                     canGoToEnclosingDirectory: state.navigation.canGoToEnclosingDirectory,
                     toolbarTitle: currentNavigationTitle(for: state.navigation.navigationState),
                     isCollectionMode: state.isCollectionMode,
-                    isOpeningCollectionFile: state.collectionSession.isOpening,
-                    openedCollectionName: state.collectionSession.openedName,
+                    isOpeningCollectionFile: state.collectionSession.phase.isOpening,
+                    openedCollectionName: state.collectionSession.document?.name,
                     collectionStatus: .init(
                         isCollectionMode: state.isCollectionMode,
-                        openedCollectionURLExists: state.collectionSession.openedURL != nil,
+                        openedCollectionURLExists: state.collectionSession.document?.url != nil,
                         isOpenedCollectionDirty: state.isOpenedCollectionDirty,
                         isOpenedCollectionStale: state.isOpenedCollectionStale,
-                        canRefreshStaleCollection: state.canRefreshStaleCollection,
+                        refreshBlockingReason: state.refreshBlockingReason,
                     ),
                 )
             },
@@ -198,7 +209,10 @@ struct ToolbarView: View {
                 )
                 .buttonStyle(.borderless)
 
-                if viewStore.collectionStatus.showsRefreshAffordance {
+                if showsToolbarRefreshButton(
+                    viewStore.collectionStatus,
+                    isTitleAreaHovered: isTitleAreaHovered,
+                ) {
                     toolbarRefreshButton(viewStore: viewStore)
                 }
 
@@ -283,12 +297,12 @@ struct ToolbarView: View {
             label: {
                 ToolbarHoverButtonLabel(
                     systemName: "arrow.clockwise",
-                    isEnabled: viewStore.collectionStatus.isRefreshEnabled,
+                    isEnabled: isToolbarRefreshButtonEnabled(viewStore.collectionStatus),
                     font: .system(size: 11, weight: .semibold),
                 )
             },
         )
         .buttonStyle(.borderless)
-        .disabled(!viewStore.collectionStatus.isRefreshEnabled)
+        .disabled(!isToolbarRefreshButtonEnabled(viewStore.collectionStatus))
     }
 }

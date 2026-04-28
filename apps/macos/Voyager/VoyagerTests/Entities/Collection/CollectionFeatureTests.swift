@@ -464,6 +464,7 @@ private func makeSavePayload(conditions: [Condition]) -> SaveRequestPayload {
         definitionFingerprint: "",
         capturedAt: .distantPast,
         relevanceRoots: ["/tmp"],
+        openedCompatibility: nil,
     )
 }
 
@@ -475,7 +476,12 @@ private func makeCollectionStore(
         save: { file, url in
             await recorder.append(file: file, url: url)
         },
-        load: { _ in kEmptyCollectionFile },
+        load: { _ in
+            makeCollectionLoadResult(
+                kEmptyCollectionFile,
+                sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+            )
+        },
     )
     let store = TestStore(initialState: CollectionFeature.State()) {
         CollectionFeature()
@@ -497,6 +503,19 @@ private func runSaveToExistingTest(
     await store.send(.saveToExisting(payload, url))
     await store.receive(\.saveCompleted)
     await store.finish()
+}
+
+private func makeCollectionLoadResult(
+    _ file: VoyagerCollectionFile,
+    sourceSchemaVersion: SchemaVersion?,
+) -> CollectionFileLoadResult {
+    VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
+        file: file,
+        containerFormat: .package,
+        sourceSchemaVersion: sourceSchemaVersion,
+        warning: nil,
+        usedDefinitionFallback: false,
+    )
 }
 
 private let kEmptySearchResponse = VoyagerShared.SearchResponsePayload(

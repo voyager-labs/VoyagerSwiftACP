@@ -5,7 +5,7 @@ order	category_title	category_key	description
 4	Entry Indexing	EIX	엔트리 시스템 속성을 비롯한 여러 속성을 추출해 검색 등에 사용할 시스템을 구축하는 백그라운드 기능 묶음
 5	Retrieval Collection	RCL	엔트리 프로퍼티 기반 필터로 동일 조건을 만족하는 엔트리 집합을 논리적으로 구성하는 기능 묶음
 6	Custom Entry Properties	CEP	엔트리 프로퍼티 스키마를 정의·편집·삭제하여 구조와 분류 체계를 설계∙유지하는 기능 묶음
-7	Conversation-driven Actions	CDA	사용자가 제출한 대화 메시지 의도를 해석하고, 적절한 처리 계획을 생성∙실행하는 기능 묶음
+7	Chat-based Workflows	CBW	사용자가 채팅을 작업 진입점으로 삼아 현재 맥락을 바탕으로 질의, 탐색, 계획, 실행 검토, 결과 확인까지 이어가는 기능 묶음
 8	Content Tab Management	CTM	하나의 파일 관리자 창 안에서 페이지 세션을 담고 있는 콘텐츠 탭과 관련한 기능 묶음
 9	User Settings	SET	앱 전반의 동작 방식과 사용자 선호를 설정하는 기능 묶음
 10	Command Palette	CMP	파일 관리자 창 내부 키보드 단축키로 호출하는 전역 명령 모달을 띄워 커맨드를 빠르게 호출하는 기능 묶음

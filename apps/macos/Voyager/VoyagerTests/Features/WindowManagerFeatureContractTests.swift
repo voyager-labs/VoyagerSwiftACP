@@ -22,6 +22,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
@@ -60,6 +61,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
+        } withDependencies: {
+            $0.entryFileOpsClient.createFolder = { _, _ in }
         }
         store.exhaustivity = .off
 

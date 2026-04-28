@@ -37,6 +37,43 @@ struct CollectionStalenessRecord: Codable, Equatable, Sendable {
     var definitionFingerprint: String
     var relevanceRoots: [String]
     var lastInvalidatedAt: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case definitionFingerprint
+        case relevanceRoots
+        case lastInvalidatedAt
+        case scopes
+        case isInvalidated
+    }
+
+    nonisolated init(
+        definitionFingerprint: String,
+        relevanceRoots: [String],
+        lastInvalidatedAt: Date?,
+    ) {
+        self.definitionFingerprint = definitionFingerprint
+        self.relevanceRoots = relevanceRoots
+        self.lastInvalidatedAt = lastInvalidatedAt
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        definitionFingerprint = (try? container.decodeIfPresent(String.self, forKey: .definitionFingerprint)) ?? ""
+        let roots = (try? container.decodeIfPresent([String].self, forKey: .relevanceRoots))
+            ?? (try? container.decodeIfPresent([String].self, forKey: .scopes))
+            ?? []
+        relevanceRoots = roots
+        let invalidatedAt = try? container.decodeIfPresent(Date.self, forKey: .lastInvalidatedAt)
+        let legacyInvalidated = (try? container.decodeIfPresent(Bool.self, forKey: .isInvalidated)) ?? false
+        lastInvalidatedAt = invalidatedAt ?? (legacyInvalidated ? .distantPast : nil)
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(definitionFingerprint, forKey: .definitionFingerprint)
+        try container.encode(relevanceRoots, forKey: .relevanceRoots)
+        try container.encodeIfPresent(lastInvalidatedAt, forKey: .lastInvalidatedAt)
+    }
 }
 
 private struct LegacyCollectionStalenessRecord: Codable, Equatable, Sendable {
@@ -203,22 +240,30 @@ extension CollectionStalenessClient {
     ) -> [String: CollectionStalenessRecord] {
         guard let data = userDefaultsClient.object(storageKey()) as? Data else { return [:] }
 
-        if let storage = try? PropertyListDecoder().decode([String: CollectionStalenessRecord].self, from: data) {
-            return storage.reduce(into: [:]) { result, entry in
-                result[normalizePath(entry.key)] = normalizedRecord(entry.value)
-            }
+        if let currentPlistStorage = decodeCurrentPlistStorage(data) {
+            return currentPlistStorage
         }
 
-        guard let legacyStorage = try? JSONDecoder().decode([String: LegacyCollectionStalenessRecord].self, from: data)
-        else {
-            return [:]
+        if let legacyPlistStorage = decodeLegacyPlistStorage(data) {
+            saveStorage(legacyPlistStorage, userDefaultsClient: userDefaultsClient)
+            return legacyPlistStorage
         }
 
-        let migratedStorage = legacyStorage.reduce(into: [:]) { result, entry in
-            result[normalizePath(entry.key)] = normalizedRecord(entry.value)
+        if let legacyJSONStorage = try? JSONDecoder().decode(
+            [String: LegacyCollectionStalenessRecord].self,
+            from: data,
+        ) {
+            let migratedStorage = legacyJSONStorage
+                .reduce(into: [String: CollectionStalenessRecord]()) { result, entry in
+                    let record = normalizedRecord(entry.value)
+                    guard isMeaningful(record) else { return }
+                    result[normalizePath(entry.key)] = record
+                }
+            saveStorage(migratedStorage, userDefaultsClient: userDefaultsClient)
+            return migratedStorage
         }
-        saveStorage(migratedStorage, userDefaultsClient: userDefaultsClient)
-        return migratedStorage
+
+        return [:]
     }
 
     private nonisolated static func saveStorage(
@@ -249,6 +294,65 @@ extension CollectionStalenessClient {
 
     private nonisolated static func normalizedRoots(_ roots: [String]) -> [String] {
         Array(Set(roots.map(normalizePath).filter { !$0.isEmpty })).sorted()
+    }
+
+    private nonisolated static func decodeCurrentPlistStorage(_ data: Data) -> [String: CollectionStalenessRecord]? {
+        guard let propertyList = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let topLevelAny = propertyList as? [AnyHashable: Any]
+        else {
+            return nil
+        }
+        let topLevel = topLevelAny.reduce(into: [String: Any]()) { result, entry in
+            guard let key = entry.key as? String else { return }
+            result[key] = entry.value
+        }
+
+        var result: [String: CollectionStalenessRecord] = [:]
+        for (path, rawRecord) in topLevel {
+            guard let record = decodeRecord(from: rawRecord) else { continue }
+            result[normalizePath(path)] = record
+        }
+        return result
+    }
+
+    private nonisolated static func decodeLegacyPlistStorage(_ data: Data) -> [String: CollectionStalenessRecord]? {
+        guard let legacyStorage = try? PropertyListDecoder().decode(
+            [String: LegacyCollectionStalenessRecord].self,
+            from: data,
+        ) else {
+            return nil
+        }
+
+        return legacyStorage.reduce(into: [String: CollectionStalenessRecord]()) { result, entry in
+            let record = normalizedRecord(entry.value)
+            guard isMeaningful(record) else { return }
+            result[normalizePath(entry.key)] = record
+        }
+    }
+
+    private nonisolated static func decodeRecord(from rawRecord: Any) -> CollectionStalenessRecord? {
+        guard let dictionary = rawRecord as? [String: Any] else { return nil }
+
+        let definitionFingerprint = dictionary["definitionFingerprint"] as? String ?? ""
+        let relevanceRoots = normalizedRoots(
+            (dictionary["relevanceRoots"] as? [String])
+                ?? (dictionary["scopes"] as? [String])
+                ?? [],
+        )
+
+        let invalidatedAt = dictionary["lastInvalidatedAt"] as? Date
+        let legacyInvalidated = dictionary["isInvalidated"] as? Bool ?? false
+        let record = CollectionStalenessRecord(
+            definitionFingerprint: definitionFingerprint,
+            relevanceRoots: relevanceRoots,
+            lastInvalidatedAt: invalidatedAt ?? (legacyInvalidated ? .distantPast : nil),
+        )
+
+        return isMeaningful(record) ? record : nil
+    }
+
+    private nonisolated static func isMeaningful(_ record: CollectionStalenessRecord) -> Bool {
+        !record.definitionFingerprint.isEmpty || !record.relevanceRoots.isEmpty || record.lastInvalidatedAt != nil
     }
 
     private nonisolated static func normalizePath(_ path: String) -> String {

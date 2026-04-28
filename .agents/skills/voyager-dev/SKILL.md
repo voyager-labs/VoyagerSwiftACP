@@ -52,6 +52,7 @@ This skill routes internally. Do not ask the user to pick a mode.
     - `references/public-boundary-spec.md`
     - `references/package-extraction-posture.md`
         - `references/scaffold-spec.md`
+    - Add `references/app-thin-integration-spec.md` when the task involves package-to-app wiring after extraction.
 - `decompose`
     - `references/orchestrator-spec.md`
     - Add `references/testing-playbook.md` when routing, ownership, or reducer tests change.
@@ -68,6 +69,8 @@ This skill routes internally. Do not ask the user to pick a mode.
     - `references/reuse-discovery-spec.md`
     - `references/architecture-gate-spec.md`
     - `references/decision-matrix.md`
+    - Add `references/app-thin-integration-spec.md` when the task involves package-to-app wiring after extraction.
+    - Add `references/shell-freeze-and-shared-promotion.md` when the task involves shared utility promotion or shell freeze.
 
 Do not read every reference blindly. Start with the always-on references, then add only the playbooks that match the task. Use `references/macos-architecture-shape.md` as a navigation page only when you need help choosing the next deeper architecture reference. Use `references/xcodebuildmcp-workflow.md` only when the task requires actual Xcode project introspection, build, or test execution.
 

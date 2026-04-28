@@ -13,9 +13,9 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
         store.exhaustivity = .off
 
+        XCTAssertNil(store.state.refreshBlockingReason)
         await store.send(.view(.refreshStaleCollection)) {
-            $0.collectionSession.isRefreshingHydratedSnapshot = true
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .refreshingHydratedSnapshot)
         }
         await store.receive { action in
             guard case .composer(.view(.setText("report"))) = action else {
@@ -39,9 +39,9 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
         store.exhaustivity = .off
 
+        XCTAssertNil(store.state.refreshBlockingReason)
         await store.send(.view(.refreshStaleCollection)) {
-            $0.collectionSession.isRefreshingHydratedSnapshot = true
-            $0.collectionSession.isWritingBackRefreshedSnapshot = false
+            $0.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .refreshingHydratedSnapshot)
         }
         await store.receive { action in
             guard case .composer(.view(.applyFilters)) = action else {
@@ -61,8 +61,9 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
 
         await store.send(.view(.refreshStaleCollection))
 
-        XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
+        XCTAssertEqual(store.state.refreshBlockingReason, .dirtyCollection)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
     func testRefreshStaleCollectionDoesNothingWithoutSavedCollectionPrerequisites() async {
@@ -79,9 +80,9 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
 
         await store.send(.view(.refreshStaleCollection))
 
-        XCTAssertFalse(store.state.collectionSession.isRefreshingHydratedSnapshot)
-        XCTAssertFalse(store.state.collectionSession.isWritingBackRefreshedSnapshot)
-        XCTAssertFalse(store.state.canRefreshStaleCollection)
+        XCTAssertEqual(store.state.refreshBlockingReason, .missingOpenedURL)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
     }
 }
 
@@ -93,8 +94,7 @@ private func makeState(
 ) -> FileManagerContentState {
     var state = FileManagerContentState()
     state.entryViewLayout.isCollectionMode = true
-    state.collectionSession.isStale = true
-    state.collectionSession.staleReason = .snapshotHydratedOnOpen
+    state.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
     let baseline = CollectionContext(query: query, scopes: ["/tmp"], conditions: [])
     state.collectionSession.baseline = hasCollectionPrerequisites ? .init(context: baseline) : nil
     state.collectionSession.openedURL = hasCollectionPrerequisites ? URL(fileURLWithPath: "/tmp/demo.voycoll") : nil
