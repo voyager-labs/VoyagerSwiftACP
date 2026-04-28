@@ -14,6 +14,9 @@ fi
 
 mkdir -p "${BUILD_DIR}"
 
+# Skip macro fingerprint validation for CI (Xcode 26.1+ enforces macro trust policy)
+defaults write com.apple.dt.Xcode IDESkipMacroFingerprintValidation -bool YES
+
 xcodebuild \
   -project "${PROJECT_PATH}" \
   -scheme "${SCHEME}" \
