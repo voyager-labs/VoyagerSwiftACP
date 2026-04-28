@@ -3,6 +3,7 @@ import Foundation
 import VoyagerShared
 
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerWidgetsEntryViewLayout
 

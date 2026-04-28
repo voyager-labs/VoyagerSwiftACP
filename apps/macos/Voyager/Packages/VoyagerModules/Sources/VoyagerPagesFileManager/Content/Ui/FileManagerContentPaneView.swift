@@ -1,5 +1,9 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
+
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 
 struct FileManagerContentPaneView: View {
     let store: StoreOf<FileManagerContentFeature>
