@@ -66,16 +66,6 @@
                 ReferencedContainer = "container:Voyager.xcodeproj">
              </BuildableReference>
           </TestableReference>
-          <TestableReference
-             skipped = "NO"
-             parallelizable = "YES">
-             <BuildableReference
-                BuildableIdentifier = "primary"
-                BuildableName = "VoyagerPagesFileManagerTests.xctest"
-                BlueprintName = "VoyagerPagesFileManagerTests"
-                ReferencedContainer = "container:Packages/VoyagerModules">
-             </BuildableReference>
-          </TestableReference>
        </Testables>
    </TestAction>
    <LaunchAction
