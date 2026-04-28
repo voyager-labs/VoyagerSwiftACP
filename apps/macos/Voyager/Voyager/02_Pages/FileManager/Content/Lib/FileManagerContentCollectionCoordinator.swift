@@ -1,10 +1,10 @@
 import ComposableArchitecture
 
-extension FileManagerContentFeature {
-    func handleCollectionOwnerAction(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action>? {
+enum FileManagerContentCollectionCoordinator {
+    static func handleCollectionOwnerAction(
+        _ action: FileManagerContentAction,
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction>? {
         switch action {
         case let .collection(.saveCompleted(.success(completion))):
             return .send(.collection(.writeBackCompleted(completion)))
@@ -29,8 +29,12 @@ extension FileManagerContentFeature {
         case .collection(.saveCompleted(.failure)):
             return handleCollectionSaveFailure(state: &state)
 
-        case .collection(.navigationStateApplied),
-             .collection(.openSearchPresentationCancelled),
+        case let .collection(.navigationStateApplied(payload)):
+            state.composer.applyCollectionNavigationComposerPayload(payload)
+            state.syncComposerCollectionState()
+            return .none
+
+        case .collection(.openSearchPresentationCancelled),
              .collection(.temporaryContextResetRequested):
             state.syncComposerCollectionState()
             return .none

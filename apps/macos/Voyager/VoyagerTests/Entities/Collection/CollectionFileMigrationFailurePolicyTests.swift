@@ -69,8 +69,8 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
             else {
                 return XCTFail("Unexpected error: \(error)")
             }
-            XCTAssertEqual(found, 999)
-            XCTAssertEqual(current, VoyagerCollectionFile.currentSchemaVersion)
+            XCTAssertEqual(found, SchemaVersion(legacyInt: 999))
+            XCTAssertEqual(current, CollectionFileSchemaVersion.current)
         }
 
         let afterData = try Data(contentsOf: payloadURL)
@@ -86,9 +86,9 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         XCTAssertNil(legacyMissingSchema.compatibility.sourceSchemaVersion)
         XCTAssertEqual(
             legacyMissingSchema.compatibility.migrationPath,
-            [.legacySingleFileWithoutSchema, .definitionOnlyV1, .currentSchemaV2],
+            [.legacySingleFileWithoutSchema, .definitionOnlyV1],
         )
-        XCTAssertEqual(legacyMissingSchema.file.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+        XCTAssertEqual(legacyMissingSchema.file.schemaVersion, .init(major: 1, minor: 0))
         XCTAssertEqual(legacyMissingSchema.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
 
         let invalidSchemaData = try makeBinaryPlist(InvalidSchemaVersionTypePayload())
@@ -119,6 +119,16 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         }
     }
 
+    func testInvalidPropertyListPayloadThrowsOwnerError() {
+        let data = Data("not-a-plist".utf8)
+
+        XCTAssertThrowsError(
+            try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package),
+        ) { error in
+            XCTAssertEqual(error as? CollectionFileCompatibilityError, .invalidPropertyListPayload)
+        }
+    }
+
     func testUnrecoverableDocumentCorruptionErrorShapeExists() {
         let data = try? makeBinaryPlist(UnrecoverableCorruptionPayload(
             schemaVersion: 1,
@@ -140,6 +150,50 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? CollectionFileCompatibilityError, .unrecoverableDocumentCorruption)
         }
+    }
+
+    func testMalformedSnapshotFallsBackInsteadOfBecomingUnrecoverableCorruption() throws {
+        let data = try makeBinaryPlist(InvalidSnapshotPayload(
+            schemaVersion: 2,
+            id: "corrupt-snapshot",
+            name: "Corrupt Snapshot",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "query",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: ["items": [VoyagerShared.JSONValue.number(1)]],
+            snapshotMeta: .init(
+                definitionFingerprint: "fingerprint",
+                capturedAt: .distantPast,
+                itemCount: 1,
+                relevanceRoots: ["/tmp"],
+            ),
+            appVersion: nil,
+        ))
+
+        let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
+
+        XCTAssertTrue(result.compatibility.usedDefinitionFallback)
+        XCTAssertEqual(result.compatibility.warnings, [.droppedMalformedSnapshot])
+        XCTAssertEqual(result.compatibility.writeBackReason, .blockedDefinitionFallback)
+        XCTAssertNil(result.file.snapshot)
+        XCTAssertNil(result.file.snapshotMeta)
+    }
+
+    func testFutureMinorStructuredVersionShouldBecomeReadOnlyInsteadOfHardFail() throws {
+        let data = try makeStructuredSchemaPropertyList(
+            schema: ["major": 1, "minor": 2],
+            includeSnapshot: true,
+            includeSnapshotMeta: true,
+        )
+
+        let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
+
+        XCTAssertEqual(result.compatibility.sourceSchemaVersion, .init(major: 1, minor: 2))
+        XCTAssertEqual(result.compatibility.warnings, [.futureMinorVersionReadOnly])
+        XCTAssertFalse(result.compatibility.writeBackAllowed)
+        XCTAssertEqual(result.compatibility.writeBackReason, .blockedFutureMinorVersion)
     }
 
     private func makeBinaryPlist(_ value: some Encodable) throws -> Data {
@@ -167,6 +221,40 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
             errorHandler(error)
         }
     }
+}
+
+private func makeStructuredSchemaPropertyList(
+    schema: [String: Int],
+    includeSnapshot: Bool,
+    includeSnapshotMeta: Bool,
+) throws -> Data {
+    var payload: [String: Any] = [
+        "schemaVersion": schema,
+        "id": "structured-version",
+        "name": "Structured Version",
+        "createdAt": Date.distantPast,
+        "updatedAt": Date.distantPast,
+        "query": "",
+        "scopes": ["/tmp"],
+        "conditions": [],
+    ]
+
+    if includeSnapshot {
+        payload["snapshot"] = [
+            "items": ["/tmp/report.txt"],
+        ]
+    }
+
+    if includeSnapshotMeta {
+        payload["snapshotMeta"] = [
+            "definitionFingerprint": "fingerprint",
+            "capturedAt": Date.distantPast,
+            "itemCount": 1,
+            "relevanceRoots": ["/tmp"],
+        ]
+    }
+
+    return try PropertyListSerialization.data(fromPropertyList: payload, format: .binary, options: 0)
 }
 
 private struct MissingSchemaVersionPayload: Codable {
@@ -227,5 +315,19 @@ private struct UnrecoverableCorruptionPayload: Codable {
     let query: String
     let scopes: [String]
     let conditions: [CollectionCondition]
+    let appVersion: String?
+}
+
+private struct InvalidSnapshotPayload: Codable {
+    let schemaVersion: Int
+    let id: String
+    let name: String
+    let createdAt: Date
+    let updatedAt: Date
+    let query: String
+    let scopes: [String]
+    let conditions: [CollectionCondition]
+    let snapshot: [String: [VoyagerShared.JSONValue]]
+    let snapshotMeta: CollectionSnapshotMeta
     let appVersion: String?
 }

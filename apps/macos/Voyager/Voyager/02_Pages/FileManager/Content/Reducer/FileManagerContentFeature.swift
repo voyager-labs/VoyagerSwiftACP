@@ -51,7 +51,10 @@ struct FileManagerContentFeature {
                 return effect
             }
 
-            if let effect = handleCollectionOwnerAction(action, state: &state) {
+            if let effect = FileManagerContentCollectionCoordinator.handleCollectionOwnerAction(
+                action,
+                state: &state,
+            ) {
                 return effect
             }
 
@@ -94,7 +97,7 @@ struct FileManagerContentFeature {
                 let showHidden = !state.entryViewLayout.showHiddenFiles
                 return .concatenate(
                     .send(.entryViewLayout(.view(.toggleShowHiddenFiles))),
-                    reloadEntryItemsEffect(
+                    FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
                         navigationState: state.navigation.navigationState,
                         showHidden: showHidden,
                     ),
@@ -182,7 +185,10 @@ struct FileManagerContentFeature {
         }
 
         logEntryActionMetricIfNeeded(for: entryOperationsAction)
-        return handleEntryOperationsAction(entryOperationsAction, state: &state)
+        return FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+            entryOperationsAction,
+            state: &state,
+        )
     }
 
     private func handleEntryViewLayoutDelegateBridgeAction(
@@ -210,63 +216,6 @@ struct FileManagerContentFeature {
         case let .startRename(item, text):
             let entryOperationsAction = EntryOperationsAction.edit(.startRename(item: item, text: text))
             return sendEntryOperations(entryOperationsAction)
-        }
-    }
-
-    func handleEntryOperationsAction(
-        _ action: EntryOperationsAction,
-        state: inout State,
-    ) -> Effect<Action> {
-        switch action {
-        case .loading(.itemsLoaded):
-            .none
-
-        case .lifecycle(.entryActionCompleted):
-            .none
-
-        case let .lifecycle(.pathsMutated(paths)):
-            handleMutatedPaths(paths, state: state)
-
-        case .lifecycle(.operationFinished):
-            reloadEntryItemsEffect(state: state)
-
-        case .lifecycle(.emptyTrashCompleted):
-            .send(.delegate(.closeWindow))
-
-        default:
-            .none
-        }
-    }
-
-    private func reloadEntryItemsEffect(state: State) -> Effect<Action> {
-        reloadEntryItemsEffect(
-            navigationState: state.navigation.navigationState,
-            showHidden: state.entryViewLayout.showHiddenFiles,
-        )
-    }
-
-    private func handleMutatedPaths(_ paths: [String], state: State) -> Effect<Action> {
-        guard case .collection = state.navigation.navigationState else {
-            return .none
-        }
-        return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
-    }
-
-    private func reloadEntryItemsEffect(
-        navigationState: ContentPageNavigationRoute,
-        showHidden: Bool,
-    ) -> Effect<Action> {
-        switch navigationState {
-        case let .folder(path):
-            sendEntryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))
-        case .recents:
-            sendEntryOperations(.loading(.loadRecentItems(showHidden: showHidden)))
-        case let .tags(tagName):
-            sendEntryOperations(.loading(.loadTagItems(tagName: tagName, showHidden: showHidden)))
-        case .computer:
-            sendEntryOperations(.loading(.loadComputerItems))
-        case .collection:
-            .none
         }
     }
 

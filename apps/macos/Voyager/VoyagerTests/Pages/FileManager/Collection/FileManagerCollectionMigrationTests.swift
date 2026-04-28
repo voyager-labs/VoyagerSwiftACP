@@ -76,9 +76,9 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
 
         let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
 
-        XCTAssertEqual(result.compatibility.sourceSchemaVersion, 1)
-        XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1, .currentSchemaV2])
-        XCTAssertEqual(result.file.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+        XCTAssertEqual(result.compatibility.sourceSchemaVersion, .init(major: 1, minor: 0))
+        XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1])
+        XCTAssertEqual(result.file.schemaVersion, .init(major: 1, minor: 0))
         XCTAssertNil(result.file.snapshot)
         XCTAssertNil(result.file.snapshotMeta)
         XCTAssertNil(CollectionSnapshotHydration.usableSnapshot(for: result.file))

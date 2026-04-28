@@ -192,7 +192,7 @@ final class CollectionReopenStaleTests: XCTestCase {
 
     func testNavigateToCollectionRestoresOpenedCompatibilityFromHistoryNavigation() async {
         let compatibility = CollectionFileCompatibilityMetadata(
-            sourceSchemaVersion: 2,
+            sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
             migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
             warnings: [.droppedMalformedSnapshot],
             usedDefinitionFallback: true,
@@ -306,23 +306,14 @@ private func makeOpenCollectionStore(
 
 private func makeCollectionLoadResult(
     _ file: VoyagerCollectionFile,
-    sourceSchemaVersion: Int?,
+    sourceSchemaVersion: SchemaVersion?,
 ) -> CollectionFileLoadResult {
-    .init(
+    VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
         file: file,
         containerFormat: .package,
-        compatibility: .init(
-            sourceSchemaVersion: sourceSchemaVersion,
-            migrationPath: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
-                ? [.currentSchemaV2]
-                : [.definitionOnlyV1, .currentSchemaV2],
-            warnings: [],
-            usedDefinitionFallback: false,
-            writeBackAllowed: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
-            writeBackReason: sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion
-                ? .allowed
-                : .blockedLegacyVersionUpgrade,
-        ),
+        sourceSchemaVersion: sourceSchemaVersion,
+        warning: nil,
+        usedDefinitionFallback: false,
     )
 }
 

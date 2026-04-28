@@ -354,6 +354,7 @@ private func handleNavigateToCollection(
     return .concatenate(
         .send(.content(.collection(.navigationStateApplied(payload)))),
         .send(.content(.internal(.syncComposerCollectionState))),
+        .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
         .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
         queryEffect,
     )

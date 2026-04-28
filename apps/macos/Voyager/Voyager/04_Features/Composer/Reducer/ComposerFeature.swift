@@ -252,7 +252,7 @@ func applyFiltersIfNeeded(
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = requestID
     let filters = buildFilters(from: state)
-    guard !filters.conditions.isEmpty else {
+    guard !filters.scopes.isEmpty || !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil

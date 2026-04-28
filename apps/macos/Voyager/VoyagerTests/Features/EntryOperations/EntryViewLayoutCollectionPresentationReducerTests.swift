@@ -283,4 +283,43 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
             resultingEntries: [keptItem],
         )
     }
+
+    func testAddCollectionPathsRestoresItemsWithoutDuplicatingExistingOnes() async {
+        let store = makeTestStore()
+
+        let existingItem = EntryModel.temporaryFolder(id: "/tmp/existing.txt", name: "existing.txt")
+        let restoredItem = EntryModel.temporaryFolder(id: "/tmp/restored.txt", name: "restored.txt")
+
+        await store.send(.internal(.setCollectionMode(true))) {
+            $0.isCollectionMode = true
+            $0.entries = []
+        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
+
+        await store.send(.internal(.setCollectionItems([existingItem]))) {
+            $0.collectionItems = [existingItem]
+            $0.entries = [existingItem]
+        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [existingItem],
+            isCollectionMode: true,
+            resultingEntries: [existingItem],
+        )
+
+        await store.send(.internal(.addCollectionPaths(["/tmp/restored.txt", "/tmp/existing.txt"]))) {
+            $0.collectionItems = [existingItem, restoredItem]
+            $0.entries = [existingItem, restoredItem]
+        }
+        await receiveReapplySequence(
+            from: store,
+            applyItems: [existingItem, restoredItem],
+            isCollectionMode: true,
+            resultingEntries: [existingItem, restoredItem],
+        )
+    }
 }

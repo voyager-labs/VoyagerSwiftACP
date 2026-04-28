@@ -1,5 +1,27 @@
 import Foundation
 
+// swiftlint:disable file_length
+
+enum CollectionFileSchemaVersion {
+    nonisolated static let definitionOnlyCurrent = SchemaVersion(major: 1, minor: 0)
+    nonisolated static let snapshotBearingCurrent = SchemaVersion(major: 1, minor: 1)
+    nonisolated static let current = snapshotBearingCurrent
+
+    nonisolated static func inferred(
+        snapshot: CollectionPersistedSnapshot?,
+        snapshotMeta: CollectionSnapshotMeta?,
+    ) -> SchemaVersion {
+        if snapshot != nil, snapshotMeta != nil {
+            return snapshotBearingCurrent
+        }
+        return definitionOnlyCurrent
+    }
+
+    nonisolated static func isCurrent(_ version: SchemaVersion) -> Bool {
+        version == definitionOnlyCurrent || version == snapshotBearingCurrent
+    }
+}
+
 enum CollectionFileContainerFormat: String, Sendable, Equatable {
     case package
     case legacySingleFile
@@ -8,6 +30,7 @@ enum CollectionFileContainerFormat: String, Sendable, Equatable {
 enum CollectionFileCompatibilityWarning: String, Sendable, Equatable {
     case droppedMalformedSnapshot
     case droppedIncompleteSnapshotPair
+    case futureMinorVersionReadOnly
 }
 
 enum CollectionFileMigrationStep: String, Sendable, Equatable {
@@ -22,11 +45,12 @@ enum CollectionWriteBackEligibility: String, Sendable, Equatable {
     case allowed
     case blockedLegacyVersionUpgrade
     case blockedDefinitionFallback
+    case blockedFutureMinorVersion
     case blockedUnsupportedFutureVersion
 }
 
 struct CollectionFileCompatibilityMetadata: Sendable, Equatable {
-    let sourceSchemaVersion: Int?
+    let sourceSchemaVersion: SchemaVersion?
     let migrationPath: [CollectionFileMigrationStep]
     let warnings: [CollectionFileCompatibilityWarning]
     let usedDefinitionFallback: Bool
@@ -40,10 +64,23 @@ struct CollectionFileLoadResult: Sendable, Equatable {
     let compatibility: CollectionFileCompatibilityMetadata
 }
 
+private struct VoyagerCollectionFileHeader: Decodable {
+    let schemaVersion: SchemaVersion?
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(SchemaVersion.self, forKey: .schemaVersion)
+    }
+}
+
 enum CollectionFileCompatibilityError: LocalizedError, Equatable {
     case missingSchemaVersion
     case invalidSchemaVersionType
-    case unsupportedFutureSchemaVersion(found: Int, current: Int)
+    case unsupportedFutureSchemaVersion(found: SchemaVersion, current: SchemaVersion)
     case missingPackagePayload
     case invalidDefinitionPayload
     case unrecoverableDocumentCorruption
@@ -69,10 +106,11 @@ enum CollectionFileCompatibilityError: LocalizedError, Equatable {
     }
 }
 
+// swiftlint:disable type_body_length
 enum VoyagerCollectionFileCompatibilityOwner {
     private struct SchemaProbe: Sendable, Equatable {
-        let sourceSchemaVersion: Int?
-        let effectiveSchemaVersion: Int
+        let sourceSchemaVersion: SchemaVersion?
+        let effectiveSchemaVersion: SchemaVersion
     }
 
     private struct SnapshotPairDecision {
@@ -88,16 +126,21 @@ enum VoyagerCollectionFileCompatibilityOwner {
         let usedDefinitionFallback: Bool
     }
 
+    private enum CurrentSemanticMeaning: Sendable {
+        case definitionOnlyCurrent
+        case snapshotBearingCurrent
+    }
+
     static func decode(
         _ data: Data,
         containerFormat: CollectionFileContainerFormat,
     ) throws -> CollectionFileLoadResult {
         let schemaProbe = try rawSchemaVersion(from: data, containerFormat: containerFormat)
 
-        guard schemaProbe.effectiveSchemaVersion <= VoyagerCollectionFile.currentSchemaVersion else {
+        if schemaProbe.effectiveSchemaVersion.major > CollectionFileSchemaVersion.current.major {
             throw CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(
                 found: schemaProbe.effectiveSchemaVersion,
-                current: VoyagerCollectionFile.currentSchemaVersion,
+                current: CollectionFileSchemaVersion.current,
             )
         }
 
@@ -113,25 +156,12 @@ enum VoyagerCollectionFileCompatibilityOwner {
             let decodedFile = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
             let snapshotDecision = evaluateDecodedSnapshotPair(decodedFile)
             let file = normalizeForRead(snapshotDecision.file, schemaProbe: schemaProbe)
-            return .init(
+            return makeLoadResult(
                 file: file,
                 containerFormat: containerFormat,
-                compatibility: .init(
-                    sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                    migrationPath: migrationPath(
-                        schemaProbe: schemaProbe,
-                        warning: snapshotDecision.warning,
-                    ),
-                    warnings: snapshotDecision.warning.map { [$0] } ?? [],
-                    usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
-                    writeBackAllowed: snapshotDecision.usedDefinitionFallback == false
-                        && schemaProbe.sourceSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
-                    writeBackReason: writeBackReason(
-                        schemaVersion: schemaProbe.effectiveSchemaVersion,
-                        sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                        usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
-                    ),
-                ),
+                sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
+                warning: snapshotDecision.warning,
+                usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
             )
         } catch {
             let fallback = try decodeDroppingSnapshotIfPossible(
@@ -144,11 +174,17 @@ enum VoyagerCollectionFileCompatibilityOwner {
     }
 
     static func normalizeForSave(_ file: VoyagerCollectionFile) -> VoyagerCollectionFile {
-        if file.schemaVersion == VoyagerCollectionFile.currentSchemaVersion {
+        let canonicalVersion = CollectionFileSchemaVersion.inferred(
+            snapshot: file.snapshot,
+            snapshotMeta: file.snapshotMeta,
+        )
+
+        if file.schemaVersion == canonicalVersion {
             return file
         }
 
         return VoyagerCollectionFile(
+            schemaVersion: canonicalVersion,
             id: file.id,
             name: file.name,
             createdAt: file.createdAt,
@@ -171,22 +207,62 @@ enum VoyagerCollectionFileCompatibilityOwner {
     static func compatibilityForCurrentFile(_ file: VoyagerCollectionFile) -> CollectionFileCompatibilityMetadata {
         let snapshotDecision = evaluateDecodedSnapshotPair(file)
         let normalized = snapshotDecision.file
-        return .init(
+        return makeLoadResult(
+            file: normalized,
+            containerFormat: .package,
             sourceSchemaVersion: normalized.schemaVersion,
-            migrationPath: migrationPath(
-                schemaProbe: .init(
-                    sourceSchemaVersion: normalized.schemaVersion,
-                    effectiveSchemaVersion: normalized.schemaVersion,
-                ),
-                warning: snapshotDecision.warning,
-            ),
-            warnings: snapshotDecision.warning.map { [$0] } ?? [],
+            warning: snapshotDecision.warning,
             usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
-            writeBackAllowed: snapshotDecision.usedDefinitionFallback == false,
-            writeBackReason: writeBackReason(
-                schemaVersion: normalized.schemaVersion,
-                sourceSchemaVersion: normalized.schemaVersion,
-                usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
+        ).compatibility
+    }
+
+    nonisolated static func makeLoadResult(
+        file: VoyagerCollectionFile,
+        containerFormat: CollectionFileContainerFormat,
+        sourceSchemaVersion: SchemaVersion?,
+        warning: CollectionFileCompatibilityWarning?,
+        usedDefinitionFallback: Bool,
+    ) -> CollectionFileLoadResult {
+        let effectiveSchemaVersion = sourceSchemaVersion ?? SchemaVersion(major: 1, minor: 0)
+        let schemaProbe = SchemaProbe(
+            sourceSchemaVersion: sourceSchemaVersion,
+            effectiveSchemaVersion: effectiveSchemaVersion,
+        )
+        let warnings = warning.map { [$0] } ?? []
+        let futureMinorWarning = isFutureMinorVersion(sourceSchemaVersion)
+            ? CollectionFileCompatibilityWarning.futureMinorVersionReadOnly
+            : nil
+        let combinedWarnings = warnings + (futureMinorWarning.map { [$0] } ?? [])
+
+        let semanticMeaning = currentSemanticMeaning(for: schemaProbe)
+        let writeBackAllowed: Bool = switch semanticMeaning {
+        case .definitionOnlyCurrent:
+            false
+        case .snapshotBearingCurrent:
+            usedDefinitionFallback == false
+                && sourceSchemaVersion == file.schemaVersion
+                && !isFutureMinorVersion(sourceSchemaVersion)
+        }
+
+        return .init(
+            file: file,
+            containerFormat: containerFormat,
+            compatibility: .init(
+                sourceSchemaVersion: sourceSchemaVersion,
+                migrationPath: migrationPath(
+                    schemaProbe: schemaProbe,
+                    warning: warning,
+                    currentSemanticMeaning: semanticMeaning,
+                ),
+                warnings: combinedWarnings,
+                usedDefinitionFallback: usedDefinitionFallback,
+                writeBackAllowed: writeBackAllowed,
+                writeBackReason: writeBackReason(
+                    schemaVersion: effectiveSchemaVersion,
+                    fileSchemaVersion: file.schemaVersion,
+                    sourceSchemaVersion: sourceSchemaVersion,
+                    usedDefinitionFallback: usedDefinitionFallback,
+                ),
             ),
         )
     }
@@ -195,20 +271,28 @@ enum VoyagerCollectionFileCompatibilityOwner {
         from data: Data,
         containerFormat: CollectionFileContainerFormat,
     ) throws -> SchemaProbe {
-        let propertyList = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-        guard let dictionary = propertyList as? [String: Any] else {
+        let header: VoyagerCollectionFileHeader
+        do {
+            header = try PropertyListDecoder().decode(VoyagerCollectionFileHeader.self, from: data)
+        } catch let DecodingError.typeMismatch(_, context)
+            where context.codingPath.last?.stringValue == "schemaVersion"
+        {
+            throw CollectionFileCompatibilityError.invalidSchemaVersionType
+        } catch let DecodingError.dataCorrupted(context)
+            where context.codingPath.isEmpty
+        {
+            throw CollectionFileCompatibilityError.invalidPropertyListPayload
+        } catch let DecodingError.typeMismatch(_, context) where context.codingPath.isEmpty {
+            throw CollectionFileCompatibilityError.invalidPropertyListPayload
+        } catch {
             throw CollectionFileCompatibilityError.invalidPropertyListPayload
         }
 
-        guard let rawValue = dictionary["schemaVersion"] else {
+        guard let schemaVersion = header.schemaVersion else {
             if containerFormat == .legacySingleFile {
-                return .init(sourceSchemaVersion: nil, effectiveSchemaVersion: 1)
+                return .init(sourceSchemaVersion: nil, effectiveSchemaVersion: SchemaVersion(major: 1, minor: 0))
             }
             throw CollectionFileCompatibilityError.missingSchemaVersion
-        }
-
-        guard let schemaVersion = rawValue as? Int else {
-            throw CollectionFileCompatibilityError.invalidSchemaVersionType
         }
 
         return .init(sourceSchemaVersion: schemaVersion, effectiveSchemaVersion: schemaVersion)
@@ -244,47 +328,40 @@ enum VoyagerCollectionFileCompatibilityOwner {
             appVersion: payload.appVersion,
         ), schemaProbe: schemaProbe)
 
-        return .init(
+        return makeLoadResult(
             file: file,
             containerFormat: containerFormat,
-            compatibility: .init(
-                sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                migrationPath: migrationPath(
-                    schemaProbe: schemaProbe,
-                    warning: snapshotPair.warnings.first,
-                ),
-                warnings: snapshotPair.warnings,
-                usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
-                writeBackAllowed: snapshotPair.usedDefinitionFallback == false
-                    && schemaProbe.effectiveSchemaVersion == VoyagerCollectionFile.currentSchemaVersion,
-                writeBackReason: writeBackReason(
-                    schemaVersion: schemaProbe.effectiveSchemaVersion,
-                    sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                    usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
-                ),
-            ),
+            sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
+            warning: snapshotPair.warnings.first,
+            usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
         )
     }
 
-    private static func writeBackReason(
-        schemaVersion: Int,
-        sourceSchemaVersion: Int?,
+    private nonisolated static func writeBackReason(
+        schemaVersion _: SchemaVersion,
+        fileSchemaVersion: SchemaVersion,
+        sourceSchemaVersion: SchemaVersion?,
         usedDefinitionFallback: Bool,
     ) -> CollectionWriteBackEligibility {
         if usedDefinitionFallback {
             return .blockedDefinitionFallback
         }
 
-        if sourceSchemaVersion == nil || schemaVersion < VoyagerCollectionFile.currentSchemaVersion {
+        if isFutureMinorVersion(sourceSchemaVersion) {
+            return .blockedFutureMinorVersion
+        }
+
+        if sourceSchemaVersion == nil || sourceSchemaVersion != fileSchemaVersion {
             return .blockedLegacyVersionUpgrade
         }
 
         return .allowed
     }
 
-    private static func migrationPath(
+    private nonisolated static func migrationPath(
         schemaProbe: SchemaProbe,
         warning: CollectionFileCompatibilityWarning?,
+        currentSemanticMeaning: CurrentSemanticMeaning,
     ) -> [CollectionFileMigrationStep] {
         var path: [CollectionFileMigrationStep] = []
 
@@ -292,11 +369,10 @@ enum VoyagerCollectionFileCompatibilityOwner {
             path.append(.legacySingleFileWithoutSchema)
         }
 
-        switch schemaProbe.effectiveSchemaVersion {
-        case 1:
+        switch currentSemanticMeaning {
+        case .definitionOnlyCurrent:
             path.append(.definitionOnlyV1)
-            path.append(.currentSchemaV2)
-        default:
+        case .snapshotBearingCurrent:
             path.append(.currentSchemaV2)
         }
 
@@ -305,6 +381,8 @@ enum VoyagerCollectionFileCompatibilityOwner {
             path.append(.definitionFallbackFromMalformedSnapshot)
         case .droppedIncompleteSnapshotPair:
             path.append(.definitionFallbackFromIncompletePair)
+        case .futureMinorVersionReadOnly:
+            break
         case nil:
             break
         }
@@ -312,17 +390,32 @@ enum VoyagerCollectionFileCompatibilityOwner {
         return path
     }
 
+    // Policy reads semantic meaning first (definition-only current vs snapshot-bearing current),
+    // rather than branching directly on ad-hoc numeric cases at each call site.
+    private nonisolated static func currentSemanticMeaning(
+        for schemaProbe: SchemaProbe,
+    ) -> CurrentSemanticMeaning {
+        if schemaProbe.effectiveSchemaVersion == CollectionFileSchemaVersion.definitionOnlyCurrent {
+            return .definitionOnlyCurrent
+        }
+        return .snapshotBearingCurrent
+    }
+
     private static func normalizeForRead(
         _ file: VoyagerCollectionFile,
         schemaProbe: SchemaProbe,
     ) -> VoyagerCollectionFile {
-        guard schemaProbe.sourceSchemaVersion == nil || schemaProbe.effectiveSchemaVersion < VoyagerCollectionFile
-            .currentSchemaVersion
-        else {
+        guard schemaProbe.sourceSchemaVersion == nil else {
             return file
         }
 
         return normalizeForSave(file)
+    }
+
+    private nonisolated static func isFutureMinorVersion(_ sourceSchemaVersion: SchemaVersion?) -> Bool {
+        guard let sourceSchemaVersion else { return false }
+        return sourceSchemaVersion.major == CollectionFileSchemaVersion.current.major
+            && sourceSchemaVersion.minor > CollectionFileSchemaVersion.current.minor
     }
 
     private static func evaluateDecodedSnapshotPair(_ file: VoyagerCollectionFile) -> DecodedSnapshotPairDecision {
@@ -395,8 +488,10 @@ enum VoyagerCollectionFileCompatibilityOwner {
     }
 }
 
-private struct CompatibilityPayload: Decodable {
-    let schemaVersion: Int?
+// swiftlint:enable type_body_length
+
+private nonisolated struct CompatibilityPayload: Decodable {
+    let schemaVersion: SchemaVersion?
     let id: String
     let name: String
     let createdAt: Date
@@ -422,9 +517,9 @@ private struct CompatibilityPayload: Decodable {
         case appVersion
     }
 
-    init(from decoder: Decoder) throws {
+    nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+        schemaVersion = try container.decodeIfPresent(SchemaVersion.self, forKey: .schemaVersion)
         id = try container.decode(String.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
@@ -446,22 +541,24 @@ private struct CompatibilityPayload: Decodable {
     }
 }
 
-private struct LossyOptionalField<Value: Decodable>: Decodable {
+private nonisolated struct LossyOptionalField<Value: Decodable>: Decodable {
     let value: Value?
     let wasPresent: Bool
 
-    static var missing: Self {
+    nonisolated static var missing: Self {
         .init(value: nil, wasPresent: false)
     }
 
-    init(value: Value?, wasPresent: Bool) {
+    nonisolated init(value: Value?, wasPresent: Bool) {
         self.value = value
         self.wasPresent = wasPresent
     }
 
-    init(from decoder: Decoder) throws {
+    nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         value = try? container.decode(Value.self)
         wasPresent = true
     }
 }
+
+// swiftlint:enable file_length

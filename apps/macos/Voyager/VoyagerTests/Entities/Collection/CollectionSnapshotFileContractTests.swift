@@ -225,7 +225,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
 
         let legacyFile = VoyagerCollectionFile(
-            schemaVersion: 1,
+            schemaVersion: SchemaVersion(legacyInt: 1),
             id: "legacy-file",
             name: "Legacy File",
             createdAt: .distantPast,
@@ -242,7 +242,38 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
         let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
-        XCTAssertEqual(loaded.schemaVersion, VoyagerCollectionFile.currentSchemaVersion)
+        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
+    }
+
+    func testSavePreservesCurrentSchemaVersionWithoutAdditionalMigration() async throws {
+        let url = makeTemporaryCollectionURL(name: "preserve-current-save")
+        defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
+
+        let currentFile = VoyagerCollectionFile(
+            id: "current-file",
+            name: "Current File",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "report",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: .init(items: [.string("/tmp/report.txt")]),
+            snapshotMeta: .init(
+                definitionFingerprint: "fingerprint",
+                capturedAt: .distantFuture,
+                itemCount: 1,
+                relevanceRoots: ["/tmp"],
+            ),
+            appVersion: "1.0",
+        )
+
+        try await CollectionFileClient.liveValue.save(currentFile, url)
+
+        let data = try Data(contentsOf: url.appendingPathComponent("collection.plist"))
+        let loaded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+        XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.snapshotBearingCurrent)
+        XCTAssertEqual(loaded.snapshot?.items, [.string("/tmp/report.txt")])
+        XCTAssertEqual(loaded.snapshotMeta?.definitionFingerprint, "fingerprint")
     }
 
     func testEncodeRejectsNonStringSnapshotItems() throws {
