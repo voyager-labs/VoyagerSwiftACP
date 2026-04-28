@@ -1,0 +1,2 @@
+include = ["**/*.toml", ".taplo.toml", ".codex/**/*.toml", ".agents/**/*.toml"]
+exclude = ["node_modules/**"]

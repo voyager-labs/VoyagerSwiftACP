@@ -1,0 +1,204 @@
+[contract]
+id = "set.ai_provider_connection"
+category = "SET"
+primary_object_key = "provider"
+secondary_object_keys = ["provider_catalog"]
+display_region = "settings_window.settings_body.tab_ai.provider_list_area"
+
+[policy]
+provider_catalog_scoped_to_current_build = true
+supported_providers = ["ChatGPT Codex", "OpenAI", "Anthropic"]
+oauth_only_providers = ["ChatGPT Codex"]
+api_key_only_providers = ["OpenAI", "Anthropic"]
+provider_row_persists_after_connection = true
+connection_method_picker_visible = false
+disconnect_requires_confirmation = true
+explicit_default_provider_setting_visible = false
+last_used_provider_metadata_visible = false
+connect_action_for = ["not_verified"]
+disconnect_action_for = ["connected"]
+reconnect_action_for = ["connection_failed"]
+supported_providers_note = "현재 빌드에서 provider_catalog에 노출되는 provider는 ChatGPT Codex, OpenAI, Anthropic만 허용한다"
+provider_connection_method_policy_note = "현재 빌드에서는 ChatGPT Codex는 OAuth만 허용하고, OpenAI와 Anthropic은 API key만 허용한다"
+
+[user_visible_status]
+allowed = [
+  "checking_status",
+  "connected",
+  "not_verified",
+  "connect_in_progress",
+  "disconnect_in_progress",
+  "connection_failed",
+  "unavailable",
+]
+
+[status.checking_status]
+description = "저장된 자격정보와 현재 빌드 메타데이터를 다시 확인하는 중인 상태"
+entered_by = ["SET-007-restore_ai_provider_connection_status"]
+exits_to = ["connected", "not_verified", "connection_failed", "unavailable"]
+terminal = false
+user_visible = true
+
+[status.connected]
+description = "현재 빌드에서 사용 가능한 연결이 검증되어 해당 provider row가 즉시 사용 가능한 상태"
+entered_by = [
+  "SET-007-connect_ai_provider",
+  "SET-007-restore_ai_provider_connection_status",
+]
+exits_to = ["checking_status", "disconnect_in_progress"]
+terminal = false
+user_visible = true
+
+[status.not_verified]
+description = "검증된 연결이 없어서 사용 전에 새 연결이 필요한 상태"
+entered_by = [
+  "SET-007-disconnect_ai_provider",
+  "SET-007-restore_ai_provider_connection_status",
+]
+exits_to = ["checking_status", "connect_in_progress"]
+terminal = false
+user_visible = true
+
+[status.connect_in_progress]
+description = "사용자가 Connect 또는 Reconnect를 시작해 연결 절차를 진행 중인 상태"
+entered_by = ["SET-007-connect_ai_provider"]
+exits_to = ["connected", "connection_failed"]
+terminal = false
+user_visible = true
+
+[status.disconnect_in_progress]
+description = "사용자가 Disconnect를 확정해 기존 연결을 해제하는 중인 상태"
+entered_by = ["SET-007-disconnect_ai_provider"]
+exits_to = ["not_verified", "connected"]
+terminal = false
+user_visible = true
+
+[status.connection_failed]
+description = "연결 시도 또는 상태 재확인이 실패해 자동 사용 대신 재시도가 필요한 상태"
+entered_by = [
+  "SET-007-connect_ai_provider",
+  "SET-007-restore_ai_provider_connection_status",
+]
+exits_to = ["checking_status", "connect_in_progress"]
+terminal = false
+user_visible = true
+
+[status.unavailable]
+description = "현재 빌드에서 해당 provider를 연결 surface에 노출할 수 없어 사용 불가 안내만 제공하는 상태"
+entered_by = ["SET-007-restore_ai_provider_connection_status"]
+exits_to = ["checking_status"]
+terminal = false
+user_visible = true
+
+[ownership."SET-007-show_ai_provider_list"]
+reads = [
+  "checking_status",
+  "connected",
+  "not_verified",
+  "connect_in_progress",
+  "disconnect_in_progress",
+  "connection_failed",
+  "unavailable",
+]
+writes = []
+target_object = "provider_catalog"
+display_region = "settings_window.settings_body.tab_ai.provider_list_area"
+
+[ownership."SET-007-connect_ai_provider"]
+reads = ["not_verified", "connection_failed"]
+writes = ["connect_in_progress", "connected", "connection_failed"]
+target_object = "provider"
+control_region = "settings_window.settings_body.tab_ai.provider_list_area"
+
+[ownership."SET-007-disconnect_ai_provider"]
+reads = ["connected"]
+writes = ["disconnect_in_progress", "not_verified", "connected"]
+target_object = "provider"
+control_region = "settings_window.settings_body.tab_ai.provider_list_area"
+
+[ownership."SET-007-restore_ai_provider_connection_status"]
+reads = ["connected", "not_verified", "connection_failed", "unavailable"]
+writes = [
+  "checking_status",
+  "connected",
+  "not_verified",
+  "connection_failed",
+  "unavailable",
+]
+target_object = "provider"
+display_region = "settings_window.settings_body.tab_ai.provider_list_area"
+
+[transitions.not_verified_to_connect_in_progress]
+from = "not_verified"
+to = "connect_in_progress"
+trigger = "SET-007-connect_ai_provider"
+
+[transitions.connection_failed_to_connect_in_progress]
+from = "connection_failed"
+to = "connect_in_progress"
+trigger = "SET-007-connect_ai_provider"
+
+[transitions.connect_in_progress_to_connected]
+from = "connect_in_progress"
+to = "connected"
+trigger = "SET-007-connect_ai_provider"
+
+[transitions.connect_in_progress_to_connection_failed]
+from = "connect_in_progress"
+to = "connection_failed"
+trigger = "SET-007-connect_ai_provider"
+
+[transitions.connected_to_disconnect_in_progress]
+from = "connected"
+to = "disconnect_in_progress"
+trigger = "SET-007-disconnect_ai_provider"
+
+[transitions.disconnect_in_progress_to_not_verified]
+from = "disconnect_in_progress"
+to = "not_verified"
+trigger = "SET-007-disconnect_ai_provider"
+
+[transitions.disconnect_in_progress_to_connected]
+from = "disconnect_in_progress"
+to = "connected"
+trigger = "SET-007-disconnect_ai_provider"
+
+[transitions.connected_to_checking_status]
+from = "connected"
+to = "checking_status"
+trigger = "SET-007-restore_ai_provider_connection_status"
+
+[transitions.not_verified_to_checking_status]
+from = "not_verified"
+to = "checking_status"
+trigger = "SET-007-restore_ai_provider_connection_status"
+
+[transitions.connection_failed_to_checking_status]
+from = "connection_failed"
+to = "checking_status"
+trigger = "SET-007-restore_ai_provider_connection_status"
+
+[transitions.unavailable_to_checking_status]
+from = "unavailable"
+to = "checking_status"
+trigger = "SET-007-restore_ai_provider_connection_status"
+
+[transitions.checking_status_to_connected]
+from = "checking_status"
+to = "connected"
+trigger = "SET-007-restore_ai_provider_connection_status"
+
+[transitions.checking_status_to_not_verified]
+from = "checking_status"
+to = "not_verified"
+trigger = "SET-007-restore_ai_provider_connection_status"
+
+[transitions.checking_status_to_connection_failed]
+from = "checking_status"
+to = "connection_failed"
+trigger = "SET-007-restore_ai_provider_connection_status"
+
+[transitions.checking_status_to_unavailable]
+from = "checking_status"
+to = "unavailable"
+trigger = "SET-007-restore_ai_provider_connection_status"

@@ -1,0 +1,54 @@
+[contract]
+id = "cbw.model_selection"
+category = "CBW"
+primary_object_key = "active_model"
+secondary_object_keys = ["model_catalog", "active_provider", "provider"]
+display_region = "file_manager_window.inspector_pane.inspector_mode_chat.chat_field"
+
+[policy]
+model_change_applies_from_next_request = true
+same_model_selection_is_noop = true
+selected_model_derives_provider_binding = true
+selected_model_label_hides_provider = true
+provider_badge_visible_in_catalog = true
+provider_management_surface = "settings_window.settings_body.tab_ai.provider_list_area"
+provider_catalog_in_chat_forbidden = true
+empty_active_model_autoselects_first_catalog_row = true
+unresolved_saved_model_autoselects_first_catalog_row = true
+
+[user_visible_status]
+allowed = ["model_selector_open", "model_selected"]
+
+[status.model_selector_open]
+description = "model selector가 열려 현재 대화의 model 후보를 탐색 중인 상태"
+entered_by = ["CBW-004-open_chat_model_selector"]
+
+[status.model_selected]
+description = "현재 대화에 다음 request부터 적용될 active model이 확정된 상태"
+entered_by = [
+  "CBW-004-select_active_chat_model",
+  "CBW-004-show_active_chat_provider_and_model",
+]
+
+[ownership."CBW-004-show_active_chat_provider_and_model"]
+reads = ["model_selected"]
+writes = ["model_selected"]
+target_object = "active_model"
+display_region = "file_manager_window.inspector_pane.inspector_mode_chat.chat_field"
+
+[ownership."CBW-004-open_chat_model_selector"]
+reads = ["model_selected"]
+writes = ["model_selector_open"]
+target_object = "model_catalog"
+control_region = "file_manager_window.inspector_pane.inspector_mode_chat.chat_field"
+
+[ownership."CBW-004-select_active_chat_model"]
+reads = ["model_selector_open"]
+writes = ["model_selected"]
+target_object = "active_model"
+control_region = "file_manager_window.inspector_pane.inspector_mode_chat.chat_field"
+
+[ownership."CBW-003-prepare_contextual_chat_request"]
+reads = ["model_selected"]
+writes = []
+target_object = "active_model"
