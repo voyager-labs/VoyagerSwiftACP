@@ -30,6 +30,7 @@ flowchart TD
   B --> C[`query_changes_generated`]
   B --> D[`conversion_failure_feedback_visible`]
   B --> E[`execution_failure_feedback_visible`]
+  C --> A
   C --> F[`save_ready`]
   A --> G[`condition_value_incomplete`]
   G --> A

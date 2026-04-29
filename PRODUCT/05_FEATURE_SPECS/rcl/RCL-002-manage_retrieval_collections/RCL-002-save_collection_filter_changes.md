@@ -7,7 +7,7 @@ feature_id: "RCL-002"
 status: "배포 완료"
 summary: "현재 콜렉션 파일에 필터 변경 사항을 저장해 정의를 갱신"
 related_region: "file_manager_window.content_pane.content_header.page_menu_area"
-menu: "File"
+menu: "file_menu"
 shortcut: "⌘⌥S"
 ---
 
@@ -80,9 +80,10 @@ shortcut: "⌘⌥S"
 - [RCL-005-change_collection_condition_value](../RCL-005-edit_collection_conditions/RCL-005-change_collection_condition_value.md)
 - [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
 - [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md)
+- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
 
 ## Source
 
-- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:126`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:143`
 - Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 - Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md)

@@ -92,9 +92,9 @@ user_visible = true
 terms = ["쿼리 제출 중"]
 
 [state.query_changes_generated]
-description = "latest request에 대한 generated_change_set 또는 unchanged_result/fallback_reuse가 성공 결과로 확정된 상태"
+description = "가장 최근 제출에 대한 구조화 조건 변경 결과 또는 실질 변경 없음/기존 조건 구성 유지 성공 결과가 확정된 상태"
 entered_by = ["RCL-004-generate_filter_changes_from_query"]
-exits_to = ["save_ready", "execution_failure_feedback_visible"]
+exits_to = ["editable", "save_ready", "execution_failure_feedback_visible"]
 terminal = false
 user_visible = true
 terms = ["변경안 생성 완료"]
@@ -290,6 +290,11 @@ trigger = "RCL-004-show_query_conversion_failure_feedback"
 from = "query_submitting"
 to = "execution_failure_feedback_visible"
 trigger = "RCL-004-show_query_execution_failure_feedback"
+
+[transitions.query_changes_generated_to_editable]
+from = "query_changes_generated"
+to = "editable"
+trigger = "RCL-004-apply_generated_filter_changes"
 
 [transitions.query_changes_generated_to_save_ready]
 from = "query_changes_generated"

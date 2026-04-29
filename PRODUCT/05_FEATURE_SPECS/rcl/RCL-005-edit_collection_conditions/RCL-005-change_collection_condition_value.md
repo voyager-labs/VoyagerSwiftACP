@@ -82,11 +82,9 @@ shortcut: "-"
 ## Related Interactions
 
 - [RCL-005-add_collection_condition](RCL-005-add_collection_condition.md)
-- [RCL-005-change_collection_condition_property](RCL-005-change_collection_condition_property.md)
 - [RCL-005-change_collection_condition_operator](RCL-005-change_collection_condition_operator.md)
+- [RCL-005-change_collection_condition_property](RCL-005-change_collection_condition_property.md)
 - [RCL-005-delete_collection_condition](RCL-005-delete_collection_condition.md)
-- [RCL-002-save_collection_filter_changes](../RCL-002-manage_retrieval_collections/RCL-002-save_collection_filter_changes.md)
-- [RCL-004-apply_generated_filter_changes](../RCL-004-compose_collection_filter/RCL-004-apply_generated_filter_changes.md)
 
 ## Source
 
