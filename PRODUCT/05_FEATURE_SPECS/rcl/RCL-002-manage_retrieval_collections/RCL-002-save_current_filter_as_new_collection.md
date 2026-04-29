@@ -7,7 +7,7 @@ feature_id: "RCL-002"
 status: "배포 완료"
 summary: "현재 필터 정의를 가진 새 콜렉션 파일을 생성해 로컬 스토리지에 저장"
 related_region: "file_manager_window.content_pane.content_header.page_menu_area"
-menu: "File"
+menu: "file_menu"
 shortcut: "⌘⇧S"
 ---
 
@@ -63,9 +63,17 @@ shortcut: "⌘⇧S"
 
 ## Related Interactions
 
-- TBD
+- [RCL-002-alert_unsasved_collection_filter_changes](RCL-002-alert_unsasved_collection_filter_changes.md)
+- [RCL-002-delete_collection](RCL-002-delete_collection.md)
+- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
+- [RCL-002-import_smart_folder_as_collection](RCL-002-import_smart_folder_as_collection.md)
+- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
+- [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md)
+- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
+- [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
+- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `123`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:140`
