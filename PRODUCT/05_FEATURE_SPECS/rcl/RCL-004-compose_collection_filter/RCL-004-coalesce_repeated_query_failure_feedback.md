@@ -15,95 +15,72 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- 동일한 변환 실패 또는 실행 실패가 짧은 시간 안에 반복될 때, Composer 문맥의 실패 안내가 과하게 쌓이지 않도록 중복 노출을 합치거나 최신 의미로만 갱신한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- [RCL-004-show_query_conversion_failure_feedback](RCL-004-show_query_conversion_failure_feedback.md) 또는 [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)가 새 실패 안내를 표시하려 할 때
 
 ## Preconditions
 
-- Show Query Conversion Failure Feedback 또는 Show Query Execution Failure Feedback이 표시 대상이 된
-  상태
-- 현재 실패 피드백이 표시 중인 상태
-- 짧은 시간 내 동일 유형의 실패가 반복 발생한 상태
+- 현재 실패 안내가 이미 표시 중인 상태
+- 짧은 시간 안에 동일하거나 의미가 다른 새 실패가 다시 도착한 상태
 
 ## Expected Outcome
 
-- TBD
+- 동일 메시지 반복은 하나의 안내로 유지되고, 의미가 다른 실패만 최신 의미 기준으로 교체된다.
+- 중복 억제는 사용자의 재시도 권한을 막지 않는다.
 
 ## State Changes
 
-- `failure_feedback_visible` -> `repeated_same_failure_detected`
-    - 동일한 실패 문구가 짧은 시간 내 반복 감지되면, 시스템이 새 실패를 중복 표시 후보로 식별함
-- `repeated_same_failure_detected` -> `failure_feedback_coalesced`
-    - 시스템이 동일 메시지 반복에 대해 새 feedback을 만들지 않고, 기존 토스트와 기존 자동 해제 시점을
-      그대로 유지함
-- `failure_feedback_visible` -> `different_failure_detected`
-    - 기존 feedback 표시 중 의미가 다른 실패 문구가 새로 감지되면, 시스템이 새 실패를 별도 의미의
-      상태로 분기함
-- `different_failure_detected` -> `latest_failure_feedback_visible`
-    - 시스템이 마지막 실패 유형에 맞는 feedback으로 교체하거나 갱신해 사용자가 최신 실패 원인을 식별할
-      수 있게 함
-- `failure_feedback_visible` -> `feedback_auto_dismissed`
-    - 일정 시간이 지나면 현재 feedback이 자동으로 사라짐
-- `failure_feedback_visible` -> `feedback_cleared`
-    - 사용자가 typing / cancel / composer dismiss를 수행하면 현재 feedback이 즉시 정리됨
+- `conversion_failure_feedback_visible` -> `conversion_failure_feedback_visible`
+    - 동일 변환 실패가 반복되면 새 toast를 추가하지 않고 기존 표시를 유지한다.
+- `execution_failure_feedback_visible` -> `execution_failure_feedback_visible`
+    - 동일 실행 실패가 반복되면 새 toast를 추가하지 않고 기존 표시를 유지한다.
+- `conversion_failure_feedback_visible` -> `execution_failure_feedback_visible`
+    - 의미가 다른 최신 실패가 도착하면 마지막 실패 의미 기준으로 갱신한다.
+- `execution_failure_feedback_visible` -> `conversion_failure_feedback_visible`
+    - 마지막 실패 의미가 변환 실패로 바뀌면 해당 피드백으로 갱신한다.
 
 ## User-visible Feedback
 
-- TBD
+- 사용자는 같은 실패가 반복되어도 toast가 연속 적층되지 않는다고 느껴야 한다.
+- 마지막 실패 의미가 달라졌을 때만 피드백 문구가 갱신되어야 한다.
 
 ## Edge Cases / Failure Handling
 
-- 오래된 요청 응답이 새 feedback 이후 늦게 도착하는 경우
-- 동일한 실패가 매우 짧은 간격으로 연속 제출되는 경우
-- 서로 다른 실패 유형이 교차 발생하는 경우
-- 이전 실패 피드백의 자동 해제가 새 feedback 표시 이후 늦게 도착하는 경우
-- 동일 메시지 반복 때문에 자동 해제 시점이 다시 시작되거나 연장되는 것처럼 보이면 안 되는 경우
-- 실질적 필터 변경이 없는 경우가 사용자 feedback으로 과도하게 노출되면 안 되는 경우
+- 오래된 request 응답이 더 늦게 도착하는 경우
+- 동일한 실패가 매우 짧은 간격으로 여러 번 발생하는 경우
+- 변환 실패와 실행 실패가 교차 발생하는 경우
+- 이전 자동 해제 타이머가 더 새로운 feedback 이후 늦게 도착하는 경우
 
 ## Acceptance Criteria
 
-- [ ] 동일한 변환 실패 또는 동일한 실행 실패가 짧은 시간 내 반복되면, 시스템이 새 feedback을 만들지
-      않고 기존 토스트를 그대로 유지함
-- [ ] 시스템이 dedupe 기준을 실패 문구 단위로 적용하고, 동일 메시지 반복에 대해서만 spam을 억제함
-- [ ] 변환 실패와 실행 실패처럼 의미가 다른 실패 문구가 연속 발생하면, 시스템이 이를 하나로 뭉개지
-      않고 마지막 실패 문구 기준의 피드백으로 갱신함
-- [ ] 오래된 요청 응답은 현재 feedback 상태를 바꾸지 않음
-- [ ] 사용자가 typing / cancel / composer dismiss를 수행하면 현재 feedback이 즉시 정리됨
-- [ ] 시스템이 표시 중인 feedback을 잠시 후 자동으로 정리하되, 동일 메시지 반복이 발생해도 기존 자동
-      해제 시점을 다시 시작하거나 연장하지 않음
-- [ ] 시스템이 새로운 feedback이 이미 표시된 뒤에 도착한 이전 자동 해제로 인해 더 새로운 feedback을
-      잘못 제거하지 않음
-- [ ] 실질적 필터 변경이 없는 경우는 내부 판단에만 사용되고, 사용자 피드백 대상으로 직접 확대되지
-      않음
-- [ ] 사용자가 실패 후 입력을 수정해 재시도하는 동안에도, 시스템이 과도한 중복 노출 없이 현재 실패
-      상태만 이해할 수 있도록 피드백 수를 제어함
+- [ ] 동일한 변환 실패 또는 동일한 실행 실패가 짧은 시간 안에 반복되면, 시스템은 새 피드백을 적층하지 않고 기존 피드백을 유지해야 한다.
+- [ ] 시스템은 중복 억제 기준을 실패 의미 단위로 적용해야 하며, 변환 실패와 실행 실패를 하나의 일반 실패로 뭉개지 않아야 한다.
+- [ ] 의미가 다른 최신 실패가 도착하면, 시스템은 마지막 실패 의미 기준으로 피드백을 교체하거나 갱신해야 한다.
+- [ ] 오래된 request 응답이나 늦게 도착한 자동 해제 이벤트가 더 새로운 feedback을 잘못 제거하지 않아야 한다.
+- [ ] 중복 억제는 사용자가 Composer 편집 문맥으로 돌아가 query 또는 조건 값을 다시 조정하거나 다시 제출하는 흐름을 막지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- 실패 의미 비교와 가장 최근 제출만 채택하는 규칙이 함께 유지되어야 한다.
+- 피드백 자동 해제 정책은 중복 억제 후에도 불필요하게 다시 시작되거나 연장되지 않아야 한다.
 
 ## Observability / Analytics
 
-- TBD
+- 동일 실패 중복 억제 횟수와 유형 교체 횟수를 분리해 추적할 수 있어야 한다.
+- 중복 억제 대상이 변환 실패인지 실행 실패인지 구분 가능해야 한다.
 
 ## Related Interactions
 
-- [RCL-004-apply_all_generated_filter_suggestions](RCL-004-apply_all_generated_filter_suggestions.md)
-- [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
-- [RCL-004-apply_generated_filter_suggestion](RCL-004-apply_generated_filter_suggestion.md)
-- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
-- [RCL-004-generate_filter_suggestions_from_query](RCL-004-generate_filter_suggestions_from_query.md)
-- [RCL-004-reject_all_generated_filter_suggestions](RCL-004-reject_all_generated_filter_suggestions.md)
-- [RCL-004-reject_generated_filter_suggestion](RCL-004-reject_generated_filter_suggestion.md)
-- [RCL-004-show_generated_filter_suggestions](RCL-004-show_generated_filter_suggestions.md)
 - [RCL-004-show_query_conversion_failure_feedback](RCL-004-show_query_conversion_failure_feedback.md)
 - [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
 - [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
 - [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
+
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `112`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:112`
+- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
+- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md)
