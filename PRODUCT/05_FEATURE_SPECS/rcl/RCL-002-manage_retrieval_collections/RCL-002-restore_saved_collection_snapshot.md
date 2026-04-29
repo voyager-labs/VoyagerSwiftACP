@@ -69,9 +69,16 @@ shortcut: "-"
 
 ## Related Interactions
 
+- [RCL-002-alert_unsasved_collection_filter_changes](RCL-002-alert_unsasved_collection_filter_changes.md)
+- [RCL-002-delete_collection](RCL-002-delete_collection.md)
+- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
+- [RCL-002-import_smart_folder_as_collection](RCL-002-import_smart_folder_as_collection.md)
+- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
 - [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md)
-- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
+- [RCL-002-rename_collection](RCL-002-rename_collection.md)
 - [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
+- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
+- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
 
 ## Source
 
