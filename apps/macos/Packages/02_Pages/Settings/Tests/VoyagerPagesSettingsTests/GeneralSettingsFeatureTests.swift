@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAppPreferences
 @testable import VoyagerPagesSettings
 import VoyagerShared
 import XCTest
@@ -26,7 +27,7 @@ final class GeneralSettingsFeatureTests: XCTestCase {
                 if let boolValue = value as? Bool {
                     storage.set(boolValue, forKey: key)
                 }
-            },
+            }
         )
 
         let store = TestStore(initialState: GeneralSettingsFeature.State()) {

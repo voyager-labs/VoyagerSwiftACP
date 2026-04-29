@@ -8,4 +8,5 @@ public enum SettingsAction: CasePathable, Sendable {
 
     case general(GeneralSettingsAction)
     case appearance(AppearanceSettingsAction)
+    case ai(AiSettingsAction)
 }

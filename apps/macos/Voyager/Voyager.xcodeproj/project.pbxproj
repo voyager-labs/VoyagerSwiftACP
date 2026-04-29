@@ -535,6 +535,7 @@
 				F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */,
 				F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */,
 				F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */,
+				F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Ai" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -1421,7 +1422,11 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/05_Entities/AppPreferences;
 		};
-		/* End XCLocalSwiftPackageReference section */
+		F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Ai" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/05_Entities/Ai;
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */ = {
@@ -1622,6 +1627,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */;
 			productName = VoyagerEntitiesAppPreferences;
+		};
+		F20000000000000000000016 /* VoyagerEntitiesAi */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Ai" */;
+			productName = VoyagerEntitiesAi;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
