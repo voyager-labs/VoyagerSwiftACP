@@ -3,7 +3,7 @@ import Foundation
 import VoyagerShared
 
 struct FilterSnapshot: Equatable {
-    let scopes: [String]
+    let scopeSelection: ComposerScopeSelection
     let conditions: [Condition]
     let conditionDisplayByKey: [String: ConditionDisplayState]
 }
@@ -18,6 +18,8 @@ struct ComposerState: Equatable {
     var propertyPicker: ConditionPropertyPickerFeature.State = .init()
     var operatorPicker: OperatorPickerFeature.State = .init()
     var valuePicker: ValuePickerFeature.State = .init()
+
+    var scopeEditor: ComposerScopeEditorState = .init()
 
     var isPresented: Bool = false
     var collectionContext: CollectionContext?
@@ -55,13 +57,34 @@ struct ComposerState: Equatable {
 
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !redoHistory.isEmpty }
+
+    func collectionContext(query: String) -> CollectionContext {
+        CollectionContext(
+            query: query,
+            scopes: scopeEditor.selection.legacyScopePaths,
+            conditions: conditions,
+        )
+    }
+
+    var isSemanticallyRootOnly: Bool {
+        scopeEditor.selection.isRootOnly
+    }
+
+    var scopeSummary: ComposerScopeSummary {
+        scopeEditor.selection.summary
+    }
+
+    var shouldAutoApplyScopeChange: Bool {
+        !conditions.isEmpty
+    }
+
     var isCollectionSearching: Bool {
         let isSearching = isLoadingSearch
             || isLoadingFilters
             || queryRenderPhase == .chipsAppliedPendingList
         let hasContext = isCollectionMode
             || pendingSearchQuery != nil
-            || !scopes.isEmpty
+            || !scopeEditor.selection.legacyScopePaths.isEmpty
             || !conditions.isEmpty
         return isSearching && hasContext
     }
@@ -69,7 +92,7 @@ struct ComposerState: Equatable {
     mutating func pushHistory() {
         history.append(
             FilterSnapshot(
-                scopes: scopes,
+                scopeSelection: scopeEditor.selection,
                 conditions: conditions,
                 conditionDisplayByKey: conditionDisplayByKey,
             ),
@@ -85,6 +108,20 @@ struct ComposerState: Equatable {
         redoHistory.removeAll()
     }
 
+    mutating func beginScopeEditing(path: String?) {
+        scopeEditor.editingPath = path
+        scopeEditor.entryMode = path == nil ? .add : .edit
+        scopeEditor.isPresented = true
+    }
+
+    mutating func resetScopeEditorInteractionState(clearQuery: Bool) {
+        scopeEditor.editingPath = nil
+        scopeEditor.entryMode = .add
+        if clearQuery {
+            scopeEditor.queryText = ""
+        }
+    }
+
     mutating func applyCollectionDraftRestorePayload(_ payload: CollectionDraftRestorePayload) {
         let trimmedQuery = payload.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
@@ -93,7 +130,9 @@ struct ComposerState: Equatable {
         } else {
             text = ""
         }
-        scopes = payload.context.scopes
+        let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
+        scopeEditor.selection = selection
+        scopes = selection.legacyScopePaths
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -105,7 +144,9 @@ struct ComposerState: Equatable {
         let trimmedQuery = payload.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
         text = payload.composerText
-        scopes = payload.scopes
+        let selection = ComposerScopeSelection.fromLegacyScopes(payload.scopes)
+        scopeEditor.selection = selection
+        scopes = selection.legacyScopePaths
         conditions = payload.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -119,7 +160,9 @@ struct ComposerState: Equatable {
     ) {
         pendingSearchQuery = payload.context.query.isEmpty ? nil : payload.context.query
         text = payload.context.query
-        scopes = payload.context.scopes
+        let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
+        scopeEditor.selection = selection
+        scopes = selection.legacyScopePaths
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
