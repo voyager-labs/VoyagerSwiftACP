@@ -5,7 +5,7 @@ feature: "Manage Retrieval Collections"
 category_key: "RCL"
 feature_id: "RCL-002"
 status: "기획 완료"
-summary: "저장된 콜렉션을 다시 열 때 조건 구성과 저장된 결과 정보·관련 메타데이터를 함께 읽고, 바로 복원 가능한 결과인지 판단해 초기 복원 경로를 결정"
+summary: "저장된 콜렉션을 다시 열 때 마지막 결과 snapshot과 정의 메타데이터를 먼저 복원해 즉시 확인 가능한 초기 상태를 구성"
 related_region: "file_manager_window.content_pane.page_container.page_mode_collection"
 menu: "-"
 shortcut: "-"
@@ -75,6 +75,6 @@ shortcut: "-"
 
 ## Source
 
-- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:130`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:138`
 - Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 - Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md)

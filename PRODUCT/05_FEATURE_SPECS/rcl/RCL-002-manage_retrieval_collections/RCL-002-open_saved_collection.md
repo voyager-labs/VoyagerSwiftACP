@@ -5,7 +5,7 @@ feature: "Manage Retrieval Collections"
 category_key: "RCL"
 feature_id: "RCL-002"
 status: "기획 완료"
-summary: "저장된 콜렉션을 열고, 바로 보여줄 수 있는 저장 결과가 있으면 우선 복원하고 그렇지 않으면 조건 기준 재검색 경로로 전환"
+summary: "저장된 콜렉션을 선택해 해당 콜렉션 페이지를 열고 복원 흐름을 시작"
 related_region: "file_manager_window.content_pane.page_container.page_mode_collection"
 menu: "-"
 shortcut: "-"
@@ -74,6 +74,6 @@ shortcut: "-"
 
 ## Source
 
-- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:129`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:137`
 - Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 - Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md)
