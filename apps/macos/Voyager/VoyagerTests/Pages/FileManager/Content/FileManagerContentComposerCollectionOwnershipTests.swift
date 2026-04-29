@@ -82,6 +82,51 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         }
     }
 
+    func testComposerOpenSkipsSeedingWhenNavigationIsNotFolder() async {
+        var initialState = makeInitialState()
+        initialState.navigation.navigationState = .recents
+        initialState.composer.isPresented = false
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+        }
+
+        await store.send(FileManagerContentAction.composer(.view(.setPresented(true))))
+    }
+
+    func testComposerOpenSeedsCurrentPathThroughBridgeAction() async {
+        var initialState = makeInitialState()
+        initialState.composer.isPresented = false
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+        }
+        store.exhaustivity = .off
+
+        await store.send(FileManagerContentAction.composer(.view(.setPresented(true))))
+
+        await store.receive { action in
+            guard case let .composer(.internal(.scopeEditorSeedCurrentPath(path))) = action else {
+                return false
+            }
+            return path == "/tmp/voyager"
+        }
+    }
+
     func testSyncComposerCollectionStateReadsFromCanonicalSource() {
         var state = makeInitialState()
         state.entryViewLayout.isCollectionMode = true
