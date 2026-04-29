@@ -18,7 +18,12 @@ struct ComposerConditionEditingReducer {
                 return handleAddCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
 
             case let .view(.removeCondition(propertyKey: propertyKey)):
-                return handleRemoveCondition(state: &state, propertyKey: propertyKey, registryClient: registryClient)
+                return handleRemoveCondition(
+                    state: &state,
+                    propertyKey: propertyKey,
+                    registryClient: registryClient,
+                    searchClient: searchClient,
+                )
 
             case let .view(.setOperator(propertyKey: propertyKey, operatorCode: operatorCode)):
                 return handleSetOperator(
@@ -188,6 +193,7 @@ private func handleRemoveCondition(
     state: inout ComposerFeature.State,
     propertyKey: String,
     registryClient: RegistryClient,
+    searchClient: SearchClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
     if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
@@ -196,7 +202,7 @@ private func handleRemoveCondition(
         resetConditionDisplayState(propertyKey: propertyKey, state: &state)
         updateOperatorOptions(state: &state, registryClient: registryClient)
     }
-    return .none
+    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
 }
 
 private func handleSetOperator(
