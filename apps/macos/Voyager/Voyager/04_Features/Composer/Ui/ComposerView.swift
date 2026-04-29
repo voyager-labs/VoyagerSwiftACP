@@ -16,7 +16,6 @@ struct ComposerView: View {
     private var colorScheme: ColorScheme
 
     @StateObject private var keyboardMonitor = ComposerKeyboardMonitor()
-    @State private var isScopePickerPresented: Bool = false
 
     private var isDark: Bool { colorScheme == .dark }
 
@@ -58,7 +57,6 @@ struct ComposerView: View {
                             favorites: favorites,
                             historyPaths: historyPaths,
                             colorScheme: colorScheme,
-                            isScopePickerPresented: $isScopePickerPresented,
                         )
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -110,8 +108,8 @@ struct ComposerView: View {
     private func setupOnAppear() {
         keyboardMonitor.start(
             onEscape: {
-                if isScopePickerPresented {
-                    isScopePickerPresented = false
+                if store.scopeEditor.isPresented {
+                    store.send(.scopeEditorSetPresented(false))
                     return true
                 }
                 if store.propertyPicker.isPresented {
