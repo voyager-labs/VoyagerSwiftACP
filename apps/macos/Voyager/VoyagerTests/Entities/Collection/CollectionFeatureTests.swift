@@ -1,8 +1,8 @@
 // swiftlint:disable file_length
-import Foundation
-
 import ComposableArchitecture
+import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
@@ -206,7 +206,7 @@ private let kRegistryLabels: [String: String] = [
     "size": "File size",
 ]
 
-private let kRegistryOperatorDefinition = OperatorDefinition(
+private let kRegistryOperatorDefinition = VoyagerEntitiesCollection.OperatorDefinition(
     uiLabel: "Equals",
     mdqueryOperator: nil,
     valueShape: nil,
@@ -222,33 +222,33 @@ private let kRegistryOperatorDefinition = OperatorDefinition(
     ],
 )
 
-private let kRegistryNumberEqOperatorDefinition = OperatorDefinition(
+private let kRegistryNumberEqOperatorDefinition = VoyagerEntitiesCollection.OperatorDefinition(
     uiLabel: "Is",
     mdqueryOperator: "==",
     valueShape: .single,
-    valueCount: .fixed(1),
+    valueCount: VoyagerEntitiesCollection.ValueCount.fixed(1),
     allowedTypes: ["number"],
     inverseOf: nil,
     aliases: nil,
     uiValueKind: ["number": "singleNumber"],
 )
 
-private let kRegistryNumberBetweenOperatorDefinition = OperatorDefinition(
+private let kRegistryNumberBetweenOperatorDefinition = VoyagerEntitiesCollection.OperatorDefinition(
     uiLabel: "Is between",
     mdqueryOperator: "RANGE",
     valueShape: .range,
-    valueCount: .fixed(2),
+    valueCount: VoyagerEntitiesCollection.ValueCount.fixed(2),
     allowedTypes: ["number"],
     inverseOf: nil,
     aliases: nil,
     uiValueKind: ["number": "rangeNumber"],
 )
 
-private let kRegistryExistsOperatorDefinition = OperatorDefinition(
+private let kRegistryExistsOperatorDefinition = VoyagerEntitiesCollection.OperatorDefinition(
     uiLabel: "Exists",
     mdqueryOperator: "EXISTS",
     valueShape: .none,
-    valueCount: .fixed(0),
+    valueCount: VoyagerEntitiesCollection.ValueCount.fixed(0),
     allowedTypes: ["number"],
     inverseOf: nil,
     aliases: nil,
@@ -280,7 +280,7 @@ private func makeRangeDateRegistryClient() -> RegistryClient {
                 uiLabel: "Between",
                 mdqueryOperator: "RANGE",
                 valueShape: .range,
-                valueCount: .fixed(2),
+                valueCount: VoyagerEntitiesCollection.ValueCount.fixed(2),
                 allowedTypes: ["date"],
                 inverseOf: nil,
                 aliases: nil,

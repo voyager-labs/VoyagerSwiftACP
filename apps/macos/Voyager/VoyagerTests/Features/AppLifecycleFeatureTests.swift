@@ -7,8 +7,9 @@ final class AppLifecycleFeatureTests: XCTestCase {
     func testStartTerminationCleanupDoesNotStopHelperOnNormalQuit() async {
         await VoyagerTerminationCoordinator.shared.end()
         let attemptID = UUID()
-        var didStopHelper = false
-        var repliedValues: [Bool] = []
+
+        // Use actor-isolated storage class to avoid concurrent mutation issues
+        let state = TestState()
 
         let store = TestStore(
             initialState: AppLifecycleState(
@@ -18,21 +19,32 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.helperAppClient.stop = {
-                didStopHelper = true
+            $0.helperAppClient.stop = { @MainActor in
+                state.didStopHelper = true
             }
-            $0.appTerminationReplyClient.reply = { repliedValues.append($0) }
+            $0.appTerminationReplyClient.reply = { @MainActor reply in
+                state.repliedValues.append(reply)
+            }
             $0.uuid = .incrementing
         }
 
-        await store.send(.startTerminationCleanup(attemptID: attemptID))
-        await store.receive(.willTerminate)
-        await store.receive(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: true)) {
+        await store.send(AppLifecycleAction.termination(.startTerminationCleanup(attemptID: attemptID)))
+        await store.send(AppLifecycleAction.termination(.willTerminate))
+        await store.send(AppLifecycleAction.termination(.completeTerminationAttempt(
+            attemptID: attemptID,
+            shouldTerminate: true,
+        ))) {
             $0.terminationAttemptID = nil
         }
 
-        XCTAssertFalse(didStopHelper)
-        XCTAssertEqual(repliedValues, [true])
+        XCTAssertFalse(state.didStopHelper)
+        XCTAssertEqual(state.repliedValues, [true])
         await VoyagerTerminationCoordinator.shared.end()
+    }
+
+    @MainActor
+    private final class TestState: @unchecked Sendable {
+        var didStopHelper = false
+        var repliedValues: [Bool] = []
     }
 }

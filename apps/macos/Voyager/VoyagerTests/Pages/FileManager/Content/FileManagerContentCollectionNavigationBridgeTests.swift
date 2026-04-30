@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 import XCTest
@@ -25,8 +26,11 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             Reduce { state, action in
                 switch action {
                 case let .bridge(entryAction):
-                    FileManagerContentFeature().handleEntryOperationsAction(entryAction, state: &state.content)
-                        .map(Action.forwarded)
+                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                        entryAction,
+                        state: &state.content,
+                    )
+                    .map(Action.forwarded)
                 case .forwarded:
                     .none
                 }

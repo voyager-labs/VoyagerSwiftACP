@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
@@ -43,7 +44,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(alerts.count(), 0)
-        XCTAssertFalse(store.state.collectionSession.isOpening)
+        XCTAssertFalse(store.state.collectionSession.phase.isOpening)
         XCTAssertEqual(
             store.state.composer.transientFeedback?.message,
             ComposerQueryFeedbackPolicy.executionFailureMessage,
@@ -90,6 +91,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
     }
 }
 
+@MainActor
 private func assertCollectionOpenFailureRollback(
     store: TestStore<FileManagerContentState, FileManagerContentAction>,
 ) async {

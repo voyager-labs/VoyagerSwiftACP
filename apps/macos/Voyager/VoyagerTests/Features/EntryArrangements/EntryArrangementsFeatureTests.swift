@@ -3,6 +3,7 @@ import Foundation
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import XCTest
 
 @MainActor

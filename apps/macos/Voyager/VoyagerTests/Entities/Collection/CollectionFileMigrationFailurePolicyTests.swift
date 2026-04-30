@@ -1,5 +1,7 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -32,7 +34,10 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
 
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
-        await XCTAssertThrowsErrorAsync(try CollectionFileClient.liveValue.load(url)) { error in
+        do {
+            _ = try await CollectionFileClient.liveValue.load(url)
+            XCTFail("Expected error to be thrown")
+        } catch {
             XCTAssertEqual(error as? CollectionFileCompatibilityError, .missingPackagePayload)
         }
         XCTAssertFalse(fileManager.fileExists(atPath: url.appendingPathComponent("collection.plist").path))
@@ -64,7 +69,10 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
 
         let beforeData = try Data(contentsOf: payloadURL)
 
-        await XCTAssertThrowsErrorAsync(try CollectionFileClient.liveValue.load(url)) { error in
+        do {
+            _ = try await CollectionFileClient.liveValue.load(url)
+            XCTFail("Expected error to be thrown")
+        } catch {
             guard case let CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(found, current) = error
             else {
                 return XCTFail("Unexpected error: \(error)")
@@ -223,7 +231,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 }
 
-private func makeStructuredSchemaPropertyList(
+func makeStructuredSchemaPropertyList(
     schema: [String: Int],
     includeSnapshot: Bool,
     includeSnapshotMeta: Bool,
@@ -280,20 +288,6 @@ private struct InvalidSchemaVersionTypePayload: Codable {
     let appVersion: String? = nil
 }
 
-private struct FutureVersionPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let snapshot: CollectionPersistedSnapshot?
-    let snapshotMeta: CollectionSnapshotMeta?
-    let appVersion: String?
-}
-
 private struct InvalidDefinitionPayload: Codable {
     let schemaVersion: Int
     let id: String
@@ -303,31 +297,5 @@ private struct InvalidDefinitionPayload: Codable {
     let query: String
     let scopes: [String]
     let conditions: [CollectionCondition]
-    let appVersion: String?
-}
-
-private struct UnrecoverableCorruptionPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: String
-    let updatedAt: String
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let appVersion: String?
-}
-
-private struct InvalidSnapshotPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let snapshot: [String: [VoyagerShared.JSONValue]]
-    let snapshotMeta: CollectionSnapshotMeta
     let appVersion: String?
 }

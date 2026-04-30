@@ -1,6 +1,7 @@
 import AppKit
 @testable import Voyager
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import XCTest
 
 @MainActor

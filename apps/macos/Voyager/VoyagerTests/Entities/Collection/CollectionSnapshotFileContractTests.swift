@@ -1,5 +1,6 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
@@ -76,9 +77,10 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
-        await XCTAssertThrowsErrorAsync(
-            try CollectionFileClient.liveValue.load(url),
-        )
+        do {
+            _ = try await CollectionFileClient.liveValue.load(url)
+            XCTFail("Expected error to be thrown")
+        } catch {}
     }
 
     func testEncodeDecodeV2SnapshotFileRoundTrips() throws {
@@ -127,7 +129,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         XCTAssertNil(decoded.snapshot)
         XCTAssertNil(decoded.snapshotMeta)
-        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertEqual(decoded.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
     }
 
     func testDecodeDropsMalformedSnapshotInsteadOfFailingWholeFile() throws {

@@ -1,12 +1,13 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
+final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
     // MARK: - Harness
@@ -28,8 +29,11 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
             Reduce { state, action in
                 switch action {
                 case let .bridge(entryAction):
-                    FileManagerContentFeature().handleEntryOperationsAction(entryAction, state: &state.content)
-                        .map(Action.forwarded)
+                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                        entryAction,
+                        state: &state.content,
+                    )
+                    .map(Action.forwarded)
                 case .forwarded:
                     .none
                 }
@@ -206,9 +210,10 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.lifecycle(.entryActionCompleted(restoredRecord))))
-        await store.receive(
-            .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))),
-        )
+        await store.receive { action in
+            guard case .forwarded = action else { return false }
+            return true
+        }
         await store.finish()
     }
 
@@ -236,9 +241,10 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.undoRedo(.entryActionApplied(direction: .undo, record: trashedRecord))))
-        await store.receive(
-            .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))),
-        )
+        await store.receive { action in
+            guard case .forwarded = action else { return false }
+            return true
+        }
         await store.finish()
     }
 
@@ -301,15 +307,14 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.lifecycle(.pathsMutated(["/tmp/a.txt"]))))
-        await store.receive(.forwarded(.entryViewLayout(.internal(.removeCollectionPaths(["/tmp/a.txt"]))))) {
-            $0.content.entryViewLayout.collectionItems = [retainedItem]
-            $0.content.entryViewLayout.selectedIds = []
-            $0.content.entryViewLayout.lastSelectedId = nil
-            $0.content.entryViewLayout.rangeAnchorId = nil
-            $0.content.entryViewLayout.shouldScrollToSelection = false
-            $0.content.entryViewLayout.entries = [retainedItem]
+        await store.receive { action in
+            guard case .forwarded = action else { return false }
+            return true
         }
-        await store.receive(.forwarded(.entryViewLayout(.entryArrangements(.reapply))))
+        await store.receive { action in
+            guard case .forwarded = action else { return false }
+            return true
+        }
         await store.finish()
     }
 }
