@@ -469,6 +469,60 @@ final class AiConnectionOAuthTests: XCTestCase {
         XCTAssertEqual(store.state.connectionState, .notVerified)
     }
 
+    // MARK: - Retry Re-triggers Browser Login
+
+    func testRetryForOAuth_retriggersBrowserLogin() async {
+        let credential = makeCredential()
+
+        let store = TestStore(
+            initialState: AiConnectionRowState(
+                provider: .chatgptCodex,
+                connectionState: .connectionFailed,
+                statusReason: .missingCredential,
+                flowState: .idle,
+                enteredKey: "",
+                isVerifying: false,
+                isShowingDisconnectConfirmation: false
+            )
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startBrowserLogin = {
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.inProgress)
+                    continuation.yield(.completed(credential))
+                    continuation.finish()
+                }
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { provider, _, connectionState in
+                AiProviderConnectionResult(
+                    provider: provider,
+                    state: connectionState,
+                    reason: .none,
+                    updatedFile: AIConnectionsFile.empty()
+                )
+            }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+        }
+
+        await store.send(.retryButtonTapped)
+
+        await store.receive(\.startBrowserLogin) { state in
+            state.flowState = .browserLoginInProgress
+            state.connectionState = .connectInProgress
+        }
+
+        await store.receive(\.browserLoginCompleted) { state in
+            state.connectionState = .connected
+            state.flowState = .idle
+            state.statusReason = .none
+        }
+
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .connected)
+    }
+
     // MARK: - Guard Against Re-entry
 
     func testConnectButton_whileConnecting_isIgnored() async {

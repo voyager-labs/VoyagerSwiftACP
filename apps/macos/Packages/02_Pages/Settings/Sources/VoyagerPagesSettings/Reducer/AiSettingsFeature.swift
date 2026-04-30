@@ -44,7 +44,7 @@ public struct AiSettingsFeature {
                 return .none
             }
         }
-        forEach(\.rows, action: \.row) {
+        .forEach(\.rows, action: \.row) {
             AiConnectionRowReducer()
         }
     }
