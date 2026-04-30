@@ -242,7 +242,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             isRenaming: isRenaming,
             renamingText: state.entryOperations.renamingText,
             isDropTargeted: isDropTargeted,
-            workspaceClient: workspaceClient,
+            workspaceClient: workspaceClient.toShared(),
             onRenameUpdate: { [weak self] text in
                 self?.sendEntryOperations(.edit(.updateRenamingText(text)))
             },

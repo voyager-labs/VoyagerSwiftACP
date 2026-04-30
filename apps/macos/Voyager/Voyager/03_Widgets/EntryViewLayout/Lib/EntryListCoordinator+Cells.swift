@@ -1,6 +1,7 @@
 import AppKit
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 extension EntryListCoordinator {
     func makeEntryCellConfiguration(
@@ -24,7 +25,7 @@ extension EntryListCoordinator {
                 isCut: isCut,
                 isRenaming: state.entryOperations.renamingItemId == entry.id,
                 renamingText: state.entryOperations.renamingText,
-                workspaceClient: workspaceClient,
+                workspaceClient: workspaceClient.toShared(),
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }

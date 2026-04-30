@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 
 struct FileManagerLocationsClient: Sendable {
     var loadLocations: @Sendable (EntryLoadingClient) async -> [SidebarItems.LocationItem]

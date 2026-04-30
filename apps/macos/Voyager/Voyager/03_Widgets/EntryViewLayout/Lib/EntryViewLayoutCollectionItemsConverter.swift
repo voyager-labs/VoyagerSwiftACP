@@ -8,7 +8,7 @@ enum EntryViewLayoutCollectionItemsConverter {
         _ paths: [String],
         showHidden: Bool,
         entryLoadingClient: EntryLoadingClient,
-        workspaceClient: WorkspaceClient,
+        workspaceClient: VoyagerShared.WorkspaceClient,
     ) -> [EntryModel] {
         let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
         let converted: [EntryModel] = paths.compactMap { path -> EntryModel? in

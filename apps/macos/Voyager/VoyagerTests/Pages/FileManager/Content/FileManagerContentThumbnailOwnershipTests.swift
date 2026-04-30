@@ -1,6 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
@@ -14,7 +15,7 @@ final class FileManagerContentThumbnailOwnershipTests: XCTestCase {
             $0.collectionAlertClient = .testValue
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
             $0.notificationCenterClient = .testValue
-            $0.thumbnailGeneratorClient = .testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = .testValue
         }
 
