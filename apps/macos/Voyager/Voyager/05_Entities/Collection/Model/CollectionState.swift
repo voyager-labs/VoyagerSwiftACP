@@ -269,6 +269,7 @@ extension CollectionState {
 struct CollectionSaveSnapshot: Equatable, Sendable {
     let query: String
     let scopes: [String]
+    let includeSubfolders: Bool
     let conditions: [CollectionCondition]
     let snapshotItems: [VoyagerShared.JSONValue]?
     let definitionFingerprint: String
