@@ -138,9 +138,12 @@ A sweep resets the accumulation counter to zero. After a sweep completes:
 
 1. Record the sweep's `run_at` as the new baseline timestamp.
 2. All subsequent accumulation counts start from this baseline.
-3. The 14-day clock restarts from the sweep's `run_at`.
+3. Check adopted rules and skills whose source dedupe keys appear in the sweep window. Flag each as `still-useful`, `needs-revision`, `candidate-rollback`, or `no-recent-signal`.
+4. The 14-day clock restarts from the sweep's `run_at`.
 
 If a sweep is triggered by the time condition (14 days) but no new authoritative runs have accumulated, the sweep still runs but produces a "no new findings" report. This confirms the governance system is alive even during quiet periods.
+
+For adopted-rule health checks, absence of the original dedupe key is not automatically bad; it may mean the rule worked. Rollback is considered only when the adopted harness creates noise, conflicts with current structure, or causes new regressions.
 
 ---
 

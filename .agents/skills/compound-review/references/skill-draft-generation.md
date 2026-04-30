@@ -120,7 +120,7 @@ Format: `.agents/rules/{group}/{rule-name}.md` or `.agents/rules/{rule-name}.md`
 
 If the proposed target path already exists:
 
-1. The draft must note this explicitly: `Proposed Target: .agents/skills/existing-skill/SKILL.md (extend existing skill)`
+1. The draft must note this explicitly: `Proposed Target: .agents/skills/{existing-skill-name}/SKILL.md (extend existing skill)`
 2. The `Proposed Scope` must describe what to **add** to the existing skill, not replace it
 3. The `Non-Goals` must state: "Does not replace or restructure the existing skill — only adds the proposed scope"
 

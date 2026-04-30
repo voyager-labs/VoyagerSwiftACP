@@ -11,13 +11,16 @@ Use this reference when deciding whether a slice boundary is strong enough to su
 
 ## Current partial modularization
 
-- A local Swift Package already exists at `apps/macos/Voyager/Packages/VoyagerModules/Package.swift`.
+- Local Swift Packages live under `apps/macos/Packages/**/Package.swift`.
 - Current extracted products include:
-  - `VoyagerShared`
-  - `VoyagerEntitiesSettings`
-  - `VoyagerFeaturesBetaAccess`
-  - `VoyagerPagesOnboarding`
-  - `VoyagerPagesSettings`
+    - `VoyagerShared`
+    - `VoyagerEntitiesAi`
+    - `VoyagerEntitiesAppPreferences`
+    - `VoyagerEntitiesEntry`
+    - `VoyagerFeaturesBetaAccess`
+    - `VoyagerFeaturesEntryOperations`
+    - `VoyagerPagesOnboarding`
+    - `VoyagerPagesSettings`
 - Treat these extracted targets as proof that App/Pages/Features/Entities/Shared slices are expected to become package-friendly over time.
 
 ## Extraction-ready review checks
