@@ -21,6 +21,9 @@ struct ScopePickerView: View {
 
             VStack(spacing: 0) {
                 searchField(queryText: queryTextBinding)
+                if !viewStore.scopeEditor.selection.isRootOnly {
+                    includeSubfoldersRow(viewStore: viewStore)
+                }
                 listContent(viewStore: viewStore)
             }
             .frame(width: 260)
@@ -67,6 +70,33 @@ struct ScopePickerView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(VoyagerDS.Surface.popoverSearchFieldBackground(for: colorScheme))
+
+            VoyagerDS.SystemColor.separator
+                .frame(height: 1)
+        }
+    }
+
+    private func includeSubfoldersRow(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+    ) -> some View {
+        let includeSubfolders = viewStore.scopeEditor.includeSubfolders
+        return VStack(spacing: 0) {
+            Button {
+                store.send(.scopeEditorSetIncludeSubfolders(!includeSubfolders))
+            } label: {
+                HStack(spacing: 10) {
+                    Text(includeSubfolders ? "Include subfolders" : "Only selected folder")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: includeSubfolders ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 14))
+                        .foregroundColor(includeSubfolders ? .accentColor : .secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
 
             VoyagerDS.SystemColor.separator
                 .frame(height: 1)
@@ -320,6 +350,7 @@ struct ScopePickerView: View {
                 .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
         )
     }
+
     private func applicationsIcon() -> NSImage? {
         let appIcon = NSImage(
             contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",

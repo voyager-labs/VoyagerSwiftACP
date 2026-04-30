@@ -20,6 +20,7 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
         case scopeEditorOpen(editingPath: String?, favorites: [ScopeFavoriteItem], backHistory: [String])
         case scopeEditorSetPresented(Bool)
         case scopeEditorSetQueryText(String)
+        case scopeEditorSetIncludeSubfolders(Bool)
         case candidateScope(CandidateScope)
         case currentScope(CurrentScope)
         case addCondition(propertyKey: String)
@@ -77,6 +78,8 @@ extension ComposerAction {
 
     static func scopeEditorSetPresented(_ isPresented: Bool) -> Self { .view(.scopeEditorSetPresented(isPresented)) }
     static func scopeEditorSetQueryText(_ text: String) -> Self { .view(.scopeEditorSetQueryText(text)) }
+    static func scopeEditorSetIncludeSubfolders(_ includeSubfolders: Bool)
+        -> Self { .view(.scopeEditorSetIncludeSubfolders(includeSubfolders)) }
     static func candidateScope(_ action: CandidateScope) -> Self { .view(.candidateScope(action)) }
     static func currentScope(_ action: CurrentScope) -> Self { .view(.currentScope(action)) }
     static func addScope(path: String) -> Self { .view(.candidateScope(.add(path: path))) }

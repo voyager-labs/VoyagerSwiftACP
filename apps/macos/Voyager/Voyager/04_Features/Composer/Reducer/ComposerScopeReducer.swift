@@ -15,7 +15,7 @@ struct ComposerScopeReducer {
         Reduce { state, action in
             switch action {
             case let .view(.scopeEditorOpen(editingPath: editingPath, favorites: favorites, backHistory: backHistory)):
-                handleScopeEditorOpen(
+                return handleScopeEditorOpen(
                     state: &state,
                     editingPath: editingPath,
                     favorites: favorites,
@@ -24,21 +24,25 @@ struct ComposerScopeReducer {
                 )
 
             case let .view(.scopeEditorSetPresented(isPresented)):
-                handleScopeEditorPresented(
+                return handleScopeEditorPresented(
                     state: &state,
                     isPresented: isPresented,
                     entryLoadingClient: entryLoadingClient,
                 )
 
+            case let .view(.scopeEditorSetIncludeSubfolders(includeSubfolders)):
+                state.scopeEditor.includeSubfolders = includeSubfolders
+                return .none
+
             case let .view(.scopeEditorSetQueryText(queryText)):
-                handleScopeEditorQueryText(
+                return handleScopeEditorQueryText(
                     state: &state,
                     queryText: queryText,
                     entryLoadingClient: entryLoadingClient,
                 )
 
             case let .view(.candidateScope(.add(path: path))):
-                handleAddScope(
+                return handleAddScope(
                     state: &state,
                     path: path,
                     searchClient: searchClient,
@@ -46,7 +50,7 @@ struct ComposerScopeReducer {
                 )
 
             case let .view(.currentScope(.remove(path: path))):
-                handleRemoveScope(
+                return handleRemoveScope(
                     state: &state,
                     path: path,
                     searchClient: searchClient,
@@ -54,7 +58,7 @@ struct ComposerScopeReducer {
                 )
 
             case let .view(.currentScope(.replace(oldPath: oldPath, newPath: newPath))):
-                handleUpdateScope(
+                return handleUpdateScope(
                     state: &state,
                     oldPath: oldPath,
                     newPath: newPath,
@@ -63,27 +67,27 @@ struct ComposerScopeReducer {
                 )
 
             case .view(.clearAll):
-                handleClearAll(state: &state, entryLoadingClient: entryLoadingClient)
+                return handleClearAll(state: &state, entryLoadingClient: entryLoadingClient)
 
             case let .internal(.scopeEditorSeedCurrentPath(currentPath)):
-                handleScopeEditorSeedCurrentPath(state: &state, currentPath: currentPath)
+                return handleScopeEditorSeedCurrentPath(state: &state, currentPath: currentPath)
 
             case let .internal(.scopeEditorSearchResponse(query, .success(items))):
-                handleScopeEditorSearchResponse(
+                return handleScopeEditorSearchResponse(
                     state: &state,
                     query: query,
                     items: items,
                 )
 
             case let .internal(.scopeEditorSearchResponse(query, .failure(error))):
-                handleScopeEditorSearchFailure(
+                return handleScopeEditorSearchFailure(
                     state: &state,
                     query: query,
                     error: error,
                 )
 
             default:
-                .none
+                return .none
             }
         }
     }

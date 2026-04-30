@@ -99,6 +99,7 @@ struct ComposerFeature {
                  .view(.saveCollectionAs),
                  .view(.scopeEditorOpen),
                  .view(.scopeEditorSetPresented),
+                 .view(.scopeEditorSetIncludeSubfolders),
                  .view(.scopeEditorSetQueryText),
                  .propertyPicker,
                  .operatorPicker,
@@ -313,6 +314,7 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
     )
     return VoyagerShared.SearchFiltersPayload(
         scopes: state.scopeEditor.selection.legacyScopePaths,
+        includeSubfolders: state.scopeEditor.includeSubfolders,
         conditions: conditionPayloads,
     )
 }
