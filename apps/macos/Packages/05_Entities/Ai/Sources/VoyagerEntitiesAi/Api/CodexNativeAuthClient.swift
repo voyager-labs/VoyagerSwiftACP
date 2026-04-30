@@ -97,10 +97,12 @@ extension CodexNativeAuthClient: DependencyKey {
                             let credential = OAuthCredentialFile(
                                 accessToken: tokenResponse.access_token,
                                 refreshToken: tokenResponse.refresh_token,
+                                idToken: tokenResponse.id_token,
                                 tokenType: tokenResponse.token_type,
                                 scopes: config.scopes,
                                 expiresAtMs: Int64(Date().timeIntervalSince1970 * 1000)
-                                    + Int64(tokenResponse.expires_in ?? 3600) * 1000
+                                    + Int64(tokenResponse.expires_in ?? 3600) * 1000,
+                                chatGPTAccountId: Self.chatGPTAccountId(from: tokenResponse.id_token)
                             )
 
                             continuation.yield(.completed(credential))
@@ -235,6 +237,27 @@ extension CodexNativeAuthClient {
         }
 
         return try JSONDecoder().decode(CodexTokenResponse.self, from: data)
+    }
+
+    static func chatGPTAccountId(from idToken: String?) -> String? {
+        guard let idToken else { return nil }
+        let parts = idToken.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+
+        var payload = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = payload.count % 4
+        if remainder > 0 {
+            payload.append(String(repeating: "=", count: 4 - remainder))
+        }
+
+        guard let data = Data(base64Encoded: payload),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let auth = object["https://api.openai.com/auth"] as? [String: Any]
+        else { return nil }
+
+        return auth["chatgpt_account_id"] as? String
     }
 }
 

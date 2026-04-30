@@ -111,7 +111,8 @@ final class AiLiveValueTests: XCTestCase {
             tokenPath: "/token",
             redirectPort: 1455,
             redirectPath: "/auth/callback",
-            scopes: ["openid", "profile", "email"]
+            scopes: ["openid", "profile", "email"],
+            originator: "test-originator"
         )
         XCTAssertEqual(config.issuer.host, "auth.example.com")
         XCTAssertFalse(config.clientId.isEmpty)

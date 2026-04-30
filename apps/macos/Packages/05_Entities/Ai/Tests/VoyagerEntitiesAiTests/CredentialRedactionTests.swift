@@ -6,9 +6,11 @@ final class CredentialRedactionTests: XCTestCase {
         let oauth = OAuthCredentialFile(
             accessToken: "secret-access-token",
             refreshToken: "secret-refresh-token",
+            idToken: "secret-id-token",
             tokenType: "Bearer",
             scopes: ["read"],
-            expiresAtMs: 1_700_000_000_000
+            expiresAtMs: 1_700_000_000_000,
+            chatGPTAccountId: "account-123"
         )
         let payload = StoredCredentialPayload.oauth(oauth)
         let redacted = payload.redacted
@@ -16,8 +18,10 @@ final class CredentialRedactionTests: XCTestCase {
         if case let .oauth(r) = redacted {
             XCTAssertEqual(r.accessToken, "****")
             XCTAssertEqual(r.refreshToken, "****")
+            XCTAssertEqual(r.idToken, "****")
             XCTAssertEqual(r.tokenType, "Bearer")
             XCTAssertEqual(r.scopes, ["read"])
+            XCTAssertEqual(r.chatGPTAccountId, "account-123")
         } else {
             XCTFail("Expected oauth")
         }

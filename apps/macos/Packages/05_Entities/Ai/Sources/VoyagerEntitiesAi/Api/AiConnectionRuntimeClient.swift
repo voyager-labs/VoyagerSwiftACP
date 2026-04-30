@@ -52,6 +52,10 @@ extension AiConnectionRuntimeClient {
                     return .invalid(.invalidAPIKey)
                 }
 
+                if provider == .chatgptCodex {
+                    return .valid
+                }
+
                 return await Self.performSmokeRequest(
                     provider: provider,
                     secret: secret,
@@ -81,7 +85,7 @@ extension AiConnectionRuntimeClient {
         var request: URLRequest
 
         switch provider {
-        case .openai, .chatgptCodex:
+        case .openai:
             url = "https://api.openai.com/v1/chat/completions"
             guard let requestURL = URL(string: url) else {
                 return .invalid(.verificationFailed)
@@ -97,6 +101,9 @@ extension AiConnectionRuntimeClient {
                 "max_tokens": 5,
             ]
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        case .chatgptCodex:
+            return .valid
 
         case .anthropic:
             url = "https://api.anthropic.com/v1/messages"

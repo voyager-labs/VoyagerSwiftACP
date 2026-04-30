@@ -103,6 +103,26 @@ final class AIConnectionStatusTests: XCTestCase {
     func testAIConnectionStatus_verificationFailed_isEquatable() {
         XCTAssertEqual(AIConnectionStatus.verificationFailed, .verificationFailed)
     }
+
+    // MARK: - VOY-218: five distinct status cases
+
+    func testAllFiveDistinctStatusCases_exist() {
+        let cases: [AIConnectionStatus] = [
+            .ready,
+            .notConfigured,
+            .invalidCredential(.none),
+            .networkUnavailable,
+            .verificationFailed,
+        ]
+        XCTAssertEqual(cases.count, 5)
+
+        for i in 0 ..< cases.count {
+            for j in (i + 1) ..< cases.count {
+                XCTAssertNotEqual(cases[i], cases[j],
+                                  "AIConnectionStatus cases must be pairwise distinct: \(cases[i]) vs \(cases[j])")
+            }
+        }
+    }
 }
 
 // MARK: - AiConnectionStatusClient
@@ -174,6 +194,65 @@ final class AiConnectionStatusClientTests: XCTestCase {
         XCTAssertEqual(status, .ready)
     }
 
+    // MARK: - VOY-218: Codex OAuth status client paths
+
+    func testStatus_codexOAuth_connectedWithValidCredential_returnsReady() async {
+        let sut = makeClient(
+            storedFile: codexStoredFileWithCredential(status: .connected),
+            verifyResult: .valid
+        )
+        let status = await sut.checkStatus(.chatgptCodex)
+        XCTAssertEqual(status, .ready)
+    }
+
+    func testStatus_codexOAuth_connectedWithInvalidCredential_returnsInvalidCredential() async {
+        let sut = makeClient(
+            storedFile: codexStoredFileWithCredential(status: .connected),
+            verifyResult: .invalid(.expired)
+        )
+        let status = await sut.checkStatus(.chatgptCodex)
+        XCTAssertEqual(status, .invalidCredential(.expired))
+    }
+
+    func testStatus_codexOAuth_notConfigured_returnsNotConfigured() async {
+        let sut = makeClient(
+            storedFile: .empty(),
+            verifyResult: .valid
+        )
+        let status = await sut.checkStatus(.chatgptCodex)
+        XCTAssertEqual(status, .notConfigured)
+    }
+
+    func testStatus_codexOAuth_connectedNetworkError_returnsNetworkUnavailable() async {
+        let sut = makeClient(
+            storedFile: codexStoredFileWithCredential(status: .connected),
+            verifyResult: .networkError
+        )
+        let status = await sut.checkStatus(.chatgptCodex)
+        XCTAssertEqual(status, .networkUnavailable)
+    }
+
+    func testStatus_codexOAuth_connectedUnsupportedProvider_returnsVerificationFailed() async {
+        let sut = makeClient(
+            storedFile: codexStoredFileWithCredential(status: .connected),
+            verifyResult: .unsupportedProvider
+        )
+        let status = await sut.checkStatus(.chatgptCodex)
+        XCTAssertEqual(status, .verificationFailed)
+    }
+
+    func testStatus_codexOAuth_connectionFailed_returnsInvalidCredentialWithReason() async {
+        let sut = makeClient(
+            storedFile: codexStoredFileWithCredential(
+                status: .connectionFailed,
+                errorCode: .oauthRejected
+            ),
+            verifyResult: .valid
+        )
+        let status = await sut.checkStatus(.chatgptCodex)
+        XCTAssertEqual(status, .invalidCredential(.oauthRejected))
+    }
+
     private func makeClient(
         storedFile: AIConnectionsFile,
         verifyResult: AiProviderVerificationResult = .valid
@@ -221,6 +300,27 @@ final class AiConnectionStatusClientTests: XCTestCase {
                     providerId: .openai,
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
+                    snapshot: ProviderSnapshotFile(
+                        lastKnownStatus: status,
+                        lastVerifiedAtMs: 1_760_000_000_000,
+                        lastErrorCode: errorCode
+                    )
+                ),
+            ]
+        )
+    }
+
+    private func codexStoredFileWithCredential(
+        status: ProviderConnectionState = .connected,
+        errorCode: ProviderStatusReason = .none
+    ) -> AIConnectionsFile {
+        AIConnectionsFile(
+            updatedAtMs: 1_760_000_000_000,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(OAuthCredentialFile(accessToken: "codex-oauth-token")),
                     snapshot: ProviderSnapshotFile(
                         lastKnownStatus: status,
                         lastVerifiedAtMs: 1_760_000_000_000,

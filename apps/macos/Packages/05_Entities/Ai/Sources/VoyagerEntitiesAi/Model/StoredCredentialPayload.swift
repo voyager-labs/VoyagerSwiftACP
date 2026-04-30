@@ -11,22 +11,28 @@ public enum StoredCredentialPayload: Equatable, Sendable {
 public struct OAuthCredentialFile: Equatable, Sendable {
     public let accessToken: String
     public let refreshToken: String?
+    public let idToken: String?
     public let tokenType: String?
     public let scopes: [String]
     public let expiresAtMs: Int64?
+    public let chatGPTAccountId: String?
 
     public init(
         accessToken: String,
         refreshToken: String? = nil,
+        idToken: String? = nil,
         tokenType: String? = nil,
         scopes: [String] = [],
-        expiresAtMs: Int64? = nil
+        expiresAtMs: Int64? = nil,
+        chatGPTAccountId: String? = nil
     ) {
         self.accessToken = accessToken
         self.refreshToken = refreshToken
+        self.idToken = idToken
         self.tokenType = tokenType
         self.scopes = scopes
         self.expiresAtMs = expiresAtMs
+        self.chatGPTAccountId = chatGPTAccountId
     }
 }
 
@@ -91,9 +97,11 @@ public extension StoredCredentialPayload {
                 OAuthCredentialFile(
                     accessToken: "****",
                     refreshToken: oauth.refreshToken != nil ? "****" : nil,
+                    idToken: oauth.idToken != nil ? "****" : nil,
                     tokenType: oauth.tokenType,
                     scopes: oauth.scopes,
-                    expiresAtMs: oauth.expiresAtMs
+                    expiresAtMs: oauth.expiresAtMs,
+                    chatGPTAccountId: oauth.chatGPTAccountId
                 )
             )
         case .apiKey:

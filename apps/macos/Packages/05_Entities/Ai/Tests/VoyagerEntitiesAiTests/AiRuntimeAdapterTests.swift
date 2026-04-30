@@ -81,6 +81,67 @@ final class AiRuntimeAdapterTests: XCTestCase {
         XCTAssertEqual(result, .valid)
     }
 
+    func testLiveVerifyProvider_chatgptCodex_doesNotCallPlatformAPI() {
+        NetworkTrapURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NetworkTrapURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = AiConnectionRuntimeClient.live(session: session)
+        let credential = StoredCredentialPayload.oauth(
+            OAuthCredentialFile(accessToken: "codex-access-token")
+        )
+
+        let result = awaitTest { await client.verifyProvider(.chatgptCodex, credential) }
+
+        XCTAssertEqual(result, .valid)
+        XCTAssertEqual(NetworkTrapURLProtocol.requestCount, 0)
+    }
+
+    // MARK: - VOY-218: chatgptCodex verification does NOT call Platform API
+
+    /// VOY-218 intentional decision: a non-empty OAuth credential for chatgptCodex
+    /// returns `.valid` without ANY network call. The live client short-circuits
+    /// before reaching the smoke-request path.
+    func testLiveVerifyProvider_chatgptCodex_nonEmptyOAuthCredential_isValidWithoutNetwork() {
+        NetworkTrapURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NetworkTrapURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = AiConnectionRuntimeClient.live(session: session)
+        let credential = StoredCredentialPayload.oauth(
+            OAuthCredentialFile(accessToken: "codex-oauth-access-token-voY218")
+        )
+
+        let result = awaitTest { await client.verifyProvider(.chatgptCodex, credential) }
+
+        // Core VOY-218 contract: non-empty OAuth credential = valid, zero network calls
+        XCTAssertEqual(result, .valid, "chatgptCodex with non-empty OAuth must return .valid")
+        XCTAssertEqual(
+            NetworkTrapURLProtocol.requestCount, 0,
+            "chatgptCodex verification must NOT issue any HTTP request"
+        )
+    }
+
+    /// VOY-218: chatgptCodex with empty OAuth credential returns .invalid — still no network call.
+    func testLiveVerifyProvider_chatgptCodex_emptyOAuthCredential_isInvalidWithoutNetwork() {
+        NetworkTrapURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NetworkTrapURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = AiConnectionRuntimeClient.live(session: session)
+        let credential = StoredCredentialPayload.oauth(
+            OAuthCredentialFile(accessToken: "")
+        )
+
+        let result = awaitTest { await client.verifyProvider(.chatgptCodex, credential) }
+
+        XCTAssertNotEqual(result, .valid, "Empty OAuth credential must not be treated as valid")
+        XCTAssertEqual(
+            NetworkTrapURLProtocol.requestCount, 0,
+            "chatgptCodex verification must NOT issue any HTTP request even for empty credential"
+        )
+    }
+
     // MARK: - AiAdapterDescriptor
 
     func testAdapterDescriptor_equality() {
@@ -142,6 +203,32 @@ final class AiRuntimeAdapterTests: XCTestCase {
             }
         )
     }
+}
+
+private final class NetworkTrapURLProtocol: URLProtocol, @unchecked Sendable {
+    private nonisolated(unsafe) static var count = 0
+
+    static var requestCount: Int { count }
+
+    static func reset() {
+        count = 0
+    }
+
+    override class func canInit(with _: URLRequest) -> Bool {
+        count += 1
+        return true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let error = URLError(.unsupportedURL)
+        client?.urlProtocol(self, didFailWithError: error)
+    }
+
+    override func stopLoading() {}
 }
 
 private func awaitTest<T: Sendable>(

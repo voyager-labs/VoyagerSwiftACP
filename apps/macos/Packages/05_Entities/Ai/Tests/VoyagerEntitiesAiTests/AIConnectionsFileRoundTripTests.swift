@@ -18,9 +18,11 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
         let oauth = OAuthCredentialFile(
             accessToken: "at-123",
             refreshToken: "rt-456",
+            idToken: "id-789",
             tokenType: "Bearer",
             scopes: ["read", "write"],
-            expiresAtMs: 1_700_000_000_000
+            expiresAtMs: 1_700_000_000_000,
+            chatGPTAccountId: "account-123"
         )
         let record = ProviderRecordFile(
             providerId: .chatgptCodex,
@@ -112,6 +114,8 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
         if case let .oauth(oauth) = decoded {
             XCTAssertEqual(oauth.accessToken, "at")
             XCTAssertEqual(oauth.refreshToken, "rt")
+            XCTAssertNil(oauth.idToken)
+            XCTAssertNil(oauth.chatGPTAccountId)
         } else {
             XCTFail("Expected oauth credential")
         }

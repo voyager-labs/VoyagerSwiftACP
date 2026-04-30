@@ -12,6 +12,7 @@ public struct CodexOAuthConfig: Sendable, Equatable {
     public let redirectPort: Int
     public let redirectPath: String
     public let scopes: [String]
+    public let originator: String
 
     /// Production defaults. Reads overrides from environment variables when set.
     public static let `default` = CodexOAuthConfig(
@@ -23,7 +24,15 @@ public struct CodexOAuthConfig: Sendable, Equatable {
         redirectPort: ProcessInfo.processInfo.environment["OPENAI_CODEX_OAUTH_REDIRECT_PORT"]
             .flatMap { Int($0) } ?? 1455,
         redirectPath: "/auth/callback",
-        scopes: ["openid", "profile", "email", "offline_access"]
+        scopes: [
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+            "api.connectors.read",
+            "api.connectors.invoke",
+        ],
+        originator: "codex_cli_rs"
     )
 
     public var redirectURI: String {
@@ -49,6 +58,9 @@ public struct CodexOAuthConfig: Sendable, Equatable {
             URLQueryItem(name: "code_challenge", value: pkceChallenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "id_token_add_organizations", value: "true"),
+            URLQueryItem(name: "codex_cli_simplified_flow", value: "true"),
+            URLQueryItem(name: "originator", value: originator),
         ]
         return components.url!
     }

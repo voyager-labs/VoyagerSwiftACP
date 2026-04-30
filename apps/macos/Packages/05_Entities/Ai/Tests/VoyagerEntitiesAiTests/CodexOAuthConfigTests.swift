@@ -36,6 +36,38 @@ final class CodexOAuthConfigTests: XCTestCase {
         XCTAssertEqual(queryItems["code_challenge_method"], "S256")
         XCTAssertEqual(queryItems["state"], "test-state")
         XCTAssertEqual(queryItems["redirect_uri"], config.redirectURI)
+        XCTAssertEqual(queryItems["id_token_add_organizations"], "true")
+        XCTAssertEqual(queryItems["codex_cli_simplified_flow"], "true")
+        XCTAssertEqual(queryItems["originator"], "codex_cli_rs")
+    }
+
+    func testDefault_usesCodexConnectorScopes() {
+        let config = CodexOAuthConfig.default
+
+        XCTAssertEqual(
+            config.scopes,
+            [
+                "openid",
+                "profile",
+                "email",
+                "offline_access",
+                "api.connectors.read",
+                "api.connectors.invoke",
+            ]
+        )
+    }
+
+    func testChatGPTAccountId_extractsNamespacedJWTClaim() throws {
+        let payload = """
+        {"https://api.openai.com/auth":{"chatgpt_account_id":"account-123"}}
+        """
+        let token = [
+            base64URL("{}"),
+            base64URL(payload),
+            "signature",
+        ].joined(separator: ".")
+
+        XCTAssertEqual(CodexNativeAuthClient.chatGPTAccountId(from: token), "account-123")
     }
 
     func testCustomConfig_differentPort() {
@@ -46,7 +78,8 @@ final class CodexOAuthConfigTests: XCTestCase {
             tokenPath: "/token",
             redirectPort: 8080,
             redirectPath: "/callback",
-            scopes: ["read"]
+            scopes: ["read"],
+            originator: "test-originator"
         )
         XCTAssertEqual(config.redirectURI, "http://localhost:8080/callback")
         XCTAssertEqual(config.scopes, ["read"])
@@ -56,5 +89,13 @@ final class CodexOAuthConfigTests: XCTestCase {
         let config1 = CodexOAuthConfig.default
         let config2 = CodexOAuthConfig.default
         XCTAssertEqual(config1, config2)
+    }
+
+    private func base64URL(_ string: String) -> String {
+        Data(string.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }
