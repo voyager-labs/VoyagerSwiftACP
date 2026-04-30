@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesCollection
 
 private struct ConditionChipBooleanButtonLabelView: View {
     let currentText: String

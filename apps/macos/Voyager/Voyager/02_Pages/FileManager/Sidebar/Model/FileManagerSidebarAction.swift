@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesTag
 
 @CasePathable
 enum FileManagerSidebarAction: CasePathable, Sendable {

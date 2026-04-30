@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesCollection
 
 private struct ConditionChipValuePillView: View {
     let text: String

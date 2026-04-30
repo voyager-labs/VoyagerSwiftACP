@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 struct ToolbarCollectionStatusViewState: Equatable {
     let showsUnsavedIndicator: Bool

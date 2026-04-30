@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import SwiftUI
-
+import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryOperations
 
 @MainActor

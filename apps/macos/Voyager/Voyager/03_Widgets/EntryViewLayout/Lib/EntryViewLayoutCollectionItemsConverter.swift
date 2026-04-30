@@ -1,5 +1,6 @@
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 
 enum EntryViewLayoutCollectionItemsConverter {

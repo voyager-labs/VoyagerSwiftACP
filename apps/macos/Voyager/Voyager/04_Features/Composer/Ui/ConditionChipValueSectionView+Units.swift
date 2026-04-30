@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesCollection
 
 extension ConditionChipValueSectionView {
     @ViewBuilder

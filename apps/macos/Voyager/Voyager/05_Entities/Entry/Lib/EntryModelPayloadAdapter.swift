@@ -1,4 +1,6 @@
+// TODO(sunset VOY-273): Temporary compatibility adapter — app-layer code using package types.
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 
 enum EntryModelPayloadAdapter {

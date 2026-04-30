@@ -1,7 +1,8 @@
 import ComposableArchitecture
 import SwiftUI
-
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 extension ConditionChipValueSectionView {
     func tokenValueButton(

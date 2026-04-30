@@ -3,6 +3,7 @@ import Combine
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 

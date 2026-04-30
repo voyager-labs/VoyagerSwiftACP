@@ -32,13 +32,8 @@ enum AppliedFilterValueUtils {
         }
     }
 
-    private static func normalizeDateString(_ text: String, valueUIKind: String) -> String? {
-        switch valueUIKind {
-        case "singleDate", "rangeDate":
-            ValueNormalizerUtils.formatDateOnlyString(text)
-        default:
-            nil
-        }
+    private static func normalizeDateString(_: String, valueUIKind _: String) -> String? {
+        nil
     }
 
     private static func formatNumber(_ value: Double) -> String {

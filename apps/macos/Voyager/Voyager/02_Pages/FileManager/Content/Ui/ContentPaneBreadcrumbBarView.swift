@@ -4,6 +4,7 @@ import SwiftUI
 
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @MainActor
 struct ContentPaneBreadcrumbBarView: View {

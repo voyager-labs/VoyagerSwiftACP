@@ -4,6 +4,7 @@ import Foundation
 import IdentifiedCollections
 import SwiftUI
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 

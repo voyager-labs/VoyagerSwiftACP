@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 
 @CasePathable

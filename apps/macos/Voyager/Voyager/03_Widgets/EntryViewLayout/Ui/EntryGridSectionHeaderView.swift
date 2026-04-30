@@ -1,6 +1,7 @@
 import AppKit
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 final class EntryGridSectionHeaderView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")

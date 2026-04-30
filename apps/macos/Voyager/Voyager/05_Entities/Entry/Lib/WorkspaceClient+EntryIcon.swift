@@ -1,8 +1,11 @@
+// TODO(sunset VOY-273): Temporary compatibility adapter — app-layer extension using package EntryModel.
 import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerShared
 
 extension WorkspaceClient {
     func entryIcon(for entry: EntryModel, thumbnail: NSImage?) -> NSImage {

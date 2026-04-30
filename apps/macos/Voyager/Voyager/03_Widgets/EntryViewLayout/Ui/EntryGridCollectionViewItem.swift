@@ -2,6 +2,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 final class EntryGridCollectionViewItem: NSCollectionViewItem {
     struct Configuration {

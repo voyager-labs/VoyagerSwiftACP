@@ -1,7 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 

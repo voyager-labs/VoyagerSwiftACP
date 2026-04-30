@@ -1,5 +1,7 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
+import VoyagerEntitiesTag
 
 @Reducer
 struct ValuePickerFeature {
@@ -28,7 +30,7 @@ struct ValuePickerFeature {
                 state.valueArity = max(0, payload.valueArity)
                 state.valueUIKind = payload.valueUIKind
                 state.isCategoricalProperty =
-                    registryClient.propertyTypeString(payload.propertyKey) == "categorical"
+                    registryClient.propertyTypeString(for: payload.propertyKey) == "categorical"
                 state.tokenInput = ""
                 state.finderTagListState = payload.propertyKey == ValuePickerTokenUtils.finderTagPropertyKey
                     ?

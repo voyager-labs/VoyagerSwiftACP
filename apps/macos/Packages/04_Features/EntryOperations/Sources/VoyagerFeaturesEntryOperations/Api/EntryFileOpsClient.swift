@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 
 public struct EntryFileOpsClient: Sendable {

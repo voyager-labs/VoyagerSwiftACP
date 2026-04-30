@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 
 struct ContentPaneContextMenu: View {

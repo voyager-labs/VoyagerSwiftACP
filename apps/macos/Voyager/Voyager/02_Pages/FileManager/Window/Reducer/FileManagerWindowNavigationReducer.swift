@@ -1,5 +1,8 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
+import VoyagerEntitiesTag
+import VoyagerShared
 
 @Reducer
 struct FileManagerWindowNavigationReducer {

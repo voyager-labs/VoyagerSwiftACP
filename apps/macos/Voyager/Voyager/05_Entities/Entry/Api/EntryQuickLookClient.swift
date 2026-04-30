@@ -1,3 +1,4 @@
+// TODO(sunset VOY-273): Temporary compatibility adapter — app-layer TCA client.
 import AppKit
 import ComposableArchitecture
 import Foundation

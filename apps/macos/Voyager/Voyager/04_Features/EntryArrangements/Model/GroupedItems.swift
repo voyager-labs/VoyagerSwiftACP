@@ -1,5 +1,8 @@
 import Foundation
 
+import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+
 struct GroupedItems: Equatable {
     let groupName: String
     let colorCode: Int?

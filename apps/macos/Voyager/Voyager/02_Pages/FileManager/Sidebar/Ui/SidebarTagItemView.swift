@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 struct SidebarTagItemView: View {
     let tag: Tag
