@@ -1,8 +1,8 @@
 import Foundation
 
-enum TagMDItemUserTagParser {
+public enum TagMDItemUserTagParser {
     // MDItem의 kMDItemUserTags 항목("name\ncolorCode")을 Tag로 변환합니다.
-    nonisolated static func parse(_ rawTag: String) -> Tag? {
+    public nonisolated static func parse(_ rawTag: String) -> Tag? {
         let components = rawTag.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         guard let rawName = components.first else { return nil }
 
@@ -18,7 +18,7 @@ enum TagMDItemUserTagParser {
         return Tag(name: name, colorCode: colorCode)
     }
 
-    nonisolated static func parseRelaxed(_ rawTag: String, defaultColorCode: Int = 0) -> Tag? {
+    public nonisolated static func parseRelaxed(_ rawTag: String, defaultColorCode: Int = 0) -> Tag? {
         // Only use parse() when input has color code format (contains newline).
         // For name-only input, use defaultColorCode directly.
         if rawTag.contains("\n") {
