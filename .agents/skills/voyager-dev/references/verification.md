@@ -28,6 +28,8 @@ xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodepro
 
 For callback-heavy or lifecycle-heavy work, prefer focused suites that prove both boundary behavior and downstream execution-chain behavior before expanding outward.
 
+For Swift SPM packages, use: `xcrun swift test --package-path <path> --filter 'Pattern1|Pattern2'`. Split evidence by test class. See `30-macos/04-xcode-test-plan-visibility.md` for package test visibility.
+
 ## Full verification
 
 ```bash
@@ -65,6 +67,7 @@ Prefer running formatting/lint before the final test pass so style-only churn do
 - For observation refactors, search the touched `Ui/*.swift` files for `.onReceive(` and `NotificationCenter.default.publisher`.
 - For decomposition or model splits, search for stale type names, dead extension files, or bypassed reducer routes.
 - For callback-heavy flows, search for duplicate cleanup ownership, weak-context re-derivation, and missing fallback paths where framework callbacks can lose detail.
+- When tests reveal spec/implementation mismatches, document gaps in `.sisyphus/evidence/` files with source, spec reference, current behavior, and rationale for deferral. Confirm zero canonical spec changes needed.
 
 ## Layer checks
 

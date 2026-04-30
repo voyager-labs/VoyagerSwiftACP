@@ -1,6 +1,6 @@
 ---
 name: voyager-dev
-description: Unified Voyager(macOS) workflow for TCA + FSD changes. Use this whenever working in `apps/macos/Voyager/Voyager/**` to scaffold a new slice/module, refactor State/Action/Reducer ownership, split a large feature into parent/child reducers, move external/system observation out of views, evaluate reuse candidates, or enforce Voyager layer and public-boundary rules, even if the user does not explicitly mention `voyager-dev`.
+description: Unified Voyager(macOS) workflow for TCA + FSD implementation and test verification. Use this whenever working in `apps/macos/**` to scaffold or refactor TCA/FSD code, choose and run Voyager/macOS/SPM tests, analyze test failures, split reducers, move observation into reducers, evaluate reuse candidates, or enforce layer/public-boundary rules, even if the user does not explicitly mention `voyager-dev`.
 compatibility: opencode
 metadata:
     area: macos
@@ -11,11 +11,12 @@ Use this skill for Voyager macOS TCA/FSD work.
 
 ## Trigger
 
-- Any non-trivial work under `apps/macos/Voyager/Voyager/**`.
+- Any non-trivial Voyager macOS work under `apps/macos/Voyager/**`, `apps/macos/Packages/**`, or `apps/macos/Hosts/**`.
 - Add a new Voyager module with TCA + FSD structure.
 - Refactor a large feature into parent orchestrator + child reducers.
 - Migrate nested `State`/`Action` to `Model/*` split files.
 - Move view-owned external/system observation into reducer-owned TCA lifecycle.
+- Run, select, or fix Voyager/macOS/SPM tests after code changes.
 - Before implementation, find reusable symbols and enforce clean architecture gates.
 
 ## Workflow
@@ -36,6 +37,7 @@ Use this skill for Voyager macOS TCA/FSD work.
 7. Execute checks from `references/verification.md`.
 8. For Xcode project listing, build, or test execution, prefer `references/xcodebuildmcp-workflow.md` over raw `xcodebuild` CLI instructions.
 9. When a task changes `State`/`Action`/reducer ownership, apply the action-taxonomy and reducer-composition heuristics from `references/development-rules.md` before choosing a split.
+10. For test-only or test-fix work, route directly through `references/testing-playbook.md` and `references/verification.md`; this skill owns the Voyager test execution loop.
 
 This skill routes internally. Do not ask the user to pick a mode.
 
@@ -93,8 +95,8 @@ Do not read every reference blindly. Start with the always-on references, then a
 ## Not for
 
 - Trivial copy-only or spacing-only SwiftUI tweaks with no TCA, dependency, or architecture impact.
-- Non-Voyager macOS work outside `apps/macos/Voyager/Voyager/**` unless the task still clearly matches this skill's TCA/FSD workflow.
-- Pure test execution tasks that are better served directly by `.agents/skills/test-runner/SKILL.md`.
+- Non-Voyager macOS work outside `apps/macos/Voyager/**`, `apps/macos/Packages/**`, or `apps/macos/Hosts/**` unless the task still clearly matches this skill's TCA/FSD workflow.
+- Non-Voyager test execution outside `apps/macos/**` unless the task still depends on Voyager/macOS package context.
 
 ## Hard constraints
 

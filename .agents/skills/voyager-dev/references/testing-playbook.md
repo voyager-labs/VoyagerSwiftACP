@@ -10,6 +10,29 @@ Keep TCA verification proportional: exhaustive where local correctness matters, 
 - Broader integration flows may use non-exhaustive testing deliberately when asserting every internal step would create noise rather than confidence.
 - The narrower the ownership boundary, the more exhaustive the test should be.
 
+## Test execution loop
+
+Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loops for Voyager/macOS/SPM work.
+
+1. **Find the right command**
+    - Prefer official commands from this playbook, `verification.md`, `xcodebuildmcp-workflow.md`, README/AGENTS, or CI config.
+    - For monorepos, narrow by modified app/package before broad runs.
+2. **Run targeted first**
+    - First pass: fastest relevant unit/spec tests.
+    - Second pass: package/module integration tests when behavior crosses boundaries.
+    - Third pass: full suite only when shared reducers, package APIs, or broad dependencies changed.
+3. **Analyze failures**
+    - Summarize the first failure log.
+    - Classify as environment, test expectation, or product logic.
+    - Re-run suspected flaky tests, but still identify the root cause.
+4. **Fix without weakening intent**
+    - Preserve the original test purpose.
+    - Do not remove assertions, skip tests, hide failures, or add blanket error suppression.
+    - Do not run UI tests unless explicitly required; use skip flags for UI suites when running app-level tests.
+5. **Rerun and report**
+    - Re-run the same focused command that failed.
+    - Record commands, pass/fail result, key failure summary, and any fix/next action.
+
 ## Test selection rules
 
 - `scaffold`
@@ -25,11 +48,21 @@ Keep TCA verification proportional: exhaustive where local correctness matters, 
 - When behavior changes across lifecycle or callback boundaries, cover the meaningful success, failure, cancel, reload, and teardown variants rather than a single happy path.
 - When a feature has branch-specific semantics, assert state at each boundary where those branches are meant to diverge so distinct behaviors cannot collapse together silently.
 
+## Test preparation
+
+- Before writing multiple test files for the same domain, audit existing test helpers and extract shared fixtures first. This eliminates duplication across subsequent test files and establishes consistent patterns.
+- Name test files by domain/behavior (e.g., `AiConnectionOAuthTests`), not by issue identifier (e.g., `Voy218SettingsGapTests`). Coverage maps belong in notepad or evidence, not in runtime test code.
+
+## TCA TestStore patterns
+
+- Use `TestStore(initialState:) { Reducer() } withDependencies: { ... }` for deterministic mock injection. Test both state mutations (in `send` closure) and received effects (`store.receive`). Use `.off` exhaustivity for complex reducer flows with computed properties.
+
 ## Dependency testing rules
 
 - Override nondeterministic or external values in tests: time, UUID, clocks, storage, network, workspace, notifications, file system.
 - Do not let reducers call direct globals like `UUID()`, `Date()`, `Task.sleep`, or `UserDefaults.standard` when tests should control them.
 - Prefer dependency clients and test overrides through `TestStore` dependencies.
+- Prefer shared test helper files over file-private helpers when multiple test classes need the same test infrastructure. If a helper must be file-private, colocate tests requiring it in the same file.
 
 ## Exhaustivity rules
 
@@ -45,6 +78,54 @@ Keep TCA verification proportional: exhaustive where local correctness matters, 
 - Could an in-flight effect be silently left running at test end?
 - Does at least one test prove the real downstream execution path for the highest-risk routed flow?
 - Do tests distinguish routing-only assertions from execution-chain assertions where both matter?
+
+## SPM Package Test Guidance
+
+### Package inventory (8 macOS packages)
+
+| #   | Package         | Path                                               | Testable          |
+| --- | --------------- | -------------------------------------------------- | ----------------- |
+| 1   | Onboarding      | `apps/macos/Packages/02_Pages/Onboarding/`         | ✅                |
+| 2   | Settings        | `apps/macos/Packages/02_Pages/Settings/`           | ✅                |
+| 3   | BetaAccess      | `apps/macos/Packages/04_Features/BetaAccess/`      | ✅                |
+| 4   | EntryOperations | `apps/macos/Packages/04_Features/EntryOperations/` | ✅                |
+| 5   | Ai              | `apps/macos/Packages/05_Entities/Ai/`              | ✅                |
+| 6   | AppPreferences  | `apps/macos/Packages/05_Entities/AppPreferences/`  | ❌ No test target |
+| 7   | Entry           | `apps/macos/Packages/05_Entities/Entry/`           | ✅                |
+| 8   | VoyagerShared   | `apps/macos/Packages/06_Shared/VoyagerShared/`     | ❌ No test target |
+
+### Discovery commands
+
+```bash
+# List all macOS packages with test targets
+find apps/macos/Packages -name "Package.swift" -maxdepth 3 -exec sh -c 'grep -q "testTarget" "$1" && echo "$1"' _ {} \;
+
+# Or per-package check
+grep "testTarget" apps/macos/Packages/05_Entities/Ai/Package.swift
+```
+
+### Per-package test execution
+
+```bash
+# Run all tests in a specific package
+xcrun swift test --package-path apps/macos/Packages/05_Entities/Ai
+
+# Run filtered tests (preferred for evidence capture)
+xcrun swift test --package-path apps/macos/Packages/05_Entities/Ai \
+  --filter 'AiRuntimeAdapterTests|ProviderConnectionStateTests'
+```
+
+### Evidence capture
+
+- Split evidence per package or per test class, not full package runs.
+- For packages with >100 tests, use `--filter` to capture incremental evidence.
+- No-test-target packages: explicitly document as skipped with reason.
+
+### Failure handling
+
+- A failed package test must propagate nonzero exit code.
+- Do not silence failures by wrapping in `|| true`.
+- Report per-package pass/fail status separately.
 
 ## Few-shot examples
 

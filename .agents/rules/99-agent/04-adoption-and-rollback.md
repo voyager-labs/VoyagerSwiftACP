@@ -24,6 +24,7 @@ This rule is the **Stage 3 execution protocol** for the three-stage lifecycle de
 - Follow the adoption sequence (steps 1–6) in order without skipping.
 - Require a patch spec with `readiness: Needs human review` or `Ready for adoption` before proceeding.
 - Require human review and diff confirmation before committing.
+- Require a harness-change evaluation verdict before adoption.
 - Record the commit hash in the patch spec `readiness` field and in task evidence.
 - Use `git revert <commit-hash>` as the primary rollback mechanism.
 - Bundle all files for one logical deliverable into one atomic commit.
@@ -55,8 +56,9 @@ Check that all conditions in the patch spec's `adoption_prerequisites` field are
 
 1. Read the `adoption_prerequisites` list from the patch spec.
 2. For each prerequisite, confirm the condition holds (e.g., prior patch adopted, finding no longer reproduces, ≥2 authoritative runs exist).
-3. If prerequisites are empty, proceed.
-4. If any prerequisite is unmet, report to the operator and stop.
+3. Confirm `99-agent/06-harness-change-evaluation.md` produced an `adopt` verdict, or that the operator explicitly accepted a documented `defer` with rationale.
+4. If prerequisites are empty, proceed.
+5. If any prerequisite is unmet, report to the operator and stop.
 
 ### 3. Human review checkpoint
 
@@ -66,6 +68,7 @@ The human operator must perform these checks:
 2. **Check target files**: Confirm the target paths are correct and the action is appropriate.
 3. **Check for conflicts**: Review the `conflict_set` field. If conflicts exist, verify they are acceptable.
 4. **Trust classification**: Check the trust class of the Stage 2 output in the manifest. If `reference-only`, pair with additional human review. If `invalid`, do not adopt.
+5. **Evaluation verdict**: Confirm the change improved behavior or document why adoption proceeds despite incomplete evidence.
 
 The operator explicitly approves or rejects the patch spec. No agent may proceed without operator confirmation.
 
@@ -129,3 +132,4 @@ Record the revert commit hash in the task evidence file. Note the reason for rol
 - The patch spec's `readiness` field shows `Adopted (commit {hash})`.
 - Rollback of any bundle leaves no orphaned references in other rule files.
 - No `.agents/` file contains a plan slug or run ID outside of evidence pointer comments.
+- The task evidence or PR body records the harness evaluation verdict and rollback path.
