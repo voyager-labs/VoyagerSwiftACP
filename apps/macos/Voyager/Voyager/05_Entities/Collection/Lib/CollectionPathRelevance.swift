@@ -1,6 +1,10 @@
 import Foundation
 
-nonisolated func collectionChangeIsRelevant(changedPaths: [String], scopes: [String]) -> Bool {
+nonisolated func collectionChangeIsRelevant(
+    changedPaths: [String],
+    scopes: [String],
+    includeSubfolders: Bool = true,
+) -> Bool {
     let normalizedScopes = scopes.compactMap { scope -> String? in
         guard !scope.isEmpty, scope.hasPrefix("/") else { return nil }
         return URL(fileURLWithPath: scope).standardizedFileURL.path
@@ -13,6 +17,14 @@ nonisolated func collectionChangeIsRelevant(changedPaths: [String], scopes: [Str
     return changedPaths.contains { changedPath in
         let normalizedPath = URL(fileURLWithPath: changedPath).standardizedFileURL.path
         return normalizedScopes.contains { scopePath in
+            guard includeSubfolders else {
+                if normalizedPath == scopePath {
+                    return true
+                }
+                let parentPath = URL(fileURLWithPath: normalizedPath).deletingLastPathComponent().standardizedFileURL
+                    .path
+                return parentPath == scopePath
+            }
             if normalizedPath == scopePath {
                 return true
             }

@@ -30,6 +30,7 @@ struct CollectionOpenRestorationPayload: Equatable, Sendable {
 
 struct CollectionNavigationStatePayload: Equatable, Sendable {
     let context: CollectionContext
+    let includeSubfolders: Bool
     let document: CollectionOpenedDocumentState?
     let baseline: CollectionBaseline?
     let composerText: String

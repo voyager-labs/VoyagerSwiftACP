@@ -299,7 +299,11 @@ private func handleCollectionFileLoaded(
             let canonicalPath = url.standardizedFileURL.path
             isStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
             _ = collectionStalenessClient.consumeInvalidation(canonicalPath)
-            collectionStalenessClient.registerCollection(canonicalPath, file.scopes)
+            collectionStalenessClient.registerCollection(
+                canonicalPath,
+                file.scopes,
+                file.includeSubfolders,
+            )
         }
         return handleCollectionFileLoadedSuccess(
             file,
@@ -334,6 +338,7 @@ private func handleNavigateToCollection(
     }
     let payload = CollectionNavigationStatePayload(
         context: navigation.context,
+        includeSubfolders: navigation.context.includeSubfolders,
         document: openedURL.map {
             CollectionOpenedDocumentState(
                 url: $0,

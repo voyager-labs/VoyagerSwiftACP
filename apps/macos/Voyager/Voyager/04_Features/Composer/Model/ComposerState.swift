@@ -62,6 +62,7 @@ struct ComposerState: Equatable {
         CollectionContext(
             query: query,
             scopes: scopeEditor.selection.legacyScopePaths,
+            includeSubfolders: scopeEditor.includeSubfolders,
             conditions: conditions,
         )
     }
@@ -132,6 +133,7 @@ struct ComposerState: Equatable {
         }
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
         scopeEditor.selection = selection
+        scopeEditor.includeSubfolders = payload.context.includeSubfolders
         scopes = selection.legacyScopePaths
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
@@ -146,6 +148,7 @@ struct ComposerState: Equatable {
         text = payload.composerText
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.scopes)
         scopeEditor.selection = selection
+        scopeEditor.includeSubfolders = payload.includeSubfolders
         scopes = selection.legacyScopePaths
         conditions = payload.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
@@ -162,6 +165,7 @@ struct ComposerState: Equatable {
         text = payload.context.query
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
         scopeEditor.selection = selection
+        scopeEditor.includeSubfolders = payload.context.includeSubfolders
         scopes = selection.legacyScopePaths
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()

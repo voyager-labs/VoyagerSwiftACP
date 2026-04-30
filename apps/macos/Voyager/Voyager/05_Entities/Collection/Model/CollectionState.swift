@@ -166,6 +166,7 @@ extension CollectionState {
             trimmedQuery: trimmedQuery,
             resolved: resolved,
             isStale: isStale,
+            includeSubfolders: file.includeSubfolders,
         )
         let kind: CollectionSessionPhase.OpenKind = file.snapshotMeta == nil ? .definition : .hydratedSnapshot
 
@@ -199,10 +200,12 @@ extension CollectionState {
         trimmedQuery: String,
         resolved: AppliedFiltersUtils.ResolutionResult,
         isStale: Bool,
+        includeSubfolders: Bool,
     ) -> CollectionContext {
         let loadedContext = CollectionContext(
             query: trimmedQuery,
             scopes: resolved.scopes,
+            includeSubfolders: includeSubfolders,
             conditions: resolved.conditions,
         )
         if isStale,

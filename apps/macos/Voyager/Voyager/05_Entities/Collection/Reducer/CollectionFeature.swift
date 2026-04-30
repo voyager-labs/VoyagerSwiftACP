@@ -54,7 +54,11 @@ struct CollectionFeature {
 
             case let .externalPathsChanged(paths):
                 let affectsCollection: Bool = if let context = state.collectionContext {
-                    collectionChangeIsRelevant(changedPaths: paths, scopes: context.scopes)
+                    collectionChangeIsRelevant(
+                        changedPaths: paths,
+                        scopes: context.scopes,
+                        includeSubfolders: context.includeSubfolders,
+                    )
                 } else {
                     !paths.isEmpty
                 }
