@@ -108,6 +108,62 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertEqual(decoded, file)
     }
 
+    func testDecodeLegacyFileDefaultsIncludeSubfoldersToTrue() throws {
+        struct LegacyFile: Codable {
+            let schemaVersion: Int
+            let id: String
+            let name: String
+            let createdAt: Date
+            let updatedAt: Date
+            let query: String
+            let scopes: [String]
+            let conditions: [CollectionCondition]
+            let snapshot: CollectionPersistedSnapshot?
+            let snapshotMeta: CollectionSnapshotMeta?
+            let appVersion: String?
+        }
+
+        let legacy = LegacyFile(
+            schemaVersion: 1,
+            id: "legacy-file",
+            name: "Legacy File",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        let data = try PropertyListEncoder().encode(legacy)
+        let decoded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+
+        XCTAssertTrue(decoded.includeSubfolders)
+    }
+
+    func testEncodeDecodePreservesIncludeSubfoldersFalse() throws {
+        let file = VoyagerCollectionFile(
+            id: "exact-only",
+            name: "Exact Only",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "report",
+            scopes: ["/tmp"],
+            includeSubfolders: false,
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        let data = try PropertyListEncoder().encode(file)
+        let decoded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+
+        XCTAssertFalse(decoded.includeSubfolders)
+    }
+
     func testDecodeDefinitionOnlyFileLeavesSnapshotNil() throws {
         let file = VoyagerCollectionFile(
             id: "legacy",

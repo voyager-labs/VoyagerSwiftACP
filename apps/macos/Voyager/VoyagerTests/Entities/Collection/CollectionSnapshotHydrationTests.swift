@@ -21,9 +21,24 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertEqual(response?.itemCount, 1)
         XCTAssertEqual(response?.items, [.string("/tmp/report.txt")])
         XCTAssertEqual(response?.appliedFilters?.scopes, ["/tmp"])
+        XCTAssertEqual(response?.appliedFilters?.includeSubfolders, true)
         XCTAssertEqual(response?.appliedFilters?.conditions, [
             .init(propertyKey: "name_full", operator: "eq", value: .string("report")),
         ])
+    }
+
+    func testSyntheticSearchResponsePreservesIncludeSubfoldersFlag() {
+        let file = makeSnapshotFile(
+            query: "report",
+            scopes: ["/tmp"],
+            includeSubfolders: false,
+            conditions: [],
+            snapshotItems: [.string("/tmp/report.txt")],
+        )
+
+        let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
+
+        XCTAssertEqual(response?.appliedFilters?.includeSubfolders, false)
     }
 
     func testFingerprintMismatchMarksSnapshotUnusable() {
@@ -59,6 +74,25 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         )
 
         XCTAssertEqual(fromUI, fromFile)
+    }
+
+    func testDefinitionFingerprintChangesWhenIncludeSubfoldersChanges() {
+        let conditions = makeUIConditions()
+
+        let recursive = CollectionSnapshotHydration.definitionFingerprint(
+            query: "report",
+            scopes: ["/tmp"],
+            includeSubfolders: true,
+            conditions: conditions,
+        )
+        let exact = CollectionSnapshotHydration.definitionFingerprint(
+            query: "report",
+            scopes: ["/tmp"],
+            includeSubfolders: false,
+            conditions: conditions,
+        )
+
+        XCTAssertNotEqual(recursive, exact)
     }
 }
 
@@ -112,6 +146,7 @@ private func makeCondition(
 private func makeSnapshotFile(
     query: String,
     scopes: [String],
+    includeSubfolders: Bool = true,
     conditions: [CollectionCondition],
     snapshotItems: [JSONValue],
     fingerprint: String? = nil,
@@ -120,6 +155,7 @@ private func makeSnapshotFile(
         ?? CollectionSnapshotHydration.definitionFingerprint(
             query: query,
             scopes: scopes,
+            includeSubfolders: includeSubfolders,
             conditions: conditions,
         )
 
@@ -130,6 +166,7 @@ private func makeSnapshotFile(
         updatedAt: .distantPast,
         query: query,
         scopes: scopes,
+        includeSubfolders: includeSubfolders,
         conditions: conditions,
         snapshot: .init(items: snapshotItems),
         snapshotMeta: .init(

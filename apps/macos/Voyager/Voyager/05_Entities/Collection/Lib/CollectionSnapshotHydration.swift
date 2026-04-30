@@ -8,6 +8,7 @@ enum CollectionSnapshotHydration {
     static func definitionFingerprint(
         query: String,
         scopes: [String],
+        includeSubfolders: Bool = true,
         conditions: [CollectionCondition],
     ) -> String {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -22,6 +23,7 @@ enum CollectionSnapshotHydration {
         return digest(
             query: normalizedQuery,
             scopes: normalizedScopes,
+            includeSubfolders: includeSubfolders,
             conditions: normalizedConditions,
         )
     }
@@ -30,6 +32,7 @@ enum CollectionSnapshotHydration {
         definitionFingerprint(
             query: file.query,
             scopes: file.scopes,
+            includeSubfolders: file.includeSubfolders,
             conditions: file.conditions,
         )
     }
@@ -37,11 +40,13 @@ enum CollectionSnapshotHydration {
     static func definitionFingerprint(
         query: String,
         scopes: [String],
+        includeSubfolders: Bool = true,
         conditions: [Condition],
     ) -> String {
         definitionFingerprint(
             query: query,
             scopes: scopes,
+            includeSubfolders: includeSubfolders,
             conditions: collectionConditions(from: conditions),
         )
     }
@@ -63,6 +68,7 @@ enum CollectionSnapshotHydration {
             itemCount: file.snapshotMeta?.itemCount ?? snapshot.items.count,
             appliedFilters: VoyagerShared.AppliedFiltersPayload(
                 scopes: file.scopes,
+                includeSubfolders: file.includeSubfolders,
                 conditions: file.conditions.map {
                     VoyagerShared.SearchConditionPayload(
                         propertyKey: $0.propertyKey,
@@ -128,11 +134,13 @@ enum CollectionSnapshotHydration {
     private static func digest(
         query: String,
         scopes: [String],
+        includeSubfolders: Bool,
         conditions: [String],
     ) -> String {
         let canonical = [
             query,
             scopes.joined(separator: "\u{1D}"),
+            includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
             conditions.joined(separator: "\u{1C}"),
         ].joined(separator: "\u{1B}")
 

@@ -7,7 +7,34 @@ nonisolated struct SearchRequestPayload: Codable, Equatable, Sendable {
 
 nonisolated struct SearchFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]
+    let includeSubfolders: Bool
     let conditions: [SearchConditionPayload]
+
+    enum CodingKeys: String, CodingKey {
+        case scopes
+        case includeSubfolders
+        case conditions
+    }
+
+    init(scopes: [String], includeSubfolders: Bool = true, conditions: [SearchConditionPayload]) {
+        self.scopes = scopes
+        self.includeSubfolders = includeSubfolders
+        self.conditions = conditions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        scopes = try container.decode([String].self, forKey: .scopes)
+        includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
+        conditions = try container.decode([SearchConditionPayload].self, forKey: .conditions)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(scopes, forKey: .scopes)
+        try container.encode(includeSubfolders, forKey: .includeSubfolders)
+        try container.encode(conditions, forKey: .conditions)
+    }
 }
 
 nonisolated struct SearchConditionPayload: Codable, Equatable, Sendable {
@@ -35,7 +62,14 @@ nonisolated struct SearchResponsePayload: Codable, Equatable, Sendable {
 
 nonisolated struct AppliedFiltersPayload: Codable, Equatable, Sendable {
     let scopes: [String]?
+    let includeSubfolders: Bool?
     let conditions: [SearchConditionPayload]?
+
+    init(scopes: [String]? = nil, includeSubfolders: Bool? = nil, conditions: [SearchConditionPayload]? = nil) {
+        self.scopes = scopes
+        self.includeSubfolders = includeSubfolders
+        self.conditions = conditions
+    }
 }
 
 nonisolated struct SearchErrorPayload: Codable, Equatable, Sendable {
