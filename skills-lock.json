@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "computedHash": "1e85f6f9686e145aca4a124e3b704b9bbea9aa87e08515c1e352eee70f6e6e7a"
+    },
+    "skill-judge": {
+      "source": "softaworks/agent-toolkit",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/skill-authoring-pipeline/skill-judge/SKILL.md",
+      "computedHash": "737ef3628f0e11353114c3bd05a1c9d0c448dbfec1ae85db839253cbe93198b6"
+    },
+    "skill-maker": {
+      "source": "accolver/skill-maker",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/skill-authoring-pipeline/skill-maker/SKILL.md",
+      "computedHash": "d830ff0a65d550181d84413385312d77f4659c585f95b7b910314e06aabe44f6"
+    },
+    "skill-standardization": {
+      "source": "supercent-io/skills-template",
+      "sourceType": "github-manual",
+      "skillPath": ".agents/skills/skill-authoring-pipeline/skill-standardization/SKILL.md",
+      "computedHash": "14872842dbb357d68c1b9373ac5f400eedbc7d8bd54f47b5b0401e7dbf8a2b01"
+    },
+    "skillgrade-graders": {
+      "source": "mgechev/skillgrade",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/skill-authoring-pipeline/skillgrade/skillgrade-graders/SKILL.md",
+      "computedHash": "2fe7aec1d5c44f4c8e2cb138e4c93aa010f84dc00ec0b0e83caf2345606d657e"
+    },
+    "skillgrade-setup": {
+      "source": "mgechev/skillgrade",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/skill-authoring-pipeline/skillgrade/skillgrade-setup/SKILL.md",
+      "computedHash": "9696cb45ce98ef9240565088a2dad39bb3d2e0f0a8ffb1d1cbb19602c8173dc6"
+    }
+  }
+}
