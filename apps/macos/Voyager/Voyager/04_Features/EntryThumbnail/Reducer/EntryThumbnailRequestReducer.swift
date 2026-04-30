@@ -1,6 +1,8 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
+import VoyagerShared
 
 @Reducer
 struct EntryThumbnailRequestReducer {
