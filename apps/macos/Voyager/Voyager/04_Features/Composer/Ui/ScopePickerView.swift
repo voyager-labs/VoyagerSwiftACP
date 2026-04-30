@@ -79,28 +79,10 @@ struct ScopePickerView: View {
     private func includeSubfoldersRow(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
     ) -> some View {
-        let includeSubfolders = viewStore.scopeEditor.includeSubfolders
-        return VStack(spacing: 0) {
-            Button {
-                store.send(.scopeEditorSetIncludeSubfolders(!includeSubfolders))
-            } label: {
-                HStack(spacing: 10) {
-                    Text(includeSubfolders ? "Include subfolders" : "Only selected folder")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-                    Spacer()
-                    Image(systemName: includeSubfolders ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 14))
-                        .foregroundColor(includeSubfolders ? .accentColor : .secondary)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.plain)
-
-            VoyagerDS.SystemColor.separator
-                .frame(height: 1)
-        }
+        IncludeSubfoldersRow(
+            includeSubfolders: viewStore.scopeEditor.includeSubfolders,
+            onTap: { store.send(.scopeEditorSetIncludeSubfolders(!$0)) },
+        )
     }
 
     @ViewBuilder
@@ -178,31 +160,12 @@ struct ScopePickerView: View {
         }
 
         return AnyView(
-            HStack(spacing: 8) {
-                Button(action: {
-                    handleCurrentScopeTap(currentItem, viewStore: viewStore)
-                }, label: {
-                    currentScopeLabel(currentItem)
-                })
-                .buttonStyle(.plain)
-
-                Button {
-                    store.send(.currentScope(.remove(path: currentItem.base.path)))
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .medium))
-                }
-                .buttonStyle(.borderless)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme)),
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5),
+            CurrentScopeRow(
+                currentItem: currentItem,
+                colorScheme: colorScheme,
+                displayName: entryLoadingClient.displayName(currentItem.base.path),
+                onTap: { handleCurrentScopeTap(currentItem, viewStore: viewStore) },
+                onRemove: { store.send(.currentScope(.remove(path: currentItem.base.path))) },
             ),
         )
     }
@@ -212,29 +175,8 @@ struct ScopePickerView: View {
             return AnyView(EmptyView())
         }
 
-        let text = switch slot {
-        case .empty:
-            "No exceptions"
-        case let .exceptionPresent(count):
-            count == 1 ? "1 exception present" : "\(count) exceptions present"
-        }
-
         return AnyView(
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                Text(text)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme).opacity(0.5)),
-            ),
+            ExceptionSlotRow(slot: slot, colorScheme: colorScheme),
         )
     }
 
@@ -251,7 +193,12 @@ struct ScopePickerView: View {
             Button(action: {
                 handleAddableCandidateTap(candidate, viewStore: viewStore)
             }, label: {
-                addableCandidateLabel(candidate, isHovering: isHovering)
+                AddableCandidateRow(
+                    candidate: candidate,
+                    isHovering: isHovering,
+                    colorScheme: colorScheme,
+                    applicationsIcon: applicationsIcon(),
+                )
             })
             .buttonStyle(.plain)
             .onHover { hovering in
@@ -272,27 +219,6 @@ struct ScopePickerView: View {
         ))
     }
 
-    private func currentScopeLabel(_ currentItem: ComposerScopeEditorCurrentItem) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text(entryLoadingClient.displayName(currentItem.base.path))
-                    .font(.system(size: 13, weight: currentItem.isEditingTarget ? .semibold : .regular))
-                    .foregroundColor(.primary)
-                if currentItem.isEditingTarget {
-                    Text("Editing")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-            }
-            Text(currentItem.base.path)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     private func handleAddableCandidateTap(
         _ candidate: ComposerScopeEditorCandidateItem,
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
@@ -309,13 +235,136 @@ struct ScopePickerView: View {
         }
     }
 
-    private func addableCandidateLabel(
-        _ candidate: ComposerScopeEditorCandidateItem,
-        isHovering: Bool,
-    ) -> some View {
+    private func applicationsIcon() -> NSImage? {
+        let appIcon = NSImage(
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+        )
+        appIcon?.isTemplate = true
+        return appIcon
+    }
+}
+
+private struct IncludeSubfoldersRow: View {
+    let includeSubfolders: Bool
+    let onTap: (Bool) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                onTap(includeSubfolders)
+            } label: {
+                HStack(spacing: 10) {
+                    Text("Include subfolders")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: includeSubfolders ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 14))
+                        .foregroundColor(includeSubfolders ? .accentColor : .secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+
+            VoyagerDS.SystemColor.separator
+                .frame(height: 1)
+        }
+    }
+}
+
+private struct CurrentScopeRow: View {
+    let currentItem: ComposerScopeEditorCurrentItem
+    let colorScheme: ColorScheme
+    let displayName: String
+    let onTap: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
         HStack(spacing: 8) {
-            if candidate.path == "/Applications", let appIcon = applicationsIcon() {
-                Image(nsImage: appIcon)
+            Button(action: onTap) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(displayName)
+                            .font(.system(size: 13, weight: currentItem.isEditingTarget ? .semibold : .regular))
+                            .foregroundColor(.primary)
+                        if currentItem.isEditingTarget {
+                            Text("Editing")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Text(currentItem.base.path)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .medium))
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme)),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5),
+        )
+    }
+}
+
+private struct ExceptionSlotRow: View {
+    let slot: ComposerScopeEditorExceptionSlotState
+    let colorScheme: ColorScheme
+
+    private var text: String {
+        switch slot {
+        case .empty:
+            "No exceptions"
+        case let .exceptionPresent(count):
+            count == 1 ? "1 exception present" : "\(count) exceptions present"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme).opacity(0.5)),
+        )
+    }
+}
+
+private struct AddableCandidateRow: View {
+    let candidate: ComposerScopeEditorCandidateItem
+    let isHovering: Bool
+    let colorScheme: ColorScheme
+    let applicationsIcon: NSImage?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if candidate.path == "/Applications", let applicationsIcon {
+                Image(nsImage: applicationsIcon)
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(.secondary)
@@ -349,13 +398,5 @@ struct ScopePickerView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
         )
-    }
-
-    private func applicationsIcon() -> NSImage? {
-        let appIcon = NSImage(
-            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
-        )
-        appIcon?.isTemplate = true
-        return appIcon
     }
 }
