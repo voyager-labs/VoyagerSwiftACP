@@ -19,6 +19,11 @@ struct SpotlightQueryEngine: Sendable {
         return loadPaths(query: query, limit: maxCandidates)
     }
 
+    func loadPaths(queryString: String, scopes: [URL], limit: Int) throws -> [String] {
+        let query = try makeQuery(queryString: queryString, scopes: scopes)
+        return loadPaths(query: query, limit: max(1, limit))
+    }
+
     func loadMatches(
         queryString: String,
         scopes: [URL]?,

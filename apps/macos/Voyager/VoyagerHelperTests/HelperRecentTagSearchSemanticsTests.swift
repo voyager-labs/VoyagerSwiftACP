@@ -237,6 +237,22 @@ final class HelperRecentTagSearchSemanticsTests: XCTestCase {
         )
     }
 
+    func testFilterPathsKeepsOnlyDirectChildrenWhenSubfoldersDisabled() throws {
+        let service = SpotlightSearchService()
+
+        let filtered = service.filterPaths(
+            [
+                "/tmp/root/file.txt",
+                "/tmp/root/nested/deeper.txt",
+                "/tmp/other/file.txt",
+            ],
+            scopes: ["/tmp/root"],
+            includeSubfolders: false,
+        )
+
+        XCTAssertEqual(filtered, ["/tmp/root/file.txt"])
+    }
+
     private func makeSandbox() throws -> URL {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -57,16 +57,23 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
         let compiledPlan = try compiler.compilePlan(conditions: prepared.conditions)
 
         let scopeURLs = resolveFilterScopeURLs(prepared.scopes)
+        let requestedLimit = filters.includeSubfolders ? maxCandidates : maxCandidates * 8
         let paths = try executionEngine.loadPaths(
             queryString: compiledPlan.predicate,
             scopes: scopeURLs,
+            limit: requestedLimit,
+        )
+        let filteredPaths = filterPaths(
+            paths,
+            scopes: prepared.scopes,
+            includeSubfolders: filters.includeSubfolders,
         )
 
-        if paths.count == maxCandidates {
+        if paths.count == requestedLimit {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates): id=\(requestId)")
         }
 
-        let items = makeJSONItems(from: paths)
+        let items = makeJSONItems(from: filteredPaths)
 
         logger.info(
             "MDQuery applyFilters completed: id=\(requestId) scopes=\(scopeURLs.count) pushdown_conditions=\(compiledPlan.pushdownConditions.count) items=\(items.count)",
@@ -76,6 +83,7 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
             itemCount: items.count,
             appliedFilters: AppliedFiltersPayload(
                 scopes: filters.scopes,
+                includeSubfolders: filters.includeSubfolders,
                 conditions: filters.conditions,
             ),
             items: items,
@@ -178,6 +186,24 @@ extension SpotlightSearchService {
             }
             return normalized.map { URL(fileURLWithPath: $0).standardizedFileURL }
         }
+    }
+
+    func filterPaths(_ paths: [String], scopes: [String], includeSubfolders: Bool) -> [String] {
+        guard includeSubfolders else {
+            let normalizedScopes = SearchScopeNormalizer.normalizeScopes(scopes)
+            guard !normalizedScopes.isEmpty else {
+                return paths
+            }
+
+            return paths.filter { path in
+                let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+                let parentPath = URL(fileURLWithPath: normalizedPath).deletingLastPathComponent().standardizedFileURL
+                    .path
+                return normalizedScopes.contains(parentPath == "/" ? "/" : parentPath)
+            }
+        }
+
+        return paths
     }
 
     func makeJSONItems(from paths: [String]) -> [JSONValue] {
