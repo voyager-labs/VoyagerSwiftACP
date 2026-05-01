@@ -189,11 +189,11 @@ private func makeStore(
             key == "tag_names" ? "categorical" : RegistryTestSupport.propertyTypeString(for: key)
         }
         $0.registryClient = registryClient
-        $0.finderFavoritesTagClient = FinderFavoritesTagClient(
-            favoriteTagNames: { [] },
+        $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient(
+            favoriteTagNames: { [] as [String] },
             favoriteTags: { favoriteTags },
         )
     }
-    store.exhaustivity = .off
+    store.exhaustivity = Exhaustivity.off
     return store
 }
