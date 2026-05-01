@@ -91,6 +91,75 @@ final class ComposerScopeEditorDismissApplyTests: XCTestCase {
     }
 
     // swiftlint:disable:next function_body_length
+    func testScopeEditorDismissReappliesFiltersForScopeOnlyCollectionChange() async {
+        let applyRecorder = DismissApplyFiltersRecorder()
+
+        var initialState = ComposerState()
+        initialState.scopeEditor.isPresented = true
+        initialState.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+            exceptions: [],
+        )
+        initialState.scopeEditor.committedSelection = initialState.scopeEditor.selection
+        initialState.scopes = ["/Users/test/Documents"]
+        initialState.collectionContext = CollectionContext(
+            query: "",
+            scopes: ["/Users/test/Documents"],
+            includeSubfolders: true,
+            conditions: [],
+        )
+        initialState.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/test/Downloads")],
+            exceptions: [],
+        )
+        initialState.scopes = ["/Users/test/Downloads"]
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.searchClient.applyFilters = { request in
+                await applyRecorder.record(request)
+                return VoyagerShared.SearchResponsePayload(
+                    itemCount: 0,
+                    appliedFilters: VoyagerShared.AppliedFiltersPayload(
+                        scopes: request.filters.scopes,
+                        includeSubfolders: request.filters.includeSubfolders,
+                        conditions: request.filters.conditions,
+                    ),
+                    items: nil,
+                    error: nil,
+                )
+            }
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = .testValue
+        }
+        store.exhaustivity = .off
+
+        await store.send(.scopeEditorSetPresented(false)) {
+            $0.scopeEditor.isPresented = false
+            $0.scopeEditor.queryText = ""
+            $0.scopeEditor.editingPath = nil
+            $0.scopeEditor.entryMode = .add
+            $0.scopeEditor.listState = .defaultCandidates
+            $0.scopeEditor.candidateItems = []
+        }
+
+        await store.receive(\.view.applyFilters) {
+            $0.isLoadingFilters = true
+            $0.isFilteringInFlight = true
+            $0.submittedSearchFilters = VoyagerShared.SearchFiltersPayload(
+                scopes: ["/Users/test/Downloads"],
+                includeSubfolders: true,
+                conditions: [],
+            )
+        }
+
+        let recordedRequest = await applyRecorder.last()
+        XCTAssertEqual(recordedRequest?.filters.scopes, ["/Users/test/Downloads"])
+        XCTAssertEqual(recordedRequest?.filters.includeSubfolders, true)
+        XCTAssertEqual(recordedRequest?.filters.conditions, [])
+    }
+
+    // swiftlint:disable:next function_body_length
     func testScopeEditorDismissReappliesFiltersWhenScopeChanged() async {
         let applyRecorder = DismissApplyFiltersRecorder()
 
