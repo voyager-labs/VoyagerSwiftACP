@@ -12,17 +12,25 @@ public nonisolated struct SearchRequestPayload: Codable, Equatable, Sendable {
 
 public nonisolated struct SearchFiltersPayload: Codable, Equatable, Sendable {
     public let scopes: [String]
+    public let excludedScopes: [String]
     public let includeSubfolders: Bool
     public let conditions: [SearchConditionPayload]
 
     public enum CodingKeys: String, CodingKey {
         case scopes
+        case excludedScopes
         case includeSubfolders
         case conditions
     }
 
-    public init(scopes: [String], includeSubfolders: Bool = true, conditions: [SearchConditionPayload]) {
+    public init(
+        scopes: [String],
+        excludedScopes: [String] = [],
+        includeSubfolders: Bool = true,
+        conditions: [SearchConditionPayload]
+    ) {
         self.scopes = scopes
+        self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
         self.conditions = conditions
     }
@@ -30,6 +38,7 @@ public nonisolated struct SearchFiltersPayload: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         scopes = try container.decode([String].self, forKey: .scopes)
+        excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
         includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
         conditions = try container.decode([SearchConditionPayload].self, forKey: .conditions)
     }
@@ -37,6 +46,7 @@ public nonisolated struct SearchFiltersPayload: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(scopes, forKey: .scopes)
+        try container.encode(excludedScopes, forKey: .excludedScopes)
         try container.encode(includeSubfolders, forKey: .includeSubfolders)
         try container.encode(conditions, forKey: .conditions)
     }
@@ -89,13 +99,43 @@ public nonisolated struct SearchResponsePayload: Codable, Equatable, Sendable {
 
 public nonisolated struct AppliedFiltersPayload: Codable, Equatable, Sendable {
     public let scopes: [String]?
+    public let excludedScopes: [String]
     public let includeSubfolders: Bool?
     public let conditions: [SearchConditionPayload]?
 
-    public init(scopes: [String]? = nil, includeSubfolders: Bool? = nil, conditions: [SearchConditionPayload]? = nil) {
+    public enum CodingKeys: String, CodingKey {
+        case scopes
+        case excludedScopes
+        case includeSubfolders
+        case conditions
+    }
+
+    public init(
+        scopes: [String]? = nil,
+        excludedScopes: [String] = [],
+        includeSubfolders: Bool? = nil,
+        conditions: [SearchConditionPayload]? = nil
+    ) {
         self.scopes = scopes
+        self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
         self.conditions = conditions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        scopes = try container.decodeIfPresent([String].self, forKey: .scopes)
+        excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
+        includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders)
+        conditions = try container.decodeIfPresent([SearchConditionPayload].self, forKey: .conditions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(scopes, forKey: .scopes)
+        try container.encode(excludedScopes, forKey: .excludedScopes)
+        try container.encodeIfPresent(includeSubfolders, forKey: .includeSubfolders)
+        try container.encodeIfPresent(conditions, forKey: .conditions)
     }
 }
 
