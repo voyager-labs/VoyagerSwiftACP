@@ -27,6 +27,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             .init(
                 definitionFingerprint: "",
                 relevanceRoots: ["/tmp/voyager"],
+                includeSubfolders: true,
                 lastInvalidatedAt: .distantFuture,
             ),
         )
@@ -43,7 +44,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             guard case .navigation(.internal(.collectionFileLoaded(.success))) = action else {
                 return false
             }
-            return store.state.content.collectionSession.isStale
+            return store.state.content.collectionSession.phase.isStale
         }
         await store.finish()
     }
@@ -69,6 +70,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             .init(
                 definitionFingerprint: "",
                 relevanceRoots: ["/tmp/voyager"],
+                includeSubfolders: true,
                 lastInvalidatedAt: .distantFuture,
             ),
         )
@@ -86,14 +88,13 @@ final class CollectionReopenStaleTests: XCTestCase {
             $0.content.composer.text = ""
             $0.content.composer.scopes = ["/tmp/voyager"]
             $0.content.composer.conditions = []
-            $0.content.collectionSession.baseline = .init(
-                context: .init(query: "", scopes: ["/tmp/voyager"], conditions: []),
+            $0.content.collectionSession.metadata.baseline = .init(
+                context: .init(query: "", scopes: ["/tmp/voyager"], includeSubfolders: true, conditions: []),
             )
         }
 
-        XCTAssertTrue(store.state.content.collectionSession.isStale)
-        XCTAssertNotEqual(store.state.content.collectionSession.openKind, .hydratedSnapshot)
-        XCTAssertFalse(store.state.content.shouldRefreshOnOpen)
+        XCTAssertTrue(store.state.content.collectionSession.phase.isStale)
+        XCTAssertNotEqual(store.state.content.collectionSession.phase.openKind, .hydratedSnapshot)
         await assertCollectionModeNavigation(store: store)
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
         await store.finish()
@@ -120,6 +121,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             .init(
                 definitionFingerprint: "",
                 relevanceRoots: ["/tmp/voyager"],
+                includeSubfolders: true,
                 lastInvalidatedAt: .distantFuture,
             ),
         )
@@ -136,7 +138,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             guard case .navigation(.internal(.collectionFileLoaded(.success))) = action else {
                 return false
             }
-            return store.state.content.collectionSession.isStale
+            return store.state.content.collectionSession.phase.isStale
         }
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
@@ -146,7 +148,12 @@ final class CollectionReopenStaleTests: XCTestCase {
     func testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = makeDefinitionOnlyCollectionFile(query: "needle")
-        let reopenContext = CollectionContext(query: "report", scopes: ["/tmp/voyager"], conditions: [])
+        let reopenContext = CollectionContext(
+            query: "report",
+            scopes: ["/tmp/voyager"],
+            includeSubfolders: true,
+            conditions: [],
+        )
 
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
         stalenessClient.upsertRecord(
@@ -154,6 +161,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             .init(
                 definitionFingerprint: "",
                 relevanceRoots: ["/tmp/voyager"],
+                includeSubfolders: true,
                 lastInvalidatedAt: .distantFuture,
             ),
         )
@@ -175,14 +183,13 @@ final class CollectionReopenStaleTests: XCTestCase {
             $0.content.composer.text = reopenContext.query
             $0.content.composer.scopes = ["/tmp/voyager"]
             $0.content.composer.conditions = []
-            $0.content.collectionSession.baseline = .init(
+            $0.content.collectionSession.metadata.baseline = .init(
                 context: reopenContext,
             )
         }
 
-        XCTAssertTrue(store.state.content.collectionSession.isStale)
-        XCTAssertNotEqual(store.state.content.collectionSession.openKind, .hydratedSnapshot)
-        XCTAssertFalse(store.state.content.shouldRefreshOnOpen)
+        XCTAssertTrue(store.state.content.collectionSession.phase.isStale)
+        XCTAssertNotEqual(store.state.content.collectionSession.phase.openKind, .hydratedSnapshot)
         await assertCollectionModeNavigation(store: store)
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
@@ -201,7 +208,7 @@ final class CollectionReopenStaleTests: XCTestCase {
         )
         let navigation = ContentPageCollectionNavigation(
             kind: .file(url: URL(fileURLWithPath: "/tmp/history.voycoll"), name: "history"),
-            context: .init(query: "report", scopes: ["/tmp"], conditions: []),
+            context: .init(query: "report", scopes: ["/tmp"], includeSubfolders: true, conditions: []),
             sortKey: .name,
             sortOrder: .ascending,
             viewLayout: .list,
@@ -221,8 +228,10 @@ final class CollectionReopenStaleTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.navigation(.internal(.navigateToCollection(navigation)))) {
-            $0.content.collectionSession.openedCompatibility = compatibility
-            $0.content.collectionSession.baseline = .init(context: navigation.context)
+            if case let .file(url, name) = navigation.kind {
+                $0.content.collectionSession.document = .init(url: url, name: name, compatibility: compatibility)
+            }
+            $0.content.collectionSession.metadata.baseline = .init(context: navigation.context)
             $0.content.collectionContext = navigation.context
             $0.content.composer.collectionContext = navigation.context
             $0.content.composer.pendingSearchQuery = "report"
@@ -231,7 +240,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             $0.content.composer.conditions = []
         }
 
-        XCTAssertEqual(store.state.content.collectionSession.openedCompatibility, compatibility)
+        XCTAssertEqual(store.state.content.collectionSession.document?.compatibility, compatibility)
     }
 }
 
@@ -258,8 +267,11 @@ private func makeDefinitionOnlyStore(
 ) -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
     var state = FileManagerWindowState()
     state.content.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
-    state.content.collectionSession.openedURL = openedURL
-    state.content.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
+    state.content.collectionSession.document = .init(
+        url: openedURL,
+        name: openedURL.deletingPathExtension().lastPathComponent,
+        compatibility: nil,
+    )
     state.content.collectionSession.captureReopenContext(reopenContext)
 
     return TestStore(initialState: state) {
@@ -283,8 +295,11 @@ private func makeOpenCollectionStore(
     stalenessClient: CollectionStalenessClient,
 ) -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
     var state = FileManagerWindowState()
-    state.content.collectionSession.openedURL = openedURL
-    state.content.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
+    state.content.collectionSession.document = .init(
+        url: openedURL,
+        name: openedURL.deletingPathExtension().lastPathComponent,
+        compatibility: nil,
+    )
 
     return TestStore(initialState: state) {
         FileManagerFeature()

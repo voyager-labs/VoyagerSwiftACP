@@ -24,6 +24,7 @@ final class CollectionStalenessClientTests: XCTestCase {
             .init(
                 definitionFingerprint: "fp",
                 relevanceRoots: ["/tmp/voyager"],
+                includeSubfolders: true,
                 lastInvalidatedAt: .distantPast,
             ),
         )
@@ -191,8 +192,8 @@ final class CollectionStalenessClientTests: XCTestCase {
         XCTAssertEqual(record?.relevanceRoots, ["/tmp/legacy"])
         XCTAssertNotNil(record?.lastInvalidatedAt)
 
-        let migratedData = userDefaultsClient.object(CollectionKeys.stalenessRecords) as? Data
-        let migratedData = try XCTUnwrap(migratedData)
+        let migratedObject = userDefaultsClient.object(CollectionKeys.stalenessRecords) as? Data
+        let migratedData = try XCTUnwrap(migratedObject)
         let migrated = try PropertyListDecoder().decode([String: CollectionStalenessRecord].self, from: migratedData)
         XCTAssertEqual(migrated[path]?.relevanceRoots, ["/tmp/legacy"])
         XCTAssertNotNil(migrated[path]?.lastInvalidatedAt)
