@@ -205,8 +205,11 @@ func applyAppliedFilters(
         registryClient: registryClient,
     )
     let selection = ComposerScopeSelection.fromLegacyScopes(resolved.scopes)
-    state.scopeEditor.selection = selection
-    state.scopes = selection.legacyScopePaths
+    let shouldPreserveLocalMultiScope = state.scopeEditor.selection.explicitBases.count > 1
+        && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
+    if !shouldPreserveLocalMultiScope {
+        state.scopeEditor.selection = selection
+    }
     state.conditions = resolved.conditions
     state.conditionDisplayByKey = Dictionary(
         uniqueKeysWithValues: resolved.conditions.compactMap { condition in

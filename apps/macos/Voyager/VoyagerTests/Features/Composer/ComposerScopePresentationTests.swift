@@ -85,12 +85,22 @@ final class ComposerScopePresentationTests: XCTestCase {
         initialState.scopeEditor.selection = initialSelection
         initialState.scopeEditor.isPresented = true
 
+        let applyRecorder = ScopeApplyFiltersRecorder()
         let store = TestStore(initialState: initialState) {
             ComposerFeature()
         } withDependencies: {
-            $0.searchClient = .testValue
+            $0.searchClient.applyFilters = { request in
+                applyRecorder.record(request)
+                return VoyagerShared.SearchResponsePayload(
+                    itemCount: 0,
+                    appliedFilters: request.filters.asAppliedFiltersPayload,
+                    items: nil,
+                    error: nil,
+                )
+            }
             $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = .testValue
         }
+        store.exhaustivity = .off
 
         await store.send(.candidateScope(.add(path: "/Users/me/Documents"))) {
             $0.scopeEditor.selection = .explicit(
@@ -107,7 +117,7 @@ final class ComposerScopePresentationTests: XCTestCase {
             $0.scopeEditor.candidateItems = []
         }
 
-        await store.finish()
+        XCTAssertNil(applyRecorder.last())
     }
 
     func testScopeEditorSeedCurrentPathRootFoldsAndNormalizes() async {
@@ -145,7 +155,7 @@ final class ComposerScopePresentationTests: XCTestCase {
         }
     }
 
-    func testApplyAppliedFiltersUsesResolvedScopesForMultiScopeSelection() {
+    func testApplyAppliedFiltersPreservesLocalMultiScopeWhenBackendCollapsesSelection() {
         var state = ComposerState()
         state.scopeEditor.selection = .explicit(
             bases: [
@@ -162,6 +172,24 @@ final class ComposerScopePresentationTests: XCTestCase {
             registryClient: .testValue,
         )
 
-        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents"])
+        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents", "/Users/me/Downloads"])
+    }
+}
+
+private final class ScopeApplyFiltersRecorder: @unchecked Sendable {
+    private var requests: [VoyagerShared.FiltersOnlyRequestPayload] = []
+
+    func record(_ request: VoyagerShared.FiltersOnlyRequestPayload) {
+        requests.append(request)
+    }
+
+    func last() -> VoyagerShared.FiltersOnlyRequestPayload? {
+        requests.last
+    }
+}
+
+private extension VoyagerShared.SearchFiltersPayload {
+    var asAppliedFiltersPayload: VoyagerShared.AppliedFiltersPayload {
+        VoyagerShared.AppliedFiltersPayload(scopes: scopes, conditions: conditions)
     }
 }
