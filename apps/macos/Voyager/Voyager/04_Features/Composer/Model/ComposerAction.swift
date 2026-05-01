@@ -23,6 +23,7 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
         case scopeEditorSetIncludeSubfolders(Bool)
         case candidateScope(CandidateScope)
         case currentScope(CurrentScope)
+        case exceptionScope(ExceptionScope)
         case addCondition(propertyKey: String)
         case removeCondition(propertyKey: String)
         case replaceConditionProperty(originalKey: String, propertyKey: String)
@@ -49,6 +50,12 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
     enum CurrentScope: Sendable {
         case remove(path: String)
         case replace(oldPath: String, newPath: String)
+    }
+
+    @CasePathable
+    enum ExceptionScope: Sendable {
+        case exclude(path: String)
+        case restore(path: String)
     }
 
     @CasePathable
@@ -82,11 +89,15 @@ extension ComposerAction {
         -> Self { .view(.scopeEditorSetIncludeSubfolders(includeSubfolders)) }
     static func candidateScope(_ action: CandidateScope) -> Self { .view(.candidateScope(action)) }
     static func currentScope(_ action: CurrentScope) -> Self { .view(.currentScope(action)) }
+    static func exceptionScope(_ action: ExceptionScope) -> Self { .view(.exceptionScope(action)) }
     static func addScope(path: String) -> Self { .view(.candidateScope(.add(path: path))) }
     static func removeScope(path: String) -> Self { .view(.currentScope(.remove(path: path))) }
     static func updateScope(oldPath: String, newPath: String) -> Self {
         .view(.currentScope(.replace(oldPath: oldPath, newPath: newPath)))
     }
+
+    static func excludeScope(path: String) -> Self { .view(.exceptionScope(.exclude(path: path))) }
+    static func restoreScope(path: String) -> Self { .view(.exceptionScope(.restore(path: path))) }
 
     static func addCondition(propertyKey: String) -> Self { .view(.addCondition(propertyKey: propertyKey)) }
     static func removeCondition(propertyKey: String) -> Self {
