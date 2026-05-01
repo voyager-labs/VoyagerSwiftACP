@@ -5,6 +5,9 @@ import VoyagerEntitiesAi
 public enum AiSettingsAction: CasePathable, Sendable {
     case onAppear
     case bootstrapCompleted([AiProviderBootstrapResult])
+    case bootstrapVerificationCompleted([AiProviderBootstrapResult])
+    case bootstrapFailed
+    case retryBootstrapTapped
     case row(IdentifiedActionOf<AiConnectionRowReducer>)
 }
 

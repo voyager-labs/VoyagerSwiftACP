@@ -4,13 +4,16 @@ import VoyagerEntitiesAi
 @ObservableState
 public struct AiSettingsState: Equatable {
     public var didBootstrap: Bool = false
+    public var bootstrapPhase: AiSettingsBootstrapPhase = .idle
     public var rows: IdentifiedArrayOf<AiConnectionRowState>
 
     public init(
         didBootstrap: Bool = false,
+        bootstrapPhase: AiSettingsBootstrapPhase = .idle,
         rows: IdentifiedArrayOf<AiConnectionRowState>? = nil
     ) {
         self.didBootstrap = didBootstrap
+        self.bootstrapPhase = bootstrapPhase
         self.rows = rows ?? Self.catalogRows()
     }
 
@@ -24,4 +27,11 @@ public struct AiSettingsState: Equatable {
                 }
         )
     }
+}
+
+public enum AiSettingsBootstrapPhase: Equatable, Sendable {
+    case idle
+    case loading
+    case loaded
+    case failed
 }

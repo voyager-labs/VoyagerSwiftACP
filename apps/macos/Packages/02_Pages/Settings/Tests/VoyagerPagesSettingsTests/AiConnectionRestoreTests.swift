@@ -1,9 +1,3 @@
-// KNOWN SPEC GAP: SET-007 canonical requires `checking_status` as an intermediate
-// state during restore before final state resolution. The current ProviderConnectionState
-// enum does not include this case, and the bootstrap maps directly from snapshot to final state.
-// If `checking_status` is added to the state model, these tests should be extended to verify
-// the intermediate state transition.
-
 import ComposableArchitecture
 import VoyagerEntitiesAi
 @testable import VoyagerPagesSettings
@@ -13,22 +7,34 @@ import XCTest
 
 @MainActor
 final class AiConnectionRestoreTests: XCTestCase {
-    // MARK: 1. Valid stored credential → connected
+    // MARK: 1. Valid stored credential → checkingStatus → connected
 
-    func testRestore_validStoredCredential_mapsToConnected() async {
+    func testRestore_validStoredCredential_entersCheckingStatusThenConnected() async {
         let file = AIConnectionsFile.singleProvider(.openai, state: .connected)
 
         let store = TestStore(initialState: AiSettingsState()) {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { file }
+            $0.aiProviderVerificationClient.verify = { provider, credential in
+                XCTAssertEqual(provider, .openai)
+                XCTAssertNotNil(credential)
+                return .valid
+            }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .openai]?.connectionState = .connected
             state.rows[id: .openai]?.statusReason = .none
         }
@@ -63,9 +69,11 @@ final class AiConnectionRestoreTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
             state.rows[id: .openai]?.connectionState = .notVerified
             state.rows[id: .openai]?.statusReason = .missingCredential
         }
@@ -89,9 +97,12 @@ final class AiConnectionRestoreTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
-        await store.receive(\.bootstrapCompleted)
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+        }
 
         await store.finish()
 
@@ -102,9 +113,9 @@ final class AiConnectionRestoreTests: XCTestCase {
         }
     }
 
-    // MARK: 4. connectionFailed snapshot → .connectionFailed with reason + retry action
+    // MARK: 4. connectionFailed snapshot → checkingStatus → .connectionFailed with reason + retry action
 
-    func testRestore_connectionFailedSnapshot_mapsToFailed() async {
+    func testRestore_connectionFailedSnapshot_entersCheckingStatusThenFails() async {
         let file = AIConnectionsFile.singleProvider(
             .openai,
             state: .connectionFailed,
@@ -115,13 +126,25 @@ final class AiConnectionRestoreTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { file }
+            $0.aiProviderVerificationClient.verify = { provider, credential in
+                XCTAssertEqual(provider, .openai)
+                XCTAssertNotNil(credential)
+                return .invalid(.expired)
+            }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .openai]?.connectionState = .connectionFailed
             state.rows[id: .openai]?.statusReason = .expired
         }
@@ -149,22 +172,21 @@ final class AiConnectionRestoreTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
-        await store.receive(\.bootstrapCompleted)
+        await store.receive(\.bootstrapFailed) { state in
+            state.bootstrapPhase = .failed
+        }
 
         await store.finish()
 
-        // Load error → empty file → all providers have no record → notVerified / .none
-        for row in store.state.rows {
-            XCTAssertEqual(row.connectionState, .notVerified)
-            XCTAssertEqual(row.statusReason, .none)
-        }
+        XCTAssertEqual(store.state.bootstrapPhase, .failed)
     }
 
-    // MARK: 6. unavailable snapshot → .unavailable with disabled action
+    // MARK: 6. unavailable snapshot → checkingStatus → .unavailable with disabled action
 
-    func testRestore_unavailableSnapshot_mapsToUnavailable() async {
+    func testRestore_unavailableSnapshot_entersCheckingStatusThenUnavailable() async {
         let file = AIConnectionsFile.singleProvider(
             .anthropic,
             state: .unavailable,
@@ -175,13 +197,25 @@ final class AiConnectionRestoreTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { file }
+            $0.aiProviderVerificationClient.verify = { provider, credential in
+                XCTAssertEqual(provider, .anthropic)
+                XCTAssertNotNil(credential)
+                return .unsupportedProvider
+            }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .anthropic]?.connectionState = .checkingStatus
+            state.rows[id: .anthropic]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .anthropic]?.connectionState = .unavailable
             state.rows[id: .anthropic]?.statusReason = .providerUnsupportedInBuild
         }
@@ -217,10 +251,12 @@ final class AiConnectionRestoreTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         // connectInProgress with nil credential → credential guard fires first → .notVerified + .missingCredential
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
             state.rows[id: .chatgptCodex]?.connectionState = .notVerified
             state.rows[id: .chatgptCodex]?.statusReason = .missingCredential
         }
@@ -248,9 +284,11 @@ final class AiConnectionRestoreTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
             state.rows[id: .anthropic]?.connectionState = .disconnected
             state.rows[id: .anthropic]?.statusReason = .none
         }
@@ -279,9 +317,11 @@ final class AiConnectionRestoreTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
             state.rows[id: .openai]?.connectionState = .disconnected
             state.rows[id: .openai]?.statusReason = .none
         }
@@ -323,18 +363,34 @@ final class AiConnectionRestoreTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { file }
+            $0.aiProviderVerificationClient.verify = { provider, _ in
+                switch provider {
+                case .chatgptCodex: .valid
+                case .openai: .invalid(.expired)
+                case .anthropic: .valid
+                }
+            }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+            // anthropic has no record, so no mutation — stays at initial notVerified
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .chatgptCodex]?.connectionState = .connected
             state.rows[id: .chatgptCodex]?.statusReason = .none
             state.rows[id: .openai]?.connectionState = .connectionFailed
             state.rows[id: .openai]?.statusReason = .expired
-            // anthropic has no record, so no mutation — stays at initial notVerified
         }
 
         await store.finish()
