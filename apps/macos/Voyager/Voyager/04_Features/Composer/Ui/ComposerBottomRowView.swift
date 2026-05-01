@@ -14,7 +14,6 @@ struct ComposerBottomRowView: View {
     let favorites: [ScopeFavoriteItem]
     let historyPaths: [String]
     let colorScheme: ColorScheme
-    @Binding var isScopePickerPresented: Bool
 
     @State private var chipSizes: [String: CGSize] = [:]
     @State private var calculatedHeight: CGFloat = 0
@@ -51,8 +50,12 @@ struct ComposerBottomRowView: View {
         let isLocked = viewStore.isLoadingSearch || viewStore.isFilteringInFlight
         let availableWidth = geometry.size.width - chipHorizontalPadding * 2
         let pickerStore = store.scope(state: \.propertyPicker, action: \.propertyPicker)
+        let isScopePickerPresentedBinding = viewStore.binding(
+            get: { $0.scopeEditor.isPresented },
+            send: ComposerAction.scopeEditorSetPresented,
+        )
 
-        let scopeChips: [ChipItemType] = [.scope(paths: viewStore.scopes)]
+        let scopeChips: [ChipItemType] = [.scope(summary: viewStore.scopeSummary)]
         let conditionChips: [ChipItemType] = viewStore.conditions.map { .condition($0) }
         let allChips: [ChipItemType] = scopeChips + conditionChips
 
@@ -72,6 +75,9 @@ struct ComposerBottomRowView: View {
             operatorOptionsByKey: viewStore.operatorOptionsByKey,
             historyPaths: historyPaths,
         )
+        .popover(isPresented: isScopePickerPresentedBinding, arrowEdge: .bottom) {
+            ScopePickerView(store: store)
+        }
         .allowsHitTesting(!isLocked)
         .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
             handleChipSizeChange(sizes: sizes, allChips: allChips, availableWidth: availableWidth)
@@ -91,13 +97,12 @@ struct ComposerBottomRowView: View {
         historyPaths: [String],
     ) -> some View {
         switch chip {
-        case let .scope(paths):
+        case let .scope(summary):
             ScopeChipView(
-                paths: paths,
+                summary: summary,
                 store: store,
                 favorites: favorites,
                 backHistory: historyPaths,
-                isComboBoxPresented: $isScopePickerPresented,
             )
 
         case let .condition(condition):
@@ -291,13 +296,20 @@ struct ComposerBottomRowView: View {
 }
 
 private enum ChipItemType: Identifiable, Hashable {
-    case scope(paths: [String])
+    case scope(summary: ComposerScopeSummary)
     case condition(Condition)
 
     var id: String {
         switch self {
-        case let .scope(paths):
-            "scope-\(paths.joined(separator: "-"))"
+        case let .scope(summary):
+            switch summary.primary {
+            case .rootOnly:
+                "scope-root"
+            case let .singleExplicit(path):
+                "scope-single-\(path)"
+            case let .multiExplicit(count):
+                "scope-multi-\(count)"
+            }
         case let .condition(condition):
             "condition-\(condition.propertyKey)"
         }

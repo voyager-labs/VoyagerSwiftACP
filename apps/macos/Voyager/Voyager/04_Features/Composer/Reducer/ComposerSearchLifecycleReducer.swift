@@ -277,7 +277,7 @@ private func handleApplyFilters(
 
 private func feedbackBaseline(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
     state.submittedSearchFilters ?? VoyagerShared.SearchFiltersPayload(
-        scopes: state.scopes,
+        scopes: state.scopeEditor.selection.legacyScopePaths,
         conditions: buildFilters(from: state).conditions,
     )
 }

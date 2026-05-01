@@ -251,9 +251,9 @@ private extension ComposerTopRowView {
         isLocked: Bool,
     ) -> some View {
         let trimmedText = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
+        let isRootScopeOnly = viewStore.isSemanticallyRootOnly
         let isAllEmpty = trimmedText.isEmpty && viewStore.conditions.isEmpty
-            && (viewStore.scopes.isEmpty || isRootScopeOnly)
+            && (viewStore.scopeEditor.selection.legacyScopePaths.isEmpty || isRootScopeOnly)
         let isDiscard = isDiscardEnabled
         let isEnabled = isDiscard ? !isLocked : (!isLocked && !isAllEmpty)
 

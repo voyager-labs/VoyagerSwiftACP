@@ -34,6 +34,7 @@ struct ComposerFeature {
     nonisolated enum CancelID: Hashable, Sendable {
         case search
         case filters
+        case scopeEditorSearch
         case feedbackDismiss
     }
 
@@ -91,17 +92,21 @@ struct ComposerFeature {
                  .view(.setOperator),
                  .view(.replaceConditionProperty),
                  .view(.setValue),
-                 .view(.addScope),
-                 .view(.removeScope),
-                 .view(.updateScope),
+                 .view(.candidateScope),
+                 .view(.currentScope),
                  .view(.clearAll),
                  .view(.saveCollection),
                  .view(.saveCollectionAs),
+                 .view(.scopeEditorOpen),
+                 .view(.scopeEditorSetPresented),
+                 .view(.scopeEditorSetQueryText),
                  .propertyPicker,
                  .operatorPicker,
                  .valuePicker,
                  .internal(.searchResponse),
                  .internal(.filtersResponse),
+                 .internal(.scopeEditorSeedCurrentPath),
+                 .internal(.scopeEditorSearchResponse),
                  .internal(.searchListApplied),
                  .delegate:
                 return .none
@@ -168,11 +173,16 @@ func applyAppliedFilters(
     let previousDisplayByKey = state.conditionDisplayByKey
     let resolved = AppliedFiltersUtils.resolve(
         appliedFilters,
-        fallbackScopes: state.scopes,
+        fallbackScopes: state.scopeEditor.selection.legacyScopePaths,
         fallbackConditions: state.conditions,
         registryClient: registryClient,
     )
-    state.scopes = resolved.scopes
+    let selection = ComposerScopeSelection.fromLegacyScopes(resolved.scopes)
+    let shouldPreserveLocalMultiScope = state.scopeEditor.selection.explicitBases.count > 1
+        && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
+    if !shouldPreserveLocalMultiScope {
+        state.scopeEditor.selection = selection
+    }
     state.conditions = resolved.conditions
     state.conditionDisplayByKey = Dictionary(
         uniqueKeysWithValues: resolved.conditions.compactMap { condition in
@@ -270,6 +280,7 @@ func applyFiltersIfNeeded(
             await send(.filtersResponse(requestID, .failure(error)))
         }
     }
+    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 }
 
 func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
@@ -295,12 +306,12 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
     kComposerLogger.debug(
         "Built search filters payload",
         metadata: [
-            "scopes": .stringConvertible(state.scopes.count),
+            "scopes": .stringConvertible(state.scopeEditor.selection.legacyScopePaths.count),
             "conditions": .stringConvertible(conditionPayloads.count),
         ],
     )
     return VoyagerShared.SearchFiltersPayload(
-        scopes: state.scopes,
+        scopes: state.scopeEditor.selection.legacyScopePaths,
         conditions: conditionPayloads,
     )
 }

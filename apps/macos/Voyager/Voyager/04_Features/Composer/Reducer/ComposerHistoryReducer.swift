@@ -18,12 +18,12 @@ struct ComposerHistoryReducer {
                 let before = buildFilters(from: state)
                 guard let previous = state.history.popLast() else { return .none }
                 let current = FilterSnapshot(
-                    scopes: state.scopes,
+                    scopeSelection: state.scopeEditor.selection,
                     conditions: state.conditions,
                     conditionDisplayByKey: state.conditionDisplayByKey,
                 )
                 state.redoHistory.append(current)
-                state.scopes = previous.scopes
+                state.scopeEditor.selection = previous.scopeSelection
                 state.conditions = previous.conditions
                 state.conditionDisplayByKey = previous.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)
@@ -38,12 +38,12 @@ struct ComposerHistoryReducer {
                 let before = buildFilters(from: state)
                 guard let next = state.redoHistory.popLast() else { return .none }
                 let current = FilterSnapshot(
-                    scopes: state.scopes,
+                    scopeSelection: state.scopeEditor.selection,
                     conditions: state.conditions,
                     conditionDisplayByKey: state.conditionDisplayByKey,
                 )
                 state.history.append(current)
-                state.scopes = next.scopes
+                state.scopeEditor.selection = next.scopeSelection
                 state.conditions = next.conditions
                 state.conditionDisplayByKey = next.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)

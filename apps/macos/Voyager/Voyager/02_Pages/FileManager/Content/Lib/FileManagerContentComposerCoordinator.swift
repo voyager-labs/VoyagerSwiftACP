@@ -199,17 +199,22 @@ enum FileManagerContentComposerCoordinator {
             return .send(.collection(.openSearchPresentationCancelled))
         }
 
-        if state.composer.scopes.isEmpty,
-           state.composer.conditions.isEmpty,
-           state.composer.text.isEmpty
-        {
-            state.composer.scopes = [state.navigation.currentPath]
-        }
-
         VoyagerSentryMetricLogger.logMetric(
             "voyager_composer_open",
             value: 1,
         )
+
+        guard case let .folder(path) = state.navigation.navigationState else {
+            return .none
+        }
+
+        if state.composer.scopeEditor.selection.isRootOnly,
+           state.composer.conditions.isEmpty,
+           state.composer.text.isEmpty
+        {
+            return .send(.composer(.scopeEditorSeedCurrentPath(path)))
+        }
+
         return .none
     }
 
@@ -220,7 +225,7 @@ enum FileManagerContentComposerCoordinator {
     ) -> Effect<FileManagerContentAction> {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         state.composer.pendingSearchQuery = query.isEmpty ? nil : query
-        if query.isEmpty, state.composer.conditions.isEmpty, state.composer.scopes.isEmpty {
+        if query.isEmpty, state.composer.conditions.isEmpty, state.composer.isSemanticallyRootOnly {
             return exitCollectionMode(state: &state, computerName: dependencies.computerName)
         }
         return .none
@@ -234,11 +239,7 @@ enum FileManagerContentComposerCoordinator {
         let previousNavigationState = state.navigation.navigationState
         let previousNavigationIsCollection = previousNavigationState.isCollection
         state.composer.pendingSearchQuery = nil
-        let nextContext = CollectionContext(
-            query: query,
-            scopes: state.composer.scopes,
-            conditions: state.composer.conditions,
-        )
+        let nextContext = state.composer.collectionContext(query: query)
         let proposedNextNavigationState = ContentPageNavigationRoute.collection(
             makeCollectionNavigation(
                 state.collection.makeNavigationPresentationPayload(context: nextContext),
