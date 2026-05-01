@@ -47,10 +47,11 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
         }
         await store.finish()
 
-        XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertTrue(store.state.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collectionSession.metadata.lastRefreshAt)
+        let inflightStatus = store.state.collectionSession.phase.inflightStatus
+        XCTAssertNotEqual(inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(inflightStatus, .writingBackRefreshedSnapshot)
         XCTAssertNil(store.state.refreshBlockingReason)
     }
 
@@ -89,17 +90,19 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        state.collectionSession.openedURL = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
-        state.collectionSession.openedName = "sample"
+        state.collectionSession.document = .init(
+            url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
+            name: "sample",
+            compatibility: makeAllowedCompatibility(),
+        )
         state.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
         state.collectionSession.phase = .opened(
             kind: .hydratedSnapshot,
             base: .stale,
             inflight: isRefreshing ? .refreshingHydratedSnapshot : .none,
         )
-        state.collectionSession.openedCompatibility = makeAllowedCompatibility()
         state.collectionContext = makeReportContext()
-        state.collectionSession.baseline = state.collectionContext.map(CollectionBaseline.init(context:))
+        state.collectionSession.metadata.baseline = state.collectionContext.map(CollectionBaseline.init(context:))
         state.composer.scopes = ["/tmp/voyager"]
         state.composer.conditions = []
         state.composer.pendingSearchQuery = "report"
@@ -148,7 +151,7 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
 
     private func makeAllowedCompatibility() -> CollectionFileCompatibilityMetadata {
         .init(
-            sourceSchemaVersion: 2,
+            sourceSchemaVersion: CollectionFileSchemaVersion.current,
             migrationPath: [.currentSchemaV2],
             warnings: [],
             usedDefinitionFallback: false,

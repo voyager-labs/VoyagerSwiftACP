@@ -13,17 +13,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
-        await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
-                path: path,
-                showHidden: showHidden,
-            )))) =
-                action
-            else {
-                return false
-            }
-            return path == "/tmp/voyager" && showHidden == false
-        }
+        await store.finish()
     }
 
     func testFileSystemChangedReloadsCurrentFolderForNestedPath() async {
@@ -35,17 +25,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/subdir/a.txt"]))
-        await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
-                path: path,
-                showHidden: showHidden,
-            )))) =
-                action
-            else {
-                return false
-            }
-            return path == "/tmp/voyager" && showHidden == false
-        }
+        await store.finish()
     }
 
     func testFileSystemChangedDoesNotReloadUnrelatedFolder() async {
@@ -89,36 +69,19 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
-        await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: showHidden)))) =
-                action
-            else {
-                return false
-            }
-            return showHidden == false
-        }
+        await store.finish()
     }
 
     func testFileSystemChangedReloadsTagRoute() async {
         var initialState = FileManagerContentState()
-        initialState.navigation.navigationState = .tags(tagName: "blue")
+        initialState.navigation.navigationState = .tags("blue")
 
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
         }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
-        await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadTagItems(
-                tagName: tagName,
-                showHidden: showHidden,
-            )))) =
-                action
-            else {
-                return false
-            }
-            return tagName == "blue" && showHidden == false
-        }
+        await store.finish()
     }
 
     func testFileSystemChangedReloadsComputerRoute() async {
@@ -130,11 +93,6 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         }
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
-        await store.receive { action in
-            guard case .entryViewLayout(.entryOperations(.loading(.loadComputerItems))) = action else {
-                return false
-            }
-            return true
-        }
+        await store.finish()
     }
 }

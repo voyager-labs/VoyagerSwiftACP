@@ -25,8 +25,11 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             Reduce { state, action in
                 switch action {
                 case let .bridge(entryAction):
-                    FileManagerContentFeature().handleEntryOperationsAction(entryAction, state: &state.content)
-                        .map(Action.forwarded)
+                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                        entryAction,
+                        state: &state.content,
+                    )
+                    .map(Action.forwarded)
                 case .forwarded:
                     .none
                 }
@@ -53,9 +56,27 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden)))) = action
-            else { return false }
-            return path == "/tmp/voyager" && showHidden == false
+            switch action {
+            case let .entryViewLayout(entryViewLayoutAction):
+                switch entryViewLayoutAction {
+                case let .entryOperations(entryOperationsAction):
+                    switch entryOperationsAction {
+                    case let .loading(loadingAction):
+                        switch loadingAction {
+                        case let .loadItems(path, showHidden):
+                            path == "/tmp/voyager" && showHidden == false
+                        default:
+                            false
+                        }
+                    default:
+                        false
+                    }
+                default:
+                    false
+                }
+            default:
+                false
+            }
         }
     }
 
@@ -76,9 +97,27 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden)))) = action
-            else { return false }
-            return showHidden == false
+            switch action {
+            case let .entryViewLayout(entryViewLayoutAction):
+                switch entryViewLayoutAction {
+                case let .entryOperations(entryOperationsAction):
+                    switch entryOperationsAction {
+                    case let .loading(loadingAction):
+                        switch loadingAction {
+                        case let .loadRecentItems(showHidden):
+                            showHidden == false
+                        default:
+                            false
+                        }
+                    default:
+                        false
+                    }
+                default:
+                    false
+                }
+            default:
+                false
+            }
         }
     }
 
@@ -99,9 +138,27 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadTagItems(tagName, showHidden)))) = action
-            else { return false }
-            return tagName == "Work" && showHidden == false
+            switch action {
+            case let .entryViewLayout(entryViewLayoutAction):
+                switch entryViewLayoutAction {
+                case let .entryOperations(entryOperationsAction):
+                    switch entryOperationsAction {
+                    case let .loading(loadingAction):
+                        switch loadingAction {
+                        case let .loadTagItems(tagName: tagName, showHidden: showHidden):
+                            tagName == "Work" && showHidden == false
+                        default:
+                            false
+                        }
+                    default:
+                        false
+                    }
+                default:
+                    false
+                }
+            default:
+                false
+            }
         }
     }
 
@@ -185,9 +242,32 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             Result<Void, FileOpError>.success(()),
         ))))
         await store.receive { action in
-            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden))))) =
-                action else { return false }
-            return path == "/tmp/voyager" && showHidden == false
+            switch action {
+            case let .forwarded(forwardedAction):
+                switch forwardedAction {
+                case let .entryViewLayout(entryViewLayoutAction):
+                    switch entryViewLayoutAction {
+                    case let .entryOperations(entryOperationsAction):
+                        switch entryOperationsAction {
+                        case let .loading(loadingAction):
+                            switch loadingAction {
+                            case let .loadItems(path, showHidden):
+                                path == "/tmp/voyager" && showHidden == false
+                            default:
+                                false
+                            }
+                        default:
+                            false
+                        }
+                    default:
+                        false
+                    }
+                default:
+                    false
+                }
+            default:
+                false
+            }
         }
         await store.finish()
     }

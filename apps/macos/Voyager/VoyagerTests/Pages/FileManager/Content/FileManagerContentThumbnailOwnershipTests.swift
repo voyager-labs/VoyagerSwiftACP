@@ -6,23 +6,15 @@ import XCTest
 @MainActor
 final class FileManagerContentThumbnailOwnershipTests: XCTestCase {
     func testEntryViewLayoutThumbnailActionUsesCanonicalThumbnailHost() async {
-        let store = TestStore(initialState: FileManagerContentState()) {
-            FileManagerContentFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.collectionAlertClient = .testValue
-            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.notificationCenterClient = .testValue
-            $0.thumbnailGeneratorClient = .testValue
-            $0.entryThumbnailCacheClient = .testValue
-        }
+        var state = FileManagerContentState()
+        let reducer = FileManagerContentFeature()
 
-        await store.send(.entryViewLayout(.entryThumbnail(.thumbnailsReady(paths: ["/tmp/file1.txt"])))) {
-            $0.entryViewLayout.entryThumbnail.readyPaths = ["/tmp/file1.txt"]
-            $0.entryViewLayout.entryThumbnail.renderVersion = 1
-        }
-        await store.finish()
+        _ = reducer.reduce(
+            into: &state,
+            action: .entryViewLayout(.entryThumbnail(.thumbnailsReady(paths: ["/tmp/file1.txt"]))),
+        )
 
-        XCTAssertEqual(store.state.entryViewLayout.entryThumbnail.readyPaths, ["/tmp/file1.txt"])
+        XCTAssertEqual(state.entryViewLayout.entryThumbnail.readyPaths, ["/tmp/file1.txt"])
+        XCTAssertEqual(state.entryViewLayout.entryThumbnail.renderVersion, 1)
     }
 }

@@ -93,13 +93,27 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                 return true
             }
             await store.receive { action in
-                guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
-                    path: path,
-                    showHidden: showHidden,
-                )))) =
-                    action
-                else { return false }
-                return path == "/tmp/voyager" && showHidden
+                switch action {
+                case let .entryViewLayout(entryViewLayoutAction):
+                    switch entryViewLayoutAction {
+                    case let .entryOperations(entryOperationsAction):
+                        switch entryOperationsAction {
+                        case let .loading(loadingAction):
+                            switch loadingAction {
+                            case let .loadItems(path, showHidden):
+                                path == "/tmp/voyager" && showHidden
+                            default:
+                                false
+                            }
+                        default:
+                            false
+                        }
+                    default:
+                        false
+                    }
+                default:
+                    false
+                }
             }
             await store.finish()
         }
