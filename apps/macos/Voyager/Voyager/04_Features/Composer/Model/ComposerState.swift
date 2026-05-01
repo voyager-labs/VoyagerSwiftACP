@@ -76,7 +76,26 @@ struct ComposerState: Equatable {
     }
 
     var shouldAutoApplyScopeChange: Bool {
-        !conditions.isEmpty
+        hasCommittedQuerySearch || conditions.contains(where: \.isSearchReady)
+    }
+
+    var hasCommittedQuerySearch: Bool {
+        let trimmedCollectionQuery = collectionContext?.query.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedPendingQuery = pendingSearchQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !trimmedCollectionQuery.isEmpty || !trimmedPendingQuery.isEmpty
+    }
+
+    var lastAppliedIncludeSubfolders: Bool? {
+        if let value = collectionContext?.includeSubfolders {
+            return value
+        }
+        if let value = lastFiltersResponse?.appliedFilters?.includeSubfolders {
+            return value
+        }
+        if let value = lastSearchResponse?.appliedFilters?.includeSubfolders {
+            return value
+        }
+        return submittedSearchFilters?.includeSubfolders
     }
 
     var isCollectionSearching: Bool {

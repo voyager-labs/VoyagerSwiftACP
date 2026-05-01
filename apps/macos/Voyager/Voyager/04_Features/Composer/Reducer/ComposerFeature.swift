@@ -122,25 +122,48 @@ private func handleSetPresented(
 ) -> Effect<ComposerFeature.Action> {
     state.isPresented = isPresented
     if !isPresented {
+        let shouldPreserveFilterLifecycle = state.scopeEditor.isPresented
+            && state.scopeEditor.hasPendingScopeRuleChanges
+            && state.shouldAutoApplyScopeChange
+        let hasActiveFilterLifecycle = state.isFilteringInFlight
+            || state.activeFiltersRequestID != nil
+            || state.isLoadingFilters
+        let shouldKeepFiltersAlive = shouldPreserveFilterLifecycle || hasActiveFilterLifecycle
+        let shouldCloseScopeEditorWithoutCommit = state.scopeEditor.isPresented && !shouldPreserveFilterLifecycle
+
         state.hasSubmittedInSession = false
         state.searchStartedAt = nil
-        state.filtersStartedAt = nil
         state.transientFeedback = nil
-        state.submittedSearchFilters = nil
         state.isLoadingSearch = false
-        state.isLoadingFilters = false
-        state.isFilteringInFlight = false
         state.activeSearchRequestID = nil
-        state.activeFiltersRequestID = nil
         state.lastAcceptedSearchRequestID = nil
-        state.lastAcceptedFiltersRequestID = nil
         applyQueryPhaseTransition(.reset, state: &state)
 
-        return .merge(
+        if !shouldKeepFiltersAlive {
+            state.filtersStartedAt = nil
+            state.submittedSearchFilters = nil
+            state.isLoadingFilters = false
+            state.isFilteringInFlight = false
+            state.activeFiltersRequestID = nil
+            state.lastAcceptedFiltersRequestID = nil
+        }
+
+        var effects: [Effect<ComposerFeature.Action>] = [
             .cancel(id: ComposerFeature.CancelID.search),
-            .cancel(id: ComposerFeature.CancelID.filters),
             .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
-        )
+        ]
+        if shouldPreserveFilterLifecycle {
+            effects.append(.send(.scopeEditorSetPresented(false)))
+        }
+        if shouldCloseScopeEditorWithoutCommit {
+            state.scopeEditor.isPresented = false
+            state.resetScopeEditorInteractionState(clearQuery: true)
+        }
+        if !shouldKeepFiltersAlive {
+            effects.append(.cancel(id: ComposerFeature.CancelID.filters))
+        }
+
+        return .merge(effects)
     }
 
     return .none
@@ -171,6 +194,9 @@ func applyAppliedFilters(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
 ) {
+    if let includeSubfolders = appliedFilters?.includeSubfolders {
+        state.scopeEditor.includeSubfolders = includeSubfolders
+    }
     let previousDisplayByKey = state.conditionDisplayByKey
     let resolved = AppliedFiltersUtils.resolve(
         appliedFilters,
@@ -288,7 +314,7 @@ func applyFiltersIfNeeded(
 func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
     let conditionPayloads: [VoyagerShared.SearchConditionPayload] = state.conditions
         .compactMap { condition -> VoyagerShared.SearchConditionPayload? in
-            guard condition.isActive else { return nil }
+            guard condition.isSearchReady else { return nil }
             guard let op = condition.operatorCode else { return nil }
             if let arity = condition.operatorValueArity, arity == 0 {
                 return VoyagerShared.SearchConditionPayload(

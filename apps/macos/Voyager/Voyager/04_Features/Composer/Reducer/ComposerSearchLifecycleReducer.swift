@@ -131,6 +131,8 @@ struct ComposerSearchLifecycleReducer {
                     state.activeFiltersRequestID = nil
                     state.lastFiltersResponse = response
                     applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
+                    state.scopeEditor.committedSelection = state.scopeEditor.selection
+                    state.scopeEditor.committedIncludeSubfolders = state.scopeEditor.includeSubfolders
                     if let startedAt = state.filtersStartedAt {
                         VoyagerSentryMetricLogger.logMetric(
                             "voyager_filters_roundtrip_duration_ms",
