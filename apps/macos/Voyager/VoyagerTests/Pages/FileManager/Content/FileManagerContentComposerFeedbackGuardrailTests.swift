@@ -43,7 +43,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(alerts.count(), 0)
-        XCTAssertFalse(store.state.collectionSession.isOpening)
+        XCTAssertFalse(store.state.collectionSession.phase.isOpening)
         XCTAssertEqual(
             store.state.composer.transientFeedback?.message,
             ComposerQueryFeedbackPolicy.executionFailureMessage,
@@ -90,6 +90,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
     }
 }
 
+@MainActor
 private func assertCollectionOpenFailureRollback(
     store: TestStore<FileManagerContentState, FileManagerContentAction>,
 ) async {
@@ -140,7 +141,7 @@ private func makeCollectionOpeningState(requestID: UUID) -> FileManagerContentSt
                 url: URL(fileURLWithPath: "/tmp/saved-search.voyager-collection"),
                 name: "Saved Search",
             ),
-            context: .init(query: "kind:image", scopes: ["/tmp"], conditions: []),
+            context: .init(query: "kind:image", scopes: ["/tmp"], includeSubfolders: true, conditions: []),
             sortKey: .name,
             sortOrder: .ascending,
             viewLayout: .grid,
