@@ -2,19 +2,15 @@
 import XCTest
 
 final class AIConnectionFileStoreTests: XCTestCase {
-    private var tmpDir: URL!
-    private var homeURL: URL!
+    private var fixture: TemporaryHomeFixture!
     private var store: AIConnectionFileStore!
 
     override func setUp() async throws {
         try await super.setUp()
-        tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        homeURL = tmpDir
+        fixture = try TemporaryHomeFixture(createVoyagerDirectory: false)
 
-        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeURL)
-        let lockURL = AIConnectionFSLocation.lockFileURL(homeDirectoryURL: homeURL)
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
+        let lockURL = AIConnectionFSLocation.lockFileURL(homeDirectoryURL: fixture.homeURL)
         store = AIConnectionFileStore(
             payloadURL: payloadURL,
             lockURL: lockURL
@@ -22,7 +18,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        try? FileManager.default.removeItem(at: tmpDir)
+        fixture = nil
         try await super.tearDown()
     }
 
@@ -52,8 +48,33 @@ final class AIConnectionFileStoreTests: XCTestCase {
         XCTAssertEqual(loaded.providers["chatgptCodex"]?.providerId, .chatgptCodex)
     }
 
+    func testMigrateFromHomeIfNeededWritesPayloadWithCorrectPermissions() async throws {
+        let homePayloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
+        try FileManager.default.createDirectory(
+            at: homePayloadURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let file = AIConnectionsFile.empty(updatedAtMs: 1234)
+        try await store.write(file)
+
+        let repoRootURL = fixture.homeURL.appendingPathComponent("repo-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoRootURL, withIntermediateDirectories: true)
+        let repoStore = AIConnectionFileStore.withRepoRoot(repoRootURL: repoRootURL)
+
+        try await repoStore.migrateFromHomeIfNeeded(homeDirectoryURL: fixture.homeURL)
+
+        let payloadURL = AIConnectionFSLocation.projectPayloadFileURL(repoRootURL: repoRootURL)
+        let attrs = try FileManager.default.attributesOfItem(atPath: payloadURL.path)
+        let perms = attrs[.posixPermissions] as? UInt16
+        XCTAssertEqual(perms, 0o600, "Migrated file must have owner-only 0600 permissions")
+
+        let loaded = try await repoStore.load()
+        XCTAssertEqual(loaded.updatedAtMs, file.updatedAtMs)
+    }
+
     func testLoadQuarantinesCorruptJSON() async throws {
-        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeURL)
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         try FileManager.default.createDirectory(
             at: payloadURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -74,7 +95,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
     }
 
     func testLoadQuarantinesEmptyFile() async throws {
-        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeURL)
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         try FileManager.default.createDirectory(
             at: payloadURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -90,16 +111,21 @@ final class AIConnectionFileStoreTests: XCTestCase {
 
     func testWriteCreatesFileWithCorrectPermissions() async throws {
         let file = AIConnectionsFile.empty(updatedAtMs: 1234)
+        let before = fixture.snapshotRealAuthFile()
+
         try await store.write(file)
 
-        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeURL)
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         let attrs = try FileManager.default.attributesOfItem(atPath: payloadURL.path)
         let perms = attrs[.posixPermissions] as? UInt16
         XCTAssertEqual(perms, 0o600, "File must have owner-only 0600 permissions")
+
+        let after = fixture.snapshotRealAuthFile()
+        XCTAssertEqual(after, before, "Writing isolated storage must not touch the real auth file")
     }
 
     func testWriteCreatesParentDirectory() async throws {
-        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeURL)
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         let configDir = payloadURL.deletingLastPathComponent()
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: configDir.path))
@@ -190,6 +216,11 @@ final class AIConnectionFileStoreTests: XCTestCase {
         try await store.deleteCredential(for: .chatgptCodex)
 
         let loaded = try await store.load()
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
+        let attrs = try FileManager.default.attributesOfItem(atPath: payloadURL.path)
+        let perms = attrs[.posixPermissions] as? UInt16
+        XCTAssertEqual(perms, 0o600, "Deleted file must keep owner-only 0600 permissions")
+
         guard let updated = loaded.providers["chatgptCodex"] else {
             XCTFail("Provider record should still exist")
             return
@@ -213,7 +244,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
     // MARK: - Quarantine permissions
 
     func testQuarantinedFileHasOwnerOnlyPermissions() async throws {
-        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeURL)
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         try FileManager.default.createDirectory(
             at: payloadURL.deletingLastPathComponent(),
             withIntermediateDirectories: true

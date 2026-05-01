@@ -21,7 +21,7 @@ public actor AIConnectionFileStore {
 
     public static func withDefaultHome(
         fileManager: FileManager = .default,
-        homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot()
     ) -> AIConnectionFileStore {
         let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeDirectoryURL)
         let lockURL = AIConnectionFSLocation.lockFileURL(homeDirectoryURL: homeDirectoryURL)
@@ -44,7 +44,7 @@ public actor AIConnectionFileStore {
     }
 
     public func migrateFromHomeIfNeeded(
-        homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot()
     ) throws {
         let homePayloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeDirectoryURL)
 
@@ -62,8 +62,7 @@ public actor AIConnectionFileStore {
                 return
             }
 
-            try data.write(to: payloadURL, options: .atomic)
-            try setOwnerOnlyPermissions(payloadURL)
+            try replacePayload(with: data)
         }
     }
 
@@ -93,17 +92,8 @@ public actor AIConnectionFileStore {
 
     public func write(_ file: AIConnectionsFile) throws {
         try withExclusiveLock {
-            try ensureParentDirectoryExists()
             let data = try encoder.encode(file)
-
-            let tempURL = payloadURL
-                .deletingLastPathComponent()
-                .appendingPathComponent(".\(AIConnectionFSLocation.payloadFileName).tmp-\(UUID().uuidString)")
-
-            try data.write(to: tempURL, options: .atomic)
-            try setOwnerOnlyPermissions(tempURL)
-            _ = try fileManager.replaceItemAt(payloadURL, withItemAt: tempURL)
-            try setOwnerOnlyPermissions(payloadURL)
+            try replacePayload(with: data)
         }
     }
 
@@ -153,10 +143,8 @@ public actor AIConnectionFileStore {
                 providers: updatedProviders
             )
 
-            try ensureParentDirectoryExists()
             let data = try encoder.encode(updatedFile)
-            try data.write(to: payloadURL, options: .atomic)
-            try setOwnerOnlyPermissions(payloadURL)
+            try replacePayload(with: data)
         }
     }
 
@@ -186,6 +174,19 @@ public actor AIConnectionFileStore {
             [.posixPermissions: NSNumber(value: 0o600)],
             ofItemAtPath: url.path
         )
+    }
+
+    private func replacePayload(with data: Data) throws {
+        try ensureParentDirectoryExists()
+
+        let tempURL = payloadURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(AIConnectionFSLocation.payloadFileName).tmp-\(UUID().uuidString)")
+
+        try data.write(to: tempURL, options: .atomic)
+        try setOwnerOnlyPermissions(tempURL)
+        _ = try fileManager.replaceItemAt(payloadURL, withItemAt: tempURL)
+        try setOwnerOnlyPermissions(payloadURL)
     }
 
     private func withExclusiveLock<T>(_ operation: () throws -> T) throws -> T {
