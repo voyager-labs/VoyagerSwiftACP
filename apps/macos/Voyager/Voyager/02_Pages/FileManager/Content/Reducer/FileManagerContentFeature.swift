@@ -1,9 +1,11 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryOperations
 
 @Reducer
@@ -21,9 +23,15 @@ struct FileManagerContentFeature {
     private var fileManagerClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
+    @Dependency(\.uuid)
+    private var uuid
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
             ComposerFeature()
+        }
+
+        Scope(state: \.aiChat, action: \.aiChat) {
+            AiChatFeature()
         }
 
         Scope(state: \.collection, action: \.collection) {
@@ -71,6 +79,12 @@ struct FileManagerContentFeature {
                 return .send(.entryViewLayout(.internal(.applySelectAll(
                     orderedItemIds: state.entryViewLayout.entries.map(\.id),
                 ))))
+
+            case .view(.presentAiChat):
+                state.isAiChatPresented = true
+                let sessionID = AiChatSessionID(rawValue: uuid())
+                let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: state, sessionID: sessionID)
+                return .send(.aiChat(.setup(setup)))
 
             case .view(.refreshStaleCollection):
                 guard state.refreshBlockingReason == nil else {

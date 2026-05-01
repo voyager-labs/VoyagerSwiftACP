@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryOperations
 
 func showsToolbarRefreshButton(
@@ -205,6 +206,18 @@ struct ToolbarView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .contentShape(Rectangle())
+                    },
+                )
+                .buttonStyle(.borderless)
+
+                Button(
+                    action: { store.send(.view(.presentAiChat)) },
+                    label: {
+                        ToolbarHoverButtonLabel(
+                            systemName: "sparkles",
+                            isEnabled: true,
+                            font: nil,
+                        )
                     },
                 )
                 .buttonStyle(.borderless)

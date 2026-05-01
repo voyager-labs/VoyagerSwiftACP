@@ -14,6 +14,17 @@
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
 		6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
 		6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
+		D0F5A2BB33F74A2BA53DD8C6 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = D0F5A2BA33F74A2BA53DD8C1 /* Dependencies */; };
+		D0F5A2BC33F74A2BA53DD8C6 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = D0F5A2BA33F74A2BA53DD8C1 /* Dependencies */; };
+		D0F5A2C233F74A2BA53DD8C9 /* Clocks in Frameworks */ = {isa = PBXBuildFile; productRef = D0F5A2C133F74A2BA53DD8C8 /* Clocks */; };
+		D0F5A2C333F74A2BA53DD8CA /* Clocks in Frameworks */ = {isa = PBXBuildFile; productRef = D0F5A2C133F74A2BA53DD8C8 /* Clocks */; };
+		F2100000000000000000002D /* CasePathsCore in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000014 /* CasePathsCore */; };
+		F2100000000000000000002E /* CasePathsCore in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000014 /* CasePathsCore */; };
+		F20000000000000000000028 /* VoyagerFeaturesAiChat in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000017 /* VoyagerFeaturesAiChat */; };
+		F20000000000000000000029 /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000016 /* VoyagerEntitiesAi */; };
+		F2000000000000000000002A /* VoyagerEntitiesEntry in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000019 /* VoyagerEntitiesEntry */; };
+		F2000000000000000000002B /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000016 /* VoyagerEntitiesAi */; };
+		F2000000000000000000002C /* VoyagerEntitiesEntry in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000019 /* VoyagerEntitiesEntry */; };
 		F21000000000000000000021 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000011 /* IdentifiedCollections */; };
 		F21000000000000000000022 /* OrderedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000012 /* OrderedCollections */; };
 		F21000000000000000000023 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000011 /* IdentifiedCollections */; };
@@ -190,6 +201,12 @@
 			files = (
 				F21000000000000000000021 /* IdentifiedCollections in Frameworks */,
 				F21000000000000000000022 /* OrderedCollections in Frameworks */,
+				F2100000000000000000002D /* CasePathsCore in Frameworks */,
+				D0F5A2BB33F74A2BA53DD8C6 /* Dependencies in Frameworks */,
+				D0F5A2C233F74A2BA53DD8C9 /* Clocks in Frameworks */,
+				F20000000000000000000029 /* VoyagerEntitiesAi in Frameworks */,
+				F2000000000000000000002A /* VoyagerEntitiesEntry in Frameworks */,
+				F20000000000000000000028 /* VoyagerFeaturesAiChat in Frameworks */,
 				F20000000000000000000021 /* VoyagerPagesOnboarding in Frameworks */,
 				F20000000000000000000022 /* VoyagerPagesSettings in Frameworks */,
 				F20000000000000000000023 /* VoyagerShared in Frameworks */,
@@ -213,6 +230,11 @@
 				F21000000000000000000025 /* CasePaths in Frameworks */,
 				F21000000000000000000023 /* IdentifiedCollections in Frameworks */,
 				F21000000000000000000024 /* OrderedCollections in Frameworks */,
+				F2100000000000000000002E /* CasePathsCore in Frameworks */,
+				D0F5A2BC33F74A2BA53DD8C6 /* Dependencies in Frameworks */,
+				D0F5A2C333F74A2BA53DD8CA /* Clocks in Frameworks */,
+				F2000000000000000000002B /* VoyagerEntitiesAi in Frameworks */,
+				F2000000000000000000002C /* VoyagerEntitiesEntry in Frameworks */,
 				F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */,
 				F20000000000000000000025 /* VoyagerShared in Frameworks */,
 			);
@@ -222,6 +244,22 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F21000000000000000000025 /* CasePaths in Frameworks */,
+				F21000000000000000000023 /* IdentifiedCollections in Frameworks */,
+				F21000000000000000000024 /* OrderedCollections in Frameworks */,
+				F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */,
+				F20000000000000000000025 /* VoyagerShared in Frameworks */,
+				F20000000000000000000026 /* VoyagerFeaturesEntryOperations in Frameworks */,
+				F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */,
+				F20000000000000000000028 /* VoyagerFeaturesAiChat in Frameworks */,
+				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
+				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
+				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
+				7E17C1212F24CB7500F6BD2B /* Sentry in Frameworks */,
+				6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */,
+				6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */,
+				7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */,
+				7E1974712E8BDC0700D041D3 /* InjectionNext in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -337,8 +375,14 @@
 				F20000000000000000000012 /* VoyagerPagesSettings */,
 				F20000000000000000000013 /* VoyagerShared */,
 				F20000000000000000000014 /* VoyagerFeaturesEntryOperations */,
+				F20000000000000000000016 /* VoyagerEntitiesAi */,
+				F20000000000000000000019 /* VoyagerEntitiesEntry */,
+				F20000000000000000000017 /* VoyagerFeaturesAiChat */,
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
+				F21000000000000000000014 /* CasePathsCore */,
+				D0F5A2BA33F74A2BA53DD8C1 /* Dependencies */,
+				D0F5A2C133F74A2BA53DD8C8 /* Clocks */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
 				7E1974702E8BDC0700D041D3 /* InjectionNext */,
 				7EEC64502E8CE684004ACEA5 /* SwiftDotenv */,
@@ -371,9 +415,27 @@
 			name = VoyagerTests;
 			packageProductDependencies = (
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
-				F21000000000000000000013 /* CasePaths */,
+				F20000000000000000000012 /* VoyagerPagesSettings */,
+				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000014 /* VoyagerFeaturesEntryOperations */,
+				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
+				F20000000000000000000016 /* VoyagerEntitiesAi */,
+				F20000000000000000000019 /* VoyagerEntitiesEntry */,
+				F20000000000000000000017 /* VoyagerFeaturesAiChat */,
 				F21000000000000000000011 /* IdentifiedCollections */,
+				F21000000000000000000013 /* CasePaths */,
 				F21000000000000000000012 /* OrderedCollections */,
+				F21000000000000000000014 /* CasePathsCore */,
+				D0F5A2BA33F74A2BA53DD8C1 /* Dependencies */,
+				D0F5A2C133F74A2BA53DD8C8 /* Clocks */,
+				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
+				7E1974702E8BDC0700D041D3 /* InjectionNext */,
+				7EEC64502E8CE684004ACEA5 /* SwiftDotenv */,
+				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
+				7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */,
+				6C57FBA82F02111500D85C72 /* Sparkle */,
+				6C727A2C2F0DF4A10012D44A /* Logging */,
+				7E17C1202F24CB7500D041D3 /* Sentry */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;
@@ -530,16 +592,20 @@
 			mainGroup = 7E14EDC32E86622C005AC834;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */,
-				F20000000000000000000002 /* XCLocalSwiftPackageReference "02_Pages/Settings" */,
-				F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */,
-				F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */,
-				F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */,
-				F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Ai" */,
-				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
-				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
-				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
-				7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */,
+		F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */,
+		F20000000000000000000002 /* XCLocalSwiftPackageReference "02_Pages/Settings" */,
+		F20000000000000000000018 /* XCLocalSwiftPackageReference "05_Entities/Entry" */,
+		F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */,
+		F20000000000000000000007 /* XCLocalSwiftPackageReference "04_Features/AiChat" */,
+		F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */,
+		F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */,
+		F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Ai" */,
+		F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
+		F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
+		F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
+		D0F5A2B933F74A2BA53DD8C0 /* XCRemoteSwiftPackageReference "swift-dependencies" */,
+		D0F5A2C033F74A2BA53DD8C7 /* XCRemoteSwiftPackageReference "swift-clocks" */,
+		7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */,
 				7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */,
 				7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */,
 				6CFB7B362E9D48B40005FDF6 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
@@ -1414,6 +1480,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/EntryOperations;
 		};
+		F20000000000000000000007 /* XCLocalSwiftPackageReference "04_Features/AiChat" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/AiChat;
+		};
 		F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/06_Shared/VoyagerShared;
@@ -1425,6 +1495,10 @@
 		F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Ai" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/05_Entities/Ai;
+		};
+		F20000000000000000000018 /* XCLocalSwiftPackageReference "05_Entities/Entry" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/05_Entities/Entry;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -1509,6 +1583,14 @@
 				minimumVersion = 1.4.3;
 			};
 		};
+		D0F5A2C033F74A2BA53DD8C7 /* XCRemoteSwiftPackageReference "swift-clocks" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-clocks";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.6;
+			};
+		};
 		7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/krzysztofzablocki/Inject.git";
@@ -1523,6 +1605,14 @@
 			requirement = {
 				kind = exactVersion;
 				version = 2.1.0;
+			};
+		};
+		D0F5A2B933F74A2BA53DD8C0 /* XCRemoteSwiftPackageReference "swift-dependencies" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-dependencies";
+			requirement = {
+				kind = exactVersion;
+				version = 1.10.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -1542,6 +1632,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */;
 			productName = CasePaths;
+		};
+		F21000000000000000000014 /* CasePathsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */;
+			productName = CasePathsCore;
 		};
 		319E52B31FBB4D8FA03D33B9 /* StructuredQueries */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1623,6 +1718,11 @@
 			package = F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */;
 			productName = VoyagerFeaturesEntryOperations;
 		};
+		F20000000000000000000017 /* VoyagerFeaturesAiChat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000007 /* XCLocalSwiftPackageReference "04_Features/AiChat" */;
+			productName = VoyagerFeaturesAiChat;
+		};
 		F20000000000000000000015 /* VoyagerEntitiesAppPreferences */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */;
@@ -1633,7 +1733,22 @@
 			package = F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Ai" */;
 			productName = VoyagerEntitiesAi;
 		};
-/* End XCSwiftPackageProductDependency section */
+		F20000000000000000000019 /* VoyagerEntitiesEntry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000018 /* XCLocalSwiftPackageReference "05_Entities/Entry" */;
+			productName = VoyagerEntitiesEntry;
+		};
+		D0F5A2BA33F74A2BA53DD8C1 /* Dependencies */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D0F5A2B933F74A2BA53DD8C0 /* XCRemoteSwiftPackageReference "swift-dependencies" */;
+			productName = Dependencies;
+		};
+		D0F5A2C133F74A2BA53DD8C8 /* Clocks */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D0F5A2C033F74A2BA53DD8C7 /* XCRemoteSwiftPackageReference "swift-clocks" */;
+			productName = Clocks;
+		};
+	/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7E14EDC42E86622C005AC834 /* Project object */;
 }

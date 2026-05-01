@@ -3,6 +3,8 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerFeaturesAiChat
+
 @CasePathable
 enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case view(View)
@@ -12,6 +14,7 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case entryViewLayout(EntryViewLayoutFeature.Action)
     case composer(ComposerFeature.Action)
     case collection(CollectionFeature.Action)
+    case aiChat(AiChatFeature.Action)
     case externalFileSystemChanged([String])
 
     @CasePathable
@@ -19,6 +22,7 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case handleKeyCommand(KeyCommand)
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
+        case presentAiChat
         case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
     }
