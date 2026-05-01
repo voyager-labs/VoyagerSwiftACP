@@ -198,6 +198,36 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         )
     }
 
+    func testSyncComposerCollectionStatePreservesPendingScopeRuleWhileEditorIsPresented() {
+        var state = makeInitialState()
+        state.collectionContext = CollectionContext(
+            query: "",
+            scopes: ["/tmp/voyager"],
+            includeSubfolders: true,
+            conditions: [],
+        )
+        state.composer.collectionContext = state.collectionContext
+        state.composer.scopeEditor.isPresented = true
+        state.composer.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/tmp/voyager")],
+            exceptions: [],
+        )
+        state.composer.scopeEditor.committedSelection = state.composer.scopeEditor.selection
+        state.composer.scopeEditor.includeSubfolders = false
+        state.composer.scopeEditor.committedIncludeSubfolders = true
+
+        state.syncComposerCollectionState()
+
+        XCTAssertFalse(
+            state.composer.scopeEditor.includeSubfolders,
+            "syncComposerCollectionState must not overwrite an uncommitted scope rule while editing",
+        )
+        XCTAssertTrue(
+            state.composer.scopeEditor.committedIncludeSubfolders,
+            "syncComposerCollectionState must preserve the committed scope rule baseline while editing",
+        )
+    }
+
     func testCanSaveCollectionReadsFromCanonicalSource() {
         var state = makeInitialState()
         state.entryViewLayout.isCollectionMode = true
