@@ -19,12 +19,14 @@ enum AppliedFiltersUtils {
         fallbackScopes: [String],
         fallbackConditions: [Condition],
         registryClient: RegistryClient,
+        fallbackExcludedScopes: [String] = [],
     ) -> (scopes: [String], conditions: [Condition]) {
         let resolved = resolveDetailed(
             appliedFilters,
             fallbackScopes: fallbackScopes,
             fallbackConditions: fallbackConditions,
             registryClient: registryClient,
+            fallbackExcludedScopes: fallbackExcludedScopes,
         )
         return (resolved.scopes, resolved.conditions)
     }
@@ -34,9 +36,10 @@ enum AppliedFiltersUtils {
         fallbackScopes: [String],
         fallbackConditions: [Condition],
         registryClient: RegistryClient,
+        fallbackExcludedScopes: [String] = [],
     ) -> ResolutionResult {
         let scopes = appliedFilters?.scopes ?? fallbackScopes
-        let excludedScopes = appliedFilters?.excludedScopes ?? []
+        let excludedScopes = appliedFilters?.excludedScopes ?? fallbackExcludedScopes
         if let appliedConditions = appliedFilters?.conditions {
             let resolved = appliedConditions.map {
                 makeResolvedCondition(from: $0, registryClient: registryClient)

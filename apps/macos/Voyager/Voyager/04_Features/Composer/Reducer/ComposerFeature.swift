@@ -204,6 +204,7 @@ func applyAppliedFilters(
         fallbackScopes: state.scopeEditor.selection.legacyScopePaths,
         fallbackConditions: state.conditions,
         registryClient: registryClient,
+        fallbackExcludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
     )
     let selection = ComposerScopeSelection.fromCanonicalScopes(
         bases: resolved.scopes,

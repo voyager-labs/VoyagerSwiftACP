@@ -44,6 +44,23 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertFalse(unknownCondition.isActive)
     }
 
+    func testResolveDetailedPreservesFallbackExcludedScopesWhenAppliedFiltersMissing() {
+        let fallbackCondition = makeActiveCondition()
+
+        let resolved = AppliedFiltersUtils.resolveDetailed(
+            nil,
+            fallbackScopes: ["/tmp/root"],
+            fallbackConditions: [fallbackCondition],
+            registryClient: makeRegistryClient(),
+            fallbackExcludedScopes: ["/tmp/root/excluded"],
+        )
+
+        XCTAssertEqual(resolved.scopes, ["/tmp/root"])
+        XCTAssertEqual(resolved.excludedScopes, ["/tmp/root/excluded"])
+        XCTAssertEqual(resolved.conditions, [fallbackCondition])
+        XCTAssertEqual(resolved.unknownKeys, [])
+    }
+
     func testResolveDetailedRestoresDateRangePayloadWithoutShapeLoss() {
         let registryClient = makeRangeDateRegistryClient()
         let appliedFilters = AppliedFiltersPayload(

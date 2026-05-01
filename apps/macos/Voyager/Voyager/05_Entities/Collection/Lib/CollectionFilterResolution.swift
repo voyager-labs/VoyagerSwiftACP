@@ -24,6 +24,7 @@ enum CollectionFilterResolution {
             fallbackScopes: file.scopes,
             fallbackConditions: [],
             registryClient: registryClient,
+            fallbackExcludedScopes: file.excludedScopes,
         )
     }
 }
