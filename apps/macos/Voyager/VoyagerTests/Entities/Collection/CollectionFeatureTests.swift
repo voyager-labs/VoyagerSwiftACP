@@ -457,7 +457,7 @@ private func runApplyFiltersTest(
 
 private func makeSavePayload(conditions: [Condition]) -> SaveRequestPayload {
     SaveRequestPayload(
-        context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: conditions),
+        context: CollectionContext(query: "Report", scopes: ["/tmp"], includeSubfolders: true, conditions: conditions),
         isSearchLoading: false,
         isFiltersLoading: false,
         snapshotItems: nil,

@@ -40,7 +40,7 @@ shortcut: "⌃⇥"
 
 ## Edge Cases / Failure Handling
 
-- -
+-   -
 
 ## Acceptance Criteria
 

@@ -8,7 +8,7 @@ struct CollectionStalenessClient: Sendable {
     var invalidateRecords: @Sendable (_ affectedPaths: [String]) -> Void
     var suppressPaths: @Sendable (_ paths: [String]) -> Void
     var clearRecord: @Sendable (_ path: String) -> Void
-    var registerCollection: @Sendable (_ path: String, _ relevanceRoots: [String]) -> Void
+    var registerCollection: @Sendable (_ path: String, _ relevanceRoots: [String], _ includeSubfolders: Bool) -> Void
     var consumeInvalidation: @Sendable (_ path: String) -> Bool
 }
 
@@ -21,7 +21,7 @@ extension CollectionStalenessClient: DependencyKey {
         invalidateRecords: { _ in },
         suppressPaths: { _ in },
         clearRecord: { _ in },
-        registerCollection: { _, _ in },
+        registerCollection: { _, _, _ in },
         consumeInvalidation: { _ in false },
     )
 }
@@ -36,11 +36,13 @@ extension DependencyValues {
 struct CollectionStalenessRecord: Codable, Equatable, Sendable {
     var definitionFingerprint: String
     var relevanceRoots: [String]
+    var includeSubfolders: Bool
     var lastInvalidatedAt: Date?
 
     private enum CodingKeys: String, CodingKey {
         case definitionFingerprint
         case relevanceRoots
+        case includeSubfolders
         case lastInvalidatedAt
         case scopes
         case isInvalidated
@@ -49,10 +51,12 @@ struct CollectionStalenessRecord: Codable, Equatable, Sendable {
     nonisolated init(
         definitionFingerprint: String,
         relevanceRoots: [String],
+        includeSubfolders: Bool,
         lastInvalidatedAt: Date?,
     ) {
         self.definitionFingerprint = definitionFingerprint
         self.relevanceRoots = relevanceRoots
+        self.includeSubfolders = includeSubfolders
         self.lastInvalidatedAt = lastInvalidatedAt
     }
 
@@ -63,6 +67,7 @@ struct CollectionStalenessRecord: Codable, Equatable, Sendable {
             ?? (try? container.decodeIfPresent([String].self, forKey: .scopes))
             ?? []
         relevanceRoots = roots
+        includeSubfolders = (try? container.decodeIfPresent(Bool.self, forKey: .includeSubfolders)) ?? true
         let invalidatedAt = try? container.decodeIfPresent(Date.self, forKey: .lastInvalidatedAt)
         let legacyInvalidated = (try? container.decodeIfPresent(Bool.self, forKey: .isInvalidated)) ?? false
         lastInvalidatedAt = invalidatedAt ?? (legacyInvalidated ? .distantPast : nil)
@@ -72,6 +77,7 @@ struct CollectionStalenessRecord: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(definitionFingerprint, forKey: .definitionFingerprint)
         try container.encode(relevanceRoots, forKey: .relevanceRoots)
+        try container.encode(includeSubfolders, forKey: .includeSubfolders)
         try container.encodeIfPresent(lastInvalidatedAt, forKey: .lastInvalidatedAt)
     }
 }
@@ -161,13 +167,20 @@ extension CollectionStalenessClient {
                     !isCollectionDocumentPath($0, collectionPath: path)
                 }
                 let shouldInvalidate = relevantAffectedPaths.contains { affectedPath in
-                    record.relevanceRoots.contains { affects(relevanceRoot: $0, affectedPath: affectedPath) }
+                    record.relevanceRoots.contains { relevanceRoot in
+                        affects(
+                            relevanceRoot: relevanceRoot,
+                            affectedPath: affectedPath,
+                            includeSubfolders: record.includeSubfolders,
+                        )
+                    }
                 }
                 guard shouldInvalidate else { continue }
 
                 storage[path] = .init(
                     definitionFingerprint: record.definitionFingerprint,
                     relevanceRoots: record.relevanceRoots,
+                    includeSubfolders: record.includeSubfolders,
                     lastInvalidatedAt: invalidatedAt,
                 )
             }
@@ -196,8 +209,8 @@ extension CollectionStalenessClient {
 
     private nonisolated static func makeRegisterCollection(
         userDefaultsClient: UserDefaultsClient,
-    ) -> @Sendable (String, [String]) -> Void {
-        { path, relevanceRoots in
+    ) -> @Sendable (String, [String], Bool) -> Void {
+        { path, relevanceRoots, includeSubfolders in
             let normalizedPath = normalizePath(path)
             var storage = loadStorage(userDefaultsClient: userDefaultsClient)
             let existing = storage[normalizedPath]
@@ -205,6 +218,7 @@ extension CollectionStalenessClient {
             storage[normalizedPath] = .init(
                 definitionFingerprint: existing?.definitionFingerprint ?? "",
                 relevanceRoots: normalizedRoots(relevanceRoots),
+                includeSubfolders: includeSubfolders,
                 lastInvalidatedAt: nil,
             )
             saveStorage(storage, userDefaultsClient: userDefaultsClient)
@@ -224,6 +238,7 @@ extension CollectionStalenessClient {
             storage[normalizedPath] = .init(
                 definitionFingerprint: existing.definitionFingerprint,
                 relevanceRoots: existing.relevanceRoots,
+                includeSubfolders: existing.includeSubfolders,
                 lastInvalidatedAt: nil,
             )
             saveStorage(storage, userDefaultsClient: userDefaultsClient)
@@ -278,6 +293,7 @@ extension CollectionStalenessClient {
         .init(
             definitionFingerprint: record.definitionFingerprint,
             relevanceRoots: normalizedRoots(record.relevanceRoots),
+            includeSubfolders: record.includeSubfolders,
             lastInvalidatedAt: record.lastInvalidatedAt,
         )
     }
@@ -288,6 +304,7 @@ extension CollectionStalenessClient {
         .init(
             definitionFingerprint: "",
             relevanceRoots: normalizedRoots(legacyRecord.scopes),
+            includeSubfolders: true,
             lastInvalidatedAt: legacyRecord.isInvalidated ? .distantPast : nil,
         )
     }
@@ -339,12 +356,14 @@ extension CollectionStalenessClient {
                 ?? (dictionary["scopes"] as? [String])
                 ?? [],
         )
+        let includeSubfolders = dictionary["includeSubfolders"] as? Bool ?? true
 
         let invalidatedAt = dictionary["lastInvalidatedAt"] as? Date
         let legacyInvalidated = dictionary["isInvalidated"] as? Bool ?? false
         let record = CollectionStalenessRecord(
             definitionFingerprint: definitionFingerprint,
             relevanceRoots: relevanceRoots,
+            includeSubfolders: includeSubfolders,
             lastInvalidatedAt: invalidatedAt ?? (legacyInvalidated ? .distantPast : nil),
         )
 
@@ -360,10 +379,20 @@ extension CollectionStalenessClient {
         return URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
-    private nonisolated static func affects(relevanceRoot: String, affectedPath: String) -> Bool {
+    private nonisolated static func affects(
+        relevanceRoot: String,
+        affectedPath: String,
+        includeSubfolders: Bool,
+    ) -> Bool {
         let normalizedRoot = normalizePath(relevanceRoot)
         let normalizedAffectedPath = normalizePath(affectedPath)
         guard !normalizedRoot.isEmpty else { return false }
+
+        if includeSubfolders == false {
+            return normalizedAffectedPath == normalizedRoot
+                || URL(fileURLWithPath: normalizedAffectedPath).deletingLastPathComponent().standardizedFileURL
+                .path == normalizedRoot
+        }
 
         return normalizedAffectedPath == normalizedRoot
             || (normalizedRoot == "/"

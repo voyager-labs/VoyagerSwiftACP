@@ -6,12 +6,6 @@ This repository separates agent-facing instructions from human-facing documentat
 - **Local Agent Artifacts:** Runtime directories such as `.omx/` and `.sisyphus/` are local-only and must never be staged or committed. See `.agents/rules/99-agent/01-agent-harness-artifacts.md`.
 - **For Humans:** Product and architecture documentation is located in `docs/index.md`.
 
-## Protected local files
-
-- Treat `opencode.json` as a user-managed local file.
-- Never automatically reset, revert, or discard changes in `opencode.json`.
-- Never include `opencode.json` in commits unless the user explicitly asks for it.
-
 ## Review guidelines
 
 This project uses AI-powered PR review. The reviewer is NOT a linter, formatter, or CI substitute. It should behave like a senior engineer who knows this project well.

@@ -1,5 +1,5 @@
 name = "product_interviewer"
-description = "Clarifies fuzzy product requests into problem, actor, action, scope, and open questions before inventory or spec edits, using thesis/persona as reference-only context when helpful."
+description = "Clarifies fuzzy product requests into problem, actor, action, scope, and open questions before inventory or spec edits."
 model = "gpt-5.4"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
@@ -27,11 +27,7 @@ When helpful, inspect these sources:
 - PRODUCT/02_USER_PERSONA/
 - PRODUCT/03_INFORMATION_ARCHITECTURE/
 - PRODUCT/04_FEATURE_INVENTORY/
-- PRODUCT/05_FEATURE_SPECS/
-
-Default harness note:
-- use thesis and persona as `reference_only` truth for actor, problem, and success framing
-- keep default write lanes inside IA, FI, and FS unless the parent explicitly asks for another lane
+- PRODUCT/06_USE_CASES/
 
 Return a short structured brief that the parent agent can hand to a scope or authoring agent.
 """

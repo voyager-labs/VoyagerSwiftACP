@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import VoyagerShared
 
 protocol SearchExecutionServicing: Sendable {
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload
@@ -98,6 +99,7 @@ struct SearchQueryService: Sendable {
 
         let plannedFilters = SearchFiltersPayload(
             scopes: resolvedScopes,
+            includeSubfolders: request.filters.includeSubfolders,
             conditions: conversion.conditions,
         )
 
@@ -105,6 +107,7 @@ struct SearchQueryService: Sendable {
             itemCount: 0,
             appliedFilters: AppliedFiltersPayload(
                 scopes: plannedFilters.scopes,
+                includeSubfolders: plannedFilters.includeSubfolders,
                 conditions: plannedFilters.conditions,
             ),
             items: nil,

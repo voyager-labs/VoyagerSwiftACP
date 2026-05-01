@@ -11,4 +11,16 @@ struct Condition: Equatable, Identifiable, Hashable, Sendable {
     var isActive: Bool = true
 
     var id: String { propertyKey }
+
+    var isSearchReady: Bool {
+        guard isActive else { return false }
+        guard operatorCode != nil else { return false }
+
+        if let arity = operatorValueArity, arity == 0 {
+            return true
+        }
+
+        guard let values, !values.isEmpty else { return false }
+        return ConditionValueEncoder.encode(condition: self, values: values) != nil
+    }
 }

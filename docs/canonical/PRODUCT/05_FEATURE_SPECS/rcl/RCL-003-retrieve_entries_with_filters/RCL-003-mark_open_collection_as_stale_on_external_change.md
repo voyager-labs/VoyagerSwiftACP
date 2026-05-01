@@ -5,7 +5,7 @@ feature: "Retrieve Entries with Filters"
 category_key: "RCL"
 feature_id: "RCL-003"
 status: "기획 완료"
-summary: "열려 있는 콜렉션에서 외부 변경이 발생하면 즉시 재검색하지 않고 현재 결과를 stale 상태로 표시해 후속 refresh 정책을 유지"
+summary: "열려 있는 콜렉션에서 외부 변경이 발생하면 자동 refresh 없이 현재 결과를 유지한 채 stale 상태만 남겨 후속 refresh 정책을 유지"
 related_region: "file_manager_window.content_pane.page_container.page_mode_collection"
 menu: "-"
 shortcut: "-"
@@ -68,20 +68,9 @@ shortcut: "-"
 
 ## Related Interactions
 
-- [RCL-003-apply_deterministic_filters](RCL-003-apply_deterministic_filters.md)
-- [RCL-003-combine_hybrid_scores](RCL-003-combine_hybrid_scores.md)
-- [RCL-003-evaluate_text_query_condition_lexically](RCL-003-evaluate_text_query_condition_lexically.md)
-- [RCL-003-evaluate_text_query_condition_semantically](RCL-003-evaluate_text_query_condition_semantically.md)
-- [RCL-003-execute_filtered_collection_retrieval](RCL-003-execute_filtered_collection_retrieval.md)
-- [RCL-003-indicate_collection_results_staleness](RCL-003-indicate_collection_results_staleness.md)
-- [RCL-003-invalidate_closed_collection_staleness_on_external_change](RCL-003-invalidate_closed_collection_staleness_on_external_change.md)
-- [RCL-003-mark_collection_results_as_stale](RCL-003-mark_collection_results_as_stale.md)
-- [RCL-003-rank_entries_by_relevance](RCL-003-rank_entries_by_relevance.md)
-- [RCL-003-refresh_collection_results](RCL-003-refresh_collection_results.md)
-- [RCL-003-refresh_stale_collection_results_on_reopen](RCL-003-refresh_stale_collection_results_on_reopen.md)
-- [RCL-003-request_collection_results_refresh](RCL-003-request_collection_results_refresh.md)
-- [RCL-003-update_collection_results_on_filter_change](RCL-003-update_collection_results_on_filter_change.md)
+- TBD
+
 ## Source
 
 - Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `157`
+- Source line: `149`

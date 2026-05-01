@@ -1,6 +1,6 @@
 ---
 name: commit-message
-description: Generate exactly 3 Conventional Commit candidates from currently staged Git changes, present them as a numbered list, explain each candidate briefly, collect user selection with an interactive option picker when available (fallback to text), support a `Reroll` option for new candidates, and execute `git commit` with the selected message. Use for `$commit-message`, commit-message drafting requests, or when the user wants message options before committing.
+description: Generate 3 numbered Conventional Commit candidates from currently staged Git changes, explain each candidate briefly, collect user selection with an interactive option picker when available (fallback to text), support a `Reroll` option for new candidates, and execute `git commit` with the selected message. Use for `$commit-message`, commit-message drafting requests, or when the user wants message options before committing.
 compatibility: opencode
 metadata:
     workflow: git
@@ -12,16 +12,6 @@ metadata:
 ## Purpose
 
 Generate 3 commit-message candidates from staged changes, ask the user to pick one (or reroll), and commit using the selected candidate.
-
-## Commit Type and Scope Policy
-
-- `feat`, `fix`, `refactor`, `ui`, and `test` should include a scope.
-- `docs`, `ci`, `build`, `chore`, and `agent` may omit scope unless a narrower owner materially improves clarity.
-- Use the clearest owning scope for scoped types.
-    - Voyager macOS: `helper`, `main-app` only for `Voyager/01_App`, `pages/<slice>`, `widgets/<slice>`, `features/<slice>`, `entities/<slice>`, `shared`
-    - Other areas: `backend`
-- Example scoped subjects: `fix(helper): ...`, `feat(main-app): ...`, `refactor(features/entry-operations): ...`, `fix(pages/file-manager): ...`, `feat(backend): ...`
-- Example scope-less subjects: `docs: ...`, `ci: ...`, `build: ...`, `chore: ...`, `agent: ...`
 
 ## Hard Rules
 
@@ -58,7 +48,6 @@ Generate 3 commit-message candidates from staged changes, ask the user to pick o
 
 2. **Draft Message Candidates**
     - Draft **exactly 3 candidates**.
-    - Apply the `Commit Type and Scope Policy` section above.
     - Follow formatting and quality rules in `references/output-template.md`.
     - Use exception handling rules from `references/response-template.md`.
     - Show all candidate details in plain text before asking for selection.

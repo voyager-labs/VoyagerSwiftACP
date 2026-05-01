@@ -39,6 +39,15 @@ struct FileManagerContentState: Equatable {
         composer.openedCollectionURL = collectionSession.document?.url
         composer.openedCollectionCompatibility = collectionSession.document?.compatibility
         composer.isCollectionMode = isCollectionMode
+        let shouldPreservePendingScopeRule = composer.scopeEditor.isPresented
+            && composer.scopeEditor.hasPendingScopeRuleChanges
+        if !shouldPreservePendingScopeRule {
+            if composer.scopeEditor.selection.isRootOnly {
+                composer.scopeEditor.includeSubfolders = true
+            } else if let collectionContext {
+                composer.scopeEditor.includeSubfolders = collectionContext.includeSubfolders
+            }
+        }
     }
 
     var canSaveCollection: Bool {

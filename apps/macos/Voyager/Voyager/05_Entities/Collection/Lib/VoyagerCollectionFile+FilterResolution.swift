@@ -14,6 +14,7 @@ extension VoyagerCollectionFile {
         }
         let appliedFilters = VoyagerShared.AppliedFiltersPayload(
             scopes: scopes,
+            includeSubfolders: includeSubfolders,
             conditions: conditionPayloads,
         )
         return AppliedFiltersUtils.resolveDetailed(

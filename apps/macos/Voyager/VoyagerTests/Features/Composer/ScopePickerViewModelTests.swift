@@ -1,6 +1,7 @@
 @testable import Voyager
 import XCTest
 
+@MainActor
 final class ScopePickerViewModelTests: XCTestCase {
     func testSectionsSeparateCurrentScopesExceptionAndCandidates() {
         var state = ComposerScopeEditorState(
@@ -18,13 +19,13 @@ final class ScopePickerViewModelTests: XCTestCase {
             ],
         )
 
-        let sections = state.sections()
+        let sections = state.sections(editingPath: state.editingPath)
 
         XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "exception-slot", "addable-default"])
-        guard case let .currentScopes(currentSection)? = sections.first?.kind else {
+        guard case .currentScopes? = sections.first?.kind else {
             return XCTFail("expected current scopes section")
         }
-        XCTAssertEqual(currentSection.id, "current-scopes")
+        XCTAssertEqual(sections.first?.id, "current-scopes")
 
         guard case let .currentScope(firstCurrent)? = sections[0].items.first else {
             return XCTFail("expected current scope item")
@@ -60,7 +61,7 @@ final class ScopePickerViewModelTests: XCTestCase {
             candidateItems: [],
         )
 
-        let sections = state.sections()
+        let sections = state.sections(editingPath: nil)
 
         XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "exception-slot", "addable-empty-docs"])
         XCTAssertEqual(sections[2].items.count, 0)

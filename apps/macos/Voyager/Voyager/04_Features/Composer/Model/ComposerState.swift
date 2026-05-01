@@ -66,6 +66,7 @@ struct ComposerState: Equatable {
         CollectionContext(
             query: query,
             scopes: scopeEditor.selection.legacyScopePaths,
+            includeSubfolders: scopeEditor.effectiveIncludeSubfolders,
             conditions: conditions,
         )
     }
@@ -76,6 +77,47 @@ struct ComposerState: Equatable {
 
     var scopeSummary: ComposerScopeSummary {
         scopeEditor.selection.summary
+    }
+
+    var shouldAutoApplyScopeChange: Bool {
+        hasCommittedQuerySearch
+            || hasCommittedScopeSearch
+            || conditions.contains(where: \.isSearchReady)
+    }
+
+    var hasCommittedQuerySearch: Bool {
+        let trimmedCollectionQuery = collectionContext?.query.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedPendingQuery = pendingSearchQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !trimmedCollectionQuery.isEmpty || !trimmedPendingQuery.isEmpty
+    }
+
+    var hasCommittedScopeSearch: Bool {
+        if let collectionContext, !collectionContext.scopes.isEmpty {
+            return true
+        }
+        if let submittedSearchFilters, !submittedSearchFilters.scopes.isEmpty {
+            return true
+        }
+        if let scopes = lastFiltersResponse?.appliedFilters?.scopes, !scopes.isEmpty {
+            return true
+        }
+        if let scopes = lastSearchResponse?.appliedFilters?.scopes, !scopes.isEmpty {
+            return true
+        }
+        return false
+    }
+
+    var lastAppliedIncludeSubfolders: Bool? {
+        if let value = collectionContext?.includeSubfolders {
+            return value
+        }
+        if let value = lastFiltersResponse?.appliedFilters?.includeSubfolders {
+            return value
+        }
+        if let value = lastSearchResponse?.appliedFilters?.includeSubfolders {
+            return value
+        }
+        return submittedSearchFilters?.includeSubfolders
     }
 
     var isCollectionSearching: Bool {
@@ -132,6 +174,7 @@ struct ComposerState: Equatable {
         }
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
         scopeEditor.selection = selection
+        scopeEditor.includeSubfolders = payload.context.includeSubfolders
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -145,6 +188,7 @@ struct ComposerState: Equatable {
         text = payload.composerText
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.scopes)
         scopeEditor.selection = selection
+        scopeEditor.includeSubfolders = payload.includeSubfolders
         conditions = payload.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -160,6 +204,7 @@ struct ComposerState: Equatable {
         text = payload.context.query
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
         scopeEditor.selection = selection
+        scopeEditor.includeSubfolders = payload.context.includeSubfolders
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()

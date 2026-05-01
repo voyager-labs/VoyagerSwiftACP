@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import VoyagerShared
 
 struct GatewayQueryConverter: Sendable {
     private let logger: Logger

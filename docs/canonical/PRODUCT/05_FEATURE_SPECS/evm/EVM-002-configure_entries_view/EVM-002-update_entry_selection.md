@@ -23,7 +23,7 @@ shortcut: "-"
 
 ## Preconditions
 
-- -
+-   -
 
 ## Expected Outcome
 
@@ -39,11 +39,11 @@ shortcut: "-"
 
 ## Edge Cases / Failure Handling
 
-- -
+-   -
 
 ## Acceptance Criteria
 
-- -
+-   -
 
 ## Permissions / Dependencies
 

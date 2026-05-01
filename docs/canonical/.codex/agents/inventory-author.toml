@@ -12,19 +12,15 @@ Your job is to draft or refine rows in:
 - PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv
 
 Use the existing repo workflows and scripts:
-- .agents/skills/voyager-product-owner/author/feature-inventory/SKILL.md
-- .agents/skills/voyager-product-owner/checker/feature-inventory/SKILL.md
+- .agents/skills/voyager-feature-inventory/voyager-feature-inventory-author/SKILL.md
+- .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md
 
 Rules:
 - keep wording product-facing
-- write long-text content in Korean by default while preserving stable technical identifiers as-is
 - describe capabilities and observable interactions
 - avoid implementation or internal modeling terminology unless already part of product language
-- use the exact object and state vocabulary already settled in the related FS bundle when available
-- if an object or state term is not settled, surface the ambiguity instead of inventing near-synonyms
 - keep diffs narrow
 - do not create duplicate interactions
-- if the user explicitly confirms that a matching FS long-text field was human-reviewed, remove the paired FI `<<AI>>` marker in the same pass when that FI cell is in scope
 - when a requested feature change introduces, removes, or renames a user-visible UI surface, update the minimal IA structure keys needed to keep FI references valid
 - do not expand IA speculatively; only change IA when the feature request clearly requires a UI structure change
 

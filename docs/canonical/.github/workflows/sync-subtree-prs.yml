@@ -171,21 +171,8 @@ jobs:
                     git remote add voyager-docs "$remote_url"
                   fi
 
-                  subtree_commit_message="$(git log --grep="^git-subtree-dir: $PREFIX/*\$" --no-show-signature --pretty=format:'%B' -n 1 HEAD || true)"
-                  if [[ "$subtree_commit_message" != *"git-subtree-mainline:"* ]]; then
-                    subtree_current_split="$(awk '/^git-subtree-split: / { print $2; exit }' <<<"$subtree_commit_message")"
-                    if [[ -z "$subtree_current_split" ]]; then
-                      echo "::error::Could not detect the current subtree split for '$PREFIX' in $TARGET_REPOSITORY."
-                      exit 1
-                    fi
-
-                    git fetch voyager-docs "$subtree_current_split"
-                    git merge -s ours --no-ff --no-commit --allow-unrelated-histories FETCH_HEAD
-                    git commit -m "$(printf "Add '%s/' from commit '%s'\n\ngit-subtree-dir: %s\ngit-subtree-mainline: %s\ngit-subtree-split: %s\n" "$PREFIX" "$subtree_current_split" "$PREFIX" "$old_head" "$subtree_current_split")"
-                  fi
-
                   git fetch voyager-docs "$UPSTREAM_BRANCH"
-                  git subtree pull --prefix="$PREFIX" voyager-docs "$UPSTREAM_BRANCH"
+                  git subtree pull --prefix="$PREFIX" voyager-docs "$UPSTREAM_BRANCH" --squash
 
                   new_head="$(git rev-parse HEAD)"
                   if [[ "$old_head" == "$new_head" ]]; then

@@ -23,7 +23,7 @@ shortcut: "⌘T"
 
 ## Preconditions
 
-- -
+-   -
 
 ## Expected Outcome
 
@@ -39,7 +39,7 @@ shortcut: "⌘T"
 
 ## Edge Cases / Failure Handling
 
-- -
+-   -
 
 ## Acceptance Criteria
 

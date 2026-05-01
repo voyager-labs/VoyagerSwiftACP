@@ -116,9 +116,13 @@ enum FileManagerContentComposerCoordinator {
             }
             let wasDirtyBeforeApplyingResponse = state.isOpenedCollectionDirty
             state.composer.lastFiltersResponse = response
+            let resolvedQuery = state.composer.pendingSearchQuery
+                ?? state.collectionContext?.query
+                ?? state.composer.collectionContext?.query
+                ?? ""
             let effect = handleSearchSuccess(
                 items: response.items ?? [],
-                query: state.composer.pendingSearchQuery ?? "",
+                query: resolvedQuery,
                 state: &state,
             )
             return finalizeCollectionRefreshIfNeeded(
@@ -195,6 +199,18 @@ enum FileManagerContentComposerCoordinator {
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         guard isPresented else {
+            if state.composer.isFilteringInFlight {
+                return .none
+            }
+
+            let shouldCommitScopeEditorChanges = state.composer.scopeEditor.isPresented
+                && state.composer.scopeEditor.hasPendingScopeRuleChanges
+                && state.composer.shouldAutoApplyScopeChange
+
+            if shouldCommitScopeEditorChanges {
+                return .none
+            }
+
             state.composer.pendingSearchQuery = nil
             return .send(.collection(.openSearchPresentationCancelled))
         }

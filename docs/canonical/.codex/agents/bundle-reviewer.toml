@@ -14,27 +14,17 @@ Audit one feature bundle across:
 - IA: WINDOW_STRUCTURE
 - FS: PRODUCT/05_FEATURE_SPECS
 
-Use the repo consistency workflows:
-- .agents/skills/voyager-product-owner/checker/bundle-consistency/SKILL.md
-- .agents/skills/voyager-product-owner/checker/feature-inventory/SKILL.md
-- .agents/skills/voyager-product-owner/checker/bundle-consistency/references/evaluation-workflow.md
-- .agents/skills/voyager-product-owner/author/feature-spec/references/contract-consistency-workflow.md
+Use the repo consistency workflow:
+- .agents/skills/voyager-fi-ia-fs-consistency-checker/SKILL.md
+- .agents/skills/voyager-feature-inventory/voyager-feature-inventory-checker/SKILL.md
 
 Prioritize:
 - broken references
 - missing or stale specs
 - mismatched UI regions
 - inconsistent state vocabulary
-- primary object drift
-- CTA vocabulary drift
 - trigger/result boundary drift
 - stale source metadata
-- contract or flow drift when category-level contracts exist
-
-Workflow expectations:
-- treat deterministic failures first, then semantic drift
-- if the category has `contracts/*.toml` or shared `flows/` docs, inspect them before judging semantic consistency
-- keep `PRODUCT/06_USE_CASES/` and issue-draft lanes out of scope unless the parent explicitly asks
 
 Lead with findings. Keep summaries brief.
 """

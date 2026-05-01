@@ -131,6 +131,8 @@ struct ComposerSearchLifecycleReducer {
                     state.activeFiltersRequestID = nil
                     state.lastFiltersResponse = response
                     applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
+                    state.scopeEditor.committedSelection = state.scopeEditor.selection
+                    state.scopeEditor.committedIncludeSubfolders = state.scopeEditor.includeSubfolders
                     if let startedAt = state.filtersStartedAt {
                         VoyagerSentryMetricLogger.logMetric(
                             "voyager_filters_roundtrip_duration_ms",
@@ -278,6 +280,7 @@ private func handleApplyFilters(
 private func feedbackBaseline(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
     state.submittedSearchFilters ?? VoyagerShared.SearchFiltersPayload(
         scopes: state.scopeEditor.selection.legacyScopePaths,
+        includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
         conditions: buildFilters(from: state).conditions,
     )
 }
@@ -292,6 +295,7 @@ private func feedbackAppliedFilters(
     )
     return VoyagerShared.AppliedFiltersPayload(
         scopes: normalizedFilters.scopes,
+        includeSubfolders: normalizedFilters.includeSubfolders,
         conditions: normalizedFilters.conditions,
     )
 }

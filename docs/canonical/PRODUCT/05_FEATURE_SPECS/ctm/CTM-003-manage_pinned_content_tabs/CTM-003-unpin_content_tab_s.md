@@ -40,7 +40,7 @@ shortcut: "⌘P"
 
 ## Edge Cases / Failure Handling
 
-- -
+-   -
 
 ## Acceptance Criteria
 

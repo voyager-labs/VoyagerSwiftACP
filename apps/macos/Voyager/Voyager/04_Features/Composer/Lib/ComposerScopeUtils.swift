@@ -33,12 +33,6 @@ enum ComposerScopeUtils {
 
     static let rootScopePath = "/"
 
-    static func normalizeScopePath(_ path: String) -> String {
-        let standardized = (path.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).standardizingPath
-        guard !standardized.isEmpty, standardized != ".", standardized != rootScopePath else { return rootScopePath }
-        return standardized.hasSuffix("/") ? String(standardized.dropLast()) : standardized
-    }
-
     nonisolated static func searchDirectories(
         query: String,
         entryLoadingClient: EntryLoadingClient,

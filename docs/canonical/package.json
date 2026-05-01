@@ -2,22 +2,7 @@
   "name": "voyager-documentation",
   "private": true,
   "version": "0.0.0",
-  "scripts": {
-    "format:prettier": "prettier --write",
-    "check:prettier": "prettier --check",
-    "lint:markdown": "markdownlint-cli2",
-    "lint:markdown:fix": "markdownlint-cli2 --fix",
-    "lint:markdown:paths": "markdownlint-cli2 --no-globs",
-    "lint:markdown:fix:paths": "markdownlint-cli2 --fix --no-globs",
-    "format:toml": "taplo format",
-    "check:toml": "taplo check",
-    "check:format:toml": "taplo format --check",
-    "check:contract": "python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py",
-    "check:feature-bundle": "python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py",
-    "check:category-bundle": "python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/evaluate_category_consistency.py"
-  },
   "devDependencies": {
-    "@taplo/cli": "^0.7.0",
     "markdownlint-cli2": "^0.22.0",
     "prettier": "^3.8.2"
   }

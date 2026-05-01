@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 extension SpotlightQueryCompiler {
     func buildDateClause(

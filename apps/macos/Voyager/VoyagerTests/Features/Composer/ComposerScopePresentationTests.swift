@@ -6,6 +6,55 @@ import XCTest
 
 @MainActor
 final class ComposerScopePresentationTests: XCTestCase {
+    func testScopeRuleDefaultsToIncludeSubfoldersAndProvidesDescriptions() {
+        let rootState = ComposerState()
+        XCTAssertTrue(rootState.scopeEditor.effectiveIncludeSubfolders)
+        XCTAssertEqual(rootState.scopeEditor.scopeRuleDescription, "This Mac")
+        XCTAssertFalse(rootState.scopeEditor.isExactFolderOnlyMode)
+
+        var toggledRootState = ComposerState()
+        toggledRootState.scopeEditor.includeSubfolders = false
+
+        XCTAssertTrue(toggledRootState.scopeEditor.effectiveIncludeSubfolders)
+        XCTAssertEqual(toggledRootState.scopeEditor.scopeRuleDescription, "This Mac")
+        XCTAssertFalse(toggledRootState.scopeEditor.isExactFolderOnlyMode)
+        XCTAssertTrue(toggledRootState.collectionContext(query: "docs").includeSubfolders)
+        XCTAssertTrue(buildFilters(from: toggledRootState).includeSubfolders)
+
+        var explicitState = ComposerState()
+        explicitState.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+            exceptions: [],
+        )
+        explicitState.scopeEditor.includeSubfolders = false
+
+        XCTAssertFalse(explicitState.scopeEditor.effectiveIncludeSubfolders)
+        XCTAssertTrue(explicitState.scopeEditor.isExactFolderOnlyMode)
+        XCTAssertEqual(explicitState.scopeEditor.scopeRuleDescription, "Only selected folder")
+        XCTAssertFalse(explicitState.collectionContext(query: "docs").includeSubfolders)
+        XCTAssertFalse(buildFilters(from: explicitState).includeSubfolders)
+    }
+
+    func testScopeEditorIncludeSubfoldersToggleUpdatesContext() {
+        var state = ComposerState()
+        state.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+            exceptions: [],
+        )
+
+        state.scopeEditor.includeSubfolders = false
+        XCTAssertFalse(state.scopeEditor.effectiveIncludeSubfolders)
+        XCTAssertTrue(state.scopeEditor.isExactFolderOnlyMode)
+        XCTAssertEqual(state.scopeEditor.scopeRuleDescription, "Only selected folder")
+        XCTAssertFalse(state.collectionContext(query: "docs").includeSubfolders)
+
+        state.scopeEditor.includeSubfolders = true
+        XCTAssertTrue(state.scopeEditor.effectiveIncludeSubfolders)
+        XCTAssertFalse(state.scopeEditor.isExactFolderOnlyMode)
+        XCTAssertEqual(state.scopeEditor.scopeRuleDescription, "Include subfolders")
+        XCTAssertTrue(state.collectionContext(query: "docs").includeSubfolders)
+    }
+
     func testScopeSummaryReflectsRootSingleAndMultiSelection() {
         XCTAssertEqual(ComposerScopeSelection.rootOnly.summary.primaryText, "This Mac")
 
@@ -27,7 +76,7 @@ final class ComposerScopePresentationTests: XCTestCase {
         XCTAssertEqual(multi.summary.secondaryText, "1 exception")
     }
 
-    func testScopeAddAppliesFiltersForScopeOnlyChangeWithoutConditions() async {
+    func testScopeAddPreservesNestedExplicitScopesAndSkipsAutoApplyWithoutConditions() async {
         let initialSelection = ComposerScopeSelection.explicit(
             bases: [ComposerScopeBase(path: "/Users/me")],
             exceptions: [],
@@ -55,18 +104,20 @@ final class ComposerScopePresentationTests: XCTestCase {
 
         await store.send(.candidateScope(.add(path: "/Users/me/Documents"))) {
             $0.scopeEditor.selection = .explicit(
-                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+                bases: [
+                    ComposerScopeBase(path: "/Users/me"),
+                    ComposerScopeBase(path: "/Users/me/Documents"),
+                ],
                 exceptions: [],
             )
-            $0.scopes = ["/Users/me/Documents"]
+            $0.scopes = ["/Users/me", "/Users/me/Documents"]
             $0.scopeEditor.isPresented = true
             $0.scopeEditor.queryText = ""
             $0.scopeEditor.listState = .defaultCandidates
             $0.scopeEditor.candidateItems = []
         }
 
-        XCTAssertEqual(applyRecorder.last()?.filters.scopes, ["/Users/me/Documents"])
-        XCTAssertEqual(applyRecorder.last()?.filters.conditions, [])
+        XCTAssertNil(applyRecorder.last())
     }
 
     func testScopeEditorSeedCurrentPathRootFoldsAndNormalizes() async {

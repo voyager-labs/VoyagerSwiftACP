@@ -24,9 +24,9 @@ file_manager_window	inspector_pane	inspector_mode_chat	Chat Pane	챗 패인	3	mo
 file_manager_window	inspector_pane	inspector_mode_property	Property Pane	프로퍼티 패인	3	mode	file_manager_window.inspector_pane.inspector_mode_property	선택된 엔트리의 시스템 속성·사용자 프로퍼티를 조회·편집하는 인스펙터 모드	TBD	OBT
 file_manager_window	inspector_pane	inspector_mode_preview	Preview Pane	프리뷰 패인	3	mode	file_manager_window.inspector_pane.inspector_mode_preview	선택된 엔트리 콘텐츠를 빠르게 미리보는 인스펙터 모드	TBD	MVP
 file_manager_window	inspector_pane	inspector_mode_relations	Relations Pane	릴레이션 패인	3	mode	file_manager_window.inspector_pane.inspector_mode_relations	선택된 엔트리의 연관 콜렉션·엔트리 관계를 탐색하는 인스펙터 모드	TBD	LATER
-file_manager_window	inspector_mode_chat	chat_menu_area	Chat Menu Area	챗 메뉴 영역	4	section	file_manager_window.inspector_pane.inspector_mode_chat.chat_menu_area	대화 관련 액션과 옵션을 제공하는 메뉴 영역	TBD	OBT
+file_manager_window	inspector_mode_chat	chat_menu_area	chat_menu_area	챗 메뉴 영역	4	section	file_manager_window.inspector_pane.inspector_mode_chat.chat_menu_area	대화 관련 액션과 옵션을 제공하는 메뉴 영역	TBD	OBT
 file_manager_window	inspector_mode_chat	message_area	Message Area	메시지 영역	4	section	file_manager_window.inspector_pane.inspector_mode_chat.message_area	요청·응답 메시지와 실행 결과를 시간순으로 나열하는 영역	TBD	OBT
-file_manager_window	inspector_mode_chat	chat_field	Chat Field	챗 필드	4	section	file_manager_window.inspector_pane.inspector_mode_chat.chat_field	메시지 입력·전송, 요청 컨텍스트 조정, 모델 선택을 제공하는 입력 영역	TBD	OBT
+file_manager_window	inspector_mode_chat	chat_field	Chat Field	챗 필드	4	section	file_manager_window.inspector_pane.inspector_mode_chat.chat_field	메시지 입력·전송 및 컨텍스트 조정 컨트롤을 제공하는 입력 영역	TBD	OBT
 settings_window	-	root	Settings Window	세팅 창	1	root	settings_window	앱 전역 설정을 조회·변경하는 세팅 윈도우	TBD	CBT
 settings_window	root	toolbar	Settings Toolbar	세팅 툴바	2	pane	settings_window.toolbar	세팅의 공통 네비게이션과 액션을 제공하는 상단 툴바 영역	TBD	CBT
 settings_window	root	settings_body	Settings Body	세팅 바디	2	pane	settings_window.settings_body	현재 선택된 설정 탭의 실제 설정 폼·콘텐츠를 표시하는 본문 영역	TBD	CBT
@@ -45,4 +45,4 @@ onboarding_window	-	root	Onboarding Window	온보딩 스크린	1	root	onboarding
 onboarding_window	root	welcome_screen	Welcome Screen	웰컴 스크린	2	mode	onboarding_window.welcome_screen	제품 소개와 기본 안내, 시작 액션을 제공하는 온보딩 첫 화면	TBD	CBT
 onboarding_window	root	beta_access_screen	Beta Access Screen	베타 검증 스크린	2	mode	onboarding_window.beta_access_screen	<<AI>> [CBT 한정] 초대 코드·계정 상태로 클로즈 베타 접근 권한을 검증하고 다음 단계 진입을 제어하는 화면	TBD	CBT
 onboarding_window	root	permission_screen	Permission Screen	권한 요청 스크린	2	mode	onboarding_window.permission_screen	<<AI>> Full Disk Access 필요 사유 안내, FDA/Launch at Login 권한 요청·상태 라벨링·재검증 및 시스템 설정 이동까지 한 화면 처리	TBD	CBT
-onboarding_window	root	indexing_preset_screen	Indexing Preset Screen	인덱싱 프리셋 스크린	2	mode	onboarding_window.indexing_preset_screen	<<AI>> 제외 규칙 프리셋 확인·편집 UI를 제공하는 온보딩 단계. 현재 빌드에는 기본 프리셋만 적용, 편집 UI는 OBT로 예정	TBD	OBT
+onboarding_window	root	indexing_preset_screen	Indexing Presset Screen	인덱싱 프리셋 스크린	2	mode	onboarding_window.indexing_preset_screen	<<AI>> 제외 규칙 프리셋 확인·편집 UI를 제공하는 온보딩 단계. 현재 빌드에는 기본 프리셋만 적용, 편집 UI는 OBT로 예정	TBD	OBT

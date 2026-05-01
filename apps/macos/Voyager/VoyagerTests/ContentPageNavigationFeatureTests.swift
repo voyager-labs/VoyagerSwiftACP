@@ -227,7 +227,7 @@ private func makeStore(
 private func makeCollectionNavigation() -> ContentPageCollectionNavigation {
     ContentPageCollectionNavigation(
         kind: .temporary,
-        context: CollectionContext(query: "", scopes: [], conditions: []),
+        context: CollectionContext(query: "", scopes: [], includeSubfolders: true, conditions: []),
         sortKey: .name,
         sortOrder: .ascending,
         viewLayout: .list,

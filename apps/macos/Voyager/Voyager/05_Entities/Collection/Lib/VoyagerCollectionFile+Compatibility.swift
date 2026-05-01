@@ -191,6 +191,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
             updatedAt: file.updatedAt,
             query: file.query,
             scopes: file.scopes,
+            includeSubfolders: file.includeSubfolders,
             conditions: file.conditions,
             snapshot: file.snapshot,
             snapshotMeta: file.snapshotMeta,
@@ -322,6 +323,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
             updatedAt: payload.updatedAt,
             query: payload.query,
             scopes: payload.scopes,
+            includeSubfolders: payload.includeSubfolders,
             conditions: payload.conditions,
             snapshot: snapshotPair.snapshot,
             snapshotMeta: snapshotPair.snapshotMeta,
@@ -441,6 +443,7 @@ enum VoyagerCollectionFileCompatibilityOwner {
             updatedAt: file.updatedAt,
             query: file.query,
             scopes: file.scopes,
+            includeSubfolders: file.includeSubfolders,
             conditions: file.conditions,
             snapshot: nil,
             snapshotMeta: nil,
@@ -498,6 +501,7 @@ private nonisolated struct CompatibilityPayload: Decodable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
+    let includeSubfolders: Bool
     let conditions: [CollectionCondition]
     let snapshot: LossyOptionalField<CollectionPersistedSnapshot>
     let snapshotMeta: LossyOptionalField<CollectionSnapshotMeta>
@@ -511,6 +515,7 @@ private nonisolated struct CompatibilityPayload: Decodable {
         case updatedAt
         case query
         case scopes
+        case includeSubfolders
         case conditions
         case snapshot
         case snapshotMeta
@@ -526,6 +531,7 @@ private nonisolated struct CompatibilityPayload: Decodable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         query = try container.decode(String.self, forKey: .query)
         scopes = try container.decode([String].self, forKey: .scopes)
+        includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
         conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
         snapshot = try container.decodeIfPresent(
             LossyOptionalField<CollectionPersistedSnapshot>.self,

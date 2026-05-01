@@ -143,30 +143,7 @@ Notepad directories are associated with the target plan:
 
 ---
 
-## 7. Prior Run Association Rules
-
-When the target plan has been previously reviewed, prior runs provide cross-run context for dedup and trend detection.
-
-### Detecting Prior Runs
-
-1. List directories under `.sisyphus/reviews/{plan_slug}/`.
-2. Any directory containing a `manifest.json` is a prior run.
-3. Exclude the current `run_id` (being generated) from the prior set.
-
-### Prior Run Consumption
-
-Prior runs are optional inputs. If they exist:
-
-1. Read the prior `manifest.json` for lineage and confidence metadata.
-2. Read the prior `findings.json` for `dedupe_key` comparison with current findings.
-3. Read the prior `learning.md` (in `.sisyphus/compound/{plan_slug}/{prior_run_id}/`) for overlap detection.
-4. The most recent prior run that is `authoritative` (per `evidence-trust-taxonomy.md`) is the primary cross-run baseline.
-
-If no prior runs exist, the skill proceeds without cross-run context. This is normal for first-time reviews and carries no degradation penalty.
-
----
-
-## 8. Summary: Decision Flow
+## 7. Summary: Decision Flow
 
 ```
 Operator invokes compound-review

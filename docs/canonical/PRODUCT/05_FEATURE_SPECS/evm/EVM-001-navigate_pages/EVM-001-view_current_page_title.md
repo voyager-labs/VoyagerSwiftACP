@@ -23,7 +23,7 @@ shortcut: "-"
 
 ## Preconditions
 
-- -
+-   -
 
 ## Expected Outcome
 
@@ -43,7 +43,7 @@ shortcut: "-"
 
 ## Acceptance Criteria
 
-- -
+-   -
 
 ## Permissions / Dependencies
 

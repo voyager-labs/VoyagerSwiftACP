@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 @testable import VoyagerHelper
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -235,6 +236,31 @@ final class HelperRecentTagSearchSemanticsTests: XCTestCase {
             SpotlightSearchService.loadRawUserTags(from: tagged),
             ["Green\n2", "Orange\n7"],
         )
+    }
+
+    func testFilterPathsKeepsOnlyDirectChildrenWhenSubfoldersDisabled() throws {
+        let service = SpotlightSearchService()
+
+        let filtered = service.filterPaths(
+            [
+                "/tmp/root/file.txt",
+                "/tmp/root/nested/deeper.txt",
+                "/tmp/other/file.txt",
+            ],
+            scopes: ["/tmp/root"],
+            includeSubfolders: false,
+        )
+
+        XCTAssertEqual(filtered, ["/tmp/root/file.txt"])
+    }
+
+    func testExactFolderPathMatcherUsesDirectParentOnly() throws {
+        let service = SpotlightSearchService()
+        let scopes = SearchScopeNormalizer.normalizeScopes(["/tmp/root"])
+
+        XCTAssertTrue(service.pathMatchesExactFolderScope("/tmp/root/file.txt", normalizedScopes: scopes))
+        XCTAssertFalse(service.pathMatchesExactFolderScope("/tmp/root/nested/deeper.txt", normalizedScopes: scopes))
+        XCTAssertFalse(service.pathMatchesExactFolderScope("/tmp/rootSibling/file.txt", normalizedScopes: scopes))
     }
 
     private func makeSandbox() throws -> URL {

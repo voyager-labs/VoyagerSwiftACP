@@ -12,11 +12,33 @@ public nonisolated struct SearchRequestPayload: Codable, Equatable, Sendable {
 
 public nonisolated struct SearchFiltersPayload: Codable, Equatable, Sendable {
     public let scopes: [String]
+    public let includeSubfolders: Bool
     public let conditions: [SearchConditionPayload]
 
-    public init(scopes: [String], conditions: [SearchConditionPayload]) {
+    public enum CodingKeys: String, CodingKey {
+        case scopes
+        case includeSubfolders
+        case conditions
+    }
+
+    public init(scopes: [String], includeSubfolders: Bool = true, conditions: [SearchConditionPayload]) {
         self.scopes = scopes
+        self.includeSubfolders = includeSubfolders
         self.conditions = conditions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        scopes = try container.decode([String].self, forKey: .scopes)
+        includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
+        conditions = try container.decode([SearchConditionPayload].self, forKey: .conditions)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(scopes, forKey: .scopes)
+        try container.encode(includeSubfolders, forKey: .includeSubfolders)
+        try container.encode(conditions, forKey: .conditions)
     }
 }
 
@@ -56,7 +78,7 @@ public nonisolated struct SearchResponsePayload: Codable, Equatable, Sendable {
         itemCount: Int,
         appliedFilters: AppliedFiltersPayload? = nil,
         items: [JSONValue]? = nil,
-        error: SearchErrorPayload? = nil,
+        error: SearchErrorPayload? = nil
     ) {
         self.itemCount = itemCount
         self.appliedFilters = appliedFilters
@@ -67,10 +89,12 @@ public nonisolated struct SearchResponsePayload: Codable, Equatable, Sendable {
 
 public nonisolated struct AppliedFiltersPayload: Codable, Equatable, Sendable {
     public let scopes: [String]?
+    public let includeSubfolders: Bool?
     public let conditions: [SearchConditionPayload]?
 
-    public init(scopes: [String]? = nil, conditions: [SearchConditionPayload]? = nil) {
+    public init(scopes: [String]? = nil, includeSubfolders: Bool? = nil, conditions: [SearchConditionPayload]? = nil) {
         self.scopes = scopes
+        self.includeSubfolders = includeSubfolders
         self.conditions = conditions
     }
 }
@@ -106,7 +130,7 @@ public nonisolated struct RecentSearchRequestPayload: Codable, Equatable, Sendab
         scopes: [String],
         resultCap: Int,
         includeHidden: Bool,
-        sort: RecentTagSearchSortPayload,
+        sort: RecentTagSearchSortPayload
     ) {
         self.scopeMode = scopeMode
         self.scopes = scopes
@@ -132,7 +156,7 @@ public nonisolated struct TagSearchRequestPayload: Codable, Equatable, Sendable 
         resultCap: Int,
         includeHidden: Bool,
         sort: RecentTagSearchSortPayload,
-        exactTagVerification: Bool,
+        exactTagVerification: Bool
     ) {
         self.requestedTag = requestedTag
         self.scopeMode = scopeMode
@@ -182,7 +206,7 @@ public nonisolated enum SearchEntrySupplementaryMetadataPayload: Codable, Equata
         case .imageResolution:
             self = try .imageResolution(
                 width: container.decode(Int.self, forKey: .width),
-                height: container.decode(Int.self, forKey: .height),
+                height: container.decode(Int.self, forKey: .height)
             )
         case .compressedFileSize:
             self = try .compressedFileSize(container.decode(Int64.self, forKey: .fileSize))
@@ -236,7 +260,7 @@ public nonisolated struct SearchEntryPayload: Codable, Equatable, Sendable {
         kind: String,
         creatorApplication: String?,
         tags: [SearchTagPayload]?,
-        supplementaryMetadata: SearchEntrySupplementaryMetadataPayload?,
+        supplementaryMetadata: SearchEntrySupplementaryMetadataPayload?
     ) {
         self.name = name
         self.fullPath = fullPath

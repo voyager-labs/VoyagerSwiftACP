@@ -24,11 +24,12 @@ struct ComposerHistoryReducer {
                 )
                 state.redoHistory.append(current)
                 state.scopeEditor.selection = previous.scopeSelection
+                state.scopes = previous.scopeSelection.legacyScopePaths
                 state.conditions = previous.conditions
                 state.conditionDisplayByKey = previous.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
-                if before != after {
+                if before != after, state.shouldAutoApplyScopeChange {
                     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
                 }
                 return .none
@@ -44,11 +45,12 @@ struct ComposerHistoryReducer {
                 )
                 state.history.append(current)
                 state.scopeEditor.selection = next.scopeSelection
+                state.scopes = next.scopeSelection.legacyScopePaths
                 state.conditions = next.conditions
                 state.conditionDisplayByKey = next.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
-                if before != after {
+                if before != after, state.shouldAutoApplyScopeChange {
                     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
                 }
                 return .none

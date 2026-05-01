@@ -43,6 +43,7 @@ private func makeSavePayload(from state: ComposerState, currentDate: Date) -> Sa
         definitionFingerprint: CollectionSnapshotHydration.definitionFingerprint(
             query: query,
             scopes: scopes,
+            includeSubfolders: context?.includeSubfolders ?? true,
             conditions: conditions,
         ),
         capturedAt: currentDate,

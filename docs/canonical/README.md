@@ -22,18 +22,17 @@
 
 - 그로스 인덱스: `GROWTH/index.md`
 
+### META (레포 운영 규칙)
+
+- 운영 규칙/포맷 규칙: `META/README.md`
+
 ## 폴더 구조(상위 도메인)
 
 - `PRODUCT/` — 제품 기획/스펙/유즈케이스
 - `BRANDING/` — 포지셔닝, 보이스/톤, 메시징, 네이밍, 프레스킷 등
 - `GROWTH/` — 그로스 헌법, 채널 플레이북, 실험 로그, 지표 정의 등
+- `META/` — SSOT 운영 규칙/포맷/린팅 가이드
 - `.agents/` — 로컬 검증/조회 스크립트(스킬)
-
-## 네이밍 규칙
-
-- 폴더: 기본 `CONSTANT_CASE`, 정렬용 숫자 프리픽스가 있으면 `NN_CONSTANT_CASE`
-- 파일: 기본 `snake_case` + 소문자 확장자
-- 예외: `README.md`, `index.md`
 
 ## 다른 레포에서 이 문서를 subtree로 포함하기
 

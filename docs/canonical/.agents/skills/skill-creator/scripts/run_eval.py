@@ -1,86 +1,61 @@
 #!/usr/bin/env python3
 """Run trigger evaluation for a skill description.
 
-Tests whether a skill's description causes Claude or Codex to trigger
-(read the skill) for a set of queries. Outputs results as JSON.
+Tests whether a skill's description causes Claude to trigger (read the skill)
+for a set of queries. Outputs results as JSON.
 """
 
 import argparse
 import json
 import os
-import re
 import select
-import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from scripts.llm_cli import claude_env, codex_model_arg
 from scripts.utils import parse_skill_md
 
 
 def find_project_root() -> Path:
-    """Find the project root by walking up from cwd looking for CLI config dirs."""
+    """Find the project root by walking up from cwd looking for .claude/.
+
+    Mimics how Claude Code discovers its project root, so the command file
+    we create ends up where claude -p will look for it.
+    """
     current = Path.cwd()
     for parent in [current, *current.parents]:
-        if (parent / ".claude").is_dir() or (parent / ".codex").is_dir():
+        if (parent / ".claude").is_dir():
             return parent
     return current
 
 
-def _make_eval_skill_id(skill_name: str, unique_id: str) -> str:
-    """Return a filesystem-safe temporary skill identifier."""
-    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", skill_name).strip("-").lower()
-    if not slug:
-        slug = "skill"
-    return f"{slug}-skill-{unique_id}"
-
-
-def _pick_codex_skills_dir(project_root: str) -> Path:
-    """Choose a writable Codex skills directory for temporary eval skills."""
-    candidates: list[Path] = []
-    codex_home = os.environ.get("CODEX_HOME")
-    if codex_home:
-        candidates.append(Path(codex_home) / "skills")
-    candidates.append(Path(project_root) / ".codex" / "skills")
-    candidates.append(Path.home() / ".codex" / "skills")
-
-    errors: list[str] = []
-    for candidate in candidates:
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-            probe = candidate / f".eval-write-probe-{uuid.uuid4().hex[:8]}"
-            probe.mkdir()
-            probe.rmdir()
-            return candidate
-        except OSError as exc:
-            errors.append(f"{candidate}: {exc}")
-
-    raise RuntimeError(
-        "Could not find a writable Codex skills directory:\n" + "\n".join(errors)
-    )
-
-
-def _run_single_query_claude(
+def run_single_query(
     query: str,
     skill_name: str,
     skill_description: str,
     timeout: int,
     project_root: str,
-    model: str | None,
+    model: str | None = None,
 ) -> bool:
-    """Run a single trigger query through Claude and detect skill usage."""
+    """Run a single query and return whether the skill was triggered.
+
+    Creates a command file in .claude/commands/ so it appears in Claude's
+    available_skills list, then runs `claude -p` with the raw query.
+    Uses --include-partial-messages to detect triggering early from
+    stream events (content_block_start) rather than waiting for the
+    full assistant message, which only arrives after tool execution.
+    """
     unique_id = uuid.uuid4().hex[:8]
-    clean_name = _make_eval_skill_id(skill_name, unique_id)
+    clean_name = f"{skill_name}-skill-{unique_id}"
     project_commands_dir = Path(project_root) / ".claude" / "commands"
     command_file = project_commands_dir / f"{clean_name}.md"
 
     try:
         project_commands_dir.mkdir(parents=True, exist_ok=True)
+        # Use YAML block scalar to avoid breaking on quotes in description
         indented_desc = "\n  ".join(skill_description.split("\n"))
         command_content = (
             f"---\n"
@@ -102,17 +77,23 @@ def _run_single_query_claude(
         if model:
             cmd.extend(["--model", model])
 
+        # Remove CLAUDECODE env var to allow nesting claude -p inside a
+        # Claude Code session. The guard is for interactive terminal conflicts;
+        # programmatic subprocess usage is safe.
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             cwd=project_root,
-            env=claude_env(),
+            env=env,
         )
 
         triggered = False
         start_time = time.time()
         buffer = ""
+        # Track state for stream event detection
         pending_tool_name = None
         accumulated_json = ""
 
@@ -144,6 +125,7 @@ def _run_single_query_claude(
                     except json.JSONDecodeError:
                         continue
 
+                    # Early detection via stream events
                     if event.get("type") == "stream_event":
                         se = event.get("event", {})
                         se_type = se.get("type", "")
@@ -171,6 +153,7 @@ def _run_single_query_claude(
                             if se_type == "message_stop":
                                 return False
 
+                    # Fallback: full assistant message
                     elif event.get("type") == "assistant":
                         message = event.get("message", {})
                         for content_item in message.get("content", []):
@@ -186,14 +169,8 @@ def _run_single_query_claude(
 
                     elif event.get("type") == "result":
                         return triggered
-
-            process.wait(timeout=1)
-            if process.returncode not in (0, None):
-                stderr = process.stderr.read().decode("utf-8", errors="replace")
-                raise RuntimeError(
-                    f"claude -p exited {process.returncode}\nstderr: {stderr}"
-                )
         finally:
+            # Clean up process on any exit path (return, exception, timeout)
             if process.poll() is None:
                 process.kill()
                 process.wait()
@@ -202,128 +179,6 @@ def _run_single_query_claude(
     finally:
         if command_file.exists():
             command_file.unlink()
-
-
-def _run_single_query_codex(
-    query: str,
-    skill_name: str,
-    skill_description: str,
-    timeout: int,
-    project_root: str,
-    model: str | None,
-) -> bool:
-    """Run a single trigger query through Codex and detect skill usage."""
-    unique_id = uuid.uuid4().hex[:8]
-    clean_name = _make_eval_skill_id(skill_name, unique_id)
-    trigger_marker = f"__TRIGGERED_{unique_id.upper()}__"
-    skill_dir = _pick_codex_skills_dir(project_root) / clean_name
-    skill_file = skill_dir / "SKILL.md"
-
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".txt",
-        prefix="codex-run-eval-",
-        delete=False,
-    ) as output_file:
-        output_path = Path(output_file.name)
-
-    try:
-        skill_dir.mkdir(parents=True, exist_ok=True)
-        indented_desc = "\n  ".join(skill_description.split("\n"))
-        skill_content = (
-            f"---\n"
-            f"name: {clean_name}\n"
-            f"description: |\n"
-            f"  {indented_desc}\n"
-            f"---\n\n"
-            f"# {skill_name}\n\n"
-            f"If you are reading this skill because it was selected for the current request, "
-            f"include the exact token `{trigger_marker}` once in the first line of your final "
-            f"response. If this skill is not selected, never mention that token.\n\n"
-            f"This skill handles: {skill_description}\n"
-        )
-        skill_file.write_text(skill_content)
-
-        cmd = [
-            "codex",
-            "exec",
-            "-",
-            "--ephemeral",
-            "--skip-git-repo-check",
-            "--sandbox",
-            "read-only",
-            "--color",
-            "never",
-            "--output-last-message",
-            str(output_path),
-            *codex_model_arg(model),
-        ]
-
-        result = subprocess.run(
-            cmd,
-            input=query,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=project_root,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"codex exec exited {result.returncode}\n"
-                f"stdout: {result.stdout}\n"
-                f"stderr: {result.stderr}"
-            )
-        if not output_path.exists():
-            raise RuntimeError("codex exec did not write an output message file")
-
-        return trigger_marker in output_path.read_text()
-    finally:
-        output_path.unlink(missing_ok=True)
-        shutil.rmtree(skill_dir, ignore_errors=True)
-
-
-def run_single_query(
-    query: str,
-    skill_name: str,
-    skill_description: str,
-    timeout: int,
-    project_root: str,
-    model: str | None = None,
-) -> bool:
-    """Run a single query and return whether the skill was triggered."""
-    errors: list[str] = []
-
-    if shutil.which("claude"):
-        try:
-            return _run_single_query_claude(
-                query,
-                skill_name,
-                skill_description,
-                timeout,
-                project_root,
-                model,
-            )
-        except Exception as exc:
-            errors.append(f"claude failed: {exc}")
-    else:
-        errors.append("claude failed: executable not found")
-
-    if shutil.which("codex"):
-        try:
-            return _run_single_query_codex(
-                query,
-                skill_name,
-                skill_description,
-                timeout,
-                project_root,
-                model,
-            )
-        except Exception as exc:
-            errors.append(f"codex failed: {exc}")
-    else:
-        errors.append("codex failed: executable not found")
-
-    raise RuntimeError("No supported LLM CLI succeeded:\n" + "\n".join(errors))
 
 
 def run_eval(
@@ -339,66 +194,35 @@ def run_eval(
 ) -> dict:
     """Run the full eval set and return results."""
     results = []
-    query_triggers: dict[str, list[bool]] = {}
-    query_items: dict[str, dict] = {}
 
-    def record_result(item: dict, triggered: bool):
-        query = item["query"]
-        query_items[query] = item
-        if query not in query_triggers:
-            query_triggers[query] = []
-        query_triggers[query].append(triggered)
-
-    def execute_sequential():
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        future_to_info = {}
         for item in eval_set:
-            for _ in range(runs_per_query):
-                try:
-                    triggered = run_single_query(
-                        item["query"],
-                        skill_name,
-                        description,
-                        timeout,
-                        str(project_root),
-                        model,
-                    )
-                except Exception as e:
-                    print(f"Warning: query failed: {e}", file=sys.stderr)
-                    triggered = False
-                record_result(item, triggered)
+            for run_idx in range(runs_per_query):
+                future = executor.submit(
+                    run_single_query,
+                    item["query"],
+                    skill_name,
+                    description,
+                    timeout,
+                    str(project_root),
+                    model,
+                )
+                future_to_info[future] = (item, run_idx)
 
-    if num_workers <= 1:
-        execute_sequential()
-    else:
-        try:
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
-                future_to_info = {}
-                for item in eval_set:
-                    for run_idx in range(runs_per_query):
-                        future = executor.submit(
-                            run_single_query,
-                            item["query"],
-                            skill_name,
-                            description,
-                            timeout,
-                            str(project_root),
-                            model,
-                        )
-                        future_to_info[future] = (item, run_idx)
-
-                for future in as_completed(future_to_info):
-                    item, _ = future_to_info[future]
-                    try:
-                        triggered = future.result()
-                    except Exception as e:
-                        print(f"Warning: query failed: {e}", file=sys.stderr)
-                        triggered = False
-                    record_result(item, triggered)
-        except (OSError, PermissionError) as e:
-            print(
-                f"Warning: parallel eval unavailable, falling back to sequential execution: {e}",
-                file=sys.stderr,
-            )
-            execute_sequential()
+        query_triggers: dict[str, list[bool]] = {}
+        query_items: dict[str, dict] = {}
+        for future in as_completed(future_to_info):
+            item, _ = future_to_info[future]
+            query = item["query"]
+            query_items[query] = item
+            if query not in query_triggers:
+                query_triggers[query] = []
+            try:
+                query_triggers[query].append(future.result())
+            except Exception as e:
+                print(f"Warning: query failed: {e}", file=sys.stderr)
+                query_triggers[query].append(False)
 
     for query, triggers in query_triggers.items():
         item = query_items[query]
@@ -441,7 +265,7 @@ def main():
     parser.add_argument("--timeout", type=int, default=30, help="Timeout per query in seconds")
     parser.add_argument("--runs-per-query", type=int, default=3, help="Number of runs per query")
     parser.add_argument("--trigger-threshold", type=float, default=0.5, help="Trigger rate threshold")
-    parser.add_argument("--model", default=None, help="Model to use for Claude/Codex when compatible")
+    parser.add_argument("--model", default=None, help="Model to use for claude -p (default: user's configured model)")
     parser.add_argument("--verbose", action="store_true", help="Print progress to stderr")
     args = parser.parse_args()
 

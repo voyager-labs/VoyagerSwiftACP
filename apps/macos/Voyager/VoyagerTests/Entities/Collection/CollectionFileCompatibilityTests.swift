@@ -38,6 +38,28 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         XCTAssertEqual(reencoded, data)
     }
 
+    func testNormalizeForSavePreservesIncludeSubfolders() throws {
+        let file = VoyagerCollectionFile(
+            schemaVersion: .init(major: 0, minor: 9),
+            id: "compat-preserve",
+            name: "Compat Preserve",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "docs",
+            scopes: ["/tmp/root"],
+            includeSubfolders: false,
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        let normalized = VoyagerCollectionFileCompatibilityOwner.normalizeForSave(file)
+
+        XCTAssertFalse(normalized.includeSubfolders)
+        XCTAssertEqual(normalized.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
+    }
+
     func testCompatibilityOwnerExposesMalformedSnapshotFallbackMetadata() throws {
         let data = try makeBinaryPlist(makeInvalidSnapshotPayload())
 

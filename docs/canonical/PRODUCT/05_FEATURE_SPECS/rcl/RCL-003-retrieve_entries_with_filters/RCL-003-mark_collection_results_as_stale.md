@@ -5,7 +5,7 @@ feature: "Retrieve Entries with Filters"
 category_key: "RCL"
 feature_id: "RCL-003"
 status: "기획 완료"
-summary: "파일시스템 변경 등으로 현재 결과의 최신성이 깨졌을 때 콜렉션 결과를 stale 상태로 전환해 후속 refresh 필요를 기록"
+summary: "파일시스템 변경 등으로 결과 최신성이 깨졌다고 판단되면, 열린 collection은 stale 상태로 전환하고 저장된 collection record도 future reopen 판단용으로 invalidate"
 related_region: "-"
 menu: "-"
 shortcut: "-"
@@ -70,20 +70,9 @@ shortcut: "-"
 
 ## Related Interactions
 
-- [RCL-003-apply_deterministic_filters](RCL-003-apply_deterministic_filters.md)
-- [RCL-003-combine_hybrid_scores](RCL-003-combine_hybrid_scores.md)
-- [RCL-003-evaluate_text_query_condition_lexically](RCL-003-evaluate_text_query_condition_lexically.md)
-- [RCL-003-evaluate_text_query_condition_semantically](RCL-003-evaluate_text_query_condition_semantically.md)
-- [RCL-003-execute_filtered_collection_retrieval](RCL-003-execute_filtered_collection_retrieval.md)
-- [RCL-003-indicate_collection_results_staleness](RCL-003-indicate_collection_results_staleness.md)
-- [RCL-003-invalidate_closed_collection_staleness_on_external_change](RCL-003-invalidate_closed_collection_staleness_on_external_change.md)
-- [RCL-003-mark_open_collection_as_stale_on_external_change](RCL-003-mark_open_collection_as_stale_on_external_change.md)
-- [RCL-003-rank_entries_by_relevance](RCL-003-rank_entries_by_relevance.md)
-- [RCL-003-refresh_collection_results](RCL-003-refresh_collection_results.md)
-- [RCL-003-refresh_stale_collection_results_on_reopen](RCL-003-refresh_stale_collection_results_on_reopen.md)
-- [RCL-003-request_collection_results_refresh](RCL-003-request_collection_results_refresh.md)
-- [RCL-003-update_collection_results_on_filter_change](RCL-003-update_collection_results_on_filter_change.md)
+- TBD
+
 ## Source
 
 - Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `152`
+- Source line: `144`

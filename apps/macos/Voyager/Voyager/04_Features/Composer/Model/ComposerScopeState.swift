@@ -212,6 +212,9 @@ struct ComposerScopeEditorSection: Equatable, Sendable, Identifiable {
 
 struct ComposerScopeEditorState: Equatable, Sendable {
     var selection: ComposerScopeSelection = .rootOnly
+    var includeSubfolders: Bool = true
+    var committedSelection: ComposerScopeSelection = .rootOnly
+    var committedIncludeSubfolders: Bool = true
     var listState: ComposerScopeEditorListState = .defaultCandidates
     var isPresented: Bool = false
     var queryText: String = ""
@@ -236,7 +239,27 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         selection.hasExceptions
     }
 
-    func sections() -> [ComposerScopeEditorSection] {
+    var effectiveIncludeSubfolders: Bool {
+        selection.isRootOnly || includeSubfolders
+    }
+
+    var isExactFolderOnlyMode: Bool {
+        !selection.isRootOnly && !effectiveIncludeSubfolders
+    }
+
+    var scopeRuleDescription: String {
+        if selection.isRootOnly {
+            "This Mac"
+        } else if effectiveIncludeSubfolders {
+            "Include subfolders"
+        } else {
+            "Only selected folder"
+        }
+    }
+
+    func sections(
+        editingPath: String? = nil,
+    ) -> [ComposerScopeEditorSection] {
         var sections: [ComposerScopeEditorSection] = []
 
         let currentItems = selection.explicitBases.map {
@@ -287,5 +310,9 @@ struct ComposerScopeEditorState: Equatable, Sendable {
 
     var trimmedQueryText: String {
         queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var hasPendingScopeRuleChanges: Bool {
+        committedSelection != selection || committedIncludeSubfolders != includeSubfolders
     }
 }

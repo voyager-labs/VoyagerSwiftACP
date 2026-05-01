@@ -1,10 +1,11 @@
 import Foundation
 @testable import VoyagerHelper
+import VoyagerShared
 import XCTest
 
 @MainActor
 final class FilterSearchQueryBuilderTests: XCTestCase {
-    func testScopeNormalizerNormalizesAndReducesScopes() {
+    func testScopeNormalizerNormalizesAndDedupesIdenticalScopes() {
         let normalized = SearchScopeNormalizer.normalizeScopes([
             "  /Users/test/Downloads/  ",
             "/Users/test/Downloads/subfolder",
@@ -12,20 +13,20 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
             "",
         ])
 
-        XCTAssertEqual(normalized, ["/Users/test/Downloads"])
+        XCTAssertEqual(normalized, ["/Users/test/Downloads", "/Users/test/Downloads/subfolder"])
     }
 
-    func testScopeNormalizerRootOverridesSubScopes() {
+    func testScopeNormalizerPreservesRootAndExplicitSubScopes() {
         let normalized = SearchScopeNormalizer.normalizeScopes([
             "/Users/test",
             "/",
             "/Users/test/Downloads",
         ])
 
-        XCTAssertEqual(normalized, ["/"])
+        XCTAssertEqual(normalized, ["/Users/test", "/", "/Users/test/Downloads"])
     }
 
-    func testScopeNormalizerExpandsTildeAndReducesHomeSubScopes() {
+    func testScopeNormalizerExpandsTildeAndPreservesHomeSubScopes() {
         let homePath = FileManager.default.homeDirectoryForCurrentUser.path
 
         let normalized = SearchScopeNormalizer.normalizeScopes([
@@ -33,7 +34,7 @@ final class FilterSearchQueryBuilderTests: XCTestCase {
             homePath + "/Documents/subfolder",
         ])
 
-        XCTAssertEqual(normalized, [homePath + "/Documents"])
+        XCTAssertEqual(normalized, [homePath + "/Documents", homePath + "/Documents/subfolder"])
     }
 
     func testScopeNormalizerReturnsEmptyWhenScopesAreBlank() {

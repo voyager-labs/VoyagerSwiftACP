@@ -15,7 +15,7 @@ struct ComposerScopeReducer {
         Reduce { state, action in
             switch action {
             case let .view(.scopeEditorOpen(editingPath: editingPath, favorites: favorites, backHistory: backHistory)):
-                handleScopeEditorOpen(
+                return handleScopeEditorOpen(
                     state: &state,
                     editingPath: editingPath,
                     favorites: favorites,
@@ -24,21 +24,26 @@ struct ComposerScopeReducer {
                 )
 
             case let .view(.scopeEditorSetPresented(isPresented)):
-                handleScopeEditorPresented(
+                return handleScopeEditorPresented(
                     state: &state,
                     isPresented: isPresented,
+                    searchClient: searchClient,
                     entryLoadingClient: entryLoadingClient,
                 )
 
+            case let .view(.scopeEditorSetIncludeSubfolders(includeSubfolders)):
+                state.scopeEditor.includeSubfolders = includeSubfolders
+                return .none
+
             case let .view(.scopeEditorSetQueryText(queryText)):
-                handleScopeEditorQueryText(
+                return handleScopeEditorQueryText(
                     state: &state,
                     queryText: queryText,
                     entryLoadingClient: entryLoadingClient,
                 )
 
             case let .view(.candidateScope(.add(path: path))):
-                handleAddScope(
+                return handleAddScope(
                     state: &state,
                     path: path,
                     searchClient: searchClient,
@@ -46,7 +51,7 @@ struct ComposerScopeReducer {
                 )
 
             case let .view(.currentScope(.remove(path: path))):
-                handleRemoveScope(
+                return handleRemoveScope(
                     state: &state,
                     path: path,
                     searchClient: searchClient,
@@ -54,7 +59,7 @@ struct ComposerScopeReducer {
                 )
 
             case let .view(.currentScope(.replace(oldPath: oldPath, newPath: newPath))):
-                handleUpdateScope(
+                return handleUpdateScope(
                     state: &state,
                     oldPath: oldPath,
                     newPath: newPath,
@@ -63,27 +68,27 @@ struct ComposerScopeReducer {
                 )
 
             case .view(.clearAll):
-                handleClearAll(state: &state, entryLoadingClient: entryLoadingClient)
+                return handleClearAll(state: &state, entryLoadingClient: entryLoadingClient)
 
             case let .internal(.scopeEditorSeedCurrentPath(currentPath)):
-                handleScopeEditorSeedCurrentPath(state: &state, currentPath: currentPath)
+                return handleScopeEditorSeedCurrentPath(state: &state, currentPath: currentPath)
 
             case let .internal(.scopeEditorSearchResponse(query, .success(items))):
-                handleScopeEditorSearchResponse(
+                return handleScopeEditorSearchResponse(
                     state: &state,
                     query: query,
                     items: items,
                 )
 
             case let .internal(.scopeEditorSearchResponse(query, .failure(error))):
-                handleScopeEditorSearchFailure(
+                return handleScopeEditorSearchFailure(
                     state: &state,
                     query: query,
                     error: error,
                 )
 
             default:
-                .none
+                return .none
             }
         }
     }
@@ -96,10 +101,23 @@ private func handleScopeEditorOpen(
     backHistory: [String],
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
+    let shouldSeedCommittedScopeRule = !state.scopeEditor.isPresented
+    let committedSelection = state.collectionContext
+        .map { ComposerScopeSelection.fromLegacyScopes($0.scopes) }
+        ?? state.scopeEditor.selection
+    let committedIncludeSubfolders = state.collectionContext?.includeSubfolders
+        ?? state.scopeEditor.includeSubfolders
+
     state.scopeEditor.favorites = favorites
     state.scopeEditor.backHistory = backHistory
     state.scopeEditor.editingPath = editingPath
     state.scopeEditor.entryMode = editingPath == nil ? .add : .edit
+    if shouldSeedCommittedScopeRule {
+        state.scopeEditor.selection = committedSelection
+        state.scopeEditor.includeSubfolders = committedIncludeSubfolders
+        state.scopeEditor.committedSelection = committedSelection
+        state.scopeEditor.committedIncludeSubfolders = committedIncludeSubfolders
+    }
     state.scopeEditor.isPresented = true
     state.scopeEditor.queryText = ""
     state.scopeEditor.listState = .defaultCandidates
@@ -114,6 +132,7 @@ private func handleScopeEditorOpen(
 private func handleScopeEditorPresented(
     state: inout ComposerFeature.State,
     isPresented: Bool,
+    searchClient _: SearchClient,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     if isPresented {
@@ -134,6 +153,9 @@ private func handleScopeEditorPresented(
         return .none
     }
 
+    let shouldReapplyFilters = state.shouldAutoApplyScopeChange
+        && state.scopeEditor.hasPendingScopeRuleChanges
+
     state.scopeEditor.isPresented = false
     state.resetScopeEditorInteractionState(clearQuery: true)
     state.scopeEditor.entryMode = .add
@@ -143,7 +165,28 @@ private func handleScopeEditorPresented(
         backHistory: state.scopeEditor.backHistory,
         entryLoadingClient: entryLoadingClient,
     )
-    return .cancel(id: ComposerFeature.CancelID.scopeEditorSearch)
+    let dismissEffect = Effect<ComposerFeature.Action>.cancel(id: ComposerFeature.CancelID.scopeEditorSearch)
+    guard shouldReapplyFilters else {
+        return dismissEffect
+    }
+
+    return .merge(dismissEffect, reexecuteCurrentCollectionSearch(state: &state))
+}
+
+private func reexecuteCurrentCollectionSearch(
+    state: inout ComposerFeature.State,
+) -> Effect<ComposerFeature.Action> {
+    let query = state.pendingSearchQuery
+        ?? state.collectionContext?.query
+        ?? state.text
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else {
+        return .send(.applyFilters)
+    }
+
+    state.text = trimmedQuery
+    state.pendingSearchQuery = trimmedQuery
+    return .send(.submit)
 }
 
 private func handleScopeEditorQueryText(
@@ -239,12 +282,12 @@ private func handleScopeEditorSearchFailure(
 private func handleAddScope(
     state: inout ComposerFeature.State,
     path: String,
-    searchClient: SearchClient,
+    searchClient _: SearchClient,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
     let normalizedPath = ComposerScopeUtils.normalizeScopePath(path)
-    let currentPaths = state.scopeEditor.selection.legacyScopePaths
+    let currentPaths = state.scopeEditor.selection.explicitBases.map(\.path)
     let canonicalPaths = collapseScopePaths(existing: currentPaths, adding: normalizedPath)
     guard canonicalPaths != currentPaths else {
         return settleScopeEditorAfterSelectionChange(
@@ -259,14 +302,13 @@ private func handleAddScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-    return .merge(settleEffect, filterEffect)
+    return settleEffect
 }
 
 private func handleRemoveScope(
     state: inout ComposerFeature.State,
     path: String,
-    searchClient: SearchClient,
+    searchClient _: SearchClient,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
@@ -285,15 +327,14 @@ private func handleRemoveScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-    return .merge(settleEffect, filterEffect)
+    return settleEffect
 }
 
 private func handleUpdateScope(
     state: inout ComposerFeature.State,
     oldPath: String,
     newPath: String,
-    searchClient: SearchClient,
+    searchClient _: SearchClient,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
@@ -319,8 +360,7 @@ private func handleUpdateScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-    return .merge(settleEffect, filterEffect)
+    return settleEffect
 }
 
 private func handleClearAll(
@@ -373,19 +413,8 @@ private func collapseScopePaths(existing: [String], adding candidate: String) ->
     let normalizedCandidate = ComposerScopeUtils.normalizeScopePath(candidate)
     var result: [String] = []
 
-    func isAncestorOrSame(_ lhs: String, _ rhs: String) -> Bool {
-        if lhs == rhs { return true }
-        if lhs == ComposerScopeUtils.rootScopePath { return true }
-        return rhs.hasPrefix(lhs + "/")
-    }
-
-    for path in existing.map(ComposerScopeUtils.normalizeScopePath) {
-        if isAncestorOrSame(path, normalizedCandidate) || isAncestorOrSame(normalizedCandidate, path) {
-            continue
-        }
-        if !result.contains(path) {
-            result.append(path)
-        }
+    for path in existing.map(ComposerScopeUtils.normalizeScopePath) where !result.contains(path) {
+        result.append(path)
     }
 
     if !result.contains(normalizedCandidate) {

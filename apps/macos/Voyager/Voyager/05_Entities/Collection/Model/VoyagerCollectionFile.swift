@@ -60,6 +60,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
+    let includeSubfolders: Bool
     let conditions: [CollectionCondition]
     let snapshot: CollectionPersistedSnapshot?
     let snapshotMeta: CollectionSnapshotMeta?
@@ -73,10 +74,43 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         case updatedAt
         case query
         case scopes
+        case includeSubfolders
         case conditions
         case snapshot
         case snapshotMeta
         case appVersion
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(SchemaVersion.self, forKey: .schemaVersion)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        query = try container.decode(String.self, forKey: .query)
+        scopes = try container.decode([String].self, forKey: .scopes)
+        includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
+        conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
+        snapshot = try container.decodeIfPresent(CollectionPersistedSnapshot.self, forKey: .snapshot)
+        snapshotMeta = try container.decodeIfPresent(CollectionSnapshotMeta.self, forKey: .snapshotMeta)
+        appVersion = try container.decodeIfPresent(String.self, forKey: .appVersion)
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(query, forKey: .query)
+        try container.encode(scopes, forKey: .scopes)
+        try container.encode(includeSubfolders, forKey: .includeSubfolders)
+        try container.encode(conditions, forKey: .conditions)
+        try container.encodeIfPresent(snapshot, forKey: .snapshot)
+        try container.encodeIfPresent(snapshotMeta, forKey: .snapshotMeta)
+        try container.encodeIfPresent(appVersion, forKey: .appVersion)
     }
 
     nonisolated init(
@@ -87,6 +121,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         updatedAt: Date,
         query: String,
         scopes: [String],
+        includeSubfolders: Bool = true,
         conditions: [CollectionCondition],
         snapshot: CollectionPersistedSnapshot?,
         snapshotMeta: CollectionSnapshotMeta?,
@@ -99,6 +134,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         self.updatedAt = updatedAt
         self.query = query
         self.scopes = scopes
+        self.includeSubfolders = includeSubfolders
         self.conditions = conditions
         self.snapshot = snapshot
         self.snapshotMeta = snapshotMeta
@@ -112,6 +148,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         updatedAt: Date,
         query: String,
         scopes: [String],
+        includeSubfolders: Bool = true,
         conditions: [CollectionCondition],
         snapshot: CollectionPersistedSnapshot?,
         snapshotMeta: CollectionSnapshotMeta?,
@@ -128,6 +165,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
             updatedAt: updatedAt,
             query: query,
             scopes: scopes,
+            includeSubfolders: includeSubfolders,
             conditions: conditions,
             snapshot: snapshot,
             snapshotMeta: snapshotMeta,
