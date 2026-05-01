@@ -7,6 +7,8 @@ struct AiConnectionRowView: View {
 
     let store: StoreOf<AiConnectionRowReducer>
 
+    private static let checkingStatusRawValue = "checkingStatus"
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             headerRow
@@ -77,24 +79,48 @@ struct AiConnectionRowView: View {
     }
 
     private var connectionStateColor: Color {
+        if store.connectionState.rawValue == Self.checkingStatusRawValue {
+            return .blue
+        }
+
         switch store.connectionState {
-        case .connected: .green
-        case .connectionFailed: .red
-        case .connectInProgress, .disconnecting: .blue
-        case .notVerified, .disconnected: .gray
-        case .unavailable: .gray.opacity(0.5)
+        case .connected:
+            return .green
+        case .connectionFailed:
+            return .red
+        case .connectInProgress, .disconnecting:
+            return .blue
+        case .notVerified, .disconnected:
+            return .gray
+        case .unavailable:
+            return .gray.opacity(0.5)
+        default:
+            return .gray
         }
     }
 
     private var connectionStateLabel: String {
+        if store.connectionState.rawValue == Self.checkingStatusRawValue {
+            return "Checking status\u{2026}"
+        }
+
         switch store.connectionState {
-        case .notVerified: "Not connected"
-        case .connectInProgress: "Connecting\u{2026}"
-        case .connected: "Connected"
-        case .connectionFailed: "Failed"
-        case .disconnecting: "Disconnecting\u{2026}"
-        case .disconnected: "Disconnected"
-        case .unavailable: "Unavailable"
+        case .notVerified:
+            return "Not connected"
+        case .connectInProgress:
+            return "Connecting\u{2026}"
+        case .connected:
+            return "Connected"
+        case .connectionFailed:
+            return "Failed"
+        case .disconnecting:
+            return "Disconnecting\u{2026}"
+        case .disconnected:
+            return "Disconnected"
+        case .unavailable:
+            return "Unavailable"
+        default:
+            return "Not connected"
         }
     }
 
@@ -177,6 +203,7 @@ struct AiConnectionRowView: View {
 
     private var showsProgress: Bool {
         store.isVerifying
+            || store.connectionState.rawValue == Self.checkingStatusRawValue
             || store.flowState == .connecting
             || store.flowState == .browserLoginInProgress
             || store.flowState == .deviceAuthInProgress
@@ -184,11 +211,19 @@ struct AiConnectionRowView: View {
     }
 
     private var progressLabel: String {
+        if store.connectionState.rawValue == Self.checkingStatusRawValue {
+            return "Checking status\u{2026}"
+        }
+
         switch store.flowState {
-        case .connecting: "Verifying\u{2026}"
-        case .browserLoginInProgress, .deviceAuthInProgress: "Waiting for authentication\u{2026}"
-        case .disconnecting: "Disconnecting\u{2026}"
-        default: "Verifying\u{2026}"
+        case .connecting:
+            return "Verifying\u{2026}"
+        case .browserLoginInProgress, .deviceAuthInProgress:
+            return "Waiting for authentication\u{2026}"
+        case .disconnecting:
+            return "Disconnecting\u{2026}"
+        default:
+            return "Verifying\u{2026}"
         }
     }
 

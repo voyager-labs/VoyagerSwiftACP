@@ -8,8 +8,17 @@ struct AiSettingsView: View {
     var body: some View {
         Form {
             Section {
-                ForEach(store.scope(state: \.rows, action: \.row)) { rowStore in
-                    AiConnectionRowView(store: rowStore)
+                if store.bootstrapPhase == .failed {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Failed to load AI connections.")
+                        Button("Retry") {
+                            store.send(.retryBootstrapTapped)
+                        }
+                    }
+                } else {
+                    ForEach(store.scope(state: \.rows, action: \.row)) { rowStore in
+                        AiConnectionRowView(store: rowStore)
+                    }
                 }
             } header: {
                 Text("AI Connections")
