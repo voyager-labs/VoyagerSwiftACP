@@ -185,8 +185,20 @@ public actor AIConnectionFileStore {
 
         try data.write(to: tempURL, options: .atomic)
         try setOwnerOnlyPermissions(tempURL)
+        try ensurePayloadPlaceholderExists()
         _ = try fileManager.replaceItemAt(payloadURL, withItemAt: tempURL)
         try setOwnerOnlyPermissions(payloadURL)
+    }
+
+    private func ensurePayloadPlaceholderExists() throws {
+        guard !fileManager.fileExists(atPath: payloadURL.path) else { return }
+
+        let didCreateFile = fileManager.createFile(
+            atPath: payloadURL.path,
+            contents: Data(),
+            attributes: [.posixPermissions: NSNumber(value: 0o600)]
+        )
+        guard didCreateFile else { throw CocoaError(.fileWriteUnknown) }
     }
 
     private func withExclusiveLock<T>(_ operation: () throws -> T) throws -> T {
