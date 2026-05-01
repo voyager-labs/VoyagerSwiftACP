@@ -23,23 +23,23 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             )
             let loaded = try await CollectionFileClient.liveValue.load(url)
 
-            matrixCase.assertLoaded(result, loaded)
+            matrixCase.assertLoaded(result, loaded.file)
         }
     }
 
     func testCurrentSchemaRoundTripEncodingIsStable() throws {
         let file = makeSnapshotFile()
 
-        let data = try makeBinaryPlist(file)
+        let data = try makeCompatibilityBinaryPlist(file)
         let decoded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
-        let reencoded = try makeBinaryPlist(decoded)
+        let reencoded = try makeCompatibilityBinaryPlist(decoded)
 
         XCTAssertEqual(decoded, file)
         XCTAssertEqual(reencoded, data)
     }
 
     func testCompatibilityOwnerExposesMalformedSnapshotFallbackMetadata() throws {
-        let data = try makeBinaryPlist(makeInvalidSnapshotPayload())
+        let data = try makeCompatibilityBinaryPlist(makeInvalidSnapshotPayload())
 
         let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
 
@@ -53,7 +53,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
     }
 
     func testCompatibilityOwnerDropsIncompleteSnapshotPairOnDirectDecodeSuccessPath() throws {
-        let data = try makeBinaryPlist(makeSnapshotOnlyPayload())
+        let data = try makeCompatibilityBinaryPlist(makeSnapshotOnlyPayload())
 
         let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
 
@@ -83,7 +83,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             ),
             appVersion: nil,
         )
-        let data = try makeBinaryPlist(file)
+        let data = try makeCompatibilityBinaryPlist(file)
 
         let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
 
@@ -97,7 +97,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
     }
 
     func testCompatibilityOwnerTreatsMissingSchemaAsLegacySingleFileOnly() throws {
-        let data = try makeBinaryPlist(makeLegacyNoSchemaPayload())
+        let data = try makeCompatibilityBinaryPlist(makeLegacyNoSchemaPayload())
 
         let legacyResult = try VoyagerCollectionFileCompatibilityOwner.decode(
             data,
@@ -136,11 +136,11 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         let currentSnapshot = makeSnapshotFile()
 
         let definitionResult = try VoyagerCollectionFileCompatibilityOwner.decode(
-            makeBinaryPlist(currentDefinitionOnly),
+            makeCompatibilityBinaryPlist(currentDefinitionOnly),
             containerFormat: .package,
         )
         let snapshotResult = try VoyagerCollectionFileCompatibilityOwner.decode(
-            makeBinaryPlist(currentSnapshot),
+            makeCompatibilityBinaryPlist(currentSnapshot),
             containerFormat: .package,
         )
 
@@ -153,7 +153,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
     }
 
     func testFailureMatrixExplicitlyDistinguishesFutureAndMalformedCases() throws {
-        let futureVersionData = try makeBinaryPlist(makeFutureVersionPayload())
+        let futureVersionData = try makeCompatibilityBinaryPlist(makeFutureVersionPayload())
         XCTAssertThrowsError(
             try VoyagerCollectionFileCompatibilityOwner.decode(futureVersionData, containerFormat: .package),
         ) { error in
@@ -165,7 +165,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             XCTAssertEqual(current, CollectionFileSchemaVersion.current)
         }
 
-        let corruptionData = try makeBinaryPlist(makeUnrecoverableCorruptionPayload())
+        let corruptionData = try makeCompatibilityBinaryPlist(makeUnrecoverableCorruptionPayload())
         XCTAssertThrowsError(
             try VoyagerCollectionFileCompatibilityOwner.decode(corruptionData, containerFormat: .package),
         ) { error in
@@ -206,15 +206,79 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         XCTAssertEqual(result.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
     }
 
-    private func makeBinaryPlist(_ value: some Encodable) throws -> Data {
+    private func makeTemporaryCollectionURL(name: String) -> URL {
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        return root.appendingPathComponent("\(name).voycoll")
+    }
+
+    private func makeCompatibilityBinaryPlist(_ value: some Encodable) throws -> Data {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         return try encoder.encode(value)
     }
 
-    private func makeTemporaryCollectionURL(name: String) -> URL {
-        let root = fileManager.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        return root.appendingPathComponent("\(name).voycoll")
+    private func makeFutureVersionPayload() -> FutureVersionPayload {
+        FutureVersionPayload(
+            schemaVersion: 999,
+            id: "future",
+            name: "Future",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+    }
+
+    private func makeUnrecoverableCorruptionPayload() -> UnrecoverableCorruptionPayload {
+        UnrecoverableCorruptionPayload(
+            schemaVersion: 1,
+            id: "broken",
+            name: "Broken",
+            createdAt: "not-a-date",
+            updatedAt: "also-not-a-date",
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            appVersion: nil,
+        )
+    }
+
+    private func makeStructuredSchemaPropertyList(
+        schema: [String: Int],
+        includeSnapshot: Bool,
+        includeSnapshotMeta: Bool,
+    ) throws -> Data {
+        var payload: [String: Any] = [
+            "schemaVersion": schema,
+            "id": "structured-version",
+            "name": "Structured Version",
+            "createdAt": Date.distantPast,
+            "updatedAt": Date.distantPast,
+            "query": "",
+            "scopes": ["/tmp"],
+            "conditions": [],
+        ]
+
+        if includeSnapshot {
+            payload["snapshot"] = [
+                "items": ["/tmp/report.txt"],
+            ]
+        }
+
+        if includeSnapshotMeta {
+            payload["snapshotMeta"] = [
+                "definitionFingerprint": "fingerprint",
+                "capturedAt": Date.distantPast,
+                "itemCount": 1,
+                "relevanceRoots": ["/tmp"],
+            ]
+        }
+
+        return try PropertyListSerialization.data(fromPropertyList: payload, format: .binary, options: 0)
     }
 }

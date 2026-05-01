@@ -1,5 +1,6 @@
 import Foundation
 @testable import Voyager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -7,7 +8,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     private let fileManager = FileManager.default
 
     func testMissingSchemaVersionFailsDecode() throws {
-        let data = try makeBinaryPlist(MissingSchemaVersionPayload())
+        let data = try makeFailurePolicyBinaryPlist(MissingSchemaVersionPayload())
 
         XCTAssertThrowsError(
             try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package),
@@ -17,7 +18,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testInvalidSchemaVersionTypeFailsDecode() throws {
-        let data = try makeBinaryPlist(InvalidSchemaVersionTypePayload())
+        let data = try makeFailurePolicyBinaryPlist(InvalidSchemaVersionTypePayload())
 
         XCTAssertThrowsError(
             try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package),
@@ -32,7 +33,9 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
 
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
-        await XCTAssertThrowsErrorAsync(try CollectionFileClient.liveValue.load(url)) { error in
+        await XCTAssertThrowsErrorAsync({
+            try await CollectionFileClient.liveValue.load(url)
+        }) { error in
             XCTAssertEqual(error as? CollectionFileCompatibilityError, .missingPackagePayload)
         }
         XCTAssertFalse(fileManager.fileExists(atPath: url.appendingPathComponent("collection.plist").path))
@@ -45,7 +48,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
         let payloadURL = url.appendingPathComponent("collection.plist")
-        let data = try makeBinaryPlist(
+        let data = try makeFailurePolicyBinaryPlist(
             FutureVersionPayload(
                 schemaVersion: 999,
                 id: "future",
@@ -64,7 +67,9 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
 
         let beforeData = try Data(contentsOf: payloadURL)
 
-        await XCTAssertThrowsErrorAsync(try CollectionFileClient.liveValue.load(url)) { error in
+        await XCTAssertThrowsErrorAsync({
+            try await CollectionFileClient.liveValue.load(url)
+        }) { error in
             guard case let CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(found, current) = error
             else {
                 return XCTFail("Unexpected error: \(error)")
@@ -78,7 +83,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testCompatibilityOwnerExposesTypedSchemaFailures() throws {
-        let missingSchemaData = try makeBinaryPlist(MissingSchemaVersionPayload())
+        let missingSchemaData = try makeFailurePolicyBinaryPlist(MissingSchemaVersionPayload())
         let legacyMissingSchema = try VoyagerCollectionFileCompatibilityOwner.decode(
             missingSchemaData,
             containerFormat: .legacySingleFile,
@@ -91,7 +96,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         XCTAssertEqual(legacyMissingSchema.file.schemaVersion, .init(major: 1, minor: 0))
         XCTAssertEqual(legacyMissingSchema.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
 
-        let invalidSchemaData = try makeBinaryPlist(InvalidSchemaVersionTypePayload())
+        let invalidSchemaData = try makeFailurePolicyBinaryPlist(InvalidSchemaVersionTypePayload())
         XCTAssertThrowsError(
             try VoyagerCollectionFileCompatibilityOwner.decode(invalidSchemaData, containerFormat: .legacySingleFile),
         ) { error in
@@ -100,7 +105,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testInvalidDefinitionPayloadThrowsOwnerError() throws {
-        let data = try makeBinaryPlist(InvalidDefinitionPayload(
+        let data = try makeFailurePolicyBinaryPlist(InvalidDefinitionPayload(
             schemaVersion: 1,
             id: "",
             name: "Broken",
@@ -130,7 +135,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testUnrecoverableDocumentCorruptionErrorShapeExists() {
-        let data = try? makeBinaryPlist(UnrecoverableCorruptionPayload(
+        let data = try? makeFailurePolicyBinaryPlist(UnrecoverableCorruptionPayload(
             schemaVersion: 1,
             id: "broken",
             name: "Broken",
@@ -153,7 +158,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testMalformedSnapshotFallsBackInsteadOfBecomingUnrecoverableCorruption() throws {
-        let data = try makeBinaryPlist(InvalidSnapshotPayload(
+        let data = try makeFailurePolicyBinaryPlist(InvalidSnapshotPayload(
             schemaVersion: 2,
             id: "corrupt-snapshot",
             name: "Corrupt Snapshot",
@@ -196,7 +201,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         XCTAssertEqual(result.compatibility.writeBackReason, .blockedFutureMinorVersion)
     }
 
-    private func makeBinaryPlist(_ value: some Encodable) throws -> Data {
+    private func makeFailurePolicyBinaryPlist(_ value: some Encodable) throws -> Data {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         return try encoder.encode(value)
@@ -209,7 +214,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     private func XCTAssertThrowsErrorAsync(
-        _ expression: @autoclosure () async throws -> some Any,
+        _ expression: @escaping () async throws -> some Any,
         file: StaticString = #filePath,
         line: UInt = #line,
         _ errorHandler: (Error) -> Void = { _ in },
@@ -280,20 +285,6 @@ private struct InvalidSchemaVersionTypePayload: Codable {
     let appVersion: String? = nil
 }
 
-private struct FutureVersionPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let snapshot: CollectionPersistedSnapshot?
-    let snapshotMeta: CollectionSnapshotMeta?
-    let appVersion: String?
-}
-
 private struct InvalidDefinitionPayload: Codable {
     let schemaVersion: Int
     let id: String
@@ -303,31 +294,5 @@ private struct InvalidDefinitionPayload: Codable {
     let query: String
     let scopes: [String]
     let conditions: [CollectionCondition]
-    let appVersion: String?
-}
-
-private struct UnrecoverableCorruptionPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: String
-    let updatedAt: String
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let appVersion: String?
-}
-
-private struct InvalidSnapshotPayload: Codable {
-    let schemaVersion: Int
-    let id: String
-    let name: String
-    let createdAt: Date
-    let updatedAt: Date
-    let query: String
-    let scopes: [String]
-    let conditions: [CollectionCondition]
-    let snapshot: [String: [VoyagerShared.JSONValue]]
-    let snapshotMeta: CollectionSnapshotMeta
     let appVersion: String?
 }

@@ -1,5 +1,7 @@
 import Foundation
+@testable import Voyager
 import VoyagerShared
+import XCTest
 
 // swiftlint:disable multiline_arguments
 
@@ -27,8 +29,8 @@ extension CollectionFileCompatibilityTests {
     func makeLegacySingleFileV1Case() -> MatrixCase {
         .init(name: "legacy-single-file-v1", containerFormat: .legacySingleFile, writer: { url in
             let parent = url.deletingLastPathComponent()
-            try self.fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
-            let data = try self.makeBinaryPlist(self.makeDefinitionOnlyPayload(schemaVersion: 1))
+            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            let data = try self.makeCaseBinaryPlist(self.makeDefinitionOnlyPayload(schemaVersion: 1))
             try data.write(to: url)
         }, assertLoaded: { result, loaded in
             XCTAssertEqual(result.containerFormat, .legacySingleFile)
@@ -48,8 +50,8 @@ extension CollectionFileCompatibilityTests {
     func makeLegacySingleFileNoSchemaCase() -> MatrixCase {
         .init(name: "legacy-single-file-no-schema", containerFormat: .legacySingleFile, writer: { url in
             let parent = url.deletingLastPathComponent()
-            try self.fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
-            let data = try self.makeBinaryPlist(self.makeLegacyNoSchemaPayload())
+            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            let data = try self.makeCaseBinaryPlist(self.makeLegacyNoSchemaPayload())
             try data.write(to: url)
         }, assertLoaded: { result, loaded in
             XCTAssertEqual(result.containerFormat, .legacySingleFile)
@@ -68,8 +70,8 @@ extension CollectionFileCompatibilityTests {
 
     func makeDefinitionOnlyPackageV1Case() -> MatrixCase {
         .init(name: "definition-only-package-v1", containerFormat: .package, writer: { url in
-            try self.fileManager.createDirectory(at: url, withIntermediateDirectories: true)
-            let data = try self.makeBinaryPlist(self.makeDefinitionOnlyPayload(schemaVersion: 1))
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let data = try self.makeCaseBinaryPlist(self.makeDefinitionOnlyPayload(schemaVersion: 1))
             try data.write(to: url.appendingPathComponent("collection.plist"))
         }, assertLoaded: { result, loaded in
             XCTAssertEqual(result.containerFormat, .package)
@@ -88,8 +90,8 @@ extension CollectionFileCompatibilityTests {
 
     func makeSnapshotFirstPackageV2Case(snapshotFile: VoyagerCollectionFile) -> MatrixCase {
         .init(name: "snapshot-first-package-v2", containerFormat: .package, writer: { url in
-            try self.fileManager.createDirectory(at: url, withIntermediateDirectories: true)
-            let data = try self.makeBinaryPlist(snapshotFile)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let data = try self.makeCaseBinaryPlist(snapshotFile)
             try data.write(to: url.appendingPathComponent("collection.plist"))
         }, assertLoaded: { result, loaded in
             XCTAssertEqual(result.containerFormat, .package)
@@ -106,8 +108,8 @@ extension CollectionFileCompatibilityTests {
 
     func makeCorruptSnapshotFallbackCase() -> MatrixCase {
         .init(name: "corrupt-snapshot-valid-definition-package", containerFormat: .package, writer: { url in
-            try self.fileManager.createDirectory(at: url, withIntermediateDirectories: true)
-            let data = try self.makeBinaryPlist(self.makeInvalidSnapshotPayload())
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let data = try self.makeCaseBinaryPlist(self.makeInvalidSnapshotPayload())
             try data.write(to: url.appendingPathComponent("collection.plist"))
         }, assertLoaded: { result, loaded in
             XCTAssertEqual(result.containerFormat, .package)
@@ -131,8 +133,8 @@ extension CollectionFileCompatibilityTests {
 
     func makeSnapshotWithoutMetaCase() -> MatrixCase {
         .init(name: "snapshot-without-meta-package", containerFormat: .package, writer: { url in
-            try self.fileManager.createDirectory(at: url, withIntermediateDirectories: true)
-            let data = try self.makeBinaryPlist(self.makeSnapshotOnlyPayload())
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let data = try self.makeCaseBinaryPlist(self.makeSnapshotOnlyPayload())
             try data.write(to: url.appendingPathComponent("collection.plist"))
         }, assertLoaded: { result, loaded in
             XCTAssertEqual(result.compatibility.sourceSchemaVersion, CollectionFileSchemaVersion.snapshotBearingCurrent)
@@ -151,8 +153,8 @@ extension CollectionFileCompatibilityTests {
 
     func makeSnapshotMetaWithoutSnapshotCase() -> MatrixCase {
         .init(name: "meta-without-snapshot-package", containerFormat: .package, writer: { url in
-            try self.fileManager.createDirectory(at: url, withIntermediateDirectories: true)
-            let data = try self.makeBinaryPlist(self.makeSnapshotMetaOnlyPayload())
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let data = try self.makeCaseBinaryPlist(self.makeSnapshotMetaOnlyPayload())
             try data.write(to: url.appendingPathComponent("collection.plist"))
         }, assertLoaded: { result, loaded in
             XCTAssertEqual(result.compatibility.sourceSchemaVersion, CollectionFileSchemaVersion.snapshotBearingCurrent)
@@ -195,6 +197,12 @@ extension CollectionFileCompatibilityTests {
         )
     }
 
+    private func makeCaseBinaryPlist(_ value: some Encodable) throws -> Data {
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        return try encoder.encode(value)
+    }
+
     func makeDefinitionOnlyPayload(schemaVersion: Int) -> LegacyDefinitionOnlyPayload {
         LegacyDefinitionOnlyPayload(
             schemaVersion: schemaVersion,
@@ -202,36 +210,6 @@ extension CollectionFileCompatibilityTests {
             name: "Definition Only",
             createdAt: .distantPast,
             updatedAt: .distantPast,
-            query: "",
-            scopes: ["/tmp"],
-            conditions: [],
-            appVersion: nil,
-        )
-    }
-
-    func makeFutureVersionPayload() -> FutureVersionPayload {
-        FutureVersionPayload(
-            schemaVersion: 999,
-            id: "future",
-            name: "Future",
-            createdAt: .distantPast,
-            updatedAt: .distantPast,
-            query: "",
-            scopes: ["/tmp"],
-            conditions: [],
-            snapshot: nil,
-            snapshotMeta: nil,
-            appVersion: nil,
-        )
-    }
-
-    func makeUnrecoverableCorruptionPayload() -> UnrecoverableCorruptionPayload {
-        UnrecoverableCorruptionPayload(
-            schemaVersion: 1,
-            id: "broken",
-            name: "Broken",
-            createdAt: "not-a-date",
-            updatedAt: "also-not-a-date",
             query: "",
             scopes: ["/tmp"],
             conditions: [],
@@ -254,7 +232,7 @@ extension CollectionFileCompatibilityTests {
 
     func makeInvalidSnapshotPayload() -> InvalidSnapshotPayload {
         InvalidSnapshotPayload(
-            schemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+            schemaVersion: 2,
             id: "corrupt-snapshot",
             name: "Corrupt Snapshot",
             createdAt: .distantPast,
@@ -262,7 +240,7 @@ extension CollectionFileCompatibilityTests {
             query: "query",
             scopes: ["/tmp"],
             conditions: [],
-            snapshot: ["items": [VoyagerShared.JSONValue.number(1)]],
+            snapshot: ["items": [.number(1)]],
             snapshotMeta: .init(
                 definitionFingerprint: "fingerprint",
                 capturedAt: .distantPast,
@@ -275,27 +253,27 @@ extension CollectionFileCompatibilityTests {
 
     func makeSnapshotOnlyPayload() -> SnapshotOnlyPayload {
         SnapshotOnlyPayload(
-            schemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
-            id: "snapshot-only",
-            name: "Snapshot Only",
+            schemaVersion: 2,
+            id: "snapshot-without-meta",
+            name: "Snapshot Without Meta",
             createdAt: .distantPast,
             updatedAt: .distantPast,
-            query: "report",
+            query: "query",
             scopes: ["/tmp"],
             conditions: [],
-            snapshot: .init(items: [VoyagerShared.JSONValue.string("/tmp/report.txt")]),
+            snapshot: .init(items: [.string("/tmp/report.txt")]),
             appVersion: nil,
         )
     }
 
     func makeSnapshotMetaOnlyPayload() -> SnapshotMetaOnlyPayload {
         SnapshotMetaOnlyPayload(
-            schemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
-            id: "snapshot-meta-only",
-            name: "Snapshot Meta Only",
+            schemaVersion: 2,
+            id: "meta-without-snapshot",
+            name: "Meta Without Snapshot",
             createdAt: .distantPast,
             updatedAt: .distantPast,
-            query: "report",
+            query: "query",
             scopes: ["/tmp"],
             conditions: [],
             snapshotMeta: .init(

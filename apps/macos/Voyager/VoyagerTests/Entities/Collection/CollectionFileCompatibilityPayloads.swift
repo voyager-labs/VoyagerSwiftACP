@@ -1,4 +1,5 @@
 import Foundation
+@testable import Voyager
 import VoyagerShared
 
 struct LegacyDefinitionOnlyPayload: Codable {
