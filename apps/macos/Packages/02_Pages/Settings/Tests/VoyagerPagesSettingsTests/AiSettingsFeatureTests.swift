@@ -3,6 +3,24 @@ import VoyagerEntitiesAi
 @testable import VoyagerPagesSettings
 import XCTest
 
+private final class APIKeyConnectionController: @unchecked Sendable {
+    private var continuation: CheckedContinuation<AiProviderConnectionResult, Never>?
+
+    func connect(
+        provider _: AiProvider,
+        connectionState _: ProviderConnectionState
+    ) async -> AiProviderConnectionResult {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resume(with result: AiProviderConnectionResult) {
+        continuation?.resume(returning: result)
+        continuation = nil
+    }
+}
+
 @MainActor
 final class AiSettingsFeatureTests: XCTestCase {
     // MARK: - Fresh Install (No Auth File)
@@ -16,9 +34,12 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
-        await store.receive(\.bootstrapCompleted)
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+        }
 
         await store.finish()
 
@@ -55,13 +76,23 @@ final class AiSettingsFeatureTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { connectedFile }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .chatgptCodex]?.connectionState = .connected
             state.rows[id: .chatgptCodex]?.statusReason = .none
             state.rows[id: .openai]?.connectionState = .connected
@@ -100,13 +131,21 @@ final class AiSettingsFeatureTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { failedFile }
+            $0.aiProviderVerificationClient.verify = { _, _ in .invalid(.expired) }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .openai]?.connectionState = .connectionFailed
             state.rows[id: .openai]?.statusReason = .expired
         }
@@ -140,13 +179,21 @@ final class AiSettingsFeatureTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { failedFile }
+            $0.aiProviderVerificationClient.verify = { _, _ in .invalid(.invalidAPIKey) }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .anthropic]?.connectionState = .checkingStatus
+            state.rows[id: .anthropic]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .anthropic]?.connectionState = .connectionFailed
             state.rows[id: .anthropic]?.statusReason = .invalidAPIKey
         }
@@ -159,9 +206,9 @@ final class AiSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(anthropicRow?.primaryAction, .retry)
     }
 
-    // MARK: - Load Error → All Not Verified
+    // MARK: - Load Error → Failed Bootstrap
 
-    func testOnAppear_loadError_fallsBackToNotVerified() async {
+    func testOnAppear_loadError_setsFailedBootstrapPhase() async {
         let store = TestStore(initialState: AiSettingsState()) {
             AiSettingsFeature()
         } withDependencies: {
@@ -170,15 +217,17 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
-        await store.receive(\.bootstrapCompleted)
+        await store.receive(\.bootstrapFailed) { state in
+            state.bootstrapPhase = .failed
+        }
 
         await store.finish()
 
-        for row in store.state.rows {
-            XCTAssertEqual(row.connectionState, .notVerified)
-        }
+        XCTAssertEqual(store.state.bootstrapPhase, .failed)
+        XCTAssertEqual(store.state.rows.count, 3)
     }
 
     // MARK: - Idempotent Bootstrap
@@ -192,8 +241,11 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
-        await store.receive(\.bootstrapCompleted)
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+        }
         await store.finish()
 
         await store.send(.onAppear)
@@ -223,9 +275,11 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
             state.rows[id: .openai]?.connectionState = .notVerified
             state.rows[id: .openai]?.statusReason = .missingCredential
         }
@@ -302,9 +356,11 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
             state.rows[id: .openai]?.connectionState = .disconnected
             state.rows[id: .openai]?.statusReason = .none
         }
@@ -339,9 +395,11 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
             state.rows[id: .chatgptCodex]?.connectionState = .notVerified
             state.rows[id: .chatgptCodex]?.statusReason = .missingCredential
         }
@@ -372,9 +430,11 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
             state.rows[id: .anthropic]?.connectionState = .disconnected
             state.rows[id: .anthropic]?.statusReason = .none
         }
@@ -418,6 +478,50 @@ final class AiSettingsFeatureTests: XCTestCase {
         }
 
         await store.finish()
+    }
+
+    func testSubmitAPIKey_cancelAfterVerificationPreventsConnectionCompletion() async {
+        let controller = APIKeyConnectionController()
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .openai)
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+            $0.aiProviderConnectionClient.connectAPIKey = { provider, _, connectionState in
+                await controller.connect(provider: provider, connectionState: connectionState)
+            }
+        }
+
+        await store.send(.submitAPIKey("sk-test-valid-key")) { state in
+            state.enteredKey = "sk-test-valid-key"
+            state.connectionState = .connectInProgress
+            state.flowState = .connecting
+            state.isVerifying = true
+        }
+
+        await store.receive(\._verificationResponse) { state in
+            state.isVerifying = false
+        }
+
+        await store.send(.cancelButtonTapped) { state in
+            state.flowState = .idle
+            state.isVerifying = false
+            state.connectionState = .notVerified
+        }
+
+        controller.resume(with: AiProviderConnectionResult(
+            provider: .openai,
+            state: .connected,
+            reason: .none,
+            updatedFile: AIConnectionsFile.empty()
+        ))
+
+        await Task.yield()
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .notVerified)
+        XCTAssertEqual(store.state.flowState, .idle)
     }
 
     func testSubmitAPIKey_invalidKey_showsConnectionFailed() async {
