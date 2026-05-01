@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 extension GatewayQueryConverter {
     func buildSystemPrompt() throws -> String {

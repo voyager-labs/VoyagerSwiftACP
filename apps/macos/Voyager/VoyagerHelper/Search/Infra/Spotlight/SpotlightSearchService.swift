@@ -4,6 +4,7 @@ import Foundation
 import ImageIO
 import Logging
 import UniformTypeIdentifiers
+import VoyagerShared
 
 struct SpotlightSearchService: Sendable, SearchExecutionServicing {
     private nonisolated static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"

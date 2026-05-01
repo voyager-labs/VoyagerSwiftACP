@@ -24,6 +24,9 @@
 		F20000000000000000000023 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		F20000000000000000000025 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
+		F20000000000000000000028 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
+		F20000000000000000000029 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
+		F2000000000000000000002A /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		F20000000000000000000026 /* VoyagerFeaturesEntryOperations in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000014 /* VoyagerFeaturesEntryOperations */; };
 		F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000015 /* VoyagerEntitiesAppPreferences */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
@@ -237,6 +240,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F20000000000000000000028 /* VoyagerShared in Frameworks */,
 				6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */,
 				6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */,
 				7E9D64952E8CDDC8006CB69F /* SwiftDotenv in Frameworks */,
@@ -249,6 +253,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F20000000000000000000029 /* VoyagerShared in Frameworks */,
 				3B378A28A482423D9B847800 /* StructuredQueries in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -257,6 +262,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F2000000000000000000002A /* VoyagerShared in Frameworks */,
 				F10000000000000000000030 /* Logging in Frameworks */,
 				F10000000000000000000031 /* SwiftDotenv in Frameworks */,
 				F10000000000000000000033 /* StructuredQueries in Frameworks */,
@@ -422,6 +428,7 @@
 			);
 			name = VoyagerHelper;
 			packageProductDependencies = (
+				F20000000000000000000013 /* VoyagerShared */,
 				7E17C1202F24CB7500F6BD2B /* Sentry */,
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
 				7EEC64522E8CE6E3004ACEA5 /* InjectionNext */,
@@ -450,6 +457,7 @@
 			);
 			name = VoyagerHelperTests;
 			packageProductDependencies = (
+				F20000000000000000000013 /* VoyagerShared */,
 				319E52B31FBB4D8FA03D33B9 /* StructuredQueries */,
 			);
 			productName = VoyagerHelperTests;
@@ -476,6 +484,7 @@
 			);
 			name = FilterSearchXPC;
 			packageProductDependencies = (
+				F20000000000000000000013 /* VoyagerShared */,
 				6C727A2C2F0DF4A10012D44A /* Logging */,
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
 				319E52B31FBB4D8FA03D33B9 /* StructuredQueries */,

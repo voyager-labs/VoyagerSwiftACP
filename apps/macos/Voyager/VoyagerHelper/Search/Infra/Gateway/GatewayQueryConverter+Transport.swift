@@ -1,5 +1,6 @@
 import Foundation
 import SwiftDotenv
+import VoyagerShared
 
 extension GatewayQueryConverter {
     func requestGateway(systemPrompt: String, userPrompt: String) async throws -> String {

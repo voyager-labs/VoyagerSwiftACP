@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 @testable import VoyagerHelper
+import VoyagerShared
 import XCTest
 
 @MainActor

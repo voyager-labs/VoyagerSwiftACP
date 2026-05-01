@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import VoyagerShared
 
 protocol SearchExecutionServicing: Sendable {
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload
