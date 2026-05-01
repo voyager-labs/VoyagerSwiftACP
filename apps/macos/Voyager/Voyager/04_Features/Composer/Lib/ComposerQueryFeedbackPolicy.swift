@@ -16,6 +16,7 @@ enum ComposerQueryFeedbackPolicy {
     ) -> VoyagerShared.SearchFiltersPayload {
         VoyagerShared.SearchFiltersPayload(
             scopes: appliedFilters?.scopes ?? baseline.scopes,
+            excludedScopes: appliedFilters?.excludedScopes ?? baseline.excludedScopes,
             includeSubfolders: appliedFilters?.includeSubfolders ?? baseline.includeSubfolders,
             conditions: appliedFilters?.conditions ?? baseline.conditions,
         )

@@ -121,14 +121,13 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         let activeRequestID = UUID()
         let staleRequestID = UUID()
         let initialFeedback = ComposerTransientFeedback(id: UUID(), kind: .info, message: "existing")
-        let initialState = ComposerState(
-            scopes: ["/tmp"],
-            isLoadingFilters: true,
-            isFilteringInFlight: true,
-            queryRenderPhase: .chipsAppliedPendingList,
-            transientFeedback: initialFeedback,
-            activeFiltersRequestID: activeRequestID,
-        )
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.isLoadingFilters = true
+        initialState.isFilteringInFlight = true
+        initialState.queryRenderPhase = .chipsAppliedPendingList
+        initialState.transientFeedback = initialFeedback
+        initialState.activeFiltersRequestID = activeRequestID
 
         let store = TestStore(initialState: initialState) {
             ComposerFeature()
@@ -172,6 +171,10 @@ private struct MockLocalizedError: LocalizedError, Equatable {
 
 private extension VoyagerShared.SearchFiltersPayload {
     var asAppliedFiltersPayload: VoyagerShared.AppliedFiltersPayload {
-        VoyagerShared.AppliedFiltersPayload(scopes: scopes, conditions: conditions)
+        VoyagerShared.AppliedFiltersPayload(
+            scopes: scopes,
+            excludedScopes: excludedScopes,
+            conditions: conditions,
+        )
     }
 }
