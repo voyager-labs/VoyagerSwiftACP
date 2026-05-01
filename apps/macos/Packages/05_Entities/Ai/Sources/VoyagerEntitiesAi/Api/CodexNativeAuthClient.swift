@@ -36,6 +36,70 @@ struct CodexTokenResponse: Decodable, Sendable {
     let token_type: String
 }
 
+private final class CodexBrowserLoginFlow: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    private var server: LocalOAuthHTTPServer?
+    private var generation = 0
+
+    func start(server: LocalOAuthHTTPServer, operation: @escaping @Sendable () async -> Void) -> Int {
+        cancel()
+
+        lock.lock()
+        generation += 1
+        let currentGeneration = generation
+        self.server = server
+        let task = Task {
+            await operation()
+            finish(generation: currentGeneration)
+        }
+        self.task = task
+        lock.unlock()
+
+        return currentGeneration
+    }
+
+    func cancel() {
+        lock.lock()
+        generation += 1
+        let currentTask = task
+        let currentServer = server
+        task = nil
+        server = nil
+        lock.unlock()
+
+        currentServer?.cancel()
+        currentTask?.cancel()
+    }
+
+    func cancel(generation expectedGeneration: Int) {
+        lock.lock()
+        guard generation == expectedGeneration else {
+            lock.unlock()
+            return
+        }
+
+        generation += 1
+        let currentTask = task
+        let currentServer = server
+        task = nil
+        server = nil
+        lock.unlock()
+
+        currentServer?.cancel()
+        currentTask?.cancel()
+    }
+
+    private func finish(generation finishedGeneration: Int) {
+        lock.lock()
+        if generation == finishedGeneration {
+            task = nil
+            server = nil
+        }
+        lock.unlock()
+    }
+}
+
 // MARK: - Client
 
 public struct CodexNativeAuthClient: Sendable {
@@ -61,22 +125,25 @@ public struct CodexNativeAuthClient: Sendable {
 
 extension CodexNativeAuthClient: DependencyKey {
     public nonisolated static var liveValue: CodexNativeAuthClient {
-        CodexNativeAuthClient(
+        let browserLoginFlow = CodexBrowserLoginFlow()
+
+        return CodexNativeAuthClient(
             startBrowserLogin: {
                 AsyncThrowingStream { continuation in
-                    Task {
+                    let config = CodexOAuthConfig.default
+                    let server = LocalOAuthHTTPServer(
+                        port: UInt16(config.redirectPort),
+                        expectedPath: config.redirectPath
+                    )
+
+                    let flowGeneration = browserLoginFlow.start(server: server) {
                         do {
-                            let config = CodexOAuthConfig.default
+                            try Task.checkCancellation()
                             let pkce = PKCE.generate()
                             let state = PKCE.generateState()
                             let authURL = config.authorizeURL(pkceChallenge: pkce.challenge, state: state)
 
                             continuation.yield(.inProgress)
-
-                            let server = LocalOAuthHTTPServer(
-                                port: UInt16(config.redirectPort),
-                                expectedPath: config.redirectPath
-                            )
 
                             openURL(authURL)
 
@@ -129,6 +196,10 @@ extension CodexNativeAuthClient: DependencyKey {
                             continuation.finish()
                         }
                     }
+
+                    continuation.onTermination = { @Sendable _ in
+                        browserLoginFlow.cancel(generation: flowGeneration)
+                    }
                 }
             },
             startDeviceAuth: {
@@ -137,7 +208,9 @@ extension CodexNativeAuthClient: DependencyKey {
             completeDeviceAuth: { _ in
                 throw CodexNativeAuthError.loginUnavailable
             },
-            cancelCurrentFlow: {}
+            cancelCurrentFlow: {
+                browserLoginFlow.cancel()
+            }
         )
     }
 

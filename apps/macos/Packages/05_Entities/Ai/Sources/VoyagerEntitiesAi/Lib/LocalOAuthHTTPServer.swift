@@ -27,8 +27,10 @@ enum OAuthCallbackError: Error, Sendable, Equatable {
 final class LocalOAuthHTTPServer: @unchecked Sendable {
     private let port: UInt16
     private let expectedPath: String
+    private let lock = NSLock()
     private var listener: NWListener?
     private var continuation: CheckedContinuation<OAuthCallbackResult, Error>?
+    private var isCancelled = false
 
     init(port: UInt16, expectedPath: String = "/auth/callback") {
         self.port = port
@@ -36,7 +38,7 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
     }
 
     deinit {
-        listener?.cancel()
+        stop()
     }
 
     // MARK: - Public API
@@ -45,47 +47,102 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw OAuthCallbackError.serverStartFailed("Invalid port: \(port)")
         }
+        guard !isFlowCancelled() else { throw OAuthCallbackError.cancelled }
+
         let listener = try NWListener(using: .tcp, on: nwPort)
 
         listener.newConnectionHandler = { [weak self] connection in
             self?.handleConnection(connection)
         }
 
+        lock.lock()
+        if isCancelled {
+            lock.unlock()
+            listener.cancel()
+            throw OAuthCallbackError.cancelled
+        }
         self.listener = listener
+        lock.unlock()
+
         listener.start(queue: .global(qos: .userInitiated))
     }
 
     /// Wait for the OAuth callback to arrive. Resolves with the auth code
     /// or throws on error / cancellation.
     func waitForCallback() async throws -> OAuthCallbackResult {
-        try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.lock()
+                if isCancelled {
+                    lock.unlock()
+                    continuation.resume(throwing: OAuthCallbackError.cancelled)
+                    return
+                }
+                self.continuation = continuation
+                lock.unlock()
+            }
+        } onCancel: {
+            self.cancel()
         }
     }
 
     /// Convenience: start, wait with a timeout, then stop.
     func startAndWait(timeout: TimeInterval = 300) async throws -> OAuthCallbackResult {
         try start()
-        defer { stop() }
 
-        return try await withThrowingTaskGroup(of: OAuthCallbackResult.self) { group in
-            group.addTask {
-                try await self.waitForCallback()
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                throw OAuthCallbackError.serverStartFailed("Timeout waiting for OAuth callback")
-            }
+        return try await withTaskCancellationHandler {
+            defer { stop() }
 
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
+            return try await withThrowingTaskGroup(of: OAuthCallbackResult.self) { group in
+                group.addTask {
+                    try await self.waitForCallback()
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    let error = OAuthCallbackError.serverStartFailed("Timeout waiting for OAuth callback")
+                    self.cancel(with: error)
+                    throw error
+                }
+
+                let result = try await group.next()!
+                group.cancelAll()
+                return result
+            }
+        } onCancel: {
+            self.cancel()
         }
     }
 
     func stop() {
-        listener?.cancel()
+        lock.lock()
+        let currentListener = listener
         listener = nil
+        lock.unlock()
+
+        currentListener?.cancel()
+    }
+
+    func cancel() {
+        cancel(with: OAuthCallbackError.cancelled)
+    }
+
+    private func cancel(with error: Error) {
+        lock.lock()
+        let currentListener = listener
+        let currentContinuation = continuation
+        listener = nil
+        continuation = nil
+        isCancelled = true
+        lock.unlock()
+
+        currentListener?.cancel()
+        currentContinuation?.resume(throwing: error)
+    }
+
+    private func isFlowCancelled() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isCancelled
     }
 
     // MARK: - Connection Handling
@@ -176,8 +233,12 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
     }
 
     private func resolve(_ result: Result<OAuthCallbackResult, Error>) {
-        guard let cont = continuation else { return }
+        lock.lock()
+        let cont = continuation
         continuation = nil
+        lock.unlock()
+
+        guard let cont else { return }
         switch result {
         case let .success(value): cont.resume(returning: value)
         case let .failure(error): cont.resume(throwing: error)
