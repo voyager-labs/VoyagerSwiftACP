@@ -38,7 +38,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         XCTAssertEqual(reencoded, data)
     }
 
-    func testNormalizeForSavePreservesIncludeSubfolders() throws {
+    func testNormalizeForSavePreservesScopeRuleFields() throws {
         let file = VoyagerCollectionFile(
             schemaVersion: .init(major: 0, minor: 9),
             id: "compat-preserve",
@@ -47,6 +47,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
             updatedAt: .distantPast,
             query: "docs",
             scopes: ["/tmp/root"],
+            excludedScopes: ["/tmp/root/ignored"],
             includeSubfolders: false,
             conditions: [],
             snapshot: nil,
@@ -56,8 +57,47 @@ final class CollectionFileCompatibilityTests: XCTestCase {
 
         let normalized = VoyagerCollectionFileCompatibilityOwner.normalizeForSave(file)
 
+        XCTAssertEqual(normalized.excludedScopes, ["/tmp/root/ignored"])
         XCTAssertFalse(normalized.includeSubfolders)
         XCTAssertEqual(normalized.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
+    }
+
+    func testCompatibilityOwnerPreservesExcludedScopesWhenDroppingMalformedSnapshot() throws {
+        let data = try makeMalformedSnapshotPayloadWithExcludedScopes()
+
+        let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
+
+        XCTAssertEqual(result.file.scopes, ["/tmp/root"])
+        XCTAssertEqual(result.file.excludedScopes, ["/tmp/root/ignored"])
+        XCTAssertTrue(result.compatibility.usedDefinitionFallback)
+        XCTAssertEqual(result.compatibility.warnings, [.droppedMalformedSnapshot])
+    }
+
+    func testCompatibilityOwnerPreservesExcludedScopesWhenDroppingIncompleteSnapshotPair() throws {
+        let file = VoyagerCollectionFile(
+            schemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+            id: "snapshot-only",
+            name: "Snapshot Only",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "docs",
+            scopes: ["/tmp/root"],
+            excludedScopes: ["/tmp/root/ignored"],
+            includeSubfolders: true,
+            conditions: [],
+            snapshot: .init(items: [VoyagerShared.JSONValue.string("/tmp/root/file.txt")]),
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        let result = try VoyagerCollectionFileCompatibilityOwner.decode(
+            makeBinaryPlist(file),
+            containerFormat: .package,
+        )
+
+        XCTAssertEqual(result.file.excludedScopes, ["/tmp/root/ignored"])
+        XCTAssertTrue(result.compatibility.usedDefinitionFallback)
+        XCTAssertEqual(result.compatibility.warnings, [.droppedIncompleteSnapshotPair])
     }
 
     func testCompatibilityOwnerExposesMalformedSnapshotFallbackMetadata() throws {
