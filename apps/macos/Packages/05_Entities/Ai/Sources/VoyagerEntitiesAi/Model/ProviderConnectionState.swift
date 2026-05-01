@@ -10,6 +10,7 @@ import Foundation
 public enum ProviderConnectionState: String, Codable, Sendable, Equatable, CaseIterable {
     case notVerified
     case connectInProgress
+    case checkingStatus
     case connected
     case connectionFailed
     case disconnecting
@@ -50,6 +51,7 @@ public extension ProviderConnectionState {
         switch self {
         case .notVerified: .connect
         case .connectInProgress: .cancel
+        case .checkingStatus: .disabled
         case .connected: .disconnect
         case .connectionFailed: .retry
         case .disconnecting: .disabled

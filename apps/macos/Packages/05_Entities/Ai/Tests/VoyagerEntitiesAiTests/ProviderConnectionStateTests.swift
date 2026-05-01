@@ -8,6 +8,7 @@ final class ProviderConnectionStateTests: XCTestCase {
         let expected: Set<ProviderConnectionState> = [
             .notVerified,
             .connectInProgress,
+            .checkingStatus,
             .connected,
             .connectionFailed,
             .disconnecting,
@@ -15,7 +16,7 @@ final class ProviderConnectionStateTests: XCTestCase {
             .unavailable,
         ]
         XCTAssertEqual(Set(ProviderConnectionState.allCases), expected)
-        XCTAssertEqual(ProviderConnectionState.allCases.count, 7)
+        XCTAssertEqual(ProviderConnectionState.allCases.count, 8)
     }
 
     // MARK: - Action mapping
@@ -26,6 +27,10 @@ final class ProviderConnectionStateTests: XCTestCase {
 
     func testConnectInProgress_mapsToCancel() {
         XCTAssertEqual(ProviderConnectionState.connectInProgress.primaryAction, .cancel)
+    }
+
+    func testCheckingStatus_mapsToDisabled() {
+        XCTAssertEqual(ProviderConnectionState.checkingStatus.primaryAction, .disabled)
     }
 
     func testConnected_mapsToDisconnect() {
