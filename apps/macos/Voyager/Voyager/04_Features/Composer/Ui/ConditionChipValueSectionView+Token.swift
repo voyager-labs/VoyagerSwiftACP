@@ -1,7 +1,7 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesCollection
-import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
 extension ConditionChipValueSectionView {
@@ -181,7 +181,7 @@ extension ConditionChipValueSectionView {
                             valuePickerStore.send(.appendToken(tag.name))
                         } label: {
                             HStack(spacing: 8) {
-                                TagDotView(tagColor: tag.tagColor, size: 10)
+                                ColorDotView(nsColor: tag.tagColor.nsColor, size: 10)
                                 Text(tag.name)
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundColor(.primary)
