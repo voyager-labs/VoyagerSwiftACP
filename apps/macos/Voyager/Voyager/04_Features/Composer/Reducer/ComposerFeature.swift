@@ -101,6 +101,7 @@ struct ComposerFeature {
                  .view(.scopeEditorSetPresented),
                  .view(.scopeEditorSetIncludeSubfolders),
                  .view(.scopeEditorSetQueryText),
+                 .view(.exceptionScope),
                  .propertyPicker,
                  .operatorPicker,
                  .valuePicker,
@@ -198,14 +199,19 @@ func applyAppliedFilters(
         state.scopeEditor.includeSubfolders = includeSubfolders
     }
     let previousDisplayByKey = state.conditionDisplayByKey
-    let resolved = AppliedFiltersUtils.resolve(
+    let resolved = AppliedFiltersUtils.resolveDetailed(
         appliedFilters,
         fallbackScopes: state.scopeEditor.selection.legacyScopePaths,
         fallbackConditions: state.conditions,
         registryClient: registryClient,
     )
-    let selection = ComposerScopeSelection.fromLegacyScopes(resolved.scopes)
+    let selection = ComposerScopeSelection.fromCanonicalScopes(
+        bases: resolved.scopes,
+        exceptions: resolved.excludedScopes,
+        includeSubfolders: state.scopeEditor.includeSubfolders,
+    )
     let shouldPreserveLocalMultiScope = state.scopeEditor.selection.explicitBases.count > 1
+        && resolved.excludedScopes.isEmpty
         && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
     if !shouldPreserveLocalMultiScope {
         state.scopeEditor.selection = selection
@@ -339,6 +345,7 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
     )
     return VoyagerShared.SearchFiltersPayload(
         scopes: state.scopeEditor.selection.legacyScopePaths,
+        excludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
         includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
         conditions: conditionPayloads,
     )

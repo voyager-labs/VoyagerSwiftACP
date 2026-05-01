@@ -66,6 +66,7 @@ struct ComposerState: Equatable {
         CollectionContext(
             query: query,
             scopes: scopeEditor.selection.legacyScopePaths,
+            excludedScopes: scopeEditor.selection.exceptions.map(\.path),
             includeSubfolders: scopeEditor.effectiveIncludeSubfolders,
             conditions: conditions,
         )
@@ -172,7 +173,11 @@ struct ComposerState: Equatable {
         } else {
             text = ""
         }
-        let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
+        let selection = ComposerScopeSelection.fromCanonicalScopes(
+            bases: payload.context.scopes,
+            exceptions: payload.context.excludedScopes,
+            includeSubfolders: payload.context.includeSubfolders,
+        )
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.context.includeSubfolders
         conditions = payload.context.conditions
@@ -186,7 +191,11 @@ struct ComposerState: Equatable {
         let trimmedQuery = payload.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
         text = payload.composerText
-        let selection = ComposerScopeSelection.fromLegacyScopes(payload.scopes)
+        let selection = ComposerScopeSelection.fromCanonicalScopes(
+            bases: payload.scopes,
+            exceptions: payload.excludedScopes,
+            includeSubfolders: payload.includeSubfolders,
+        )
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.includeSubfolders
         conditions = payload.conditions
@@ -202,7 +211,11 @@ struct ComposerState: Equatable {
     ) {
         pendingSearchQuery = payload.context.query.isEmpty ? nil : payload.context.query
         text = payload.context.query
-        let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
+        let selection = ComposerScopeSelection.fromCanonicalScopes(
+            bases: payload.context.scopes,
+            exceptions: payload.context.excludedScopes,
+            includeSubfolders: payload.context.includeSubfolders,
+        )
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.context.includeSubfolders
         conditions = payload.context.conditions
@@ -212,7 +225,12 @@ struct ComposerState: Equatable {
         clearHistory()
         let filters = buildFilters(from: self)
         applyAppliedFilters(
-            .init(scopes: filters.scopes, conditions: filters.conditions),
+            .init(
+                scopes: filters.scopes,
+                excludedScopes: filters.excludedScopes,
+                includeSubfolders: filters.includeSubfolders,
+                conditions: filters.conditions,
+            ),
             state: &self,
             registryClient: registryClient,
         )
