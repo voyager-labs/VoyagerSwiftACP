@@ -3,33 +3,14 @@ import Foundation
 /// Creates an isolated temporary directory that mimics `~/.voyager` for auth file tests.
 /// Cleans up the directory on `deinit`.
 final class AuthTestFixture {
-    let homeURL: URL
-    let voyagerHomeURL: URL
-    let authFileURL: URL
+    private let fixture: TemporaryHomeFixture
 
-    private let originalHome: String?
+    var homeURL: URL { fixture.homeURL }
+    var voyagerHomeURL: URL { fixture.voyagerHomeURL }
+    var authFileURL: URL { fixture.authFileURL }
 
     init() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        homeURL = tmp
-        voyagerHomeURL = tmp.appendingPathComponent(".voyager", isDirectory: true)
-        authFileURL = voyagerHomeURL.appendingPathComponent("auth.json")
-
-        try FileManager.default.createDirectory(
-            at: voyagerHomeURL,
-            withIntermediateDirectories: true
-        )
-
-        originalHome = ProcessInfo.processInfo.environment["HOME"]
-        setenv("HOME", tmp.path, 1)
-    }
-
-    deinit {
-        if let originalHome {
-            setenv("HOME", originalHome, 1)
-        }
-        try? FileManager.default.removeItem(at: homeURL)
+        fixture = try TemporaryHomeFixture()
     }
 
     /// Writes `data` to `auth.json` with `0o600` permissions (owner read/write only).

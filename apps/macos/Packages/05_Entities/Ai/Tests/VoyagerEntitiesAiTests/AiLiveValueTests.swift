@@ -6,6 +6,45 @@ import XCTest
 /// Recovered from old AIConnectionClientContractTests + Voy218GapTests (9d3be186).
 /// Tests liveValue and persistence-only behavior for the dependency clients.
 final class AiLiveValueTests: XCTestCase {
+    // MARK: - File store liveValue
+
+    func testAIConnectionsFileClient_liveValue_usesTemporaryHome() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let before = fixture.snapshotRealAuthFile()
+        let client = AIConnectionsFileClient.liveValue
+
+        let initialLoad = try await client.load()
+        XCTAssertEqual(initialLoad, AIConnectionsFile.empty())
+
+        let file = AIConnectionsFile(
+            updatedAtMs: 1_700_000_000_000,
+            lastUsedProviderId: .openai,
+            providers: [
+                "openai": ProviderRecordFile(
+                    providerId: .openai,
+                    authMethod: .apiKey,
+                    credential: .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+                ),
+            ]
+        )
+
+        let saveResult = try await client.save(file)
+        switch saveResult {
+        case let .success(savedFile):
+            XCTAssertEqual(savedFile, file)
+        default:
+            XCTFail("Expected successful save")
+        }
+
+        let loaded = try await client.load()
+        XCTAssertEqual(loaded, file)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
+
+        let after = fixture.snapshotRealAuthFile()
+        XCTAssertEqual(after, before, "Live file-store access must not touch the user's real auth file")
+    }
+
     // MARK: - Verification liveValue
 
     func testAIProviderVerificationClient_liveValue_nilCredential_returnsMissingCredential() {
@@ -37,24 +76,34 @@ final class AiLiveValueTests: XCTestCase {
     // MARK: - connectOAuth liveValue
 
     func testConnectOAuth_liveValue_persistsCredentialForValidProvider() {
+        let fixture = try! TemporaryHomeFixture()
+        let before = fixture.snapshotRealAuthFile()
         let client = AIProviderConnectionClient.liveValue
         let credential = OAuthCredentialFile(accessToken: "at_connect_test")
         let result = awaitTest { await client.connectOAuth(.chatgptCodex, credential, .connected) }
 
         XCTAssertEqual(result.provider, .chatgptCodex)
         XCTAssertEqual(result.state, .connected)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
+
+        let after = fixture.snapshotRealAuthFile()
+        XCTAssertEqual(after, before, "OAuth persistence must not touch the real auth file")
     }
 
     func testConnectOAuth_liveValue_persistsCredentialInFile() {
+        let fixture = try! TemporaryHomeFixture()
         let client = AIProviderConnectionClient.liveValue
         let credential = OAuthCredentialFile(accessToken: "at_verify_fake")
         let result = awaitTest { await client.connectOAuth(.chatgptCodex, credential, .connected) }
 
         let codexRecord = result.updatedFile.providers["chatgptCodex"]
         XCTAssertNotNil(codexRecord?.credential)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
     }
 
     func testConnectOAuth_liveValue_rejectsAPIKeyOnlyProvider() {
+        let fixture = try! TemporaryHomeFixture()
+        let before = fixture.snapshotRealAuthFile()
         let client = AIProviderConnectionClient.liveValue
         let credential = OAuthCredentialFile(accessToken: "at_wrong_provider")
         let result = awaitTest { await client.connectOAuth(.openai, credential, .connected) }
@@ -62,20 +111,26 @@ final class AiLiveValueTests: XCTestCase {
         XCTAssertEqual(result.provider, .openai)
         XCTAssertEqual(result.state, .connectionFailed)
         XCTAssertEqual(result.reason, .providerUnsupportedInBuild)
+
+        let after = fixture.snapshotRealAuthFile()
+        XCTAssertEqual(after, before, "Rejected OAuth writes must leave the real auth file untouched")
     }
 
     // MARK: - connectAPIKey persistence-only
 
     func testConnectAPIKey_isPersistenceOnly_returnsConnected() async {
+        let fixture = try! TemporaryHomeFixture()
         let result = await AIProviderConnectionClient.liveValue.connectAPIKey(
             .openai,
             "sk-obviously-fake-key",
             .connected
         )
         XCTAssertEqual(result.state, .connected)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
     }
 
     func testConnectOAuth_isPersistenceOnly_returnsConnected() async {
+        let fixture = try! TemporaryHomeFixture()
         let credential = OAuthCredentialFile(accessToken: "fake-oauth-token")
         let result = await AIProviderConnectionClient.liveValue.connectOAuth(
             .chatgptCodex,
@@ -83,11 +138,14 @@ final class AiLiveValueTests: XCTestCase {
             .connected
         )
         XCTAssertEqual(result.state, .connected)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
     }
 
     // MARK: - disconnect liveValue
 
     func testDisconnect_liveValue_returnsNotVerified_forProviderWithNoRecord() {
+        let fixture = try! TemporaryHomeFixture()
+        let before = fixture.snapshotRealAuthFile()
         let client = AIProviderConnectionClient.liveValue
         let disconnectResult = awaitTest { await client.disconnect(.chatgptCodex) }
         XCTAssertEqual(disconnectResult.provider, .chatgptCodex)
@@ -95,6 +153,9 @@ final class AiLiveValueTests: XCTestCase {
 
         let codexRecord = disconnectResult.updatedFile.providers["chatgptCodex"]
         XCTAssertNil(codexRecord?.credential)
+
+        let after = fixture.snapshotRealAuthFile()
+        XCTAssertEqual(after, before, "Disconnect should not touch the real auth file")
     }
 
     // MARK: - OAuth infrastructure wiring
@@ -133,6 +194,8 @@ final class AiLiveValueTests: XCTestCase {
     // MARK: - Snapshot persistence with .notVerified
 
     func testConnectOAuth_withNotVerified_persistsNotVerifiedInSnapshot() async {
+        let fixture = try! TemporaryHomeFixture()
+        let before = fixture.snapshotRealAuthFile()
         let credential = OAuthCredentialFile(accessToken: "net-err-token")
         let result = await AIProviderConnectionClient.liveValue.connectOAuth(
             .chatgptCodex,
@@ -147,9 +210,15 @@ final class AiLiveValueTests: XCTestCase {
         XCTAssertEqual(record?.snapshot.lastKnownStatus, .notVerified)
         XCTAssertNil(record?.snapshot.lastVerifiedAtMs)
         XCTAssertEqual(record?.snapshot.lastErrorCode, .networkUnavailable)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
+
+        let after = fixture.snapshotRealAuthFile()
+        XCTAssertEqual(after, before, "Not-verified persistence must not touch the real auth file")
     }
 
     func testConnectAPIKey_withNotVerified_persistsNotVerifiedInSnapshot() async {
+        let fixture = try! TemporaryHomeFixture()
+        let before = fixture.snapshotRealAuthFile()
         let result = await AIProviderConnectionClient.liveValue.connectAPIKey(
             .openai,
             "sk-net-err-key",
@@ -162,11 +231,17 @@ final class AiLiveValueTests: XCTestCase {
         XCTAssertNotNil(record)
         XCTAssertEqual(record?.snapshot.lastKnownStatus, .notVerified)
         XCTAssertNil(record?.snapshot.lastVerifiedAtMs)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
+
+        let after = fixture.snapshotRealAuthFile()
+        XCTAssertEqual(after, before, "API key persistence must not touch the real auth file")
     }
 
     // MARK: - Snapshot persistence with .connected
 
     func testConnectOAuth_withConnected_persistsConnectedInSnapshot() async {
+        let fixture = try! TemporaryHomeFixture()
+        let before = fixture.snapshotRealAuthFile()
         let credential = OAuthCredentialFile(accessToken: "valid-token")
         let result = await AIProviderConnectionClient.liveValue.connectOAuth(
             .chatgptCodex,
@@ -180,6 +255,10 @@ final class AiLiveValueTests: XCTestCase {
         XCTAssertNotNil(record)
         XCTAssertEqual(record?.snapshot.lastKnownStatus, .connected)
         XCTAssertNotNil(record?.snapshot.lastVerifiedAtMs)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
+
+        let after = fixture.snapshotRealAuthFile()
+        XCTAssertEqual(after, before, "Connected persistence must not touch the real auth file")
     }
 }
 
