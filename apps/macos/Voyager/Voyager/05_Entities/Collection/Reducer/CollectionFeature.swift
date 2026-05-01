@@ -57,6 +57,7 @@ struct CollectionFeature {
                     collectionChangeIsRelevant(
                         changedPaths: paths,
                         scopes: context.scopes,
+                        excludedScopes: context.excludedScopes,
                         includeSubfolders: context.includeSubfolders,
                     )
                 } else {
