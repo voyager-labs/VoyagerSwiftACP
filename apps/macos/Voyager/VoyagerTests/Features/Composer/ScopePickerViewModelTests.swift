@@ -18,7 +18,7 @@ final class ScopePickerViewModelTests: XCTestCase {
             ],
         )
 
-        let sections = state.sections(editingPath: state.editingPath)
+        let sections = state.sections()
 
         XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "exception-slot", "addable-default"])
         guard case let .currentScopes(currentSection)? = sections.first?.kind else {
@@ -60,7 +60,7 @@ final class ScopePickerViewModelTests: XCTestCase {
             candidateItems: [],
         )
 
-        let sections = state.sections(editingPath: nil)
+        let sections = state.sections()
 
         XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "exception-slot", "addable-empty-docs"])
         XCTAssertEqual(sections[2].items.count, 0)

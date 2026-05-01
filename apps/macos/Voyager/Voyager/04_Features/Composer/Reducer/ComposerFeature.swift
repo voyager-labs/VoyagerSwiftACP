@@ -182,7 +182,6 @@ func applyAppliedFilters(
         && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
     if !shouldPreserveLocalMultiScope {
         state.scopeEditor.selection = selection
-        state.scopes = selection.legacyScopePaths
     }
     state.conditions = resolved.conditions
     state.conditionDisplayByKey = Dictionary(

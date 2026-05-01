@@ -203,7 +203,6 @@ private func handleScopeEditorSeedCurrentPath(
 
     let selection = ComposerScopeSelection.fromLegacyScopes([currentPath])
     state.scopeEditor.selection = selection
-    state.scopes = selection.legacyScopePaths
     return .none
 }
 
@@ -256,7 +255,6 @@ private func handleAddScope(
     state.pushHistory()
     let selection = ComposerScopeSelection.fromLegacyScopes(canonicalPaths)
     state.scopeEditor.selection = selection
-    state.scopes = selection.legacyScopePaths
     let settleEffect = settleScopeEditorAfterSelectionChange(
         state: &state,
         entryLoadingClient: entryLoadingClient,
@@ -280,7 +278,6 @@ private func handleRemoveScope(
     let updatedPaths = currentPaths.filter { $0 != normalizedPath }
     let selection = ComposerScopeSelection.fromLegacyScopes(updatedPaths)
     state.scopeEditor.selection = selection
-    state.scopes = selection.legacyScopePaths
     if state.scopeEditor.editingPath == normalizedPath {
         state.resetScopeEditorInteractionState(clearQuery: false)
     }
@@ -314,7 +311,6 @@ private func handleUpdateScope(
         collapseScopePaths(existing: updatedPaths, adding: normalizedNewPath),
     )
     state.scopeEditor.selection = selection
-    state.scopes = selection.legacyScopePaths
     if state.scopeEditor.editingPath == normalizedOldPath {
         state.scopeEditor.editingPath = normalizedNewPath
         state.scopeEditor.entryMode = .edit
@@ -335,7 +331,6 @@ private func handleClearAll(
     state.pushHistory()
     state.text = ""
     state.scopeEditor.selection = .rootOnly
-    state.scopes = [ComposerScopeUtils.rootScopePath]
     state.scopeEditor.isPresented = false
     state.resetScopeEditorInteractionState(clearQuery: true)
     state.scopeEditor.entryMode = .add

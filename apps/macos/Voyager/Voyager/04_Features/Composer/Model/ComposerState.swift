@@ -29,7 +29,11 @@ struct ComposerState: Equatable {
     var pendingSearchQuery: String?
 
     var text: String = ""
-    var scopes: [String] = []
+    var scopes: [String] {
+        get { scopeEditor.selection.legacyScopePaths }
+        set { scopeEditor.selection = ComposerScopeSelection.fromLegacyScopes(newValue) }
+    }
+
     var conditions: [Condition] = []
     var conditionDisplayByKey: [String: ConditionDisplayState] = [:]
     var operatorOptionsByKey: [String: [String]] = [:]
@@ -128,7 +132,6 @@ struct ComposerState: Equatable {
         }
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
         scopeEditor.selection = selection
-        scopes = selection.legacyScopePaths
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -142,7 +145,6 @@ struct ComposerState: Equatable {
         text = payload.composerText
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.scopes)
         scopeEditor.selection = selection
-        scopes = selection.legacyScopePaths
         conditions = payload.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -158,7 +160,6 @@ struct ComposerState: Equatable {
         text = payload.context.query
         let selection = ComposerScopeSelection.fromLegacyScopes(payload.context.scopes)
         scopeEditor.selection = selection
-        scopes = selection.legacyScopePaths
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()

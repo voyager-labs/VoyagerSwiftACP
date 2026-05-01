@@ -24,7 +24,6 @@ struct ComposerHistoryReducer {
                 )
                 state.redoHistory.append(current)
                 state.scopeEditor.selection = previous.scopeSelection
-                state.scopes = previous.scopeSelection.legacyScopePaths
                 state.conditions = previous.conditions
                 state.conditionDisplayByKey = previous.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)
@@ -45,7 +44,6 @@ struct ComposerHistoryReducer {
                 )
                 state.history.append(current)
                 state.scopeEditor.selection = next.scopeSelection
-                state.scopes = next.scopeSelection.legacyScopePaths
                 state.conditions = next.conditions
                 state.conditionDisplayByKey = next.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)

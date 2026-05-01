@@ -75,7 +75,7 @@ struct ScopePickerView: View {
 
     @ViewBuilder
     private func listContent(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let sections = viewStore.scopeEditor.sections(editingPath: viewStore.scopeEditor.editingPath)
+        let sections = viewStore.scopeEditor.sections()
 
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -320,6 +320,7 @@ struct ScopePickerView: View {
                 .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
         )
     }
+
     private func applicationsIcon() -> NSImage? {
         let appIcon = NSImage(
             contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",

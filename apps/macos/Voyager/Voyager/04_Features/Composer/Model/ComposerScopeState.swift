@@ -43,12 +43,7 @@ enum ComposerScopeSelection: Equatable, Sendable {
     }
 
     var isRootOnly: Bool {
-        switch self {
-        case .rootOnly:
-            true
-        case .explicit:
-            false
-        }
+        explicitBases.isEmpty
     }
 
     var legacyScopePaths: [String] {
@@ -62,18 +57,20 @@ enum ComposerScopeSelection: Equatable, Sendable {
     }
 
     var summary: ComposerScopeSummary {
+        guard !isRootOnly else {
+            return ComposerScopeSummary(primary: .rootOnly, secondary: [])
+        }
+
         let secondary: [ComposerScopeSummarySecondary] = hasExceptions
             ? [.exceptionCount(exceptions.count)]
             : []
 
         switch self {
         case .rootOnly:
-            return ComposerScopeSummary(primary: .rootOnly, secondary: secondary)
+            return ComposerScopeSummary(primary: .rootOnly, secondary: [])
 
         case let .explicit(bases, _):
             switch bases.count {
-            case 0:
-                return ComposerScopeSummary(primary: .rootOnly, secondary: secondary)
             case 1:
                 return ComposerScopeSummary(primary: .singleExplicit(path: bases[0].path), secondary: secondary)
             default:
@@ -239,9 +236,7 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         selection.hasExceptions
     }
 
-    func sections(
-        editingPath: String? = nil,
-    ) -> [ComposerScopeEditorSection] {
+    func sections() -> [ComposerScopeEditorSection] {
         var sections: [ComposerScopeEditorSection] = []
 
         let currentItems = selection.explicitBases.map {
