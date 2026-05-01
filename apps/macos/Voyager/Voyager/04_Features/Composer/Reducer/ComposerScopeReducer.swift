@@ -288,7 +288,7 @@ private func handleAddScope(
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
     let normalizedPath = ComposerScopeUtils.normalizeScopePath(path)
-    let currentPaths = state.scopeEditor.selection.legacyScopePaths
+    let currentPaths = state.scopeEditor.selection.explicitBases.map(\.path)
     let canonicalPaths = collapseScopePaths(existing: currentPaths, adding: normalizedPath)
     guard canonicalPaths != currentPaths else {
         return settleScopeEditorAfterSelectionChange(

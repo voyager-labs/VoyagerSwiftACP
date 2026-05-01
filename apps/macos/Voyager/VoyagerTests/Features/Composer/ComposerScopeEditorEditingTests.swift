@@ -143,8 +143,17 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
         await store.finish()
     }
 
-    func testScopeEditorAddKeepsPopoverOpen() async {
+    func testScopeEditorAddFromRootOnlyCreatesExplicitScopeAndKeepsPopoverOpen() async {
         var initialState = ComposerState()
+        initialState.collectionContext = CollectionContext(
+            query: "",
+            scopes: [ComposerScopeUtils.rootScopePath],
+            includeSubfolders: true,
+            conditions: [],
+        )
+        initialState.scopeEditor.selection = .rootOnly
+        initialState.scopeEditor.committedSelection = .rootOnly
+        initialState.scopes = [ComposerScopeUtils.rootScopePath]
         initialState.scopeEditor.isPresented = true
 
         let store = makePassiveStore(initialState: initialState)
