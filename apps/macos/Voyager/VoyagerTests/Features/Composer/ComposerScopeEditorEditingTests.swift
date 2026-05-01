@@ -83,6 +83,66 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
         await store.finish()
     }
 
+    // swiftlint:disable:next function_body_length
+    func testScopeEditorOpenPreservesPendingScopeRuleWhenAlreadyPresented() async {
+        var initialState = ComposerState()
+        initialState.collectionContext = CollectionContext(
+            query: "",
+            scopes: ["/Users/test/Documents"],
+            includeSubfolders: true,
+            conditions: [],
+        )
+        initialState.scopeEditor.isPresented = true
+        initialState.scopeEditor.selection = .explicit(
+            bases: [
+                ComposerScopeBase(path: "/Users/test/Documents"),
+                ComposerScopeBase(path: "/Users/test/Downloads"),
+            ],
+            exceptions: [],
+        )
+        initialState.scopeEditor.committedSelection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+            exceptions: [],
+        )
+        initialState.scopeEditor.includeSubfolders = false
+        initialState.scopeEditor.committedIncludeSubfolders = true
+        initialState.scopeEditor.editingPath = nil
+        initialState.scopeEditor.entryMode = .add
+        initialState.scopeEditor.queryText = "down"
+        initialState.scopeEditor.listState = .searchResults(query: "down")
+        initialState.scopes = ["/Users/test/Documents", "/Users/test/Downloads"]
+
+        let store = makePassiveStore(initialState: initialState)
+
+        await store.send(
+            .scopeEditorOpen(editingPath: "/Users/test/Downloads", favorites: [], backHistory: []),
+        ) {
+            $0.scopeEditor.isPresented = true
+            $0.scopeEditor.editingPath = "/Users/test/Downloads"
+            $0.scopeEditor.entryMode = .edit
+            $0.scopeEditor.selection = .explicit(
+                bases: [
+                    ComposerScopeBase(path: "/Users/test/Documents"),
+                    ComposerScopeBase(path: "/Users/test/Downloads"),
+                ],
+                exceptions: [],
+            )
+            $0.scopeEditor.committedSelection = .explicit(
+                bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+                exceptions: [],
+            )
+            $0.scopeEditor.includeSubfolders = false
+            $0.scopeEditor.committedIncludeSubfolders = true
+            $0.scopeEditor.queryText = ""
+            $0.scopeEditor.listState = .defaultCandidates
+            $0.scopeEditor.candidateItems = []
+            $0.scopeEditor.favorites = []
+            $0.scopeEditor.backHistory = []
+        }
+
+        await store.finish()
+    }
+
     func testScopeEditorAddKeepsPopoverOpen() async {
         var initialState = ComposerState()
         initialState.scopeEditor.isPresented = true

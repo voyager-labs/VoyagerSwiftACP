@@ -101,6 +101,7 @@ private func handleScopeEditorOpen(
     backHistory: [String],
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
+    let shouldSeedCommittedScopeRule = !state.scopeEditor.isPresented
     let committedSelection = state.collectionContext
         .map { ComposerScopeSelection.fromLegacyScopes($0.scopes) }
         ?? state.scopeEditor.selection
@@ -111,11 +112,13 @@ private func handleScopeEditorOpen(
     state.scopeEditor.backHistory = backHistory
     state.scopeEditor.editingPath = editingPath
     state.scopeEditor.entryMode = editingPath == nil ? .add : .edit
-    state.scopeEditor.selection = committedSelection
-    state.scopeEditor.includeSubfolders = committedIncludeSubfolders
+    if shouldSeedCommittedScopeRule {
+        state.scopeEditor.selection = committedSelection
+        state.scopeEditor.includeSubfolders = committedIncludeSubfolders
+        state.scopeEditor.committedSelection = committedSelection
+        state.scopeEditor.committedIncludeSubfolders = committedIncludeSubfolders
+    }
     state.scopeEditor.isPresented = true
-    state.scopeEditor.committedSelection = committedSelection
-    state.scopeEditor.committedIncludeSubfolders = committedIncludeSubfolders
     state.scopeEditor.queryText = ""
     state.scopeEditor.listState = .defaultCandidates
     state.scopeEditor.candidateItems = makeDefaultScopeEditorCandidates(
