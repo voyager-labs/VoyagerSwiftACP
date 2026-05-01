@@ -69,10 +69,6 @@ enum ComposerScopeUtils {
         return Array(sortSearchResults(results, query: queryLower).prefix(maxResults))
     }
 
-    static func childDirectoryCandidates(parentPath: String, entryLoadingClient: EntryLoadingClient, maxCount: Int = 50) -> [DirectoryItem] {
-        ComposerScopeChildDirectoryCandidates.make(parentPath: parentPath, entryLoadingClient: entryLoadingClient, maxCount: maxCount)
-    }
-
     static func buildCombinedList(
         history: [String],
         favorites: [ScopeFavoriteItem],
