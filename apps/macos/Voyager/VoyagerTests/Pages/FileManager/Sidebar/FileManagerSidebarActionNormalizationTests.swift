@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
@@ -19,13 +20,13 @@ final class FileManagerSidebarActionNormalizationTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerSidebarFeature()
         } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
-            $0.fileManagerFavoritesClient = .testValue
-            $0.fileManagerLocationsClient = .testValue
-            $0.finderFavoritesTagClient = .testValue
-            $0.notificationCenterClient = .testValue
-            $0.fileManagerIconClient = .testValue
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
+            $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
+            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
         store.exhaustivity = .off
 
@@ -45,13 +46,13 @@ final class FileManagerSidebarActionNormalizationTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerSidebarFeature()
         } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
-            $0.fileManagerFavoritesClient = .testValue
-            $0.fileManagerLocationsClient = .testValue
-            $0.finderFavoritesTagClient = .testValue
-            $0.notificationCenterClient = .testValue
-            $0.fileManagerIconClient = .testValue
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
+            $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
+            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
         store.exhaustivity = .off
 
@@ -79,13 +80,13 @@ final class FileManagerSidebarActionNormalizationTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerSidebarFeature()
         } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
-            $0.fileManagerFavoritesClient = .testValue
-            $0.fileManagerLocationsClient = .testValue
-            $0.finderFavoritesTagClient = .testValue
-            $0.notificationCenterClient = .testValue
-            $0.fileManagerIconClient = .testValue
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
+            $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
+            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
         store.exhaustivity = .off
 
@@ -105,13 +106,13 @@ final class FileManagerSidebarActionNormalizationTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerSidebarFeature()
         } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
-            $0.fileManagerFavoritesClient = .testValue
-            $0.fileManagerLocationsClient = .testValue
-            $0.finderFavoritesTagClient = .testValue
-            $0.notificationCenterClient = .testValue
-            $0.fileManagerIconClient = .testValue
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
+            $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
+            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
         store.exhaustivity = .off
 
@@ -136,26 +137,26 @@ final class FileManagerSidebarActionNormalizationTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerSidebarFeature()
         } withDependencies: {
-            $0.userDefaultsClient = .testValue
-            $0.entryLoadingClient = .testValue
-            $0.fileManagerFavoritesClient = .testValue
-            $0.fileManagerLocationsClient = .testValue
-            $0.finderFavoritesTagClient = .testValue
-            $0.notificationCenterClient = .testValue
-            $0.fileManagerIconClient = .testValue
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
+            $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
+            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
         store.exhaustivity = .off
 
         // Test favorites loading flow
-        await store.send(.internal(.loadFavorites))
+        await store.send(FileManagerSidebarAction.internal(.loadFavorites))
         await store.finish()
 
         // Test locations loading flow
-        await store.send(.internal(.loadLocations))
+        await store.send(FileManagerSidebarAction.internal(.loadLocations))
         await store.finish()
 
         // Test tags loading flow
-        await store.send(.internal(.loadTags))
+        await store.send(FileManagerSidebarAction.internal(.loadTags))
         await store.finish()
     }
 }
