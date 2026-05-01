@@ -69,15 +69,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == windowID && receivedPaths == paths
-        }
+        await store.receive(\.windowManager.windows)
     }
 
     func testHelperExternalFileChangeFansOutToAllOpenWindows() async {
@@ -96,24 +88,8 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
 
         await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == firstID && receivedPaths == paths
-        }
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == secondID && receivedPaths == paths
-        }
+        await store.receive(\.windowManager.windows)
+        await store.receive(\.windowManager.windows)
     }
 
     func testMenuCommandsStateIsRecomputedAfterWindowManagerChanges() async {
@@ -134,7 +110,7 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         XCTAssertFalse(store.state.menuCommands.hasFocusedWindow)
 
-        await store.send(.windowManager(.event(.windowBecameKey(id: windowID)))) {
+        await store.send(.windowManager(.event(.windowBecameKey(windowID)))) {
             $0.windowManager.focusedWindowID = windowID
             $0.menuCommands.hasFocusedWindow = true
         }

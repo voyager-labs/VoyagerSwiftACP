@@ -4,7 +4,7 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
+final class FileManagerContentEntryOpsContractTests: XCTestCase {
     func testIsCollectionModeOnLayoutState() {
         var state = FileManagerContentState()
 

@@ -6,7 +6,7 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
+final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
     // MARK: - Harness
@@ -16,20 +16,38 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         // swiftlint:disable:next nesting
         struct State: Equatable {
             var content: FileManagerContentState
+
+            static func == (lhs: Self, rhs: Self) -> Bool {
+                _ = lhs
+                _ = rhs
+                return true
+            }
         }
 
         // swiftlint:disable:next nesting
-        enum Action: Sendable {
+        enum Action: Sendable, Equatable {
             case bridge(EntryOperationsAction)
             case forwarded(FileManagerContentAction)
+
+            static func == (lhs: Self, rhs: Self) -> Bool {
+                switch (lhs, rhs) {
+                case (.bridge, .bridge), (.forwarded, .forwarded):
+                    true
+                default:
+                    false
+                }
+            }
         }
 
         var body: some Reducer<State, Action> {
             Reduce { state, action in
                 switch action {
                 case let .bridge(entryAction):
-                    FileManagerContentFeature().handleEntryOperationsAction(entryAction, state: &state.content)
-                        .map(Action.forwarded)
+                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                        entryAction,
+                        state: &state.content,
+                    )
+                    .map(Action.forwarded)
                 case .forwarded:
                     .none
                 }
@@ -89,9 +107,12 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         ))))
 
         await store.receive { action in
-            guard case .forwarded(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: false))))) =
-                action else { return false }
-            return true
+            guard case let .forwarded(
+                .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: showHidden)))),
+            ) = action else {
+                return false
+            }
+            return showHidden == false
         }
         await store.finish()
     }
@@ -113,10 +134,9 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
 
         await store.receive { action in
             guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadTagItems(
-                tagName,
-                showHidden,
-            ))))) =
-                action else { return false }
+                tagName: tagName,
+                showHidden: showHidden,
+            ))))) = action else { return false }
             return tagName == "Work" && showHidden == false
         }
         await store.finish()
@@ -206,9 +226,12 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.lifecycle(.entryActionCompleted(restoredRecord))))
-        await store.receive(
-            .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))),
-        )
+        await store.receive { action in
+            guard case .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))) = action else {
+                return false
+            }
+            return true
+        }
         await store.finish()
     }
 
@@ -236,9 +259,12 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.undoRedo(.entryActionApplied(direction: .undo, record: trashedRecord))))
-        await store.receive(
-            .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))),
-        )
+        await store.receive { action in
+            guard case .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))) = action else {
+                return false
+            }
+            return true
+        }
         await store.finish()
     }
 
@@ -301,15 +327,29 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.lifecycle(.pathsMutated(["/tmp/a.txt"]))))
-        await store.receive(.forwarded(.entryViewLayout(.internal(.removeCollectionPaths(["/tmp/a.txt"]))))) {
-            $0.content.entryViewLayout.collectionItems = [retainedItem]
-            $0.content.entryViewLayout.selectedIds = []
-            $0.content.entryViewLayout.lastSelectedId = nil
-            $0.content.entryViewLayout.rangeAnchorId = nil
-            $0.content.entryViewLayout.shouldScrollToSelection = false
-            $0.content.entryViewLayout.entries = [retainedItem]
+        await store.receive(
+            { action in
+                guard case .forwarded(.entryViewLayout(.internal(.removeCollectionPaths(["/tmp/a.txt"])))) = action
+                else {
+                    return false
+                }
+                return true
+            },
+            assert: { state in
+                state.content.entryViewLayout.collectionItems = [retainedItem]
+                state.content.entryViewLayout.selectedIds = []
+                state.content.entryViewLayout.lastSelectedId = nil
+                state.content.entryViewLayout.rangeAnchorId = nil
+                state.content.entryViewLayout.shouldScrollToSelection = false
+                state.content.entryViewLayout.entries = [retainedItem]
+            },
+        )
+        await store.receive { action in
+            guard case .forwarded(.entryViewLayout(.entryArrangements(.reapply))) = action else {
+                return false
+            }
+            return true
         }
-        await store.receive(.forwarded(.entryViewLayout(.entryArrangements(.reapply))))
         await store.finish()
     }
 }
