@@ -243,7 +243,7 @@ struct ComposerScopeEditorState: Equatable, Sendable {
     }
 
     var effectiveIncludeSubfolders: Bool {
-        includeSubfolders
+        selection.isRootOnly || includeSubfolders
     }
 
     var isExactFolderOnlyMode: Bool {

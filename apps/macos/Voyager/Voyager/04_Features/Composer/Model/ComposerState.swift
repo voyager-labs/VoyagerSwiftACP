@@ -62,7 +62,7 @@ struct ComposerState: Equatable {
         CollectionContext(
             query: query,
             scopes: scopeEditor.selection.legacyScopePaths,
-            includeSubfolders: scopeEditor.includeSubfolders,
+            includeSubfolders: scopeEditor.effectiveIncludeSubfolders,
             conditions: conditions,
         )
     }

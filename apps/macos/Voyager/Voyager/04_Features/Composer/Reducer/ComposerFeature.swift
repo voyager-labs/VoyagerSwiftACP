@@ -340,7 +340,7 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
     )
     return VoyagerShared.SearchFiltersPayload(
         scopes: state.scopeEditor.selection.legacyScopePaths,
-        includeSubfolders: state.scopeEditor.includeSubfolders,
+        includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
         conditions: conditionPayloads,
     )
 }

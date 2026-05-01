@@ -12,6 +12,15 @@ final class ComposerScopePresentationTests: XCTestCase {
         XCTAssertEqual(rootState.scopeEditor.scopeRuleDescription, "This Mac")
         XCTAssertFalse(rootState.scopeEditor.isExactFolderOnlyMode)
 
+        var toggledRootState = ComposerState()
+        toggledRootState.scopeEditor.includeSubfolders = false
+
+        XCTAssertTrue(toggledRootState.scopeEditor.effectiveIncludeSubfolders)
+        XCTAssertEqual(toggledRootState.scopeEditor.scopeRuleDescription, "This Mac")
+        XCTAssertFalse(toggledRootState.scopeEditor.isExactFolderOnlyMode)
+        XCTAssertTrue(toggledRootState.collectionContext(query: "docs").includeSubfolders)
+        XCTAssertTrue(buildFilters(from: toggledRootState).includeSubfolders)
+
         var explicitState = ComposerState()
         explicitState.scopeEditor.selection = .explicit(
             bases: [ComposerScopeBase(path: "/Users/me/Documents")],
@@ -23,6 +32,7 @@ final class ComposerScopePresentationTests: XCTestCase {
         XCTAssertTrue(explicitState.scopeEditor.isExactFolderOnlyMode)
         XCTAssertEqual(explicitState.scopeEditor.scopeRuleDescription, "Only selected folder")
         XCTAssertFalse(explicitState.collectionContext(query: "docs").includeSubfolders)
+        XCTAssertFalse(buildFilters(from: explicitState).includeSubfolders)
     }
 
     func testScopeEditorIncludeSubfoldersToggleUpdatesContext() {
