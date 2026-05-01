@@ -61,6 +61,46 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(resolved.unknownKeys, [])
     }
 
+    func testResolveDetailedPreservesFallbackExcludedScopesWhenAppliedPayloadOmitsKey() throws {
+        let fallbackCondition = makeActiveCondition()
+        let data = Data(
+            #"{"scopes":["/tmp/root"],"includeSubfolders":true,"conditions":[]}"#.utf8,
+        )
+        let appliedFilters = try JSONDecoder().decode(AppliedFiltersPayload.self, from: data)
+
+        let resolved = AppliedFiltersUtils.resolveDetailed(
+            appliedFilters,
+            fallbackScopes: ["/tmp/fallback"],
+            fallbackConditions: [fallbackCondition],
+            registryClient: makeRegistryClient(),
+            fallbackExcludedScopes: ["/tmp/root/excluded"],
+        )
+
+        XCTAssertEqual(resolved.scopes, ["/tmp/root"])
+        XCTAssertEqual(resolved.excludedScopes, ["/tmp/root/excluded"])
+        XCTAssertEqual(resolved.conditions, [])
+        XCTAssertEqual(resolved.unknownKeys, [])
+    }
+
+    func testResolveDetailedKeepsEmptyExcludedScopesWhenFallbackIsEmpty() throws {
+        let data = Data(
+            #"{"scopes":["/tmp/root"],"includeSubfolders":true,"conditions":[]}"#.utf8,
+        )
+        let appliedFilters = try JSONDecoder().decode(AppliedFiltersPayload.self, from: data)
+
+        let resolved = AppliedFiltersUtils.resolveDetailed(
+            appliedFilters,
+            fallbackScopes: ["/tmp/fallback"],
+            fallbackConditions: [makeActiveCondition()],
+            registryClient: makeRegistryClient(),
+        )
+
+        XCTAssertEqual(resolved.scopes, ["/tmp/root"])
+        XCTAssertEqual(resolved.excludedScopes, [])
+        XCTAssertEqual(resolved.conditions, [])
+        XCTAssertEqual(resolved.unknownKeys, [])
+    }
+
     func testResolveDetailedRestoresDateRangePayloadWithoutShapeLoss() {
         let registryClient = makeRangeDateRegistryClient()
         let appliedFilters = AppliedFiltersPayload(
