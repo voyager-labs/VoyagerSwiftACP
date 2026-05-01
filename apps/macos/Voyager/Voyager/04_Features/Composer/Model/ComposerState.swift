@@ -74,10 +74,6 @@ struct ComposerState: Equatable {
         scopeEditor.selection.summary
     }
 
-    var shouldAutoApplyScopeChange: Bool {
-        !conditions.isEmpty
-    }
-
     var isCollectionSearching: Bool {
         let isSearching = isLoadingSearch
             || isLoadingFilters

@@ -29,7 +29,7 @@ struct ComposerHistoryReducer {
                 state.conditionDisplayByKey = previous.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
-                if before != after, state.shouldAutoApplyScopeChange {
+                if before != after {
                     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
                 }
                 return .none
@@ -50,7 +50,7 @@ struct ComposerHistoryReducer {
                 state.conditionDisplayByKey = next.conditionDisplayByKey
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
-                if before != after, state.shouldAutoApplyScopeChange {
+                if before != after {
                     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
                 }
                 return .none

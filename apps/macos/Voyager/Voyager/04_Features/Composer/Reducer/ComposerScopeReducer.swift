@@ -261,9 +261,6 @@ private func handleAddScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    guard state.shouldAutoApplyScopeChange else {
-        return settleEffect
-    }
     let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
     return .merge(settleEffect, filterEffect)
 }
@@ -291,9 +288,6 @@ private func handleRemoveScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    guard state.shouldAutoApplyScopeChange else {
-        return settleEffect
-    }
     let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
     return .merge(settleEffect, filterEffect)
 }
@@ -329,9 +323,6 @@ private func handleUpdateScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    guard state.shouldAutoApplyScopeChange else {
-        return settleEffect
-    }
     let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
     return .merge(settleEffect, filterEffect)
 }
