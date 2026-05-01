@@ -27,6 +27,7 @@ struct ComposerScopeReducer {
                 return handleScopeEditorPresented(
                     state: &state,
                     isPresented: isPresented,
+                    searchClient: searchClient,
                     entryLoadingClient: entryLoadingClient,
                 )
 
@@ -100,11 +101,21 @@ private func handleScopeEditorOpen(
     backHistory: [String],
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
+    let committedSelection = state.collectionContext
+        .map { ComposerScopeSelection.fromLegacyScopes($0.scopes) }
+        ?? state.scopeEditor.selection
+    let committedIncludeSubfolders = state.collectionContext?.includeSubfolders
+        ?? state.scopeEditor.includeSubfolders
+
     state.scopeEditor.favorites = favorites
     state.scopeEditor.backHistory = backHistory
     state.scopeEditor.editingPath = editingPath
     state.scopeEditor.entryMode = editingPath == nil ? .add : .edit
+    state.scopeEditor.selection = committedSelection
+    state.scopeEditor.includeSubfolders = committedIncludeSubfolders
     state.scopeEditor.isPresented = true
+    state.scopeEditor.committedSelection = committedSelection
+    state.scopeEditor.committedIncludeSubfolders = committedIncludeSubfolders
     state.scopeEditor.queryText = ""
     state.scopeEditor.listState = .defaultCandidates
     state.scopeEditor.candidateItems = makeDefaultScopeEditorCandidates(
@@ -118,6 +129,7 @@ private func handleScopeEditorOpen(
 private func handleScopeEditorPresented(
     state: inout ComposerFeature.State,
     isPresented: Bool,
+    searchClient _: SearchClient,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     if isPresented {
@@ -138,6 +150,9 @@ private func handleScopeEditorPresented(
         return .none
     }
 
+    let shouldReapplyFilters = state.shouldAutoApplyScopeChange
+        && state.scopeEditor.hasPendingScopeRuleChanges
+
     state.scopeEditor.isPresented = false
     state.resetScopeEditorInteractionState(clearQuery: true)
     state.scopeEditor.entryMode = .add
@@ -147,7 +162,28 @@ private func handleScopeEditorPresented(
         backHistory: state.scopeEditor.backHistory,
         entryLoadingClient: entryLoadingClient,
     )
-    return .cancel(id: ComposerFeature.CancelID.scopeEditorSearch)
+    let dismissEffect = Effect<ComposerFeature.Action>.cancel(id: ComposerFeature.CancelID.scopeEditorSearch)
+    guard shouldReapplyFilters else {
+        return dismissEffect
+    }
+
+    return .merge(dismissEffect, reexecuteCurrentCollectionSearch(state: &state))
+}
+
+private func reexecuteCurrentCollectionSearch(
+    state: inout ComposerFeature.State,
+) -> Effect<ComposerFeature.Action> {
+    let query = state.pendingSearchQuery
+        ?? state.collectionContext?.query
+        ?? state.text
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else {
+        return .send(.applyFilters)
+    }
+
+    state.text = trimmedQuery
+    state.pendingSearchQuery = trimmedQuery
+    return .send(.submit)
 }
 
 private func handleScopeEditorQueryText(
@@ -244,7 +280,7 @@ private func handleScopeEditorSearchFailure(
 private func handleAddScope(
     state: inout ComposerFeature.State,
     path: String,
-    searchClient: SearchClient,
+    searchClient _: SearchClient,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
@@ -265,17 +301,13 @@ private func handleAddScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    guard state.shouldAutoApplyScopeChange else {
-        return settleEffect
-    }
-    let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-    return .merge(settleEffect, filterEffect)
+    return settleEffect
 }
 
 private func handleRemoveScope(
     state: inout ComposerFeature.State,
     path: String,
-    searchClient: SearchClient,
+    searchClient _: SearchClient,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
@@ -295,18 +327,14 @@ private func handleRemoveScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    guard state.shouldAutoApplyScopeChange else {
-        return settleEffect
-    }
-    let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-    return .merge(settleEffect, filterEffect)
+    return settleEffect
 }
 
 private func handleUpdateScope(
     state: inout ComposerFeature.State,
     oldPath: String,
     newPath: String,
-    searchClient: SearchClient,
+    searchClient _: SearchClient,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
@@ -333,11 +361,7 @@ private func handleUpdateScope(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    guard state.shouldAutoApplyScopeChange else {
-        return settleEffect
-    }
-    let filterEffect = applyFiltersIfNeeded(state: &state, searchClient: searchClient)
-    return .merge(settleEffect, filterEffect)
+    return settleEffect
 }
 
 private func handleClearAll(
@@ -391,19 +415,8 @@ private func collapseScopePaths(existing: [String], adding candidate: String) ->
     let normalizedCandidate = ComposerScopeUtils.normalizeScopePath(candidate)
     var result: [String] = []
 
-    func isAncestorOrSame(_ lhs: String, _ rhs: String) -> Bool {
-        if lhs == rhs { return true }
-        if lhs == ComposerScopeUtils.rootScopePath { return true }
-        return rhs.hasPrefix(lhs + "/")
-    }
-
-    for path in existing.map(ComposerScopeUtils.normalizeScopePath) {
-        if isAncestorOrSame(path, normalizedCandidate) || isAncestorOrSame(normalizedCandidate, path) {
-            continue
-        }
-        if !result.contains(path) {
-            result.append(path)
-        }
+    for path in existing.map(ComposerScopeUtils.normalizeScopePath) where !result.contains(path) {
+        result.append(path)
     }
 
     if !result.contains(normalizedCandidate) {

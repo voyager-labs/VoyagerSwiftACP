@@ -66,7 +66,7 @@ final class ComposerScopePresentationTests: XCTestCase {
         XCTAssertEqual(multi.summary.secondaryText, "1 exception")
     }
 
-    func testScopeAddCollapsesNestedScopesAndSkipsAutoApplyWithoutConditions() async {
+    func testScopeAddPreservesNestedExplicitScopesAndSkipsAutoApplyWithoutConditions() async {
         let initialSelection = ComposerScopeSelection.explicit(
             bases: [ComposerScopeBase(path: "/Users/me")],
             exceptions: [],
@@ -84,10 +84,13 @@ final class ComposerScopePresentationTests: XCTestCase {
 
         await store.send(.candidateScope(.add(path: "/Users/me/Documents"))) {
             $0.scopeEditor.selection = .explicit(
-                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+                bases: [
+                    ComposerScopeBase(path: "/Users/me"),
+                    ComposerScopeBase(path: "/Users/me/Documents"),
+                ],
                 exceptions: [],
             )
-            $0.scopes = ["/Users/me/Documents"]
+            $0.scopes = ["/Users/me", "/Users/me/Documents"]
             $0.scopeEditor.isPresented = true
             $0.scopeEditor.queryText = ""
             $0.scopeEditor.listState = .defaultCandidates

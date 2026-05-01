@@ -216,6 +216,8 @@ struct ComposerScopeEditorSection: Equatable, Sendable, Identifiable {
 struct ComposerScopeEditorState: Equatable, Sendable {
     var selection: ComposerScopeSelection = .rootOnly
     var includeSubfolders: Bool = true
+    var committedSelection: ComposerScopeSelection = .rootOnly
+    var committedIncludeSubfolders: Bool = true
     var listState: ComposerScopeEditorListState = .defaultCandidates
     var isPresented: Bool = false
     var queryText: String = ""
@@ -311,5 +313,9 @@ struct ComposerScopeEditorState: Equatable, Sendable {
 
     var trimmedQueryText: String {
         queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var hasPendingScopeRuleChanges: Bool {
+        committedSelection != selection || committedIncludeSubfolders != includeSubfolders
     }
 }
