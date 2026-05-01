@@ -1,7 +1,60 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAi
 @testable import VoyagerPagesSettings
 import XCTest
+
+private final class BrowserLoginStreamController: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: AsyncThrowingStream<BrowserLoginState, Error>.Continuation?
+
+    func stream() -> AsyncThrowingStream<BrowserLoginState, Error> {
+        AsyncThrowingStream { continuation in
+            lock.lock()
+            self.continuation = continuation
+            lock.unlock()
+            continuation.yield(.inProgress)
+        }
+    }
+
+    func complete(_ credential: OAuthCredentialFile) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+
+        continuation?.yield(.completed(credential))
+        continuation?.finish()
+    }
+}
+
+private actor OAuthEventLog {
+    private var events: [String] = []
+
+    func record(_ event: String) {
+        events.append(event)
+    }
+
+    func snapshot() -> [String] {
+        events
+    }
+}
+
+private actor SuspensionGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
 
 @MainActor
 final class AiConnectionOAuthTests: XCTestCase {
@@ -59,6 +112,68 @@ final class AiConnectionOAuthTests: XCTestCase {
             state.flowState = .idle
             state.statusReason = .none
         }
+
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .connected)
+        XCTAssertEqual(store.state.flowState, .idle)
+    }
+
+    func testBrowserLogin_delayedCompletion_waitsForVerificationBeforePersisting() async {
+        let credential = makeCredential()
+        let controller = BrowserLoginStreamController()
+        let log = OAuthEventLog()
+        let gate = SuspensionGate()
+        let verificationStarted = expectation(description: "verification started")
+
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .chatgptCodex)
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startBrowserLogin = { controller.stream() }
+            $0.aiProviderVerificationClient.verify = { _, _ in
+                await log.record("verify")
+                verificationStarted.fulfill()
+                await gate.wait()
+                return .valid
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { provider, _, connectionState in
+                await log.record("connect")
+                return AiProviderConnectionResult(
+                    provider: provider,
+                    state: connectionState,
+                    reason: .none,
+                    updatedFile: AIConnectionsFile.empty()
+                )
+            }
+        }
+
+        await store.send(.connectButtonTapped)
+
+        await store.receive(\.startBrowserLogin) { state in
+            state.flowState = .browserLoginInProgress
+            state.connectionState = .connectInProgress
+        }
+
+        controller.complete(credential)
+        await fulfillment(of: [verificationStarted], timeout: 1)
+
+        let snapshotBeforeOpen = await log.snapshot()
+        XCTAssertEqual(snapshotBeforeOpen, ["verify"])
+        XCTAssertEqual(store.state.connectionState, .connectInProgress)
+        XCTAssertEqual(store.state.flowState, .browserLoginInProgress)
+
+        await gate.open()
+
+        await store.receive(\.browserLoginCompleted) { state in
+            state.connectionState = .connected
+            state.flowState = .idle
+            state.statusReason = .none
+        }
+
+        let snapshotAfterOpen = await log.snapshot()
+        XCTAssertEqual(snapshotAfterOpen, ["verify", "connect"])
 
         await store.finish()
 
@@ -190,17 +305,82 @@ final class AiConnectionOAuthTests: XCTestCase {
         await store.finish()
     }
 
+    func testBrowserLogin_verificationFailure_doesNotPersistConnected() async {
+        let credential = makeCredential()
+
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .chatgptCodex)
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startBrowserLogin = {
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.completed(credential))
+                    continuation.finish()
+                }
+            }
+            $0.aiProviderVerificationClient.verify = { _, _ in
+                .invalid(.verificationFailed)
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
+                XCTFail("connectOAuth must not be called before verification succeeds")
+                return AiProviderConnectionResult(
+                    provider: .chatgptCodex,
+                    state: .connected,
+                    reason: .none,
+                    updatedFile: AIConnectionsFile.empty()
+                )
+            }
+        }
+
+        await store.send(.startBrowserLogin) { state in
+            state.flowState = .browserLoginInProgress
+            state.connectionState = .connectInProgress
+        }
+
+        await store.receive(\.verificationFailed) { state in
+            state.flowState = .idle
+            state.connectionState = .connectionFailed
+            state.statusReason = .verificationFailed
+        }
+
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .connectionFailed)
+        XCTAssertEqual(store.state.statusReason, .verificationFailed)
+    }
+
     // MARK: - Cancel Button During OAuth
 
     func testCancelButton_duringBrowserLogin_resetsToNotVerified() async {
+        let controller = BrowserLoginStreamController()
+
         let store = TestStore(
-            initialState: AiConnectionRowState(
-                provider: .chatgptCodex,
-                connectionState: .connectInProgress,
-                flowState: .browserLoginInProgress
-            )
+            initialState: AiConnectionRowState(provider: .chatgptCodex)
         ) {
             AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startBrowserLogin = { controller.stream() }
+            $0.aiProviderVerificationClient.verify = { _, _ in
+                XCTFail("verify must not be called after cancellation")
+                return .valid
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
+                XCTFail("connectOAuth must not be called after cancellation")
+                return AiProviderConnectionResult(
+                    provider: .chatgptCodex,
+                    state: .connected,
+                    reason: .none,
+                    updatedFile: AIConnectionsFile.empty()
+                )
+            }
+        }
+
+        await store.send(.connectButtonTapped)
+
+        await store.receive(\.startBrowserLogin) { state in
+            state.flowState = .browserLoginInProgress
+            state.connectionState = .connectInProgress
         }
 
         await store.send(.cancelButtonTapped) { state in
@@ -208,7 +388,13 @@ final class AiConnectionOAuthTests: XCTestCase {
             state.connectionState = .notVerified
         }
 
+        controller.complete(makeCredential())
+        await Task.yield()
+
         await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .notVerified)
+        XCTAssertEqual(store.state.flowState, .idle)
     }
 
     // MARK: - Connect Button Routes OAuth Providers
@@ -234,8 +420,8 @@ final class AiConnectionOAuthTests: XCTestCase {
         }
 
         await store.receive(\.browserLoginFailed) { state in
-            state.flowState = .idle
             state.connectionState = .connectionFailed
+            state.flowState = .idle
             state.statusReason = .networkUnavailable
         }
 
@@ -337,10 +523,10 @@ final class AiConnectionOAuthTests: XCTestCase {
             state.connectionState = .connectInProgress
         }
 
-        await store.receive(\.browserLoginFailed) { state in
+        await store.receive(\.verificationFailed) { state in
             state.flowState = .idle
             state.connectionState = .connectionFailed
-            state.statusReason = .networkUnavailable
+            state.statusReason = .verificationFailed
         }
 
         await store.finish()

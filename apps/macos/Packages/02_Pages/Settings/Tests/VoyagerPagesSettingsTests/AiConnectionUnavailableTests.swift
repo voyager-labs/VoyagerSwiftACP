@@ -5,12 +5,8 @@ import XCTest
 
 /// Regression tests for the "unavailable in build" provider connection behavior.
 ///
-/// Two scenarios:
-/// 1. **API key providers** (openai, anthropic): `handleConnect` returns `.none` for non-OAuth
-///    providers, so unavailable rows correctly block connect/retry.
-/// 2. **OAuth providers** (chatgptCodex): `handleConnect` does NOT guard against
-///    `.unavailable` `connectionState`. If the provider has a valid descriptor, the connect
-///    flow proceeds. These tests document this as a known gap.
+/// These tests prove unavailable rows stay inert across connect/retry/start-flow paths
+/// and never reach browser login, verification, or persistence clients.
 @MainActor
 final class AiConnectionUnavailableTests: XCTestCase {
     // MARK: - Row-level: API key provider correctly blocks connect from unavailable
@@ -65,72 +61,104 @@ final class AiConnectionUnavailableTests: XCTestCase {
         XCTAssertEqual(row.primaryAction, .disabled)
     }
 
-    // MARK: - Row-level: OAuth provider gap documentation
+    // MARK: - Row-level: OAuth provider unavailable guard
 
-    // GAP: `handleConnect` does NOT guard against `.unavailable` connectionState.
-    // For OAuth providers that have a valid `ProviderDescriptor`, the connect flow
-    // proceeds even when the row is in `.unavailable` state.
-    // Expected fix: add `guard state.connectionState != .unavailable else { return .none }`
-    // before the descriptor lookup in `handleConnect`.
-    func testConnectButton_unavailable_oAuthProvider_proceedsToLogin_DOCUMENTED_GAP() async {
+    func testConnectButton_unavailable_oAuthProvider_isIgnored() async {
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable)
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
             $0.codexNativeAuthClient.startBrowserLogin = {
-                AsyncThrowingStream { continuation in
-                    continuation.yield(.failed(.loginUnavailable))
-                    continuation.finish()
-                }
+                XCTFail("startBrowserLogin must not be invoked for unavailable OAuth provider")
+                return AsyncThrowingStream { $0.finish() }
+            }
+            $0.codexNativeAuthClient.startDeviceAuth = {
+                XCTFail("startDeviceAuth must not be invoked for unavailable OAuth provider")
+                throw CodexNativeAuthError.loginUnavailable
+            }
+            $0.aiProviderVerificationClient.verify = { _, _ in
+                XCTFail("verify must not be invoked for unavailable OAuth provider")
+                return .valid
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
+                XCTFail("connectOAuth must not be invoked for unavailable OAuth provider")
+                return .init(provider: .chatgptCodex, state: .connected, reason: .none, updatedFile: .empty())
             }
         }
 
-        // Despite `.unavailable`, handleConnect proceeds to startBrowserLogin for OAuth providers
         await store.send(.connectButtonTapped)
 
-        await store.receive(\.startBrowserLogin) { state in
-            state.flowState = .browserLoginInProgress
-            state.connectionState = .connectInProgress
-        }
-
-        await store.receive(\.browserLoginFailed) { state in
-            state.flowState = .idle
-            state.connectionState = .connectionFailed
-            state.statusReason = .providerUnsupportedInBuild
-        }
-
         await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .unavailable)
+        XCTAssertEqual(store.state.flowState, .idle)
     }
 
-    func testRetryButton_unavailable_oAuthProvider_proceedsToLogin_DOCUMENTED_GAP() async {
+    func testRetryButton_unavailable_oAuthProvider_isIgnored() async {
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable)
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
             $0.codexNativeAuthClient.startBrowserLogin = {
-                AsyncThrowingStream { continuation in
-                    continuation.yield(.failed(.loginUnavailable))
-                    continuation.finish()
-                }
+                XCTFail("startBrowserLogin must not be invoked for unavailable OAuth provider")
+                return AsyncThrowingStream { $0.finish() }
+            }
+            $0.codexNativeAuthClient.startDeviceAuth = {
+                XCTFail("startDeviceAuth must not be invoked for unavailable OAuth provider")
+                throw CodexNativeAuthError.loginUnavailable
+            }
+            $0.aiProviderVerificationClient.verify = { _, _ in
+                XCTFail("verify must not be invoked for unavailable OAuth provider")
+                return .valid
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
+                XCTFail("connectOAuth must not be invoked for unavailable OAuth provider")
+                return .init(provider: .chatgptCodex, state: .connected, reason: .none, updatedFile: .empty())
             }
         }
 
         await store.send(.retryButtonTapped)
 
-        await store.receive(\.startBrowserLogin) { state in
-            state.flowState = .browserLoginInProgress
-            state.connectionState = .connectInProgress
-        }
-
-        await store.receive(\.browserLoginFailed) { state in
-            state.flowState = .idle
-            state.connectionState = .connectionFailed
-            state.statusReason = .providerUnsupportedInBuild
-        }
-
         await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .unavailable)
+        XCTAssertEqual(store.state.flowState, .idle)
+    }
+
+    // MARK: - Dependency trap: unavailable row blocks direct start actions
+
+    func testUnavailableOAuthRow_directStartActions_areIgnored() async {
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable)
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startBrowserLogin = {
+                XCTFail("startBrowserLogin must not be invoked for unavailable OAuth provider")
+                return AsyncThrowingStream { $0.finish() }
+            }
+            $0.codexNativeAuthClient.startDeviceAuth = {
+                XCTFail("startDeviceAuth must not be invoked for unavailable OAuth provider")
+                throw CodexNativeAuthError.loginUnavailable
+            }
+            $0.aiProviderVerificationClient.verify = { _, _ in
+                XCTFail("verify must not be invoked for unavailable OAuth provider")
+                return .valid
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
+                XCTFail("connectOAuth must not be invoked for unavailable OAuth provider")
+                return .init(provider: .chatgptCodex, state: .connected, reason: .none, updatedFile: .empty())
+            }
+        }
+
+        await store.send(.startBrowserLogin)
+        await store.send(.startDeviceAuth)
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .unavailable)
+        XCTAssertEqual(store.state.flowState, .idle)
     }
 
     // MARK: - Dependency trap: API key provider never invokes OAuth
@@ -166,6 +194,29 @@ final class AiConnectionUnavailableTests: XCTestCase {
         XCTAssertEqual(store.state.flowState, .idle)
     }
 
+    func testUnavailableRow_apiKeySubmit_isIgnored() async {
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .openai, connectionState: .unavailable)
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.aiProviderVerificationClient.verify = { _, _ in
+                XCTFail("verify must not be invoked for unavailable API key provider")
+                return .valid
+            }
+            $0.aiProviderConnectionClient.connectAPIKey = { _, _, _ in
+                XCTFail("connectAPIKey must not be invoked for unavailable API key provider")
+                return .init(provider: .openai, state: .connected, reason: .none, updatedFile: .empty())
+            }
+        }
+
+        await store.send(.submitAPIKey("test-key"))
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .unavailable)
+        XCTAssertEqual(store.state.flowState, .idle)
+    }
+
     // MARK: - Feature-level: Restore from persisted unavailable snapshot
 
     func testRestore_unavailableProvider_remainsUnavailable() async {
@@ -179,13 +230,21 @@ final class AiConnectionUnavailableTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { unavailableFile }
+            $0.aiProviderVerificationClient.verify = { _, _ in .unsupportedProvider }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .chatgptCodex]?.connectionState = .unavailable
             state.rows[id: .chatgptCodex]?.statusReason = .providerUnsupportedInBuild
         }
@@ -208,13 +267,21 @@ final class AiConnectionUnavailableTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { unavailableFile }
+            $0.aiProviderVerificationClient.verify = { _, _ in .unsupportedProvider }
         }
 
         await store.send(.onAppear) { state in
             state.didBootstrap = true
+            state.bootstrapPhase = .loading
         }
 
         await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
             state.rows[id: .openai]?.connectionState = .unavailable
             state.rows[id: .openai]?.statusReason = .providerUnsupportedInBuild
         }

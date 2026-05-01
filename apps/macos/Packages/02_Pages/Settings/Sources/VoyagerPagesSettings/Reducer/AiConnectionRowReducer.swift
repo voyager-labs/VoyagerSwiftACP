@@ -14,6 +14,10 @@ public struct AiConnectionRowReducer {
     @Dependency(\.aiProviderVerificationClient)
     var verificationClient
 
+    private enum CancelID: Hashable, Sendable {
+        case connectFlow
+    }
+
     public init() {}
 
     public var body: some Reducer<State, Action> {
@@ -47,9 +51,12 @@ public struct AiConnectionRowReducer {
                 if state.connectionState == .connectInProgress {
                     state.connectionState = .notVerified
                 }
-                return .run { [nativeAuthClient] _ in
-                    await nativeAuthClient.cancelCurrentFlow()
-                }
+                return .merge(
+                    .cancel(id: CancelID.connectFlow),
+                    .run { [nativeAuthClient] _ in
+                        await nativeAuthClient.cancelCurrentFlow()
+                    }
+                )
 
             case .startBrowserLogin:
                 return handleStartBrowserLogin(&state)
@@ -62,6 +69,15 @@ public struct AiConnectionRowReducer {
 
             case let .browserLoginFailed(error):
                 return handleAuthError(&state, error: error)
+
+            case let .verificationFailed(reason):
+                state.flowState = .idle
+                state.isVerifying = false
+                state.connectionState = reason == .providerUnsupportedInBuild
+                    ? .unavailable
+                    : .connectionFailed
+                state.statusReason = reason
+                return .none
 
             case .startDeviceAuth:
                 return handleStartDeviceAuth(&state)
@@ -101,6 +117,12 @@ public struct AiConnectionRowReducer {
 
     private func handleConnect(_ state: inout State) -> Effect<Action> {
         guard state.flowState == .idle else { return .none }
+        switch state.connectionState {
+        case .notVerified, .connectionFailed, .disconnected:
+            break
+        default:
+            return .none
+        }
 
         let descriptor = ProviderDescriptor.descriptor(for: state.provider)
         guard let descriptor else { return .none }
@@ -112,6 +134,7 @@ public struct AiConnectionRowReducer {
     }
 
     private func handleStartBrowserLogin(_ state: inout State) -> Effect<Action> {
+        guard state.connectionState != .unavailable else { return .none }
         state.flowState = .browserLoginInProgress
         state.connectionState = .connectInProgress
 
@@ -141,27 +164,29 @@ public struct AiConnectionRowReducer {
                 return
             }
 
-            let result = await connectionClient.connectOAuth(.chatgptCodex, credential, .connected)
-
-            guard result.state == .connected else {
-                await send(.browserLoginFailed(.networkError("Connection failed")))
-                return
-            }
-
-            let record = result.updatedFile.providers[AiProvider.chatgptCodex.rawValue]
-            let storedCredential = record?.credential
-            let verification = await verificationClient.verify(.chatgptCodex, storedCredential)
+            let verification = await verificationClient.verify(.chatgptCodex, .oauth(credential))
 
             switch verification {
             case .valid:
+                let result = await connectionClient.connectOAuth(.chatgptCodex, credential, .connected)
+                guard result.state == .connected else {
+                    await send(.browserLoginFailed(.networkError("Connection failed")))
+                    return
+                }
                 await send(.browserLoginCompleted(credential))
-            case .invalid, .unsupportedProvider, .networkError:
-                await send(.browserLoginFailed(.networkError("Verification failed")))
+            case let .invalid(reason):
+                await send(.verificationFailed(reason))
+            case .unsupportedProvider:
+                await send(.verificationFailed(.providerUnsupportedInBuild))
+            case .networkError:
+                await send(.verificationFailed(.networkUnavailable))
             }
         }
+        .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
     }
 
     private func handleStartDeviceAuth(_ state: inout State) -> Effect<Action> {
+        guard state.connectionState != .unavailable else { return .none }
         state.flowState = .deviceAuthInProgress
         state.connectionState = .connectInProgress
 
@@ -170,22 +195,22 @@ public struct AiConnectionRowReducer {
                 let challenge = try await nativeAuthClient.startDeviceAuth()
                 let credential = try await nativeAuthClient.completeDeviceAuth(challenge)
 
-                let result = await connectionClient.connectOAuth(.chatgptCodex, credential, .connected)
-
-                guard result.state == .connected else {
-                    await send(.deviceAuthFailed(.networkError("Connection failed")))
-                    return
-                }
-
-                let record = result.updatedFile.providers[AiProvider.chatgptCodex.rawValue]
-                let storedCredential = record?.credential
-                let verification = await verificationClient.verify(.chatgptCodex, storedCredential)
+                let verification = await verificationClient.verify(.chatgptCodex, .oauth(credential))
 
                 switch verification {
                 case .valid:
+                    let result = await connectionClient.connectOAuth(.chatgptCodex, credential, .connected)
+                    guard result.state == .connected else {
+                        await send(.deviceAuthFailed(.networkError("Connection failed")))
+                        return
+                    }
                     await send(.deviceAuthCompleted(credential))
-                case .invalid, .unsupportedProvider, .networkError:
-                    await send(.deviceAuthFailed(.networkError("Verification failed")))
+                case let .invalid(reason):
+                    await send(.verificationFailed(reason))
+                case .unsupportedProvider:
+                    await send(.verificationFailed(.providerUnsupportedInBuild))
+                case .networkError:
+                    await send(.verificationFailed(.networkUnavailable))
                 }
             } catch let error as CodexNativeAuthError {
                 await send(.deviceAuthFailed(error))
@@ -193,6 +218,7 @@ public struct AiConnectionRowReducer {
                 await send(.deviceAuthFailed(.networkError(error.localizedDescription)))
             }
         }
+        .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
     }
 
     private func handleAuthError(
@@ -218,6 +244,7 @@ public struct AiConnectionRowReducer {
     }
 
     private func handleSubmitAPIKey(_ state: inout State, key: String) -> Effect<Action> {
+        guard state.connectionState != .unavailable else { return .none }
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .none }
 
@@ -234,6 +261,7 @@ public struct AiConnectionRowReducer {
             let result = await verificationClient.verify(provider, credential)
             await send(._verificationResponse(result))
         }
+        .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
     }
 
     private func handleVerificationResponse(
@@ -252,6 +280,7 @@ public struct AiConnectionRowReducer {
                 )
                 await send(._connectionResponse(connectionResult))
             }
+            .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
         case let .invalid(reason):
             state.connectionState = .connectionFailed
             state.statusReason = reason
