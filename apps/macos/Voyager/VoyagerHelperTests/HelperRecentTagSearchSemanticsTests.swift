@@ -253,6 +253,15 @@ final class HelperRecentTagSearchSemanticsTests: XCTestCase {
         XCTAssertEqual(filtered, ["/tmp/root/file.txt"])
     }
 
+    func testExactFolderPathMatcherUsesDirectParentOnly() throws {
+        let service = SpotlightSearchService()
+        let scopes = SearchScopeNormalizer.normalizeScopes(["/tmp/root"])
+
+        XCTAssertTrue(service.pathMatchesExactFolderScope("/tmp/root/file.txt", normalizedScopes: scopes))
+        XCTAssertFalse(service.pathMatchesExactFolderScope("/tmp/root/nested/deeper.txt", normalizedScopes: scopes))
+        XCTAssertFalse(service.pathMatchesExactFolderScope("/tmp/rootSibling/file.txt", normalizedScopes: scopes))
+    }
+
     private func makeSandbox() throws -> URL {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

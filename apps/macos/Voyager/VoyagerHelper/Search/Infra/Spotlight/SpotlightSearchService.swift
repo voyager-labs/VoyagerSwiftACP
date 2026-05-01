@@ -57,19 +57,30 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
         let compiledPlan = try compiler.compilePlan(conditions: prepared.conditions)
 
         let scopeURLs = resolveFilterScopeURLs(prepared.scopes)
-        let requestedLimit = filters.includeSubfolders ? maxCandidates : maxCandidates * 8
-        let paths = try executionEngine.loadPaths(
-            queryString: compiledPlan.predicate,
-            scopes: scopeURLs,
-            limit: requestedLimit,
-        )
+        let normalizedFilterScopes = SearchScopeNormalizer.normalizeScopes(prepared.scopes)
+        let paths: [String] = if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
+            try executionEngine.loadPaths(
+                queryString: compiledPlan.predicate,
+                scopes: scopeURLs,
+                limit: maxCandidates,
+            )
+        } else {
+            try executionEngine.loadPaths(
+                queryString: compiledPlan.predicate,
+                scopes: scopeURLs,
+                limit: maxCandidates,
+                shouldIncludePath: { path in
+                    pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
+                },
+            )
+        }
         let filteredPaths = filterPaths(
             paths,
             scopes: prepared.scopes,
             includeSubfolders: filters.includeSubfolders,
         )
 
-        if paths.count == requestedLimit {
+        if paths.count == maxCandidates {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates): id=\(requestId)")
         }
 
@@ -196,14 +207,17 @@ extension SpotlightSearchService {
             }
 
             return paths.filter { path in
-                let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-                let parentPath = URL(fileURLWithPath: normalizedPath).deletingLastPathComponent().standardizedFileURL
-                    .path
-                return normalizedScopes.contains(parentPath == "/" ? "/" : parentPath)
+                pathMatchesExactFolderScope(path, normalizedScopes: normalizedScopes)
             }
         }
 
         return paths
+    }
+
+    func pathMatchesExactFolderScope(_ path: String, normalizedScopes: [String]) -> Bool {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let parentPath = URL(fileURLWithPath: normalizedPath).deletingLastPathComponent().standardizedFileURL.path
+        return normalizedScopes.contains(parentPath == "/" ? "/" : parentPath)
     }
 
     func makeJSONItems(from paths: [String]) -> [JSONValue] {

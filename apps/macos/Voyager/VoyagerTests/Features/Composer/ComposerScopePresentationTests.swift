@@ -145,7 +145,7 @@ final class ComposerScopePresentationTests: XCTestCase {
         }
     }
 
-    func testApplyAppliedFiltersPreservesLocalMultiScopeWhenBackendCollapsesSelection() {
+    func testApplyAppliedFiltersUsesResolvedScopesForMultiScopeSelection() {
         var state = ComposerState()
         state.scopeEditor.selection = .explicit(
             bases: [
@@ -162,6 +162,6 @@ final class ComposerScopePresentationTests: XCTestCase {
             registryClient: .testValue,
         )
 
-        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents", "/Users/me/Downloads"])
+        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents"])
     }
 }
