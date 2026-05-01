@@ -302,6 +302,7 @@ private func handleCollectionFileLoaded(
             collectionStalenessClient.registerCollection(
                 canonicalPath,
                 file.scopes,
+                file.excludedScopes,
                 file.includeSubfolders,
             )
         }
@@ -349,6 +350,7 @@ private func handleNavigateToCollection(
         baseline: openedURL.map { _ in CollectionBaseline(context: navigation.context) },
         composerText: navigation.context.query,
         scopes: navigation.context.scopes,
+        excludedScopes: navigation.context.excludedScopes,
         conditions: navigation.context.conditions,
     )
 
@@ -373,7 +375,7 @@ private func handleCollectionFileLoadedSuccess(
     environment: CollectionOpenEnvironment,
 ) -> Effect<FileManagerWindowAction> {
     state.content.composer.isPresented = false
-    let resolved = file.resolveCollectionFilters(registryClient: environment.registryClient)
+    let resolved = CollectionFilterResolution.resolve(file: file, registryClient: environment.registryClient)
     let openPayload = state.content.collection.makeOpenRestorationPayload(
         file: file,
         resolved: resolved,

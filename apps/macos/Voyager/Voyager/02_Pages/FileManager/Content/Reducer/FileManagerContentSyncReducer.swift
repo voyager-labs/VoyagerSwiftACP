@@ -68,6 +68,7 @@ struct FileManagerContentSyncReducer {
         return collectionChangeIsRelevant(
             changedPaths: relevantPaths,
             scopes: context.scopes,
+            excludedScopes: context.excludedScopes,
             includeSubfolders: context.includeSubfolders,
         )
     }

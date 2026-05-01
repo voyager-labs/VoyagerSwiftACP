@@ -27,6 +27,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             .init(
                 definitionFingerprint: "",
                 relevanceRoots: ["/tmp/voyager"],
+                excludedScopes: [],
                 includeSubfolders: true,
                 lastInvalidatedAt: .distantFuture,
             ),
@@ -70,6 +71,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             .init(
                 definitionFingerprint: "",
                 relevanceRoots: ["/tmp/voyager"],
+                excludedScopes: [],
                 includeSubfolders: true,
                 lastInvalidatedAt: .distantFuture,
             ),
@@ -89,7 +91,13 @@ final class CollectionReopenStaleTests: XCTestCase {
             $0.content.composer.scopes = ["/tmp/voyager"]
             $0.content.composer.conditions = []
             $0.content.collectionSession.metadata.baseline = .init(
-                context: .init(query: "", scopes: ["/tmp/voyager"], includeSubfolders: true, conditions: []),
+                context: .init(
+                    query: "",
+                    scopes: ["/tmp/voyager"],
+                    excludedScopes: [],
+                    includeSubfolders: true,
+                    conditions: [],
+                ),
             )
         }
 
@@ -121,6 +129,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             .init(
                 definitionFingerprint: "",
                 relevanceRoots: ["/tmp/voyager"],
+                excludedScopes: [],
                 includeSubfolders: true,
                 lastInvalidatedAt: .distantFuture,
             ),
@@ -151,6 +160,7 @@ final class CollectionReopenStaleTests: XCTestCase {
         let reopenContext = CollectionContext(
             query: "report",
             scopes: ["/tmp/voyager"],
+            excludedScopes: [],
             includeSubfolders: true,
             conditions: [],
         )
@@ -161,6 +171,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             .init(
                 definitionFingerprint: "",
                 relevanceRoots: ["/tmp/voyager"],
+                excludedScopes: [],
                 includeSubfolders: true,
                 lastInvalidatedAt: .distantFuture,
             ),
@@ -208,7 +219,13 @@ final class CollectionReopenStaleTests: XCTestCase {
         )
         let navigation = ContentPageCollectionNavigation(
             kind: .file(url: URL(fileURLWithPath: "/tmp/history.voycoll"), name: "history"),
-            context: .init(query: "report", scopes: ["/tmp"], includeSubfolders: true, conditions: []),
+            context: .init(
+                query: "report",
+                scopes: ["/tmp"],
+                excludedScopes: [],
+                includeSubfolders: true,
+                conditions: [],
+            ),
             sortKey: .name,
             sortOrder: .ascending,
             viewLayout: .list,
