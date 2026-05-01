@@ -169,8 +169,14 @@ enum ComposerScopeEditorListState: Equatable, Sendable {
 struct ComposerScopeEditorCurrentItem: Equatable, Sendable, Identifiable {
     let base: ComposerScopeBase
     let isEditingTarget: Bool
+    let exceptionCount: Int
 
     var id: String { base.id }
+
+    var exceptionSummaryText: String? {
+        guard exceptionCount > 0 else { return nil }
+        return exceptionCount == 1 ? "1 exception" : "\(exceptionCount) exceptions"
+    }
 }
 
 struct ComposerScopeEditorCandidateItem: Equatable, Sendable, Identifiable {
@@ -293,16 +299,17 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         let exceptions = selection.exceptions
 
         for base in selection.explicitBases {
+            let owningExceptions = exceptions.filter { ComposerScopeUtils.isStrictDescendant($0.path, of: base.path) }
             currentItems.append(
                 .currentScope(
                     ComposerScopeEditorCurrentItem(
                         base: base,
                         isEditingTarget: base.path == editingPath,
+                        exceptionCount: owningExceptions.count,
                     ),
                 ),
             )
 
-            let owningExceptions = exceptions.filter { ComposerScopeUtils.isStrictDescendant($0.path, of: base.path) }
             currentItems.append(
                 contentsOf: owningExceptions.map {
                     .exceptionScope(
