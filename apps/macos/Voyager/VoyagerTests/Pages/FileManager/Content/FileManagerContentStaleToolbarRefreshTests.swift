@@ -62,8 +62,8 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         await store.send(.view(.refreshStaleCollection))
 
         XCTAssertEqual(store.state.refreshBlockingReason, .dirtyCollection)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
     func testRefreshStaleCollectionDoesNothingWithoutSavedCollectionPrerequisites() async {
@@ -81,8 +81,8 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         await store.send(.view(.refreshStaleCollection))
 
         XCTAssertEqual(store.state.refreshBlockingReason, .missingOpenedURL)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 }
 
@@ -95,12 +95,18 @@ private func makeState(
     var state = FileManagerContentState()
     state.entryViewLayout.isCollectionMode = true
     state.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
-    let baseline = CollectionContext(query: query, scopes: ["/tmp"], conditions: [])
-    state.collectionSession.baseline = hasCollectionPrerequisites ? .init(context: baseline) : nil
-    state.collectionSession.openedURL = hasCollectionPrerequisites ? URL(fileURLWithPath: "/tmp/demo.voycoll") : nil
+    let baseline = CollectionContext(query: query, scopes: ["/tmp"], includeSubfolders: true, conditions: [])
+    state.collectionSession.metadata.baseline = hasCollectionPrerequisites ? .init(context: baseline) : nil
+    state.collectionSession.document = hasCollectionPrerequisites
+        ? .init(
+            url: URL(fileURLWithPath: "/tmp/demo.voycoll"),
+            name: "demo",
+            compatibility: nil,
+        )
+        : nil
     state.collectionContext = hasCollectionPrerequisites
         ? (isDirty
-            ? CollectionContext(query: query + "-dirty", scopes: ["/tmp"], conditions: [])
+            ? CollectionContext(query: query + "-dirty", scopes: ["/tmp"], includeSubfolders: true, conditions: [])
             : baseline)
         : nil
     state.composer.collectionContext = state.collectionContext

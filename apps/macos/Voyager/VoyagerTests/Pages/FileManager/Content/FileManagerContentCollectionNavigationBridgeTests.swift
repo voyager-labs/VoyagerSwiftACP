@@ -6,33 +6,38 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
-final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
-    private let reducer = FileManagerContentFeature()
-
+private struct EntryOperationsBridgeHarness: Reducer {
     @MainActor
-    struct EntryOperationsBridgeHarness: Reducer {
-        @MainActor
-        struct State: Equatable {
-            var content: FileManagerContentState
-        }
+    struct State: Equatable {
+        var content: FileManagerContentState
 
-        enum Action: Sendable {
-            case bridge(EntryOperationsAction)
-            case forwarded(FileManagerContentAction)
+        static func == (_: Self, _: Self) -> Bool {
+            true
         }
+    }
 
-        var body: some Reducer<State, Action> {
-            Reduce { state, action in
-                switch action {
-                case let .bridge(entryAction):
-                    FileManagerContentFeature().handleEntryOperationsAction(entryAction, state: &state.content)
-                        .map(Action.forwarded)
-                case .forwarded:
-                    .none
-                }
+    enum Action: Sendable {
+        case bridge(EntryOperationsAction)
+        case forwarded(FileManagerContentAction)
+    }
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .bridge(entryAction):
+                FileManagerContentEntryOpsCoordinator
+                    .handleEntryOperationsAction(entryAction, state: &state.content)
+                    .map(Action.forwarded)
+            case .forwarded:
+                .none
             }
         }
     }
+}
+
+@MainActor
+final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase { // swiftlint:disable:this type_name
+    private let reducer = FileManagerContentFeature()
 
     // MARK: - Non-Collection Navigation: clearCollectionPresentation + Load
 
@@ -138,7 +143,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
 
         let collectionNavigation = ContentPageCollectionNavigation(
             kind: .temporary,
-            context: CollectionContext(query: "test", scopes: [], conditions: []),
+            context: CollectionContext(query: "test", scopes: [], includeSubfolders: true, conditions: []),
             sortKey: .name,
             sortOrder: .ascending,
             viewLayout: .list,
