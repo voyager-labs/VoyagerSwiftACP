@@ -77,7 +77,7 @@ struct ComposerState: Equatable {
     }
 
     var scopeSummary: ComposerScopeSummary {
-        scopeEditor.selection.summary
+        scopeEditor.summary
     }
 
     var shouldAutoApplyScopeChange: Bool {

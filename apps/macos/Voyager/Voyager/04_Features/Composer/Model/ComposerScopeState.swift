@@ -56,29 +56,6 @@ enum ComposerScopeSelection: Equatable, Sendable {
         }
     }
 
-    var summary: ComposerScopeSummary {
-        guard !isRootOnly else {
-            return ComposerScopeSummary(primary: .rootOnly, secondary: [])
-        }
-
-        let secondary: [ComposerScopeSummarySecondary] = hasExceptions
-            ? [.exceptionCount(exceptions.count)]
-            : []
-
-        switch self {
-        case .rootOnly:
-            return ComposerScopeSummary(primary: .rootOnly, secondary: [])
-
-        case let .explicit(bases, _):
-            switch bases.count {
-            case 1:
-                return ComposerScopeSummary(primary: .singleExplicit(path: bases[0].path), secondary: secondary)
-            default:
-                return ComposerScopeSummary(primary: .multiExplicit(count: bases.count), secondary: secondary)
-            }
-        }
-    }
-
     static func fromLegacyScopes(_ scopes: [String]) -> Self {
         fromCanonicalScopes(bases: scopes, exceptions: [], includeSubfolders: true)
     }
@@ -100,6 +77,44 @@ enum ComposerScopeSelection: Equatable, Sendable {
             bases: canonical.bases.map(ComposerScopeBase.init(path:)),
             exceptions: canonical.exceptions.map(ComposerScopeException.init(path:)),
         )
+    }
+
+    func summary(includeSubfolders: Bool) -> ComposerScopeSummary {
+        guard !isRootOnly else {
+            return ComposerScopeSummary(primary: .rootOnly, secondaryItems: [], badges: [])
+        }
+
+        let secondaryItems: [ComposerScopeSummarySecondary] = switch explicitBases.count {
+        case 1:
+            includeSubfolders ? [.includeSubfolders] : [.onlySelectedFolder]
+        default:
+            includeSubfolders ? [.includeSubfolders] : [.onlySelectedFolders]
+        }
+
+        let badges: [ComposerScopeSummaryBadge] = hasExceptions
+            ? [.exceptionCount(exceptions.count)]
+            : []
+
+        switch self {
+        case .rootOnly:
+            return ComposerScopeSummary(primary: .rootOnly, secondaryItems: [], badges: [])
+
+        case let .explicit(bases, _):
+            switch bases.count {
+            case 1:
+                return ComposerScopeSummary(
+                    primary: .singleExplicit(path: bases[0].path),
+                    secondaryItems: secondaryItems,
+                    badges: badges,
+                )
+            default:
+                return ComposerScopeSummary(
+                    primary: .multiExplicit(count: bases.count),
+                    secondaryItems: secondaryItems,
+                    badges: badges,
+                )
+            }
+        }
     }
 }
 
@@ -265,6 +280,10 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         } else {
             "Only selected folder"
         }
+    }
+
+    var summary: ComposerScopeSummary {
+        selection.summary(includeSubfolders: effectiveIncludeSubfolders)
     }
 
     func sections() -> [ComposerScopeEditorSection] {
