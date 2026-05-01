@@ -344,12 +344,15 @@ private struct ExceptionRow: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle")
+                    Image(systemName: "minus.circle")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Text(text)
                         .font(.system(size: 12))
                         .foregroundColor(.primary)
+                    Text("Excluded")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
                 }
                 Text(exception.path)
                     .font(.system(size: 10))

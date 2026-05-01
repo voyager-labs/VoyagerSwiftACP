@@ -69,42 +69,8 @@ enum ComposerScopeUtils {
         return Array(sortSearchResults(results, query: queryLower).prefix(maxResults))
     }
 
-    static func childDirectoryCandidates(
-        parentPath: String,
-        entryLoadingClient: EntryLoadingClient,
-        maxCount: Int = 50,
-    ) -> [DirectoryItem] {
-        let normalizedParentPath = normalizeScopePath(parentPath)
-        let parentURL = URL(fileURLWithPath: normalizedParentPath, isDirectory: true)
-        let resourceKeys: [URLResourceKey] = [.isDirectoryKey]
-        guard let contents = try? entryLoadingClient.contentsOfDirectory(
-            parentURL,
-            resourceKeys,
-            [.skipsHiddenFiles, .skipsPackageDescendants],
-        ) else {
-            return []
-        }
-
-        let homePath = entryLoadingClient.homeDirectory()
-        let iconPathMap = buildIconPathMapping(entryLoadingClient: entryLoadingClient)
-        let items = contents.compactMap { url -> DirectoryItem? in
-            guard let values = try? url.resourceValues(forKeys: Set(resourceKeys)),
-                  values.isDirectory == true
-            else {
-                return nil
-            }
-
-            let path = normalizeScopePath(url.path)
-            return DirectoryItem(
-                id: path,
-                path: path,
-                name: entryLoadingClient.displayName(path),
-                iconName: iconNameForPath(path, homePath: homePath, iconPathMap: iconPathMap),
-            )
-        }
-
-        return Array(items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .prefix(maxCount))
+    static func childDirectoryCandidates(parentPath: String, entryLoadingClient: EntryLoadingClient, maxCount: Int = 50) -> [DirectoryItem] {
+        ComposerScopeChildDirectoryCandidates.make(parentPath: parentPath, entryLoadingClient: entryLoadingClient, maxCount: maxCount)
     }
 
     static func buildCombinedList(
