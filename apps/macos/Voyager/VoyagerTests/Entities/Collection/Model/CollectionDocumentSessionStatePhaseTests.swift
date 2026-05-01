@@ -8,24 +8,27 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         var session = CollectionDocumentSessionState()
 
         session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot)
-        XCTAssertFalse(session.isOpening)
-        XCTAssertTrue(session.isStale)
-        XCTAssertEqual(session.openKind, .hydratedSnapshot)
-        XCTAssertEqual(session.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
+        let phase = session.phase
+        XCTAssertFalse(phase.isOpening)
+        XCTAssertTrue(phase.isStale)
+        XCTAssertEqual(phase.openKind, .hydratedSnapshot)
+        XCTAssertEqual(phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(phase.inflightStatus, .writingBackRefreshedSnapshot)
 
         session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .writingBackRefreshedSnapshot)
-        XCTAssertTrue(session.isStale)
-        XCTAssertEqual(session.openKind, .hydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
+        let phase2 = session.phase
+        XCTAssertTrue(phase2.isStale)
+        XCTAssertEqual(phase2.openKind, .hydratedSnapshot)
+        XCTAssertNotEqual(phase2.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertEqual(phase2.inflightStatus, .writingBackRefreshedSnapshot)
 
         session.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
-        XCTAssertTrue(session.isOpening)
-        XCTAssertFalse(session.isStale)
-        XCTAssertNotEqual(session.openKind, .hydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
+        let phase3 = session.phase
+        XCTAssertTrue(phase3.isOpening)
+        XCTAssertFalse(phase3.isStale)
+        XCTAssertEqual(phase3.openKind, .definition)
+        XCTAssertEqual(phase3.inflightStatus, .none)
+        XCTAssertNotEqual(phase3.openKind, .hydratedSnapshot)
     }
 
     func testExplicitPhaseHelpersTranslateToPhaseTransitions() {
@@ -99,11 +102,12 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot)
         session.failRefreshOrWriteBack()
 
-        XCTAssertEqual(session.phase, .refreshFailed(kind: .hydratedSnapshot))
-        XCTAssertTrue(session.isStale)
-        XCTAssertEqual(session.openKind, .hydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
+        let phase = session.phase
+        XCTAssertEqual(phase, .refreshFailed(kind: .hydratedSnapshot))
+        XCTAssertTrue(phase.isStale)
+        XCTAssertEqual(phase.openKind, .hydratedSnapshot)
+        XCTAssertNotEqual(phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
     func testEqualityTracksPhaseIdentityDirectly() {

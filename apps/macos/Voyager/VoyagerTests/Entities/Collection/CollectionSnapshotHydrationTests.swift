@@ -109,11 +109,12 @@ private func makeCondition(
     )
 }
 
+@MainActor
 private func makeSnapshotFile(
     query: String,
     scopes: [String],
     conditions: [CollectionCondition],
-    snapshotItems: [JSONValue],
+    snapshotItems: [VoyagerShared.JSONValue],
     fingerprint: String? = nil,
 ) -> VoyagerCollectionFile {
     let resolvedFingerprint = fingerprint

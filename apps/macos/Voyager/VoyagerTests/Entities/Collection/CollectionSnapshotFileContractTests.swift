@@ -76,9 +76,9 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
-        await XCTAssertThrowsErrorAsync(
-            try CollectionFileClient.liveValue.load(url),
-        )
+        await XCTAssertThrowsErrorAsync {
+            try await CollectionFileClient.liveValue.load(url)
+        }
     }
 
     func testEncodeDecodeV2SnapshotFileRoundTrips() throws {
@@ -127,7 +127,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         XCTAssertNil(decoded.snapshot)
         XCTAssertNil(decoded.snapshotMeta)
-        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertEqual(decoded.schemaVersion, SchemaVersion(legacyInt: 1))
     }
 
     func testDecodeDropsMalformedSnapshotInsteadOfFailingWholeFile() throws {
@@ -305,7 +305,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
     }
 
     private func XCTAssertThrowsErrorAsync(
-        _ expression: @autoclosure () async throws -> some Any,
+        _ expression: @Sendable @escaping () async throws -> some Any,
         file: StaticString = #filePath,
         line: UInt = #line,
         _ errorHandler: (Error) -> Void = { _ in },

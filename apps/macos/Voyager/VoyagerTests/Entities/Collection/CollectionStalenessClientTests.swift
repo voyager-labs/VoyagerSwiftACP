@@ -142,8 +142,11 @@ final class CollectionStalenessClientTests: XCTestCase {
         XCTAssertNotNil(record?.lastInvalidatedAt)
 
         let migratedData = userDefaultsClient.object(CollectionKeys.stalenessRecords) as? Data
-        let migratedData = try XCTUnwrap(migratedData)
-        let migrated = try PropertyListDecoder().decode([String: CollectionStalenessRecord].self, from: migratedData)
+        let migratedDataUnwrapped = try XCTUnwrap(migratedData)
+        let migrated = try PropertyListDecoder().decode(
+            [String: CollectionStalenessRecord].self,
+            from: migratedDataUnwrapped,
+        )
         XCTAssertEqual(migrated[path]?.relevanceRoots, ["/tmp/legacy"])
         XCTAssertNotNil(migrated[path]?.lastInvalidatedAt)
     }

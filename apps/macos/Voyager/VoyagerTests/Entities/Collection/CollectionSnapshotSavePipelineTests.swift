@@ -259,7 +259,8 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         await store.send(.saveToExisting(payload, url))
         await store.finish()
 
-        await XCTAssertNil(recorder.last())
+        let last = await recorder.last()
+        XCTAssertNil(last)
     }
 
     private func assertSnapshotMeta(_ file: VoyagerCollectionFile?, itemCount: Int) {
