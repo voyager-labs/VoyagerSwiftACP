@@ -15,7 +15,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         let store = makeContentStore(
             initialState: makeRefreshingState(
                 requestID: requestID,
-                openedURL: url,
                 query: "report",
                 scopes: ["/tmp"],
                 collectionContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
@@ -43,7 +42,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         let store = makeContentStore(
             initialState: makeRefreshingState(
                 requestID: requestID,
-                openedURL: URL(fileURLWithPath: "/tmp/failure.voycoll"),
                 query: "report",
                 scopes: ["/tmp"],
                 collectionContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
@@ -57,10 +55,11 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         }
         await store.finish()
 
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
-        XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        let inflightStatus = store.state.collectionSession.phase.inflightStatus
+        XCTAssertNotEqual(inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertTrue(store.state.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collectionSession.metadata.lastRefreshAt)
         XCTAssertEqual(store.state.refreshBlockingReason, .missingBaseline)
     }
 
@@ -71,7 +70,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         let store = makeContentStore(
             initialState: makeRefreshingState(
                 requestID: requestID,
-                openedURL: URL(fileURLWithPath: "/tmp/dirty.voycoll"),
                 query: "report",
                 scopes: ["/tmp"],
                 collectionContext: .init(query: "updated", scopes: ["/tmp"], conditions: []),
@@ -90,10 +88,11 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
 
         let saved = await recorder.last()
         XCTAssertNil(saved)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
-        XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        let inflightStatus = store.state.collectionSession.phase.inflightStatus
+        XCTAssertNotEqual(inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertTrue(store.state.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collectionSession.metadata.lastRefreshAt)
         XCTAssertNil(store.state.refreshBlockingReason)
     }
 
@@ -104,7 +103,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         let store = makeContentStore(
             initialState: makeRefreshingState(
                 requestID: requestID,
-                openedURL: URL(fileURLWithPath: "/tmp/fallback.voycoll"),
                 query: "report",
                 scopes: ["/tmp"],
                 collectionContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
@@ -130,8 +128,8 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
 
         let saved = await recorder.last()
         XCTAssertNil(saved)
-        XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertTrue(store.state.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collectionSession.metadata.lastRefreshAt)
     }
 
     func testCompleteWriteBackUpdatesCompatibilityForDefinitionOnlyCollection() {
@@ -158,10 +156,10 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
 
         _ = state.collection.completeWriteBack(completion)
 
-        XCTAssertEqual(state.collectionSession.openedCompatibility?.warnings, [])
-        XCTAssertFalse(state.collectionSession.openedCompatibility?.usedDefinitionFallback ?? true)
-        XCTAssertTrue(state.collectionSession.openedCompatibility?.writeBackAllowed ?? false)
-        XCTAssertEqual(state.collectionSession.openedCompatibility?.writeBackReason, .allowed)
+        XCTAssertEqual(state.collectionSession.document?.compatibility?.warnings, [])
+        XCTAssertFalse(state.collectionSession.document?.compatibility?.usedDefinitionFallback ?? true)
+        XCTAssertTrue(state.collectionSession.document?.compatibility?.writeBackAllowed ?? false)
+        XCTAssertEqual(state.collectionSession.document?.compatibility?.writeBackReason, .allowed)
     }
 }
 
@@ -210,7 +208,6 @@ private func makeContentStore(
 @MainActor
 private func makeRefreshingState(
     requestID: UUID,
-    openedURL: URL,
     query: String,
     scopes: [String],
     collectionContext: CollectionContext,
@@ -231,10 +228,12 @@ private func makeRefreshingState(
         base: .stale,
         inflight: .refreshingHydratedSnapshot,
     )
-    state.collectionSession.openedURL = openedURL
-    state.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
-    state.collectionSession.openedCompatibility = compatibility
-    state.collectionSession.baseline = baselineContext.map(CollectionBaseline.init(context:))
+    state.collectionSession.document = .init(
+        url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
+        name: "sample",
+        compatibility: compatibility,
+    )
+    state.collectionSession.metadata.baseline = baselineContext.map(CollectionBaseline.init(context:))
     state.collectionContext = collectionContext
     state.composer.scopes = scopes
     state.composer.conditions = []

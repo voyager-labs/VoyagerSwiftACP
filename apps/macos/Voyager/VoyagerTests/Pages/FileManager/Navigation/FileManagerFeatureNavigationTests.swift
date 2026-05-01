@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesAppPreferences
 import VoyagerShared
 import XCTest
 

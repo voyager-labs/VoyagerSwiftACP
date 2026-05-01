@@ -162,7 +162,11 @@ private func makeStore(
     var state = FileManagerWindowState()
     state.content.entryViewLayout.isCollectionMode = true
     state.content.collectionContext = CollectionContext(query: "Query", scopes: ["/tmp"], conditions: [])
-    state.content.collectionSession.openedURL = collectionURL
+    state.content.collectionSession.document = .init(
+        url: collectionURL,
+        name: collectionURL.deletingPathExtension().lastPathComponent,
+        compatibility: nil,
+    )
     state.content.syncComposerCollectionState()
     state.content.composer.text = composerText
 
