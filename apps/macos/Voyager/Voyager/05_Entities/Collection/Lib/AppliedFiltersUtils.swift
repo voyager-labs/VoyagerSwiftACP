@@ -4,6 +4,7 @@ import VoyagerShared
 enum AppliedFiltersUtils {
     struct ResolutionResult: Equatable {
         let scopes: [String]
+        let excludedScopes: [String]
         let conditions: [Condition]
         let unknownKeys: [String]
     }
@@ -35,6 +36,7 @@ enum AppliedFiltersUtils {
         registryClient: RegistryClient,
     ) -> ResolutionResult {
         let scopes = appliedFilters?.scopes ?? fallbackScopes
+        let excludedScopes = appliedFilters?.excludedScopes ?? []
         if let appliedConditions = appliedFilters?.conditions {
             let resolved = appliedConditions.map {
                 makeResolvedCondition(from: $0, registryClient: registryClient)
@@ -44,12 +46,14 @@ enum AppliedFiltersUtils {
             ).sorted()
             return ResolutionResult(
                 scopes: scopes,
+                excludedScopes: excludedScopes,
                 conditions: resolved.map(\.condition),
                 unknownKeys: unknownKeys,
             )
         }
         return ResolutionResult(
             scopes: scopes,
+            excludedScopes: excludedScopes,
             conditions: fallbackConditions,
             unknownKeys: [],
         )

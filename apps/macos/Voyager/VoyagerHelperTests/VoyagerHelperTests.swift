@@ -107,3 +107,140 @@ private extension FilterSearchQueryBuilderTests {
         return try JSONDecoder().decode(T.self, from: data)
     }
 }
+
+@MainActor
+final class SearchQueryServiceTests: XCTestCase {
+    func testQuerySearchPreservesExcludedScopesInPlannedFilters() async {
+        let service = SearchQueryService(
+            searchService: SearchExecutionServiceStub(),
+            convertQuery: { _, _ in
+                GatewayQueryResult(
+                    conditions: [SearchConditionPayload(
+                        propertyKey: "extension",
+                        operator: "eq",
+                        value: .string("pdf"),
+                    )],
+                    scopes: ["  /tmp/root  ", "/tmp/root/sub", "   "],
+                    error: nil,
+                )
+            },
+        )
+        let request = SearchRequestPayload(
+            query: "find receipts",
+            filters: SearchFiltersPayload(
+                scopes: ["/tmp/fallback"],
+                excludedScopes: ["/tmp/root/excluded"],
+                includeSubfolders: true,
+                conditions: [],
+            ),
+        )
+
+        let response = await service.querySearch(request)
+
+        XCTAssertNil(response.error)
+        XCTAssertEqual(
+            response.appliedFilters,
+            AppliedFiltersPayload(
+                scopes: ["/tmp/root", "/tmp/root/sub"],
+                excludedScopes: ["/tmp/root/excluded"],
+                includeSubfolders: true,
+                conditions: [SearchConditionPayload(propertyKey: "extension", operator: "eq", value: .string("pdf"))],
+            ),
+        )
+    }
+
+    func testQuerySearchEmptyQueryPreservesExcludedScopes() async {
+        let service = SearchQueryService(
+            searchService: SearchExecutionServiceStub(),
+            convertQuery: { _, _ in
+                XCTFail("convertQuery should not run for empty query")
+                return GatewayQueryResult(conditions: [], scopes: nil, error: nil)
+            },
+        )
+        let request = SearchRequestPayload(
+            query: "   ",
+            filters: SearchFiltersPayload(
+                scopes: ["/tmp/root"],
+                excludedScopes: ["/tmp/root/excluded"],
+                includeSubfolders: false,
+                conditions: [SearchConditionPayload(propertyKey: "extension", operator: "eq", value: .string("txt"))],
+            ),
+        )
+
+        let response = await service.querySearch(request)
+
+        XCTAssertNil(response.error)
+        XCTAssertEqual(
+            response.appliedFilters,
+            AppliedFiltersPayload(
+                scopes: ["/tmp/root"],
+                excludedScopes: ["/tmp/root/excluded"],
+                includeSubfolders: false,
+                conditions: [SearchConditionPayload(propertyKey: "extension", operator: "eq", value: .string("txt"))],
+            ),
+        )
+    }
+
+    func testQuerySearchErrorResponsePreservesExcludedScopes() async {
+        let service = SearchQueryService(
+            searchService: SearchExecutionServiceStub(),
+            convertQuery: { _, _ in
+                GatewayQueryResult(conditions: [], scopes: nil, error: "gateway failed")
+            },
+        )
+        let request = SearchRequestPayload(
+            query: "find receipts",
+            filters: SearchFiltersPayload(
+                scopes: ["/tmp/root"],
+                excludedScopes: ["/tmp/root/excluded"],
+                includeSubfolders: false,
+                conditions: [SearchConditionPayload(propertyKey: "extension", operator: "eq", value: .string("txt"))],
+            ),
+        )
+
+        let response = await service.querySearch(request)
+
+        XCTAssertEqual(response.error, SearchErrorPayload(code: "LLM_CONVERSION_FAILED", details: "gateway failed"))
+        XCTAssertEqual(
+            response.appliedFilters,
+            AppliedFiltersPayload(
+                scopes: ["/tmp/root"],
+                excludedScopes: ["/tmp/root/excluded"],
+                includeSubfolders: false,
+                conditions: [SearchConditionPayload(propertyKey: "extension", operator: "eq", value: .string("txt"))],
+            ),
+        )
+    }
+
+    func testAppliedFiltersPayloadDecodesMissingExcludedScopesAsDeterministicEmptyArray() throws {
+        let data = Data(#"{"scopes":["/tmp/root"],"includeSubfolders":true,"conditions":[]}"#.utf8)
+
+        let decoded = try JSONDecoder().decode(AppliedFiltersPayload.self, from: data)
+
+        XCTAssertEqual(decoded.excludedScopes, [])
+    }
+}
+
+private struct SearchExecutionServiceStub: SearchExecutionServicing {
+    func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload {
+        SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: filters.scopes,
+                excludedScopes: filters.excludedScopes,
+                includeSubfolders: filters.includeSubfolders,
+                conditions: filters.conditions,
+            ),
+            items: [],
+            error: nil,
+        )
+    }
+
+    func searchRecent(_: RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload {
+        RecentSearchResponsePayload(items: [])
+    }
+
+    func searchTag(_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload {
+        TagSearchResponsePayload(requestedTag: request.requestedTag, items: [])
+    }
+}
