@@ -203,7 +203,7 @@ final class ScopePickerViewModelTests: XCTestCase {
         XCTAssertTrue(result.allSatisfy { $0.secondaryText == nil })
     }
 
-    func testApplyCandidateDisambiguationPolicySetsDistinctSecondaryTextForDuplicateNames() {
+    func testApplyCandidateDisambiguationPolicyUsesParentNamesForDuplicateNames() {
         let items = [
             ComposerScopeUtils.DirectoryItem(
                 id: "/Users/me/Work/Docs",
@@ -225,13 +225,47 @@ final class ScopePickerViewModelTests: XCTestCase {
 
         XCTAssertEqual(result.count, 2)
         XCTAssertEqual(Set(result.map(\.locationIdentifier)).count, 2)
-        XCTAssertEqual(Set(result.compactMap(\.secondaryText)).count, 2)
-        XCTAssertEqual(result[0].secondaryText, result[0].locationIdentifier)
-        XCTAssertEqual(result[1].secondaryText, result[1].locationIdentifier)
+        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["Work", "Personal"])
+        XCTAssertEqual(result[0].secondaryText, "Work")
+        XCTAssertEqual(result[1].secondaryText, "Personal")
     }
 
-    func testSameNameCandidatesExposeDistinctLocationMetadata() {
+    func testApplyCandidateDisambiguationPolicyExpandsSuffixWhenParentNamesMatch() {
         let items = [
+            ComposerScopeUtils.DirectoryItem(
+                id: "/Users/me/Work/Projects/Docs",
+                path: "/Users/me/Work/Projects/Docs",
+                name: "Docs",
+                iconName: "folder",
+                locationIdentifier: "/Users/me/Work/Projects",
+            ),
+            ComposerScopeUtils.DirectoryItem(
+                id: "/Users/me/Personal/Projects/Docs",
+                path: "/Users/me/Personal/Projects/Docs",
+                name: "Docs",
+                iconName: "folder",
+                locationIdentifier: "/Users/me/Personal/Projects",
+            ),
+        ]
+
+        let result = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
+
+        XCTAssertEqual(
+            Set(result.map(\.locationIdentifier)),
+            ["/Users/me/Work/Projects", "/Users/me/Personal/Projects"],
+        )
+        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["Work/Projects", "Personal/Projects"])
+    }
+
+    func testApplyCandidateDisambiguationPolicyUsesStorageFallbackForMixedLocations() {
+        let items = [
+            ComposerScopeUtils.DirectoryItem(
+                id: "/Volumes/External/Work/Docs",
+                path: "/Volumes/External/Work/Docs",
+                name: "Docs",
+                iconName: "folder",
+                locationIdentifier: "/Volumes/External/Work",
+            ),
             ComposerScopeUtils.DirectoryItem(
                 id: "/Users/me/Work/Docs",
                 path: "/Users/me/Work/Docs",
@@ -239,19 +273,35 @@ final class ScopePickerViewModelTests: XCTestCase {
                 iconName: "folder",
                 locationIdentifier: "/Users/me/Work",
             ),
+        ]
+
+        let result = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
+
+        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["External • Work", "me • Work"])
+    }
+
+    func testApplyCandidateDisambiguationPolicyUsesAbsoluteParentPathAsLastResortWhenOtherLabelsStillCollide() {
+        let items = [
             ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Personal/Docs",
-                path: "/Users/me/Personal/Docs",
+                id: "/Volumes/me/Work/Docs",
+                path: "/Volumes/me/Work/Docs",
                 name: "Docs",
                 iconName: "folder",
-                locationIdentifier: "/Users/me/Personal",
+                locationIdentifier: "/Volumes/me/Work",
+            ),
+            ComposerScopeUtils.DirectoryItem(
+                id: "/Users/me/Work/Docs",
+                path: "/Users/me/Work/Docs",
+                name: "Docs",
+                iconName: "folder",
+                locationIdentifier: "/Users/me/Work",
             ),
         ]
 
         let result = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
 
-        XCTAssertEqual(Set(result.map(\.locationIdentifier)), ["/Users/me/Work", "/Users/me/Personal"])
-        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["/Users/me/Work", "/Users/me/Personal"])
+        // last resort: volume name and username are both `me`, so suffix and storage fallback stay ambiguous.
+        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["/Volumes/me/Work", "/Users/me/Work"])
     }
 
     func testDefaultAndSearchCandidatesShareLocationMetadataContract() {
@@ -261,7 +311,7 @@ final class ScopePickerViewModelTests: XCTestCase {
             entryLoadingClient: makeEntryLoadingClient(),
         )
 
-        let searchItems = ComposerScopeUtils.applyCandidateDisambiguationPolicy([
+        let searchItems = [
             ComposerScopeUtils.DirectoryItem(
                 id: "/Users/me/Work/Docs",
                 path: "/Users/me/Work/Docs",
@@ -269,17 +319,17 @@ final class ScopePickerViewModelTests: XCTestCase {
                 iconName: "folder",
                 locationIdentifier: "/Users/me/Work",
             ),
-        ])
+        ]
         let searchCandidate = ComposerScopeEditorCandidateItem(
             path: searchItems[0].path,
             name: searchItems[0].name,
             iconName: searchItems[0].iconName,
             locationIdentifier: searchItems[0].locationIdentifier,
-            secondaryText: searchItems[0].secondaryText,
         )
 
         XCTAssertEqual(defaultCandidates.first?.locationIdentifier, searchCandidate.locationIdentifier)
-        XCTAssertEqual(defaultCandidates.first?.secondaryText, searchCandidate.secondaryText)
+        XCTAssertNil(defaultCandidates.first?.secondaryText)
+        XCTAssertNil(searchCandidate.secondaryText)
     }
 
     func testCandidateRowsExposeSecondaryTextWithoutChangingSelectionIntent() {
@@ -316,7 +366,7 @@ final class ScopePickerViewModelTests: XCTestCase {
             guard case let .addableCandidate(candidate) = item else { return nil }
             return candidate
         }
-        XCTAssertEqual(candidates?.map(\.secondaryText), ["/Users/me/Documents", "/Users/me/Archive"])
+        XCTAssertEqual(candidates?.map(\.secondaryText), ["Documents", "Archive"])
         XCTAssertTrue(state.candidateItems.allSatisfy { $0.secondaryText == nil })
     }
 
@@ -330,22 +380,25 @@ final class ScopePickerViewModelTests: XCTestCase {
             isPresented: true,
             queryText: "",
             editingPath: nil,
-            candidateItems: ComposerScopeUtils.applyCandidateDisambiguationPolicy([
-                ComposerScopeUtils.DirectoryItem(
-                    id: "/Users/me/Work/Docs",
-                    path: "/Users/me/Work/Docs",
-                    name: "Docs",
-                    iconName: "folder",
-                    locationIdentifier: "/Users/me/Work",
-                ),
-                ComposerScopeUtils.DirectoryItem(
-                    id: "/Users/me/Personal/Docs",
-                    path: "/Users/me/Personal/Docs",
-                    name: "Docs",
-                    iconName: "folder",
-                    locationIdentifier: "/Users/me/Personal",
-                ),
-            ]).map { item in
+            candidateItems: ComposerScopeUtils.applyCandidateDisambiguationPolicy(
+                [
+                    ComposerScopeUtils.DirectoryItem(
+                        id: "/Users/me/Work/Docs",
+                        path: "/Users/me/Work/Docs",
+                        name: "Docs",
+                        iconName: "folder",
+                        locationIdentifier: "/Users/me/Work",
+                    ),
+                    ComposerScopeUtils.DirectoryItem(
+                        id: "/Users/me/Personal/Docs",
+                        path: "/Users/me/Personal/Docs",
+                        name: "Docs",
+                        iconName: "folder",
+                        locationIdentifier: "/Users/me/Personal",
+                    ),
+                ],
+            )
+            .map { item in
                 ComposerScopeEditorCandidateItem(
                     path: item.path,
                     name: item.name,
@@ -393,7 +446,7 @@ final class ScopePickerViewModelTests: XCTestCase {
         XCTAssertNil(candidate.secondaryText)
     }
 
-    func testMakeDefaultScopeEditorCandidatesAppliesDisambiguationPolicyToDuplicateNamesOnly() {
+    func testMakeDefaultScopeEditorCandidatesKeepsRawMetadataOnly() {
         let candidates = makeDefaultScopeEditorCandidates(
             favorites: [],
             backHistory: [
@@ -414,10 +467,7 @@ final class ScopePickerViewModelTests: XCTestCase {
             "/Users/me/Personal",
             "/Users/me/Work",
         ])
-        XCTAssertEqual(Set(duplicateCandidates.compactMap(\.secondaryText)), [
-            "/Users/me/Personal",
-            "/Users/me/Work",
-        ])
+        XCTAssertTrue(duplicateCandidates.allSatisfy { $0.secondaryText == nil })
 
         let downloadsCandidate = candidates.first(where: { $0.name == "Downloads" })
         XCTAssertEqual(downloadsCandidate?.locationIdentifier, "/Users/me")
