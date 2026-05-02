@@ -427,11 +427,13 @@ private struct AddableCandidateRow: View {
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(candidate.path)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if let secondary = candidate.secondaryText {
+                    Text(secondary)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
 
             Spacer()
