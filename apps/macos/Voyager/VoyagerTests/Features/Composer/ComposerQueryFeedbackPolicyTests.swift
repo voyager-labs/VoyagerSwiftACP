@@ -65,8 +65,27 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
 
         XCTAssertEqual(normalized.scopes, ["/tmp"])
         XCTAssertEqual(normalized.excludedScopes, ["/tmp/Receipts"])
-        XCTAssertEqual(normalized.includeSubfolders, false)
+        XCTAssertFalse(normalized.includeSubfolders)
         XCTAssertEqual(normalized.conditions, [])
+    }
+
+    func testNormalizedFiltersRestoresBaselineExcludedScopesWhenAppliedPayloadOmitsKey() throws {
+        let baseline = VoyagerShared.SearchFiltersPayload(
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
+            includeSubfolders: true,
+            conditions: [],
+        )
+        let data = Data(#"{"scopes":["/tmp"],"includeSubfolders":true,"conditions":[]}"#.utf8)
+        let applied = try JSONDecoder().decode(VoyagerShared.AppliedFiltersPayload.self, from: data)
+
+        let normalized = ComposerQueryFeedbackPolicy.normalizedFilters(appliedFilters: applied, fallback: baseline)
+
+        XCTAssertEqual(normalized.scopes, ["/tmp"])
+        XCTAssertEqual(normalized.excludedScopes, ["/tmp/ignored"])
+        XCTAssertTrue(normalized.includeSubfolders)
+        XCTAssertEqual(normalized.conditions, [])
+        XCTAssertTrue(ComposerQueryFeedbackPolicy.isNoOp(baseline: baseline, appliedFilters: applied))
     }
 
     func testBuildFiltersIncludesExcludedScopesFromSelection() {
@@ -81,7 +100,7 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
 
         XCTAssertEqual(filters.scopes, ["/tmp"])
         XCTAssertEqual(filters.excludedScopes, ["/tmp/Receipts"])
-        XCTAssertEqual(filters.includeSubfolders, true)
+        XCTAssertTrue(filters.includeSubfolders)
         XCTAssertEqual(filters.conditions, [])
     }
 }

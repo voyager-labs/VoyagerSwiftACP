@@ -154,25 +154,89 @@ final class ComposerScopePresentationTests: XCTestCase {
         XCTAssertTrue(state.collectionContext(query: "docs").includeSubfolders)
     }
 
-    func testScopeSummaryReflectsRootSingleAndMultiSelection() {
-        XCTAssertEqual(ComposerScopeSelection.rootOnly.summary.primaryText, "This Mac")
+    func testScopeSummaryFollowsDisplayDecisionTable() {
+        assertRootScopeSummary()
+        assertSingleScopeSummary()
+        assertMultiScopeSummary()
+        assertSingleExceptionSummary()
+        assertMultiExceptionSummary()
+        assertInvalidExplicitScopeSummaryFallsBackToRoot()
+    }
 
+    private func assertRootScopeSummary() {
+        let rootSummary = ComposerScopeSelection.rootOnly.summary(includeSubfolders: true)
+        XCTAssertEqual(rootSummary.primaryText, "This Mac")
+        XCTAssertNil(rootSummary.secondaryText)
+        XCTAssertNil(rootSummary.badgeText)
+        XCTAssertEqual(rootSummary.accessibilityText, "This Mac")
+    }
+
+    private func assertSingleScopeSummary() {
         let single = ComposerScopeSelection.explicit(
             bases: [ComposerScopeBase(path: "/Users/me/Documents")],
             exceptions: [],
         )
-        XCTAssertEqual(single.summary.primaryText, "/Users/me/Documents")
-        XCTAssertNil(single.summary.secondaryText)
+        let singleSummary = single.summary(includeSubfolders: true)
+        XCTAssertEqual(singleSummary.primaryText, "Documents")
+        XCTAssertEqual(singleSummary.secondaryText, "Include subfolders")
+        XCTAssertNil(singleSummary.badgeText)
+        XCTAssertEqual(singleSummary.accessibilityText, "Documents, /Users/me/Documents, Include subfolders")
+    }
 
-        let multi = ComposerScopeSelection.explicit(
-            bases: [
-                ComposerScopeBase(path: "/Users/me/Documents"),
-                ComposerScopeBase(path: "/Users/me/Downloads"),
-            ],
+    private func assertMultiScopeSummary() {
+        let multi = ComposerScopeSelection.explicit(bases: threeScopeBases, exceptions: [])
+        let multiSummary = multi.summary(includeSubfolders: false)
+        XCTAssertEqual(multiSummary.primaryText, "3 Scopes")
+        XCTAssertEqual(multiSummary.secondaryText, "Only selected folders")
+        XCTAssertNil(multiSummary.badgeText)
+        XCTAssertEqual(multiSummary.accessibilityText, "3 Scopes, Only selected folders")
+    }
+
+    private func assertSingleExceptionSummary() {
+        let singleWithException = ComposerScopeSelection.explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
             exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secrets")],
         )
-        XCTAssertEqual(multi.summary.primaryText, "2 Scopes")
-        XCTAssertEqual(multi.summary.secondaryText, "1 exception")
+        let singleExceptionSummary = singleWithException.summary(includeSubfolders: true)
+        XCTAssertEqual(singleExceptionSummary.primaryText, "Documents")
+        XCTAssertEqual(singleExceptionSummary.secondaryText, "Include subfolders")
+        XCTAssertEqual(singleExceptionSummary.badgeText, "1 exception")
+        XCTAssertFalse(singleExceptionSummary.accessibilityText.contains("No exceptions"))
+    }
+
+    private func assertMultiExceptionSummary() {
+        let multiWithExceptions = ComposerScopeSelection.explicit(
+            bases: threeScopeBases,
+            exceptions: [
+                ComposerScopeException(path: "/Users/me/Documents/Secrets"),
+                ComposerScopeException(path: "/Users/me/Downloads/Private"),
+            ],
+        )
+        let multiExceptionSummary = multiWithExceptions.summary(includeSubfolders: true)
+        XCTAssertEqual(multiExceptionSummary.primaryText, "3 Scopes")
+        XCTAssertEqual(multiExceptionSummary.secondaryText, "Include subfolders")
+        XCTAssertEqual(multiExceptionSummary.badgeText, "2 exceptions")
+        XCTAssertEqual(multiExceptionSummary.accessibilityText, "3 Scopes, Include subfolders, 2 exceptions")
+    }
+
+    private func assertInvalidExplicitScopeSummaryFallsBackToRoot() {
+        let invalidExplicit = ComposerScopeSelection.explicit(
+            bases: [],
+            exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secrets")],
+        )
+        let invalidSummary = invalidExplicit.summary(includeSubfolders: true)
+        XCTAssertEqual(invalidSummary.primaryText, "This Mac")
+        XCTAssertNil(invalidSummary.secondaryText)
+        XCTAssertNil(invalidSummary.badgeText)
+        XCTAssertFalse(invalidSummary.accessibilityText.contains("No exceptions"))
+    }
+
+    private var threeScopeBases: [ComposerScopeBase] {
+        [
+            ComposerScopeBase(path: "/Users/me/Documents"),
+            ComposerScopeBase(path: "/Users/me/Downloads"),
+            ComposerScopeBase(path: "/Users/me/Desktop"),
+        ]
     }
 
     func testScopeAddPreservesNestedExplicitScopesAndSkipsAutoApplyWithoutConditions() async {

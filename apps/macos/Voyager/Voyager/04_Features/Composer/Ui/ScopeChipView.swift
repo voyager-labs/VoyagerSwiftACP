@@ -22,12 +22,26 @@ struct ScopeChipView: View {
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
+
                 if let secondary = summary.secondaryText {
                     Text(secondary)
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
+            }
+
+            if let badge = summary.badgeText {
+                Text(badge)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(VoyagerDS.Interaction.hoverFill(for: colorScheme)),
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             dropdownButton(compact: summary.primary == .rootOnly)
@@ -38,6 +52,8 @@ struct ScopeChipView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme)),
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(summary.accessibilityText)
     }
 
     private func dropdownButton(compact: Bool) -> some View {

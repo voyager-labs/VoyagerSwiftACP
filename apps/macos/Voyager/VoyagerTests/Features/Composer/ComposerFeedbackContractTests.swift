@@ -76,6 +76,42 @@ final class ComposerFeedbackContractTests: XCTestCase {
 
         XCTAssertEqual(store.state, initialState)
     }
+
+    func testApplyAppliedFiltersPreservesExcludedScopesWhenAppliedFiltersMissing() {
+        var state = ComposerState()
+        state.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+            exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secret")],
+        )
+
+        applyAppliedFilters(nil, state: &state, registryClient: .testValue)
+
+        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents"])
+        XCTAssertEqual(
+            state.scopeEditor.selection.exceptions.map(\.path),
+            ["/Users/me/Documents/Secret"],
+        )
+    }
+
+    func testApplyAppliedFiltersPreservesExcludedScopesWhenAppliedPayloadOmitsKey() throws {
+        var state = ComposerState()
+        state.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+            exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secret")],
+        )
+        let data = Data(
+            #"{"scopes":["/Users/me/Documents"],"includeSubfolders":true,"conditions":[]}"#.utf8,
+        )
+        let appliedFilters = try JSONDecoder().decode(AppliedFiltersPayload.self, from: data)
+
+        applyAppliedFilters(appliedFilters, state: &state, registryClient: .testValue)
+
+        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents"])
+        XCTAssertEqual(
+            state.scopeEditor.selection.exceptions.map(\.path),
+            ["/Users/me/Documents/Secret"],
+        )
+    }
 }
 
 private final class SearchRequestRecorder: @unchecked Sendable {

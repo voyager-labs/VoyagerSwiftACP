@@ -14,9 +14,10 @@ enum ComposerQueryFeedbackPolicy {
         appliedFilters: VoyagerShared.AppliedFiltersPayload?,
         fallback baseline: VoyagerShared.SearchFiltersPayload,
     ) -> VoyagerShared.SearchFiltersPayload {
-        VoyagerShared.SearchFiltersPayload(
+        let excludedScopes = normalizedExcludedScopes(appliedFilters: appliedFilters, fallback: baseline)
+        return VoyagerShared.SearchFiltersPayload(
             scopes: appliedFilters?.scopes ?? baseline.scopes,
-            excludedScopes: appliedFilters?.excludedScopes ?? baseline.excludedScopes,
+            excludedScopes: excludedScopes,
             includeSubfolders: appliedFilters?.includeSubfolders ?? baseline.includeSubfolders,
             conditions: appliedFilters?.conditions ?? baseline.conditions,
         )
@@ -35,5 +36,18 @@ enum ComposerQueryFeedbackPolicy {
             .first
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             ?? localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func normalizedExcludedScopes(
+        appliedFilters: VoyagerShared.AppliedFiltersPayload?,
+        fallback baseline: VoyagerShared.SearchFiltersPayload,
+    ) -> [String] {
+        guard let appliedFilters else {
+            return baseline.excludedScopes
+        }
+        if appliedFilters.excludedScopes.isEmpty, !baseline.excludedScopes.isEmpty {
+            return baseline.excludedScopes
+        }
+        return appliedFilters.excludedScopes
     }
 }

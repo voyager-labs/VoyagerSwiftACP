@@ -290,17 +290,23 @@ private struct CurrentScopeRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Button(action: onTap) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
                         Text(displayName)
                             .font(.system(size: 13, weight: currentItem.isEditingTarget ? .semibold : .regular))
                             .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        if let exceptionSummary = currentItem.exceptionSummaryText {
+                            statusBadge(text: exceptionSummary)
+                        }
+
                         if currentItem.isEditingTarget {
-                            Text("Editing")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.secondary)
+                            statusBadge(text: "Editing", subtle: true)
                         }
                     }
+
                     Text(currentItem.base.path)
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
@@ -327,6 +333,23 @@ private struct CurrentScopeRow: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5),
         )
+    }
+
+    private func statusBadge(text: String, subtle: Bool = false) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(
+                        subtle
+                            ? VoyagerDS.Surface.chipItemBackground(for: colorScheme)
+                            : VoyagerDS.Interaction.hoverFill(for: colorScheme),
+                    ),
+            )
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
 
