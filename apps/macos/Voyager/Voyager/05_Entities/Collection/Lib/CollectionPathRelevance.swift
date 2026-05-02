@@ -3,11 +3,21 @@ import Foundation
 nonisolated func collectionChangeIsRelevant(
     changedPaths: [String],
     scopes: [String],
+    excludedScopes: [String] = [],
     includeSubfolders: Bool = true,
 ) -> Bool {
     let normalizedScopes = scopes.compactMap { scope -> String? in
         guard !scope.isEmpty, scope.hasPrefix("/") else { return nil }
         return URL(fileURLWithPath: scope).standardizedFileURL.path
+    }
+    let normalizedExcludedScopes = excludedScopes.compactMap { scope -> String? in
+        guard !scope.isEmpty, scope.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: scope).standardizedFileURL.path
+    }
+    let isDescendantOrEqual: @Sendable (String, String) -> Bool = { path, excludedScope in
+        if path == excludedScope { return true }
+        let prefix = excludedScope == "/" ? "/" : excludedScope + "/"
+        return path.hasPrefix(prefix)
     }
 
     guard !normalizedScopes.isEmpty else {
@@ -16,6 +26,9 @@ nonisolated func collectionChangeIsRelevant(
 
     return changedPaths.contains { changedPath in
         let normalizedPath = URL(fileURLWithPath: changedPath).standardizedFileURL.path
+        if normalizedExcludedScopes.contains(where: { isDescendantOrEqual(normalizedPath, $0) }) {
+            return false
+        }
         return normalizedScopes.contains { scopePath in
             guard includeSubfolders else {
                 if normalizedPath == scopePath {

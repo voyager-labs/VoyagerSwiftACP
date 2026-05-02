@@ -1,11 +1,12 @@
 import Foundation
 import VoyagerShared
 
-extension VoyagerCollectionFile {
-    func resolveCollectionFilters(
+enum CollectionFilterResolution {
+    static func resolve(
+        file: VoyagerCollectionFile,
         registryClient: RegistryClient,
     ) -> AppliedFiltersUtils.ResolutionResult {
-        let conditionPayloads = conditions.map { condition in
+        let conditionPayloads = file.conditions.map { condition in
             VoyagerShared.SearchConditionPayload(
                 propertyKey: condition.propertyKey,
                 operator: condition.operatorCode,
@@ -13,13 +14,14 @@ extension VoyagerCollectionFile {
             )
         }
         let appliedFilters = VoyagerShared.AppliedFiltersPayload(
-            scopes: scopes,
-            includeSubfolders: includeSubfolders,
+            scopes: file.scopes,
+            excludedScopes: file.excludedScopes,
+            includeSubfolders: file.includeSubfolders,
             conditions: conditionPayloads,
         )
         return AppliedFiltersUtils.resolveDetailed(
             appliedFilters,
-            fallbackScopes: scopes,
+            fallbackScopes: file.scopes,
             fallbackConditions: [],
             registryClient: registryClient,
         )

@@ -21,6 +21,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertEqual(response?.itemCount, 1)
         XCTAssertEqual(response?.items, [.string("/tmp/report.txt")])
         XCTAssertEqual(response?.appliedFilters?.scopes, ["/tmp"])
+        XCTAssertEqual(response?.appliedFilters?.excludedScopes, [])
         XCTAssertEqual(response?.appliedFilters?.includeSubfolders, true)
         XCTAssertEqual(response?.appliedFilters?.conditions, [
             .init(propertyKey: "name_full", operator: "eq", value: .string("report")),
@@ -39,6 +40,20 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
 
         XCTAssertEqual(response?.appliedFilters?.includeSubfolders, false)
+    }
+
+    func testSyntheticSearchResponsePreservesExcludedScopes() {
+        let file = makeSnapshotFile(
+            query: "report",
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
+            conditions: [],
+            snapshotItems: [.string("/tmp/report.txt")],
+        )
+
+        let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
+
+        XCTAssertEqual(response?.appliedFilters?.excludedScopes, ["/tmp/ignored"])
     }
 
     func testFingerprintMismatchMarksSnapshotUnusable() {
@@ -94,6 +109,25 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
 
         XCTAssertNotEqual(recursive, exact)
     }
+
+    func testDefinitionFingerprintChangesWhenExcludedScopesChange() {
+        let conditions = makeUIConditions()
+
+        let withoutExcluded = CollectionSnapshotHydration.definitionFingerprint(
+            query: "report",
+            scopes: ["/tmp"],
+            excludedScopes: [],
+            conditions: conditions,
+        )
+        let withExcluded = CollectionSnapshotHydration.definitionFingerprint(
+            query: "report",
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
+            conditions: conditions,
+        )
+
+        XCTAssertNotEqual(withoutExcluded, withExcluded)
+    }
 }
 
 private func makeUIConditions() -> [Condition] {
@@ -146,6 +180,7 @@ private func makeCondition(
 private func makeSnapshotFile(
     query: String,
     scopes: [String],
+    excludedScopes: [String] = [],
     includeSubfolders: Bool = true,
     conditions: [CollectionCondition],
     snapshotItems: [JSONValue],
@@ -155,6 +190,7 @@ private func makeSnapshotFile(
         ?? CollectionSnapshotHydration.definitionFingerprint(
             query: query,
             scopes: scopes,
+            excludedScopes: excludedScopes,
             includeSubfolders: includeSubfolders,
             conditions: conditions,
         )
@@ -166,6 +202,7 @@ private func makeSnapshotFile(
         updatedAt: .distantPast,
         query: query,
         scopes: scopes,
+        excludedScopes: excludedScopes,
         includeSubfolders: includeSubfolders,
         conditions: conditions,
         snapshot: .init(items: snapshotItems),

@@ -60,6 +60,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
+    let excludedScopes: [String]
     let includeSubfolders: Bool
     let conditions: [CollectionCondition]
     let snapshot: CollectionPersistedSnapshot?
@@ -74,6 +75,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         case updatedAt
         case query
         case scopes
+        case excludedScopes
         case includeSubfolders
         case conditions
         case snapshot
@@ -90,6 +92,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         query = try container.decode(String.self, forKey: .query)
         scopes = try container.decode([String].self, forKey: .scopes)
+        excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
         includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
         conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
         snapshot = try container.decodeIfPresent(CollectionPersistedSnapshot.self, forKey: .snapshot)
@@ -106,6 +109,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(query, forKey: .query)
         try container.encode(scopes, forKey: .scopes)
+        try container.encode(excludedScopes, forKey: .excludedScopes)
         try container.encode(includeSubfolders, forKey: .includeSubfolders)
         try container.encode(conditions, forKey: .conditions)
         try container.encodeIfPresent(snapshot, forKey: .snapshot)
@@ -121,6 +125,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         updatedAt: Date,
         query: String,
         scopes: [String],
+        excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
         conditions: [CollectionCondition],
         snapshot: CollectionPersistedSnapshot?,
@@ -134,6 +139,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         self.updatedAt = updatedAt
         self.query = query
         self.scopes = scopes
+        self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
         self.conditions = conditions
         self.snapshot = snapshot
@@ -148,6 +154,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         updatedAt: Date,
         query: String,
         scopes: [String],
+        excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
         conditions: [CollectionCondition],
         snapshot: CollectionPersistedSnapshot?,
@@ -165,6 +172,7 @@ struct VoyagerCollectionFile: Codable, Equatable, Sendable {
             updatedAt: updatedAt,
             query: query,
             scopes: scopes,
+            excludedScopes: excludedScopes,
             includeSubfolders: includeSubfolders,
             conditions: conditions,
             snapshot: snapshot,

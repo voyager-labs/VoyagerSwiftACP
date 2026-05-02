@@ -254,6 +254,47 @@ final class HelperRecentTagSearchSemanticsTests: XCTestCase {
         XCTAssertEqual(filtered, ["/tmp/root/file.txt"])
     }
 
+    func testFilterPathsExcludesDescendantSubtreesWhenSubfoldersEnabled() throws {
+        let service = SpotlightSearchService()
+
+        let filtered = service.filterPaths(
+            [
+                "/tmp/root/file.txt",
+                "/tmp/root/excluded/file.txt",
+                "/tmp/root/excluded/deeper/file.txt",
+                "/tmp/root/keep/child.txt",
+            ],
+            scopes: ["/tmp/root"],
+            includeSubfolders: true,
+            excludedScopes: ["/tmp/root/excluded"],
+        )
+
+        XCTAssertEqual(filtered, [
+            "/tmp/root/file.txt",
+            "/tmp/root/keep/child.txt",
+        ])
+    }
+
+    func testFilterPathsInExactFolderModeIgnoresExcludedScopesAndStillKeepsDirectChildren() throws {
+        let service = SpotlightSearchService()
+
+        let filtered = service.filterPaths(
+            [
+                "/tmp/root/file.txt",
+                "/tmp/root/excluded",
+                "/tmp/root/excluded/deeper.txt",
+            ],
+            scopes: ["/tmp/root"],
+            includeSubfolders: false,
+            excludedScopes: ["/tmp/root/excluded"],
+        )
+
+        XCTAssertEqual(filtered, [
+            "/tmp/root/file.txt",
+            "/tmp/root/excluded",
+        ])
+    }
+
     func testExactFolderPathMatcherUsesDirectParentOnly() throws {
         let service = SpotlightSearchService()
         let scopes = SearchScopeNormalizer.normalizeScopes(["/tmp/root"])

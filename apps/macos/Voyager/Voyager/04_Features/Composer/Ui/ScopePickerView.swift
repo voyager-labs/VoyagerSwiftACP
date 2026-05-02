@@ -87,7 +87,7 @@ struct ScopePickerView: View {
 
     @ViewBuilder
     private func listContent(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let sections = viewStore.scopeEditor.sections(editingPath: viewStore.scopeEditor.editingPath)
+        let sections = viewStore.scopeEditor.sections()
 
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -114,11 +114,14 @@ struct ScopePickerView: View {
                 switch section.kind {
                 case .currentScopes:
                     ForEach(section.items, id: \.id) { item in
-                        currentScopeRow(item: item, viewStore: viewStore)
-                    }
-                case .exceptionSlot:
-                    ForEach(section.items, id: \.id) { item in
-                        exceptionSlotRow(item: item)
+                        switch item {
+                        case .currentScope:
+                            currentScopeRow(item: item, viewStore: viewStore)
+                        case .exceptionScope:
+                            exceptionRow(item: item, viewStore: viewStore)
+                        case .addableCandidate:
+                            EmptyView()
+                        }
                     }
                 case .addableCandidates:
                     if section.items.isEmpty {
@@ -144,8 +147,6 @@ struct ScopePickerView: View {
         switch kind {
         case .currentScopes:
             "Current Scopes"
-        case .exceptionSlot:
-            "Exceptions"
         case let .addableCandidates(listState):
             listState.candidateSectionTitle
         }
@@ -170,13 +171,21 @@ struct ScopePickerView: View {
         )
     }
 
-    private func exceptionSlotRow(item: ComposerScopeEditorSectionItem) -> some View {
-        guard case let .exceptionSlot(slot) = item else {
+    private func exceptionRow(
+        item: ComposerScopeEditorSectionItem,
+        viewStore _: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+    ) -> some View {
+        guard case let .exceptionScope(exception) = item else {
             return AnyView(EmptyView())
         }
 
         return AnyView(
-            ExceptionSlotRow(slot: slot, colorScheme: colorScheme),
+            ExceptionRow(
+                exception: exception,
+                colorScheme: colorScheme,
+                displayName: entryLoadingClient.displayName(exception.path),
+                onRestore: { store.send(.restoreScope(path: exception.path)) },
+            ),
         )
     }
 
@@ -223,15 +232,13 @@ struct ScopePickerView: View {
         _ candidate: ComposerScopeEditorCandidateItem,
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
     ) {
-        switch viewStore.scopeEditor.entryMode {
-        case .edit:
-            if let oldPath = viewStore.scopeEditor.editingPath {
-                store.send(.currentScope(.replace(oldPath: oldPath, newPath: candidate.path)))
-            } else {
-                store.send(.candidateScope(.add(path: candidate.path)))
-            }
-        case .add:
-            store.send(.candidateScope(.add(path: candidate.path)))
+        switch viewStore.scopeEditor.candidateSelectionIntent(for: candidate.path) {
+        case let .add(path):
+            store.send(.candidateScope(.add(path: path)))
+        case let .replace(oldPath, newPath):
+            store.send(.currentScope(.replace(oldPath: oldPath, newPath: newPath)))
+        case let .exclude(path):
+            store.send(.exceptionScope(.exclude(path: path)))
         }
     }
 
@@ -323,30 +330,45 @@ private struct CurrentScopeRow: View {
     }
 }
 
-private struct ExceptionSlotRow: View {
-    let slot: ComposerScopeEditorExceptionSlotState
+private struct ExceptionRow: View {
+    let exception: ComposerScopeEditorExceptionItem
     let colorScheme: ColorScheme
+    let displayName: String
+    let onRestore: () -> Void
 
     private var text: String {
-        switch slot {
-        case .empty:
-            "No exceptions"
-        case let .exceptionPresent(count):
-            count == 1 ? "1 exception present" : "\(count) exceptions present"
-        }
+        displayName
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-            Text(text)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Image(systemName: "minus.circle")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Text(text)
+                        .font(.system(size: 12))
+                        .foregroundColor(.primary)
+                    Text("Excluded")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                Text(exception.path)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Button(action: onRestore) {
+                Text("Restore")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.borderless)
             Spacer()
         }
-        .padding(.horizontal, 10)
+        .padding(.leading, 22)
+        .padding(.trailing, 10)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 6)

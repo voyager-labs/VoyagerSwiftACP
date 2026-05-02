@@ -18,6 +18,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             updatedAt: .distantFuture,
             query: "report",
             scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
             conditions: [
                 .init(propertyKey: "name_full", operatorCode: "eq", value: .string("report")),
             ],
@@ -41,6 +42,30 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         let loaded = try await CollectionFileClient.liveValue.load(url)
         XCTAssertEqual(loaded.file, file)
         XCTAssertEqual(loaded.containerFormat, .package)
+    }
+
+    func testEncodeDecodePreservesExcludedScopes() throws {
+        let file = VoyagerCollectionFile(
+            id: "excluded-file",
+            name: "Excluded File",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "report",
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: "1.0",
+        )
+
+        let decoded = try PropertyListDecoder().decode(
+            VoyagerCollectionFile.self,
+            from: PropertyListEncoder().encode(file),
+        )
+
+        XCTAssertEqual(decoded.excludedScopes, ["/tmp/ignored"])
+        XCTAssertEqual(decoded, file)
     }
 
     func testLoadLegacySingleFileRoundTrips() async throws {
@@ -67,6 +92,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         let loaded = try await CollectionFileClient.liveValue.load(url)
         XCTAssertEqual(loaded.file, file)
+        XCTAssertEqual(loaded.file.excludedScopes, [])
         XCTAssertEqual(loaded.containerFormat, .legacySingleFile)
     }
 

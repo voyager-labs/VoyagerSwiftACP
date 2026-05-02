@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 @testable import Voyager
 import VoyagerEntitiesEntry
 import VoyagerShared
@@ -58,6 +59,64 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
 
         let recordedRequest = await applyRecorder.last()
         XCTAssertNil(recordedRequest)
+        await store.finish()
+    }
+
+    func testScopeEditorOpenInEditModeShowsDirectChildFolders() async throws {
+        let temporaryRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let parentURL = temporaryRoot.appendingPathComponent("Parent", isDirectory: true)
+        let archiveURL = parentURL.appendingPathComponent("Archive", isDirectory: true)
+        let receiptsURL = parentURL.appendingPathComponent("Receipts", isDirectory: true)
+        let fileURL = parentURL.appendingPathComponent("note.txt", isDirectory: false)
+        try FileManager.default.createDirectory(at: archiveURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: receiptsURL, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data())
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+
+        var initialState = ComposerState()
+        initialState.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: parentURL.path)],
+            exceptions: [],
+        )
+        initialState.scopeEditor.isPresented = true
+
+        var entryLoadingClient = EntryLoadingClient.testValue
+        entryLoadingClient.contentsOfDirectory = { url, keys, options in
+            try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: keys,
+                options: options,
+            )
+        }
+        entryLoadingClient.displayName = { ($0 as NSString).lastPathComponent }
+        entryLoadingClient.homeDirectory = { temporaryRoot.path }
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.searchClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = entryLoadingClient
+        }
+
+        await store.send(.scopeEditorOpen(editingPath: parentURL.path, favorites: [], backHistory: [])) {
+            $0.scopeEditor.isPresented = true
+            $0.scopeEditor.editingPath = parentURL.path
+            $0.scopeEditor.entryMode = .edit
+            $0.scopeEditor.queryText = ""
+            $0.scopeEditor.listState = .childFolders(parentPath: parentURL.path)
+            $0.scopeEditor.candidateItems = [
+                ComposerScopeEditorCandidateItem(path: archiveURL.path, name: "Archive", iconName: "folder"),
+                ComposerScopeEditorCandidateItem(path: receiptsURL.path, name: "Receipts", iconName: "folder"),
+            ]
+            $0.scopeEditor.favorites = []
+            $0.scopeEditor.backHistory = []
+        }
+
+        XCTAssertEqual(
+            store.state.scopeEditor.candidateSelectionIntent(for: receiptsURL.path),
+            .exclude(path: receiptsURL.path),
+        )
         await store.finish()
     }
 
@@ -134,7 +193,7 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
             $0.scopeEditor.includeSubfolders = false
             $0.scopeEditor.committedIncludeSubfolders = true
             $0.scopeEditor.queryText = ""
-            $0.scopeEditor.listState = .defaultCandidates
+            $0.scopeEditor.listState = .childFolders(parentPath: "/Users/test/Downloads")
             $0.scopeEditor.candidateItems = []
             $0.scopeEditor.favorites = []
             $0.scopeEditor.backHistory = []
@@ -199,7 +258,7 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
             $0.scopeEditor.isPresented = true
             $0.scopeEditor.editingPath = "/Users/test/Documents"
             $0.scopeEditor.entryMode = .edit
-            $0.scopeEditor.listState = .defaultCandidates
+            $0.scopeEditor.listState = .childFolders(parentPath: "/Users/test/Documents")
             $0.scopeEditor.candidateItems = []
         }
 
@@ -228,7 +287,7 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
             $0.scopeEditor.isPresented = true
             $0.scopeEditor.editingPath = "/Users/test/Desktop"
             $0.scopeEditor.entryMode = .edit
-            $0.scopeEditor.listState = .defaultCandidates
+            $0.scopeEditor.listState = .childFolders(parentPath: "/Users/test/Desktop")
             $0.scopeEditor.candidateItems = []
         }
 
@@ -263,6 +322,66 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
             $0.scopeEditor.isPresented = true
             $0.scopeEditor.editingPath = "/Users/test/Documents/Receipts"
             $0.scopeEditor.entryMode = .edit
+            $0.scopeEditor.listState = .childFolders(parentPath: "/Users/test/Documents/Receipts")
+            $0.scopeEditor.candidateItems = []
+        }
+
+        await store.finish()
+    }
+
+    func testScopeEditorExcludeAddsExceptionWithoutDroppingBase() async {
+        var initialState = ComposerState()
+        initialState.scopeEditor.isPresented = true
+        initialState.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+            exceptions: [],
+        )
+        initialState.scopeEditor.committedSelection = initialState.scopeEditor.selection
+        initialState.scopeEditor.includeSubfolders = true
+        initialState.scopeEditor.committedIncludeSubfolders = true
+        initialState.scopes = ["/Users/test/Documents"]
+
+        let store = makePassiveStore(initialState: initialState)
+
+        await store.send(.exceptionScope(.exclude(path: "/Users/test/Documents/Receipts"))) {
+            $0.scopeEditor.selection = .explicit(
+                bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+                exceptions: [ComposerScopeException(path: "/Users/test/Documents/Receipts")],
+            )
+            $0.scopes = ["/Users/test/Documents"]
+            $0.scopeEditor.isPresented = true
+            $0.scopeEditor.editingPath = nil
+            $0.scopeEditor.entryMode = .add
+            $0.scopeEditor.listState = .defaultCandidates
+            $0.scopeEditor.candidateItems = []
+        }
+
+        await store.finish()
+    }
+
+    func testScopeEditorRestoreRemovesExceptionWithoutDroppingBase() async {
+        var initialState = ComposerState()
+        initialState.scopeEditor.isPresented = true
+        initialState.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+            exceptions: [ComposerScopeException(path: "/Users/test/Documents/Receipts")],
+        )
+        initialState.scopeEditor.committedSelection = initialState.scopeEditor.selection
+        initialState.scopeEditor.includeSubfolders = true
+        initialState.scopeEditor.committedIncludeSubfolders = true
+        initialState.scopes = ["/Users/test/Documents"]
+
+        let store = makePassiveStore(initialState: initialState)
+
+        await store.send(.exceptionScope(.restore(path: "/Users/test/Documents/Receipts"))) {
+            $0.scopeEditor.selection = .explicit(
+                bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+                exceptions: [],
+            )
+            $0.scopes = ["/Users/test/Documents"]
+            $0.scopeEditor.isPresented = true
+            $0.scopeEditor.editingPath = nil
+            $0.scopeEditor.entryMode = .add
             $0.scopeEditor.listState = .defaultCandidates
             $0.scopeEditor.candidateItems = []
         }

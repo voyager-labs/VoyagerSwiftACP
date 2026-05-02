@@ -65,6 +65,71 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
+    func testSaveToExistingPreservesExcludedScopesInFileAndStalenessRecord() async {
+        let recorder = SavedCollectionsRecorder()
+        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
+        let url = URL(fileURLWithPath: "/tmp/excluded-save.voycoll")
+
+        let payload = SaveRequestPayload(
+            context: CollectionContext(
+                query: "Report",
+                scopes: ["/tmp"],
+                excludedScopes: ["/tmp/ignored"],
+                includeSubfolders: true,
+                conditions: [],
+            ),
+            isSearchLoading: false,
+            isFiltersLoading: false,
+            snapshotItems: [.string("/tmp/report.txt")],
+            definitionFingerprint: "fingerprint-with-excluded",
+            capturedAt: .distantFuture,
+            relevanceRoots: ["/tmp"],
+            openedCompatibility: nil,
+        )
+
+        let store = TestStore(initialState: CollectionFeature.State()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient = CollectionFileClient(
+                save: { file, url in
+                    await recorder.append(file: file, url: url)
+                },
+                load: { _ in
+                    makeCollectionLoadResult(
+                        kEmptyCollectionFile,
+                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
+                    )
+                },
+            )
+            $0.userDefaultsClient = .testValue
+            $0.collectionStalenessClient = stalenessClient
+        }
+        store.exhaustivity = .off
+
+        await store.send(.saveToExisting(payload, url)) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+        }
+        await store.finish()
+
+        let saved = await recorder.last()
+        XCTAssertEqual(saved?.file.excludedScopes, ["/tmp/ignored"])
+        XCTAssertEqual(saved?.file.snapshotMeta?.definitionFingerprint, "fingerprint-with-excluded")
+        XCTAssertEqual(
+            stalenessClient.record(url.path),
+            .init(
+                definitionFingerprint: "fingerprint-with-excluded",
+                relevanceRoots: ["/tmp"],
+                excludedScopes: ["/tmp/ignored"],
+                includeSubfolders: true,
+                lastInvalidatedAt: nil,
+            ),
+        )
+    }
+
     func testDefinitionOnlySaveLeavesSnapshotNil() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -277,6 +342,8 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             .init(
                 definitionFingerprint: "fingerprint",
                 relevanceRoots: ["/tmp"],
+                excludedScopes: [],
+                includeSubfolders: true,
                 lastInvalidatedAt: nil,
             ),
         )

@@ -205,6 +205,7 @@ extension CollectionState {
         let loadedContext = CollectionContext(
             query: trimmedQuery,
             scopes: resolved.scopes,
+            excludedScopes: resolved.excludedScopes,
             includeSubfolders: includeSubfolders,
             conditions: resolved.conditions,
         )
@@ -272,6 +273,7 @@ extension CollectionState {
 struct CollectionSaveSnapshot: Equatable, Sendable {
     let query: String
     let scopes: [String]
+    let excludedScopes: [String]
     let includeSubfolders: Bool
     let conditions: [CollectionCondition]
     let snapshotItems: [VoyagerShared.JSONValue]?

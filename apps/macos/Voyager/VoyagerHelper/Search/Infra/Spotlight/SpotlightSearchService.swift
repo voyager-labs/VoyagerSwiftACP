@@ -79,6 +79,7 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
             paths,
             scopes: prepared.scopes,
             includeSubfolders: filters.includeSubfolders,
+            excludedScopes: filters.excludedScopes,
         )
 
         if paths.count == maxCandidates {
@@ -95,6 +96,7 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
             itemCount: items.count,
             appliedFilters: AppliedFiltersPayload(
                 scopes: filters.scopes,
+                excludedScopes: filters.excludedScopes,
                 includeSubfolders: filters.includeSubfolders,
                 conditions: filters.conditions,
             ),
@@ -200,25 +202,48 @@ extension SpotlightSearchService {
         }
     }
 
-    func filterPaths(_ paths: [String], scopes: [String], includeSubfolders: Bool) -> [String] {
-        guard includeSubfolders else {
-            let normalizedScopes = SearchScopeNormalizer.normalizeScopes(scopes)
-            guard !normalizedScopes.isEmpty else {
-                return paths
+    func filterPaths(
+        _ paths: [String],
+        scopes: [String],
+        includeSubfolders: Bool,
+        excludedScopes: [String] = [],
+    ) -> [String] {
+        let normalizedScopes = SearchScopeNormalizer.normalizeScopes(scopes)
+        let normalizedExcludedScopes = includeSubfolders
+            ? SearchScopeNormalizer.normalizeScopes(excludedScopes)
+            : []
+
+        return paths.filter { path in
+            let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+
+            if includeSubfolders == false,
+               normalizedScopes.isEmpty == false,
+               pathMatchesExactFolderScope(normalizedPath, normalizedScopes: normalizedScopes) == false
+            {
+                return false
             }
 
-            return paths.filter { path in
-                pathMatchesExactFolderScope(path, normalizedScopes: normalizedScopes)
+            if normalizedExcludedScopes.contains(where: { pathIsDescendantOrEqual(normalizedPath, scope: $0) }) {
+                return false
             }
+
+            return true
         }
-
-        return paths
     }
 
     func pathMatchesExactFolderScope(_ path: String, normalizedScopes: [String]) -> Bool {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
         let parentPath = URL(fileURLWithPath: normalizedPath).deletingLastPathComponent().standardizedFileURL.path
         return normalizedScopes.contains(parentPath == "/" ? "/" : parentPath)
+    }
+
+    func pathIsDescendantOrEqual(_ path: String, scope: String) -> Bool {
+        if path == scope {
+            return true
+        }
+
+        let prefix = scope == "/" ? "/" : scope + "/"
+        return path.hasPrefix(prefix)
     }
 
     func makeJSONItems(from paths: [String]) -> [JSONValue] {

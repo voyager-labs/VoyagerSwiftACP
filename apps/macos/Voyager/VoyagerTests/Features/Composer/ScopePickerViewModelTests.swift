@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class ScopePickerViewModelTests: XCTestCase {
-    func testSectionsSeparateCurrentScopesExceptionAndCandidates() {
+    func testSectionsInlineExceptionsUnderCurrentScopes() {
         var state = ComposerScopeEditorState(
             selection: .explicit(
                 bases: [ComposerScopeBase(path: "/Users/me/Documents"), ComposerScopeBase(path: "/Users/me/Desktop")],
@@ -19,9 +19,9 @@ final class ScopePickerViewModelTests: XCTestCase {
             ],
         )
 
-        let sections = state.sections(editingPath: state.editingPath)
+        let sections = state.sections()
 
-        XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "exception-slot", "addable-default"])
+        XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "addable-default"])
         guard case .currentScopes? = sections.first?.kind else {
             return XCTFail("expected current scopes section")
         }
@@ -32,17 +32,14 @@ final class ScopePickerViewModelTests: XCTestCase {
         }
         XCTAssertTrue(firstCurrent.isEditingTarget)
 
-        guard case let .exceptionSlot(exceptionSlot)? = sections[1].items.first else {
-            return XCTFail("expected exception slot item")
+        guard case let .exceptionScope(exception)? = sections[0].items[1] else {
+            return XCTFail("expected inline exception item")
         }
-        if case let .exceptionPresent(count) = exceptionSlot {
-            XCTAssertEqual(count, 1)
-        } else {
-            XCTFail("expected exception present state")
-        }
+        XCTAssertEqual(exception.path, "/Users/me/Documents/Secrets")
+        XCTAssertEqual(exception.owningBasePath, "/Users/me/Documents")
 
-        XCTAssertEqual(sections[2].items.count, 1)
-        guard case let .addableCandidate(candidate) = sections[2].items.first else {
+        XCTAssertEqual(sections[1].items.count, 1)
+        guard case let .addableCandidate(candidate) = sections[1].items.first else {
             return XCTFail("expected addable candidate")
         }
         XCTAssertEqual(candidate.path, "/Users/me/Downloads")
@@ -61,10 +58,62 @@ final class ScopePickerViewModelTests: XCTestCase {
             candidateItems: [],
         )
 
-        let sections = state.sections(editingPath: nil)
+        let sections = state.sections()
 
-        XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "exception-slot", "addable-empty-docs"])
-        XCTAssertEqual(sections[2].items.count, 0)
-        XCTAssertEqual(sections[2].kind.id, "addable-empty-docs")
+        XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "addable-empty-docs"])
+        XCTAssertEqual(sections[1].items.count, 0)
+        XCTAssertEqual(sections[1].kind.id, "addable-empty-docs")
+    }
+
+    func testCandidateSelectionIntentExcludesDescendantWhenEditingBase() {
+        let state = ComposerScopeEditorState(
+            selection: .explicit(
+                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+                exceptions: [],
+            ),
+            includeSubfolders: true,
+            isPresented: true,
+            editingPath: "/Users/me/Documents",
+            entryMode: .edit,
+        )
+
+        XCTAssertEqual(
+            state.candidateSelectionIntent(for: "/Users/me/Documents/Secrets/"),
+            .exclude(path: "/Users/me/Documents/Secrets"),
+        )
+    }
+
+    func testCandidateSelectionIntentReplacesWhenEditingNonDescendantOrExactFolderMode() {
+        let editState = ComposerScopeEditorState(
+            selection: .explicit(
+                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+                exceptions: [],
+            ),
+            includeSubfolders: true,
+            isPresented: true,
+            editingPath: "/Users/me/Documents",
+            entryMode: .edit,
+        )
+
+        XCTAssertEqual(
+            editState.candidateSelectionIntent(for: "/Users/me/Desktop"),
+            .replace(oldPath: "/Users/me/Documents", newPath: "/Users/me/Desktop"),
+        )
+
+        let exactFolderState = ComposerScopeEditorState(
+            selection: .explicit(
+                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+                exceptions: [],
+            ),
+            includeSubfolders: false,
+            isPresented: true,
+            editingPath: "/Users/me/Documents",
+            entryMode: .edit,
+        )
+
+        XCTAssertEqual(
+            exactFolderState.candidateSelectionIntent(for: "/Users/me/Documents/Secrets"),
+            .replace(oldPath: "/Users/me/Documents", newPath: "/Users/me/Documents/Secrets"),
+        )
     }
 }

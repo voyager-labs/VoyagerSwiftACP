@@ -35,6 +35,7 @@ struct CollectionNavigationStatePayload: Equatable, Sendable {
     let baseline: CollectionBaseline?
     let composerText: String
     let scopes: [String]
+    let excludedScopes: [String]
     let conditions: [Condition]
 }
 
