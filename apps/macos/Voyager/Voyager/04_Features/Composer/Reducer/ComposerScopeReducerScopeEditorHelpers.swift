@@ -44,12 +44,20 @@ func makeChildScopeEditorCandidates(
     parentPath: String,
     entryLoadingClient: EntryLoadingClient,
 ) -> [ComposerScopeEditorCandidateItem] {
-    ComposerScopeChildDirectoryCandidates.make(
-        parentPath: parentPath,
-        entryLoadingClient: entryLoadingClient,
+    ComposerScopeUtils.applyCandidateDisambiguationPolicy(
+        ComposerScopeChildDirectoryCandidates.make(
+            parentPath: parentPath,
+            entryLoadingClient: entryLoadingClient,
+        ),
     )
     .map {
-        ComposerScopeEditorCandidateItem(path: $0.path, name: $0.name, iconName: $0.iconName)
+        ComposerScopeEditorCandidateItem(
+            path: $0.path,
+            name: $0.name,
+            iconName: $0.iconName,
+            locationIdentifier: $0.locationIdentifier,
+            secondaryText: $0.secondaryText,
+        )
     }
 }
 
@@ -58,13 +66,21 @@ func makeDefaultScopeEditorCandidates(
     backHistory: [String],
     entryLoadingClient: EntryLoadingClient,
 ) -> [ComposerScopeEditorCandidateItem] {
-    ComposerScopeUtils.buildCombinedList(
-        history: backHistory,
-        favorites: favorites,
-        entryLoadingClient: entryLoadingClient,
-        maxCount: 10,
+    ComposerScopeUtils.applyCandidateDisambiguationPolicy(
+        ComposerScopeUtils.buildCombinedList(
+            history: backHistory,
+            favorites: favorites,
+            entryLoadingClient: entryLoadingClient,
+            maxCount: 10,
+        ),
     )
     .map {
-        ComposerScopeEditorCandidateItem(path: $0.path, name: $0.name, iconName: $0.iconName)
+        ComposerScopeEditorCandidateItem(
+            path: $0.path,
+            name: $0.name,
+            iconName: $0.iconName,
+            locationIdentifier: $0.locationIdentifier,
+            secondaryText: $0.secondaryText,
+        )
     }
 }

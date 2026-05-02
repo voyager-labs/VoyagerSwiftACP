@@ -183,6 +183,22 @@ struct ComposerScopeEditorCandidateItem: Equatable, Sendable, Identifiable {
     let path: String
     let name: String
     let iconName: String
+    let locationIdentifier: String?
+    let secondaryText: String?
+
+    init(
+        path: String,
+        name: String,
+        iconName: String,
+        locationIdentifier: String? = nil,
+        secondaryText: String? = nil,
+    ) {
+        self.path = path
+        self.name = name
+        self.iconName = iconName
+        self.locationIdentifier = locationIdentifier
+        self.secondaryText = secondaryText
+    }
 
     var id: String { path }
 }
@@ -334,8 +350,9 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         let normalizedCurrentPaths = Set(
             selection.explicitBases.map { ComposerScopeUtils.normalizeScopePath($0.path) },
         )
-        let candidateSectionItems = candidateItems
+        let visibleCandidates = candidateItems
             .filter { !normalizedCurrentPaths.contains(ComposerScopeUtils.normalizeScopePath($0.path)) }
+        let candidateSectionItems = disambiguatedVisibleCandidates(visibleCandidates)
             .map { ComposerScopeEditorSectionItem.addableCandidate($0) }
 
         sections.append(
@@ -346,6 +363,32 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         )
 
         return sections
+    }
+
+    private func disambiguatedVisibleCandidates(
+        _ candidates: [ComposerScopeEditorCandidateItem],
+    ) -> [ComposerScopeEditorCandidateItem] {
+        ComposerScopeUtils.applyCandidateDisambiguationPolicy(
+            candidates.map { candidate in
+                ComposerScopeUtils.DirectoryItem(
+                    id: candidate.id,
+                    path: candidate.path,
+                    name: candidate.name,
+                    iconName: candidate.iconName,
+                    locationIdentifier: candidate.locationIdentifier,
+                    secondaryText: candidate.secondaryText,
+                )
+            },
+        )
+        .map { item in
+            ComposerScopeEditorCandidateItem(
+                path: item.path,
+                name: item.name,
+                iconName: item.iconName,
+                locationIdentifier: item.locationIdentifier,
+                secondaryText: item.secondaryText,
+            )
+        }
     }
 
     func candidateSelectionIntent(for path: String) -> ScopeCandidateIntent {
