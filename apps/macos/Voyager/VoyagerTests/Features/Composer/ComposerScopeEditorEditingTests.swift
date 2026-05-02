@@ -106,8 +106,18 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
             $0.scopeEditor.queryText = ""
             $0.scopeEditor.listState = .childFolders(parentPath: parentURL.path)
             $0.scopeEditor.candidateItems = [
-                ComposerScopeEditorCandidateItem(path: archiveURL.path, name: "Archive", iconName: "folder"),
-                ComposerScopeEditorCandidateItem(path: receiptsURL.path, name: "Receipts", iconName: "folder"),
+                ComposerScopeEditorCandidateItem(
+                    path: archiveURL.path,
+                    name: "Archive",
+                    iconName: "folder",
+                    locationIdentifier: parentURL.path,
+                ),
+                ComposerScopeEditorCandidateItem(
+                    path: receiptsURL.path,
+                    name: "Receipts",
+                    iconName: "folder",
+                    locationIdentifier: parentURL.path,
+                ),
             ]
             $0.scopeEditor.favorites = []
             $0.scopeEditor.backHistory = []
@@ -411,6 +421,25 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
         ) {
             $0.scopeEditor.queryText = "docs"
             $0.scopeEditor.listState = .searchResults(query: "docs")
+            $0.scopeEditor.candidateItems = []
+        }
+    }
+
+    func testScopeEditorSearchNoResultsShowsNoResultsState() async {
+        var initialState = ComposerState()
+        initialState.scopeEditor.queryText = "docs"
+        initialState.scopeEditor.listState = .searchResults(query: "docs")
+
+        let store = makePassiveStore(initialState: initialState)
+
+        await store.send(
+            .scopeEditorSearchResponse(
+                "docs",
+                .success([]),
+            ),
+        ) {
+            $0.scopeEditor.queryText = "docs"
+            $0.scopeEditor.listState = .noResults(query: "docs")
             $0.scopeEditor.candidateItems = []
         }
     }
