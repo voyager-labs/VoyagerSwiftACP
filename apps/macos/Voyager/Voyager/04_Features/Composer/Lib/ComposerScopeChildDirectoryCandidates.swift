@@ -30,11 +30,15 @@ enum ComposerScopeChildDirectoryCandidates {
                 return nil
             }
 
+            let locationMetadata = ComposerScopeUtils.candidateLocationMetadata(path: path)
+
             return ComposerScopeUtils.DirectoryItem(
                 id: path,
                 path: path,
                 name: entryLoadingClient.displayName(path),
                 iconName: "folder",
+                locationIdentifier: locationMetadata.locationIdentifier,
+                secondaryText: locationMetadata.secondaryText,
             )
         }
 

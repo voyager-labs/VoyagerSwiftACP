@@ -67,8 +67,18 @@ final class ComposerScopeEditorChildFolderTests: XCTestCase {
             collectionURL: collectionURL,
             entryLoadingClient: makeEntryLoadingClient(homeURL: temporaryRoot),
             expectedCandidates: [
-                ComposerScopeEditorCandidateItem(path: archiveURL.path, name: "Archive", iconName: "folder"),
-                ComposerScopeEditorCandidateItem(path: receiptsURL.path, name: "Receipts", iconName: "folder"),
+                ComposerScopeEditorCandidateItem(
+                    path: archiveURL.path,
+                    name: "Archive",
+                    iconName: "folder",
+                    locationIdentifier: parentURL.path,
+                ),
+                ComposerScopeEditorCandidateItem(
+                    path: receiptsURL.path,
+                    name: "Receipts",
+                    iconName: "folder",
+                    locationIdentifier: parentURL.path,
+                ),
             ],
         )
     }
