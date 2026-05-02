@@ -49,6 +49,14 @@ enum ComposerScopeUtils {
         let options: FileManager.DirectoryEnumerationOptions
     }
 
+    private struct CandidateDisambiguationSource {
+        let parentPath: String
+        let parentComponents: [String]
+        let parentLastComponent: String
+        let storageKindKey: String
+        let storageLocationLabel: String?
+    }
+
     nonisolated static let rootScopePath = "/"
 
     nonisolated static func candidateLocationMetadata(path: String)
@@ -69,23 +77,26 @@ enum ComposerScopeUtils {
     }
 
     nonisolated static func applyCandidateDisambiguationPolicy(_ items: [DirectoryItem]) -> [DirectoryItem] {
-        let duplicateNames = Set(
-            Dictionary(grouping: items, by: \.name)
-                .filter { $0.value.count > 1 }
-                .map(\.key),
-        )
+        let groups = Dictionary(grouping: items.enumerated(), by: { $0.element.name })
+        let secondaryTextByID = groups.reduce(into: [String: String]()) { partialResult, group in
+            let entries = group.value
+            guard entries.count > 1 else { return }
+
+            let duplicateItems = entries.map(\.element)
+            let disambiguationTexts = candidateDisambiguationTexts(for: duplicateItems)
+            for (entry, secondaryText) in zip(entries, disambiguationTexts) {
+                partialResult[entry.element.id] = secondaryText
+            }
+        }
 
         return items.map { item in
-            let secondaryText = duplicateNames.contains(item.name)
-                ? candidateDisambiguationText(for: item)
-                : nil
-            return DirectoryItem(
+            DirectoryItem(
                 id: item.id,
                 path: item.path,
                 name: item.name,
                 iconName: item.iconName,
                 locationIdentifier: item.locationIdentifier,
-                secondaryText: secondaryText,
+                secondaryText: secondaryTextByID[item.id],
             )
         }
     }
@@ -191,14 +202,165 @@ enum ComposerScopeUtils {
         return result
     }
 
-    private nonisolated static func candidateDisambiguationText(for item: DirectoryItem) -> String {
-        if let locationIdentifier = item.locationIdentifier {
-            return locationIdentifier
+    private nonisolated static func candidateDisambiguationTexts(for items: [DirectoryItem]) -> [String] {
+        let sources = items.map { candidateDisambiguationSource(for: $0) }
+        var disambiguationTexts = [String?](repeating: nil, count: sources.count)
+
+        let groupedByParent = Dictionary(grouping: Array(sources.enumerated()), by: { $0.element.parentLastComponent })
+        for entries in groupedByParent.values {
+            guard let first = entries.first else { continue }
+            if entries.count == 1, !first.element.parentLastComponent.isEmpty {
+                disambiguationTexts[first.offset] = first.element.parentLastComponent
+                continue
+            }
+
+            let clusterSources = entries.map(\.element)
+            let assignedLabels = Set(disambiguationTexts.compactMap(\.self))
+
+            if let labels = candidateDisambiguationLabels(
+                for: clusterSources,
+                existingLabels: assignedLabels,
+            ) {
+                for (entry, label) in zip(entries, labels) {
+                    disambiguationTexts[entry.offset] = label
+                }
+                continue
+            }
+
+            for entry in entries {
+                disambiguationTexts[entry.offset] = entry.element.parentPath
+            }
+        }
+
+        return disambiguationTexts.map { $0 ?? "" }
+    }
+
+    private nonisolated static func candidateDisambiguationLabels(
+        for sources: [CandidateDisambiguationSource],
+        existingLabels: Set<String>,
+    ) -> [String]? {
+        if hasMixedStorageKinds(sources) {
+            return uniqueStorageFallbackLabels(
+                for: sources,
+                existingLabels: existingLabels,
+            )
+        }
+
+        if let suffixLabels = uniqueParentSuffixLabels(
+            for: sources,
+            existingLabels: existingLabels,
+        ) {
+            return suffixLabels
+        }
+
+        if let storageFallbackLabels = uniqueStorageFallbackLabels(
+            for: sources,
+            existingLabels: existingLabels,
+        ) {
+            return storageFallbackLabels
+        }
+
+        return nil
+    }
+
+    private nonisolated static func candidateDisambiguationSource(
+        for item: DirectoryItem,
+    ) -> CandidateDisambiguationSource {
+        let parentPath = normalizedParentPath(for: item)
+        let parentComponents = pathComponents(parentPath)
+        let parentLastComponent = parentComponents.last ?? parentPath
+        let (storageKindKey, storageLocationLabel) = storageMetadata(parentComponents: parentComponents)
+
+        return CandidateDisambiguationSource(
+            parentPath: parentPath,
+            parentComponents: parentComponents,
+            parentLastComponent: parentLastComponent,
+            storageKindKey: storageKindKey,
+            storageLocationLabel: storageLocationLabel,
+        )
+    }
+
+    private nonisolated static func normalizedParentPath(for item: DirectoryItem) -> String {
+        if let locationIdentifier = item.locationIdentifier, !locationIdentifier.isEmpty {
+            return normalizeScopePath(locationIdentifier)
         }
 
         let normalizedPath = normalizeScopePath(item.path)
         let parentPath = (normalizedPath as NSString).deletingLastPathComponent
         return normalizeScopePath(parentPath)
+    }
+
+    private nonisolated static func pathComponents(_ path: String) -> [String] {
+        normalizeScopePath(path)
+            .split(separator: Character(rootScopePath))
+            .map(String.init)
+    }
+
+    private nonisolated static func storageMetadata(
+        parentComponents: [String],
+    ) -> (String, String?) {
+        guard let firstComponent = parentComponents.first else {
+            return ("other", nil)
+        }
+
+        if firstComponent == "Volumes", parentComponents.count >= 2 {
+            return ("volume", parentComponents[1])
+        }
+
+        if firstComponent == "Users", parentComponents.count >= 2 {
+            return ("userHome", parentComponents[1])
+        }
+
+        return ("other", firstComponent)
+    }
+
+    private nonisolated static func hasMixedStorageKinds(_ sources: [CandidateDisambiguationSource]) -> Bool {
+        Set(sources.map(\.storageKindKey)).count > 1
+    }
+
+    private nonisolated static func uniqueParentSuffixLabels(
+        for sources: [CandidateDisambiguationSource],
+        existingLabels: Set<String>,
+    ) -> [String]? {
+        let maxDepth = sources.map { max($0.parentComponents.count, 2) }.max() ?? 1
+        guard maxDepth >= 2 else { return nil }
+
+        for depth in 2 ... maxDepth {
+            let labels = sources.map { parentSuffixLabel(for: $0, depth: depth) }
+            let labelSet = Set(labels)
+            guard labelSet.count == labels.count else { continue }
+            guard existingLabels.isDisjoint(with: labelSet) else { continue }
+            return labels
+        }
+
+        return nil
+    }
+
+    private nonisolated static func parentSuffixLabel(
+        for source: CandidateDisambiguationSource,
+        depth: Int,
+    ) -> String {
+        let suffixComponents = source.parentComponents.suffix(depth)
+        if suffixComponents.isEmpty {
+            return source.parentPath
+        }
+
+        return suffixComponents.joined(separator: rootScopePath)
+    }
+
+    private nonisolated static func uniqueStorageFallbackLabels(
+        for sources: [CandidateDisambiguationSource],
+        existingLabels: Set<String>,
+    ) -> [String]? {
+        let labels = sources.map { source -> String in
+            let parentLabel = source.parentLastComponent.isEmpty ? source.parentPath : source.parentLastComponent
+            let storageLabel = source.storageLocationLabel ?? source.parentPath
+            return storageLabel + " • " + parentLabel
+        }
+        let labelSet = Set(labels)
+        guard labelSet.count == labels.count else { return nil }
+        guard existingLabels.isDisjoint(with: labelSet) else { return nil }
+        return labels
     }
 
     private nonisolated static func buildIconPathMapping(
