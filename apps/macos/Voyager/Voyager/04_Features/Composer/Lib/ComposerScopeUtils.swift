@@ -6,6 +6,24 @@ enum ComposerScopeUtils {
         let path: String
         let name: String
         let iconName: String
+        let locationIdentifier: String?
+        let secondaryText: String?
+
+        nonisolated init(
+            id: String,
+            path: String,
+            name: String,
+            iconName: String,
+            locationIdentifier: String? = nil,
+            secondaryText: String? = nil,
+        ) {
+            self.id = id
+            self.path = path
+            self.name = name
+            self.iconName = iconName
+            self.locationIdentifier = locationIdentifier
+            self.secondaryText = secondaryText
+        }
     }
 
     private struct IconMapping {
@@ -31,7 +49,46 @@ enum ComposerScopeUtils {
         let options: FileManager.DirectoryEnumerationOptions
     }
 
-    static let rootScopePath = "/"
+    nonisolated static let rootScopePath = "/"
+
+    nonisolated static func candidateLocationMetadata(path: String)
+        -> (locationIdentifier: String?, secondaryText: String?)
+    {
+        let normalizedPath = normalizeScopePath(path)
+        guard normalizedPath != rootScopePath else {
+            return (nil, nil)
+        }
+
+        let parentPath = (normalizedPath as NSString).deletingLastPathComponent
+        let normalizedParentPath = normalizeScopePath(parentPath)
+        guard normalizedParentPath != rootScopePath else {
+            return (nil, nil)
+        }
+
+        return (normalizedParentPath, nil)
+    }
+
+    nonisolated static func applyCandidateDisambiguationPolicy(_ items: [DirectoryItem]) -> [DirectoryItem] {
+        let duplicateNames = Set(
+            Dictionary(grouping: items, by: \.name)
+                .filter { $0.value.count > 1 }
+                .map(\.key),
+        )
+
+        return items.map { item in
+            let secondaryText = duplicateNames.contains(item.name)
+                ? candidateDisambiguationText(for: item)
+                : nil
+            return DirectoryItem(
+                id: item.id,
+                path: item.path,
+                name: item.name,
+                iconName: item.iconName,
+                locationIdentifier: item.locationIdentifier,
+                secondaryText: secondaryText,
+            )
+        }
+    }
 
     nonisolated static func searchDirectories(
         query: String,
@@ -90,12 +147,16 @@ enum ComposerScopeUtils {
             let displayName = entryLoadingClient.displayName(path)
             let iconName = iconNameForPath(path, homePath: homePath, iconPathMap: iconPathMap)
 
+            let locationMetadata = candidateLocationMetadata(path: path)
+
             result.append(
                 DirectoryItem(
                     id: path,
                     path: path,
                     name: displayName,
                     iconName: iconName,
+                    locationIdentifier: locationMetadata.locationIdentifier,
+                    secondaryText: locationMetadata.secondaryText,
                 ),
             )
 
@@ -110,12 +171,16 @@ enum ComposerScopeUtils {
                 guard !seenPaths.contains(path) else { continue }
                 guard entryLoadingClient.fileExists(path) else { continue }
 
+                let locationMetadata = candidateLocationMetadata(path: path)
+
                 result.append(
                     DirectoryItem(
                         id: path,
                         path: path,
                         name: favorite.name,
                         iconName: favorite.iconName,
+                        locationIdentifier: locationMetadata.locationIdentifier,
+                        secondaryText: locationMetadata.secondaryText,
                     ),
                 )
 
@@ -124,6 +189,16 @@ enum ComposerScopeUtils {
         }
 
         return result
+    }
+
+    private nonisolated static func candidateDisambiguationText(for item: DirectoryItem) -> String {
+        if let locationIdentifier = item.locationIdentifier {
+            return locationIdentifier
+        }
+
+        let normalizedPath = normalizeScopePath(item.path)
+        let parentPath = (normalizedPath as NSString).deletingLastPathComponent
+        return normalizeScopePath(parentPath)
     }
 
     private nonisolated static func buildIconPathMapping(
@@ -197,12 +272,16 @@ enum ComposerScopeUtils {
             homePath: context.homePath,
             iconPathMap: context.iconPathMap,
         )
+        let locationMetadata = candidateLocationMetadata(path: fullPath)
+
         results.append(
             DirectoryItem(
                 id: fullPath,
                 path: fullPath,
                 name: displayName,
                 iconName: iconName,
+                locationIdentifier: locationMetadata.locationIdentifier,
+                secondaryText: locationMetadata.secondaryText,
             ),
         )
     }

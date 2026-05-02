@@ -1,7 +1,7 @@
 import Foundation
 
 extension ComposerScopeUtils {
-    static func normalizeScopePath(_ path: String) -> String {
+    nonisolated static func normalizeScopePath(_ path: String) -> String {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return rootScopePath }
 
@@ -14,7 +14,7 @@ extension ComposerScopeUtils {
             : standardized
     }
 
-    static func isStrictDescendant(_ path: String, of base: String) -> Bool {
+    nonisolated static func isStrictDescendant(_ path: String, of base: String) -> Bool {
         let normalizedPath = normalizeScopePath(path)
         let normalizedBase = normalizeScopePath(base)
 
@@ -26,7 +26,7 @@ extension ComposerScopeUtils {
         return normalizedPath.hasPrefix(normalizedBase + rootScopePath)
     }
 
-    static func canonicalizeScopeRule(
+    nonisolated static func canonicalizeScopeRule(
         bases: [String],
         exceptions: [String],
         includeSubfolders: Bool,
@@ -51,7 +51,7 @@ extension ComposerScopeUtils {
         return (canonicalBases, canonicalExceptions)
     }
 
-    private static func dedupeNormalizedPaths(_ paths: [String]) -> [String] {
+    private nonisolated static func dedupeNormalizedPaths(_ paths: [String]) -> [String] {
         var result: [String] = []
 
         for path in paths.map(normalizeScopePath) where !result.contains(path) {
@@ -61,7 +61,7 @@ extension ComposerScopeUtils {
         return result
     }
 
-    private static func canonicalizeExceptions(_ exceptions: [String], bases: [String]) -> [String] {
+    private nonisolated static func canonicalizeExceptions(_ exceptions: [String], bases: [String]) -> [String] {
         var result: [String] = []
 
         for path in exceptions
