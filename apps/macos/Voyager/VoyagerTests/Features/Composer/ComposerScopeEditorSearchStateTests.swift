@@ -261,19 +261,7 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
             $0.scopeEditor.candidateItems = []
         }
 
-        await store.send(
-            .scopeEditorSearchResponse(
-                "d",
-                .success([
-                    ComposerScopeUtils.DirectoryItem(
-                        id: "/Users/test/Desktop",
-                        path: "/Users/test/Desktop",
-                        name: "Desktop",
-                        iconName: "folder",
-                    ),
-                ]),
-            ),
-        ) {
+        await store.send(staleDesktopSearchResponse(query: "d")) {
             $0.scopeEditor.isPresented = true
             $0.scopeEditor.queryText = ""
             $0.scopeEditor.listState = .defaultCandidates
@@ -294,6 +282,20 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
 
         await store.finish()
     }
+}
+
+private func staleDesktopSearchResponse(query: String) -> ComposerAction {
+    .scopeEditorSearchResponse(
+        query,
+        .success([
+            ComposerScopeUtils.DirectoryItem(
+                id: "/Users/test/Desktop",
+                path: "/Users/test/Desktop",
+                name: "Desktop",
+                iconName: "folder",
+            ),
+        ]),
+    )
 }
 
 private struct EditModeChildFolderFixture {
