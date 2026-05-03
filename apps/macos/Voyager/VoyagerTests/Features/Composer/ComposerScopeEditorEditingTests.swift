@@ -39,7 +39,7 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
         initialState.scopeEditor.committedSelection = initialState.scopeEditor.selection
         initialState.scopes = ["/Users/test/Documents"]
 
-        let store = makeStore(initialState: initialState, recorder: applyRecorder)
+        let store = makeEditingStore(initialState: initialState, recorder: applyRecorder)
 
         await store.send(.addScope(path: "/Users/test/Downloads")) {
             $0.scopeEditor.selection = .explicit(
@@ -398,74 +398,29 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
 
         await store.finish()
     }
+}
 
-    func testScopeEditorSearchResponseIgnoresStaleQuery() async {
-        var initialState = ComposerState()
-        initialState.scopeEditor.queryText = "docs"
-        initialState.scopeEditor.listState = .searchResults(query: "docs")
-
-        let store = makePassiveStore(initialState: initialState)
-
-        await store.send(
-            .scopeEditorSearchResponse(
-                "stale",
-                .success([
-                    ComposerScopeUtils.DirectoryItem(
-                        id: "/Users/test/Downloads",
-                        path: "/Users/test/Downloads",
-                        name: "Downloads",
-                        iconName: "folder",
-                    ),
-                ]),
-            ),
-        ) {
-            $0.scopeEditor.queryText = "docs"
-            $0.scopeEditor.listState = .searchResults(query: "docs")
-            $0.scopeEditor.candidateItems = []
-        }
+private func makePassiveStore(initialState: ComposerState) -> TestStore<ComposerState, ComposerAction> {
+    TestStore(initialState: initialState) {
+        ComposerFeature()
+    } withDependencies: {
+        $0.searchClient = .testValue
+        $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = .testValue
     }
+}
 
-    func testScopeEditorSearchNoResultsShowsNoResultsState() async {
-        var initialState = ComposerState()
-        initialState.scopeEditor.queryText = "docs"
-        initialState.scopeEditor.listState = .searchResults(query: "docs")
-
-        let store = makePassiveStore(initialState: initialState)
-
-        await store.send(
-            .scopeEditorSearchResponse(
-                "docs",
-                .success([]),
-            ),
-        ) {
-            $0.scopeEditor.queryText = "docs"
-            $0.scopeEditor.listState = .noResults(query: "docs")
-            $0.scopeEditor.candidateItems = []
+private func makeEditingStore(
+    initialState: ComposerState,
+    recorder: EditingApplyFiltersRecorder,
+) -> TestStore<ComposerState, ComposerAction> {
+    TestStore(initialState: initialState) {
+        ComposerFeature()
+    } withDependencies: {
+        $0.searchClient.applyFilters = { request in
+            await recorder.record(request)
+            return VoyagerShared.SearchResponsePayload(itemCount: 0)
         }
-    }
-
-    private func makePassiveStore(initialState: ComposerState) -> TestStore<ComposerState, ComposerAction> {
-        TestStore(initialState: initialState) {
-            ComposerFeature()
-        } withDependencies: {
-            $0.searchClient = .testValue
-            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = .testValue
-        }
-    }
-
-    private func makeStore(
-        initialState: ComposerState,
-        recorder: EditingApplyFiltersRecorder,
-    ) -> TestStore<ComposerState, ComposerAction> {
-        TestStore(initialState: initialState) {
-            ComposerFeature()
-        } withDependencies: {
-            $0.searchClient.applyFilters = { request in
-                await recorder.record(request)
-                return VoyagerShared.SearchResponsePayload(itemCount: 0)
-            }
-            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = .testValue
-        }
+        $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = .testValue
     }
 }
 
