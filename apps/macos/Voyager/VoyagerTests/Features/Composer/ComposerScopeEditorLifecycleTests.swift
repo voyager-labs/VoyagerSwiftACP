@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 @testable import Voyager
 import VoyagerEntitiesEntry
 import VoyagerShared
@@ -6,7 +7,7 @@ import XCTest
 
 @MainActor
 final class ComposerScopeEditorLifecycleTests: XCTestCase {
-    func testScopeEditorOpenSeedsPresentationState() async {
+    func testScopeEditorOpenInAddModeSeedsDefaultCandidates() async {
         let store = TestStore(initialState: ComposerState()) {
             ComposerFeature()
         } withDependencies: {
@@ -15,10 +16,11 @@ final class ComposerScopeEditorLifecycleTests: XCTestCase {
         }
 
         await store.send(
-            .scopeEditorOpen(editingPath: "/Users/test/Documents", favorites: [], backHistory: []),
+            .scopeEditorOpen(editingPath: nil, favorites: [], backHistory: []),
         ) {
             $0.scopeEditor.isPresented = true
-            $0.scopeEditor.editingPath = "/Users/test/Documents"
+            $0.scopeEditor.editingPath = nil
+            $0.scopeEditor.entryMode = .add
             $0.scopeEditor.queryText = ""
             $0.scopeEditor.listState = .defaultCandidates
             $0.scopeEditor.candidateItems = []
@@ -99,6 +101,55 @@ final class ComposerScopeEditorLifecycleTests: XCTestCase {
             $0.scopeEditor.editingPath = nil
             $0.scopeEditor.listState = .defaultCandidates
             $0.scopeEditor.candidateItems = []
+        }
+
+        await store.finish()
+    }
+
+    func testScopeEditorWhitespaceOnlyQueryInEditModeReturnsToChildFolders() async throws {
+        let temporaryRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let parentURL = temporaryRoot.appendingPathComponent("Parent", isDirectory: true)
+        let childURL = parentURL.appendingPathComponent("Archive", isDirectory: true)
+        try FileManager.default.createDirectory(at: childURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+
+        var initialState = ComposerState()
+        initialState.scopeEditor.isPresented = true
+        initialState.scopeEditor.editingPath = parentURL.path
+        initialState.scopeEditor.entryMode = .edit
+        initialState.scopeEditor.queryText = "docs"
+        initialState.scopeEditor.listState = .searchResults(query: "docs")
+
+        var entryLoadingClient = EntryLoadingClient.testValue
+        entryLoadingClient.contentsOfDirectory = { url, keys, options in
+            try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: keys,
+                options: options,
+            )
+        }
+        entryLoadingClient.displayName = { ($0 as NSString).lastPathComponent }
+        entryLoadingClient.homeDirectory = { temporaryRoot.path }
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.searchClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = entryLoadingClient
+        }
+
+        await store.send(.scopeEditorSetQueryText("   ")) {
+            $0.scopeEditor.queryText = "   "
+            $0.scopeEditor.listState = .childFolders(parentPath: parentURL.path)
+            $0.scopeEditor.candidateItems = [
+                ComposerScopeEditorCandidateItem(
+                    path: childURL.path,
+                    name: "Archive",
+                    iconName: "folder",
+                    locationIdentifier: parentURL.path,
+                ),
+            ]
         }
 
         await store.finish()
