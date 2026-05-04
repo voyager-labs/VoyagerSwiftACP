@@ -18,11 +18,13 @@ final class ComposerScopeRulePersistenceTests: XCTestCase {
 
         var initialState = ComposerState()
         initialState.scopeEditor.selection = baseSelection
+        initialState.scopeEditor.includeSubfolders = true
         initialState.history = [
             FilterSnapshot(
                 scopeSelection: excludedSelection,
                 conditions: [],
                 conditionDisplayByKey: [:],
+                includeSubfolders: false,
             ),
         ]
 
@@ -37,9 +39,11 @@ final class ComposerScopeRulePersistenceTests: XCTestCase {
 
         await store.send(.undo)
         XCTAssertEqual(store.state.scopeEditor.selection.exceptions.map(\.path), ["/Users/me/Documents/Secret"])
+        XCTAssertFalse(store.state.scopeEditor.includeSubfolders)
 
         await store.send(.redo)
         XCTAssertEqual(store.state.scopeEditor.selection.exceptions.map(\.path), [])
+        XCTAssertTrue(store.state.scopeEditor.includeSubfolders)
     }
 
     func testIncludeSubfoldersTogglePrunesExceptionsInExactFolderMode() async {

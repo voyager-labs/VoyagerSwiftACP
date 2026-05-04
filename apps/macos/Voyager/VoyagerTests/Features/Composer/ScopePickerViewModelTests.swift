@@ -268,4 +268,61 @@ final class ScopePickerViewModelTests: XCTestCase {
             .replace(oldPath: "/Users/me/Documents", newPath: "/Users/me/Documents/Secrets"),
         )
     }
+
+    func testScopeFeedbackSnapshotEqualityDependsOnScopeMeaningOnly() {
+        let baseSelection: ComposerScopeSelection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+            exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secrets")],
+        )
+
+        let canonicalSnapshot = ComposerScopeSnapshot(
+            scopeSelection: baseSelection,
+            includeSubfolders: true,
+        )
+        let sameMeaningDifferentNoiseSnapshot = ComposerScopeSnapshot(
+            scopeSelection: baseSelection,
+            includeSubfolders: true,
+        )
+        let differentIncludeSubfoldersSnapshot = ComposerScopeSnapshot(
+            scopeSelection: baseSelection,
+            includeSubfolders: false,
+        )
+
+        XCTAssertEqual(canonicalSnapshot, sameMeaningDifferentNoiseSnapshot)
+        XCTAssertNotEqual(canonicalSnapshot, differentIncludeSubfoldersSnapshot)
+    }
+
+    func testScopeFeedbackSnapshotChangesWithBaseAndExceptionMeaning() {
+        let rootOnlySnapshot = ComposerScopeSnapshot(
+            scopeSelection: .rootOnly,
+            includeSubfolders: true,
+        )
+        let explicitBaseSnapshot = ComposerScopeSnapshot(
+            scopeSelection: .explicit(
+                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+                exceptions: [],
+            ),
+            includeSubfolders: true,
+        )
+        let explicitExceptionSnapshot = ComposerScopeSnapshot(
+            scopeSelection: .explicit(
+                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+                exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secrets")],
+            ),
+            includeSubfolders: true,
+        )
+
+        XCTAssertNotEqual(rootOnlySnapshot, explicitBaseSnapshot)
+        XCTAssertNotEqual(explicitBaseSnapshot, explicitExceptionSnapshot)
+        XCTAssertEqual(
+            explicitExceptionSnapshot,
+            ComposerScopeSnapshot(
+                scopeSelection: .explicit(
+                    bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+                    exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secrets")],
+                ),
+                includeSubfolders: true,
+            ),
+        )
+    }
 }
