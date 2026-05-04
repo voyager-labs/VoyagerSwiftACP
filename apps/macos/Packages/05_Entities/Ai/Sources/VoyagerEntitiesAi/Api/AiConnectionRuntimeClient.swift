@@ -86,42 +86,28 @@ extension AiConnectionRuntimeClient {
 
         switch provider {
         case .openai:
-            url = "https://api.openai.com/v1/chat/completions"
+            url = "https://api.openai.com/v1/models"
             guard let requestURL = URL(string: url) else {
                 return .invalid(.verificationFailed)
             }
             request = URLRequest(url: requestURL)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpMethod = "GET"
             request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
             request.timeoutInterval = 30
-            let body: [String: Any] = [
-                "model": "gpt-4o-mini",
-                "messages": [["role": "user", "content": "Hi"]],
-                "max_tokens": 5,
-            ]
-            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         case .chatgptCodex:
             return .valid
 
         case .anthropic:
-            url = "https://api.anthropic.com/v1/messages"
+            url = "https://api.anthropic.com/v1/models"
             guard let requestURL = URL(string: url) else {
                 return .invalid(.verificationFailed)
             }
             request = URLRequest(url: requestURL)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpMethod = "GET"
             request.setValue(secret, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
             request.timeoutInterval = 30
-            let body: [String: Any] = [
-                "model": "claude-sonnet-4-20250514",
-                "messages": [["role": "user", "content": "Hi"]],
-                "max_tokens": 5,
-            ]
-            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         }
 
         do {
