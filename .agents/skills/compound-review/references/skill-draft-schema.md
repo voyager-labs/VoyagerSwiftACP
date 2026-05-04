@@ -88,7 +88,7 @@ The subtype is declared in the `Proposed Target` section.
 | `Source Findings`         | yes      | Bulleted list of finding IDs with dedupe_keys and source facets.                           |
 | `Proposed Scope`          | yes      | Bulleted list of what the skill/rules will do, read, and verify.                           |
 | `Does NOT`                | no       | Bulleted list of what is explicitly out of scope for this proposal.                        |
-| `Target File`             | yes      | Exact path to the proposed file (e.g., `.agents/skills/grid-drop-harness/SKILL.md`).       |
+| `Target File`             | yes      | Exact path to the proposed file (e.g., `.agents/skills/{proposed-skill-name}/SKILL.md`).   |
 | `Non-Goals`               | yes      | Bulleted list of what other skills/systems handle (to avoid overlap).                      |
 | `Readiness`               | yes      | Draft status. One of: `Draft only`, `Needs human review`, `Ready for adoption`, `Adopted`. |
 | `Source-Artifact Linkage` | yes      | Table linking each source finding to its dedupe_key, severity, and the issue it addresses. |
@@ -126,7 +126,7 @@ OR when the operator explicitly requests a draft regardless of threshold.
 
 **Run:** 2026-04-10-181500
 **Generated:** 2026-04-10T18:15:00Z
-**Proposed Target:** `.agents/skills/grid-drop-harness/` (new skill, not yet created)
+**Proposed Target:** `.agents/skills/{proposed-skill-name}/` (new skill, not yet created)
 
 ---
 
@@ -143,7 +143,7 @@ Repeated finding across f2 code quality reviews: coordinator drag/drop state cle
 
 ### Proposed Scope
 
-- New skill: `.agents/skills/grid-drop-harness/SKILL.md`
+- New skill: `.agents/skills/{proposed-skill-name}/SKILL.md`
 - Reads: `EntryGridCoordinator+Extensions.swift`, `EntryViewLayoutAutoscrollAcceleration.swift`
 - Verifies: single-owner highlight clearing, correct `shouldClearAfterSessionEnd` semantics
 - Asserts that `acceptDrop` success branches do NOT call `setDropTargetEntryId(nil)` or `setDropTargeted(false)`
@@ -151,17 +151,17 @@ Repeated finding across f2 code quality reviews: coordinator drag/drop state cle
 
 ### Does NOT
 
-- Execute XCTest suites (test-runner handles that)
+- Execute XCTest suites (the active Work-phase verification skill handles that)
 - Create or modify PRs (pr-execution handles that)
 - Trigger automatic Work loops
 
 ### Target File
 
-`.agents/skills/grid-drop-harness/SKILL.md`
+`.agents/skills/{proposed-skill-name}/SKILL.md`
 
 ### Non-Goals
 
-- No test execution (test-runner handles that)
+- No test execution (the active Work-phase verification skill handles that)
 - No PR creation (pr-execution handles that)
 - No automatic Work loops
 - No cross-repo artifact resolution

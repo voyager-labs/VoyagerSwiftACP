@@ -17,12 +17,14 @@
 - [기술 스택](architecture/tech-stack.md)
 - [소스 트리](architecture/source-tree.md)
 - [코딩/작업 규칙 요약](architecture/coding-standards.md)
+- [Project Harness 정의](architecture/harness.md)
 
 ## 주요 기능
 
 ## 통합/연동
 
 - [Helper ↔ Backend 부트스트랩](integration/backend-bootstrap.md)
+- [Codex OAuth / 토큰 저장](integration/codex-oauth-token-storage.md)
 - [검색 계약 (LLM → 조건 변환)](integration/search-contract.md)
 
 ## macOS

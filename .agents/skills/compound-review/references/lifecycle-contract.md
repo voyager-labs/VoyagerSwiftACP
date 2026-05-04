@@ -19,7 +19,7 @@ The lifecycle applies to any change that targets `.agents/` governance artifacts
 
 ### Stage 1: Work-time Verification
 
-**Owner:** Work-phase skills (`test-runner`, `pr-review`, `voyager-dev`, and any skill that runs during active Work).
+**Owner:** Work-phase skills (`pr-review`, `voyager-dev`, and any skill that runs during active Work).
 
 **When it runs:** During an active Sisyphus Work cycle, interleaved with code and artifact production.
 
@@ -303,8 +303,8 @@ This lifecycle contract does not replace or modify existing governance rules. It
 │  Verification            │
 │                           │
 │  Owner: work-phase skills │
-│  (test-runner, pr-review, │
-│   voyager-dev)            │
+│  (pr-review, voyager-dev, │
+│   etc.)                   │
 │                           │
 │  Produces: evidence,     │
 │  test results, review    │

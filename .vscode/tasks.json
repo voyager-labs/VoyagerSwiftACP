@@ -111,9 +111,46 @@
         "$sweetpad-xcbeautify-warnings"
       ],
       "label": "OnboardingHost Dev: Launch (Debug)",
-      "detail": "Build and Run OnboardingHost in Development environment on Debug mode",
+      "detail": "Build and Run OnboardingHost from Voyager.xcworkspace on Debug mode",
       "isBackground": true,
       "scheme": "OnboardingHost-Dev",
+      "configuration": "Debug",
+      "launchEnv": {
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
+        "VOYAGER_ONBOARDING_MOCK_BETA": "1"
+      }
+    },
+    {
+      "type": "sweetpad",
+      "action": "launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "OnboardingHost Dev: Launch (Release)",
+      "detail": "Build and Run OnboardingHost from Voyager.xcworkspace on Release mode",
+      "scheme": "OnboardingHost-Dev",
+      "configuration": "Release",
+      "launchEnv": {
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}",
+        "VOYAGER_ONBOARDING_MOCK_BETA": "1"
+      }
+    },
+    {
+      "type": "sweetpad",
+      "action": "debugging-launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "SettingsHost Dev: Launch (Debug)",
+      "detail": "Build and Run SettingsHost from Voyager.xcworkspace on Debug mode",
+      "isBackground": true,
+      "scheme": "SettingsHost-Dev",
       "configuration": "Debug",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
@@ -128,9 +165,9 @@
         "$sweetpad-xcbeautify-errors",
         "$sweetpad-xcbeautify-warnings"
       ],
-      "label": "OnboardingHost Dev: Launch (Release)",
-      "detail": "Build and Run OnboardingHost in Development environment on Release mode",
-      "scheme": "OnboardingHost-Dev",
+      "label": "SettingsHost Dev: Launch (Release)",
+      "detail": "Build and Run SettingsHost from Voyager.xcworkspace on Release mode",
+      "scheme": "SettingsHost-Dev",
       "configuration": "Release",
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"

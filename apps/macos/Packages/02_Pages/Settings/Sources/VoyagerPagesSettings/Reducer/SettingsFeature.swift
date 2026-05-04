@@ -16,12 +16,16 @@ public struct SettingsFeature {
         Scope(state: \.appearanceSettings, action: \.appearance) {
             AppearanceSettingsFeature()
         }
+        Scope(state: \.aiSettings, action: \.ai) {
+            AiSettingsFeature()
+        }
 
         Reduce { state, action in
             if case .onAppear = action {
                 return .merge(
                     .send(.general(.loadSettings)),
                     .send(.appearance(.loadSettings)),
+                    .send(.ai(.onAppear))
                 )
             }
 

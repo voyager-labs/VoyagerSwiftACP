@@ -39,6 +39,9 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - When mixed subview geometry can distort previews, hotspots, or interaction affordances, prefer representations aligned to the user's perceived whole interaction area.
 - File-scope helper functions are acceptable for dense orchestrator-only handlers when extracting another reducer or type would not create a real boundary. Keep the helper narrow and avoid turning it into a shadow owner.
 - Keep Voyager-specific heuristics here until they become stable enough to enforce repo-wide, then promote them into `.agents/rules/**`.
+- Make bootstrap/onAppear flows idempotent via a flag (e.g., `didBootstrap`) to prevent double initialization when view lifecycle triggers multiple appearances.
+- Normalize transient states at bootstrap — reset in-progress states (e.g., `connectInProgress` → `notVerified`, `disconnecting` → `disconnected`) to stable equivalents. Transient states from previous sessions should not persist across app launches.
+- Apply `@ObservableState` on the actual struct definition, not on a typealias. See `30-macos/02-tca-observation-lifecycle.md` for TCA observation patterns.
 
 ## Promotion test
 

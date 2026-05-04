@@ -28,7 +28,7 @@ public struct SettingsView: View {
                     store.send(.closeWindow)
                 }
                 .keyboardShortcut("w", modifiers: .command)
-                .hidden(),
+                .hidden()
             )
         })
     }
@@ -40,6 +40,8 @@ public struct SettingsView: View {
             GeneralSettingsView(store: store.scope(state: \.generalSettings, action: \.general))
         case .appearance:
             AppearanceSettingsView(store: store.scope(state: \.appearanceSettings, action: \.appearance))
+        case .ai:
+            AiSettingsView(store: store.scope(state: \.aiSettings, action: \.ai))
         }
     }
 }

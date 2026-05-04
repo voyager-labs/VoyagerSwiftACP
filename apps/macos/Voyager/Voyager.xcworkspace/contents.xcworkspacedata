@@ -2,9 +2,12 @@
 <Workspace
    version = "1.0">
    <FileRef
-      location = "self:Voyager.xcodeproj">
+      location = "group:Voyager.xcodeproj">
    </FileRef>
    <FileRef
-      location = "group:../../Hosts/OnboardingHost/OnboardingHost.xcodeproj">
+      location = "group:../Hosts/OnboardingHost/OnboardingHost.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:../Hosts/SettingsHost/SettingsHost.xcodeproj">
    </FileRef>
 </Workspace>

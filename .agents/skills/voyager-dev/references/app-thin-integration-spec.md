@@ -186,7 +186,7 @@ Search app code for any type name that exists only in the package's `internal` d
 ```bash
 # From the package source, list internal types, then grep app code for them
 grep -rn "internal struct\|internal class\|internal enum\|internal protocol" \
-  apps/macos/Voyager/Packages/VoyagerModules/Sources/VoyagerPackageName/
+  apps/macos/Packages/<Layer>/<PackageName>/Sources/<ProductName>/
 ```
 
 If any of these internal types appear in `01_App/`, the boundary is leaking.
