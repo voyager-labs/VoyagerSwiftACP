@@ -320,33 +320,7 @@ struct ComposerScopeEditorState: Equatable, Sendable {
     func sections() -> [ComposerScopeEditorSection] {
         var sections: [ComposerScopeEditorSection] = []
 
-        var currentItems: [ComposerScopeEditorSectionItem] = []
-        let exceptions = selection.exceptions
-
-        for base in selection.explicitBases {
-            let owningExceptions = exceptions.filter { ComposerScopeUtils.isStrictDescendant($0.path, of: base.path) }
-            currentItems.append(
-                .currentScope(
-                    ComposerScopeEditorCurrentItem(
-                        base: base,
-                        isEditingTarget: base.path == editingPath,
-                        exceptionCount: owningExceptions.count,
-                    ),
-                ),
-            )
-
-            currentItems.append(
-                contentsOf: owningExceptions.map {
-                    .exceptionScope(
-                        ComposerScopeEditorExceptionItem(
-                            path: $0.path,
-                            owningBasePath: base.path,
-                        ),
-                    )
-                },
-            )
-        }
-
+        let currentItems = currentScopeSectionItems()
         if !currentItems.isEmpty {
             sections.append(
                 ComposerScopeEditorSection(
@@ -372,6 +346,63 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         )
 
         return sections
+    }
+
+    private func currentScopeSectionItems() -> [ComposerScopeEditorSectionItem] {
+        let exceptionsByOwningBasePath = exceptionItemsByOwningBasePath()
+        var currentItems: [ComposerScopeEditorSectionItem] = []
+
+        for base in selection.explicitBases {
+            let owningExceptions = exceptionsByOwningBasePath[base.path, default: []]
+            currentItems.append(
+                .currentScope(
+                    ComposerScopeEditorCurrentItem(
+                        base: base,
+                        isEditingTarget: base.path == editingPath,
+                        exceptionCount: owningExceptions.count,
+                    ),
+                ),
+            )
+            currentItems.append(contentsOf: exceptionSectionItems(owningExceptions, owningBasePath: base.path))
+        }
+
+        return currentItems
+    }
+
+    private func exceptionItemsByOwningBasePath() -> [String: [ComposerScopeException]] {
+        let normalizedBases = selection.explicitBases.map { base in
+            (
+                base: base,
+                normalizedPath: ComposerScopeUtils.normalizeScopePath(base.path),
+            )
+        }
+        var exceptionsByOwningBasePath: [String: [ComposerScopeException]] = [:]
+
+        for exception in selection.exceptions {
+            let normalizedExceptionPath = ComposerScopeUtils.normalizeScopePath(exception.path)
+            let owningBase = normalizedBases
+                .filter { ComposerScopeUtils.isStrictDescendant(normalizedExceptionPath, of: $0.normalizedPath) }
+                .max { lhs, rhs in lhs.normalizedPath.count < rhs.normalizedPath.count }
+
+            guard let owningBase else { continue }
+            exceptionsByOwningBasePath[owningBase.base.path, default: []].append(exception)
+        }
+
+        return exceptionsByOwningBasePath
+    }
+
+    private func exceptionSectionItems(
+        _ exceptions: [ComposerScopeException],
+        owningBasePath: String,
+    ) -> [ComposerScopeEditorSectionItem] {
+        exceptions.map {
+            .exceptionScope(
+                ComposerScopeEditorExceptionItem(
+                    path: $0.path,
+                    owningBasePath: owningBasePath,
+                ),
+            )
+        }
     }
 
     private func disambiguatedVisibleCandidates(
