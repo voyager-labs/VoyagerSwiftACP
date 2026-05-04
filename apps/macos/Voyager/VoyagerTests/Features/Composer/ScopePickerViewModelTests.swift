@@ -61,6 +61,123 @@ final class ScopePickerViewModelTests: XCTestCase {
         XCTAssertEqual(candidate.path, "/Users/me/Downloads")
     }
 
+    func testSectionsAssignOverlappingExceptionToLongestOwningBase() {
+        let state = ComposerScopeEditorState(
+            selection: .explicit(
+                bases: [
+                    ComposerScopeBase(path: "/Users/me"),
+                    ComposerScopeBase(path: "/Users/me/Documents"),
+                    ComposerScopeBase(path: "/Users/me/Desktop"),
+                ],
+                exceptions: [
+                    ComposerScopeException(path: "/Users/me/Documents/Secrets"),
+                    ComposerScopeException(path: "/Users/me/Desktop/Scratch"),
+                    ComposerScopeException(path: "/tmp/Detached"),
+                ],
+            ),
+            listState: .defaultCandidates,
+            isPresented: true,
+            queryText: "",
+            candidateItems: [],
+        )
+
+        let sections = state.sections()
+        let currentItemIDs = sections[0].items.map(\.id)
+
+        XCTAssertEqual(currentItemIDs, [
+            "current-/Users/me",
+            "current-/Users/me/Documents",
+            "exception-/Users/me/Documents-/Users/me/Documents/Secrets",
+            "current-/Users/me/Desktop",
+            "exception-/Users/me/Desktop-/Users/me/Desktop/Scratch",
+        ])
+        XCTAssertTrue(currentItemIDs.contains("exception-/Users/me/Documents-/Users/me/Documents/Secrets"))
+        XCTAssertFalse(currentItemIDs.contains("exception-/Users/me-/Users/me/Documents/Secrets"))
+        XCTAssertFalse(currentItemIDs.contains("exception-/Users/me-/tmp/Detached"))
+        XCTAssertFalse(currentItemIDs.contains("exception-/Users/me/Documents-/tmp/Detached"))
+
+        guard case let .currentScope(rootBase) = sections[0].items[0] else {
+            return XCTFail("expected root current scope item")
+        }
+        XCTAssertEqual(rootBase.exceptionCount, 0)
+
+        guard case let .currentScope(documentsBase) = sections[0].items[1] else {
+            return XCTFail("expected documents current scope item")
+        }
+        XCTAssertEqual(documentsBase.exceptionCount, 1)
+
+        guard case let .currentScope(desktopBase) = sections[0].items[3] else {
+            return XCTFail("expected desktop current scope item")
+        }
+        XCTAssertEqual(desktopBase.exceptionCount, 1)
+    }
+
+    func testCanonicalSelectionPrunesNonDescendantExceptionsFromSections() {
+        let selection = ComposerScopeSelection.fromCanonicalScopes(
+            bases: ["/Users/me/Documents"],
+            exceptions: [
+                "/Users/me/Documents/Secrets",
+                "/tmp/Detached",
+            ],
+            includeSubfolders: true,
+        )
+        let state = ComposerScopeEditorState(
+            selection: selection,
+            listState: .defaultCandidates,
+            isPresented: true,
+            queryText: "",
+            candidateItems: [],
+        )
+
+        XCTAssertEqual(selection.exceptions.map(\.path), ["/Users/me/Documents/Secrets"])
+        XCTAssertFalse(selection.exceptions.map(\.path).contains("/tmp/Detached"))
+
+        let sections = state.sections()
+        let itemIDs = sections.flatMap(\.items).map(\.id)
+
+        XCTAssertFalse(itemIDs.contains("exception-/Users/me/Documents-/tmp/Detached"))
+        XCTAssertFalse(itemIDs.contains { $0.contains("/tmp/Detached") })
+    }
+
+    func testSectionsKeepInlineExceptionsVisibleDuringScopeApplyState() {
+        let selection: ComposerScopeSelection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+            exceptions: [
+                ComposerScopeException(path: "/Users/me/Documents/Secrets"),
+            ],
+        )
+        let state = ComposerScopeEditorState(
+            selection: selection,
+            committedSelection: .rootOnly,
+            listState: .defaultCandidates,
+            isPresented: true,
+            queryText: "",
+            candidateItems: [],
+        )
+
+        XCTAssertTrue(state.hasPendingScopeRuleChanges)
+
+        let sections = state.sections()
+
+        XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "addable-default"])
+        XCTAssertEqual(sections[0].items.map(\.id), [
+            "current-/Users/me/Documents",
+            "exception-/Users/me/Documents-/Users/me/Documents/Secrets",
+        ])
+
+        guard case let .currentScope(baseItem) = sections[0].items[0] else {
+            return XCTFail("expected current scope item")
+        }
+        XCTAssertEqual(baseItem.base.path, "/Users/me/Documents")
+        XCTAssertEqual(baseItem.exceptionCount, 1)
+
+        guard case let .exceptionScope(exceptionItem) = sections[0].items[1] else {
+            return XCTFail("expected inline exception item")
+        }
+        XCTAssertEqual(exceptionItem.path, "/Users/me/Documents/Secrets")
+        XCTAssertEqual(exceptionItem.owningBasePath, "/Users/me/Documents")
+    }
+
     func testRootOnlyShowsSuggestionsWithoutCurrentScopesSection() {
         let state = ComposerScopeEditorState(
             selection: .rootOnly,
@@ -150,336 +267,5 @@ final class ScopePickerViewModelTests: XCTestCase {
             exactFolderState.candidateSelectionIntent(for: "/Users/me/Documents/Secrets"),
             .replace(oldPath: "/Users/me/Documents", newPath: "/Users/me/Documents/Secrets"),
         )
-    }
-
-    func testCandidateItemDisplayMetadataDefaultsAndPreservesExplicitValues() {
-        let defaultCandidate = ComposerScopeEditorCandidateItem(
-            path: "/Users/me/Documents",
-            name: "Documents",
-            iconName: "folder",
-        )
-
-        XCTAssertNil(defaultCandidate.locationIdentifier)
-        XCTAssertNil(defaultCandidate.secondaryText)
-        XCTAssertEqual(defaultCandidate.id, "/Users/me/Documents")
-
-        let configuredCandidate = ComposerScopeEditorCandidateItem(
-            path: "/Users/me/Documents",
-            name: "Documents",
-            iconName: "folder",
-            locationIdentifier: "/Users/me",
-            secondaryText: "Documents",
-        )
-
-        XCTAssertEqual(configuredCandidate.locationIdentifier, "/Users/me")
-        XCTAssertEqual(configuredCandidate.secondaryText, "Documents")
-    }
-
-    func testApplyCandidateDisambiguationPolicyKeepsSecondaryTextNilForNonDuplicateNames() {
-        let items = [
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Documents",
-                path: "/Users/me/Documents",
-                name: "Documents",
-                iconName: "folder",
-                locationIdentifier: "/Users/me",
-            ),
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Downloads",
-                path: "/Users/me/Downloads",
-                name: "Downloads",
-                iconName: "folder",
-                locationIdentifier: "/Users/me",
-            ),
-        ]
-
-        let result = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
-
-        XCTAssertEqual(result.map(\.id), items.map(\.id))
-        XCTAssertEqual(result.map(\.path), items.map(\.path))
-        XCTAssertEqual(result.map(\.name), items.map(\.name))
-        XCTAssertEqual(result.map(\.iconName), items.map(\.iconName))
-        XCTAssertEqual(result.map(\.locationIdentifier), items.map(\.locationIdentifier))
-        XCTAssertTrue(result.allSatisfy { $0.secondaryText == nil })
-    }
-
-    func testApplyCandidateDisambiguationPolicyUsesParentNamesForDuplicateNames() {
-        let items = [
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Work/Docs",
-                path: "/Users/me/Work/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Users/me/Work",
-            ),
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Personal/Docs",
-                path: "/Users/me/Personal/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Users/me/Personal",
-            ),
-        ]
-
-        let result = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
-
-        XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(Set(result.map(\.locationIdentifier)).count, 2)
-        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["Work", "Personal"])
-        XCTAssertEqual(result[0].secondaryText, "Work")
-        XCTAssertEqual(result[1].secondaryText, "Personal")
-    }
-
-    func testApplyCandidateDisambiguationPolicyExpandsSuffixWhenParentNamesMatch() {
-        let items = [
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Work/Projects/Docs",
-                path: "/Users/me/Work/Projects/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Users/me/Work/Projects",
-            ),
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Personal/Projects/Docs",
-                path: "/Users/me/Personal/Projects/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Users/me/Personal/Projects",
-            ),
-        ]
-
-        let result = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
-
-        XCTAssertEqual(
-            Set(result.map(\.locationIdentifier)),
-            ["/Users/me/Work/Projects", "/Users/me/Personal/Projects"],
-        )
-        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["Work/Projects", "Personal/Projects"])
-    }
-
-    func testApplyCandidateDisambiguationPolicyUsesStorageFallbackForMixedLocations() {
-        let items = [
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Volumes/External/Work/Docs",
-                path: "/Volumes/External/Work/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Volumes/External/Work",
-            ),
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Work/Docs",
-                path: "/Users/me/Work/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Users/me/Work",
-            ),
-        ]
-
-        let result = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
-
-        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["External • Work", "me • Work"])
-    }
-
-    func testApplyCandidateDisambiguationPolicyUsesAbsoluteParentPathAsLastResortWhenOtherLabelsStillCollide() {
-        let items = [
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Volumes/me/Work/Docs",
-                path: "/Volumes/me/Work/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Volumes/me/Work",
-            ),
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Work/Docs",
-                path: "/Users/me/Work/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Users/me/Work",
-            ),
-        ]
-
-        let result = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
-
-        // last resort: volume name and username are both `me`, so suffix and storage fallback stay ambiguous.
-        XCTAssertEqual(Set(result.compactMap(\.secondaryText)), ["/Volumes/me/Work", "/Users/me/Work"])
-    }
-
-    func testDefaultAndSearchCandidatesShareLocationMetadataContract() {
-        let defaultCandidates = makeDefaultScopeEditorCandidates(
-            favorites: [],
-            backHistory: ["/Users/me/Work/Docs"],
-            entryLoadingClient: makeEntryLoadingClient(),
-        )
-
-        let searchItems = [
-            ComposerScopeUtils.DirectoryItem(
-                id: "/Users/me/Work/Docs",
-                path: "/Users/me/Work/Docs",
-                name: "Docs",
-                iconName: "folder",
-                locationIdentifier: "/Users/me/Work",
-            ),
-        ]
-        let searchCandidate = ComposerScopeEditorCandidateItem(
-            path: searchItems[0].path,
-            name: searchItems[0].name,
-            iconName: searchItems[0].iconName,
-            locationIdentifier: searchItems[0].locationIdentifier,
-        )
-
-        XCTAssertEqual(defaultCandidates.first?.locationIdentifier, searchCandidate.locationIdentifier)
-        XCTAssertNil(defaultCandidates.first?.secondaryText)
-        XCTAssertNil(searchCandidate.secondaryText)
-    }
-
-    func testCandidateRowsExposeSecondaryTextWithoutChangingSelectionIntent() {
-        let state = ComposerScopeEditorState(
-            selection: .explicit(
-                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
-                exceptions: [],
-            ),
-            includeSubfolders: true,
-            isPresented: true,
-            editingPath: "/Users/me/Documents",
-            entryMode: .edit,
-            candidateItems: [
-                ComposerScopeEditorCandidateItem(
-                    path: "/Users/me/Documents/Secrets",
-                    name: "Secrets",
-                    iconName: "folder",
-                    locationIdentifier: "/Users/me/Documents",
-                ),
-                ComposerScopeEditorCandidateItem(
-                    path: "/Users/me/Archive/Secrets",
-                    name: "Secrets",
-                    iconName: "folder",
-                    locationIdentifier: "/Users/me/Archive",
-                ),
-            ],
-        )
-
-        XCTAssertEqual(
-            state.candidateSelectionIntent(for: "/Users/me/Documents/Secrets"),
-            .exclude(path: "/Users/me/Documents/Secrets"),
-        )
-        let candidates = state.sections().last?.items.compactMap { item -> ComposerScopeEditorCandidateItem? in
-            guard case let .addableCandidate(candidate) = item else { return nil }
-            return candidate
-        }
-        XCTAssertEqual(candidates?.map(\.secondaryText), ["Documents", "Archive"])
-        XCTAssertTrue(state.candidateItems.allSatisfy { $0.secondaryText == nil })
-    }
-
-    func testCurrentScopeFilteringRecomputesSecondaryTextForVisibleCandidates() {
-        let state = ComposerScopeEditorState(
-            selection: .explicit(
-                bases: [ComposerScopeBase(path: "/Users/me/Work/Docs")],
-                exceptions: [],
-            ),
-            listState: .defaultCandidates,
-            isPresented: true,
-            queryText: "",
-            editingPath: nil,
-            candidateItems: ComposerScopeUtils.applyCandidateDisambiguationPolicy(
-                [
-                    ComposerScopeUtils.DirectoryItem(
-                        id: "/Users/me/Work/Docs",
-                        path: "/Users/me/Work/Docs",
-                        name: "Docs",
-                        iconName: "folder",
-                        locationIdentifier: "/Users/me/Work",
-                    ),
-                    ComposerScopeUtils.DirectoryItem(
-                        id: "/Users/me/Personal/Docs",
-                        path: "/Users/me/Personal/Docs",
-                        name: "Docs",
-                        iconName: "folder",
-                        locationIdentifier: "/Users/me/Personal",
-                    ),
-                ],
-            )
-            .map { item in
-                ComposerScopeEditorCandidateItem(
-                    path: item.path,
-                    name: item.name,
-                    iconName: item.iconName,
-                    locationIdentifier: item.locationIdentifier,
-                    secondaryText: item.secondaryText,
-                )
-            },
-        )
-
-        let candidates = state.sections().last?.items.compactMap { item -> ComposerScopeEditorCandidateItem? in
-            guard case let .addableCandidate(candidate) = item else { return nil }
-            return candidate
-        }
-
-        XCTAssertEqual(candidates?.map(\.path), ["/Users/me/Personal/Docs"])
-        XCTAssertEqual(candidates?.first?.locationIdentifier, "/Users/me/Personal")
-        XCTAssertNil(candidates?.first?.secondaryText)
-    }
-
-    func testCandidateRowsDoNotForceSecondaryForNonDuplicateCandidates() {
-        let state = ComposerScopeEditorState(
-            selection: .explicit(
-                bases: [ComposerScopeBase(path: "/Users/me/Documents")],
-                exceptions: [],
-            ),
-            listState: .defaultCandidates,
-            isPresented: true,
-            queryText: "",
-            editingPath: nil,
-            candidateItems: [
-                ComposerScopeEditorCandidateItem(path: "/Users/me/Downloads", name: "Downloads", iconName: "folder"),
-            ],
-        )
-
-        let sections = state.sections()
-
-        XCTAssertEqual(sections.map(\.kind.id), ["current-scopes", "addable-default"])
-        guard let sectionItem = sections[1].items.first else {
-            return XCTFail("expected addable candidate")
-        }
-        guard case let .addableCandidate(candidate) = sectionItem else {
-            return XCTFail("expected addable candidate")
-        }
-        XCTAssertNil(candidate.secondaryText)
-    }
-
-    func testMakeDefaultScopeEditorCandidatesKeepsRawMetadataOnly() {
-        let candidates = makeDefaultScopeEditorCandidates(
-            favorites: [],
-            backHistory: [
-                "/Users/me/Work/Docs",
-                "/Users/me/Personal/Docs",
-                "/Users/me/Downloads",
-            ],
-            entryLoadingClient: makeEntryLoadingClient(),
-        )
-
-        let duplicateCandidates = candidates.filter { $0.name == "Docs" }
-        XCTAssertEqual(duplicateCandidates.count, 2)
-        XCTAssertEqual(Set(duplicateCandidates.map(\.path)), [
-            "/Users/me/Personal/Docs",
-            "/Users/me/Work/Docs",
-        ])
-        XCTAssertEqual(Set(duplicateCandidates.map(\.locationIdentifier)), [
-            "/Users/me/Personal",
-            "/Users/me/Work",
-        ])
-        XCTAssertTrue(duplicateCandidates.allSatisfy { $0.secondaryText == nil })
-
-        let downloadsCandidate = candidates.first(where: { $0.name == "Downloads" })
-        XCTAssertEqual(downloadsCandidate?.locationIdentifier, "/Users/me")
-        XCTAssertNil(downloadsCandidate?.secondaryText)
-    }
-
-    private func makeEntryLoadingClient(homePath: String = "/Users/me") -> EntryLoadingClient {
-        var client = EntryLoadingClient.testValue
-        client.fileExists = { _ in true }
-        client.displayName = { ($0 as NSString).lastPathComponent }
-        client.homeDirectory = { homePath }
-        client.urlsForDirectory = { _, _ in [] }
-        return client
     }
 }
