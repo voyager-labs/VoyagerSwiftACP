@@ -2,9 +2,10 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAppPreferences
-import VoyagerShared
-
+import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @Reducer
 struct FileManagerContentFeature {

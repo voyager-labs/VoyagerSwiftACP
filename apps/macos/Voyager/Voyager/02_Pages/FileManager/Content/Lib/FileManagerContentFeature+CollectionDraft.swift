@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 
 extension FileManagerContentFeature {
     func handleCollectionDraftAction(

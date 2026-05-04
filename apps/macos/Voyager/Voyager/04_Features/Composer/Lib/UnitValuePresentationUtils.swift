@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 enum UnitValuePresentationUtils {
     static func makeState(

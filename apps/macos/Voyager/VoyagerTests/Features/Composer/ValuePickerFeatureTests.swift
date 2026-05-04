@@ -1,6 +1,8 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import XCTest
 
 @MainActor
@@ -189,11 +191,11 @@ private func makeStore(
             key == "tag_names" ? "categorical" : RegistryTestSupport.propertyTypeString(for: key)
         }
         $0.registryClient = registryClient
-        $0.finderFavoritesTagClient = FinderFavoritesTagClient(
+        $0[FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient(
             favoriteTagNames: { [] },
             favoriteTags: { favoriteTags },
         )
     }
-    store.exhaustivity = .off
+    store.exhaustivity = ComposableArchitecture.Exhaustivity.off
     return store
 }

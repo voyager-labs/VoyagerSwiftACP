@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntitiesCollection
 
 enum FileManagerContentCollectionCoordinator {
     static func handleCollectionOwnerAction(

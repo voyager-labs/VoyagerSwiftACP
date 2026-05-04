@@ -26,6 +26,8 @@
 		F20000000000000000000025 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		F20000000000000000000026 /* VoyagerFeaturesEntryOperations in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000014 /* VoyagerFeaturesEntryOperations */; };
 		F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000015 /* VoyagerEntitiesAppPreferences */; };
+		F20000000000000000000028 /* VoyagerEntitiesTag in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000016 /* VoyagerEntitiesTag */; };
+		F20000000000000000000029 /* VoyagerEntitiesCollection in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000017 /* VoyagerEntitiesCollection */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -195,6 +197,8 @@
 				F20000000000000000000023 /* VoyagerShared in Frameworks */,
 				F20000000000000000000026 /* VoyagerFeaturesEntryOperations in Frameworks */,
 				F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */,
+				F20000000000000000000028 /* VoyagerEntitiesTag in Frameworks */,
+				F20000000000000000000029 /* VoyagerEntitiesCollection in Frameworks */,
 				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
 				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
@@ -337,6 +341,9 @@
 				F20000000000000000000012 /* VoyagerPagesSettings */,
 				F20000000000000000000013 /* VoyagerShared */,
 				F20000000000000000000014 /* VoyagerFeaturesEntryOperations */,
+				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
+				F20000000000000000000016 /* VoyagerEntitiesTag */,
+				F20000000000000000000017 /* VoyagerEntitiesCollection */,
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
@@ -535,6 +542,8 @@
 				F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */,
 				F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */,
 				F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */,
+				F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Tag" */,
+				F20000000000000000000007 /* XCLocalSwiftPackageReference "05_Entities/Collection" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -1421,6 +1430,14 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/05_Entities/AppPreferences;
 		};
+		F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Tag" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/05_Entities/Tag;
+		};
+		F20000000000000000000007 /* XCLocalSwiftPackageReference "05_Entities/Collection" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/05_Entities/Collection;
+		};
 		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1622,6 +1639,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */;
 			productName = VoyagerEntitiesAppPreferences;
+		};
+		F20000000000000000000016 /* VoyagerEntitiesTag */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Tag" */;
+			productName = VoyagerEntitiesTag;
+		};
+		F20000000000000000000017 /* VoyagerEntitiesCollection */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000007 /* XCLocalSwiftPackageReference "05_Entities/Collection" */;
+			productName = VoyagerEntitiesCollection;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

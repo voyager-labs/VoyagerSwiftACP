@@ -1,6 +1,7 @@
 import AppKit
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 enum EntryContextMenuBuilder {
     struct Configuration {

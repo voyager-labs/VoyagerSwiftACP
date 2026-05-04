@@ -1,6 +1,7 @@
 import Foundation
 
 import ComposableArchitecture
+import VoyagerEntitiesEntry
 
 @CasePathable
 enum EntryArrangementsAction: CasePathable, Equatable, Sendable {

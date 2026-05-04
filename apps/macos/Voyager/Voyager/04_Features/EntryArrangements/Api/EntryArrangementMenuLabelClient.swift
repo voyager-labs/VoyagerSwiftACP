@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 struct EntryArrangementMenuLabelClient {
     var labelForPropertyKey: (String) -> String

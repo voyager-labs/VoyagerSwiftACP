@@ -1,6 +1,8 @@
 import AppKit
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerShared
 
 struct EntryListEntryCellViewConfiguration {
     let context: Context

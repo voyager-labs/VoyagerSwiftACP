@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
@@ -259,7 +260,8 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         await store.send(.saveToExisting(payload, url))
         await store.finish()
 
-        await XCTAssertNil(recorder.last())
+        let lastSaved = await recorder.last()
+        XCTAssertNil(lastSaved)
     }
 
     private func assertSnapshotMeta(_ file: VoyagerCollectionFile?, itemCount: Int) {

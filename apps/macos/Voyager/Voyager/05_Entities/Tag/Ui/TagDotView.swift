@@ -1,7 +1,9 @@
+// TODO(sunset VOY-272): UI component — remains app-layer; move to appropriate UI layer when 05_Entities is sunset.
 import AppKit
 import SwiftUI
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 struct TagDotView: View {
     let tagColor: TagColor

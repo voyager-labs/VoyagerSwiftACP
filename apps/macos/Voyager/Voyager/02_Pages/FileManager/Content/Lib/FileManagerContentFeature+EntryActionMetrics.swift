@@ -2,6 +2,7 @@ import Foundation
 
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 extension FileManagerContentFeature {
     private struct EntryActionPayload {

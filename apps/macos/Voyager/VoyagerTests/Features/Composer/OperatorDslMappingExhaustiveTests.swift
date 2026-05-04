@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 
 @MainActor

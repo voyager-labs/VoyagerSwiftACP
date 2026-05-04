@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 enum ConditionChipDisplayUtils {
     static func displayValueText(for condition: Condition, displayValues: [String]? = nil) -> String {

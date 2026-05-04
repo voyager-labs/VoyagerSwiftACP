@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import Logging
+import VoyagerEntitiesCollection
 import VoyagerShared
 
 private let kComposerSearchLifecycleLogger = Logger(label: "Voyager")

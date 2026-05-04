@@ -1,6 +1,9 @@
+// TODO(sunset VOY-273): Temporary compatibility adapter — app-layer code using package types.
 import Foundation
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerShared
 
 enum EntryModelConverterLive {
     nonisolated static func convertURLToEntry(

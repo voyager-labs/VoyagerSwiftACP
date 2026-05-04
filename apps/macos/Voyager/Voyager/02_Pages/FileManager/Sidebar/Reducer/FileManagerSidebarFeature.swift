@@ -3,6 +3,8 @@ import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesCollection
+import VoyagerEntitiesTag
 import VoyagerShared
 
 @Reducer

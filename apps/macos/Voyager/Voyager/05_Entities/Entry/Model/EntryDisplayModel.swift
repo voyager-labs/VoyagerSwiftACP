@@ -1,6 +1,8 @@
+// TODO(sunset VOY-273): Temporary compatibility adapter — app-layer display logic using package EntryModel.
 import Foundation
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 struct EntryDisplayModel: Sendable {
     let entry: EntryModel

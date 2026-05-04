@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 enum ComposerScopeUtils {
     struct DirectoryItem: Identifiable, Equatable {

@@ -3,6 +3,7 @@ import CoreServices
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+import VoyagerEntitiesTag
 import VoyagerShared
 
 public struct EntryLoadingClient: Sendable {
@@ -15,15 +16,15 @@ public struct EntryLoadingClient: Sendable {
     public var contentsOfDirectory: @Sendable (
         URL,
         [URLResourceKey],
-        FileManager.DirectoryEnumerationOptions,
+        FileManager.DirectoryEnumerationOptions
     ) throws -> [URL]
     public var mountedVolumeURLs: @Sendable (
         [URLResourceKey],
-        FileManager.VolumeEnumerationOptions,
+        FileManager.VolumeEnumerationOptions
     ) -> [URL]?
     public var urlsForDirectory: @Sendable (
         FileManager.SearchPathDirectory,
-        FileManager.SearchPathDomainMask,
+        FileManager.SearchPathDomainMask
     ) -> [URL]
     public var homeDirectory: @Sendable () -> String
     public var getItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata
@@ -41,7 +42,7 @@ public struct EntryLoadingClient: Sendable {
         fileExists: @escaping @Sendable (String) -> Bool,
         fileExistsAtPath: @escaping @Sendable (
             String,
-            UnsafeMutablePointer<ObjCBool>?,
+            UnsafeMutablePointer<ObjCBool>?
         ) -> Bool,
         contentsOfDirectory: @escaping @Sendable (URL, [URLResourceKey], FileManager.DirectoryEnumerationOptions) throws
             -> [URL],
@@ -54,7 +55,7 @@ public struct EntryLoadingClient: Sendable {
         getFileSizeInBytes: @escaping @Sendable (URL) -> Int64?,
         getFolderItemCount: @escaping @Sendable (URL) -> Int?,
         isPackageDirectory: @escaping @Sendable (URL) -> Bool,
-        displayName: @escaping @Sendable (String) -> String,
+        displayName: @escaping @Sendable (String) -> String
     ) {
         self.loadItems = loadItems
         self.loadComputerItems = loadComputerItems
@@ -86,14 +87,14 @@ extension EntryLoadingClient: DependencyKey {
             loadRecentItems: { showHidden, _ in
                 await EntryLoadingLive.loadRecentItemsViaSearch(
                     showHidden: showHidden,
-                    recentSearchClient: recentSearchClient,
+                    recentSearchClient: recentSearchClient
                 )
             },
             loadFilesWithTag: { tag, showHidden, _ in
                 await EntryLoadingLive.loadFilesWithTagViaSearch(
                     tag: tag,
                     showHidden: showHidden,
-                    tagSearchClient: tagSearchClient,
+                    tagSearchClient: tagSearchClient
                 )
             },
             fileExists: EntryLoadingLive.fileExists,
@@ -107,7 +108,7 @@ extension EntryLoadingClient: DependencyKey {
             getFileSizeInBytes: EntryLoadingLive.getFileSizeInBytes,
             getFolderItemCount: EntryLoadingLive.getFolderItemCount,
             isPackageDirectory: EntryLoadingLive.isPackageDirectory,
-            displayName: EntryLoadingLive.displayName,
+            displayName: EntryLoadingLive.displayName
         )
     }
 
@@ -128,7 +129,7 @@ extension EntryLoadingClient: DependencyKey {
             getFileSizeInBytes: { _ in nil },
             getFolderItemCount: { _ in nil },
             isPackageDirectory: { _ in false },
-            displayName: { path in path },
+            displayName: { path in path }
         )
     }
 
@@ -149,7 +150,7 @@ extension EntryLoadingClient: DependencyKey {
             getFileSizeInBytes: { _ in nil },
             getFolderItemCount: { _ in nil },
             isPackageDirectory: { _ in false },
-            displayName: { path in path },
+            displayName: { path in path }
         )
     }
 }
@@ -186,14 +187,14 @@ enum EntryLoadingLive {
                         .addedToDirectoryDateKey,
                         .contentAccessDateKey,
                     ],
-                    options,
+                    options
                 )
 
                 let loadedEntries = entries.compactMap { url in
                     EntryModelConverterLive.convertURLToEntry(
                         url,
                         entryLoadingClient: entryLoadingClient,
-                        workspaceClient: workspaceClient,
+                        workspaceClient: workspaceClient
                     )
                 }
 
@@ -223,8 +224,8 @@ enum EntryLoadingLive {
                             kind: "Volume",
                             creatorApplication: nil,
                             tags: nil,
-                            supplementaryMetadata: nil,
-                        ),
+                            supplementaryMetadata: nil
+                        )
                     ),
                 ]
             }.value
@@ -251,7 +252,7 @@ enum EntryLoadingLive {
 
     nonisolated static var urlsForDirectory: @Sendable (
         FileManager.SearchPathDirectory,
-        FileManager.SearchPathDomainMask,
+        FileManager.SearchPathDomainMask
     ) -> [URL] {
         { directory, domain in
             FileManagerClient.liveValue.urlsForDirectory(directory, domain)
@@ -270,7 +271,7 @@ enum EntryLoadingLive {
 
     nonisolated static var mountedVolumeURLs: @Sendable (
         [URLResourceKey],
-        FileManager.VolumeEnumerationOptions,
+        FileManager.VolumeEnumerationOptions
     ) -> [URL]? {
         { keys, options in
             FileManagerClient.liveValue.mountedVolumeURLs(keys, options)
@@ -280,7 +281,7 @@ enum EntryLoadingLive {
     nonisolated static var contentsOfDirectory: @Sendable (
         URL,
         [URLResourceKey],
-        FileManager.DirectoryEnumerationOptions,
+        FileManager.DirectoryEnumerationOptions
     ) throws -> [URL] {
         { url, keys, options in
             try FileManagerClient.liveValue.contentsOfDirectory(url, keys, options)
@@ -320,7 +321,7 @@ enum EntryLoadingLive {
             return EntryItemMetadata(
                 kind: kind,
                 creatorApplication: creatorApplication,
-                lastUsedDate: lastUsedDate,
+                lastUsedDate: lastUsedDate
             )
         }
     }
@@ -356,7 +357,7 @@ enum EntryLoadingLive {
             guard let entries = try? FileManagerClient.liveValue.contentsOfDirectory(
                 url,
                 nil,
-                [.skipsHiddenFiles],
+                [.skipsHiddenFiles]
             ) else {
                 return nil
             }
@@ -390,7 +391,7 @@ enum EntryLoadingLive {
 
     nonisolated static func loadRecentItemsViaSearch(
         showHidden: Bool,
-        recentSearchClient: RecentSearchClient,
+        recentSearchClient: RecentSearchClient
     ) async -> [EntryModel] {
         do {
             let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
@@ -400,12 +401,12 @@ enum EntryLoadingLive {
                     scopes: [],
                     resultCap: 100,
                     includeHidden: showHidden,
-                    sort: .lastUsedDateDescending,
-                ),
+                    sort: .lastUsedDateDescending
+                )
             )
             return EntryModelTagColorNormalizer.normalize(
                 response.items.map(EntryModelPayloadAdapter.makeEntry),
-                favoriteTags: favoriteTags,
+                favoriteTags: favoriteTags
             )
         } catch {
             return []
@@ -415,7 +416,7 @@ enum EntryLoadingLive {
     nonisolated static func loadFilesWithTagViaSearch(
         tag: String,
         showHidden: Bool,
-        tagSearchClient: TagSearchClient,
+        tagSearchClient: TagSearchClient
     ) async -> [EntryModel] {
         do {
             let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
@@ -427,12 +428,12 @@ enum EntryLoadingLive {
                     resultCap: 100,
                     includeHidden: showHidden,
                     sort: .lastUsedDateDescending,
-                    exactTagVerification: true,
-                ),
+                    exactTagVerification: true
+                )
             )
             return EntryModelTagColorNormalizer.normalize(
                 response.items.map(EntryModelPayloadAdapter.makeEntry),
-                favoriteTags: favoriteTags,
+                favoriteTags: favoriteTags
             )
         } catch {
             return []

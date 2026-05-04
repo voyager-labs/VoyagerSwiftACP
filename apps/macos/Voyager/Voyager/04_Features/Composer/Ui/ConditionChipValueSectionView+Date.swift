@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesCollection
 
 private struct ConditionChipDateValueButtonConfig {
     let placeholderText: String

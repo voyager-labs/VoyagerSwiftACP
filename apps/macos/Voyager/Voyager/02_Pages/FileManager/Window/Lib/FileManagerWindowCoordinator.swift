@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 import ComposableArchitecture
-
+import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryOperations
 
 final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {

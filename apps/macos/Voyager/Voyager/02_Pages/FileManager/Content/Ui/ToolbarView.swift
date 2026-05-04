@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import SwiftUI
-
+import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryOperations
 
 func showsToolbarRefreshButton(

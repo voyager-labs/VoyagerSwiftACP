@@ -1,3 +1,4 @@
+// TODO(sunset VOY-273): Temporary compatibility adapter — app-layer TCA client.
 import ComposableArchitecture
 import CoreServices
 import Foundation
@@ -5,6 +6,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 
 public struct EntryLoadingClient: Sendable {

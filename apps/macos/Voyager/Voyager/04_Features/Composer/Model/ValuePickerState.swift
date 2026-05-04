@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesTag
 
 @ObservableState
 struct ValuePickerState: Equatable {

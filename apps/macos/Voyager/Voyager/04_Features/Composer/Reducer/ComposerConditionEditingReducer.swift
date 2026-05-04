@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 
 @Reducer
 struct ComposerConditionEditingReducer {
@@ -159,7 +160,7 @@ private func handleAddCondition(
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
     let label = registryClient.labelForKey(propertyKey)
-    let propertyType = registryClient.propertyTypeString(propertyKey)
+    let propertyType = registryClient.propertyTypeString(for: propertyKey)
     if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
         state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."
         return .none
@@ -262,7 +263,7 @@ private func handleReplaceConditionProperty(
     }
 
     let label = registryClient.labelForKey(propertyKey)
-    let propertyType = registryClient.propertyTypeString(propertyKey)
+    let propertyType = registryClient.propertyTypeString(for: propertyKey)
 
     if let dupIndex = state.conditions.firstIndex(where: { $0.propertyKey == propertyKey }), dupIndex != idx {
         state.propertyPicker.duplicateMessage = "\"\(label)\" is already added."

@@ -1,8 +1,8 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerShared
-
+import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @Reducer
 struct FileManagerNavigationActionReducer {

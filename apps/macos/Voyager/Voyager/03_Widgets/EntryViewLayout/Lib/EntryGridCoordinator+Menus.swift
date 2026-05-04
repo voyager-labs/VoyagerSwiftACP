@@ -1,4 +1,5 @@
 import AppKit
+import VoyagerEntitiesTag
 import VoyagerFeaturesEntryOperations
 
 extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProviding {

@@ -1,6 +1,8 @@
+// TODO(sunset VOY-273): Temporary compatibility adapter — app-layer tag normalization using package types.
 import Foundation
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 enum EntryModelTagColorNormalizer {
     nonisolated static func normalize(_ entries: [EntryModel], favoriteTags: [Tag]) -> [EntryModel] {

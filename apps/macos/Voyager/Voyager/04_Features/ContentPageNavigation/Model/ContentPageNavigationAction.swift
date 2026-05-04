@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 
 struct ContentPageNavigationErrorFingerprint: Equatable, Sendable {
     let domain: String

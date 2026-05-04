@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesCollection
 
 struct ConditionChipValueSectionView: View {
     let condition: Condition
