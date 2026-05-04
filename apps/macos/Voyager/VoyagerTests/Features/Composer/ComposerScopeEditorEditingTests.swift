@@ -298,6 +298,9 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
             $0.scopeEditor.candidateItems = []
         }
 
+        XCTAssertEqual(store.state.scopeEditor.selection.explicitBases.map(\.path), ["/Users/test/Documents"])
+        XCTAssertEqual(store.state.scopeEditor.selection.exceptions.map(\.path), ["/Users/test/Documents/Receipts"])
+
         await store.finish()
     }
 
@@ -328,10 +331,19 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
             $0.scopeEditor.candidateItems = []
         }
 
+        XCTAssertEqual(store.state.scopeEditor.selection.explicitBases.map(\.path), ["/Users/test/Documents"])
+        XCTAssertFalse(store.state.scopeEditor.hasExceptions)
+        XCTAssertFalse(
+            store.state.scopeEditor.sections()
+                .flatMap(\.items)
+                .contains { if case .exceptionScope = $0 { true } else { false } },
+        )
+
         await store.finish()
     }
 }
 
+@MainActor
 private func makePassiveStore(initialState: ComposerState) -> TestStore<ComposerState, ComposerAction> {
     TestStore(initialState: initialState) {
         ComposerFeature()
@@ -341,6 +353,7 @@ private func makePassiveStore(initialState: ComposerState) -> TestStore<Composer
     }
 }
 
+@MainActor
 private func makeEditingStore(
     initialState: ComposerState,
     recorder: EditingApplyFiltersRecorder,
