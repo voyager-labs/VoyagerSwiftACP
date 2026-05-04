@@ -1,0 +1,6 @@
+Task 7: FileManager host wiring evidence
+
+- Scope: FileManager mounts AiChat as a thin host with a context adapter.
+- Boundary: the host passes current context snapshots only, chat semantics stay in AiChat.
+- Verification: focused test passed with `xcodebuild -project "apps/macos/Voyager/Voyager.xcodeproj" -scheme Voyager-Dev -configuration Debug -derivedDataPath "/tmp/voyager-task7-dd" test -only-testing:VoyagerTests/FileManagerContentAiChatPresentationTests`.
+- Result: `** TEST SUCCEEDED **` with 3 passed cases, `testCurrentViewSnapshotUsesCanonicalNavigationContext`, `testPresentAiChatMountsStoreWithContextWithoutOwningChatSemantics`, and `testSelectedItemSnapshotIncludesSelectedEntriesAndSelectionMetadata`.

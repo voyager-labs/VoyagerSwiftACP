@@ -1,0 +1,23 @@
+Task 6 evidence
+
+Checkbox item: `6. Wave 2d: Implement VOY-222 session continuity and restore/rebind fallback in AiChat`
+
+Command:
+`xcrun swift test --package-path apps/macos/Packages/04_Features/AiChat --filter 'Restore|NewSession|Rebind'`
+
+Result:
+- Passed.
+- Build complete.
+- Executed 4 tests, with 0 failures.
+
+Relevant tests observed:
+- `testRestoreContextMismatchFallsBackToNewSession`
+- `testRestoreFallsBackToFirstCurrentModelWhenRestoredModelIsMissing`
+- `testRestoreMissingRecordFallsBackToNewSessionWithoutError`
+- `testRestoreValidSessionRestoresTranscriptAndNormalizesLockedState`
+
+AC mapping:
+- missing restore record falls back to `new_session`
+- context mismatch records `rebind_required`, then falls back to `new_session`
+- invalid restore does not activate a stale transcript
+- restored model fallback is covered

@@ -1,0 +1,28 @@
+Task 8 boundary audit
+
+## Commands
+
+- `grep` search in `apps/macos/Packages/05_Entities/Ai/Sources` for `FileManager|VoyagerFeaturesAiChat|02_Pages|04_Features|import Voyager`
+- `grep` search in `apps/macos/Packages/05_Entities/Ai/Sources` for `^import (FileManager|VoyagerFeaturesAiChat|Voyager|Pages)`
+- `grep` search in `apps/macos/Packages/04_Features/AiChat/Sources` for `FileManager|02_Pages|import Voyager\b|Voyager/`
+- `grep` search in `apps/macos/Voyager/Voyager/02_Pages/FileManager/Content` for `AiChatRequest|AiChatSession|transcript|stream|lockedModel|selectedModel|RequestRun|partial`
+- `grep` search in `apps/macos/Voyager/Voyager/02_Pages/FileManager/Content` for `context|navigation|composer|present|mount|toolbar|adapter|AiChat`
+
+## Results
+
+### `apps/macos/Packages/05_Entities/Ai/Sources`
+
+- No forbidden upward imports found.
+- Matches were limited to existing infra usage of `FileManager.default` inside API/Lib helpers.
+- No `import Voyager`, `import Pages`, `VoyagerFeaturesAiChat`, `02_Pages`, or `04_Features` imports were found.
+
+### `apps/macos/Packages/04_Features/AiChat/Sources`
+
+- No matches found for `FileManager`, `02_Pages`, `import Voyager\b`, or `Voyager/`.
+- This keeps the feature package free of app/page dependencies.
+
+### FileManager content boundaries
+
+- No lifecycle ownership terms were found for `AiChatRequest`, `AiChatSession`, `transcript`, `stream`, `lockedModel`, `selectedModel`, `RequestRun`, or `partial`.
+- The only matches were host/context routing terms in existing composer/navigation/adaptor code, including `FileManagerAiChatContextAdapter`, toolbar mount paths, composer actions, and navigation helpers.
+- Conclusion: FileManager remains a thin host with context translation only.

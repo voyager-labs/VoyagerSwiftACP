@@ -1,0 +1,18 @@
+Building for debugging...
+[0/2] Write swift-version-1CE8F7596B9D9E9D.txt
+Build complete! (0.14s)
+Test Suite 'Selected tests' started at 2026-05-01 10:38:22.762.
+Test Suite 'VoyagerFeaturesAiChatPackageTests.xctest' started at 2026-05-01 10:38:22.763.
+Test Suite 'AiChatFeatureTests' started at 2026-05-01 10:38:22.763.
+Test Case '-[VoyagerFeaturesAiChatTests.AiChatFeatureTests testCancelRejectsLateStreamAndFinalEvents]' started.
+Test Case '-[VoyagerFeaturesAiChatTests.AiChatFeatureTests testCancelRejectsLateStreamAndFinalEvents]' passed (0.036 seconds).
+Test Suite 'AiChatFeatureTests' passed at 2026-05-01 10:38:22.800.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.036 (0.036) seconds
+Test Suite 'VoyagerFeaturesAiChatPackageTests.xctest' passed at 2026-05-01 10:38:22.800.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.036 (0.036) seconds
+Test Suite 'Selected tests' passed at 2026-05-01 10:38:22.800.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.036 (0.037) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 1400
+􀄵  Target Platform: arm64e-apple-macos14.0
+􁁛  Test run with 0 tests in 0 suites passed after 0.001 seconds.

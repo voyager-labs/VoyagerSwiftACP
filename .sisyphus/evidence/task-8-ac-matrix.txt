@@ -1,0 +1,13 @@
+Task 8 verification summary
+
+- Matrix: `.sisyphus/evidence/voy-231-ac-matrix.md`
+- Package test command: `xcrun swift test --package-path apps/macos/Packages/05_Entities/Ai`
+  - Result: passed, 197 tests passed, 3 skipped, 0 failures.
+- Package test command: `xcrun swift test --package-path apps/macos/Packages/04_Features/AiChat`
+  - Result: passed, 14 tests passed, 0 failures.
+- Focused FileManager command: `xcodebuild -project "apps/macos/Voyager/Voyager.xcodeproj" -scheme Voyager-Dev -configuration Debug -derivedDataPath "/tmp/voyager-task8-dd" test -only-testing:VoyagerTests/FileManagerContentAiChatPresentationTests`
+  - Result: `** TEST SUCCEEDED **` with 3 passed cases.
+- Smoke build command: `xcodebuild -project "apps/macos/Voyager/Voyager.xcodeproj" -scheme Voyager-Dev -configuration Debug -derivedDataPath "/tmp/voyager-task8-build-dd" build`
+  - Result: `** BUILD SUCCEEDED **`.
+
+Issue coverage confirmed for VOY-237, VOY-238, VOY-219, and VOY-222 via the AC matrix.

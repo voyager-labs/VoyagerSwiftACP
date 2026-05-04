@@ -1,0 +1,26 @@
+[0/1] Planning build
+Building for debugging...
+[0/7] Write sources
+[1/7] Write swift-version-1CE8F7596B9D9E9D.txt
+[3/5] Emitting module VoyagerFeaturesAiChatTests
+[4/5] Compiling VoyagerFeaturesAiChatTests AiChatFeatureTests.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking VoyagerFeaturesAiChatPackageTests
+Build complete! (3.63s)
+Test Suite 'Selected tests' started at 2026-05-01 10:20:25.311.
+Test Suite 'VoyagerFeaturesAiChatPackageTests.xctest' started at 2026-05-01 10:20:25.312.
+Test Suite 'AiChatFeatureTests' started at 2026-05-01 10:20:25.312.
+Test Case '-[VoyagerFeaturesAiChatTests.AiChatFeatureTests testModelSelectionIsNextRequestOnlyAndSameModelIsNoOp]' started.
+Test Case '-[VoyagerFeaturesAiChatTests.AiChatFeatureTests testModelSelectionIsNextRequestOnlyAndSameModelIsNoOp]' passed (0.036 seconds).
+Test Case '-[VoyagerFeaturesAiChatTests.AiChatFeatureTests testSetupFallsBackToFirstCatalogRowWhenSelectedModelIsUnresolvable]' started.
+Test Case '-[VoyagerFeaturesAiChatTests.AiChatFeatureTests testSetupFallsBackToFirstCatalogRowWhenSelectedModelIsUnresolvable]' passed (0.028 seconds).
+Test Suite 'AiChatFeatureTests' passed at 2026-05-01 10:20:25.376.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.063 (0.064) seconds
+Test Suite 'VoyagerFeaturesAiChatPackageTests.xctest' passed at 2026-05-01 10:20:25.376.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.063 (0.064) seconds
+Test Suite 'Selected tests' passed at 2026-05-01 10:20:25.376.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.063 (0.065) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 1400
+􀄵  Target Platform: arm64e-apple-macos14.0
+􁁛  Test run with 0 tests in 0 suites passed after 0.001 seconds.

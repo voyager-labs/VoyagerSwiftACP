@@ -1,0 +1,113 @@
+Building for debugging...
+[0/7] Write sources
+[1/7] Write swift-version-1CE8F7596B9D9E9D.txt
+[3/7] Compiling VoyagerEntitiesAiTests AiConnectionClientTests.swift
+/Users/jongmin/Desktop/voyager-fm/voyager-app.worktrees/phase/voy-231/apps/macos/Packages/05_Entities/Ai/Tests/VoyagerEntitiesAiTests/AiConnectionClientTests.swift:347:27: warning: value 'credential' was defined but never used; consider replacing with boolean test [#no-usage]
+345 |         let client = AiConnectionRuntimeClient(
+346 |             verifyProvider: { _, credential in
+347 |                 guard let credential else { return .invalid(.missingCredential) }
+    |                           `- warning: value 'credential' was defined but never used; consider replacing with boolean test [#no-usage]
+348 |                 return .valid
+349 |             },
+[4/7] Emitting module VoyagerEntitiesAiTests
+[5/7] Compiling VoyagerEntitiesAiTests AiChatContractTests.swift
+[5/7] Write Objects.LinkFileList
+[6/7] Linking VoyagerEntitiesAiPackageTests
+Build complete! (1.90s)
+Test Suite 'Selected tests' started at 2026-05-01 09:52:08.030.
+Test Suite 'VoyagerEntitiesAiPackageTests.xctest' started at 2026-05-01 09:52:08.031.
+Test Suite 'AiChatContractTests' started at 2026-05-01 09:52:08.031.
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testAiModelCatalogRow_roundTripsAndUsesExistingProviderAPIs]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testAiModelCatalogRow_roundTripsAndUsesExistingProviderAPIs]' passed (0.002 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testAiModelHandle_roundTripsAndPreservesProviderAuthCompatibility]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testAiModelHandle_roundTripsAndPreservesProviderAuthCompatibility]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testChatRequestResponseEvent_roundTrips]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testChatRequestResponseEvent_roundTrips]' passed (0.002 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testRequestContextSnapshot_roundTrips]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testRequestContextSnapshot_roundTrips]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testSendableIntent_isExpressibleAtCompileTime]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testSendableIntent_isExpressibleAtCompileTime]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testSessionSnapshotAndRestoreResult_roundTrips]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testSessionSnapshotAndRestoreResult_roundTrips]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testSessionStatusAndMessageRoles_coverAllCases]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiChatContractTests testSessionStatusAndMessageRoles_coverAllCases]' passed (0.000 seconds).
+Test Suite 'AiChatContractTests' passed at 2026-05-01 09:52:08.036.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.005 (0.005) seconds
+Test Suite 'AiLiveValueTests' started at 2026-05-01 09:52:08.036.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testAIProviderVerificationClient_liveValue_emptyAPIKey_returnsInvalidAPIKey]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testAIProviderVerificationClient_liveValue_emptyAPIKey_returnsInvalidAPIKey]' passed (0.003 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testAIProviderVerificationClient_liveValue_emptyOAuthToken_returnsInvalidAPIKey]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testAIProviderVerificationClient_liveValue_emptyOAuthToken_returnsInvalidAPIKey]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testAIProviderVerificationClient_liveValue_nilCredential_anthropic_returnsMissingCredential]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testAIProviderVerificationClient_liveValue_nilCredential_anthropic_returnsMissingCredential]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testAIProviderVerificationClient_liveValue_nilCredential_returnsMissingCredential]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testAIProviderVerificationClient_liveValue_nilCredential_returnsMissingCredential]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testCodexOAuthInfrastructureIsWired]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testCodexOAuthInfrastructureIsWired]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectAPIKey_isPersistenceOnly_returnsConnected]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectAPIKey_isPersistenceOnly_returnsConnected]' passed (0.005 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectAPIKey_withNotVerified_persistsNotVerifiedInSnapshot]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectAPIKey_withNotVerified_persistsNotVerifiedInSnapshot]' passed (0.001 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_isPersistenceOnly_returnsConnected]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_isPersistenceOnly_returnsConnected]' passed (0.001 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_liveValue_persistsCredentialForValidProvider]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_liveValue_persistsCredentialForValidProvider]' passed (0.001 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_liveValue_persistsCredentialInFile]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_liveValue_persistsCredentialInFile]' passed (0.001 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_liveValue_rejectsAPIKeyOnlyProvider]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_liveValue_rejectsAPIKeyOnlyProvider]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_withConnected_persistsConnectedInSnapshot]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_withConnected_persistsConnectedInSnapshot]' passed (0.001 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_withNotVerified_persistsNotVerifiedInSnapshot]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testConnectOAuth_withNotVerified_persistsNotVerifiedInSnapshot]' passed (0.001 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testDisconnect_liveValue_returnsNotVerified_forProviderWithNoRecord]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testDisconnect_liveValue_returnsNotVerified_forProviderWithNoRecord]' passed (0.001 seconds).
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testLoginUnavailableMapsToGenericMissingCredential]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiLiveValueTests testLoginUnavailableMapsToGenericMissingCredential]' passed (0.000 seconds).
+Test Suite 'AiLiveValueTests' passed at 2026-05-01 09:52:08.053.
+	 Executed 15 tests, with 0 failures (0 unexpected) in 0.016 (0.017) seconds
+Test Suite 'AiProviderTests' started at 2026-05-01 09:52:08.053.
+Test Case '-[VoyagerEntitiesAiTests.AiProviderTests testChatGPTCodex_usesOAuth]' started.
+Test Case '-[VoyagerEntitiesAiTests.AiProviderTests testChatGPTCodex_usesOAuth]' passed (0.000 seconds).
+Test Suite 'AiProviderTests' passed at 2026-05-01 09:52:08.053.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'CodexOAuthConfigTests' started at 2026-05-01 09:52:08.053.
+Test Case '-[VoyagerEntitiesAiTests.CodexOAuthConfigTests testChatGPTAccountId_extractsNamespacedJWTClaim]' started.
+Test Case '-[VoyagerEntitiesAiTests.CodexOAuthConfigTests testChatGPTAccountId_extractsNamespacedJWTClaim]' passed (0.000 seconds).
+Test Suite 'CodexOAuthConfigTests' passed at 2026-05-01 09:52:08.054.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'ProviderConnectionStateTests' started at 2026-05-01 09:52:08.054.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testAllSevenConnectionStatesExist]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testAllSevenConnectionStatesExist]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testConnected_mapsToDisconnect]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testConnected_mapsToDisconnect]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testConnectInProgress_mapsToCancel]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testConnectInProgress_mapsToCancel]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testConnectionFailed_mapsToRetry]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testConnectionFailed_mapsToRetry]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testConnectionState_roundTrips]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testConnectionState_roundTrips]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testDisconnected_mapsToConnect]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testDisconnected_mapsToConnect]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testDisconnecting_mapsToDisabled]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testDisconnecting_mapsToDisabled]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testEveryState_hasActionMapping]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testEveryState_hasActionMapping]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testNotVerified_mapsToConnect]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testNotVerified_mapsToConnect]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testProviderStatusReason_allCases]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testProviderStatusReason_allCases]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testStatusReason_roundTrips]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testStatusReason_roundTrips]' passed (0.000 seconds).
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testUnavailable_mapsToDisabled]' started.
+Test Case '-[VoyagerEntitiesAiTests.ProviderConnectionStateTests testUnavailable_mapsToDisabled]' passed (0.000 seconds).
+Test Suite 'ProviderConnectionStateTests' passed at 2026-05-01 09:52:08.055.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'VoyagerEntitiesAiPackageTests.xctest' passed at 2026-05-01 09:52:08.055.
+	 Executed 36 tests, with 0 failures (0 unexpected) in 0.022 (0.024) seconds
+Test Suite 'Selected tests' passed at 2026-05-01 09:52:08.055.
+	 Executed 36 tests, with 0 failures (0 unexpected) in 0.022 (0.025) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 1400
+􀄵  Target Platform: arm64e-apple-macos14.0
+􁁛  Test run with 0 tests in 0 suites passed after 0.001 seconds.
