@@ -38,7 +38,7 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         let tagDot = tagStack.arrangedSubviews.first
         XCTAssertNotNil(tagDot, "Tag dot should exist")
 
-        // The TagDotNSView sets its layer background color to tagColor.nsColor.cgColor
+        // The ColorDotNSView sets its layer background color to tagColor.nsColor.cgColor
         // For colorCode 6 (red), this should be NSColor.systemRed
         let expectedColor = TagColor(colorCode: 6).nsColor
         let dotLayerColor = tagDot?.layer?.backgroundColor
