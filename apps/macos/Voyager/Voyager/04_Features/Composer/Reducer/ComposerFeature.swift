@@ -69,6 +69,12 @@ struct ComposerFeature {
                 state.focusRequestID += 1
                 return .none
 
+            case .view(.scopeFeedbackUndoTapped):
+                return .send(.view(.undo))
+
+            case .view(.scopeFeedbackRedoTapped):
+                return .send(.view(.redo))
+
             case .view(.undo),
                  .view(.redo):
                 return .none
@@ -147,6 +153,7 @@ private func handleSetPresented(
             state.isFilteringInFlight = false
             state.activeFiltersRequestID = nil
             state.lastAcceptedFiltersRequestID = nil
+            state.lastScopeChangeFeedback = nil
         }
 
         var effects: [Effect<ComposerFeature.Action>] = [
@@ -303,6 +310,7 @@ func applyFiltersIfNeeded(
         state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters)
     }
+    state.markScopeChangeFeedbackPending(.filters(requestID))
     return .run { send in
         do {
             let response = try await searchClient.applyFilters(.init(filters: filters))

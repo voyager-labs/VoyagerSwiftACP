@@ -39,6 +39,8 @@ enum ComposerAction: ViewAction, CasePathable, Sendable {
         case saveCollectionAs
         case undo
         case redo
+        case scopeFeedbackUndoTapped
+        case scopeFeedbackRedoTapped
     }
 
     @CasePathable
@@ -129,6 +131,8 @@ extension ComposerAction {
     static var saveCollectionAs: Self { .view(.saveCollectionAs) }
     static var undo: Self { .view(.undo) }
     static var redo: Self { .view(.redo) }
+    static var scopeFeedbackUndoTapped: Self { .view(.scopeFeedbackUndoTapped) }
+    static var scopeFeedbackRedoTapped: Self { .view(.scopeFeedbackRedoTapped) }
 
     static func searchResponse(
         _ requestID: UUID,
