@@ -148,6 +148,50 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertNil(store.state.lastScopeChangeFeedback?.pendingResultRequest)
     }
 
+    func testApplyFiltersFailureDoesNotMutateScopeFeedbackAfterUnrelatedHistoryChange() async throws {
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.lastScopeChangeFeedback = scopeChangeFeedback(
+            phase: .visible,
+            pendingResultRequest: nil,
+        )
+        initialState.history = [
+            FilterSnapshot(
+                scopeSelection: initialState.scopeEditor.selection,
+                conditions: initialState.conditions,
+                conditionDisplayByKey: initialState.conditionDisplayByKey,
+                includeSubfolders: initialState.scopeEditor.includeSubfolders,
+            ),
+        ]
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.searchClient.applyFilters = { _ in
+                throw MockLocalizedError("HELPER_UNAVAILABLE: condition failure")
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.applyFilters)
+
+        let filtersRequestID = try XCTUnwrap(store.state.activeFiltersRequestID)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.phase, .visible)
+        XCTAssertNil(store.state.lastScopeChangeFeedback?.pendingResultRequest)
+
+        await store.receive(\.internal.filtersResponse)
+
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.phase, .visible)
+        XCTAssertNil(store.state.lastScopeChangeFeedback?.pendingResultRequest)
+        XCTAssertEqual(store.state.lastAcceptedFiltersRequestID, filtersRequestID)
+        XCTAssertEqual(store.state.transientFeedback?.kind, .error)
+        XCTAssertEqual(
+            store.state.transientFeedback?.message,
+            ComposerQueryFeedbackPolicy.executionFailureMessage,
+        )
+        XCTAssertEqual(store.state.queryRenderPhase, .idle)
+    }
+
     func testApplyFiltersFailureMarksScopeFeedbackFailed() async throws {
         var initialState = ComposerState()
         initialState.scopes = ["/tmp"]

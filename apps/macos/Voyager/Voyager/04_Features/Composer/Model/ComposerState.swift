@@ -262,6 +262,7 @@ extension ComposerState {
 
     mutating func markScopeChangeFeedbackPending(_ pendingResultRequest: ScopeFeedbackPendingRequest) {
         guard let feedback = lastScopeChangeFeedback,
+              history.count == feedback.historyDepthAfterCommit,
               feedback.matchesCurrentScope(
                   selection: scopeEditor.selection,
                   includeSubfolders: scopeEditor.includeSubfolders,
