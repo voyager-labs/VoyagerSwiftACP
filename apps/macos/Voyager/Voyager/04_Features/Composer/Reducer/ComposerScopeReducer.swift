@@ -269,15 +269,13 @@ private func handleScopeEditorSearchResponse(
         return .none
     }
 
-    let disambiguatedItems = ComposerScopeUtils.applyCandidateDisambiguationPolicy(items)
-    state.scopeEditor.listState = disambiguatedItems.isEmpty ? .noResults(query: query) : .searchResults(query: query)
-    state.scopeEditor.candidateItems = disambiguatedItems.map {
+    state.scopeEditor.listState = items.isEmpty ? .noResults(query: query) : .searchResults(query: query)
+    state.scopeEditor.candidateItems = items.map {
         ComposerScopeEditorCandidateItem(
             path: $0.path,
             name: $0.name,
             iconName: $0.iconName,
             locationIdentifier: $0.locationIdentifier,
-            secondaryText: $0.secondaryText,
         )
     }
     return .none
