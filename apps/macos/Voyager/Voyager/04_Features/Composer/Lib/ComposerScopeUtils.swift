@@ -253,13 +253,6 @@ enum ComposerScopeUtils {
             return suffixLabels
         }
 
-        if let storageFallbackLabels = uniqueStorageFallbackLabels(
-            for: sources,
-            existingLabels: existingLabels,
-        ) {
-            return storageFallbackLabels
-        }
-
         return nil
     }
 
@@ -268,7 +261,7 @@ enum ComposerScopeUtils {
     ) -> CandidateDisambiguationSource {
         let parentPath = normalizedParentPath(for: item)
         let parentComponents = pathComponents(parentPath)
-        let parentLastComponent = parentComponents.last ?? parentPath
+        let parentLastComponent = parentComponents.last ?? item.name
         let (storageKindKey, storageLocationLabel) = storageMetadata(parentComponents: parentComponents)
 
         return CandidateDisambiguationSource(
@@ -322,7 +315,7 @@ enum ComposerScopeUtils {
         for sources: [CandidateDisambiguationSource],
         existingLabels: Set<String>,
     ) -> [String]? {
-        let maxDepth = sources.map { max($0.parentComponents.count, 2) }.max() ?? 1
+        let maxDepth = sources.map(\.parentComponents.count).max() ?? 0
         guard maxDepth >= 2 else { return nil }
 
         for depth in 2 ... maxDepth {
