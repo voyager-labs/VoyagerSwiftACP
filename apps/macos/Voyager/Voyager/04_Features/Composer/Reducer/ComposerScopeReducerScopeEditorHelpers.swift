@@ -129,6 +129,7 @@ func handleClearAll(
     state.valuePicker = .init()
     state.isLoadingFilters = false
     state.lastFiltersResponse = nil
+    state.lastScopeChangeFeedback = nil
     applyQueryPhaseTransition(.reset, state: &state)
     return .cancel(id: ComposerFeature.CancelID.filters)
 }
