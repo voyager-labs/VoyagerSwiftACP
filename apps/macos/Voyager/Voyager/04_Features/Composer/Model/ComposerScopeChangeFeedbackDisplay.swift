@@ -121,7 +121,17 @@ struct ComposerScopeChangeFeedbackDisplay: Equatable, Sendable {
 
 extension ComposerState {
     var lastScopeChangeFeedbackDisplay: ComposerScopeChangeFeedbackDisplay? {
-        guard let lastScopeChangeFeedback, hasMatchingScopeChangeFeedback else { return nil }
+        guard let lastScopeChangeFeedback,
+              matchesScopeChangeFeedbackSnapshot(lastScopeChangeFeedback.afterScope)
+              || matchesScopeChangeFeedbackSnapshot(lastScopeChangeFeedback.beforeScope)
+        else {
+            return nil
+        }
         return ComposerScopeChangeFeedbackDisplay(state: self, feedback: lastScopeChangeFeedback)
+    }
+
+    private func matchesScopeChangeFeedbackSnapshot(_ snapshot: ComposerScopeSnapshot) -> Bool {
+        scopeEditor.selection == snapshot.scopeSelection
+            && scopeEditor.includeSubfolders == snapshot.includeSubfolders
     }
 }

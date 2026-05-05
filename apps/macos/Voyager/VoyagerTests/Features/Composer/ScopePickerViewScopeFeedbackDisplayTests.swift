@@ -162,17 +162,20 @@ final class ScopePickerViewScopeFeedbackDisplayTests: XCTestCase {
     }
 
     func testScopeFeedbackDisplayCoversFailureAndRedoCopy() {
-        let removedSelection: ComposerScopeSelection = .rootOnly
+        let addedSelection: ComposerScopeSelection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+            exceptions: [],
+        )
         let feedback = makeFeedback(
             origin: .addBase,
             beforeSelection: .rootOnly,
             beforeIncludeSubfolders: true,
-            afterSelection: removedSelection,
+            afterSelection: addedSelection,
             afterIncludeSubfolders: true,
         )
 
         let visibleState = makeDisplayState(
-            selection: removedSelection,
+            selection: addedSelection,
             includeSubfolders: true,
             historyCount: feedback.historyDepthAfterCommit,
             redoCount: feedback.redoDepthAfterCommit,
