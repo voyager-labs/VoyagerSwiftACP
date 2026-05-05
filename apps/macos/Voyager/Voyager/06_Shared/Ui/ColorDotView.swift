@@ -1,29 +1,30 @@
-// TODO(sunset VOY-272): UI component — remains app-layer; move to appropriate UI layer when 05_Entities is sunset.
 import AppKit
 import SwiftUI
 
-import VoyagerEntitiesTag
-
-struct TagDotView: View {
-    let tagColor: TagColor
+struct ColorDotView: View {
+    let color: Color
     let size: CGFloat
 
-    init(tagColor: TagColor, size: CGFloat = 8) {
-        self.tagColor = tagColor
+    init(color: Color, size: CGFloat = 8) {
+        self.color = color
         self.size = size
+    }
+
+    init(nsColor: NSColor, size: CGFloat = 8) {
+        self.init(color: Color(nsColor: nsColor), size: size)
     }
 
     var body: some View {
         Circle()
-            .fill(Color(nsColor: tagColor.nsColor))
+            .fill(color)
             .frame(width: size, height: size)
     }
 }
 
-final class TagDotNSView: NSView {
-    private var dotSize: CGFloat
+final class ColorDotNSView: NSView {
+    private let dotSize: CGFloat
 
-    init(tagColor: TagColor, size: CGFloat = 8) {
+    init(color: NSColor, size: CGFloat = 8) {
         dotSize = size
         super.init(frame: .zero)
         wantsLayer = true
@@ -32,7 +33,7 @@ final class TagDotNSView: NSView {
             widthAnchor.constraint(equalToConstant: size),
             heightAnchor.constraint(equalToConstant: size),
         ])
-        update(tagColor: tagColor)
+        update(color: color)
     }
 
     @available(*, unavailable)
@@ -40,8 +41,8 @@ final class TagDotNSView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(tagColor: TagColor) {
-        layer?.backgroundColor = tagColor.nsColor.cgColor
+    func update(color: NSColor) {
+        layer?.backgroundColor = color.cgColor
         layer?.cornerRadius = dotSize / 2
     }
 
@@ -50,10 +51,9 @@ final class TagDotNSView: NSView {
     }
 }
 
-enum TagDotImageFactory {
-    static func make(tagColor: TagColor, size: CGFloat = 11, inset: CGFloat = 1) -> NSImage {
+enum ColorDotImageFactory {
+    static func make(color: NSColor, size: CGFloat = 11, inset: CGFloat = 1) -> NSImage {
         let imageSize = NSSize(width: size, height: size)
-        let color = tagColor.nsColor
 
         let image = NSImage(size: imageSize, flipped: false) { rect in
             let circleRect = rect.insetBy(dx: inset, dy: inset)

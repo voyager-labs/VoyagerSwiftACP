@@ -2,6 +2,7 @@ import AppKit
 
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerShared
 
 enum EntryContextMenuBuilder {
     struct Configuration {
@@ -172,7 +173,7 @@ enum EntryContextMenuBuilder {
             )
             item.representedObject = tag.name
             item.state = selectionStateValue(tag.selection)
-            item.image = TagDotImageFactory.make(tagColor: TagColor(colorCode: tag.colorCode))
+            item.image = ColorDotImageFactory.make(color: TagColor(colorCode: tag.colorCode).nsColor)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())

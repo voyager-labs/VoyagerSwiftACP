@@ -118,8 +118,8 @@ final class EntryListGroupHeaderCellView: NSTableCellView {
         }
 
         let attachment = NSTextAttachment()
-        attachment.image = TagDotImageFactory.make(
-            tagColor: TagColor(colorCode: colorCode),
+        attachment.image = ColorDotImageFactory.make(
+            color: TagColor(colorCode: colorCode).nsColor,
             size: 10,
             inset: 1,
         )
@@ -347,7 +347,7 @@ final class EntryListEntryCellView: NSTableCellView {
         if let tags, !tags.isEmpty {
             let visibleTags = Array(tags.prefix(3))
             for tag in visibleTags {
-                let dot = TagDotNSView(tagColor: tag.tagColor, size: 8)
+                let dot = ColorDotNSView(color: tag.tagColor.nsColor, size: 8)
                 tagStackView.addArrangedSubview(dot)
             }
             tagStackView.isHidden = false

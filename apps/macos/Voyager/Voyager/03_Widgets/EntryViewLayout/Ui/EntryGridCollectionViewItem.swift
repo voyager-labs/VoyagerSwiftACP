@@ -319,7 +319,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         tagStackView.isHidden = false
         let visibleTags = tags.prefix(3)
         for tag in visibleTags {
-            let dot = TagDotNSView(tagColor: tag.tagColor, size: 8)
+            let dot = ColorDotNSView(color: tag.tagColor.nsColor, size: 8)
             tagStackView.addArrangedSubview(dot)
         }
     }

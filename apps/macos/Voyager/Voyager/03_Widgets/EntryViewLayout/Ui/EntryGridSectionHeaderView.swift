@@ -2,12 +2,13 @@ import AppKit
 
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerShared
 
 final class EntryGridSectionHeaderView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
     private let toggleButton = NSButton()
-    private let colorDotView = TagDotNSView(tagColor: .none, size: 8)
+    private let colorDotView = ColorDotNSView(color: .clear, size: 8)
     private var onToggle: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
@@ -39,7 +40,7 @@ final class EntryGridSectionHeaderView: NSView {
 
         if let colorCode {
             colorDotView.isHidden = false
-            colorDotView.update(tagColor: TagColor(colorCode: colorCode))
+            colorDotView.update(color: TagColor(colorCode: colorCode).nsColor)
         } else {
             colorDotView.isHidden = true
         }
