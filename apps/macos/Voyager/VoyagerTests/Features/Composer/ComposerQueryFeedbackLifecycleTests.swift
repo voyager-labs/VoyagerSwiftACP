@@ -79,6 +79,54 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertNil(store.state.lastScopeChangeFeedback?.pendingResultRequest)
     }
 
+    func testCancelSearchResolvesDelayedScopeFeedback() async {
+        let activeRequestID = UUID()
+        let initialState = searchLoadingState(activeRequestID: activeRequestID)
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(ComposerAction.cancelSearch)
+
+        XCTAssertFalse(store.state.isLoadingSearch)
+        XCTAssertNil(store.state.activeSearchRequestID)
+        XCTAssertEqual(store.state.queryRenderPhase, .idle)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.phase, .visible)
+        XCTAssertNil(store.state.lastScopeChangeFeedback?.pendingResultRequest)
+    }
+
+    func testCancelFiltersResolvesDelayedScopeFeedback() async {
+        let activeRequestID = UUID()
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.isLoadingFilters = true
+        initialState.isFilteringInFlight = true
+        initialState.queryRenderPhase = .chipsAppliedPendingList
+        initialState.activeFiltersRequestID = activeRequestID
+        initialState.pendingSearchQuery = "draft"
+        initialState.lastScopeChangeFeedback = scopeChangeFeedback(
+            phase: .delayed,
+            pendingResultRequest: .filters(activeRequestID),
+        )
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(ComposerAction.cancelFilters)
+
+        XCTAssertFalse(store.state.isLoadingFilters)
+        XCTAssertFalse(store.state.isFilteringInFlight)
+        XCTAssertNil(store.state.activeFiltersRequestID)
+        XCTAssertNil(store.state.pendingSearchQuery)
+        XCTAssertEqual(store.state.queryRenderPhase, .idle)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.phase, .visible)
+        XCTAssertNil(store.state.lastScopeChangeFeedback?.pendingResultRequest)
+    }
+
     func testSearchFailureShowsPolicyErrorFeedback() async {
         let activeRequestID = UUID()
         let initialState = searchLoadingState(activeRequestID: activeRequestID)
@@ -167,6 +215,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
     }
 }
 
+@MainActor
 private func searchLoadingState(activeRequestID: UUID) -> ComposerState {
     var state = ComposerState()
     state.scopes = ["/tmp"]
@@ -181,6 +230,7 @@ private func searchLoadingState(activeRequestID: UUID) -> ComposerState {
     return state
 }
 
+@MainActor
 private func scopeChangeFeedback(
     phase: ComposerScopeChangeFeedbackPhase,
     pendingResultRequest: ScopeFeedbackPendingRequest?,
@@ -188,7 +238,7 @@ private func scopeChangeFeedback(
     ComposerScopeChangeFeedback(
         id: UUID(),
         beforeScope: ComposerScopeSnapshot(scopeSelection: .rootOnly, includeSubfolders: true),
-        afterScope: ComposerScopeSnapshot(scopeSelection: explicitTmpScope, includeSubfolders: true),
+        afterScope: ComposerScopeSnapshot(scopeSelection: explicitTmpScope(), includeSubfolders: true),
         origin: .addBase,
         phase: phase,
         pendingResultRequest: pendingResultRequest,
@@ -197,7 +247,8 @@ private func scopeChangeFeedback(
     )
 }
 
-private var explicitTmpScope: ComposerScopeSelection {
+@MainActor
+private func explicitTmpScope() -> ComposerScopeSelection {
     .explicit(
         bases: [ComposerScopeBase(path: "/tmp")],
         exceptions: [],

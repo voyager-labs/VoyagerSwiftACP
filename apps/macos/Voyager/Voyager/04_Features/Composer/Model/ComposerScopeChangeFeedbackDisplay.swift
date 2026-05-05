@@ -32,6 +32,7 @@ struct ComposerScopeChangeFeedbackDisplay: Equatable, Sendable {
         showsRedo = state.canRedo
             && matchesBeforeScope
             && state.redoHistory.count > feedback.redoDepthAfterCommit
+            && state.nextRedoMatchesScopeChangeFeedback(feedback)
         isFailure = feedback.phase == .failed
         isDelayed = feedback.phase == .delayed
         accessibilityLabel = [title, message, phaseLabel]
@@ -133,5 +134,11 @@ extension ComposerState {
     private func matchesScopeChangeFeedbackSnapshot(_ snapshot: ComposerScopeSnapshot) -> Bool {
         scopeEditor.selection == snapshot.scopeSelection
             && scopeEditor.includeSubfolders == snapshot.includeSubfolders
+    }
+
+    fileprivate func nextRedoMatchesScopeChangeFeedback(_ feedback: ComposerScopeChangeFeedback) -> Bool {
+        guard let nextRedo = redoHistory.last else { return false }
+        return nextRedo.scopeSelection == feedback.afterScope.scopeSelection
+            && nextRedo.includeSubfolders == feedback.afterScope.includeSubfolders
     }
 }

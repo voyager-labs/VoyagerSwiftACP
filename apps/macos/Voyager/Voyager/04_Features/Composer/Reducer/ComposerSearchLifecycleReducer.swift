@@ -237,8 +237,12 @@ private func handleSubmit(
 }
 
 private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    let requestID = state.activeSearchRequestID
     state.isLoadingSearch = false
     state.activeSearchRequestID = nil
+    if let requestID {
+        state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
+    }
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",
@@ -249,10 +253,14 @@ private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<Co
 }
 
 private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    let requestID = state.activeFiltersRequestID
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
     state.pendingSearchQuery = nil
+    if let requestID {
+        state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
+    }
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",

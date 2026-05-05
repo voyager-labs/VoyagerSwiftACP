@@ -189,13 +189,14 @@ final class ScopePickerViewScopeFeedbackDisplayTests: XCTestCase {
         XCTAssertTrue(visibleDisplay.showsUndo)
         XCTAssertFalse(visibleDisplay.showsRedo)
 
-        let undoneState = makeDisplayState(
+        var undoneState = makeDisplayState(
             selection: .rootOnly,
             includeSubfolders: true,
             historyCount: 0,
             redoCount: 1,
             feedback: feedback,
         )
+        undoneState.redoHistory = [makeSnapshot(selection: addedSelection, includeSubfolders: true)]
 
         guard let undoneDisplay = undoneState.lastScopeChangeFeedbackDisplay else {
             return XCTFail("expected undone scope feedback display")
@@ -203,6 +204,38 @@ final class ScopePickerViewScopeFeedbackDisplayTests: XCTestCase {
 
         XCTAssertFalse(undoneDisplay.showsUndo)
         XCTAssertTrue(undoneDisplay.showsRedo)
+    }
+
+    func testScopeFeedbackDisplayHidesRedoWhenNextRedoIsNotScopeChange() {
+        let addedSelection: ComposerScopeSelection = .explicit(
+            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
+            exceptions: [],
+        )
+        let feedback = makeFeedback(
+            origin: .addBase,
+            beforeSelection: .rootOnly,
+            beforeIncludeSubfolders: true,
+            afterSelection: addedSelection,
+            afterIncludeSubfolders: true,
+        )
+        var state = makeDisplayState(
+            selection: .rootOnly,
+            includeSubfolders: true,
+            historyCount: 0,
+            redoCount: 2,
+            feedback: feedback,
+        )
+        state.redoHistory = [
+            makeSnapshot(selection: addedSelection, includeSubfolders: true),
+            makeSnapshot(selection: .rootOnly, includeSubfolders: true),
+        ]
+
+        guard let display = state.lastScopeChangeFeedbackDisplay else {
+            return XCTFail("expected undone scope feedback display")
+        }
+
+        XCTAssertFalse(display.showsUndo)
+        XCTAssertFalse(display.showsRedo)
     }
 
     private func makeDisplayState(
