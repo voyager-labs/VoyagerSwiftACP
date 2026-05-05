@@ -1,6 +1,7 @@
 import CoreServices
 import Foundation
 @testable import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import XCTest
 
 /// Characterization tests for tag loading behavior in EntryLoadingClient.

@@ -1,8 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesEntry
-import struct VoyagerEntitiesTag.Tag
-import enum VoyagerEntitiesTag.TagColor
+import VoyagerEntitiesTag
 import VoyagerShared
 import XCTest
 

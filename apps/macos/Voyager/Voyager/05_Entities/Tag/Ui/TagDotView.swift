@@ -2,7 +2,6 @@
 import AppKit
 import SwiftUI
 
-import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
 struct TagDotView: View {

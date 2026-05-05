@@ -4,6 +4,7 @@ import Foundation
 import UniformTypeIdentifiers
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
 

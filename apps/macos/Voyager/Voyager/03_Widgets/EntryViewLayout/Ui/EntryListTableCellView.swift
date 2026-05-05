@@ -18,7 +18,7 @@ struct EntryListEntryCellViewConfiguration {
         let isCut: Bool
         let isRenaming: Bool
         let renamingText: String
-        let workspaceClient: WorkspaceClient
+        let workspaceClient: VoyagerShared.WorkspaceClient
         let onRenameUpdate: ((String) -> Void)?
         let onRenameCommit: (() -> Void)?
         let onRenameCancel: (() -> Void)?

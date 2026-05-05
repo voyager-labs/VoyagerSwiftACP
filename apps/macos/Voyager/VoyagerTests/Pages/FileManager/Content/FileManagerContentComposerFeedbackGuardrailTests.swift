@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
@@ -27,7 +28,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
                 },
             )
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
@@ -67,7 +68,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
                 },
             )
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }

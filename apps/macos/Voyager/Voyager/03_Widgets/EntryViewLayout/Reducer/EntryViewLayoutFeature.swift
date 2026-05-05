@@ -3,6 +3,28 @@ import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
+
+extension WorkspaceClient {
+    func toShared() -> VoyagerShared.WorkspaceClient {
+        VoyagerShared.WorkspaceClient(
+            urlForApplication: urlForApplication,
+            urlForApplicationToOpen: urlForApplicationToOpen,
+            urlsForApplications: urlsForApplications,
+            iconForFile: iconForFile,
+            iconForType: iconForType,
+            openApplication: openApplication,
+            openURL: openURL,
+            currentEvent: currentEvent,
+            runningApplications: runningApplications,
+            activateFileViewerSelecting: activateFileViewerSelecting,
+            openURLsWithApplication: openURLsWithApplication,
+            openApplicationAtURL: openApplicationAtURL,
+            addWorkspaceNotificationObserver: addWorkspaceNotificationObserver,
+            removeWorkspaceNotificationObserver: removeWorkspaceNotificationObserver,
+        )
+    }
+}
 
 @Reducer
 struct EntryViewLayoutFeature {
@@ -195,7 +217,7 @@ struct EntryViewLayoutFeature {
                     paths,
                     showHidden: showHidden,
                     entryLoadingClient: entryLoadingClient,
-                    workspaceClient: workspaceClient,
+                    workspaceClient: workspaceClient.toShared(),
                 )
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: converted)
                 return Self.updateEntriesAndReapply(&state)
@@ -206,7 +228,7 @@ struct EntryViewLayoutFeature {
                     paths,
                     showHidden: state.showHiddenFiles,
                     entryLoadingClient: entryLoadingClient,
-                    workspaceClient: workspaceClient,
+                    workspaceClient: workspaceClient.toShared(),
                 )
                 guard !restoredItems.isEmpty else { return .none }
 

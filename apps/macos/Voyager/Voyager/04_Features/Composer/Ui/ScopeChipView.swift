@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesEntry
 
 struct ScopeChipView: View {
     let paths: [String]

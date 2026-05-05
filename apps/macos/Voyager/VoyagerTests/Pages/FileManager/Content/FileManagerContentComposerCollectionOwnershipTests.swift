@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
@@ -56,7 +57,7 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
             $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
             $0.collectionAlertClient = CollectionAlertClient.testValue
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
@@ -127,7 +128,7 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
             $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
             $0.collectionAlertClient = CollectionAlertClient.testValue
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }

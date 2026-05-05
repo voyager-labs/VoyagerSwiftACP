@@ -1,6 +1,7 @@
 import Combine
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 
 @MainActor
 final class ScopePickerSearchCoordinator: ObservableObject {

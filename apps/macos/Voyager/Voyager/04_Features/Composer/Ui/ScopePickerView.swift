@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesEntry
 
 struct ScopePickerView: View {
     let oldPath: String?

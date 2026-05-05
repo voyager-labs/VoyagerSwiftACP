@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 
 struct FileManagerIconClient: Sendable {
     var iconNameForURL: @Sendable (URL, Bool, EntryLoadingClient) -> String

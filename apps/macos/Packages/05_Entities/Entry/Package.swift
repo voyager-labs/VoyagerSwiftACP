@@ -31,6 +31,7 @@ let package = Package(
             name: "VoyagerEntitiesEntryTests",
             dependencies: [
                 "VoyagerEntitiesEntry",
+                .product(name: "VoyagerEntitiesTag", package: "Tag"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
