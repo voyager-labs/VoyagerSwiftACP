@@ -28,8 +28,8 @@ description: "macOS SwiftUI + TCA structure and dependency rules."
 - Follow `.agents/rules/30-macos/05-swift-testing-gotchas.md` when writing or fixing Swift tests.
 - Follow `.agents/rules/30-macos/06-file-backed-storage-invariants.md` when changing credential, OAuth, provider snapshot, settings, or other file-backed storage.
 - In multi-stage UI callback flows, keep state cleanup, resolved context, and visual ownership with one canonical owner instead of splitting them across success handlers, session-end hooks, and reload paths.
-- For scaffold/orchestrator-style TCA work, load:
-    - `.agents/skills/voyager-dev/SKILL.md`
+- For scaffold/orchestrator-style TCA work, load the `voyager-dev` orchestrator entry:
+    - `.agents/skills/voyager-dev/orchestrator/SKILL.md`
 
 ## Must not
 
