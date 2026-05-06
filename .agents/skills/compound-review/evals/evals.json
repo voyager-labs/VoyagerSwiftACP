@@ -1,0 +1,41 @@
+{
+  "skill_name": "compound-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Run compound-review for the completed plan .sisyphus/plans/voy-999-example.md. The evidence directory has task files and f1/f2/f3/f4 final review facets. Explain what artifacts you will read and write, and stop if any required precondition fails.",
+      "expected_output": "The response applies target selection, validates P1-P6 before synthesis, reads only allowed .sisyphus inputs, and writes only the review/compound/draft artifacts.",
+      "files": [],
+      "expectations": [
+        "States compound-review is post-Work and manual-trigger only",
+        "Validates required preconditions before reading or synthesizing artifacts",
+        "Reads only .sisyphus/plans, .sisyphus/evidence, and .sisyphus/notepads inputs",
+        "Writes only manifest/findings/learning/skill-draft or FAILURE under the documented .sisyphus output paths"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "A compound-review run found one medium repeated testing gap and one low formatting issue. Decide whether to propose a new rule, extend an existing skill, or keep findings local-only. Do not edit files.",
+      "expected_output": "The response applies promotion thresholds, suppresses weak/noisy findings, and proposes an extend-existing-skill target only when justified by evidence.",
+      "files": [],
+      "expectations": [
+        "Applies severity and recurrence thresholds before proposing promotion",
+        "Does not promote low formatting/nit findings into shared harness",
+        "Distinguishes new skill, existing skill extension, rule, and local-only outcomes",
+        "Uses placeholder target names only as variables, not as real repo paths"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "A rule was adopted last month to prevent repeated review noise for import-order nits. Recent compound-review findings show the same dedupe_key disappeared, but a new P1 cancellation regression appears. Evaluate whether the adopted rule improved behavior, whether it should stay, and what new harness action is needed.",
+      "expected_output": "The response distinguishes post-promotion outcome evidence from new unrelated findings, keeps the successful adopted rule, and proposes a new or extended harness only for the cancellation regression if thresholds are met.",
+      "files": [],
+      "expectations": [
+        "Checks whether the adopted rule's source dedupe_key improved after promotion",
+        "Does not roll back a rule solely because unrelated new findings appeared",
+        "Separates keep/rollback decision for the adopted rule from new promotion decisions",
+        "Requires recurrence, severity, and confidence evidence before proposing a new harness action"
+      ]
+    }
+  ]
+}

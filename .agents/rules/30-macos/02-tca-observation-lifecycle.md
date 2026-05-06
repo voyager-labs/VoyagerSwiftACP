@@ -20,7 +20,7 @@ description: "Reducer-owned external observation lifecycle for SwiftUI + TCA vie
 - Keep views limited to rendering, UI-only local state, and sending lifecycle/user actions.
 - Translate raw external events into semantic feature actions before mutating state or forwarding to child reducers.
 - Add or update focused reducer tests for observation start, cancellation, and event routing.
-- For migration-heavy refactors, load `.agents/skills/voyager-dev/SKILL.md` and apply its reducer-owned observation playbook.
+- For migration-heavy refactors, load the `voyager-dev` orchestrator entry at `.agents/skills/voyager-dev/orchestrator/SKILL.md` and apply its reducer-owned observation playbook.
 
 ## Must not
 

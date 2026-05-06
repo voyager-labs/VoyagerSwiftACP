@@ -24,7 +24,9 @@ description: "Xcode/SPM test-plan visibility safeguard: ensure intended test tar
 - Treat auto-created test plans (`shouldAutocreateTestPlan=YES`) as equivalent to explicit `.xcctestplan` files when package test coverage is required.
 - Generalize this Xcode/CLI-specific behavior into cross-language or cross-platform rules (e.g., `00-core`).
 
-## MCP-first verification steps
+## Execution steps
+
+### MCP-first path
 
 When XcodeBuildMCP is available:
 
@@ -38,7 +40,7 @@ When XcodeBuildMCP is available:
    b. If not, create or update one to include the missing package test targets.
    c. If CLI execution of package tests is not feasible, document the limitation in evidence.
 
-## CLI fallback verification
+### CLI fallback path
 
 When XcodeBuildMCP is not available, use raw CLI:
 
@@ -56,10 +58,12 @@ xcodebuild test -scheme <SCHEME> -project <PROJECT> \
   -resultBundlePath /tmp/test-result 2>&1 | grep -E 'Test suite .*(started|passed)'
 ```
 
+## Verification
+
 - **PASS**: Every intended test target (project + SPM package) appears in the test output.
 - **FAIL**: Any intended test target is absent from the output.
 - On FAIL, create or fix the `.xcctestplan` before proceeding, or record the limitation in evidence.
 
 ## Example (illustrative only)
 
-A scheme referencing SPM packages via `container:Packages/*` may have an auto-created test plan that only includes `VoyagerTests` but skips `VoyagerModulesTests`. The verification command above would surface this gap as a FAIL.
+A scheme referencing SPM packages under `apps/macos/Packages/**` may have an auto-created test plan that only includes `VoyagerTests` but skips package targets such as `VoyagerPagesSettingsTests` or `VoyagerEntitiesAiTests`. The verification command above would surface this gap as a FAIL.
