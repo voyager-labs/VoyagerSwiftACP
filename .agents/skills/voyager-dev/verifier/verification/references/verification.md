@@ -28,7 +28,9 @@ xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodepro
 
 For callback-heavy or lifecycle-heavy work, prefer focused suites that prove both boundary behavior and downstream execution-chain behavior before expanding outward.
 
-For Swift SPM packages, use: `xcrun swift test --package-path <path> --filter 'Pattern1|Pattern2'`. Split evidence by test class. See `30-macos/04-xcode-test-plan-visibility.md` for package test visibility.
+For multi-step async flows, focused verification must cover cancellation, superseded requests, and stale completions when those outcomes could otherwise write durable state or trigger persistence.
+
+For Swift SPM packages, use: `xcrun swift test --package-path <path> --filter 'Pattern1|Pattern2'`. Split evidence by test class. See `../../../../../rules/30-macos/04-xcode-test-plan-visibility.md` for package test visibility.
 
 ## Full verification
 
@@ -67,25 +69,27 @@ Prefer running formatting/lint before the final test pass so style-only churn do
 - For observation refactors, search the touched `Ui/*.swift` files for `.onReceive(` and `NotificationCenter.default.publisher`.
 - For decomposition or model splits, search for stale type names, dead extension files, or bypassed reducer routes.
 - For callback-heavy flows, search for duplicate cleanup ownership, weak-context re-derivation, and missing fallback paths where framework callbacks can lose detail.
+- For multi-step async flows, search for durable writes or persistence calls that can execute after cancellation, supersession, or failed verification.
 - When tests reveal spec/implementation mismatches, document gaps in `.sisyphus/evidence/` files with source, spec reference, current behavior, and rationale for deferral. Confirm zero canonical spec changes needed.
 
 ## Layer checks
 
-- Load `layer-and-segment-rules.md` only when layer choice, segment placement, or dependency direction changed.
-- Apply the layer-specific review checklist from `layer-and-segment-rules.md` once one of those conditions is true.
-- Load `package-extraction-posture.md` only when the task changes package-facing boundaries or extraction readiness.
+- Load `../../../reviewer/boundary/references/layer-and-segment-rules.md` only when layer choice, segment placement, or dependency direction changed.
+- Apply the layer-specific review checklist from `../../../reviewer/boundary/references/layer-and-segment-rules.md` once one of those conditions is true.
+- Load `../../../planner/scaffold/references/package-extraction-posture.md` only when the task changes package-facing boundaries or extraction readiness.
 - When needed, use search-based proof for known failure modes such as widget-owned `Api/`, reverse imports, or page-specific logic leaking downward.
 
 ## FSD checks
 
-- Apply `layer-and-segment-rules.md` and `public-boundary-spec.md` only when layer choice, slice boundary, or segment naming changed.
+- Apply `../../../reviewer/boundary/references/layer-and-segment-rules.md` and `../../../reviewer/boundary/references/public-boundary-spec.md` only when layer choice, slice boundary, or segment naming changed.
 
 ## Boundary and test checks
 
-- When slice-boundary changes are involved, load and apply `public-boundary-spec.md` checks.
-- When reducer or integration tests change, load and apply `testing-playbook.md` checks.
+- When slice-boundary changes are involved, load and apply `../../../reviewer/boundary/references/public-boundary-spec.md` checks.
+- When reducer or integration tests change, load and apply `../../testing/references/testing-playbook.md` checks.
 - When coordinator or adapter code changes, verify at least one focused test covers the real callback → reducer → effect chain instead of routing-only interception.
 - When semantics depend on branch kind or lifecycle outcome, verify the distinct success, failure, cancel, reload, and teardown paths separately.
+- When persistence follows verification or another async precondition, verify that failure, cancellation, and superseded completions do not commit success state.
 
 ## Few-shot examples
 

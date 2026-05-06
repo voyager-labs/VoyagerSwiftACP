@@ -75,7 +75,7 @@ Each cell names the concrete reducer, helper, or type that fills the sub-role, o
 
 If any of the following conditions hold, do **not** split. Fold the concern back into the existing monolithic reducer and document the reason.
 
-- **Compatibility-only split.** The proposed child wraps existing behavior without owning new boundaries, new state, or meaningful complexity reduction. (See `development-rules.md` "one canonical owner per concern" principle.)
+- **Compatibility-only split.** The proposed child wraps existing behavior without owning new boundaries, new state, or meaningful complexity reduction. (See `../../../implementer/tca-contract/references/development-rules.md` "one canonical owner per concern" principle.)
 - **Shadow-owner split.** State is nominally in a child reducer but the parent still writes to it directly. If the parent cannot delegate all writes through the child's action path, the split creates a shadow owner.
 - **No clear ownership.** Multiple sub-owners write the same state field and cannot be separated without introducing coupling that exceeds the benefit of the split.
 
@@ -85,6 +85,6 @@ When a failure condition is met: retain the monolithic reducer, record the conce
 
 This section defines **who** owns what and **when** to split. For the mechanics listed below, consult the canonical neighbor directly.
 
-- Composition mechanics (how to wire child reducers, `Scope`, `.merge` ordering): `tca-contract.md`
-- One-owner-per-concern principle and reuse-before-new heuristics: `development-rules.md`
-- Test setup patterns (exhaustivity, dependency overrides, test scope alignment): `testing-playbook.md`
+- Composition mechanics (how to wire child reducers, `Scope`, `.merge` ordering): `../../../implementer/tca-contract/references/tca-contract.md`
+- One-owner-per-concern principle and reuse-before-new heuristics: `../../../implementer/tca-contract/references/development-rules.md`
+- Test setup patterns (exhaustivity, dependency overrides, test scope alignment): `../../../verifier/testing/references/testing-playbook.md`

@@ -5,15 +5,15 @@
 `Reuse Score = Similarity + LayerFit + Testability - CouplingRisk - WrapperTax`
 
 - `Similarity` (0-4)
-  - Signature/behavior parity with target
+    - Signature/behavior parity with target
 - `LayerFit` (0-3)
-  - Resides in correct FSD layer and segment
+    - Resides in correct FSD layer and segment
 - `Testability` (0-2)
-  - Existing tests or easy `TestStore` coverage
+    - Existing tests or easy `TestStore` coverage
 - `CouplingRisk` (0-3)
-  - Hidden dependencies, side effects, cross-layer leaks
+    - Hidden dependencies, side effects, cross-layer leaks
 - `WrapperTax` (0-3)
-  - Penalize new types that only mirror existing state/behavior or add compatibility shells without owning a real boundary
+    - Penalize new types that only mirror existing state/behavior or add compatibility shells without owning a real boundary
 
 ## Decision thresholds
 
@@ -26,13 +26,13 @@
 For final implementation planning, always emit:
 
 1. `reuse-candidates`
-   - ranked table with score and rationale
+    - ranked table with score and rationale
 2. `architecture-risks`
-   - gate failures and mitigation
+    - gate failures and mitigation
 3. `final-choice`
-   - `extend` | `reuse` | `adapt` | `new` + reason
+    - `extend` | `reuse` | `adapt` | `new` + reason
 4. `implementation-delta`
-   - files to change, symbols to touch, verification commands
+    - files to change, symbols to touch, verification commands
 
 ## Rule
 

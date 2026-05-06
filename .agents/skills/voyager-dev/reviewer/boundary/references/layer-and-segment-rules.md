@@ -23,24 +23,24 @@ Use this reference when deciding where Voyager code belongs across FSD layers an
 ## Layer map
 
 - `01_App/`
-  - App entrypoint, global commands, lifecycle, bootstrap orchestration.
-  - Do not accumulate page/entity business logic here.
+    - App entrypoint, global commands, lifecycle, bootstrap orchestration.
+    - Do not accumulate page/entity business logic here.
 - `02_Pages/`
-  - Window/screen containers and navigation orchestration.
-  - Compose lower layers instead of implementing deep domain logic inline.
+    - Window/screen containers and navigation orchestration.
+    - Compose lower layers instead of implementing deep domain logic inline.
 - `03_Widgets/`
-  - Reusable page-internal sections.
-  - Keep them presentation-focused; do not introduce independent IO-heavy flows here.
-  - Do not add widget-owned `Api/` for normal cases; inject IO from upper layers instead.
+    - Reusable page-internal sections.
+    - Keep them presentation-focused; do not introduce independent IO-heavy flows here.
+    - Do not add widget-owned `Api/` for normal cases; inject IO from upper layers instead.
 - `04_Features/`
-  - Use-case level functionality.
-  - Do not depend on page containers.
+    - Use-case level functionality.
+    - Do not depend on page containers.
 - `05_Entities/`
-  - Domain models and domain-centered reducers.
-  - Never depend on `Pages` or `Features` above them.
+    - Domain models and domain-centered reducers.
+    - Never depend on `Pages` or `Features` above them.
 - `06_Shared/`
-  - Reusable clients, config, utilities, design tokens, and atomic components.
-  - Must stay reusable from every layer.
+    - Reusable clients, config, utilities, design tokens, and atomic components.
+    - Must stay reusable from every layer.
 
 ## Layer contracts
 
@@ -95,19 +95,19 @@ Use this reference when deciding where Voyager code belongs across FSD layers an
 ## Segment responsibilities
 
 - `Ui/`
-  - SwiftUI rendering plus minimal user/lifecycle event wiring.
-  - Do not own system observation, SDK listeners, or business orchestration.
+    - SwiftUI rendering plus minimal user/lifecycle event wiring.
+    - Do not own system observation, SDK listeners, or business orchestration.
 - `Reducer/`
-  - `@Reducer` composition, effect routing, cancellation ownership, child scopes.
+    - `@Reducer` composition, effect routing, cancellation ownership, child scopes.
 - `Model/`
-  - State, Action, domain-facing models, and screen models.
+    - State, Action, domain-facing models, and screen models.
 - `Api/`
-  - Dependency clients and boundary adapters using `DependencyKey` / `DependencyValues`.
+    - Dependency clients and boundary adapters using `DependencyKey` / `DependencyValues`.
 - `Lib/`
-  - Helpers, mappers, coordinators, delegates, and utility logic.
-  - If it orchestrates SDK delegates/listeners and routes into TCA, prefer `*Coordinator.swift` here.
+    - Helpers, mappers, coordinators, delegates, and utility logic.
+    - If it orchestrates SDK delegates/listeners and routes into TCA, prefer `*Coordinator.swift` here.
 - `Config/`
-  - Static constants, design tokens, and configuration values.
+    - Static constants, design tokens, and configuration values.
 
 ## Segment naming rule
 

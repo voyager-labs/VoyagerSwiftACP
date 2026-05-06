@@ -81,12 +81,12 @@ Widget rule:
 ## Required output
 
 - `layer`
-  - chosen layer plus one-line ownership rationale
+    - chosen layer plus one-line ownership rationale
 - `slice-boundary`
-  - stable external surface the slice should expose
+    - stable external surface the slice should expose
 - `segments`
-  - selected segments plus intentionally omitted segments
+    - selected segments plus intentionally omitted segments
 - `file-plan`
-  - files to create or modify, including the minimum `Model/*State`, `Model/*Action`, and `Reducer/*Feature` set when the slice is non-trivial
+    - files to create or modify, including the minimum `Model/*State`, `Model/*Action`, and `Reducer/*Feature` set when the slice is non-trivial
 - `verification`
-  - focused tests, search checks, and formatting/lint commands to run after the scaffold lands
+    - focused tests, search checks, and formatting/lint commands to run after the scaffold lands

@@ -16,19 +16,19 @@ This reference covers **integration ceremony only**: how the thin app shell wire
 
 ## Canonical neighbors
 
-| Neighbor                        | What it provides (linked, not restated)                         |
-| ------------------------------- | --------------------------------------------------------------- |
-| `package-extraction-posture.md` | Extraction readiness checks and modularization direction        |
-| `layer-and-segment-rules.md`    | `01_App` and `06_Shared` layer contracts, dependency direction  |
-| `public-boundary-spec.md`       | Public surface rules, deep import rules, entity cross-reference |
-| `tca-contract.md`               | Dependency client definition mechanics, `Sendable` rules        |
+| Neighbor                                                           | What it provides (linked, not restated)                         |
+| ------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `package-extraction-posture.md`                                    | Extraction readiness checks and modularization direction        |
+| `../../../reviewer/boundary/references/layer-and-segment-rules.md` | `01_App` and `06_Shared` layer contracts, dependency direction  |
+| `../../../reviewer/boundary/references/public-boundary-spec.md`    | Public surface rules, deep import rules, entity cross-reference |
+| `../../../implementer/tca-contract/references/tca-contract.md`     | Dependency client definition mechanics, `Sendable` rules        |
 
 ## Non-goals
 
 - Extraction readiness evaluation (see `package-extraction-posture.md`).
-- FSD layer definitions and `01_App` contract details (see `layer-and-segment-rules.md`).
-- TCA dependency client definition mechanics (see `tca-contract.md`).
-- Public boundary stability principles (see `public-boundary-spec.md`).
+- FSD layer definitions and `01_App` contract details (see `../../../reviewer/boundary/references/layer-and-segment-rules.md`).
+- TCA dependency client definition mechanics (see `../../../implementer/tca-contract/references/tca-contract.md`).
+- Public boundary stability principles (see `../../../reviewer/boundary/references/public-boundary-spec.md`).
 
 ---
 
@@ -90,7 +90,7 @@ If a piece of logic would still make sense when the package is extracted to a st
 
 ### Where to define clients
 
-Dependency client placement follows the three-tier rule in `tca-contract.md` (dependency client rules): package-local `Api/` for package-domain boundaries, `01_App/Api/` for truly app-global services, and `06_Shared/Api/` for genuinely cross-cutting, layer-agnostic boundaries. This reference does not restate the placement rules; consult `tca-contract.md` for the authoritative definition.
+Dependency client placement follows the three-tier rule in `../../../implementer/tca-contract/references/tca-contract.md` (dependency client rules): package-local `Api/` for package-domain boundaries, `01_App/Api/` for truly app-global services, and `06_Shared/Api/` for genuinely cross-cutting, layer-agnostic boundaries. This reference does not restate the placement rules; consult `../../../implementer/tca-contract/references/tca-contract.md` for the authoritative definition.
 
 ### Typealias bridge pattern
 

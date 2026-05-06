@@ -12,21 +12,21 @@ Two related ceremonies in one document. Shell-freeze is the typical trigger for 
 
 ## Canonical neighbors
 
-- `public-boundary-spec.md` — public surface rules, deep import rules, entity cross-reference
-- `layer-and-segment-rules.md` — FSD layer contracts, `06_Shared` contract, dependency direction
+- `../../../reviewer/boundary/references/public-boundary-spec.md` — public surface rules, deep import rules, entity cross-reference
+- `../../../reviewer/boundary/references/layer-and-segment-rules.md` — FSD layer contracts, `06_Shared` contract, dependency direction
 - `reuse-discovery-spec.md` — reuse-first ordering, candidate table format, search workflow
-- `decision-matrix.md` — Reuse Score model, thresholds, output contract
-- `package-extraction-posture.md` — extraction readiness checks, modularization direction
+- `../../../reviewer/architecture-gate/references/decision-matrix.md` — Reuse Score model, thresholds, output contract
+- `../../scaffold/references/package-extraction-posture.md` — extraction readiness checks, modularization direction
 
 ## Non-goals
 
 This reference does NOT cover:
 
-- Reuse scoring or the Reuse Score formula (see `decision-matrix.md`)
-- Public boundary principles or deep import rules (see `public-boundary-spec.md`)
-- `06_Shared` layer contract or what shared code may reference (see `layer-and-segment-rules.md`)
+- Reuse scoring or the Reuse Score formula (see `../../../reviewer/architecture-gate/references/decision-matrix.md`)
+- Public boundary principles or deep import rules (see `../../../reviewer/boundary/references/public-boundary-spec.md`)
+- `06_Shared` layer contract or what shared code may reference (see `../../../reviewer/boundary/references/layer-and-segment-rules.md`)
 - Reuse search workflow or candidate discovery (see `reuse-discovery-spec.md`)
-- Extraction readiness checks (see `package-extraction-posture.md`)
+- Extraction readiness checks (see `../../scaffold/references/package-extraction-posture.md`)
 
 ---
 
@@ -39,13 +39,13 @@ Run the freeze ceremony when ALL of the following are true:
 1. **Extraction complete.** Package extraction is finished or the public surface has been confirmed stable through review.
 2. **No planned signature changes.** No outstanding work items propose changes to the shell's public API signatures.
 3. **At least one consuming caller.** At least one caller outside the shell's own slice relies on the current surface. A surface with zero external consumers has no reason to freeze.
-4. **Clear ownership.** The owner audit (from `orchestrator-spec.md`) shows conflict-free ownership: each state field, effect, and cancellation scope has exactly one canonical owner.
+4. **Clear ownership.** The owner audit (from `../../decompose/references/orchestrator-spec.md`) shows conflict-free ownership: each state field, effect, and cancellation scope has exactly one canonical owner.
 
 ### Steps
 
 **Step 1: Audit the public surface.** List every exposed type, function, and property that callers outside the slice can reach. Record the list as a surface manifest.
 
-**Step 2: Verify extraction readiness.** Run the extraction-ready checks from `package-extraction-posture.md`. Freeze should not proceed if the surface would break when moved behind a package boundary.
+**Step 2: Verify extraction readiness.** Run the extraction-ready checks from `../../scaffold/references/package-extraction-posture.md`. Freeze should not proceed if the surface would break when moved behind a package boundary.
 
 **Step 3: Document the frozen surface manifest.** Write down:
 

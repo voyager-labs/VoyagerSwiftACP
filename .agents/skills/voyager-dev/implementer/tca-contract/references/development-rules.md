@@ -34,6 +34,7 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Keep one canonical owner per concern. When behavior such as lifecycle restore, rollback, derived navigation, or mode exit spans multiple reducers, choose one reducer/helper/state method as the owner and route other paths through it.
 - In multi-stage UI callback flows, keep one canonical owner for visual cleanup and state reset instead of splitting ownership across intermediate success paths, teardown hooks, and reload paths.
 - When earlier callbacks resolve critical context that later callbacks receive only partially, prefer carrying the resolved value forward explicitly over re-deriving it from weaker transient inputs.
+- Do not reason from assumed ownership or remembered structure when the current code can be checked. Confirm owners, routes, dependencies, and test surface with reads/search/LSP before editing.
 - When framework hit-testing or event context is known to be incomplete around nested subviews or transformed content, add a stable fallback that preserves the intended interaction contract.
 - Preserve behavior parity across sibling coordinators, presenters, or adapters before introducing one-off exclusions in only one path.
 - When mixed subview geometry can distort previews, hotspots, or interaction affordances, prefer representations aligned to the user's perceived whole interaction area.
@@ -41,7 +42,8 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Keep Voyager-specific heuristics here until they become stable enough to enforce repo-wide, then promote them into `.agents/rules/**`.
 - Make bootstrap/onAppear flows idempotent via a flag (e.g., `didBootstrap`) to prevent double initialization when view lifecycle triggers multiple appearances.
 - Normalize transient states at bootstrap — reset in-progress states (e.g., `connectInProgress` → `notVerified`, `disconnecting` → `disconnected`) to stable equivalents. Transient states from previous sessions should not persist across app launches.
-- Apply `@ObservableState` on the actual struct definition, not on a typealias. See `30-macos/02-tca-observation-lifecycle.md` for TCA observation patterns.
+- Keep transient process/UI states from becoming durable semantic state at restore, effect-completion, cancellation, teardown, and view-disappear boundaries. Convert them to stable state or discard them at the owning reducer boundary.
+- Apply `@ObservableState` on the actual struct definition, not on a typealias. See `../../../../../rules/30-macos/02-tca-observation-lifecycle.md` for TCA observation patterns.
 
 ## Promotion test
 

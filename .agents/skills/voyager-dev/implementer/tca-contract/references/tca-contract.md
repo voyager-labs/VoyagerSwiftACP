@@ -62,6 +62,8 @@ enum ParentAction {
 - Do not call network/filesystem/system SDK directly from SwiftUI views.
 - Give long-lived work a feature-owned `CancelID` and cancel it explicitly from reducer lifecycle.
 - Use `cancelInFlight` only when repeated user intent should replace the earlier in-flight work.
+- Keep every step of a multi-stage async user intent under one cancellation boundary when later steps depend on earlier steps (for example acquire input → verify → persist durable state).
+- Before emitting durable state or persistence effects from an async completion, verify the completion still matches the current user intent/session and was not cancelled or superseded.
 - Do not read nondeterministic globals such as `UUID()`, `Date()`, clocks, `Task.sleep`, or persistent stores directly when the value should be controlled in tests.
 - In `.run` effects, capture immutable snapshots and dependencies explicitly; do not rely on mutable reducer state escaping into async work.
 
@@ -74,7 +76,7 @@ enum ParentAction {
 
 ## Dependency direction stance
 
-- Follow the structural dependency direction defined in `layer-and-segment-rules.md`.
+- Follow the structural dependency direction defined in `../../../reviewer/boundary/references/layer-and-segment-rules.md`.
 - Keep `tca-contract.md` focused on TCA ownership and execution mechanics that sit inside those boundaries.
 
 ## Cancellation ownership
@@ -82,3 +84,4 @@ enum ParentAction {
 - Keep cancellation ownership close to the reducer orchestrating the effect.
 - Prefer `enum CancelID: Hashable, Sendable` inside the feature or reducer owner.
 - Do not scatter cancellation IDs across helper extensions when a parent reducer owns the lifecycle.
+- Choose `CancelID` granularity by concern/user intent, not by individual implementation step, so cancellation aborts the whole flow including post-verification persistence.

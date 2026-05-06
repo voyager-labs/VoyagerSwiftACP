@@ -15,7 +15,7 @@ Keep TCA verification proportional: exhaustive where local correctness matters, 
 Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loops for Voyager/macOS/SPM work.
 
 1. **Find the right command**
-    - Prefer official commands from this playbook, `verification.md`, `xcodebuildmcp-workflow.md`, README/AGENTS, or CI config.
+    - Prefer official commands from this playbook, `../../verification/references/verification.md`, `../../verification/references/xcodebuildmcp-workflow.md`, README/AGENTS, or CI config.
     - For monorepos, narrow by modified app/package before broad runs.
 2. **Run targeted first**
     - First pass: fastest relevant unit/spec tests.
@@ -47,6 +47,7 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
 - If a test intercepts a routed action and returns `.none`, treat that as routing coverage only and add a separate full-chain test when downstream execution is the real risk.
 - When behavior changes across lifecycle or callback boundaries, cover the meaningful success, failure, cancel, reload, and teardown variants rather than a single happy path.
 - When a feature has branch-specific semantics, assert state at each boundary where those branches are meant to diverge so distinct behaviors cannot collapse together silently.
+- For multi-step async flows, include at least one stale-completion, cancellation-between-steps, or superseded-request test when a later step can persist or commit durable state.
 
 ## Test preparation
 
@@ -60,6 +61,7 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
 ## Dependency testing rules
 
 - Override nondeterministic or external values in tests: time, UUID, clocks, storage, network, workspace, notifications, file system.
+- For filesystem-backed tests, isolate via dependency/env overrides and assert real user files are unchanged; do not assume the real file is absent.
 - Do not let reducers call direct globals like `UUID()`, `Date()`, `Task.sleep`, or `UserDefaults.standard` when tests should control them.
 - Prefer dependency clients and test overrides through `TestStore` dependencies.
 - Prefer shared test helper files over file-private helpers when multiple test classes need the same test infrastructure. If a helper must be file-private, colocate tests requiring it in the same file.

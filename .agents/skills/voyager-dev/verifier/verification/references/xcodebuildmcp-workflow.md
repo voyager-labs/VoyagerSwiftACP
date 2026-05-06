@@ -60,6 +60,6 @@ brew install xcodebuildmcp
 - Once XcodeBuildMCP is available, use its project-listing, build, and test tools for verification.
 - Until then, treat the missing MCP as an environment/setup blocker and surface the exact harness-specific install step to the user.
 - Keep the repository-specific verification expectations from `verification.md`:
-  - focused tests first when possible
-  - expand to the full suite when shared reducers or cross-feature boundaries changed
-  - run SwiftLint and SwiftFormat for touched Swift files
+    - focused tests first when possible
+    - expand to the full suite when shared reducers or cross-feature boundaries changed
+    - run SwiftLint and SwiftFormat for touched Swift files
