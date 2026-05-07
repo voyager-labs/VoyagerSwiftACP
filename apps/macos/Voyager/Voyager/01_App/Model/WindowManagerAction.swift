@@ -52,6 +52,7 @@ enum WindowManagerAction: CasePathable, Sendable {
         case requestUndo
         case requestRedo
         case toggleComposer
+        case openContextualAiChat
         case cut
         case copy
         case paste

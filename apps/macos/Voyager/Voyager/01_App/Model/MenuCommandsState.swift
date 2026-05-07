@@ -26,6 +26,7 @@ struct MenuCommandsState: Equatable {
     var canRedo: Bool
     var selectedItemCount: Int
     var isComposerPresented: Bool
+    var isContextualAiChatPresented: Bool
 
     init() {
         hasFocusedWindow = false
@@ -45,6 +46,7 @@ struct MenuCommandsState: Equatable {
         canRedo = false
         selectedItemCount = 0
         isComposerPresented = false
+        isContextualAiChatPresented = false
     }
 
     init(state: AppRootState) {
@@ -76,5 +78,7 @@ struct MenuCommandsState: Equatable {
         canRedo = windowState.content.entryViewLayout.entryOperations.canRedoEntryAction
         selectedItemCount = selectedIds.count
         isComposerPresented = windowState.content.composer.isPresented
+        isContextualAiChatPresented = windowState.inspector.inspectorVisible
+            && windowState.inspector.activeMode == .chat
     }
 }

@@ -73,6 +73,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let editCases: [(MenuCommandItem.EditCommand, WindowManagerAction)] = [
             (.cut, .edit(.cut)),
             (.copy, .edit(.copy)),
+            (.openContextualAiChat, .edit(.openContextualAiChat)),
             (.paste, .edit(.paste)),
             (.duplicate, .edit(.duplicate)),
             (.makeAlias, .edit(.makeAlias)),
@@ -96,6 +97,40 @@ final class MenuCommandsFeatureTests: XCTestCase {
             return true
         }
         await store.finish()
+    }
+
+    func testMenuCommandStateReflectsFocusedWindowContextualAiChatPresentation() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000041")
+        let unfocusedID = makeUUID("00000000-0000-0000-0000-000000000042")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.inspector.inspectorVisible = true
+        focusedWindow.inspector.activeMode = .chat
+
+        var unfocusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
+        unfocusedWindow.inspector.inspectorVisible = false
+        unfocusedWindow.inspector.activeMode = .chat
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+            WindowSessionState(id: unfocusedID, window: unfocusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertTrue(MenuCommandsState(state: appState).isContextualAiChatPresented)
+
+        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorVisible = false
+
+        XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
+    }
+
+    private func makeUUID(_ rawValue: String) -> UUID {
+        guard let uuid = UUID(uuidString: rawValue) else {
+            XCTFail("Invalid UUID fixture: \(rawValue)")
+            return UUID()
+        }
+        return uuid
     }
 
     private func assertAppCommand(
@@ -136,6 +171,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             switch (action, expected) {
             case (.edit(.cut), .edit(.cut)),
                  (.edit(.copy), .edit(.copy)),
+                 (.edit(.openContextualAiChat), .edit(.openContextualAiChat)),
                  (.edit(.paste), .edit(.paste)),
                  (.edit(.duplicate), .edit(.duplicate)),
                  (.edit(.makeAlias), .edit(.makeAlias)),
