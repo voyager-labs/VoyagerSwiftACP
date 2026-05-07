@@ -23,7 +23,7 @@ final class AiChatFeatureTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: nil,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.sessionID = nil
             state.sessionStatus = .idle
@@ -45,7 +45,7 @@ final class AiChatFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.connectionState, .unconnected(.init(
             title: "No session connected",
             detail: "Start or open a session to continue from the current context.",
-            fixLabel: "Open session"
+            fixLabel: "Open session",
         )))
 
         if case let .unconnected(connection, summaryDisplay) = store.state.surfaceState {
@@ -57,8 +57,166 @@ final class AiChatFeatureTests: XCTestCase {
 
         XCTAssertEqual(store.state.modelFieldLabel, "Model")
         XCTAssertEqual(store.state.modelCatalogState.rows.first?.label.title, "GPT-4.1 Mini")
-        XCTAssertEqual(store.state.modelCatalogState.rows.first?.label.subtitle, ProviderDescriptor.descriptor(for: catalogRows[0].handle.provider)?.displayName)
+        XCTAssertEqual(
+            store.state.modelCatalogState.rows.first?.label.subtitle,
+            ProviderDescriptor.descriptor(for: catalogRows[0].handle.provider)?.displayName,
+        )
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
+    }
+
+    func testCurrentContextSummaryFixturesMatchInspectorContract() {
+        let selectedHandle = makeCatalogRows()[0].handle
+
+        let selectedEntriesState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(
+                summary: "Documents · 2 selected",
+                references: [],
+                items: [],
+                attachments: [],
+            ),
+            transcriptHistory: [],
+            draftText: "",
+            streamDraftText: "",
+            catalogRows: makeCatalogRows(),
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+        XCTAssertEqual(selectedEntriesState.currentContextSummaryDisplayModel.title, "Documents · 2 selected")
+        XCTAssertNil(selectedEntriesState.currentContextSummaryDisplayModel.detail)
+
+        let locationOnlyState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "",
+            streamDraftText: "",
+            catalogRows: makeCatalogRows(),
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+        XCTAssertEqual(locationOnlyState.currentContextSummaryDisplayModel.title, "Documents")
+        XCTAssertNil(locationOnlyState.currentContextSummaryDisplayModel.detail)
+
+        let emptyContextState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: .init(),
+            transcriptHistory: [],
+            draftText: "",
+            streamDraftText: "",
+            catalogRows: makeCatalogRows(),
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+        XCTAssertEqual(emptyContextState.currentContextSummaryDisplayModel.title, "No current context")
+        XCTAssertNil(emptyContextState.currentContextSummaryDisplayModel.detail)
+    }
+
+    func testProviderUnavailableSurfaceUsesSettingsFixtureAndDisablesSubmit() {
+        let state = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "Hello",
+            streamDraftText: "",
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+
+        XCTAssertEqual(state.connectionState, .error(.init(
+            title: "No AI provider connected",
+            detail: "Connect an AI provider in Settings to start chatting.",
+            fixLabel: "Connect provider in Settings",
+        )))
+        XCTAssertFalse(state.canSubmit)
+
+        if case let .error(connection, summary) = state.surfaceState {
+            XCTAssertEqual(connection.title, "No AI provider connected")
+            XCTAssertEqual(connection.detail, "Connect an AI provider in Settings to start chatting.")
+            XCTAssertEqual(connection.fixLabel, "Connect provider in Settings")
+            XCTAssertEqual(summary.title, "Documents")
+        } else {
+            XCTFail("Expected provider unavailable error surface")
+        }
+    }
+
+    func testCanSubmitDisallowsRetryWhileFailureSurfaceExists() {
+        let catalogRows = makeCatalogRows()
+        let state = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "Retry after failure",
+            streamDraftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: .transportError,
+            executionPhase: .idle,
+        )
+        let store = TestStore(initialState: state) {
+            AiChatFeature()
+        }
+        XCTAssertFalse(store.state.canSubmit)
+    }
+
+    func testSubmitTappedIsNoOpWhenCanSubmitIsFalse() async {
+        final class ExecutionRequestSpy: @unchecked Sendable {
+            private(set) var requests: [AiChatRequest] = []
+
+            func append(_ request: AiChatRequest) {
+                requests.append(request)
+            }
+        }
+
+        let requestSpy = ExecutionRequestSpy()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "Hello",
+            streamDraftText: "",
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                requestSpy.append(request)
+                return AsyncStream { continuation in
+                    continuation.finish()
+                }
+            })
+        }
+
+        XCTAssertFalse(store.state.canSubmit)
+
+        await store.send(.submitTapped)
+
+        XCTAssertTrue(requestSpy.requests.isEmpty)
+        XCTAssertEqual(store.state.draftText, "Hello")
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lockedModelHandle)
+
+        await store.finish()
     }
 
     func testSurfaceStateCoversEmptyReadyProcessingAndError() {
@@ -77,12 +235,34 @@ final class AiChatFeatureTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         if case .empty = emptyState.surfaceState {
         } else {
             XCTFail("Expected empty surface state")
+        }
+
+        let currentContextInitialState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: summary,
+            transcriptHistory: [],
+            draftText: "",
+            streamDraftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+
+        if case let .empty(summaryDisplay, selectedModel) = currentContextInitialState.surfaceState {
+            XCTAssertFalse(summaryDisplay.isEmpty)
+            XCTAssertEqual(summaryDisplay.title, "Four files selected")
+            XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+        } else {
+            XCTFail("Expected current-context initial chat to use empty surface state")
         }
 
         let readyState = AiChatFeature.State(
@@ -96,7 +276,7 @@ final class AiChatFeatureTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         if case let .ready(summaryDisplay, selectedModel) = readyState.surfaceState {
@@ -120,13 +300,19 @@ final class AiChatFeatureTests: XCTestCase {
             executionPhase: .processing(makeRequestLock(
                 kind: .submit,
                 request: AiChatRequest(
-                    context: makeRequestContext(sessionID: AiChatSessionID(rawValue: UUID()), requestID: AiChatRequestID(rawValue: UUID()), runID: AiChatRunID(rawValue: UUID()), model: catalogRows[1].handle, selectedRow: catalogRows[1]),
-                    messages: []
+                    context: makeRequestContext(
+                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: catalogRows[1].handle,
+                        selectedRow: catalogRows[1],
+                    ),
+                    messages: [],
                 ),
                 selectedHandle: catalogRows[1].handle,
                 selectedRow: catalogRows[1],
-                assistantReplacementIndex: nil
-            ))
+                assistantReplacementIndex: nil,
+            )),
         )
 
         if case let .processing(processing, _, selectedModel) = processingState.surfaceState {
@@ -151,13 +337,19 @@ final class AiChatFeatureTests: XCTestCase {
             executionPhase: .failed(makeRequestLock(
                 kind: .submit,
                 request: AiChatRequest(
-                    context: makeRequestContext(sessionID: AiChatSessionID(rawValue: UUID()), requestID: AiChatRequestID(rawValue: UUID()), runID: AiChatRunID(rawValue: UUID()), model: selectedHandle, selectedRow: catalogRows[0]),
-                    messages: []
+                    context: makeRequestContext(
+                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: selectedHandle,
+                        selectedRow: catalogRows[0],
+                    ),
+                    messages: [],
                 ),
                 selectedHandle: selectedHandle,
                 selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil
-            ), .transportError)
+                assistantReplacementIndex: nil,
+            ), .transportError),
         )
 
         if case let .error(connection, _) = errorState.surfaceState {
@@ -171,15 +363,21 @@ final class AiChatFeatureTests: XCTestCase {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
         let placeholderRequest = AiChatRequest(
-            context: makeRequestContext(sessionID: AiChatSessionID(rawValue: UUID()), requestID: AiChatRequestID(rawValue: UUID()), runID: AiChatRunID(rawValue: UUID()), model: catalogRows[0].handle, selectedRow: catalogRows[0]),
-            messages: []
+            context: makeRequestContext(
+                sessionID: AiChatSessionID(rawValue: UUID()),
+                requestID: AiChatRequestID(rawValue: UUID()),
+                runID: AiChatRunID(rawValue: UUID()),
+                model: catalogRows[0].handle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [],
         )
         let placeholderLock = makeRequestLock(
             kind: .submit,
             request: placeholderRequest,
             selectedHandle: catalogRows[0].handle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -192,7 +390,7 @@ final class AiChatFeatureTests: XCTestCase {
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: catalogRows[0].handle,
             lastExecutionFailure: nil,
-            executionPhase: .processing(placeholderLock)
+            executionPhase: .processing(placeholderLock),
         )) {
             AiChatFeature()
         }
@@ -238,7 +436,7 @@ final class AiChatFeatureTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: unresolvableHandle,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.sessionID = sessionID
             state.sessionStatus = .active
@@ -256,10 +454,11 @@ final class AiChatFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows.first?.handle)
         XCTAssertEqual(store.state.modelCatalogState.selectedModel?.handle, catalogRows.first?.handle)
 
-        if case let .ready(_, selectedModel) = store.state.surfaceState {
+        if case let .empty(summaryDisplay, selectedModel) = store.state.surfaceState {
+            XCTAssertFalse(summaryDisplay.isEmpty)
             XCTAssertEqual(selectedModel?.handle, catalogRows.first?.handle)
         } else {
-            XCTFail("Expected ready surface state after fallback")
+            XCTFail("Expected initial empty surface state after fallback")
         }
     }
 
@@ -275,7 +474,7 @@ final class AiChatFeatureTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -290,7 +489,7 @@ final class AiChatFeatureTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[1].handle,
             lockedModelHandle: catalogRows[1].handle,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -316,10 +515,13 @@ final class AiChatFeatureTests: XCTestCase {
             model: catalogRows[1].handle,
             selectedModelRow: catalogRows[1],
             transcriptHistory: [],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
 
-        await store.receive(.restoreOutcome(.newSession(snapshot: fallbackSnapshot), restoreFailure: .missingRecord)) { state in
+        await store.receive(.restoreOutcome(
+            .newSession(snapshot: fallbackSnapshot),
+            restoreFailure: .missingRecord,
+        )) { state in
             state.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
             state.restoreFailure = .missingRecord
             state.sessionID = fallbackSessionID
@@ -350,7 +552,7 @@ final class AiChatFeatureTests: XCTestCase {
             model: AiModelHandle(provider: .anthropic, rawValue: "stale-model"),
             selectedModelRow: nil,
             transcriptHistory: [AiChatMessage(role: .user, content: "old")],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in rebindSnapshot })
         let store = TestStore(initialState: AiChatFeature.State()) {
@@ -360,7 +562,7 @@ final class AiChatFeatureTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -374,7 +576,7 @@ final class AiChatFeatureTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: rebindSnapshot.model,
             lockedModelHandle: rebindSnapshot.model,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -400,10 +602,13 @@ final class AiChatFeatureTests: XCTestCase {
             model: catalogRows.first?.handle ?? AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
             selectedModelRow: catalogRows.first,
             transcriptHistory: [],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
 
-        await store.receive(.restoreOutcome(.newSession(snapshot: fallbackSnapshot), restoreFailure: .contextMismatch)) { state in
+        await store.receive(.restoreOutcome(
+            .newSession(snapshot: fallbackSnapshot),
+            restoreFailure: .contextMismatch,
+        )) { state in
             state.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
             state.restoreFailure = .contextMismatch
             state.sessionID = fallbackSessionID
@@ -438,18 +643,24 @@ final class AiChatFeatureTests: XCTestCase {
             ],
             lastRequestID: AiChatRequestID(rawValue: UUID(uuidString: "66666666-6666-6666-6666-666666666666")!),
             lastRunID: AiChatRunID(rawValue: UUID(uuidString: "77777777-7777-7777-7777-777777777777")!),
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let staleLock = makeRequestLock(
             kind: .submit,
             request: AiChatRequest(
-                context: makeRequestContext(sessionID: targetSessionID, requestID: AiChatRequestID(rawValue: UUID()), runID: AiChatRunID(rawValue: UUID()), model: catalogRows[1].handle, selectedRow: catalogRows[1]),
-                messages: []
+                context: makeRequestContext(
+                    sessionID: targetSessionID,
+                    requestID: AiChatRequestID(rawValue: UUID()),
+                    runID: AiChatRunID(rawValue: UUID()),
+                    model: catalogRows[1].handle,
+                    selectedRow: catalogRows[1],
+                ),
+                messages: [],
             ),
             selectedHandle: catalogRows[1].handle,
             selectedRow: catalogRows[1],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
         let store = TestStore(initialState: AiChatFeature.State(
             restoreSessionID: targetSessionID,
@@ -463,7 +674,7 @@ final class AiChatFeatureTests: XCTestCase {
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: catalogRows[1].handle,
             lastExecutionFailure: .transportError,
-            executionPhase: .processing(staleLock)
+            executionPhase: .processing(staleLock),
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -471,7 +682,7 @@ final class AiChatFeatureTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -485,7 +696,7 @@ final class AiChatFeatureTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: catalogRows[1].handle,
-            lastExecutionFailure: .transportError
+            lastExecutionFailure: .transportError,
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -533,7 +744,7 @@ final class AiChatFeatureTests: XCTestCase {
             model: AiModelHandle(provider: .openai, rawValue: "missing-model"),
             selectedModelRow: nil,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let store = TestStore(initialState: AiChatFeature.State()) {
@@ -543,7 +754,7 @@ final class AiChatFeatureTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -557,7 +768,7 @@ final class AiChatFeatureTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: restoredSnapshot.model,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -584,7 +795,7 @@ final class AiChatFeatureTests: XCTestCase {
             transcriptHistory: restoredSnapshot.transcriptHistory,
             lastRequestID: nil,
             lastRunID: nil,
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
 
         await store.receive(.restoreOutcome(.restored(snapshot: normalizedSnapshot), restoreFailure: nil)) { state in
@@ -623,13 +834,19 @@ final class AiChatFeatureTests: XCTestCase {
             executionPhase: .processing(makeRequestLock(
                 kind: .submit,
                 request: AiChatRequest(
-                    context: makeRequestContext(sessionID: sessionID, requestID: AiChatRequestID(rawValue: UUID()), runID: AiChatRunID(rawValue: UUID()), model: catalogRows[1].handle, selectedRow: catalogRows[1]),
-                    messages: []
+                    context: makeRequestContext(
+                        sessionID: sessionID,
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: catalogRows[1].handle,
+                        selectedRow: catalogRows[1],
+                    ),
+                    messages: [],
                 ),
                 selectedHandle: catalogRows[1].handle,
                 selectedRow: catalogRows[1],
-                assistantReplacementIndex: nil
-            ))
+                assistantReplacementIndex: nil,
+            )),
         )) {
             AiChatFeature()
         }
@@ -649,31 +866,48 @@ final class AiChatFeatureTests: XCTestCase {
         }
     }
 
-    func testDraftTextChangeAndReset() async {
+    func testDraftTextChangeClearsStaleFailureAndResetStillClearsTranscript() async {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
         let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
             draftText: "Draft",
             streamDraftText: "Partial",
-            catalogRows: makeCatalogRows(),
-            selectedModelHandle: makeCatalogRows()[0].handle,
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
             lastExecutionFailure: .transportError,
             executionPhase: .failed(makeRequestLock(
                 kind: .submit,
                 request: AiChatRequest(
-                    context: makeRequestContext(sessionID: AiChatSessionID(rawValue: UUID()), requestID: AiChatRequestID(rawValue: UUID()), runID: AiChatRunID(rawValue: UUID()), model: makeCatalogRows()[0].handle, selectedRow: makeCatalogRows()[0]),
-                    messages: []
+                    context: makeRequestContext(
+                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: selectedHandle,
+                        selectedRow: catalogRows[0],
+                    ),
+                    messages: [],
                 ),
-                selectedHandle: makeCatalogRows()[0].handle,
-                selectedRow: makeCatalogRows()[0],
-                assistantReplacementIndex: nil
-            ), .transportError)
+                selectedHandle: selectedHandle,
+                selectedRow: catalogRows[0],
+                assistantReplacementIndex: nil,
+            ), .transportError),
         )) {
             AiChatFeature()
         }
 
+        XCTAssertFalse(store.state.canSubmit)
+
         await store.send(.draftTextChanged("Updated")) { state in
             state.draftText = "Updated"
+            state.lastExecutionFailure = nil
+            state.executionPhase = .idle
         }
+
+        XCTAssertTrue(store.state.canSubmit)
 
         await store.send(.resetTapped) { state in
             state.draftText = ""
@@ -684,6 +918,52 @@ final class AiChatFeatureTests: XCTestCase {
             state.executionPhase = .idle
         }
 
+        await store.finish()
+    }
+
+    func testSelectedModelChangeClearsStaleFailureAndRestoresSubmitEligibility() async {
+        let catalogRows = makeCatalogRows()
+        let firstHandle = catalogRows[0].handle
+        let secondHandle = catalogRows[1].handle
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "Retry me",
+            streamDraftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: firstHandle,
+            lastExecutionFailure: .transportError,
+            executionPhase: .failed(makeRequestLock(
+                kind: .submit,
+                request: AiChatRequest(
+                    context: makeRequestContext(
+                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: firstHandle,
+                        selectedRow: catalogRows[0],
+                    ),
+                    messages: [],
+                ),
+                selectedHandle: firstHandle,
+                selectedRow: catalogRows[0],
+                assistantReplacementIndex: nil,
+            ), .transportError),
+        )) {
+            AiChatFeature()
+        }
+
+        XCTAssertFalse(store.state.canSubmit)
+
+        await store.send(.selectedModelChanged(secondHandle)) { state in
+            state.selectedModelHandle = secondHandle
+            state.lastExecutionFailure = nil
+            state.executionPhase = .idle
+        }
+
+        XCTAssertTrue(store.state.canSubmit)
         await store.finish()
     }
 
@@ -705,7 +985,7 @@ final class AiChatFeatureTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -718,7 +998,7 @@ final class AiChatFeatureTests: XCTestCase {
                 saveSession: { snapshot in
                     await persistence.save(snapshot)
                 },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -742,7 +1022,7 @@ final class AiChatFeatureTests: XCTestCase {
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
 
         XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello")])
@@ -761,7 +1041,7 @@ final class AiChatFeatureTests: XCTestCase {
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "Hello back"),
-            completedAtMs: 0
+            completedAtMs: 0,
         )
         stream.yield(.final(response: finalResponse))
         stream.finish()
@@ -800,7 +1080,7 @@ final class AiChatFeatureTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -811,7 +1091,7 @@ final class AiChatFeatureTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -831,7 +1111,7 @@ final class AiChatFeatureTests: XCTestCase {
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
 
         XCTAssertEqual(store.state.executionPhase, .processing(lock))
@@ -846,7 +1126,7 @@ final class AiChatFeatureTests: XCTestCase {
         await store.send(.executionEvent(.final(response: AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "late final"),
-            completedAtMs: 0
+            completedAtMs: 0,
         ))))
 
         XCTAssertEqual(store.state.transcriptHistory, [AiChatMessage(role: .user, content: "Cancel me")])
@@ -878,7 +1158,7 @@ final class AiChatFeatureTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -891,7 +1171,7 @@ final class AiChatFeatureTests: XCTestCase {
                 saveSession: { snapshot in
                     await persistence.save(snapshot)
                 },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -909,7 +1189,7 @@ final class AiChatFeatureTests: XCTestCase {
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: 1
+            assistantReplacementIndex: 1,
         )
 
         XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello")])
@@ -918,7 +1198,7 @@ final class AiChatFeatureTests: XCTestCase {
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "New answer"),
-            completedAtMs: 0
+            completedAtMs: 0,
         )
         stream.yield(.final(response: finalResponse))
         stream.finish()
@@ -956,7 +1236,7 @@ final class AiChatFeatureTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -970,7 +1250,7 @@ final class AiChatFeatureTests: XCTestCase {
                     struct PersistenceBoom: Error {}
                     throw PersistenceBoom()
                 },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -989,7 +1269,7 @@ final class AiChatFeatureTests: XCTestCase {
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
 
         XCTAssertEqual(store.state.executionPhase, .processing(lock))
@@ -997,7 +1277,7 @@ final class AiChatFeatureTests: XCTestCase {
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "Hi"),
-            completedAtMs: 0
+            completedAtMs: 0,
         )
         stream.yield(.final(response: finalResponse))
         stream.finish()
@@ -1035,7 +1315,7 @@ final class AiChatFeatureTests: XCTestCase {
                 subtitle: nil,
                 sortOrder: 10,
                 isDefault: true,
-                isRecommended: true
+                isRecommended: true,
             ),
             AiModelCatalogRow(
                 handle: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
@@ -1044,7 +1324,7 @@ final class AiChatFeatureTests: XCTestCase {
                 subtitle: "Reasoning-first chat",
                 sortOrder: 20,
                 isDefault: false,
-                isRecommended: false
+                isRecommended: false,
             ),
         ]
     }
@@ -1053,35 +1333,40 @@ final class AiChatFeatureTests: XCTestCase {
         AiModelHandle(provider: .openai, rawValue: "unresolvable-model")
     }
 
-    private func makeContextSnapshot() -> AiChatCurrentContextSnapshot {
+    private func makeContextSnapshot(
+        summary: String = "Four files selected",
+        references: [AiChatContextReference] = [
+            AiChatContextReference(
+                kind: .reference,
+                identifier: "ref-1",
+                title: "Readme.md",
+                subtitle: "Project readme",
+                metadata: ["path": "docs/Readme.md"],
+            ),
+        ],
+        items: [AiChatContextItem] = [
+            AiChatContextItem(
+                kind: .file,
+                identifier: "file-1",
+                title: "VoyagerEntitiesAi.swift",
+                subtitle: "Source file",
+                metadata: ["path": "Sources/VoyagerEntitiesAi/VoyagerEntitiesAi.swift"],
+            ),
+        ],
+        attachments: [AiChatContextAttachment] = [
+            AiChatContextAttachment(
+                identifier: "attachment-1",
+                title: "Screenshot",
+                subtitle: "Current state",
+                metadata: ["mimeType": "image/png"],
+            ),
+        ],
+    ) -> AiChatCurrentContextSnapshot {
         AiChatCurrentContextSnapshot(
-            summary: "Four files selected",
-            references: [
-                AiChatContextReference(
-                    kind: .reference,
-                    identifier: "ref-1",
-                    title: "Readme.md",
-                    subtitle: "Project readme",
-                    metadata: ["path": "docs/Readme.md"]
-                ),
-            ],
-            items: [
-                AiChatContextItem(
-                    kind: .file,
-                    identifier: "file-1",
-                    title: "VoyagerEntitiesAi.swift",
-                    subtitle: "Source file",
-                    metadata: ["path": "Sources/VoyagerEntitiesAi/VoyagerEntitiesAi.swift"]
-                ),
-            ],
-            attachments: [
-                AiChatContextAttachment(
-                    identifier: "attachment-1",
-                    title: "Screenshot",
-                    subtitle: "Current state",
-                    metadata: ["mimeType": "image/png"]
-                ),
-            ]
+            summary: summary,
+            references: references,
+            items: items,
+            attachments: attachments,
         )
     }
 
@@ -1091,7 +1376,7 @@ final class AiChatFeatureTests: XCTestCase {
         runID: AiChatRunID,
         model: AiModelHandle,
         selectedRow: AiModelCatalogRow,
-        promptSummary: String = "Hello"
+        promptSummary: String = "Hello",
     ) -> AiChatRequestContextSnapshot {
         AiChatRequestContextSnapshot(
             sessionID: sessionID,
@@ -1103,7 +1388,7 @@ final class AiChatFeatureTests: XCTestCase {
             sessionStatus: .active,
             currentContext: makeContextSnapshot(),
             promptSummary: promptSummary,
-            submittedAtMs: nil
+            submittedAtMs: nil,
         )
     }
 
@@ -1112,7 +1397,7 @@ final class AiChatFeatureTests: XCTestCase {
         request: AiChatRequest,
         selectedHandle: AiModelHandle,
         selectedRow: AiModelCatalogRow,
-        assistantReplacementIndex: Int?
+        assistantReplacementIndex: Int?,
     ) -> AiChatRequestLock {
         AiChatRequestLock(
             kind: kind,
@@ -1122,7 +1407,7 @@ final class AiChatFeatureTests: XCTestCase {
             request: request,
             selectedModelHandle: selectedHandle,
             selectedModelRow: selectedRow,
-            assistantReplacementIndex: assistantReplacementIndex
+            assistantReplacementIndex: assistantReplacementIndex,
         )
     }
 }

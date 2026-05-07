@@ -184,6 +184,14 @@ func aiChatConnectionMetadata(for state: AiChatState) -> AiChatConnectionMetadat
         )
     }
 
+    if state.catalogRows.isEmpty || state.selectedModelDisplayModel == nil {
+        return AiChatConnectionMetadata(
+            title: "No AI provider connected",
+            detail: "Connect an AI provider in Settings to start chatting.",
+            fixLabel: "Connect provider in Settings"
+        )
+    }
+
     if let failure = state.lastExecutionFailure {
         return AiChatConnectionMetadata(
             title: "Chat unavailable",

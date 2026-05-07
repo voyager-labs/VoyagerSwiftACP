@@ -11,7 +11,7 @@ public struct AiChatView: View {
 
     public var body: some View {
         WithPerceptionTracking {
-            let state = self.store.state
+            let state = store.state
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("AI Chat")
@@ -52,6 +52,9 @@ public struct AiChatView: View {
                     surfaceBlock(title: connection.title, detail: connection.detail, actionLabel: connection.fixLabel)
 
                 case let .empty(_, selectedModel):
+                    Text("No messages yet")
+                    Text("Type a message to start chatting with this context.")
+                        .font(.caption)
                     Text(selectedModel?.label.title ?? "No model selected")
 
                 case let .ready(_, selectedModel):
@@ -64,7 +67,7 @@ public struct AiChatView: View {
                             .font(.caption)
                     }
                     Button(processing.cancelAffordance.title) {
-                        self.store.send(.cancelTapped)
+                        store.send(.cancelTapped)
                     }
                     .disabled(!processing.cancelAffordance.isEnabled)
                 }
@@ -83,13 +86,13 @@ public struct AiChatView: View {
                     "Draft message",
                     text: Binding(
                         get: { state.draftText },
-                        set: { self.store.send(.draftTextChanged($0)) }
-                    )
+                        set: { store.send(.draftTextChanged($0)) },
+                    ),
                 )
 
                 ForEach(state.modelCatalogState.rows) { row in
                     Button {
-                        self.store.send(.selectedModelChanged(row.handle))
+                        store.send(.selectedModelChanged(row.handle))
                     } label: {
                         Text(row.label.title)
                     }
@@ -97,17 +100,17 @@ public struct AiChatView: View {
                 }
 
                 Button("Submit") {
-                    self.store.send(.submitTapped)
+                    store.send(.submitTapped)
                 }
                 .disabled(!state.canSubmit)
 
                 Button("Regenerate") {
-                    self.store.send(.regenerateTapped)
+                    store.send(.regenerateTapped)
                 }
                 .disabled(!state.canRegenerate)
 
                 Button("Reset draft") {
-                    self.store.send(.resetTapped)
+                    store.send(.resetTapped)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

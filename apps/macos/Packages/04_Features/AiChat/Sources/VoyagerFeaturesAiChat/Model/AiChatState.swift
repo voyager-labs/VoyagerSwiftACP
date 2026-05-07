@@ -33,7 +33,7 @@ public struct AiChatState: Equatable, Sendable {
         selectedModelHandle: AiModelHandle? = nil,
         lockedModelHandle: AiModelHandle? = nil,
         lastExecutionFailure: AiChatExecutionFailure? = nil,
-        executionPhase: AiChatExecutionPhase = .idle
+        executionPhase: AiChatExecutionPhase = .idle,
     ) {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
@@ -62,11 +62,7 @@ public struct AiChatState: Equatable, Sendable {
             }
             return .error(metadata)
         }
-        return sessionID == nil ? .unconnected(.init(
-            title: "No session connected",
-            detail: "Start or open a session to continue from the current context.",
-            fixLabel: "Open session"
-        )) : .connected
+        return .connected
     }
 
     public var modelCatalogState: AiChatModelCatalogState {
@@ -84,11 +80,11 @@ public struct AiChatState: Equatable, Sendable {
                     isSelected: row.handle == selectedHandle,
                     isLocked: row.handle == lockedHandle,
                     isDefault: row.isDefault,
-                    isRecommended: row.isRecommended
+                    isRecommended: row.isRecommended,
                 )
             },
             selectedModel: selectedModel,
-            lockedModel: lockedModel
+            lockedModel: lockedModel,
         )
     }
 
@@ -105,7 +101,12 @@ public struct AiChatState: Equatable, Sendable {
     }
 
     public var canSubmit: Bool {
-        !isProcessing && !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard !isProcessing else { return false }
+        guard resolvedSelectedModelRow != nil else { return false }
+        guard connectionState == .connected else { return false }
+        guard case .ready = surfaceState else { return false }
+        return true
     }
 
     public var canRegenerate: Bool {
@@ -167,14 +168,14 @@ public struct AiChatState: Equatable, Sendable {
                 return .processing(
                     processing: AiChatProcessingState(
                         lockedModel: lockedModel,
-                        cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true)
+                        cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true),
                     ),
                     summary: currentContextSummaryDisplayModel,
-                    selectedModel: selectedModelDisplayModel
+                    selectedModel: selectedModelDisplayModel,
                 )
             }
 
-            if currentContextSummaryDisplayModel.isEmpty, transcriptHistory.isEmpty, draftText.isEmpty {
+            if isInitialChatSurface {
                 return .empty(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
             }
 
@@ -185,6 +186,12 @@ public struct AiChatState: Equatable, Sendable {
     public var modelFieldLabel: String { "Model" }
 
     public var isProcessing: Bool { lockedModelDisplayModel != nil }
+
+    private var isInitialChatSurface: Bool {
+        transcriptHistory.isEmpty
+            && draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && streamDraftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     private var resolvedSelectedModelRow: AiModelCatalogRow? {
         if let handle = selectedModelHandle,

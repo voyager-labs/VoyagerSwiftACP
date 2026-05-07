@@ -38,13 +38,16 @@ public struct AiChatFeature {
                 let resolvedHandle = resolvedSelectionHandle(handle, in: state.catalogRows)
                 guard state.selectedModelHandle != resolvedHandle else { return .none }
                 state.selectedModelHandle = resolvedHandle
+                clearRetryBlockingFailureIfNeeded(&state)
                 return .none
 
             case let .draftTextChanged(text):
                 state.draftText = text
+                clearRetryBlockingFailureIfNeeded(&state)
                 return .none
 
             case .submitTapped:
+                guard state.canSubmit else { return .none }
                 return startRequest(kind: .submit, state: &state)
 
             case .regenerateTapped:
@@ -87,6 +90,17 @@ public struct AiChatFeature {
                 state.lastExecutionFailure = failure
                 return .none
             }
+        }
+    }
+
+    private func clearRetryBlockingFailureIfNeeded(_ state: inout State) {
+        state.lastExecutionFailure = nil
+
+        switch state.executionPhase {
+        case .failed, .persistenceRecovery:
+            state.executionPhase = .idle
+        default:
+            break
         }
     }
 
