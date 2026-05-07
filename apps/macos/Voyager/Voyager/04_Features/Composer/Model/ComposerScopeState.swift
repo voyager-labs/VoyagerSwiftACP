@@ -147,10 +147,10 @@ enum ComposerScopeEditorListState: Equatable, Sendable {
             "Suggestions"
         case .childFolders:
             "Subfolders"
-        case .searchResults:
-            "Search Results"
-        case .noResults:
-            "No Results"
+        case let .searchResults(query):
+            "Search Results for \"\(query)\""
+        case let .noResults(query):
+            "No Results for \"\(query)\""
         }
     }
 
@@ -159,9 +159,18 @@ enum ComposerScopeEditorListState: Equatable, Sendable {
         case .defaultCandidates, .searchResults:
             nil
         case .childFolders:
-            "No subfolders found"
+            "No subfolders found."
         case let .noResults(query):
-            "No directories found for \"\(query)\""
+            "No directories found for \"\(query)\"."
+        }
+    }
+
+    var emptyStateRecoveryMessage: String? {
+        switch self {
+        case .defaultCandidates, .childFolders, .searchResults:
+            nil
+        case .noResults:
+            "Try another search or clear the search to return to the previous list."
         }
     }
 }

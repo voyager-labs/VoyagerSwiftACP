@@ -125,14 +125,7 @@ struct ScopePickerView: View {
                     }
                 case .addableCandidates:
                     if section.items.isEmpty {
-                        if case let .addableCandidates(listState) = section.kind,
-                           let message = listState.emptyStateMessage
-                        {
-                            Text(message)
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                                .padding(.vertical, 8)
-                        }
+                        addableCandidatesEmptyState(for: section.kind)
                     } else {
                         ForEach(section.items, id: \.id) { item in
                             addableCandidateRow(item: item, viewStore: viewStore)
@@ -214,6 +207,28 @@ struct ScopePickerView: View {
                 hoveredPath = hovering ? candidate.path : nil
             },
         )
+    }
+
+    @ViewBuilder
+    private func addableCandidatesEmptyState(for kind: ComposerScopeEditorSection.Kind) -> some View {
+        if case let .addableCandidates(listState) = kind,
+           let message = listState.emptyStateMessage
+        {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+
+                if let recoveryMessage = listState.emptyStateRecoveryMessage {
+                    Text(recoveryMessage)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 8)
+        } else {
+            EmptyView()
+        }
     }
 
     private func handleCurrentScopeTap(
