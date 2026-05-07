@@ -1,8 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
 
-import VoyagerFeaturesAiChat
-
 struct FileManagerContentPaneView: View {
     let store: StoreOf<FileManagerContentFeature>
     let chromeProps: FileManagerContentChromeProps
@@ -69,26 +67,6 @@ struct FileManagerContentPaneView: View {
                 .spring(response: 0.25, dampingFraction: 0.75),
                 value: overlayProps.isComposerPresented,
             )
-
-            Group {
-                if store.isAiChatPresented {
-                    HStack {
-                        Spacer(minLength: 0)
-                        AiChatView(store: store.scope(state: \.aiChat, action: \.aiChat))
-                            .padding(.horizontal, VoyagerDS.Spacing.composerHorizontalPadding)
-                            .padding(.top, VoyagerDS.Spacing.composerTopPadding)
-                            .background(
-                                RoundedRectangle(cornerRadius: VoyagerDS.Radius.contentPane, style: .continuous)
-                                    .fill(.thickMaterial),
-                            )
-                    }
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-            }
-            .animation(
-                .spring(response: 0.25, dampingFraction: 0.75),
-                value: store.isAiChatPresented,
-            )
         }
         .background(.thickMaterial)
         .overlay(FileManagerContentMaterialTint())
@@ -101,6 +79,7 @@ struct FileManagerContentChromeProps: Equatable {
     let breadcrumbRoots: FileManagerBreadcrumbRoots
     let pathDisplayNames: [String: String]
     let specialDirectoryIconNames: [String: String]
+    let isContextualAiChatPresented: Bool
 }
 
 struct FileManagerContentOverlayProps: Equatable {

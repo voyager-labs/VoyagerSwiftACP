@@ -1,11 +1,9 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
-import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryOperations
 
 @Reducer
@@ -23,15 +21,9 @@ struct FileManagerContentFeature {
     private var fileManagerClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
-    @Dependency(\.uuid)
-    private var uuid
     var body: some Reducer<State, Action> {
         Scope(state: \.composer, action: \.composer) {
             ComposerFeature()
-        }
-
-        Scope(state: \.aiChat, action: \.aiChat) {
-            AiChatFeature()
         }
 
         Scope(state: \.collection, action: \.collection) {
@@ -80,11 +72,8 @@ struct FileManagerContentFeature {
                     orderedItemIds: state.entryViewLayout.entries.map(\.id),
                 ))))
 
-            case .view(.presentAiChat):
-                state.isAiChatPresented = true
-                let sessionID = AiChatSessionID(rawValue: uuid())
-                let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: state, sessionID: sessionID)
-                return .send(.aiChat(.setup(setup)))
+            case .view(.openContextualAiChatTapped):
+                return .send(.delegate(.openContextualAiChat))
 
             case .view(.refreshStaleCollection):
                 guard state.refreshBlockingReason == nil else {
@@ -122,7 +111,8 @@ struct FileManagerContentFeature {
 
             case .delegate(.openPathInNewWindow),
                  .delegate(.openPathInNewTab),
-                 .delegate(.closeWindow):
+                 .delegate(.closeWindow),
+                 .delegate(.openContextualAiChat):
                 return .none
 
             case let .delegate(.dropItemsToSidebarFolder(providers, targetURL)):

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 
 import VoyagerFeaturesEntryOperations
 
@@ -7,6 +8,11 @@ import VoyagerFeaturesEntryOperations
 struct FileManagerFeature {
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
+
+    @Dependency(\.aiConnectionsFileClient)
+    private var aiConnectionsFileClient
+    @Dependency(\.uuid)
+    private var uuid
 
     var body: some Reducer<State, Action> {
         Scope(state: \.content, action: \.content) {
@@ -42,6 +48,9 @@ struct FileManagerFeature {
             case let .content(.delegate(.openPathInNewTab(path))):
                 .send(.delegate(.openPathInNewTab(path)))
 
+            case .content(.delegate(.openContextualAiChat)):
+                .send(.request(.openContextualAiChat))
+
             default:
                 .none
             }
@@ -66,7 +75,9 @@ struct FileManagerFeature {
 
         case .saveCollection,
              .saveCollectionAs,
-             .toggleComposer:
+             .toggleComposer,
+             .openContextualAiChat,
+             .presentContextualAiChat:
             handleComposerRequest(command, state: &state)
 
         case .goBack,
@@ -204,16 +215,43 @@ struct FileManagerFeature {
     private func handleComposerRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
         case .saveCollection:
-            .send(.content(.composer(.saveCollection)))
+            return .send(.content(.composer(.saveCollection)))
 
         case .saveCollectionAs:
-            .send(.content(.composer(.saveCollectionAs)))
+            return .send(.content(.composer(.saveCollectionAs)))
 
         case .toggleComposer:
-            .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
+            return .send(.content(.composer(.setPresented(!state.content.composer.isPresented))))
+
+        case .openContextualAiChat:
+            if state.inspector.inspectorVisible,
+               state.inspector.activeMode == .chat
+            {
+                return .send(.inspector(.setInspectorVisible(false)))
+            }
+            return openContextualAiChatEffect(state: state)
+
+        case .presentContextualAiChat:
+            return openContextualAiChatEffect(state: state)
 
         default:
-            .none
+            return .none
+        }
+    }
+
+    private func openContextualAiChatEffect(state: State) -> Effect<Action> {
+        let content = state.content
+        let sessionID = AiChatSessionID(rawValue: uuid())
+        return .run { [aiConnectionsFileClient, content, sessionID] send in
+            let connectionsFile = await (try? aiConnectionsFileClient.load()) ?? .empty()
+            let setup = await MainActor.run {
+                FileManagerAiChatContextAdapter.makeAiChatSetupState(
+                    content: content,
+                    sessionID: sessionID,
+                    connectionsFile: connectionsFile,
+                )
+            }
+            await send(.inspector(.openChat(setup)))
         }
     }
 

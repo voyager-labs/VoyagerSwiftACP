@@ -2,7 +2,6 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
-import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryOperations
 
 @ObservableState
@@ -11,8 +10,6 @@ struct FileManagerContentState: Equatable {
     var entryViewLayout: EntryViewLayoutFeature.State = .init()
     var composer: ComposerFeature.State = .init()
     var collection: CollectionFeature.State = .init()
-    var aiChat: AiChatFeature.State = .init()
-    var isAiChatPresented: Bool = false
 
     // 컴포저 관련
     var collectionContext: CollectionContext? {

@@ -35,6 +35,8 @@ enum FileManagerWindowAction: CasePathable, Sendable {
         case requestUndo
         case requestRedo
         case toggleComposer
+        case openContextualAiChat
+        case presentContextualAiChat
         case cut
         case copy
         case paste
