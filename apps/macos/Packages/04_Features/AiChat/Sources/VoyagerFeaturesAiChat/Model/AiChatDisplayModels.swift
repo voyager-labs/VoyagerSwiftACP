@@ -29,7 +29,7 @@ public struct AiChatContextSummaryDisplayModel: Equatable, Sendable {
 
     public init(
         title: String,
-        detail: String? = nil,
+        detail: String?,
         referenceCount: Int,
         itemCount: Int,
         attachmentCount: Int,
@@ -145,11 +145,16 @@ public enum AiChatSurfaceState: Equatable, Sendable {
     case error(connection: AiChatConnectionMetadata, summary: AiChatContextSummaryDisplayModel)
     case empty(summary: AiChatContextSummaryDisplayModel, selectedModel: AiChatSelectedModelDisplayModel?)
     case ready(summary: AiChatContextSummaryDisplayModel, selectedModel: AiChatSelectedModelDisplayModel?)
-    case processing(processing: AiChatProcessingState, summary: AiChatContextSummaryDisplayModel, selectedModel: AiChatSelectedModelDisplayModel?)
+    case processing(
+        processing: AiChatProcessingState,
+        summary: AiChatContextSummaryDisplayModel,
+        selectedModel: AiChatSelectedModelDisplayModel?
+    )
 }
 
 func aiChatModelLabel(for row: AiModelCatalogRow) -> AiChatModelLabel {
-    let providerLabel = ProviderDescriptor.descriptor(for: row.handle.provider)?.displayName ?? row.handle.provider.rawValue
+    let providerLabel = ProviderDescriptor.descriptor(for: row.handle.provider)?.displayName
+        ?? row.handle.provider.rawValue
     return AiChatModelLabel(title: row.displayName, subtitle: row.subtitle ?? providerLabel)
 }
 
@@ -159,11 +164,12 @@ func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot
     let attachmentCount = snapshot.attachments.count
     let hasContent = referenceCount > 0 || itemCount > 0 || attachmentCount > 0
     let trimmedSummary = snapshot.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let title = trimmedSummary.flatMap { $0.isEmpty ? nil : $0 } ?? (hasContent ? "Current context" : "No current context")
+    let title = trimmedSummary.flatMap { $0.isEmpty ? nil : $0 }
+        ?? (hasContent ? "Current context" : "No current context")
     let detailParts = [
         referenceCount > 0 ? "\(referenceCount) \(referenceCount == 1 ? "reference" : "references")" : nil,
         itemCount > 0 ? "\(itemCount) \(itemCount == 1 ? "item" : "items")" : nil,
-        attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil,
+        attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil
     ].compactMap { $0 }
     return AiChatContextSummaryDisplayModel(
         title: title,

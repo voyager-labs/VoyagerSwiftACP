@@ -195,8 +195,7 @@ public struct AiChatState: Equatable, Sendable {
 
     private var resolvedSelectedModelRow: AiModelCatalogRow? {
         if let handle = selectedModelHandle,
-           let row = catalogRows.first(where: { $0.handle == handle })
-        {
+           let row = catalogRows.first(where: { $0.handle == handle }) {
             return row
         }
 
