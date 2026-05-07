@@ -36,6 +36,7 @@ final class ComposerScopeEditorListStateTests: XCTestCase {
         XCTAssertNil(searchResultsState.emptyStateRecoveryMessage)
 
         let childFoldersState = ComposerScopeEditorListState.childFolders(parentPath: "/Users/me/Documents")
+        XCTAssertEqual(childFoldersState.emptyStateMessage, "No subfolders found.")
         XCTAssertNil(childFoldersState.emptyStateRecoveryMessage)
     }
 }

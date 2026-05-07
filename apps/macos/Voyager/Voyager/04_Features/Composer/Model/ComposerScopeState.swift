@@ -159,7 +159,7 @@ enum ComposerScopeEditorListState: Equatable, Sendable {
         case .defaultCandidates, .searchResults:
             nil
         case .childFolders:
-            "No subfolders found"
+            "No subfolders found."
         case let .noResults(query):
             "No directories found for \"\(query)\"."
         }
