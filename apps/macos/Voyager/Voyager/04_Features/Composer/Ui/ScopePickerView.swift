@@ -24,6 +24,9 @@ struct ScopePickerView: View {
                 if !viewStore.scopeEditor.selection.isRootOnly {
                     includeSubfoldersRow(viewStore: viewStore)
                 }
+                if let display = viewStore.lastScopeChangeFeedbackDisplay {
+                    scopeChangeFeedbackBanner(display)
+                }
                 listContent(viewStore: viewStore)
             }
             .frame(width: 260)
@@ -82,6 +85,16 @@ struct ScopePickerView: View {
         IncludeSubfoldersRow(
             includeSubfolders: viewStore.scopeEditor.includeSubfolders,
             onTap: { store.send(.scopeEditorSetIncludeSubfolders(!$0)) },
+        )
+    }
+
+    @ViewBuilder
+    private func scopeChangeFeedbackBanner(_ display: ComposerScopeChangeFeedbackDisplay) -> some View {
+        ScopeChangeFeedbackBannerView(
+            display: display,
+            colorScheme: colorScheme,
+            onUndo: { store.send(.scopeFeedbackUndoTapped) },
+            onRedo: { store.send(.scopeFeedbackRedoTapped) },
         )
     }
 

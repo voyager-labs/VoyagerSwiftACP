@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class ComposerScopeEditorDismissApplyTests: XCTestCase {
     // swiftlint:disable:next function_body_length
-    func testScopeEditorDismissReappliesFiltersWhenIncludeSubfoldersChanged() async {
+    func testScopeEditorDismissReappliesFiltersWhenIncludeSubfoldersChanged() async throws {
         let applyRecorder = DismissApplyFiltersRecorder()
 
         var initialState = ComposerState()
@@ -38,6 +38,17 @@ final class ComposerScopeEditorDismissApplyTests: XCTestCase {
             conditions: initialState.conditions,
         )
         initialState.scopeEditor.includeSubfolders = false
+        recordScopeChangeFeedback(
+            state: &initialState,
+            beforeScope: ComposerScopeSnapshot(
+                scopeSelection: .explicit(
+                    bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+                    exceptions: [],
+                ),
+                includeSubfolders: true,
+            ),
+            origin: .includeSubfolders,
+        )
 
         let store = TestStore(initialState: initialState) {
             ComposerFeature()
@@ -88,6 +99,9 @@ final class ComposerScopeEditorDismissApplyTests: XCTestCase {
         XCTAssertEqual(recordedRequest?.filters.scopes, ["/Users/test/Documents"])
         XCTAssertEqual(recordedRequest?.filters.includeSubfolders, false)
         XCTAssertEqual(recordedRequest?.filters.conditions.count, 1)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.phase, .delayed)
+        let activeFiltersRequestID = try XCTUnwrap(store.state.activeFiltersRequestID)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.pendingResultRequest, .filters(activeFiltersRequestID))
     }
 
     // swiftlint:disable:next function_body_length
@@ -160,7 +174,7 @@ final class ComposerScopeEditorDismissApplyTests: XCTestCase {
     }
 
     // swiftlint:disable:next function_body_length
-    func testScopeEditorDismissReappliesFiltersWhenScopeChanged() async {
+    func testScopeEditorDismissReappliesFiltersWhenScopeChanged() async throws {
         let applyRecorder = DismissApplyFiltersRecorder()
 
         var initialState = ComposerState()
@@ -199,6 +213,17 @@ final class ComposerScopeEditorDismissApplyTests: XCTestCase {
             exceptions: [],
         )
         initialState.scopes = ["/Users/test/Documents", "/Users/test/Downloads"]
+        recordScopeChangeFeedback(
+            state: &initialState,
+            beforeScope: ComposerScopeSnapshot(
+                scopeSelection: .explicit(
+                    bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+                    exceptions: [],
+                ),
+                includeSubfolders: true,
+            ),
+            origin: .addBase,
+        )
 
         let store = TestStore(initialState: initialState) {
             ComposerFeature()
@@ -249,6 +274,9 @@ final class ComposerScopeEditorDismissApplyTests: XCTestCase {
         XCTAssertEqual(recordedRequest?.filters.scopes, ["/Users/test/Documents", "/Users/test/Downloads"])
         XCTAssertEqual(recordedRequest?.filters.includeSubfolders, true)
         XCTAssertEqual(recordedRequest?.filters.conditions.count, 1)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.phase, .delayed)
+        let activeFiltersRequestID = try XCTUnwrap(store.state.activeFiltersRequestID)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.pendingResultRequest, .filters(activeFiltersRequestID))
     }
 }
 

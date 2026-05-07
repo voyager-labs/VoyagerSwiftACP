@@ -32,12 +32,18 @@ struct ComposerScopeReducer {
                 )
 
             case let .view(.scopeEditorSetIncludeSubfolders(includeSubfolders)):
+                guard state.scopeEditor.includeSubfolders != includeSubfolders else {
+                    return .none
+                }
+                let beforeScope = scopeChangeSnapshot(state: state)
+                state.pushHistory()
                 state.scopeEditor.includeSubfolders = includeSubfolders
                 state.scopeEditor.selection = ComposerScopeSelection.fromCanonicalScopes(
                     bases: state.scopeEditor.selection.explicitBases.map(\.path),
                     exceptions: state.scopeEditor.selection.exceptions.map(\.path),
                     includeSubfolders: includeSubfolders,
                 )
+                recordScopeChangeFeedback(state: &state, beforeScope: beforeScope, origin: .includeSubfolders)
                 return .none
 
             case let .view(.scopeEditorSetQueryText(queryText)):
@@ -316,8 +322,10 @@ private func handleAddScope(
             entryLoadingClient: entryLoadingClient,
         )
     }
+    let beforeScope = scopeChangeSnapshot(state: state)
     state.pushHistory()
     state.scopeEditor.selection = selection
+    recordScopeChangeFeedback(state: &state, beforeScope: beforeScope, origin: .addBase)
     let settleEffect = settleScopeEditorAfterSelectionChange(
         state: &state,
         entryLoadingClient: entryLoadingClient,
@@ -336,6 +344,7 @@ private func handleRemoveScope(
     let currentBases = state.scopeEditor.selection.explicitBases.map(\.path)
     guard currentBases.contains(normalizedPath) else { return .none }
 
+    let beforeScope = scopeChangeSnapshot(state: state)
     state.pushHistory()
     let updatedBases = currentBases.filter { $0 != normalizedPath }
     let selection = ComposerScopeSelection.fromCanonicalScopes(
@@ -344,6 +353,7 @@ private func handleRemoveScope(
         includeSubfolders: state.scopeEditor.includeSubfolders,
     )
     state.scopeEditor.selection = selection
+    recordScopeChangeFeedback(state: &state, beforeScope: beforeScope, origin: .removeBase)
     if state.scopeEditor.editingPath == normalizedPath {
         state.resetScopeEditorInteractionState(clearQuery: false)
     }
@@ -369,6 +379,7 @@ private func handleUpdateScope(
         return .none
     }
 
+    let beforeScope = scopeChangeSnapshot(state: state)
     state.pushHistory()
     var updatedBases = currentBases
     updatedBases[index] = normalizedNewPath
@@ -378,6 +389,7 @@ private func handleUpdateScope(
         includeSubfolders: state.scopeEditor.includeSubfolders,
     )
     state.scopeEditor.selection = selection
+    recordScopeChangeFeedback(state: &state, beforeScope: beforeScope, origin: .replaceBase)
     if state.scopeEditor.editingPath == normalizedOldPath {
         state.scopeEditor.editingPath = normalizedNewPath
         state.scopeEditor.entryMode = .edit
@@ -413,8 +425,10 @@ private func handleExcludeScope(
         )
     }
 
+    let beforeScope = scopeChangeSnapshot(state: state)
     state.pushHistory()
     state.scopeEditor.selection = selection
+    recordScopeChangeFeedback(state: &state, beforeScope: beforeScope, origin: .exclude)
     return settleScopeEditorAfterSelectionChange(
         state: &state,
         entryLoadingClient: entryLoadingClient,
@@ -446,41 +460,14 @@ private func handleRestoreScope(
         )
     }
 
+    let beforeScope = scopeChangeSnapshot(state: state)
     state.pushHistory()
     state.scopeEditor.selection = selection
+    recordScopeChangeFeedback(state: &state, beforeScope: beforeScope, origin: .restore)
     return settleScopeEditorAfterSelectionChange(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-}
-
-private func handleClearAll(
-    state: inout ComposerFeature.State,
-    entryLoadingClient: EntryLoadingClient,
-) -> Effect<ComposerFeature.Action> {
-    guard !state.isLoadingSearch else { return .none }
-    state.pushHistory()
-    state.text = ""
-    state.scopeEditor.selection = .rootOnly
-    state.scopeEditor.isPresented = false
-    state.resetScopeEditorInteractionState(clearQuery: true)
-    state.scopeEditor.entryMode = .add
-    state.scopeEditor.listState = .defaultCandidates
-    state.scopeEditor.candidateItems = makeDefaultScopeEditorCandidates(
-        favorites: state.scopeEditor.favorites,
-        backHistory: state.scopeEditor.backHistory,
-        entryLoadingClient: entryLoadingClient,
-    )
-    state.conditions = []
-    state.conditionDisplayByKey = [:]
-    state.operatorOptionsByKey = [:]
-    state.propertyPicker = .init()
-    state.operatorPicker = .init()
-    state.valuePicker = .init()
-    state.isLoadingFilters = false
-    state.lastFiltersResponse = nil
-    applyQueryPhaseTransition(.reset, state: &state)
-    return .cancel(id: ComposerFeature.CancelID.filters)
 }
 
 private func settleScopeEditorAfterSelectionChange(

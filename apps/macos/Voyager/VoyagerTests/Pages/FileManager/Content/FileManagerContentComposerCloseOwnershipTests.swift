@@ -28,24 +28,9 @@ final class FileManagerComposerCloseOwnershipTests: XCTestCase {
         }
     }
 
-    func testComposerCloseWhileScopeEditorOpenSubmitsSearchForQueryOnlyPendingScopeChange() async {
+    func testComposerCloseWhileScopeEditorOpenSubmitsSearchForQueryOnlyPendingScopeChange() async throws {
         let store = makeStore { state in
-            state.composer.isPresented = true
-            state.composer.scopeEditor.isPresented = true
-            state.composer.scopeEditor.selection = .explicit(
-                bases: [ComposerScopeBase(path: "/tmp/voyager")],
-                exceptions: [],
-            )
-            state.composer.scopeEditor.committedSelection = state.composer.scopeEditor.selection
-            state.composer.pendingSearchQuery = "kind:image"
-            state.composer.scopes = ["/tmp/voyager", "/tmp/downloads"]
-            state.composer.scopeEditor.selection = .explicit(
-                bases: [
-                    ComposerScopeBase(path: "/tmp/voyager"),
-                    ComposerScopeBase(path: "/tmp/downloads"),
-                ],
-                exceptions: [],
-            )
+            configureQueryOnlyPendingScopeChange(&state.composer)
         }
         store.exhaustivity = .off
 
@@ -63,23 +48,7 @@ final class FileManagerComposerCloseOwnershipTests: XCTestCase {
             return true
         }
 
-        XCTAssertTrue(store.state.composer.hasSubmittedInSession)
-        XCTAssertTrue(store.state.composer.isLoadingSearch)
-        XCTAssertFalse(store.state.composer.isLoadingFilters)
-        XCTAssertEqual(
-            store.state.composer.submittedSearchFilters,
-            VoyagerShared.SearchFiltersPayload(
-                scopes: ["/tmp/voyager", "/tmp/downloads"],
-                includeSubfolders: true,
-                conditions: [],
-            ),
-        )
-        XCTAssertNotNil(store.state.composer.activeSearchRequestID)
-        XCTAssertNil(store.state.composer.activeFiltersRequestID)
-        XCTAssertNil(store.state.composer.lastAcceptedSearchRequestID)
-        XCTAssertNil(store.state.composer.lastAcceptedFiltersRequestID)
-        XCTAssertNil(store.state.composer.lastFiltersResponse)
-        XCTAssertEqual(store.state.composer.text, "")
+        try assertQueryOnlyScopeChangeSubmitted(store.state.composer)
     }
 
     func testOpenSearchPresentationCancelledDoesNotSyncComposerScopeRuleWhileFiltersInFlight() async {
@@ -147,4 +116,59 @@ final class FileManagerComposerCloseOwnershipTests: XCTestCase {
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
     }
+}
+
+private func configureQueryOnlyPendingScopeChange(_ state: inout ComposerState) {
+    state.isPresented = true
+    state.scopeEditor.isPresented = true
+    state.scopeEditor.selection = voyagerOnlyScope
+    state.scopeEditor.committedSelection = state.scopeEditor.selection
+    state.pendingSearchQuery = "kind:image"
+    state.scopes = ["/tmp/voyager", "/tmp/downloads"]
+    state.scopeEditor.selection = voyagerAndDownloadsScope
+    recordScopeChangeFeedback(
+        state: &state,
+        beforeScope: ComposerScopeSnapshot(
+            scopeSelection: voyagerOnlyScope,
+            includeSubfolders: true,
+        ),
+        origin: .addBase,
+    )
+}
+
+private func assertQueryOnlyScopeChangeSubmitted(_ state: ComposerState) throws {
+    XCTAssertEqual(state.lastScopeChangeFeedback?.phase, .delayed)
+    let activeSearchRequestID = try XCTUnwrap(state.activeSearchRequestID)
+    XCTAssertEqual(state.lastScopeChangeFeedback?.pendingResultRequest, .search(activeSearchRequestID))
+    XCTAssertTrue(state.hasSubmittedInSession)
+    XCTAssertTrue(state.isLoadingSearch)
+    XCTAssertFalse(state.isLoadingFilters)
+    XCTAssertEqual(state.submittedSearchFilters, expectedSubmittedFilters)
+    XCTAssertNil(state.activeFiltersRequestID)
+    XCTAssertNil(state.lastAcceptedSearchRequestID)
+    XCTAssertNil(state.lastAcceptedFiltersRequestID)
+    XCTAssertNil(state.lastFiltersResponse)
+    XCTAssertEqual(state.text, "")
+}
+
+private var voyagerOnlyScope: ComposerScopeSelection {
+    .explicit(bases: [ComposerScopeBase(path: "/tmp/voyager")], exceptions: [])
+}
+
+private var voyagerAndDownloadsScope: ComposerScopeSelection {
+    .explicit(
+        bases: [
+            ComposerScopeBase(path: "/tmp/voyager"),
+            ComposerScopeBase(path: "/tmp/downloads"),
+        ],
+        exceptions: [],
+    )
+}
+
+private var expectedSubmittedFilters: VoyagerShared.SearchFiltersPayload {
+    VoyagerShared.SearchFiltersPayload(
+        scopes: ["/tmp/voyager", "/tmp/downloads"],
+        includeSubfolders: true,
+        conditions: [],
+    )
 }

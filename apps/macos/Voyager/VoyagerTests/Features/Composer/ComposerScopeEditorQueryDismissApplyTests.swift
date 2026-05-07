@@ -10,6 +10,17 @@ final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase { // swiftlint
         let searchRecorder = QueryDismissSearchRecorder()
         let store = makeQueryOnlyStore(recorder: searchRecorder) { state in
             state.scopeEditor.includeSubfolders = false
+            recordScopeChangeFeedback(
+                state: &state,
+                beforeScope: ComposerScopeSnapshot(
+                    scopeSelection: .explicit(
+                        bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+                        exceptions: [],
+                    ),
+                    includeSubfolders: true,
+                ),
+                origin: .includeSubfolders,
+            )
         }
 
         await dismissAndExpectSubmit(
@@ -17,6 +28,10 @@ final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase { // swiftlint
             expectedScopes: ["/Users/test/Documents"],
             expectedIncludeSubfolders: false,
         )
+
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.phase, .delayed)
+        let activeSearchRequestID = try XCTUnwrap(store.state.activeSearchRequestID)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.pendingResultRequest, .search(activeSearchRequestID))
 
         let recordedRequest = await searchRecorder.last()
         XCTAssertEqual(recordedRequest?.query, "kind:image")
@@ -36,6 +51,17 @@ final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase { // swiftlint
                 exceptions: [],
             )
             state.scopes = ["/Users/test/Documents", "/Users/test/Downloads"]
+            recordScopeChangeFeedback(
+                state: &state,
+                beforeScope: ComposerScopeSnapshot(
+                    scopeSelection: .explicit(
+                        bases: [ComposerScopeBase(path: "/Users/test/Documents")],
+                        exceptions: [],
+                    ),
+                    includeSubfolders: true,
+                ),
+                origin: .addBase,
+            )
         }
 
         await dismissAndExpectSubmit(
@@ -43,6 +69,10 @@ final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase { // swiftlint
             expectedScopes: ["/Users/test/Documents", "/Users/test/Downloads"],
             expectedIncludeSubfolders: true,
         )
+
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.phase, .delayed)
+        let activeSearchRequestID = try XCTUnwrap(store.state.activeSearchRequestID)
+        XCTAssertEqual(store.state.lastScopeChangeFeedback?.pendingResultRequest, .search(activeSearchRequestID))
 
         let recordedRequest = await searchRecorder.last()
         XCTAssertEqual(recordedRequest?.query, "kind:image")

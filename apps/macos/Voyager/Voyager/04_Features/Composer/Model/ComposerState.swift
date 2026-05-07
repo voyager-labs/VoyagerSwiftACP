@@ -6,6 +6,7 @@ struct FilterSnapshot: Equatable {
     let scopeSelection: ComposerScopeSelection
     let conditions: [Condition]
     let conditionDisplayByKey: [String: ConditionDisplayState]
+    let includeSubfolders: Bool
 }
 
 struct ConditionDisplayState: Equatable {
@@ -20,6 +21,7 @@ struct ComposerState: Equatable {
     var valuePicker: ValuePickerFeature.State = .init()
 
     var scopeEditor: ComposerScopeEditorState = .init()
+    var lastScopeChangeFeedback: ComposerScopeChangeFeedback?
 
     var isPresented: Bool = false
     var collectionContext: CollectionContext?
@@ -138,6 +140,7 @@ struct ComposerState: Equatable {
                 scopeSelection: scopeEditor.selection,
                 conditions: conditions,
                 conditionDisplayByKey: conditionDisplayByKey,
+                includeSubfolders: scopeEditor.includeSubfolders,
             ),
         )
         if history.count > 100 {
@@ -245,5 +248,67 @@ struct ComposerState: Equatable {
         lastFiltersResponse = payload.lastFiltersResponse
         lastSearchResponse = payload
             .lastSearchResponse ?? (navigation.context.query.isEmpty ? nil : payload.lastFiltersResponse)
+    }
+}
+
+extension ComposerState {
+    var hasMatchingScopeChangeFeedback: Bool {
+        guard let lastScopeChangeFeedback else { return false }
+        return lastScopeChangeFeedback.matchesCurrentScope(
+            selection: scopeEditor.selection,
+            includeSubfolders: scopeEditor.includeSubfolders,
+        )
+    }
+
+    mutating func markScopeChangeFeedbackPending(_ pendingResultRequest: ScopeFeedbackPendingRequest) {
+        guard let feedback = lastScopeChangeFeedback,
+              history.count == feedback.historyDepthAfterCommit,
+              feedback.matchesCurrentScope(
+                  selection: scopeEditor.selection,
+                  includeSubfolders: scopeEditor.includeSubfolders,
+              )
+        else {
+            return
+        }
+        lastScopeChangeFeedback = feedback.updating(
+            pendingResultRequest: pendingResultRequest,
+            phase: .delayed,
+        )
+    }
+
+    mutating func retargetScopeChangeFeedbackPending(
+        from expectedPendingResultRequest: ScopeFeedbackPendingRequest,
+        to pendingResultRequest: ScopeFeedbackPendingRequest,
+    ) {
+        guard let feedback = lastScopeChangeFeedback,
+              feedback.pendingResultRequest == expectedPendingResultRequest
+        else {
+            return
+        }
+        lastScopeChangeFeedback = feedback.updating(
+            pendingResultRequest: pendingResultRequest,
+            phase: .delayed,
+        )
+    }
+
+    mutating func resolveScopeChangeFeedback(
+        _ pendingResultRequest: ScopeFeedbackPendingRequest,
+        phase: ComposerScopeChangeFeedbackPhase,
+    ) {
+        guard let feedback = lastScopeChangeFeedback,
+              feedback.pendingResultRequest == pendingResultRequest
+        else {
+            return
+        }
+        lastScopeChangeFeedback = ComposerScopeChangeFeedback(
+            id: feedback.id,
+            beforeScope: feedback.beforeScope,
+            afterScope: feedback.afterScope,
+            origin: feedback.origin,
+            phase: phase,
+            pendingResultRequest: nil,
+            historyDepthAfterCommit: feedback.historyDepthAfterCommit,
+            redoDepthAfterCommit: feedback.redoDepthAfterCommit,
+        )
     }
 }

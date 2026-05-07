@@ -73,6 +73,7 @@ struct ComposerSearchLifecycleReducer {
                         state.filtersStartedAt = nil
                         state.pendingSearchQuery = nil
                         applyQueryPhaseTransition(.reset, state: &state)
+                        state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
                         return .none
                     }
                     state.isLoadingFilters = true
@@ -81,6 +82,10 @@ struct ComposerSearchLifecycleReducer {
                     let executionFilters = buildFilters(from: state)
                     state.activeFiltersRequestID = filtersRequestID
                     state.filtersStartedAt = Date()
+                    state.retargetScopeChangeFeedbackPending(
+                        from: .search(requestID),
+                        to: .filters(filtersRequestID),
+                    )
                     return .run { send in
                         do {
                             let executionResponse = try await searchClient.applyFilters(
@@ -99,6 +104,7 @@ struct ComposerSearchLifecycleReducer {
                 case let .failure(error):
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
+                    state.resolveScopeChangeFeedback(.search(requestID), phase: .failed)
                     let feedbackEffect = presentTransientFeedback(
                         kind: .error,
                         message: feedbackFailureMessage(for: error),
@@ -133,6 +139,7 @@ struct ComposerSearchLifecycleReducer {
                     applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
                     state.scopeEditor.committedSelection = state.scopeEditor.selection
                     state.scopeEditor.committedIncludeSubfolders = state.scopeEditor.includeSubfolders
+                    state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
                     if let startedAt = state.filtersStartedAt {
                         VoyagerSentryMetricLogger.logMetric(
                             "voyager_filters_roundtrip_duration_ms",
@@ -147,6 +154,7 @@ struct ComposerSearchLifecycleReducer {
                     state.isFilteringInFlight = false
                     state.activeFiltersRequestID = nil
                     state.filtersStartedAt = nil
+                    state.resolveScopeChangeFeedback(.filters(requestID), phase: .failed)
                     applyQueryPhaseTransition(.reset, state: &state)
                     let feedbackEffect = presentTransientFeedback(
                         kind: .error,
@@ -203,6 +211,7 @@ private func handleSubmit(
     state.lastAcceptedSearchRequestID = nil
     state.lastAcceptedFiltersRequestID = nil
     state.lastFiltersResponse = nil
+    state.markScopeChangeFeedbackPending(.search(searchRequestID))
     applyQueryPhaseTransition(.startSearch, state: &state)
     state.text = ""
 
@@ -228,8 +237,12 @@ private func handleSubmit(
 }
 
 private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    let requestID = state.activeSearchRequestID
     state.isLoadingSearch = false
     state.activeSearchRequestID = nil
+    if let requestID {
+        state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
+    }
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",
@@ -240,10 +253,14 @@ private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<Co
 }
 
 private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+    let requestID = state.activeFiltersRequestID
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
     state.pendingSearchQuery = nil
+    if let requestID {
+        state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
+    }
     applyQueryPhaseTransition(.reset, state: &state)
     VoyagerSentryMetricLogger.logMetric(
         "voyager_search_cancel",

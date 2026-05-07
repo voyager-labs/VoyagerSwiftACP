@@ -78,3 +78,58 @@ func makeDefaultScopeEditorCandidates(
         )
     }
 }
+
+func scopeChangeSnapshot(state: ComposerFeature.State) -> ComposerScopeSnapshot {
+    ComposerScopeSnapshot(
+        scopeSelection: state.scopeEditor.selection,
+        includeSubfolders: state.scopeEditor.includeSubfolders,
+    )
+}
+
+func recordScopeChangeFeedback(
+    state: inout ComposerFeature.State,
+    beforeScope: ComposerScopeSnapshot,
+    origin: ComposerScopeChangeFeedbackOrigin,
+) {
+    state.lastScopeChangeFeedback = ComposerScopeChangeFeedback(
+        id: UUID(),
+        beforeScope: beforeScope,
+        afterScope: scopeChangeSnapshot(state: state),
+        origin: origin,
+        phase: .visible,
+        pendingResultRequest: nil,
+        historyDepthAfterCommit: state.history.count,
+        redoDepthAfterCommit: state.redoHistory.count,
+    )
+}
+
+func handleClearAll(
+    state: inout ComposerFeature.State,
+    entryLoadingClient: EntryLoadingClient,
+) -> Effect<ComposerFeature.Action> {
+    guard !state.isLoadingSearch else { return .none }
+
+    state.pushHistory()
+    state.text = ""
+    state.scopeEditor.selection = .rootOnly
+    state.scopeEditor.isPresented = false
+    state.resetScopeEditorInteractionState(clearQuery: true)
+    state.scopeEditor.entryMode = .add
+    state.scopeEditor.listState = .defaultCandidates
+    state.scopeEditor.candidateItems = makeDefaultScopeEditorCandidates(
+        favorites: state.scopeEditor.favorites,
+        backHistory: state.scopeEditor.backHistory,
+        entryLoadingClient: entryLoadingClient,
+    )
+    state.conditions = []
+    state.conditionDisplayByKey = [:]
+    state.operatorOptionsByKey = [:]
+    state.propertyPicker = .init()
+    state.operatorPicker = .init()
+    state.valuePicker = .init()
+    state.isLoadingFilters = false
+    state.lastFiltersResponse = nil
+    state.lastScopeChangeFeedback = nil
+    applyQueryPhaseTransition(.reset, state: &state)
+    return .cancel(id: ComposerFeature.CancelID.filters)
+}
