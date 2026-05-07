@@ -196,60 +196,82 @@ struct ToolbarView: View {
                 canGoToEnclosingDirectory: viewStore.canGoToEnclosingDirectory,
             )
 
-            HStack(spacing: 8) {
-                Button(
-                    action: { store.send(.composer(.setPresented(true))) },
-                    label: {
-                        HStack(spacing: 4) {
-                            titleContent(viewStore: viewStore)
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                    },
-                )
-                .buttonStyle(.borderless)
+            toolbarTitleArea(viewStore: viewStore)
+        }
+    }
 
-                Button(
-                    action: { store.send(.view(.presentAiChat)) },
-                    label: {
-                        ToolbarHoverButtonLabel(
-                            systemName: "sparkles",
-                            isEnabled: true,
-                            font: nil,
-                        )
-                    },
-                )
-                .buttonStyle(.borderless)
+    private func toolbarTitleArea(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
+        HStack(spacing: 8) {
+            composerTitleButton(viewStore: viewStore)
 
-                if showsToolbarRefreshButton(
-                    viewStore.collectionStatus,
-                    isTitleAreaHovered: isTitleAreaHovered,
-                ) {
-                    toolbarRefreshButton(viewStore: viewStore)
-                }
-
-                if isTitleAreaHovered {
-                    ViewToggleButton(store: store)
-                    SortGroupButton(store: store)
-                }
+            if showsToolbarRefreshButton(
+                viewStore.collectionStatus,
+                isTitleAreaHovered: isTitleAreaHovered,
+            ) {
+                toolbarRefreshButton(viewStore: viewStore)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 6)
-            .frame(height: 32)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                isTitleAreaHovered = hovering
+
+            if isTitleAreaHovered {
+                ViewToggleButton(store: store)
+                SortGroupButton(store: store)
+                contextualAiChatButton
             }
-            .background(
-                Group {
-                    if isTitleAreaHovered {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(VoyagerDS.Interaction.toolbarTitleHoverFill(for: colorScheme))
-                    }
-                },
-            )
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .frame(height: 32)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isTitleAreaHovered = hovering
+        }
+        .background(titleAreaHoverBackground)
+    }
+
+    private func composerTitleButton(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
+        Button(
+            action: { store.send(.composer(.setPresented(true))) },
+            label: {
+                HStack(spacing: 4) {
+                    titleContent(viewStore: viewStore)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+            },
+        )
+        .buttonStyle(.borderless)
+    }
+
+    private var contextualAiChatButton: some View {
+        let title = chromeProps.isContextualAiChatPresented
+            ? "Close Contextual AI Chat"
+            : "Open Contextual AI Chat"
+
+        return Button(
+            action: { store.send(.view(.openContextualAiChatTapped)) },
+            label: {
+                ToolbarHoverButtonLabel(
+                    systemName: "sparkles",
+                    isEnabled: true,
+                    font: nil,
+                )
+            },
+        )
+        .buttonStyle(.borderless)
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
+        .zIndex(2)
+        .help(title)
+        .accessibilityLabel(title)
+    }
+
+    private var titleAreaHoverBackground: some View {
+        Group {
+            if isTitleAreaHovered {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(VoyagerDS.Interaction.toolbarTitleHoverFill(for: colorScheme))
+            }
         }
     }
 

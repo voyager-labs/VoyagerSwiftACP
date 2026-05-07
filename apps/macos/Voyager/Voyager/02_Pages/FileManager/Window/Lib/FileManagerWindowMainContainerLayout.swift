@@ -54,6 +54,7 @@ enum FileManagerWindowMainContainerLayout {
         let hosting = NSHostingController(rootView: InspectorPaneView(store: store))
         hosting.safeAreaRegions = []
         applyInspectorPaneStyle(hosting.view, isDark: isDark)
+        hosting.view.setFrameSize(NSSize(width: 300, height: 0))
         return hosting
     }
 
