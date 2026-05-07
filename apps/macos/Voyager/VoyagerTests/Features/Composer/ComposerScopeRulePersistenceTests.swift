@@ -62,6 +62,12 @@ final class ComposerScopeRulePersistenceTests: XCTestCase {
 
         XCTAssertEqual(store.state.scopeEditor.selection.explicitBases.map(\.path), ["/Users/me/Documents"])
         XCTAssertEqual(store.state.scopeEditor.selection.exceptions.map(\.path), [])
+        XCTAssertFalse(store.state.scopeEditor.hasExceptions)
         XCTAssertFalse(store.state.scopeEditor.includeSubfolders)
+        XCTAssertFalse(
+            store.state.scopeEditor.sections()
+                .flatMap(\.items)
+                .contains { if case .exceptionScope = $0 { true } else { false } },
+        )
     }
 }
