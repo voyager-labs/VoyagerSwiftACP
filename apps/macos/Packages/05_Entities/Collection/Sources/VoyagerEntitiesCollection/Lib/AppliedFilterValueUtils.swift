@@ -1,7 +1,7 @@
 import Foundation
 import VoyagerShared
 
-public enum AppliedFilterValueUtils {
+enum AppliedFilterValueUtils {
     static func stringValues(from value: VoyagerShared.JSONValue?, valueUIKind: String) -> [String]? {
         guard let value else { return nil }
         switch value {

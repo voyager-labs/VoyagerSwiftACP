@@ -1,7 +1,6 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-import UniformTypeIdentifiers
 import VoyagerShared
 
 @Reducer
@@ -11,6 +10,9 @@ public struct CollectionSavePipelineReducer {
 
     @Dependency(\.collectionFileClient)
     var collectionFileClient
+
+    @Dependency(\.collectionSavePanelClient)
+    var collectionSavePanelClient
 
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
@@ -25,7 +27,7 @@ public struct CollectionSavePipelineReducer {
                 handleSaveRequested(
                     state: &state,
                     payload: payload,
-                    userDefaultsClient: userDefaultsClient
+                    collectionSavePanelClient: collectionSavePanelClient
                 )
 
             case let .saveToExisting(payload, url):
@@ -190,10 +192,10 @@ private func canStartSave(
     return true
 }
 
-public func handleSaveRequested(
+private func handleSaveRequested(
     state: inout CollectionState,
     payload: SaveRequestPayload,
-    userDefaultsClient: UserDefaultsClient
+    collectionSavePanelClient: CollectionSavePanelClient
 ) -> Effect<CollectionAction> {
     guard canStartSave(state: state, payload: payload) else { return .none }
 
@@ -204,17 +206,18 @@ public func handleSaveRequested(
         state.pendingSave = result.snapshot
         state.isSaving = true
         return .run { send in
-            let initialDirectory = await defaultCollectionSaveDirectory(
-                preferredScopes: result.context.scopes,
-                userDefaultsClient: userDefaultsClient
+            let initialDirectory = await collectionSavePanelClient.defaultSaveDirectory(
+                result.context.scopes
             )
-            let url = await showCollectionSavePanel(initialDirectory: initialDirectory)
+            let url = await collectionSavePanelClient.presentSavePanel(
+                initialDirectory
+            )
             await send(.savePanelResponse(url))
         }
     }
 }
 
-public func handleSaveToExisting(
+private func handleSaveToExisting(
     state: inout CollectionState,
     payload: SaveRequestPayload,
     url: URL,
@@ -237,7 +240,7 @@ public func handleSaveToExisting(
     }
 }
 
-public func handleSavePanelResponse(
+private func handleSavePanelResponse(
     state: inout CollectionState,
     selectedURL: URL?,
     collectionFileClient: CollectionFileClient,
@@ -256,7 +259,7 @@ public func handleSavePanelResponse(
     )
 }
 
-public func handleSaveCompleted(
+private func handleSaveCompleted(
     state: inout CollectionState,
     result: Result<CollectionSaveCompletion, Error>,
     userDefaultsClient: UserDefaultsClient,
@@ -285,64 +288,6 @@ public func handleSaveCompleted(
             message: error.localizedDescription
         ))
     }
-}
-
-@MainActor
-private func defaultCollectionSaveDirectory(
-    preferredScopes: [String],
-    userDefaultsClient: UserDefaultsClient
-) -> URL? {
-    let fileManager = FileManager.default
-    if preferredScopes.count == 1,
-       let scope = preferredScopes.first,
-       let url = validDirectoryURL(scope, fileManager: fileManager)
-    {
-        return url
-    }
-
-    if let saved = userDefaultsClient.string(CollectionKeys.lastCollectionSaveDirectory),
-       let url = validDirectoryURL(saved, fileManager: fileManager)
-    {
-        return url
-    }
-
-    return URL(fileURLWithPath: NSHomeDirectory())
-}
-
-private func validDirectoryURL(_ path: String, fileManager: FileManager) -> URL? {
-    var isDirectory: ObjCBool = false
-    guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
-        return nil
-    }
-    return URL(fileURLWithPath: path)
-}
-
-@MainActor
-private func showCollectionSavePanel(initialDirectory: URL?) -> URL? {
-    let panel = NSSavePanel()
-    panel.title = "Save Collection"
-    panel.prompt = "Save"
-    panel.canCreateDirectories = true
-    panel.allowsOtherFileTypes = false
-    panel.allowedContentTypes = [
-        UTType("fm.voyager.collection")
-            ?? UTType(filenameExtension: CollectionConstants.fileExtension)
-            ?? .data,
-    ]
-    panel.isExtensionHidden = false
-    panel.nameFieldStringValue = ""
-    panel.directoryURL = initialDirectory
-
-    let response = panel.runModal()
-    guard response == .OK else { return nil }
-    return panel.url
-}
-
-private func ensureCollectionFileExtension(_ url: URL) -> URL {
-    if url.pathExtension.lowercased() == CollectionConstants.fileExtension {
-        return url
-    }
-    return url.deletingPathExtension().appendingPathExtension(CollectionConstants.fileExtension)
 }
 
 private func makeCollectionFile(
@@ -431,15 +376,22 @@ private func performSave(
 }
 
 private struct CollectionSaveRequest {
-    public let url: URL
-    public let file: VoyagerCollectionFile
+    let url: URL
+    let file: VoyagerCollectionFile
 }
 
 private func buildSaveRequest(
     snapshot: CollectionSaveSnapshot,
     destinationURL: URL
 ) -> CollectionSaveRequest {
-    let finalURL = ensureCollectionFileExtension(destinationURL)
+    let finalURL: URL
+    if destinationURL.pathExtension.lowercased() == CollectionConstants.fileExtension {
+        finalURL = destinationURL
+    } else {
+        finalURL = destinationURL
+            .deletingPathExtension()
+            .appendingPathExtension(CollectionConstants.fileExtension)
+    }
     let file = makeCollectionFile(
         name: finalURL.deletingPathExtension().lastPathComponent,
         snapshot: snapshot,
