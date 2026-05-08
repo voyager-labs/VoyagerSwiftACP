@@ -5,6 +5,11 @@ import VoyagerFeaturesAiChat
 struct InspectorPaneView: View {
     let store: StoreOf<FileManagerInspectorFeature>
 
+    @Environment(\.colorScheme)
+    private var colorScheme
+
+    @State private var isCloseButtonHovered = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -22,15 +27,38 @@ struct InspectorPaneView: View {
             Spacer()
 
             Button {
-                store.send(.setInspectorVisible(false))
+                store.send(.closeChat)
             } label: {
-                Image(systemName: "xmark")
-                    .foregroundColor(.secondary)
-                    .frame(width: 16, height: 16)
+                closeButtonLabel
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
+            .onHover { hovering in
+                isCloseButtonHovered = hovering
+            }
+            .help("Close AI Chat")
+            .accessibilityLabel("Close AI Chat")
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    private var closeButtonLabel: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
+                .fill(closeButtonBackground)
+
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .frame(width: 24, height: 24)
+        .contentShape(Rectangle())
+    }
+
+    private var closeButtonBackground: Color {
+        isCloseButtonHovered
+            ? VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
+            : .clear
     }
 }

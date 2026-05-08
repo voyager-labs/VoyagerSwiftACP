@@ -105,6 +105,23 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         )))
     }
 
+    func testInspectorCloseChatActionHidesPaneFromWindow() async {
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.inspectorPaneExists = true
+        initialState.inspector.activeMode = .chat
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        }
+
+        await store.send(.inspector(.closeChat)) {
+            $0.inspector.inspectorVisible = false
+        }
+
+        XCTAssertEqual(store.state.inspector.activeMode, .chat)
+    }
+
     func testToolbarSparklesOpensInspectorChatMode() async {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000010")
         let selectedEntry = makeEntry(name: "Draft.md", fullPath: "/Users/test/Documents/Draft.md")
@@ -195,7 +212,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
     ) async {
         await store.send(.edit(.openContextualAiChat))
         await assertWindowManagerRequest(on: store, fixture: fixture)
-        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.setInspectorVisible) {
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.closeChat) {
             $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible = false
         }
     }
@@ -321,7 +338,7 @@ private extension FileManagerWindowInspectorChatRoutingTests {
     }
 
     private func assertCloseChat(on store: TestStore<FileManagerFeature.State, FileManagerFeature.Action>) async {
-        await store.receive(\.inspector.setInspectorVisible) {
+        await store.receive(\.inspector.closeChat) {
             $0.inspector.inspectorVisible = false
         }
     }

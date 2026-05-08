@@ -41,6 +41,23 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.aiChat.currentContext.summary, "Documents · 2 selected")
     }
 
+    func testCloseChatHidesInspectorPane() async {
+        let store = TestStore(initialState: FileManagerInspectorFeature.State(
+            inspectorVisible: true,
+            inspectorPaneExists: true,
+            activeMode: .chat,
+        )) {
+            FileManagerInspectorFeature()
+        }
+
+        await store.send(.closeChat) {
+            $0.inspectorVisible = false
+        }
+
+        XCTAssertEqual(store.state.activeMode, .chat)
+        XCTAssertTrue(store.state.inspectorPaneExists)
+    }
+
     func testOpenChatWhileProcessingPreservesInFlightState() async {
         let existingSetup = makeSetup(
             sessionID: makeSessionID("00000000-0000-0000-0000-000000000010"),

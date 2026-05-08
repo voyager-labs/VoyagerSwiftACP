@@ -6,6 +6,10 @@ import VoyagerFeaturesEntryOperations
 
 @Reducer
 struct FileManagerFeature {
+    private nonisolated enum CancelID: Hashable, Sendable {
+        case contextualAiChatOpen
+    }
+
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
 
@@ -50,6 +54,9 @@ struct FileManagerFeature {
 
             case .content(.delegate(.openContextualAiChat)):
                 .send(.request(.openContextualAiChat))
+
+            case .inspector(.closeChat):
+                .cancel(id: CancelID.contextualAiChatOpen)
 
             default:
                 .none
@@ -227,7 +234,10 @@ struct FileManagerFeature {
             if state.inspector.inspectorVisible,
                state.inspector.activeMode == .chat
             {
-                return .send(.inspector(.setInspectorVisible(false)))
+                return .merge(
+                    .send(.inspector(.closeChat)),
+                    .cancel(id: CancelID.contextualAiChatOpen),
+                )
             }
             return openContextualAiChatEffect(state: state)
 
@@ -253,6 +263,7 @@ struct FileManagerFeature {
             }
             await send(.inspector(.openChat(setup)))
         }
+        .cancellable(id: CancelID.contextualAiChatOpen, cancelInFlight: true)
     }
 
     private func handleNavigationRequest(_ command: Action.WindowCommand) -> Effect<Action> {

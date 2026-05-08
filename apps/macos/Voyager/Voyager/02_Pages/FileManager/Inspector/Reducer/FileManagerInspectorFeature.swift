@@ -25,6 +25,10 @@ struct FileManagerInspectorFeature {
                 state.inspectorPaneExists = exists
                 return .none
 
+            case .closeChat:
+                state.inspectorVisible = false
+                return .none
+
             case let .openChat(setup):
                 state.inspectorVisible = true
                 state.activeMode = .chat
