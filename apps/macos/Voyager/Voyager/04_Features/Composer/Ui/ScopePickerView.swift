@@ -32,15 +32,14 @@ struct ScopePickerView: View {
             }
             .frame(width: ScopePickerPresentationMetrics.width)
             .frame(maxHeight: ScopePickerPresentationMetrics.maxHeight)
-            .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
             )
-            .shadow(
-                color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
-                radius: VoyagerDS.Shadow.popoverRadius,
-                y: VoyagerDS.Shadow.popoverYOffset,
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
             )
             .accessibilityIdentifier(ScopePickerAccessibilityID.surface)
             .onAppear {

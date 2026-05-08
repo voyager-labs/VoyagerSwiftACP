@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
 
@@ -17,6 +18,7 @@ struct ComposerBottomRowView: View {
 
     @State private var chipSizes: [String: CGSize] = [:]
     @State private var calculatedHeight: CGFloat = 0
+    @State private var scopeOverlayCoordinator = ComposerScopeOverlayCoordinator()
     @State private var isAddButtonHovering: Bool = false
     @State private var isScopeEditButtonHovering: Bool = false
 
@@ -91,6 +93,15 @@ private extension ComposerBottomRowView {
         }
         .onChange(of: geometry.size.width) { _ in
             updateCalculatedHeight(layout: layout)
+        }
+        .onAppear {
+            updateScopeOverlayCoordinator(isPresented: viewStore.scopeEditor.isPresented)
+        }
+        .onChange(of: viewStore.scopeEditor.isPresented) { isPresented in
+            updateScopeOverlayCoordinator(isPresented: isPresented)
+        }
+        .onDisappear {
+            scopeOverlayCoordinator.dismiss()
         }
         .padding(.horizontal, chipHorizontalPadding)
         .padding(.vertical, chipVerticalPadding)
@@ -190,10 +201,34 @@ private extension ComposerBottomRowView {
             RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                 .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme)),
         )
-        .popover(isPresented: isPresented, arrowEdge: .bottom) {
-            ScopePickerView(store: store)
-        }
+        .background(
+            ComposerAnchorFrameReader { frame, window in
+                scopeOverlayCoordinator.updateAnchorScreenFrame(frame)
+                if isPresented.wrappedValue {
+                    updateScopeOverlayCoordinator(isPresented: true, parentWindow: window)
+                }
+            },
+        )
         .accessibilityIdentifier("composer.scopeRow")
+    }
+
+    private func updateScopeOverlayCoordinator(
+        isPresented: Bool,
+        parentWindow: NSWindow? = nil,
+    ) {
+        scopeOverlayCoordinator.update(
+            isPresented: isPresented,
+            parentWindow: parentWindow,
+            content: { height in
+                AnyView(
+                    ScopePickerView(store: store)
+                        .frame(width: 420, height: height),
+                )
+            },
+            onDismiss: {
+                store.send(.scopeEditorSetPresented(false))
+            },
+        )
     }
 
     private func scopeEditButton(historyPaths: [String]) -> some View {
@@ -423,29 +458,15 @@ private extension ComposerBottomRowView {
         chipSizes: [String: CGSize],
         spacing: CGFloat,
     ) -> CGFloat {
-        guard !rows.isEmpty else { return 0 }
-
-        var totalHeight: CGFloat = 0
-        for row in rows {
-            var maxRowHeight: CGFloat = 0
-            for chip in row {
-                if let chipHeight = chipSizes[chip.id]?.height {
-                    maxRowHeight = max(maxRowHeight, chipHeight)
-                } else {
-                    maxRowHeight = max(maxRowHeight, defaultChipHeight)
-                }
-            }
-            totalHeight += maxRowHeight
+        let rowsHeight = rows.reduce(CGFloat.zero) { partialHeight, row in
+            let rowHeight = row.map { chipSizes[$0.id]?.height ?? defaultChipHeight }.max() ?? 0
+            return partialHeight + rowHeight
         }
-
-        totalHeight += CGFloat(max(0, rows.count - 1)) * spacing
-        return totalHeight
+        return rowsHeight + CGFloat(max(0, rows.count - 1)) * spacing
     }
 
     private struct RowCalculationParams {
-        let availableWidth: CGFloat
-        let spacing: CGFloat
-        let chipSizes: [String: CGSize]
+        let availableWidth: CGFloat, spacing: CGFloat, chipSizes: [String: CGSize]
     }
 
     private func calculateRows(
@@ -471,10 +492,7 @@ private extension ComposerBottomRowView {
             }
         }
 
-        if !currentRow.isEmpty {
-            rows.append(currentRow)
-        }
-
+        if !currentRow.isEmpty { rows.append(currentRow) }
         return rows
     }
 }
