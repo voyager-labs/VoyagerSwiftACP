@@ -21,6 +21,7 @@ struct ScopePickerView: View {
 
             VStack(spacing: 0) {
                 searchField(queryText: queryTextBinding)
+                currentSummaryRow(viewStore: viewStore)
                 if !viewStore.scopeEditor.selection.isRootOnly {
                     includeSubfoldersRow(viewStore: viewStore)
                 }
@@ -29,8 +30,8 @@ struct ScopePickerView: View {
                 }
                 listContent(viewStore: viewStore)
             }
-            .frame(width: 260)
-            .frame(maxHeight: 420)
+            .frame(width: ScopePickerPresentationMetrics.width)
+            .frame(maxHeight: ScopePickerPresentationMetrics.maxHeight)
             .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -41,10 +42,23 @@ struct ScopePickerView: View {
                 radius: VoyagerDS.Shadow.popoverRadius,
                 y: VoyagerDS.Shadow.popoverYOffset,
             )
+            .accessibilityIdentifier(ScopePickerAccessibilityID.surface)
             .onAppear {
                 isSearchFocused = true
             }
         })
+    }
+}
+
+private extension ScopePickerView {
+    private func currentSummaryRow(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+    ) -> some View {
+        ScopeEditorSummaryRow(
+            summary: viewStore.scopeEditor.summary,
+            ruleDescription: viewStore.scopeEditor.scopeRuleDescription,
+        )
+        .accessibilityIdentifier(ScopePickerAccessibilityID.currentSummary)
     }
 
     private func searchField(queryText: Binding<String>) -> some View {
@@ -58,6 +72,7 @@ struct ScopePickerView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .focused($isSearchFocused)
+                    .accessibilityIdentifier(ScopePickerAccessibilityID.searchField)
 
                 if !queryText.wrappedValue.isEmpty {
                     Button {
@@ -96,6 +111,7 @@ struct ScopePickerView: View {
             onUndo: { store.send(.scopeFeedbackUndoTapped) },
             onRedo: { store.send(.scopeFeedbackRedoTapped) },
         )
+        .accessibilityIdentifier(ScopePickerAccessibilityID.feedbackBanner)
     }
 
     @ViewBuilder
@@ -136,7 +152,8 @@ struct ScopePickerView: View {
                             EmptyView()
                         }
                     }
-                case .addableCandidates:
+                case let .addableCandidates(listState):
+                    parentContextRow(for: listState)
                     if section.items.isEmpty {
                         addableCandidatesEmptyState(for: section.kind)
                     } else {
@@ -147,6 +164,7 @@ struct ScopePickerView: View {
                 }
             }
         }
+        .accessibilityIdentifier(sectionAccessibilityIdentifier(for: section.kind))
     }
 
     private func sectionTitle(for kind: ComposerScopeEditorSection.Kind) -> String {
@@ -155,6 +173,16 @@ struct ScopePickerView: View {
             "Current Scopes"
         case let .addableCandidates(listState):
             listState.candidateSectionTitle
+        }
+    }
+
+    @ViewBuilder
+    private func parentContextRow(for listState: ComposerScopeEditorListState) -> some View {
+        if case let .childFolders(parentPath) = listState {
+            ScopeEditorParentContextRow(
+                displayName: entryLoadingClient.displayName(parentPath),
+                path: parentPath,
+            )
         }
     }
 
@@ -171,6 +199,8 @@ struct ScopePickerView: View {
                 currentItem: currentItem,
                 colorScheme: colorScheme,
                 displayName: entryLoadingClient.displayName(currentItem.base.path),
+                removeAccessibilityIdentifier: ScopePickerAccessibilityID.directRemove(path: currentItem.base.path),
+                removeAccessibilityLabel: "Remove direct scope rule for \(entryLoadingClient.displayName(currentItem.base.path))",
                 onTap: { handleCurrentScopeTap(currentItem, viewStore: viewStore) },
                 onRemove: { store.send(.currentScope(.remove(path: currentItem.base.path))) },
             ),
@@ -190,6 +220,8 @@ struct ScopePickerView: View {
                 exception: exception,
                 colorScheme: colorScheme,
                 displayName: entryLoadingClient.displayName(exception.path),
+                restoreAccessibilityIdentifier: ScopePickerAccessibilityID.restore(path: exception.path),
+                restoreAccessibilityLabel: "Restore excluded scope \(entryLoadingClient.displayName(exception.path))",
                 onRestore: { store.send(.restoreScope(path: exception.path)) },
             ),
         )
@@ -204,20 +236,33 @@ struct ScopePickerView: View {
         }
 
         let isHovering = hoveredPath == candidate.path
+        let selectionIntent = viewStore.scopeEditor.candidateSelectionIntent(for: candidate.path)
+        let identifier = candidateAccessibilityIdentifier(for: selectionIntent, candidate: candidate)
+        let actionKind = candidateActionKind(for: selectionIntent)
+        let button = Button(action: {
+            handleAddableCandidateTap(candidate, viewStore: viewStore)
+        }, label: {
+            AddableCandidateRow(
+                candidate: candidate,
+                isHovering: isHovering,
+                colorScheme: colorScheme,
+                applicationsIcon: applicationsIcon(),
+                actionKind: actionKind,
+                accessibilityIdentifier: identifier,
+            )
+        })
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredPath = hovering ? candidate.path : nil
+        }
+
         return AnyView(
-            Button(action: {
-                handleAddableCandidateTap(candidate, viewStore: viewStore)
-            }, label: {
-                AddableCandidateRow(
-                    candidate: candidate,
-                    isHovering: isHovering,
-                    colorScheme: colorScheme,
-                    applicationsIcon: applicationsIcon(),
-                )
-            })
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                hoveredPath = hovering ? candidate.path : nil
+            Group {
+                if let identifier {
+                    button.accessibilityIdentifier(identifier)
+                } else {
+                    button
+                }
             },
         )
     }
@@ -239,6 +284,7 @@ struct ScopePickerView: View {
                 }
             }
             .padding(.vertical, 8)
+            .accessibilityIdentifier(ScopePickerAccessibilityID.noResults)
         } else {
             EmptyView()
         }
@@ -277,201 +323,72 @@ struct ScopePickerView: View {
         appIcon?.isTemplate = true
         return appIcon
     }
-}
 
-private struct IncludeSubfoldersRow: View {
-    let includeSubfolders: Bool
-    let onTap: (Bool) -> Void
+    private func sectionAccessibilityIdentifier(for kind: ComposerScopeEditorSection.Kind) -> String {
+        switch kind {
+        case .currentScopes:
+            ScopePickerAccessibilityID.currentSection
+        case .addableCandidates:
+            ScopePickerAccessibilityID.candidatesSection
+        }
+    }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            Button {
-                onTap(includeSubfolders)
-            } label: {
-                HStack(spacing: 10) {
-                    Text("Include subfolders")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-                    Spacer()
-                    Image(systemName: includeSubfolders ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 14))
-                        .foregroundColor(includeSubfolders ? .accentColor : .secondary)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.plain)
+    private func candidateActionKind(for intent: ScopeCandidateIntent) -> ScopeEditorCandidateRowActionKind {
+        switch intent {
+        case .add:
+            .include
+        case .replace:
+            .replace
+        case .exclude:
+            .exclude
+        }
+    }
 
-            VoyagerDS.SystemColor.separator
-                .frame(height: 1)
+    private func candidateAccessibilityIdentifier(
+        for intent: ScopeCandidateIntent,
+        candidate: ComposerScopeEditorCandidateItem,
+    ) -> String? {
+        switch intent {
+        case .add, .replace:
+            nil
+        case .exclude:
+            ScopePickerAccessibilityID.exclude(path: candidate.path)
         }
     }
 }
 
-private struct CurrentScopeRow: View {
-    let currentItem: ComposerScopeEditorCurrentItem
-    let colorScheme: ColorScheme
-    let displayName: String
-    let onTap: () -> Void
-    let onRemove: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button(action: onTap) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(displayName)
-                            .font(.system(size: 13, weight: currentItem.isEditingTarget ? .semibold : .regular))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        if let exceptionSummary = currentItem.exceptionSummaryText {
-                            statusBadge(text: exceptionSummary)
-                        }
-
-                        if currentItem.isEditingTarget {
-                            statusBadge(text: "Editing", subtle: true)
-                        }
-                    }
-
-                    Text(currentItem.base.path)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-
-            Button(action: onRemove) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .medium))
-            }
-            .buttonStyle(.borderless)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme)),
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5),
-        )
-    }
-
-    private func statusBadge(text: String, subtle: Bool = false) -> some View {
-        Text(text)
-            .font(.system(size: 9, weight: .medium))
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(
-                        subtle
-                            ? VoyagerDS.Surface.chipItemBackground(for: colorScheme)
-                            : VoyagerDS.Interaction.hoverFill(for: colorScheme),
-                    ),
-            )
-            .fixedSize(horizontal: true, vertical: false)
-    }
+private enum ScopePickerPresentationMetrics {
+    static let width: CGFloat = 420
+    static let maxHeight: CGFloat = 520
 }
 
-private struct ExceptionRow: View {
-    let exception: ComposerScopeEditorExceptionItem
-    let colorScheme: ColorScheme
-    let displayName: String
-    let onRestore: () -> Void
+private enum ScopePickerAccessibilityID {
+    static let surface = "scopeEditor.surface"
+    static let searchField = "scopeEditor.searchField"
+    static let currentSummary = "scopeEditor.currentSummary"
+    static let currentSection = "scopeEditor.currentSection"
+    static let candidatesSection = "scopeEditor.candidatesSection"
+    static let noResults = "scopeEditor.noResults"
+    static let feedbackBanner = "scopeEditor.feedbackBanner"
 
-    private var text: String {
-        displayName
+    static func directRemove(path: String) -> String {
+        "scopeEditor.row.directRemove.\(slug(for: path))"
     }
 
-    var body: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Image(systemName: "minus.circle")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                    Text(text)
-                        .font(.system(size: 12))
-                        .foregroundColor(.primary)
-                    Text("Excluded")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                Text(exception.path)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Button(action: onRestore) {
-                Text("Restore")
-                    .font(.system(size: 11, weight: .medium))
-            }
-            .buttonStyle(.borderless)
-            Spacer()
-        }
-        .padding(.leading, 22)
-        .padding(.trailing, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme).opacity(0.5)),
-        )
+    static func exclude(path: String) -> String {
+        "scopeEditor.row.exclude.\(slug(for: path))"
     }
-}
 
-private struct AddableCandidateRow: View {
-    let candidate: ComposerScopeEditorCandidateItem
-    let isHovering: Bool
-    let colorScheme: ColorScheme
-    let applicationsIcon: NSImage?
+    static func restore(path: String) -> String {
+        "scopeEditor.row.restore.\(slug(for: path))"
+    }
 
-    var body: some View {
-        HStack(spacing: 8) {
-            if candidate.path == "/Applications", let applicationsIcon {
-                Image(nsImage: applicationsIcon)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(.secondary)
-                    .frame(width: 16, height: 16)
-            } else {
-                Image(systemName: candidate.iconName)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .frame(width: 16)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(candidate.name)
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let secondary = candidate.secondaryText {
-                    Text(secondary)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-
-            Spacer()
+    private static func slug(for path: String) -> String {
+        let normalized = URL(fileURLWithPath: path).standardizedFileURL.path.lowercased()
+        let mapped = normalized.unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
-        )
+        let collapsed = String(mapped).replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
+        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 }
