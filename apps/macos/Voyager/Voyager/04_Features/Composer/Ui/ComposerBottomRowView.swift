@@ -18,13 +18,14 @@ struct ComposerBottomRowView: View {
     @State private var chipSizes: [String: CGSize] = [:]
     @State private var calculatedHeight: CGFloat = 0
     @State private var isAddButtonHovering: Bool = false
+    @State private var isScopeEditButtonHovering: Bool = false
 
     private let chipHorizontalPadding: CGFloat = 16
     private let chipSpacing: CGFloat = 8
     private let chipVerticalPadding: CGFloat = 8
-    private let conditionButtonWidth: CGFloat = 20
     private let maxChipAreaHeight: CGFloat = 200
     private let defaultChipHeight: CGFloat = 28
+    private let scopeRowVerticalPadding: CGFloat = 0
     private let defaultChipWidth: CGFloat = 120
     private let hoverFillOpacity: Double = 0.06
 
@@ -42,7 +43,9 @@ struct ComposerBottomRowView: View {
             },
         )
     }
+}
 
+private extension ComposerBottomRowView {
     private func secondRowContent(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
         geometry: GeometryProxy,
@@ -55,55 +58,245 @@ struct ComposerBottomRowView: View {
             send: ComposerAction.scopeEditorSetPresented,
         )
 
-        let scopeChips: [ChipItemType] = [.scope(summary: viewStore.scopeSummary)]
-        let conditionChips: [ChipItemType] = viewStore.conditions.map { .condition($0) }
-        let allChips: [ChipItemType] = scopeChips + conditionChips
+        let layout = rowLayoutInput(viewStore: viewStore, availableWidth: availableWidth)
 
-        let params = RowCalculationParams(
-            availableWidth: availableWidth,
-            spacing: chipSpacing,
-            chipSizes: chipSizes,
-            conditionButtonWidth: conditionButtonWidth,
-            buttonSpacing: chipSpacing,
-        )
-        let rows = calculateRowsWithButtons(chips: allChips, params: params)
+        return VStack(alignment: .leading, spacing: chipSpacing) {
+            scopeRow(
+                rows: layout.scopeRows,
+                historyPaths: historyPaths,
+                isPresented: isScopePickerPresentedBinding,
+            )
 
-        return chipRowsView(
-            rows: rows,
-            pickerStore: pickerStore,
-            conditionDisplayByKey: viewStore.conditionDisplayByKey,
-            operatorOptionsByKey: viewStore.operatorOptionsByKey,
-            historyPaths: historyPaths,
-        )
-        .popover(isPresented: isScopePickerPresentedBinding, arrowEdge: .bottom) {
-            ScopePickerView(store: store)
+            conditionRow(
+                rows: layout.conditionRows,
+                pickerStore: pickerStore,
+                conditionDisplayByKey: viewStore.conditionDisplayByKey,
+                operatorOptionsByKey: viewStore.operatorOptionsByKey,
+                historyPaths: historyPaths,
+            )
+            .frame(maxWidth: .infinity, minHeight: defaultChipHeight, alignment: .leading)
         }
         .allowsHitTesting(!isLocked)
         .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
-            handleChipSizeChange(sizes: sizes, allChips: allChips, availableWidth: availableWidth)
+            handleChipSizeChange(
+                sizes: sizes,
+                scopeChips: layout.scopeChips,
+                conditionChips: layout.conditionChips,
+                scopeAvailableWidth: layout.scopeRowWidth,
+                conditionAvailableWidth: layout.conditionRowWidth,
+            )
         }
         .onAppear {
-            updateCalculatedHeight(chips: allChips, availableWidth: availableWidth)
+            updateCalculatedHeight(layout: layout)
+        }
+        .onChange(of: geometry.size.width) { _ in
+            updateCalculatedHeight(layout: layout)
         }
         .padding(.horizontal, chipHorizontalPadding)
         .padding(.vertical, chipVerticalPadding)
     }
 
+    private var scopeEditButtonWidth: CGFloat {
+        defaultChipHeight + chipSpacing
+    }
+
+    private struct RowLayoutInput {
+        let scopeChips: [ChipItemType]
+        let conditionChips: [ChipItemType]
+        let scopeRows: [[ChipItemType]]
+        let conditionRows: [[ChipItemType]]
+        let scopeRowWidth: CGFloat
+        let conditionRowWidth: CGFloat
+    }
+
+    private func rowLayoutInput(
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        availableWidth: CGFloat,
+    ) -> RowLayoutInput {
+        let scopeChips = scopeChipItems(for: viewStore.scopeEditor.selection)
+        let conditionChips: [ChipItemType] = viewStore.conditions.map { .condition($0) } + [.conditionAdd]
+        let scopeRowWidth = max(0, availableWidth - scopeEditButtonWidth)
+        let conditionRowWidth = availableWidth
+
+        return RowLayoutInput(
+            scopeChips: scopeChips,
+            conditionChips: conditionChips,
+            scopeRows: calculateRows(
+                chips: scopeChips,
+                params: RowCalculationParams(
+                    availableWidth: scopeRowWidth,
+                    spacing: chipSpacing,
+                    chipSizes: chipSizes,
+                ),
+            ),
+            conditionRows: calculateRows(
+                chips: conditionChips,
+                params: RowCalculationParams(
+                    availableWidth: conditionRowWidth,
+                    spacing: chipSpacing,
+                    chipSizes: chipSizes,
+                ),
+            ),
+            scopeRowWidth: scopeRowWidth,
+            conditionRowWidth: conditionRowWidth,
+        )
+    }
+
+    private func updateCalculatedHeight(layout: RowLayoutInput) {
+        updateCalculatedHeight(
+            scopeChips: layout.scopeChips,
+            conditionChips: layout.conditionChips,
+            scopeAvailableWidth: layout.scopeRowWidth,
+            conditionAvailableWidth: layout.conditionRowWidth,
+        )
+    }
+
     @ViewBuilder
-    private func chipView(
-        chip: ChipItemType,
+    private func scopeRow(
+        rows: [[ChipItemType]],
+        historyPaths: [String],
+        isPresented: Binding<Bool>,
+    ) -> some View {
+        HStack(alignment: .center, spacing: chipSpacing) {
+            VStack(alignment: .leading, spacing: chipSpacing) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
+                    HStack(spacing: chipSpacing) {
+                        ForEach(Array(rowChips.enumerated()), id: \.element.id) { chipIndex, chip in
+                            scopeChipView(chip: chip)
+                                .background(
+                                    GeometryReader { chipGeometry in
+                                        Color.clear.preference(
+                                            key: ChipSizePreferenceKey.self,
+                                            value: [AnyHashable(chip.id): chipGeometry.size],
+                                        )
+                                    },
+                                )
+                                .if(rowIndex == 0 && chipIndex == 0) { view in
+                                    view.accessibilityIdentifier("composer.scopeRow.firstChip")
+                                }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            scopeEditButton(historyPaths: historyPaths)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, scopeRowVerticalPadding)
+        .frame(height: scopeRowHeight(rowCount: rows.count))
+        .frame(maxWidth: .infinity, alignment: .center)
+        .background(
+            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
+                .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme)),
+        )
+        .popover(isPresented: isPresented, arrowEdge: .bottom) {
+            ScopePickerView(store: store)
+        }
+        .accessibilityIdentifier("composer.scopeRow")
+    }
+
+    private func scopeEditButton(historyPaths: [String]) -> some View {
+        Button {
+            store.send(.scopeEditorOpen(editingPath: nil, favorites: favorites, backHistory: historyPaths))
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 20, height: 20)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isScopeEditButtonHovering ? VoyagerDS.Interaction
+                            .controlHoverFill(for: colorScheme) : .clear),
+                )
+                .frame(width: defaultChipHeight, height: defaultChipHeight)
+        }
+        .buttonStyle(.borderless)
+        .onHover { hovering in
+            isScopeEditButtonHovering = hovering
+        }
+        .accessibilityLabel("Edit scopes")
+    }
+
+    @ViewBuilder
+    private func conditionRow(
+        rows: [[ChipItemType]],
+        pickerStore: StoreOf<ConditionPropertyPickerFeature>,
         conditionDisplayByKey: [String: ConditionDisplayState],
         operatorOptionsByKey: [String: [String]],
         historyPaths: [String],
     ) -> some View {
+        VStack(alignment: .leading, spacing: chipSpacing) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, rowChips in
+                HStack(spacing: chipSpacing) {
+                    ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
+                        chipView(
+                            chip: chip,
+                            pickerStore: pickerStore,
+                            conditionDisplayByKey: conditionDisplayByKey,
+                            operatorOptionsByKey: operatorOptionsByKey,
+                            historyPaths: historyPaths,
+                        )
+                        .background(
+                            GeometryReader { chipGeometry in
+                                Color.clear.preference(
+                                    key: ChipSizePreferenceKey.self,
+                                    value: [AnyHashable(chip.id): chipGeometry.size],
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("composer.conditionRow")
+    }
+
+    private func scopeChipItems(for selection: ComposerScopeSelection) -> [ChipItemType] {
+        switch selection {
+        case .rootOnly:
+            [.scopeRoot]
+        case let .explicit(bases, _):
+            bases.map { .scopeBase(path: $0.path) }
+        }
+    }
+
+    @ViewBuilder
+    private func scopeChipView(chip: ChipItemType) -> some View {
         switch chip {
-        case let .scope(summary):
-            ScopeChipView(
-                summary: summary,
-                store: store,
-                favorites: favorites,
-                backHistory: historyPaths,
+        case .scopeRoot:
+            ScopeTokenChipView(title: "This Mac", path: nil, onRemove: nil)
+        case let .scopeBase(path):
+            ScopeTokenChipView(
+                title: scopeDisplayName(for: path),
+                path: path,
+                onRemove: { store.send(.currentScope(.remove(path: path))) },
             )
+        case .condition, .conditionAdd:
+            EmptyView()
+        }
+    }
+
+    private func scopeDisplayName(for path: String) -> String {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let displayName = URL(fileURLWithPath: normalizedPath).lastPathComponent
+        return displayName.isEmpty ? normalizedPath : displayName
+    }
+
+    @ViewBuilder
+    private func chipView(
+        chip: ChipItemType,
+        pickerStore: StoreOf<ConditionPropertyPickerFeature>,
+        conditionDisplayByKey: [String: ConditionDisplayState],
+        operatorOptionsByKey: [String: [String]],
+        historyPaths _: [String],
+    ) -> some View {
+        switch chip {
+        case .scopeRoot, .scopeBase:
+            scopeChipView(chip: chip)
+
+        case .conditionAdd:
+            conditionAddButton(pickerStore: pickerStore)
 
         case let .condition(condition):
             let displayState = conditionDisplayByKey[condition.propertyKey]
@@ -127,43 +320,6 @@ struct ComposerBottomRowView: View {
                     store.send(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
                 },
             )
-        }
-    }
-
-    private func chipRowsView(
-        rows: [[ChipItemType]],
-        pickerStore: StoreOf<ConditionPropertyPickerFeature>,
-        conditionDisplayByKey: [String: ConditionDisplayState],
-        operatorOptionsByKey: [String: [String]],
-        historyPaths: [String],
-    ) -> some View {
-        VStack(alignment: .leading, spacing: chipSpacing) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
-                let isLastRow = rowIndex == rows.count - 1
-
-                HStack(spacing: chipSpacing) {
-                    ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
-                        chipView(
-                            chip: chip,
-                            conditionDisplayByKey: conditionDisplayByKey,
-                            operatorOptionsByKey: operatorOptionsByKey,
-                            historyPaths: historyPaths,
-                        )
-                        .background(
-                            GeometryReader { chipGeometry in
-                                Color.clear.preference(
-                                    key: ChipSizePreferenceKey.self,
-                                    value: [AnyHashable(chip.id): chipGeometry.size],
-                                )
-                            },
-                        )
-                    }
-
-                    if isLastRow {
-                        conditionAddButton(pickerStore: pickerStore)
-                    }
-                }
-            }
         }
     }
 
@@ -204,28 +360,60 @@ struct ComposerBottomRowView: View {
 
     private func handleChipSizeChange(
         sizes: [AnyHashable: CGSize],
-        allChips: [ChipItemType],
-        availableWidth: CGFloat,
+        scopeChips: [ChipItemType],
+        conditionChips: [ChipItemType],
+        scopeAvailableWidth: CGFloat,
+        conditionAvailableWidth: CGFloat,
     ) {
-        for chip in allChips {
+        for chip in scopeChips + conditionChips {
             let anyId = AnyHashable(chip.id)
             if let size = sizes[anyId] {
                 chipSizes[chip.id] = size
             }
         }
-        updateCalculatedHeight(chips: allChips, availableWidth: availableWidth)
+        updateCalculatedHeight(
+            scopeChips: scopeChips,
+            conditionChips: conditionChips,
+            scopeAvailableWidth: scopeAvailableWidth,
+            conditionAvailableWidth: conditionAvailableWidth,
+        )
     }
 
-    private func updateCalculatedHeight(chips: [ChipItemType], availableWidth: CGFloat) {
-        let params = RowCalculationParams(
-            availableWidth: availableWidth,
-            spacing: chipSpacing,
-            chipSizes: chipSizes,
-            conditionButtonWidth: conditionButtonWidth,
-            buttonSpacing: chipSpacing,
+    private func scopeRowHeight(rowCount: Int) -> CGFloat {
+        let safeRowCount = max(rowCount, 1)
+        let chipsHeight = CGFloat(safeRowCount) * defaultChipHeight
+        let spacingHeight = CGFloat(max(0, safeRowCount - 1)) * chipSpacing
+        return chipsHeight + spacingHeight + scopeRowVerticalPadding * 2
+    }
+
+    private func updateCalculatedHeight(
+        scopeChips: [ChipItemType],
+        conditionChips: [ChipItemType],
+        scopeAvailableWidth: CGFloat,
+        conditionAvailableWidth: CGFloat,
+    ) {
+        let scopeRows = calculateRows(
+            chips: scopeChips,
+            params: RowCalculationParams(
+                availableWidth: scopeAvailableWidth,
+                spacing: chipSpacing,
+                chipSizes: chipSizes,
+            ),
         )
-        let updatedRows = calculateRowsWithButtons(chips: chips, params: params)
-        let contentHeight = calculateTotalHeight(rows: updatedRows, chipSizes: chipSizes, spacing: chipSpacing)
+        let conditionRows = calculateRows(
+            chips: conditionChips,
+            params: RowCalculationParams(
+                availableWidth: conditionAvailableWidth,
+                spacing: chipSpacing,
+                chipSizes: chipSizes,
+            ),
+        )
+        let scopeHeight = scopeRowHeight(rowCount: scopeRows.count)
+        let conditionHeight = max(
+            calculateTotalHeight(rows: conditionRows, chipSizes: chipSizes, spacing: chipSpacing),
+            defaultChipHeight,
+        )
+        let contentHeight = scopeHeight + chipSpacing + conditionHeight
         let paddingHeight = chipVerticalPadding * 2
         calculatedHeight = min(contentHeight + paddingHeight, maxChipAreaHeight)
     }
@@ -258,11 +446,9 @@ struct ComposerBottomRowView: View {
         let availableWidth: CGFloat
         let spacing: CGFloat
         let chipSizes: [String: CGSize]
-        let conditionButtonWidth: CGFloat
-        let buttonSpacing: CGFloat
     }
 
-    private func calculateRowsWithButtons(
+    private func calculateRows(
         chips: [ChipItemType],
         params: RowCalculationParams,
     ) -> [[ChipItemType]] {
@@ -273,11 +459,9 @@ struct ComposerBottomRowView: View {
         for chip in chips {
             let chipWidth = params.chipSizes[chip.id]?.width ?? defaultChipWidth
             let chipSpacing = currentRow.isEmpty ? 0 : params.spacing
-            let rowButtonSpace = params.conditionButtonWidth
             let chipsOnlyWidth = currentRowWidth + chipSpacing + chipWidth
-            let effectiveAvailableWidth = params.availableWidth - rowButtonSpace
 
-            if chipsOnlyWidth > effectiveAvailableWidth, !currentRow.isEmpty {
+            if chipsOnlyWidth > params.availableWidth, !currentRow.isEmpty {
                 rows.append(currentRow)
                 currentRow = [chip]
                 currentRowWidth = chipWidth
@@ -292,26 +476,5 @@ struct ComposerBottomRowView: View {
         }
 
         return rows
-    }
-}
-
-private enum ChipItemType: Identifiable, Hashable {
-    case scope(summary: ComposerScopeSummary)
-    case condition(Condition)
-
-    var id: String {
-        switch self {
-        case let .scope(summary):
-            switch summary.primary {
-            case .rootOnly:
-                "scope-root"
-            case let .singleExplicit(path):
-                "scope-single-\(path)"
-            case let .multiExplicit(count):
-                "scope-multi-\(count)"
-            }
-        case let .condition(condition):
-            "condition-\(condition.propertyKey)"
-        }
     }
 }
