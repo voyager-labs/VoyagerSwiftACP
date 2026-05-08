@@ -79,6 +79,7 @@ struct MenuCommandsState: Equatable {
         selectedItemCount = selectedIds.count
         isComposerPresented = windowState.content.composer.isPresented
         isContextualAiChatPresented = windowState.inspector.inspectorVisible
+            && windowState.inspector.inspectorPaneExists
             && windowState.inspector.activeMode == .chat
     }
 }

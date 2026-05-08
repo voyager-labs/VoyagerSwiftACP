@@ -232,6 +232,7 @@ struct FileManagerFeature {
 
         case .openContextualAiChat:
             if state.inspector.inspectorVisible,
+               state.inspector.inspectorPaneExists,
                state.inspector.activeMode == .chat
             {
                 return .merge(
