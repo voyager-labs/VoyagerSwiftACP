@@ -51,25 +51,21 @@ public struct CollectionDocumentSessionState: Equatable, Sendable {
     public var phase: CollectionSessionPhase = .idle
     public var document: CollectionOpenedDocumentState?
     public var metadata: CollectionSessionMetadata = .init()
-    public var pendingComposerResetOnNavigation: Bool = false
 
     public init(
         phase: CollectionSessionPhase = .idle,
         document: CollectionOpenedDocumentState? = nil,
-        metadata: CollectionSessionMetadata = .init(),
-        pendingComposerResetOnNavigation: Bool = false
+        metadata: CollectionSessionMetadata = .init()
     ) {
         self.phase = phase
         self.document = document
         self.metadata = metadata
-        self.pendingComposerResetOnNavigation = pendingComposerResetOnNavigation
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.phase == rhs.phase
             && lhs.document == rhs.document
             && lhs.metadata == rhs.metadata
-            && lhs.pendingComposerResetOnNavigation == rhs.pendingComposerResetOnNavigation
     }
 
     public mutating func captureReopenContext(_ context: CollectionContext?) {

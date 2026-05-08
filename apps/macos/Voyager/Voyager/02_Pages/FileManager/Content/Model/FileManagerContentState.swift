@@ -22,10 +22,7 @@ struct FileManagerContentState: Equatable {
     }
 
     // 컴포저 관련
-    var resetComposerOnNextDirectoryNavigation: Bool {
-        get { collection.collectionSession.pendingComposerResetOnNavigation }
-        set { collection.collectionSession.pendingComposerResetOnNavigation = newValue }
-    }
+    var resetComposerOnNextDirectoryNavigation: Bool = false
 
     var isCollectionMode: Bool {
         entryViewLayout.isCollectionMode
