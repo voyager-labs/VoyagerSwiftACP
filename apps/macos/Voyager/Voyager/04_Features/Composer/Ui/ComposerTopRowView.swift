@@ -46,6 +46,7 @@ private extension ComposerTopRowView {
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .frame(height: 40)
+        .accessibilityIdentifier("composer.inputRow")
     }
 
     @ViewBuilder
