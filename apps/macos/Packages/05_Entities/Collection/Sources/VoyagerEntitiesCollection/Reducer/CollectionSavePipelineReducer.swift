@@ -283,6 +283,9 @@ private func handleSaveCompleted(
         userDefaultsClient.setString(directory, CollectionKeys.lastCollectionSaveDirectory)
         return .none
     case let .failure(error):
+        if state.collectionSession.phase.isInflightWriteBack {
+            state.collectionSession.failRefreshOrWriteBack()
+        }
         return showSaveError(.init(
             title: "Unable to Save Collection",
             message: error.localizedDescription

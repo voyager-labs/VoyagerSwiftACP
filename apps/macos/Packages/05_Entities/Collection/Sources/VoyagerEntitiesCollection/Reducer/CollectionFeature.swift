@@ -47,10 +47,18 @@ public struct CollectionFeature {
                 return .none
 
             case let .refreshResponseReceived(_, wasDirtyBeforeApplyingResponse):
-                _ = state.applyRefreshResponse(wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse)
+                let shouldWriteBack = state.applyRefreshResponse(
+                    wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse
+                )
+                if shouldWriteBack {
+                    return .send(.delegate(.refreshWriteBackRequested))
+                }
                 return .none
 
             case .refreshFailed:
+                guard state.collectionSession.phase.isInflightRefresh else {
+                    return .none
+                }
                 state.collectionSession.failRefreshOrWriteBack()
                 return .none
 

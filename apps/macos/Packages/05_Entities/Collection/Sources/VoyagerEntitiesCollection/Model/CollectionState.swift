@@ -24,6 +24,23 @@ public struct CollectionState: Equatable {
 }
 
 public extension CollectionState {
+    var isDirty: Bool {
+        guard let baseline = collectionSession.metadata.baseline,
+              let context = collectionContext
+        else { return false }
+        return baseline.context != context
+    }
+
+    func canSave(isCollectionMode: Bool) -> Bool {
+        guard isCollectionMode, collectionContext != nil else {
+            return false
+        }
+        if collectionSession.metadata.baseline == nil {
+            return true
+        }
+        return isDirty
+    }
+
     mutating func cancelOpenSearchPresentation() {
         collectionSession.finishOpeningTransition()
         collectionSession.document = nil
@@ -44,7 +61,7 @@ public extension CollectionState {
 
     mutating func applyRefreshResponse(wasDirtyBeforeApplyingResponse: Bool) -> Bool {
         let writeBackAllowed = collectionSession.document?.compatibility?.writeBackAllowed != false
-        guard collectionSession.phase.inflightStatus == .refreshingHydratedSnapshot else {
+        guard collectionSession.phase.isInflightRefresh else {
             return false
         }
         if wasDirtyBeforeApplyingResponse || !writeBackAllowed {
@@ -72,10 +89,10 @@ public extension CollectionState {
         if isSearching {
             return .searchInFlight
         }
-        if collectionSession.phase.inflightStatus == .refreshingHydratedSnapshot {
+        if collectionSession.phase.isInflightRefresh {
             return .refreshInFlight
         }
-        if collectionSession.phase.inflightStatus == .writingBackRefreshedSnapshot {
+        if collectionSession.phase.isInflightWriteBack {
             return .writeBackInFlight
         }
         if collectionSession.document?.url == nil {
