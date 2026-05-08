@@ -85,6 +85,49 @@ struct ComposerFeature {
                 state.transientFeedback = nil
                 return .cancel(id: CancelID.feedbackDismiss)
 
+            case let .internal(.applyCollectionDraftRestore(payload)):
+                state.applyCollectionDraftRestorePayload(payload)
+                return .none
+
+            case let .internal(.applyCollectionNavigationComposer(payload)):
+                state.applyCollectionNavigationComposerPayload(payload)
+                return .none
+
+            case let .internal(.syncCollectionState(context, url, compatibility, isCollectionMode)):
+                state.collectionContext = context
+                state.openedCollectionURL = url
+                state.openedCollectionCompatibility = compatibility
+                state.isCollectionMode = isCollectionMode
+                return .none
+
+            case let .internal(.updateLastFiltersResponse(response)):
+                state.lastFiltersResponse = response
+                return .none
+
+            case .internal(.clearPendingSearchQuery):
+                state.pendingSearchQuery = nil
+                return .none
+
+            case let .internal(.setPendingSearchQuery(query)):
+                state.pendingSearchQuery = query
+                return .none
+
+            case let .internal(.setLoadingFilters(isLoading)):
+                state.isLoadingFilters = isLoading
+                return .none
+
+            case let .internal(.setInitialScope(path)):
+                state.scopes = [path]
+                return .none
+
+            case let .internal(.resetComposerAndSync(context, url, compatibility, isCollectionMode)):
+                state = .init()
+                state.collectionContext = context
+                state.openedCollectionURL = url
+                state.openedCollectionCompatibility = compatibility
+                state.isCollectionMode = isCollectionMode
+                return .none
+
             case .view(.applyFilters),
                  .view(.setDisplayUnit),
                  .view(.addCondition),
