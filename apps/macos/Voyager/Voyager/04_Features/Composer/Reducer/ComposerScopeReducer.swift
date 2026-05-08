@@ -474,9 +474,9 @@ private func settleScopeEditorAfterSelectionChange(
     state: inout ComposerFeature.State,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
-    state.scopeEditor.isPresented = true
+    let wasPresented = state.scopeEditor.isPresented
     state.scopeEditor.entryMode = state.scopeEditor.editingPath == nil ? .add : .edit
-    if state.scopeEditor.trimmedQueryText.isEmpty {
+    if wasPresented, state.scopeEditor.trimmedQueryText.isEmpty {
         seedScopeEditorCandidatesForCurrentMode(state: &state, entryLoadingClient: entryLoadingClient)
     }
     return .cancel(id: ComposerFeature.CancelID.scopeEditorSearch)
