@@ -41,6 +41,7 @@ func hydrateOpenedCollectionSnapshot(
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
     state.content.composer.applyHydratedCollectionOpenComposerPayload(payload, navigation: navigation)
+    state.content.syncComposerCollectionState()
 
     let showHidden = state.content.entryViewLayout.showHiddenFiles
 
@@ -53,7 +54,6 @@ func hydrateOpenedCollectionSnapshot(
                 paths: payload.snapshotPaths,
                 showHidden: showHidden,
             )))))
-            await send(.content(.internal(.syncComposerCollectionState)))
             await send(.content(.composer(.searchListApplied)))
         },
     ]
