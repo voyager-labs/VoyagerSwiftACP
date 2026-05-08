@@ -224,6 +224,39 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
             .missingBaseline,
         )
     }
+
+    func testResetComposerOnNextDirectoryNavigationDefaultsFalse() {
+        let state = FileManagerContentState()
+        XCTAssertFalse(state.resetComposerOnNextDirectoryNavigation)
+    }
+
+    func testResetComposerOnNextDirectoryNavigationRoundTrips() {
+        var state = FileManagerContentState()
+        state.resetComposerOnNextDirectoryNavigation = true
+        XCTAssertTrue(state.resetComposerOnNextDirectoryNavigation)
+        state.resetComposerOnNextDirectoryNavigation = false
+        XCTAssertFalse(state.resetComposerOnNextDirectoryNavigation)
+    }
+
+    func testResetComposerOnNextDirectoryNavigationToleratesCollectionSessionMutation() {
+        var state = FileManagerContentState()
+        state.resetComposerOnNextDirectoryNavigation = true
+
+        state.collection.collectionSession.phase = .opened(
+            kind: .definition, base: .ready, inflight: .none,
+        )
+        XCTAssertTrue(state.resetComposerOnNextDirectoryNavigation)
+
+        state.collection.collectionSession.document = .init(
+            url: URL(fileURLWithPath: "/tmp/test.voycoll"),
+            name: "test",
+            compatibility: nil,
+        )
+        XCTAssertTrue(state.resetComposerOnNextDirectoryNavigation)
+
+        state.collection = .init()
+        XCTAssertTrue(state.resetComposerOnNextDirectoryNavigation)
+    }
 }
 
 @MainActor

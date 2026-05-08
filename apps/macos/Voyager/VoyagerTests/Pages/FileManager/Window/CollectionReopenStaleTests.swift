@@ -46,6 +46,21 @@ final class CollectionReopenStaleTests: XCTestCase {
             }
             return store.state.content.collection.collectionSession.phase.isStale
         }
+
+        XCTAssertEqual(
+            store.state.content.composer.openedCollectionURL,
+            store.state.content.collection.collectionSession.document?.url,
+        )
+        XCTAssertEqual(
+            store.state.content.composer.collectionContext,
+            store.state.content.collection.collectionContext,
+        )
+        XCTAssertNil(store.state.content.composer.openedCollectionCompatibility)
+        XCTAssertEqual(
+            store.state.content.composer.isCollectionMode,
+            store.state.content.isCollectionMode,
+        )
+
         await store.finish()
     }
 
@@ -98,6 +113,21 @@ final class CollectionReopenStaleTests: XCTestCase {
             .isStale)
         await assertCollectionModeNavigation(store: store)
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
+
+        XCTAssertEqual(
+            store.state.content.composer.openedCollectionURL,
+            store.state.content.collection.collectionSession.document?.url,
+        )
+        XCTAssertEqual(
+            store.state.content.composer.collectionContext,
+            store.state.content.collection.collectionContext,
+        )
+        XCTAssertNil(store.state.content.composer.openedCollectionCompatibility)
+        XCTAssertEqual(
+            store.state.content.composer.isCollectionMode,
+            store.state.content.isCollectionMode,
+        )
+
         await store.finish()
     }
 
@@ -142,6 +172,21 @@ final class CollectionReopenStaleTests: XCTestCase {
         }
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
+
+        XCTAssertEqual(
+            store.state.content.composer.openedCollectionURL,
+            store.state.content.collection.collectionSession.document?.url,
+        )
+        XCTAssertEqual(
+            store.state.content.composer.collectionContext,
+            store.state.content.collection.collectionContext,
+        )
+        XCTAssertNil(store.state.content.composer.openedCollectionCompatibility)
+        XCTAssertEqual(
+            store.state.content.composer.isCollectionMode,
+            store.state.content.isCollectionMode,
+        )
+
         await store.finish()
     }
 
@@ -190,6 +235,21 @@ final class CollectionReopenStaleTests: XCTestCase {
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
+
+        XCTAssertEqual(
+            store.state.content.composer.openedCollectionURL,
+            store.state.content.collection.collectionSession.document?.url,
+        )
+        XCTAssertEqual(
+            store.state.content.composer.collectionContext,
+            store.state.content.collection.collectionContext,
+        )
+        XCTAssertNil(store.state.content.composer.openedCollectionCompatibility)
+        XCTAssertEqual(
+            store.state.content.composer.isCollectionMode,
+            store.state.content.isCollectionMode,
+        )
+
         await store.finish()
     }
 
