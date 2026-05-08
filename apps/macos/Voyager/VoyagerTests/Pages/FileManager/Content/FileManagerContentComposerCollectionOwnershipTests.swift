@@ -39,8 +39,8 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
 
     func testClearCollectionModeSendsClearCollectionPresentation() async {
         var initialState = makeInitialState()
-        initialState.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
-        initialState.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
+        initialState.collection.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
+        initialState.collection.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
         initialState.navigation.navigationState = .collection(
             ContentPageCollectionNavigation(
                 kind: .temporary,
@@ -78,28 +78,12 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
             guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
             return true
         }
-        await store.receive { action in
-            guard case .internal(.syncComposerCollectionState) = action else { return false }
-            return true
-        }
-    }
-
-    func testSyncComposerCollectionStateReadsFromCanonicalSource() {
-        var state = makeInitialState()
-        state.entryViewLayout.isCollectionMode = true
-
-        state.syncComposerCollectionState()
-
-        XCTAssertTrue(
-            state.composer.isCollectionMode,
-            "syncComposerCollectionState must read from entryViewLayout.isCollectionMode (canonical)",
-        )
     }
 
     func testCanSaveCollectionReadsFromCanonicalSource() {
         var state = makeInitialState()
         state.entryViewLayout.isCollectionMode = true
-        state.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
+        state.collection.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
 
         XCTAssertTrue(
             state.canSaveCollection,

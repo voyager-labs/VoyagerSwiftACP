@@ -18,12 +18,12 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.collectionSession.document = .init(
+        initialState.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
             name: "sample",
             compatibility: nil,
         )
-        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        initialState.collection.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
 
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
@@ -32,8 +32,8 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.finish()
 
-        XCTAssertFalse(store.state.collectionSession.phase.isStale)
-        XCTAssertNil(store.state.collectionSession.metadata.lastRefreshAt)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
     }
 
     func testFileSystemChangedDoesNotMarkCollectionStaleForUnrelatedScope() async {
@@ -47,13 +47,13 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.collectionSession.document = .init(
+        initialState.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
             name: "sample",
             compatibility: nil,
         )
-        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
-        initialState.collectionContext = .init(
+        initialState.collection.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        initialState.collection.collectionContext = .init(
             query: "q",
             scopes: ["/tmp/voyager"],
             conditions: [],
@@ -78,13 +78,13 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.collectionSession.document = .init(
+        initialState.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
             name: "sample",
             compatibility: nil,
         )
-        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
-        initialState.collectionContext = .init(
+        initialState.collection.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        initialState.collection.collectionContext = .init(
             query: "q",
             scopes: ["/tmp/voyager"],
             conditions: [],
@@ -109,13 +109,13 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.collectionSession.document = .init(
+        initialState.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
             name: "sample",
             compatibility: nil,
         )
-        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
-        initialState.collectionContext = .init(
+        initialState.collection.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        initialState.collection.collectionContext = .init(
             query: "q",
             scopes: ["/tmp/voyager"],
             conditions: [],
@@ -128,8 +128,8 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.send(.externalFileSystemChanged(["/tmp/voyager/sub/a.txt"]))
         await store.finish()
 
-        XCTAssertFalse(store.state.collectionSession.phase.isStale)
-        XCTAssertNil(store.state.collectionSession.metadata.lastRefreshAt)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
     }
 
     func testFileSystemChangedDoesNotReopenRefreshBoundaryForStaleCollection() async {
@@ -143,14 +143,14 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.collectionSession.document = .init(
+        initialState.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
             name: "sample",
             compatibility: nil,
         )
-        initialState.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
-        initialState.collectionSession.metadata.lastRefreshAt = .distantFuture
-        initialState.collectionContext = .init(
+        initialState.collection.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        initialState.collection.collectionSession.metadata.lastRefreshAt = .distantFuture
+        initialState.collection.collectionContext = .init(
             query: "q",
             scopes: ["/tmp/voyager"],
             conditions: [],
@@ -163,8 +163,8 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.send(.externalFileSystemChanged(["/tmp/voyager/sub/a.txt"]))
         await store.finish()
 
-        XCTAssertFalse(store.state.collectionSession.phase.isStale)
-        XCTAssertEqual(store.state.collectionSession.metadata.lastRefreshAt, .distantFuture)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertEqual(store.state.collection.collectionSession.metadata.lastRefreshAt, .distantFuture)
     }
 
     func testFileSystemChangedKeepsDirtyStateWhileInvalidatingCollection() async {
@@ -179,32 +179,40 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.collectionSession.document = .init(
+        initialState.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
             name: "sample",
             compatibility: nil,
         )
-        initialState.collectionContext = .init(query: "report", scopes: ["/tmp/voyager"], conditions: [])
-        initialState.collectionSession.metadata.lastRefreshAt = .distantFuture
-        initialState.collectionSession.metadata.baseline = .init(
+        initialState.collection.collectionContext = .init(query: "report", scopes: ["/tmp/voyager"], conditions: [])
+        initialState.collection.collectionSession.metadata.lastRefreshAt = .distantFuture
+        initialState.collection.collectionSession.metadata.baseline = .init(
             context: .init(query: "before", scopes: ["/tmp/voyager"], conditions: []),
         )
-        initialState.collectionContext = .init(query: "after", scopes: ["/tmp/voyager"], conditions: [])
+        initialState.collection.collectionContext = .init(query: "after", scopes: ["/tmp/voyager"], conditions: [])
 
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
         }
 
         XCTAssertTrue(store.state.isOpenedCollectionDirty)
-        XCTAssertEqual(store.state.refreshBlockingReason, .notStale)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .notStale)
 
         await store.send(.externalFileSystemChanged(["/tmp/voyager/sub/a.txt"]))
         await store.finish()
 
         XCTAssertTrue(store.state.isOpenedCollectionDirty)
-        XCTAssertFalse(store.state.collectionSession.phase.isStale)
-        XCTAssertEqual(store.state.collectionSession.metadata.lastRefreshAt, .distantFuture)
-        XCTAssertEqual(store.state.refreshBlockingReason, .notStale)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertEqual(store.state.collection.collectionSession.metadata.lastRefreshAt, .distantFuture)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .notStale)
     }
 
     func testFileSystemChangedPreservesExistingRefreshMarker() async {
@@ -219,14 +227,14 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        initialState.collectionSession.document = .init(
+        initialState.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
             name: "sample",
             compatibility: nil,
         )
-        initialState.collectionContext = .init(query: "report", scopes: ["/tmp/voyager"], conditions: [])
-        initialState.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
-        initialState.collectionSession.metadata.lastRefreshAt = .distantFuture
+        initialState.collection.collectionContext = .init(query: "report", scopes: ["/tmp/voyager"], conditions: [])
+        initialState.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
+        initialState.collection.collectionSession.metadata.lastRefreshAt = .distantFuture
 
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
@@ -235,7 +243,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.send(.externalFileSystemChanged(["/tmp/voyager/sub/a.txt"]))
         await store.finish()
 
-        XCTAssertTrue(store.state.collectionSession.phase.isStale)
-        XCTAssertEqual(store.state.collectionSession.metadata.lastRefreshAt, .distantFuture)
+        XCTAssertTrue(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertEqual(store.state.collection.collectionSession.metadata.lastRefreshAt, .distantFuture)
     }
 }
