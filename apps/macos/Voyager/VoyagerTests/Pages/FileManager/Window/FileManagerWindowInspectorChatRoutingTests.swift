@@ -71,6 +71,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertTrue(store.state.inspector.inspectorVisible)
         XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents · 2 selected")
 
+        await store.send(.inspector(.setInspectorPaneExists(true))) {
+            $0.inspector.inspectorPaneExists = true
+        }
+
         await store.send(.request(.openContextualAiChat))
         await assertCloseChat(on: store)
 
@@ -146,6 +150,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await assertOpenChat(on: store, expectedSetup: expectedSetup)
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
 
+        await store.send(.inspector(.setInspectorPaneExists(true))) {
+            $0.inspector.inspectorPaneExists = true
+        }
+
         await store.send(.content(.view(.openContextualAiChatTapped)))
         await store.receive(\.content.delegate.openContextualAiChat)
         await store.receive(\.request.openContextualAiChat)
@@ -204,6 +212,12 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await assertWindowManagerRequest(on: store, fixture: fixture)
         await assertWindowManagerOpenChat(on: store, fixture: fixture)
         await assertWindowManagerAiChatSetup(on: store, fixture: fixture)
+        await store.send(.windows(.element(
+            id: fixture.focusedUUID,
+            action: .window(.inspector(.setInspectorPaneExists(true)))
+        )) {
+            $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorPaneExists = true
+        }
     }
 
     private func assertCommandLClosesContextualAiChat(

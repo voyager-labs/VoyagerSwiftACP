@@ -105,6 +105,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         focusedWindow.inspector.inspectorVisible = true
+        focusedWindow.inspector.inspectorPaneExists = true
         focusedWindow.inspector.activeMode = .chat
 
         var unfocusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
@@ -120,6 +121,11 @@ final class MenuCommandsFeatureTests: XCTestCase {
 
         XCTAssertTrue(MenuCommandsState(state: appState).isContextualAiChatPresented)
 
+        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = false
+
+        XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
+
+        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = true
         appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorVisible = false
 
         XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
