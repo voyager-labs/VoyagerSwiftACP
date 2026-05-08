@@ -87,6 +87,87 @@ final class AiChatFeatureRestoreTests: XCTestCase {
     }
 
     // swiftlint:disable:next function_body_length
+    func testRestoreMissingRecordWithEmptyCatalogDoesNotExposeUnknownModelSelection() async {
+        let summary = makeContextSnapshot()
+        let targetSessionID = AiChatSessionID(rawValue: makeUUID("99999999-9999-9999-9999-999999999999"))
+        let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in nil })
+        let store = TestStore(initialState: AiChatFeature.State()) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { id in try await persistence.loadSession(id) },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
+        }
+
+        await store.send(.setup(AiChatSetupState(
+            restoreSessionID: targetSessionID,
+            sessionID: nil,
+            sessionStatus: .idle,
+            currentContext: summary,
+            transcriptHistory: [],
+            draftText: "Draft",
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        ))) { state in
+            state.restoreSessionID = targetSessionID
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionID = nil
+            state.sessionStatus = .restoring
+            state.currentContext = summary
+            state.transcriptHistory = []
+            state.draftText = "Draft"
+            state.streamDraftText = ""
+            state.catalogRows = []
+            state.selectedModelHandle = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.executionPhase = .idle
+        }
+
+        let fallbackSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
+        let unresolvedModel = AiModelHandle(provider: .openai, rawValue: "unknown")
+        let fallbackSnapshot = AiChatSessionSnapshot(
+            sessionID: fallbackSessionID,
+            status: .idle,
+            provider: unresolvedModel.provider,
+            model: unresolvedModel,
+            selectedModelRow: nil,
+            transcriptHistory: [],
+            updatedAtMs: 0,
+        )
+
+        await store.receive(.restoreOutcome(
+            .newSession(snapshot: fallbackSnapshot),
+            restoreFailure: .missingRecord,
+        )) { state in
+            state.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
+            state.restoreFailure = .missingRecord
+            state.sessionID = fallbackSessionID
+            state.sessionStatus = .idle
+            state.transcriptHistory = []
+            state.streamDraftText = ""
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.executionPhase = .idle
+            state.selectedModelHandle = nil
+        }
+
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertNil(store.state.selectedModelDisplayModel)
+        XCTAssertFalse(store.state.canSubmit)
+        guard case let .error(metadata) = store.state.connectionState else {
+            return XCTFail("Expected provider connection error")
+        }
+        XCTAssertEqual(metadata.title, "No AI provider connected")
+    }
+
+    // swiftlint:disable:next function_body_length
     func testRestoreContextMismatchFallsBackToNewSession() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
