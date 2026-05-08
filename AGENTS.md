@@ -12,6 +12,12 @@ This repository separates agent-facing instructions from human-facing documentat
 - Never automatically reset, revert, or discard changes in `opencode.json`.
 - Never include `opencode.json` in commits unless the user explicitly asks for it.
 
+## Commit attribution
+
+- Agents must **never** add `Co-authored-by: Sisyphus`, `Co-authored-by: Sisyphus <...>`, `Ultraworked with Sisyphus`, or any similar AI/Sisyphus co-author trailer to commit messages.
+- This applies to commit subjects, bodies, and footers alike.
+- The only exception is when the user explicitly requests such a trailer.
+
 ## Review guidelines
 
 This project uses AI-powered PR review. The reviewer is NOT a linter, formatter, or CI substitute. It should behave like a senior engineer who knows this project well.
