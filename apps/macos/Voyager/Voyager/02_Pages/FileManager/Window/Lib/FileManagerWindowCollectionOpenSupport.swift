@@ -41,15 +41,21 @@ func hydrateOpenedCollectionSnapshot(
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
     state.content.composer.applyHydratedCollectionOpenComposerPayload(payload, navigation: navigation)
-    state.content.syncComposerCollectionState()
 
     let showHidden = state.content.entryViewLayout.showHiddenFiles
+    let collectionURL: URL? = if case let .file(url, _) = navigation.kind { url } else { nil }
 
     return [
         .run { send in
             await send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation)))))))
             await send(.content(.internal(.applyNavigationState(.collection(navigation)))))
             await send(.content(.entryViewLayout(.internal(.setCollectionMode(true)))))
+            await send(.content(.composer(.syncCollectionState(
+                context: navigation.context,
+                url: collectionURL,
+                compatibility: navigation.compatibility,
+                isCollectionMode: true,
+            ))))
             await send(.content(.entryViewLayout(.internal(.applyCollectionSearchPaths(
                 paths: payload.snapshotPaths,
                 showHidden: showHidden,
