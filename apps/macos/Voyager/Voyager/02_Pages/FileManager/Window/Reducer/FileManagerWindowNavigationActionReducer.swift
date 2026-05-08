@@ -252,11 +252,6 @@ private func handleOpenCollectionFile(
         .none
     }
 
-    let syncContext = state.content.collection.collectionContext
-    let syncURL = state.content.collection.collectionSession.document?.url
-    let syncCompat = state.content.collection.collectionSession.document?.compatibility
-    let syncIsCollectionMode = state.content.isCollectionMode
-
     let loadEffect: Effect<FileManagerWindowAction> = .run { [url] send in
         do {
             let result = try await collectionFileClient.load(url)
@@ -283,12 +278,6 @@ private func handleOpenCollectionFile(
         )))),
         .send(.navigation(.internal(.prepareCollectionFileOpen(url)))),
         loadEffect,
-        .send(.content(.composer(.syncCollectionState(
-            context: syncContext,
-            url: syncURL,
-            compatibility: syncCompat,
-            isCollectionMode: syncIsCollectionMode,
-        )))),
     )
 }
 
