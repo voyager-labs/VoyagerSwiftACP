@@ -17,7 +17,7 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
 
     func testCanSaveCollectionRequiresIsCollectionMode() {
         var state = FileManagerContentState()
-        state.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
+        state.collection.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
 
         XCTAssertFalse(state.canSaveCollection)
 
@@ -27,26 +27,9 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
 
     func testCanSaveCollectionFalseWhenNotInCollectionMode() {
         var state = FileManagerContentState()
-        state.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
+        state.collection.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
 
         XCTAssertFalse(state.entryViewLayout.isCollectionMode)
         XCTAssertFalse(state.canSaveCollection)
-    }
-
-    func testSyncComposerCollectionStateReadsIsCollectionMode() {
-        var state = FileManagerContentState()
-        state.entryViewLayout.isCollectionMode = true
-
-        state.syncComposerCollectionState()
-
-        XCTAssertTrue(state.composer.isCollectionMode)
-    }
-
-    func testSyncComposerCollectionStateFalseWhenNotCollectionMode() {
-        var state = FileManagerContentState()
-
-        state.syncComposerCollectionState()
-
-        XCTAssertFalse(state.composer.isCollectionMode)
     }
 }
