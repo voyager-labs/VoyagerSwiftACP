@@ -37,12 +37,14 @@ struct ScopeChangeFeedbackBannerView: View {
                     Button("Undo", action: onUndo)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .accessibilityLabel("Undo latest scope change")
                 }
 
                 if display.showsRedo {
                     Button("Redo", action: onRedo)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .accessibilityLabel("Redo latest scope change")
                 }
             }
         }
@@ -56,5 +58,8 @@ struct ScopeChangeFeedbackBannerView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(display.accessibilityLabel ?? "Scope change feedback")
+        .help(display.accessibilityLabel ?? display.title)
     }
 }
