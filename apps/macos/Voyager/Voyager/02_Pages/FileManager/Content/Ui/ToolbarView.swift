@@ -155,14 +155,19 @@ struct ToolbarView: View {
                     canGoToEnclosingDirectory: state.navigation.canGoToEnclosingDirectory,
                     toolbarTitle: currentNavigationTitle(for: state.navigation.navigationState),
                     isCollectionMode: state.isCollectionMode,
-                    isOpeningCollectionFile: state.collectionSession.phase.isOpening,
-                    openedCollectionName: state.collectionSession.document?.name,
+                    isOpeningCollectionFile: state.collection.collectionSession.phase.isOpening,
+                    openedCollectionName: state.collection.collectionSession.document?.name,
                     collectionStatus: .init(
                         isCollectionMode: state.isCollectionMode,
-                        openedCollectionURLExists: state.collectionSession.document?.url != nil,
+                        openedCollectionURLExists: state.collection.collectionSession.document?.url != nil,
                         isOpenedCollectionDirty: state.isOpenedCollectionDirty,
-                        isOpenedCollectionStale: state.isOpenedCollectionStale,
-                        refreshBlockingReason: state.refreshBlockingReason,
+                        isOpenedCollectionStale: state.isCollectionMode && state.collection.collectionSession.phase
+                            .isStale,
+                        refreshBlockingReason: state.collection.refreshBlockingReason(
+                            isCollectionMode: state.isCollectionMode,
+                            isDirty: state.isOpenedCollectionDirty,
+                            isSearching: state.composer.isCollectionSearching,
+                        ),
                     ),
                 )
             },
