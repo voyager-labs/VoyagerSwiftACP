@@ -134,8 +134,6 @@ final class ComposerScopeEditorChildFolderTests: XCTestCase {
         let seeds = ComposerScopeTreeNeighborhoodCandidates.make(
             editingPath: "/Users",
             selection: selection,
-            favorites: [],
-            backHistory: [],
             entryLoadingClient: .testValue,
         )
 
@@ -168,8 +166,6 @@ final class ComposerScopeEditorChildFolderTests: XCTestCase {
         let seeds = ComposerScopeTreeNeighborhoodCandidates.make(
             editingPath: "/Parent/Current",
             selection: selection,
-            favorites: [],
-            backHistory: [],
             entryLoadingClient: entryLoadingClient,
             maxSiblingCount: 2,
         )
@@ -210,8 +206,6 @@ final class ComposerScopeEditorChildFolderTests: XCTestCase {
         ComposerScopeTreeNeighborhoodCandidates.make(
             editingPath: fixture.editingURL.path,
             selection: fixture.selection,
-            favorites: fixture.favorites,
-            backHistory: fixture.backHistory,
             entryLoadingClient: fixture.entryLoadingClient,
         )
     }

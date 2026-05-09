@@ -4,8 +4,6 @@ enum ComposerScopeTreeNeighborhoodCandidates {
     static func make(
         editingPath: String?,
         selection: ComposerScopeSelection,
-        favorites _: [ScopeFavoriteItem],
-        backHistory _: [String],
         entryLoadingClient: EntryLoadingClient,
         maxSiblingCount: Int = 50,
     ) -> [ComposerScopeTreeSeedItem] {

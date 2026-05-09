@@ -85,14 +85,12 @@ extension ComposerScopeEditorState {
         action: ComposerScopeTreeRowAvailableAction,
     ) -> ComposerScopeTreeRowActionIntent {
         let normalizedRowPath = ComposerScopeUtils.normalizeScopePath(rowPath)
-        guard let row = resolvedTreeRow(for: normalizedRowPath) else { return .none }
+        let row = resolvedTreeRow(for: normalizedRowPath)
         guard row.availableActions.contains(action) else { return .none }
         switch action {
         case .include:
-            guard !(row.ruleSource.isInherited && row.visualState == .excluded) else { return .none }
             return .addBase(path: row.path)
         case .exclude:
-            guard !(row.ruleSource.isInherited && row.visualState == .excluded) else { return .none }
             return .exclude(path: row.path)
         case .clearDirectRule:
             switch (row.ruleSource, row.visualState) {
@@ -124,7 +122,7 @@ extension ComposerScopeEditorState {
         selection.isRootOnly ? [makeRootRow()] : []
     }
 
-    private func resolvedTreeRow(for normalizedPath: String) -> ComposerScopeTreeRow? {
+    private func resolvedTreeRow(for normalizedPath: String) -> ComposerScopeTreeRow {
         if let directBase = selection.explicitBases.first(where: {
             ComposerScopeUtils.normalizeScopePath($0.path) == normalizedPath
         }) {
