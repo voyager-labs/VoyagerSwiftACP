@@ -1,9 +1,0 @@
-Task 7: boundary evidence
-
-- FileManager provides context, AiChat owns chat and session behavior.
-- Boundary search in `apps/macos/Voyager/Voyager/02_Pages/FileManager/Content` found no AiChat request, session, model, transcript, or stream lifecycle ownership in FileManager; matches were existing composer, navigation, and entry-operation symbols plus AiChat presentation and context routing only.
-- No chat semantics were moved into FileManager reducers or views.
-- Verification:
-  - `xcodebuild -project "apps/macos/Voyager/Voyager.xcodeproj" -scheme Voyager-Dev -configuration Debug -derivedDataPath "/tmp/voyager-task7-dd" test -only-testing:VoyagerTests/FileManagerContentAiChatPresentationTests` → `** TEST SUCCEEDED **` with 3 passed cases.
-  - `xcodebuild -project "apps/macos/Voyager/Voyager.xcodeproj" -scheme Voyager-Dev -configuration Debug build` → `** BUILD SUCCEEDED **`.
-  - SourceKit diagnostics were noisy and false for package modules, which matched the notepad guidance, while `xcodebuild` was the authoritative gate.
