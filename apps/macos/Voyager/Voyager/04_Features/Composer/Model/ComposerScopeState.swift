@@ -330,12 +330,7 @@ struct ComposerScopeEditorState: Equatable, Sendable {
             )
         }
 
-        let normalizedCurrentPaths = Set(
-            selection.explicitBases.map { ComposerScopeUtils.normalizeScopePath($0.path) },
-        )
-        let visibleCandidates = candidateItems
-            .filter { !normalizedCurrentPaths.contains(ComposerScopeUtils.normalizeScopePath($0.path)) }
-        let candidateSectionItems = disambiguatedVisibleCandidates(visibleCandidates)
+        let candidateSectionItems = visibleProjectionCandidates()
             .map { ComposerScopeEditorSectionItem.addableCandidate($0) }
 
         sections.append(
@@ -349,7 +344,7 @@ struct ComposerScopeEditorState: Equatable, Sendable {
     }
 
     private func currentScopeSectionItems() -> [ComposerScopeEditorSectionItem] {
-        let exceptionsByOwningBasePath = exceptionItemsByOwningBasePath()
+        let exceptionsByOwningBasePath = projectionExceptionsByOwningBasePath()
         var currentItems: [ComposerScopeEditorSectionItem] = []
 
         for base in selection.explicitBases {
@@ -369,28 +364,6 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         return currentItems
     }
 
-    private func exceptionItemsByOwningBasePath() -> [String: [ComposerScopeException]] {
-        let normalizedBases = selection.explicitBases.map { base in
-            (
-                base: base,
-                normalizedPath: ComposerScopeUtils.normalizeScopePath(base.path),
-            )
-        }
-        var exceptionsByOwningBasePath: [String: [ComposerScopeException]] = [:]
-
-        for exception in selection.exceptions {
-            let normalizedExceptionPath = ComposerScopeUtils.normalizeScopePath(exception.path)
-            let owningBase = normalizedBases
-                .filter { ComposerScopeUtils.isStrictDescendant(normalizedExceptionPath, of: $0.normalizedPath) }
-                .max { lhs, rhs in lhs.normalizedPath.count < rhs.normalizedPath.count }
-
-            guard let owningBase else { continue }
-            exceptionsByOwningBasePath[owningBase.base.path, default: []].append(exception)
-        }
-
-        return exceptionsByOwningBasePath
-    }
-
     private func exceptionSectionItems(
         _ exceptions: [ComposerScopeException],
         owningBasePath: String,
@@ -401,32 +374,6 @@ struct ComposerScopeEditorState: Equatable, Sendable {
                     path: $0.path,
                     owningBasePath: owningBasePath,
                 ),
-            )
-        }
-    }
-
-    private func disambiguatedVisibleCandidates(
-        _ candidates: [ComposerScopeEditorCandidateItem],
-    ) -> [ComposerScopeEditorCandidateItem] {
-        ComposerScopeUtils.applyCandidateDisambiguationPolicy(
-            candidates.map { candidate in
-                ComposerScopeUtils.DirectoryItem(
-                    id: candidate.id,
-                    path: candidate.path,
-                    name: candidate.name,
-                    iconName: candidate.iconName,
-                    locationIdentifier: candidate.locationIdentifier,
-                    secondaryText: candidate.secondaryText,
-                )
-            },
-        )
-        .map { item in
-            ComposerScopeEditorCandidateItem(
-                path: item.path,
-                name: item.name,
-                iconName: item.iconName,
-                locationIdentifier: item.locationIdentifier,
-                secondaryText: item.secondaryText,
             )
         }
     }
