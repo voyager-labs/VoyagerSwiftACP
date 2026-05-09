@@ -411,6 +411,10 @@ private func handleExcludeScope(
     guard state.scopeEditor
         .treeActionIntent(rowPath: normalizedPath, action: .exclude) == .exclude(path: normalizedPath)
     else {
+        let isDirectException = state.scopeEditor.selection.exceptions.contains {
+            ComposerScopeUtils.normalizeScopePath($0.path) == normalizedPath
+        }
+        guard !isDirectException else { return .none }
         return settleScopeEditorAfterSelectionChange(
             state: &state,
             entryLoadingClient: entryLoadingClient,
