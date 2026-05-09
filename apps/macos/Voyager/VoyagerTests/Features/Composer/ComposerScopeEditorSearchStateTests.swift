@@ -70,6 +70,60 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
         }
     }
 
+    func testScopeEditorSearchResponseKeepsRawMetadataAndSectionsDisambiguateVisibleCandidates() async {
+        var initialState = ComposerState()
+        initialState.scopeEditor.queryText = "docs"
+        initialState.scopeEditor.listState = .searchResults(query: "docs")
+
+        let store = makePassiveStore(initialState: initialState)
+
+        await store.send(
+            .scopeEditorSearchResponse(
+                "docs",
+                .success([
+                    ComposerScopeUtils.DirectoryItem(
+                        id: "/Users/test/Work/Docs",
+                        path: "/Users/test/Work/Docs",
+                        name: "Docs",
+                        iconName: "folder",
+                        locationIdentifier: "/Users/test/Work",
+                    ),
+                    ComposerScopeUtils.DirectoryItem(
+                        id: "/Users/test/Personal/Docs",
+                        path: "/Users/test/Personal/Docs",
+                        name: "Docs",
+                        iconName: "folder",
+                        locationIdentifier: "/Users/test/Personal",
+                    ),
+                ]),
+            ),
+        ) {
+            $0.scopeEditor.queryText = "docs"
+            $0.scopeEditor.listState = .searchResults(query: "docs")
+            $0.scopeEditor.candidateItems = [
+                ComposerScopeEditorCandidateItem(
+                    path: "/Users/test/Work/Docs",
+                    name: "Docs",
+                    iconName: "folder",
+                    locationIdentifier: "/Users/test/Work",
+                ),
+                ComposerScopeEditorCandidateItem(
+                    path: "/Users/test/Personal/Docs",
+                    name: "Docs",
+                    iconName: "folder",
+                    locationIdentifier: "/Users/test/Personal",
+                ),
+            ]
+        }
+
+        XCTAssertTrue(store.state.scopeEditor.candidateItems.allSatisfy { $0.secondaryText == nil })
+        let candidates = store.state.scopeEditor.sections().flatMap(\.items).compactMap { item in
+            if case let .addableCandidate(candidate) = item { return candidate }
+            return nil
+        }
+        XCTAssertEqual(candidates.map(\.secondaryText), ["Work", "Personal"])
+    }
+
     func testScopeEditorSearchResponseIgnoresStaleQuery() async {
         var initialState = ComposerState()
         initialState.scopeEditor.queryText = "docs"

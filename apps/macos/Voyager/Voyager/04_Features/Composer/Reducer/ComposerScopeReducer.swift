@@ -407,12 +407,19 @@ private func handleExcludeScope(
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
-    guard !state.scopeEditor.selection.isRootOnly else { return settleScopeEditorAfterSelectionChange(
-        state: &state,
-        entryLoadingClient: entryLoadingClient,
-    ) }
-
     let normalizedPath = ComposerScopeUtils.normalizeScopePath(path)
+    guard state.scopeEditor
+        .treeActionIntent(rowPath: normalizedPath, action: .exclude) == .exclude(path: normalizedPath)
+    else {
+        let isDirectException = state.scopeEditor.selection.exceptions.contains {
+            ComposerScopeUtils.normalizeScopePath($0.path) == normalizedPath
+        }
+        guard !isDirectException else { return .none }
+        return settleScopeEditorAfterSelectionChange(
+            state: &state,
+            entryLoadingClient: entryLoadingClient,
+        )
+    }
     let selection = ComposerScopeSelection.fromCanonicalScopes(
         bases: state.scopeEditor.selection.explicitBases.map(\.path),
         exceptions: state.scopeEditor.selection.exceptions.map(\.path) + [normalizedPath],
@@ -441,12 +448,15 @@ private func handleRestoreScope(
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
     guard !state.isLoadingSearch else { return .none }
-    guard !state.scopeEditor.selection.isRootOnly else { return settleScopeEditorAfterSelectionChange(
-        state: &state,
-        entryLoadingClient: entryLoadingClient,
-    ) }
-
     let normalizedPath = ComposerScopeUtils.normalizeScopePath(path)
+    guard state.scopeEditor
+        .treeActionIntent(rowPath: normalizedPath, action: .clearDirectRule) == .restoreException(path: normalizedPath)
+    else {
+        return settleScopeEditorAfterSelectionChange(
+            state: &state,
+            entryLoadingClient: entryLoadingClient,
+        )
+    }
     let remainingExceptions = state.scopeEditor.selection.exceptions.map(\.path).filter { $0 != normalizedPath }
     let selection = ComposerScopeSelection.fromCanonicalScopes(
         bases: state.scopeEditor.selection.explicitBases.map(\.path),
