@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 public final class KeyCommandHostingView: NSView {
-    public weak static var currentFirstResponder: KeyCommandHostingView?
-    public var onKeyDown: ((NSEvent) -> Void)?
+    private weak static var currentFirstResponder: KeyCommandHostingView?
+    fileprivate var onKeyDown: ((NSEvent) -> Void)?
 
     override public func keyDown(with event: NSEvent) {
         onKeyDown?(event)
@@ -28,13 +28,13 @@ public final class KeyCommandHostingView: NSView {
 
     override public var acceptsFirstResponder: Bool { true }
 
-    public static func restoreCurrentFocus() {
+    static func restoreCurrentFocus() {
         DispatchQueue.main.async {
             KeyCommandHostingView.currentFirstResponder?.restoreFocus()
         }
     }
 
-    public func restoreFocus() {
+    func restoreFocus() {
         window?.makeFirstResponder(self)
     }
 }
