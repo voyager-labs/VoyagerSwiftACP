@@ -127,9 +127,16 @@ enum FileManagerContentComposerCoordinator {
             return .none
         }
         let wasDirtyBeforeApplyingResponse = state.isOpenedCollectionDirty
+        let query = state.composer.pendingSearchQuery ?? ""
+        let nextContext = CollectionContext(
+            query: query,
+            scopes: state.composer.scopes,
+            conditions: state.composer.conditions,
+        )
         let searchEffect = handleSearchSuccess(
             items: response.items ?? [],
-            query: state.composer.pendingSearchQuery ?? "",
+            query: query,
+            nextContext: nextContext,
             state: &state,
         )
         return .concatenate(
@@ -140,10 +147,10 @@ enum FileManagerContentComposerCoordinator {
             ))),
             searchEffect,
             .send(.composer(.syncCollectionState(
-                context: state.collection.collectionContext,
+                context: nextContext,
                 url: state.collection.collectionSession.document?.url,
                 compatibility: state.collection.collectionSession.document?.compatibility,
-                isCollectionMode: state.isCollectionMode,
+                isCollectionMode: true,
             ))),
             .send(.delegate(.composerCollectionSearchSucceeded)),
         )
@@ -207,17 +214,18 @@ enum FileManagerContentComposerCoordinator {
         items: [VoyagerShared.JSONValue],
         query: String,
         state: inout FileManagerContentState,
+        nextContext: CollectionContext? = nil,
     ) -> Effect<FileManagerContentAction> {
         let previousNavigationState = state.navigation.navigationState
         let previousNavigationIsCollection = previousNavigationState.isCollection
-        let nextContext = CollectionContext(
+        let resolvedContext = nextContext ?? CollectionContext(
             query: query,
             scopes: state.composer.scopes,
             conditions: state.composer.conditions,
         )
         let proposedNextNavigationState = ContentPageNavigationRoute.collection(
             ContentPageCollectionNavigationFactory.makeCollectionNavigation(
-                state.collection.makeNavigationPresentationPayload(context: nextContext),
+                state.collection.makeNavigationPresentationPayload(context: resolvedContext),
                 sortKey: state.entryViewLayout.entryArrangements.sortKey,
                 sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
                 viewLayout: state.entryViewLayout.mode,
@@ -229,7 +237,7 @@ enum FileManagerContentComposerCoordinator {
         return .concatenate(
             .send(.composer(.clearPendingSearchQuery)),
             .send(.collection(.searchSucceeded(
-                context: nextContext,
+                context: resolvedContext,
                 items: items,
                 previousNavigationIsCollection: previousNavigationIsCollection,
                 nextNavigationDiffers: previousNavigationState != proposedNextNavigationState,
