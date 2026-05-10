@@ -1,6 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerFeaturesEntryArrangements
 import XCTest
 
 @MainActor
