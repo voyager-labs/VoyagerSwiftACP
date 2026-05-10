@@ -22,7 +22,7 @@ let package = Package(
         .target(
             name: "VoyagerFeaturesUpdateVersion",
             dependencies: [
-                .product(name: "VoyagerEntitiesAppPreferences", package: "VoyagerEntitiesAppPreferences"),
+                .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),

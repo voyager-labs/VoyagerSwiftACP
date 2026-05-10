@@ -32,27 +32,29 @@ public struct UpdaterClient: Sendable {
 
 extension UpdaterClient: DependencyKey {
     public nonisolated static var liveValue: UpdaterClient {
-        let coordinator = UpdaterCoordinator.shared
-        return UpdaterClient(
-            configure: {
-                await coordinator.configureIfNeeded()
-            },
-            startAtLaunch: {
-                await coordinator.startAtLaunch()
-            },
-            checkForUpdates: {
-                await coordinator.checkForUpdates()
-            },
-            setAutomaticUpdate: { enabled in
-                await coordinator.setAutomaticUpdate(enabled)
-            },
-            prepareForRelaunch: {
-                await coordinator.prepareForRelaunch()
-            },
-            stopHelperApp: {
-                await coordinator.stopHelperApp()
-            }
-        )
+        MainActor.assumeIsolated {
+            let coordinator = UpdaterCoordinator.shared
+            return UpdaterClient(
+                configure: {
+                    await coordinator.configureIfNeeded()
+                },
+                startAtLaunch: {
+                    await coordinator.startAtLaunch()
+                },
+                checkForUpdates: {
+                    await coordinator.checkForUpdates()
+                },
+                setAutomaticUpdate: { enabled in
+                    await coordinator.setAutomaticUpdate(enabled)
+                },
+                prepareForRelaunch: {
+                    await coordinator.prepareForRelaunch()
+                },
+                stopHelperApp: {
+                    await coordinator.stopHelperApp()
+                }
+            )
+        }
     }
 
     public nonisolated static var testValue: UpdaterClient {
@@ -86,7 +88,7 @@ public extension DependencyValues {
 }
 
 @MainActor
-private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
+private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDelegate {
     static let shared = UpdaterCoordinator()
     private var controller: SPUStandardUpdaterController?
     private var pendingRelaunchAttemptId: UUID?
