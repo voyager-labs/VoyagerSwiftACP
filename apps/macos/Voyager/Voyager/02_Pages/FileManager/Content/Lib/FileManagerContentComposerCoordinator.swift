@@ -50,7 +50,7 @@ enum FileManagerContentComposerCoordinator {
             navigationEffects
                 .append(.send(.internal(.requestNavigation(.internal(.setNavigationState(nextNavigationState))))))
             if payload.shouldLogDAU {
-                logContentPageNavigationDAUIfNeeded(
+                logContentPageCollectionNavigationDAUIfNeeded(
                     previous: state.navigation.navigationState,
                     next: nextNavigationState,
                 )
@@ -325,9 +325,29 @@ func makeCollectionNavigation(
         context: payload.context,
         sortKey: state.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
-        viewLayout: ContentPageNavigationViewLayout(rawValue: state.entryViewLayout.mode.rawValue) ?? .list,
+        viewLayout: contentPageNavigationViewLayout(from: state.entryViewLayout.mode),
         compatibility: payload.compatibility,
     )
+}
+
+func contentPageNavigationViewLayout(
+    from mode: EntryViewLayoutState.Mode,
+) -> ContentPageNavigationViewLayout {
+    switch mode {
+    case .list:
+        .list
+    case .grid:
+        .grid
+    }
+}
+
+func logContentPageCollectionNavigationDAUIfNeeded(
+    previous: ContentPageNavigationRoute,
+    next: ContentPageNavigationRoute,
+) {
+    guard previous != next else { return }
+    guard next.isCollection else { return }
+    VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
 }
 
 func clearCollectionMode(state: inout FileManagerContentState) -> Effect<FileManagerContentAction> {
