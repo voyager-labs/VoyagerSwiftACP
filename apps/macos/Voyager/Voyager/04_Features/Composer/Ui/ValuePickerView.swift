@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct ValuePickerView: View {
     let store: StoreOf<ValuePickerFeature>

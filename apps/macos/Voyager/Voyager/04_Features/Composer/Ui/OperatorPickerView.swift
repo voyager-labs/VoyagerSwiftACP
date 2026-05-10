@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct OperatorPickerView: View {
     let store: StoreOf<OperatorPickerFeature>

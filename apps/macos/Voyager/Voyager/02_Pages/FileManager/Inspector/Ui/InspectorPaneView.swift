@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 // TODO: AppKit으로 변경 및 점검 필요
 struct InspectorPaneView: View {

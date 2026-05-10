@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct SortGroupButton: View {
     let store: StoreOf<FileManagerContentFeature>

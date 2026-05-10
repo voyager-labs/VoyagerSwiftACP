@@ -1,30 +1,30 @@
 import AppKit
 import SwiftUI
 
-struct ColorDotView: View {
-    let color: Color
-    let size: CGFloat
+public struct ColorDotView: View {
+    public let color: Color
+    public let size: CGFloat
 
-    init(color: Color, size: CGFloat = 8) {
+    public init(color: Color, size: CGFloat = 8) {
         self.color = color
         self.size = size
     }
 
-    init(nsColor: NSColor, size: CGFloat = 8) {
+    public init(nsColor: NSColor, size: CGFloat = 8) {
         self.init(color: Color(nsColor: nsColor), size: size)
     }
 
-    var body: some View {
+    public var body: some View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
     }
 }
 
-final class ColorDotNSView: NSView {
+public final class ColorDotNSView: NSView {
     private let dotSize: CGFloat
 
-    init(color: NSColor, size: CGFloat = 8) {
+    public init(color: NSColor, size: CGFloat = 8) {
         dotSize = size
         super.init(frame: .zero)
         wantsLayer = true
@@ -41,18 +41,18 @@ final class ColorDotNSView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(color: NSColor) {
+    public func update(color: NSColor) {
         layer?.backgroundColor = color.cgColor
         layer?.cornerRadius = dotSize / 2
     }
 
-    override var intrinsicContentSize: NSSize {
+    override public var intrinsicContentSize: NSSize {
         NSSize(width: dotSize, height: dotSize)
     }
 }
 
-enum ColorDotImageFactory {
-    static func make(color: NSColor, size: CGFloat = 11, inset: CGFloat = 1) -> NSImage {
+public enum ColorDotImageFactory {
+    public static func make(color: NSColor, size: CGFloat = 11, inset: CGFloat = 1) -> NSImage {
         let imageSize = NSSize(width: size, height: size)
 
         let image = NSImage(size: imageSize, flipped: false) { rect in

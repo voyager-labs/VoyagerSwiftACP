@@ -1,4 +1,5 @@
 import SwiftUI
+import VoyagerShared
 
 struct ComposerFeedbackToastView: View {
     let feedback: ComposerTransientFeedback
