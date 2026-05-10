@@ -30,6 +30,8 @@
 		F20000000000000000000029 /* VoyagerEntitiesCollection in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000017 /* VoyagerEntitiesCollection */; };
 		F20000000000000000000030 /* VoyagerFeaturesEntryArrangements in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */; };
 		F20000000000000000000031 /* VoyagerFeaturesEntryArrangements in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */; };
+		F20000000000000000000032 /* VoyagerFeaturesEntryThumbnail in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */; };
+		F20000000000000000000033 /* VoyagerFeaturesEntryThumbnail in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -202,6 +204,7 @@
 				F20000000000000000000028 /* VoyagerEntitiesTag in Frameworks */,
 				F20000000000000000000029 /* VoyagerEntitiesCollection in Frameworks */,
 				F20000000000000000000030 /* VoyagerFeaturesEntryArrangements in Frameworks */,
+				F20000000000000000000032 /* VoyagerFeaturesEntryThumbnail in Frameworks */,
 				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
 				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
@@ -223,6 +226,7 @@
 				F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */,
 				F20000000000000000000025 /* VoyagerShared in Frameworks */,
 				F20000000000000000000031 /* VoyagerFeaturesEntryArrangements in Frameworks */,
+				F20000000000000000000033 /* VoyagerFeaturesEntryThumbnail in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -349,6 +353,7 @@
 				F20000000000000000000016 /* VoyagerEntitiesTag */,
 				F20000000000000000000017 /* VoyagerEntitiesCollection */,
 				F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */,
+				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
 				7E1974702E8BDC0700D041D3 /* InjectionNext */,
@@ -383,6 +388,7 @@
 			packageProductDependencies = (
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
 				F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */,
+				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				F21000000000000000000013 /* CasePaths */,
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
@@ -550,6 +556,7 @@
 				F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Tag" */,
 				F20000000000000000000007 /* XCLocalSwiftPackageReference "05_Entities/Collection" */,
 				F20000000000000000000008 /* XCLocalSwiftPackageReference "04_Features/EntryArrangements" */,
+				F20000000000000000000009 /* XCLocalSwiftPackageReference "04_Features/EntryThumbnail" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -1448,6 +1455,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/EntryArrangements;
 		};
+		F20000000000000000000009 /* XCLocalSwiftPackageReference "04_Features/EntryThumbnail" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/EntryThumbnail;
+		};
 		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1665,7 +1676,12 @@
 			package = F20000000000000000000008 /* XCLocalSwiftPackageReference "04_Features/EntryArrangements" */;
 			productName = VoyagerFeaturesEntryArrangements;
 		};
-/* End XCSwiftPackageProductDependency section */
+		F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000009 /* XCLocalSwiftPackageReference "04_Features/EntryThumbnail" */;
+			productName = VoyagerFeaturesEntryThumbnail;
+		};
+		/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7E14EDC42E86622C005AC834 /* Project object */;
 }
