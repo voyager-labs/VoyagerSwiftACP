@@ -4,7 +4,7 @@ import ComposableArchitecture
 import VoyagerEntitiesEntry
 
 @CasePathable
-enum EntryArrangementsAction: CasePathable, Equatable, Sendable {
+public enum EntryArrangementsAction: CasePathable, Equatable, Sendable {
     case setSortKey(SortKey)
     case setSortOrder(SortOrder)
     case setGroupKey(GroupKey)
@@ -15,7 +15,7 @@ enum EntryArrangementsAction: CasePathable, Equatable, Sendable {
     case delegate(Delegate)
 
     @CasePathable
-    enum Delegate: CasePathable, Equatable, Sendable {
+    public enum Delegate: CasePathable, Equatable, Sendable {
         case requestApply
         case applied(sortedItems: [EntryModel], isCollectionMode: Bool)
     }

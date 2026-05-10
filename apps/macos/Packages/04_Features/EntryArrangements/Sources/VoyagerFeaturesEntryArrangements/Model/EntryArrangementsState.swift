@@ -1,20 +1,20 @@
 import Foundation
 
-struct EntryArrangementsState: Equatable, Sendable {
-    var sortKey: SortKey
-    var sortOrder: SortOrder
-    var hasUserSetSortOrder: Bool
-    var groupKey: GroupKey
-    var groupedItems: [GroupedItems]
-    var collapsedGroups: Set<String>
+public struct EntryArrangementsState: Equatable, Sendable {
+    public var sortKey: SortKey
+    public var sortOrder: SortOrder
+    public var hasUserSetSortOrder: Bool
+    public var groupKey: GroupKey
+    public var groupedItems: [GroupedItems]
+    public var collapsedGroups: Set<String>
 
-    init(
+    public init(
         sortKey: SortKey = .name,
         sortOrder: SortOrder = .ascending,
         hasUserSetSortOrder: Bool = false,
         groupKey: GroupKey = .none,
         groupedItems: [GroupedItems] = [],
-        collapsedGroups: Set<String> = [],
+        collapsedGroups: Set<String> = []
     ) {
         self.sortKey = sortKey
         self.sortOrder = sortOrder
@@ -24,19 +24,19 @@ struct EntryArrangementsState: Equatable, Sendable {
         self.collapsedGroups = collapsedGroups
     }
 
-    mutating func updateSortKey(_ key: SortKey) {
+    public mutating func updateSortKey(_ key: SortKey) {
         sortKey = key
         if !hasUserSetSortOrder {
             sortOrder = defaultSortOrder(for: key)
         }
     }
 
-    mutating func updateSortOrder(_ order: SortOrder) {
+    public mutating func updateSortOrder(_ order: SortOrder) {
         sortOrder = order
         hasUserSetSortOrder = true
     }
 
-    mutating func updateGroupKey(_ key: GroupKey) {
+    public mutating func updateGroupKey(_ key: GroupKey) {
         groupKey = key
     }
 
@@ -50,8 +50,8 @@ struct EntryArrangementsState: Equatable, Sendable {
     }
 }
 
-enum EntryArrangementsPersistenceKey {
-    static let sortKey = "sortKey"
-    static let sortOrder = "sortOrder"
-    static let groupKey = "groupKey"
+public enum EntryArrangementsPersistenceKey {
+    public static let sortKey = "sortKey"
+    public static let sortOrder = "sortOrder"
+    public static let groupKey = "groupKey"
 }
