@@ -5,6 +5,8 @@ struct ContentPageNavigationHistoryReducer {
     typealias State = ContentPageNavigationState
     typealias Action = ContentPageNavigationAction
 
+    init() {}
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -19,7 +21,7 @@ struct ContentPageNavigationHistoryReducer {
 
     private func performNavigation(
         _ pending: ContentPageNavigationPending,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch pending {
         case .back:
@@ -30,7 +32,7 @@ struct ContentPageNavigationHistoryReducer {
             performHistoryNavigation(
                 index: index,
                 isBackHistory: isBackHistory,
-                state: &state,
+                state: &state
             )
         case .enclosingDirectory:
             performEnclosingDirectoryNavigation(state: &state)
@@ -38,7 +40,7 @@ struct ContentPageNavigationHistoryReducer {
     }
 
     private func performBackNavigation(
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         guard let entry = state.backHistory.popLast() else { return .none }
@@ -46,12 +48,12 @@ struct ContentPageNavigationHistoryReducer {
         let previousNavigationState = applyContentPageNavigationHistorySnapshot(state: &state, entry: entry)
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
+            nextNavigationState: state.navigationState
         )
     }
 
     private func performForwardNavigation(
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         guard let entry = state.forwardHistory.popLast() else { return .none }
@@ -59,14 +61,14 @@ struct ContentPageNavigationHistoryReducer {
         let previousNavigationState = applyContentPageNavigationHistorySnapshot(state: &state, entry: entry)
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
+            nextNavigationState: state.navigationState
         )
     }
 
     private func performHistoryNavigation(
         index: Int,
         isBackHistory: Bool,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         if isBackHistory {
@@ -84,7 +86,7 @@ struct ContentPageNavigationHistoryReducer {
             let previousNavigationState = applyContentPageNavigationHistorySnapshot(state: &state, entry: entry)
             return historyNavigationEffects(
                 previousNavigationState: previousNavigationState,
-                nextNavigationState: state.navigationState,
+                nextNavigationState: state.navigationState
             )
         }
 
@@ -102,12 +104,12 @@ struct ContentPageNavigationHistoryReducer {
         let previousNavigationState = applyContentPageNavigationHistorySnapshot(state: &state, entry: entry)
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
+            nextNavigationState: state.navigationState
         )
     }
 
     private func performEnclosingDirectoryNavigation(
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         guard let path = state.enclosingDirectoryPath else { return .none }
@@ -117,13 +119,13 @@ struct ContentPageNavigationHistoryReducer {
         state.navigationState = .folder(path)
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
+            nextNavigationState: state.navigationState
         )
     }
 
     private func historyNavigationEffects(
         previousNavigationState: ContentPageNavigationRoute,
-        nextNavigationState: ContentPageNavigationRoute,
+        nextNavigationState: ContentPageNavigationRoute
     ) -> Effect<Action> {
         var effects: [Effect<Action>] = []
 
@@ -133,7 +135,7 @@ struct ContentPageNavigationHistoryReducer {
         }
 
         effects.append(
-            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState))),
+            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState)))
         )
         effects.append(.send(.delegate(.navigateToState(nextNavigationState))))
 
@@ -142,7 +144,7 @@ struct ContentPageNavigationHistoryReducer {
 
     private func applyContentPageNavigationHistorySnapshot(
         state: inout State,
-        entry: ContentPageNavigationHistorySnapshot,
+        entry: ContentPageNavigationHistorySnapshot
     ) -> ContentPageNavigationRoute {
         let previousNavigationState = state.navigationState
         state.navigationState = entry.navigationState

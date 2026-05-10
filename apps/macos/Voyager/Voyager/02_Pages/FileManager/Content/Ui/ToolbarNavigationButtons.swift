@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerFeaturesContentPageNavigation
 
 struct ToolbarNavigationButtons: View {
     let onNavigationAction: (ContentPageNavigationAction.View) -> Void
