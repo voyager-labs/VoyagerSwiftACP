@@ -2,14 +2,6 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
-private struct ChipSizePreferenceKey: PreferenceKey {
-    static var defaultValue: [AnyHashable: CGSize] = [:]
-
-    static func reduce(value: inout [AnyHashable: CGSize], nextValue: () -> [AnyHashable: CGSize]) {
-        value.merge(nextValue()) { _, new in new }
-    }
-}
-
 struct ComposerBottomRowView: View {
     let store: StoreOf<ComposerFeature>
     let favorites: [ScopeFavoriteItem]
@@ -19,7 +11,6 @@ struct ComposerBottomRowView: View {
     @State private var chipSizes: [String: CGSize] = [:]
     @State private var calculatedHeight: CGFloat = 0
     @State private var scopeOverlayCoordinator = ComposerScopeOverlayCoordinator()
-    @State private var isAddButtonHovering: Bool = false
     @State private var isScopeEditButtonHovering: Bool = false
 
     private let chipHorizontalPadding: CGFloat = 16
@@ -27,11 +18,13 @@ struct ComposerBottomRowView: View {
     private let chipVerticalPadding: CGFloat = 8
     private let maxChipAreaHeight: CGFloat = 200
     private let defaultChipHeight: CGFloat = 28
+    private var conditionChipHeight: CGFloat { defaultChipHeight }
     private let scopeRowVerticalPadding: CGFloat = 0
     private let defaultChipWidth: CGFloat = 120
-    private let hoverFillOpacity: Double = 0.06
+    private let conditionRowVerticalPadding: CGFloat = 0
+    private let conditionRowHorizontalPadding: CGFloat = 0
 
-    private var isDark: Bool { colorScheme == .dark }
+    private var conditionRowHeight: CGFloat { defaultChipHeight }
 
     var body: some View {
         WithViewStore(
@@ -63,23 +56,21 @@ private extension ComposerBottomRowView {
         let layout = rowLayoutInput(viewStore: viewStore, availableWidth: availableWidth)
 
         return VStack(alignment: .leading, spacing: chipSpacing) {
-            scopeRow(
+            scopeSection(
                 rows: layout.scopeRows,
                 historyPaths: historyPaths,
                 isPresented: isScopePickerPresentedBinding,
             )
 
-            conditionRow(
+            conditionSection(
                 rows: layout.conditionRows,
                 pickerStore: pickerStore,
                 conditionDisplayByKey: viewStore.conditionDisplayByKey,
                 operatorOptionsByKey: viewStore.operatorOptionsByKey,
-                historyPaths: historyPaths,
             )
-            .frame(maxWidth: .infinity, minHeight: defaultChipHeight, alignment: .leading)
         }
         .allowsHitTesting(!isLocked)
-        .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
+        .onPreferenceChange(ComposerBottomRowChipSizePreferenceKey.self) { sizes in
             handleChipSizeChange(
                 sizes: sizes,
                 scopeChips: layout.scopeChips,
@@ -105,6 +96,38 @@ private extension ComposerBottomRowView {
         }
         .padding(.horizontal, chipHorizontalPadding)
         .padding(.vertical, chipVerticalPadding)
+    }
+
+    @ViewBuilder
+    private func scopeSection(
+        rows: [[ChipItemType]],
+        historyPaths: [String],
+        isPresented: Binding<Bool>,
+    ) -> some View {
+        scopeRow(rows: rows, historyPaths: historyPaths, isPresented: isPresented)
+    }
+
+    @ViewBuilder
+    private func conditionSection(
+        rows: [[ChipItemType]],
+        pickerStore: StoreOf<ConditionPropertyPickerFeature>,
+        conditionDisplayByKey: [String: ConditionDisplayState],
+        operatorOptionsByKey: [String: [String]],
+    ) -> some View {
+        ComposerBottomConditionRowView(
+            store: store,
+            pickerStore: pickerStore,
+            rows: rows,
+            conditionDisplayByKey: conditionDisplayByKey,
+            operatorOptionsByKey: operatorOptionsByKey,
+            colorScheme: colorScheme,
+            chipSpacing: chipSpacing,
+            rowHeight: conditionRowHeight,
+            chipHeight: conditionChipHeight,
+        )
+        .padding(.horizontal, conditionRowHorizontalPadding)
+        .padding(.vertical, conditionRowVerticalPadding)
+        .frame(maxWidth: .infinity, minHeight: conditionRowHeight, alignment: .leading)
     }
 
     private var scopeEditButtonWidth: CGFloat {
@@ -134,19 +157,11 @@ private extension ComposerBottomRowView {
             conditionChips: conditionChips,
             scopeRows: calculateRows(
                 chips: scopeChips,
-                params: RowCalculationParams(
-                    availableWidth: scopeRowWidth,
-                    spacing: chipSpacing,
-                    chipSizes: chipSizes,
-                ),
+                availableWidth: scopeRowWidth,
             ),
             conditionRows: calculateRows(
                 chips: conditionChips,
-                params: RowCalculationParams(
-                    availableWidth: conditionRowWidth,
-                    spacing: chipSpacing,
-                    chipSizes: chipSizes,
-                ),
+                availableWidth: conditionRowWidth,
             ),
             scopeRowWidth: scopeRowWidth,
             conditionRowWidth: conditionRowWidth,
@@ -177,7 +192,7 @@ private extension ComposerBottomRowView {
                                 .background(
                                     GeometryReader { chipGeometry in
                                         Color.clear.preference(
-                                            key: ChipSizePreferenceKey.self,
+                                            key: ComposerBottomRowChipSizePreferenceKey.self,
                                             value: [AnyHashable(chip.id): chipGeometry.size],
                                         )
                                     },
@@ -253,40 +268,6 @@ private extension ComposerBottomRowView {
         .accessibilityLabel("Edit scopes")
     }
 
-    @ViewBuilder
-    private func conditionRow(
-        rows: [[ChipItemType]],
-        pickerStore: StoreOf<ConditionPropertyPickerFeature>,
-        conditionDisplayByKey: [String: ConditionDisplayState],
-        operatorOptionsByKey: [String: [String]],
-        historyPaths: [String],
-    ) -> some View {
-        VStack(alignment: .leading, spacing: chipSpacing) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, rowChips in
-                HStack(spacing: chipSpacing) {
-                    ForEach(Array(rowChips.enumerated()), id: \.element.id) { _, chip in
-                        chipView(
-                            chip: chip,
-                            pickerStore: pickerStore,
-                            conditionDisplayByKey: conditionDisplayByKey,
-                            operatorOptionsByKey: operatorOptionsByKey,
-                            historyPaths: historyPaths,
-                        )
-                        .background(
-                            GeometryReader { chipGeometry in
-                                Color.clear.preference(
-                                    key: ChipSizePreferenceKey.self,
-                                    value: [AnyHashable(chip.id): chipGeometry.size],
-                                )
-                            },
-                        )
-                    }
-                }
-            }
-        }
-        .accessibilityIdentifier("composer.conditionRow")
-    }
-
     private func scopeChipItems(for selection: ComposerScopeSelection) -> [ChipItemType] {
         switch selection {
         case .rootOnly:
@@ -318,81 +299,6 @@ private extension ComposerBottomRowView {
         return displayName.isEmpty ? normalizedPath : displayName
     }
 
-    @ViewBuilder
-    private func chipView(
-        chip: ChipItemType,
-        pickerStore: StoreOf<ConditionPropertyPickerFeature>,
-        conditionDisplayByKey: [String: ConditionDisplayState],
-        operatorOptionsByKey: [String: [String]],
-        historyPaths _: [String],
-    ) -> some View {
-        switch chip {
-        case .scopeRoot, .scopeBase:
-            scopeChipView(chip: chip)
-
-        case .conditionAdd:
-            conditionAddButton(pickerStore: pickerStore)
-
-        case let .condition(condition):
-            let displayState = conditionDisplayByKey[condition.propertyKey]
-            ConditionChipView(
-                propertyPickerStore: store.scope(state: \.propertyPicker, action: \.propertyPicker),
-                condition: condition,
-                isDark: isDark,
-                hoverFillOpacity: hoverFillOpacity,
-                operatorPickerStore: store.scope(state: \.operatorPicker, action: \.operatorPicker),
-                valuePickerStore: store.scope(state: \.valuePicker, action: \.valuePicker),
-                operatorOptions: operatorOptionsByKey[condition.propertyKey] ?? [],
-                displayState: displayState,
-                defaultChipHeight: defaultChipHeight,
-                onPropertyTap: {
-                    store.send(.propertyPicker(.startEditing(condition.propertyKey)))
-                },
-                onRemove: {
-                    store.send(.removeCondition(propertyKey: condition.propertyKey))
-                },
-                onDisplayUnitChange: { propertyKey, unitCode in
-                    store.send(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
-                },
-            )
-        }
-    }
-
-    private func conditionAddButton(pickerStore: StoreOf<ConditionPropertyPickerFeature>) -> some View {
-        WithViewStore(
-            pickerStore,
-            observe: { $0 },
-            content: { viewStore in
-                Button {
-                    viewStore.send(.setPresented(true))
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: defaultChipHeight, height: defaultChipHeight)
-                        .background(
-                            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
-                                .fill(isAddButtonHovering ? VoyagerDS.Interaction
-                                    .controlHoverFill(for: colorScheme) : .clear),
-                        )
-                }
-                .buttonStyle(.borderless)
-                .onHover { hovering in
-                    isAddButtonHovering = hovering
-                }
-                .popover(
-                    isPresented: viewStore.binding(
-                        get: { $0.isPresented && $0.editingConditionKey == nil },
-                        send: ConditionPropertyPickerFeature.Action.setPresented,
-                    ),
-                    arrowEdge: .bottom,
-                ) {
-                    ConditionPropertyPickerView(store: pickerStore)
-                }
-            },
-        )
-    }
-
     private func handleChipSizeChange(
         sizes: [AnyHashable: CGSize],
         scopeChips: [ChipItemType],
@@ -421,68 +327,31 @@ private extension ComposerBottomRowView {
         return chipsHeight + spacingHeight + scopeRowVerticalPadding * 2
     }
 
-    private func updateCalculatedHeight(
-        scopeChips: [ChipItemType],
-        conditionChips: [ChipItemType],
-        scopeAvailableWidth: CGFloat,
-        conditionAvailableWidth: CGFloat,
-    ) {
-        let scopeRows = calculateRows(
-            chips: scopeChips,
-            params: RowCalculationParams(
-                availableWidth: scopeAvailableWidth,
-                spacing: chipSpacing,
-                chipSizes: chipSizes,
-            ),
-        )
-        let conditionRows = calculateRows(
-            chips: conditionChips,
-            params: RowCalculationParams(
-                availableWidth: conditionAvailableWidth,
-                spacing: chipSpacing,
-                chipSizes: chipSizes,
-            ),
-        )
-        let scopeHeight = scopeRowHeight(rowCount: scopeRows.count)
-        let conditionHeight = max(
-            calculateTotalHeight(rows: conditionRows, chipSizes: chipSizes, spacing: chipSpacing),
-            defaultChipHeight,
-        )
-        let contentHeight = scopeHeight + chipSpacing + conditionHeight
-        let paddingHeight = chipVerticalPadding * 2
-        calculatedHeight = min(contentHeight + paddingHeight, maxChipAreaHeight)
-    }
-
     private func calculateTotalHeight(
         rows: [[ChipItemType]],
-        chipSizes: [String: CGSize],
-        spacing: CGFloat,
+        minimumRowHeight: CGFloat = 0,
     ) -> CGFloat {
         let rowsHeight = rows.reduce(CGFloat.zero) { partialHeight, row in
             let rowHeight = row.map { chipSizes[$0.id]?.height ?? defaultChipHeight }.max() ?? 0
-            return partialHeight + rowHeight
+            return partialHeight + max(rowHeight, minimumRowHeight)
         }
-        return rowsHeight + CGFloat(max(0, rows.count - 1)) * spacing
-    }
-
-    private struct RowCalculationParams {
-        let availableWidth: CGFloat, spacing: CGFloat, chipSizes: [String: CGSize]
+        return rowsHeight + CGFloat(max(0, rows.count - 1)) * chipSpacing
     }
 
     private func calculateRows(
         chips: [ChipItemType],
-        params: RowCalculationParams,
+        availableWidth: CGFloat,
     ) -> [[ChipItemType]] {
         var rows: [[ChipItemType]] = []
         var currentRow: [ChipItemType] = []
         var currentRowWidth: CGFloat = 0
 
         for chip in chips {
-            let chipWidth = params.chipSizes[chip.id]?.width ?? defaultChipWidth
-            let chipSpacing = currentRow.isEmpty ? 0 : params.spacing
-            let chipsOnlyWidth = currentRowWidth + chipSpacing + chipWidth
+            let chipWidth = chipSizes[chip.id]?.width ?? defaultChipWidth
+            let spacing = currentRow.isEmpty ? 0 : chipSpacing
+            let chipsOnlyWidth = currentRowWidth + spacing + chipWidth
 
-            if chipsOnlyWidth > params.availableWidth, !currentRow.isEmpty {
+            if chipsOnlyWidth > availableWidth, !currentRow.isEmpty {
                 rows.append(currentRow)
                 currentRow = [chip]
                 currentRowWidth = chipWidth
@@ -494,5 +363,33 @@ private extension ComposerBottomRowView {
 
         if !currentRow.isEmpty { rows.append(currentRow) }
         return rows
+    }
+
+    private func updateCalculatedHeight(
+        scopeChips: [ChipItemType],
+        conditionChips: [ChipItemType],
+        scopeAvailableWidth: CGFloat,
+        conditionAvailableWidth: CGFloat,
+    ) {
+        let scopeRows = calculateRows(
+            chips: scopeChips,
+            availableWidth: scopeAvailableWidth,
+        )
+        let conditionRows = calculateRows(
+            chips: conditionChips,
+            availableWidth: conditionAvailableWidth,
+        )
+        let scopeHeight = scopeRowHeight(rowCount: scopeRows.count)
+        let conditionHeight = max(
+            calculateTotalHeight(
+                rows: conditionRows,
+                minimumRowHeight: conditionRowHeight,
+            )
+                + conditionRowVerticalPadding * 2,
+            conditionRowHeight,
+        )
+        let contentHeight = scopeHeight + chipSpacing + conditionHeight
+        let paddingHeight = chipVerticalPadding * 2
+        calculatedHeight = min(contentHeight + paddingHeight, maxChipAreaHeight)
     }
 }
