@@ -1,6 +1,6 @@
 import Foundation
 
-enum ByteSizeBucket: CaseIterable, Hashable, Sendable {
+public enum ByteSizeBucket: CaseIterable, Hashable, Sendable {
     case zeroBytes
     case lessThanHundredKB
     case hundredKBToOneMB
@@ -8,12 +8,12 @@ enum ByteSizeBucket: CaseIterable, Hashable, Sendable {
     case hundredMBToOneGB
     case moreThanOneGB
 
-    static let hundredKB: Int64 = 100 * 1024
-    static let oneMB: Int64 = 1024 * 1024
-    static let hundredMB: Int64 = 100 * oneMB
-    static let oneGB: Int64 = 1024 * oneMB
+    public static let hundredKB: Int64 = 100 * 1024
+    public static let oneMB: Int64 = 1024 * 1024
+    public static let hundredMB: Int64 = 100 * oneMB
+    public static let oneGB: Int64 = 1024 * oneMB
 
-    static func bucket(for size: Int64) -> ByteSizeBucket {
+    public static func bucket(for size: Int64) -> ByteSizeBucket {
         switch size {
         case 0:
             .zeroBytes

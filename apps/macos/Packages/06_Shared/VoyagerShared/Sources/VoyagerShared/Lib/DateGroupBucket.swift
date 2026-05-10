@@ -1,6 +1,6 @@
 import Foundation
 
-enum DateGroupBucket: Hashable, Sendable {
+public enum DateGroupBucket: Hashable, Sendable {
     case today
     case yesterday
     case previous7Days
@@ -10,30 +10,23 @@ enum DateGroupBucket: Hashable, Sendable {
 
     private var priority: Int {
         switch self {
-        case .today:
-            0
-        case .yesterday:
-            1
-        case .previous7Days:
-            2
-        case .previous30Days:
-            3
-        case .month:
-            4
-        case .year:
-            5
+        case .today: 0
+        case .yesterday: 1
+        case .previous7Days: 2
+        case .previous30Days: 3
+        case .month: 4
+        case .year: 5
         }
     }
 
-    static func bucket(
+    public static func bucket(
         for date: Date,
         now: Date = Date(),
-        calendar: Calendar = .current,
+        calendar: Calendar = .current
     ) -> DateGroupBucket {
         if calendar.isDateInToday(date) {
             return .today
         }
-
         if calendar.isDateInYesterday(date) {
             return .yesterday
         }
@@ -59,7 +52,7 @@ enum DateGroupBucket: Hashable, Sendable {
         return .year(itemYear)
     }
 
-    static func ordered(_ lhs: DateGroupBucket, _ rhs: DateGroupBucket) -> Bool {
+    public static func ordered(_ lhs: DateGroupBucket, _ rhs: DateGroupBucket) -> Bool {
         let lhsPriority = lhs.priority
         let rhsPriority = rhs.priority
         if lhsPriority != rhsPriority {
