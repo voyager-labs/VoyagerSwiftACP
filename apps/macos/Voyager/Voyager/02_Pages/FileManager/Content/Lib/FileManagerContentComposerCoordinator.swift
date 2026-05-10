@@ -175,6 +175,9 @@ enum FileManagerContentComposerCoordinator {
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         guard isPresented else {
+            if case .opened = state.collection.collectionSession.phase {
+                return .send(.composer(.clearPendingSearchQuery))
+            }
             return .concatenate(
                 .send(.composer(.clearPendingSearchQuery)),
                 .send(.collection(.openSearchPresentationCancelled)),
