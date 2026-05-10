@@ -133,16 +133,6 @@
 		F10000000000000000000002 /* FilterSearchXPC.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = FilterSearchXPC.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AA0000000000000000000001 /* Exceptions for "Voyager" folder in "Voyager" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				06_Shared/Api/SearchXPCTransport.swift,
-			);
-			target = 7E14EDCB2E86622C005AC834 /* Voyager */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		24DD04D6008045F2B081D402 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -151,9 +141,6 @@
 		};
 		7E14EDCE2E86622C005AC834 /* Voyager */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				AA0000000000000000000001 /* Exceptions for "Voyager" folder in "Voyager" target */,
-			);
 			path = Voyager;
 			sourceTree = "<group>";
 		};
