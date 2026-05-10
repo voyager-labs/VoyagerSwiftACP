@@ -4,6 +4,7 @@ import Foundation
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 
 @CasePathable
 enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {

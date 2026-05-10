@@ -6,6 +6,7 @@ import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 extension EntryGridCoordinator {

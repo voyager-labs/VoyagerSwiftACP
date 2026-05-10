@@ -3,6 +3,7 @@ import AppKit
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 
 struct EntryGridSection {
     let title: String?
