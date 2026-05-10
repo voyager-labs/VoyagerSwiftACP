@@ -277,6 +277,7 @@ struct ComposerScopeEditorState: Equatable, Sendable {
     var editingPath: String?
     var entryMode: ComposerScopeEditorEntryMode = .add
     var candidateItems: [ComposerScopeEditorCandidateItem] = []
+    var treeNeighborhoodSeedItems: [ComposerScopeTreeSeedItem] = []
     var favorites: [ScopeFavoriteItem] = []
     var backHistory: [String] = []
 
