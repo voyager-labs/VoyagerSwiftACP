@@ -344,7 +344,7 @@ extension EntryListCoordinator {
             .isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
     }
 
-    func syncListSortIndicators(sortKey: SortKey, sortOrder: SortOrder) {
+    func syncListSortIndicators(sortKey: SortKey, sortOrder: VoyagerFeaturesEntryArrangements.SortOrder) {
         let ascending = sortOrder == .ascending
         let descriptorKey = state.listVisibleColumns
             .first { $0.sortKey == sortKey }?

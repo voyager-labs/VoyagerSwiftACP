@@ -41,7 +41,7 @@ struct ContentPageCollectionNavigation: Equatable, Sendable {
     var kind: ContentPageCollectionKind
     var context: CollectionContext
     var sortKey: SortKey
-    var sortOrder: SortOrder
+    var sortOrder: VoyagerFeaturesEntryArrangements.SortOrder
     var viewLayout: EntryViewLayoutState.Mode
     var compatibility: CollectionFileCompatibilityMetadata?
 }

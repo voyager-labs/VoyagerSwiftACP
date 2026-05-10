@@ -8,7 +8,7 @@ struct AppPreferencesState: Equatable, Sendable {
     var showHiddenFiles: Bool = false
     var viewLayout: EntryViewLayoutState.Mode = .list
     var sortKey: SortKey = .name
-    var sortOrder: SortOrder = .ascending
+    var sortOrder: VoyagerFeaturesEntryArrangements.SortOrder = .ascending
     var groupKey: GroupKey = .none
 
     var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize

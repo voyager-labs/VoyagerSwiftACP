@@ -32,7 +32,7 @@ enum FileManagerWindowAction: CasePathable, Sendable {
         case setViewLayout(EntryViewLayoutState.Mode)
         case setGroupKey(GroupKey)
         case setSortKey(SortKey)
-        case setSortOrder(SortOrder)
+        case setSortOrder(VoyagerFeaturesEntryArrangements.SortOrder)
         case requestUndo
         case requestRedo
         case toggleComposer

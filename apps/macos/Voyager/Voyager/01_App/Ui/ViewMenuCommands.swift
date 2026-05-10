@@ -100,7 +100,7 @@ struct ViewMenuCommands: Commands {
         )
     }
 
-    private func sortOrderToggleBinding(_ order: SortOrder) -> Binding<Bool> {
+    private func sortOrderToggleBinding(_ order: VoyagerFeaturesEntryArrangements.SortOrder) -> Binding<Bool> {
         Binding(
             get: { viewStore.sortOrder == order },
             set: { isOn in

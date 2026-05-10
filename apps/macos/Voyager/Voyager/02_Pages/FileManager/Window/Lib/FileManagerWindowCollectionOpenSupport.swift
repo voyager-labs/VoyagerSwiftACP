@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 func prepareLoadedCollectionOpenState(

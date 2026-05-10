@@ -9,7 +9,7 @@ import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
     let sortKey: SortKey
-    let sortOrder: SortOrder
+    let sortOrder: VoyagerFeaturesEntryArrangements.SortOrder
 }
 
 struct EntryListCoordinatorSortSignature: Hashable {
@@ -51,17 +51,18 @@ enum EntryListCoordinatorSortDescriptorMapper {
         guard let key = first.key else { return nil }
         guard let column = EntryListColumn(rawValue: key) else { return nil }
         guard let sortKey = column.sortKey else { return nil }
-        let sortOrder: SortOrder = first.ascending ? .ascending : .descending
+        let sortOrder: VoyagerFeaturesEntryArrangements.SortOrder = first.ascending ? .ascending : .descending
         return EntryListCoordinatorSortDescriptorChange(sortKey: sortKey, sortOrder: sortOrder)
     }
 
     static func actionsNeeded(
         currentSortKey: SortKey,
-        currentSortOrder: SortOrder,
+        currentSortOrder: VoyagerFeaturesEntryArrangements.SortOrder,
         change: EntryListCoordinatorSortDescriptorChange,
-    ) -> (sortKey: SortKey?, sortOrder: SortOrder?) {
+    ) -> (sortKey: SortKey?, sortOrder: VoyagerFeaturesEntryArrangements.SortOrder?) {
         let setKey: SortKey? = currentSortKey == change.sortKey ? nil : change.sortKey
-        let setOrder: SortOrder? = currentSortOrder == change.sortOrder ? nil : change.sortOrder
+        let setOrder: VoyagerFeaturesEntryArrangements.SortOrder? = currentSortOrder == change.sortOrder ? nil : change
+            .sortOrder
         return (setKey, setOrder)
     }
 }

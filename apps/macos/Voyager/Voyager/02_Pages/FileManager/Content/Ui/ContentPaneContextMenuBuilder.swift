@@ -6,7 +6,7 @@ enum ContentPaneContextMenuBuilder {
         let isTrashFolder: Bool
         let viewLayout: EntryViewLayoutState.Mode
         let sortKey: SortKey
-        let sortOrder: SortOrder
+        let sortOrder: VoyagerFeaturesEntryArrangements.SortOrder
         let groupKey: GroupKey
     }
 
@@ -97,7 +97,7 @@ enum ContentPaneContextMenuBuilder {
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetSortOrder(_:)),
             target: target,
         )
-        ascending.representedObject = SortOrder.ascending.rawValue
+        ascending.representedObject = VoyagerFeaturesEntryArrangements.SortOrder.ascending.rawValue
         ascending.state = configuration.sortOrder == .ascending ? .on : .off
         menu.addItem(ascending)
 
@@ -106,7 +106,7 @@ enum ContentPaneContextMenuBuilder {
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetSortOrder(_:)),
             target: target,
         )
-        descending.representedObject = SortOrder.descending.rawValue
+        descending.representedObject = VoyagerFeaturesEntryArrangements.SortOrder.descending.rawValue
         descending.state = configuration.sortOrder == .descending ? .on : .off
         menu.addItem(descending)
 

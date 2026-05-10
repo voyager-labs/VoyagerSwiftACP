@@ -2,6 +2,8 @@ import ComposableArchitecture
 
 @Reducer
 public struct EntryArrangementsFeature {
+    public init() {}
+
     public typealias State = EntryArrangementsState
     public typealias Action = EntryArrangementsAction
 

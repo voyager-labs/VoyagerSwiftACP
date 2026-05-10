@@ -65,7 +65,7 @@ struct SortGroupButton: View {
         )
     }
 
-    private func sortOrderToggle(_ title: String, order: SortOrder) -> some View {
+    private func sortOrderToggle(_ title: String, order: VoyagerFeaturesEntryArrangements.SortOrder) -> some View {
         Toggle(
             title,
             isOn: Binding(
