@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesContentPageNavigation
-import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 import XCTest
 

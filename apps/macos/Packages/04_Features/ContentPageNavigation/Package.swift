@@ -12,7 +12,6 @@ let package = Package(
     dependencies: [
         .package(path: "../../05_Entities/Collection"),
         .package(path: "../../05_Entities/AppPreferences"),
-        .package(path: "../EntryArrangements"),
         .package(path: "../../06_Shared/VoyagerShared"),
         .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.7.2"),
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.22.3"),
@@ -26,7 +25,6 @@ let package = Package(
             dependencies: [
                 .product(name: "VoyagerEntitiesCollection", package: "Collection"),
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
-                .product(name: "VoyagerFeaturesEntryArrangements", package: "EntryArrangements"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
@@ -40,7 +38,6 @@ let package = Package(
             dependencies: [
                 .product(name: "VoyagerEntitiesCollection", package: "Collection"),
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
-                .product(name: "VoyagerFeaturesEntryArrangements", package: "EntryArrangements"),
                 "VoyagerFeaturesContentPageNavigation",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
