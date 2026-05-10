@@ -213,10 +213,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-	7E14EDD82E86622E005AC834 /* Frameworks */ = {
+		7E14EDD82E86622E005AC834 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F21000000000000000000025 /* CasePaths in Frameworks */,
+				F21000000000000000000023 /* IdentifiedCollections in Frameworks */,
+				F21000000000000000000024 /* OrderedCollections in Frameworks */,
+				F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */,
+				F20000000000000000000025 /* VoyagerShared in Frameworks */,
 				F20000000000000000000031 /* VoyagerFeaturesEntryArrangements in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
