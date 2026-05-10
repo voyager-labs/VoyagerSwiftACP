@@ -5,6 +5,7 @@ import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 extension EntryListCoordinator {
     func beginRenaming(row: Int) {
@@ -344,7 +345,7 @@ extension EntryListCoordinator {
             .isDropTargeted { updateDropTargetBorder(isTargeted: snapshot.isDropTargeted) }
     }
 
-    func syncListSortIndicators(sortKey: SortKey, sortOrder: VoyagerFeaturesEntryArrangements.SortOrder) {
+    func syncListSortIndicators(sortKey: SortKey, sortOrder: VoyagerShared.SortOrder) {
         let ascending = sortOrder == .ascending
         let descriptorKey = state.listVisibleColumns
             .first { $0.sortKey == sortKey }?

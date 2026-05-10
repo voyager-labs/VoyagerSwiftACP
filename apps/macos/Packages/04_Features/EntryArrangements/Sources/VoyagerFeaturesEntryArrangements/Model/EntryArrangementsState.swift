@@ -1,8 +1,10 @@
 import Foundation
 
+import VoyagerShared
+
 public struct EntryArrangementsState: Equatable, Sendable {
     public var sortKey: SortKey
-    public var sortOrder: SortOrder
+    public var sortOrder: VoyagerShared.SortOrder
     public var hasUserSetSortOrder: Bool
     public var groupKey: GroupKey
     public var groupedItems: [GroupedItems]
@@ -10,7 +12,7 @@ public struct EntryArrangementsState: Equatable, Sendable {
 
     public init(
         sortKey: SortKey = .name,
-        sortOrder: SortOrder = .ascending,
+        sortOrder: VoyagerShared.SortOrder = .ascending,
         hasUserSetSortOrder: Bool = false,
         groupKey: GroupKey = .none,
         groupedItems: [GroupedItems] = [],
@@ -31,7 +33,7 @@ public struct EntryArrangementsState: Equatable, Sendable {
         }
     }
 
-    public mutating func updateSortOrder(_ order: SortOrder) {
+    public mutating func updateSortOrder(_ order: VoyagerShared.SortOrder) {
         sortOrder = order
         hasUserSetSortOrder = true
     }
@@ -40,7 +42,7 @@ public struct EntryArrangementsState: Equatable, Sendable {
         groupKey = key
     }
 
-    private func defaultSortOrder(for key: SortKey) -> SortOrder {
+    private func defaultSortOrder(for key: SortKey) -> VoyagerShared.SortOrder {
         switch key {
         case .dateModified, .dateCreated, .dateAdded, .dateLastOpened:
             .descending

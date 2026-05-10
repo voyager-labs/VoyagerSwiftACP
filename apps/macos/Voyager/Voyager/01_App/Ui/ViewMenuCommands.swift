@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 import VoyagerFeaturesEntryArrangements
+import VoyagerShared
 
 @ViewAction(for: MenuCommandsFeature.self)
 struct ViewMenuCommands: Commands {
@@ -100,7 +101,7 @@ struct ViewMenuCommands: Commands {
         )
     }
 
-    private func sortOrderToggleBinding(_ order: VoyagerFeaturesEntryArrangements.SortOrder) -> Binding<Bool> {
+    private func sortOrderToggleBinding(_ order: VoyagerShared.SortOrder) -> Binding<Bool> {
         Binding(
             get: { viewStore.sortOrder == order },
             set: { isOn in

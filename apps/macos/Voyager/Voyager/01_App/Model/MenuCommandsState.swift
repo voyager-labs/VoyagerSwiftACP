@@ -2,6 +2,7 @@ import IdentifiedCollections
 
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 struct MenuCommandsState: Equatable {
     var hasFocusedWindow: Bool
@@ -21,7 +22,7 @@ struct MenuCommandsState: Equatable {
     var viewLayout: EntryViewLayoutState.Mode
     var groupKey: GroupKey
     var sortKey: SortKey
-    var sortOrder: SortOrder
+    var sortOrder: VoyagerShared.SortOrder
 
     var canUndo: Bool
     var canRedo: Bool

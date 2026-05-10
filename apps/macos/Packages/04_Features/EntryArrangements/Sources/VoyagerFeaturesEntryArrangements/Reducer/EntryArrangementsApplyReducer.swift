@@ -50,7 +50,7 @@ struct EntryArrangementsApplyReducer {
     private func sortItems(
         _ items: [EntryModel],
         by sortKey: SortKey,
-        order: SortOrder
+        order: VoyagerShared.SortOrder
     ) -> [EntryModel] {
         items.sorted { item1, item2 in
             let comparison = stableComparison(item1, item2, by: sortKey)

@@ -2,11 +2,12 @@ import Foundation
 
 import ComposableArchitecture
 import VoyagerEntitiesEntry
+import VoyagerShared
 
 @CasePathable
 public enum EntryArrangementsAction: CasePathable, Equatable, Sendable {
     case setSortKey(SortKey)
-    case setSortOrder(SortOrder)
+    case setSortOrder(VoyagerShared.SortOrder)
     case setGroupKey(GroupKey)
     case toggleCollapsedGroup(String)
     case reapply

@@ -1,5 +1,7 @@
 import Foundation
 
+import VoyagerShared
+
 public struct EntryArrangementMenuItem<Key: Hashable & Equatable & Sendable>: Identifiable, Equatable, Sendable {
     public let key: Key
     public let title: String

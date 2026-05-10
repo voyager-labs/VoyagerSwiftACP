@@ -1,4 +1,5 @@
 import VoyagerFeaturesEntryArrangements
+import VoyagerShared
 
 struct MenuCommandItem: Identifiable, Equatable {
     let id: String
@@ -33,7 +34,7 @@ struct MenuCommandItem: Identifiable, Equatable {
         case setViewLayout(EntryViewLayoutState.Mode)
         case setGroupKey(GroupKey)
         case setSortKey(SortKey)
-        case setSortOrder(SortOrder)
+        case setSortOrder(VoyagerShared.SortOrder)
     }
 
     enum EditCommand: Equatable, Sendable {

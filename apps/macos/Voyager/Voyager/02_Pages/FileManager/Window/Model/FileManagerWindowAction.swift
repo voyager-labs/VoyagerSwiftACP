@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesEntryArrangements
+import VoyagerShared
 
 @CasePathable
 enum FileManagerWindowAction: CasePathable, Sendable {
@@ -32,7 +33,7 @@ enum FileManagerWindowAction: CasePathable, Sendable {
         case setViewLayout(EntryViewLayoutState.Mode)
         case setGroupKey(GroupKey)
         case setSortKey(SortKey)
-        case setSortOrder(VoyagerFeaturesEntryArrangements.SortOrder)
+        case setSortOrder(VoyagerShared.SortOrder)
         case requestUndo
         case requestRedo
         case toggleComposer

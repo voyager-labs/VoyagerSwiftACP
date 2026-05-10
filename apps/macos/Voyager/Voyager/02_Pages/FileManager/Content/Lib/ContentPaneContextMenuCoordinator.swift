@@ -5,6 +5,7 @@ import Foundation
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @MainActor
 final class ContentPaneContextMenuCoordinator: NSObject {
@@ -66,7 +67,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
     @objc
     func contextMenuSetSortOrder(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
-              let order = SortOrder(rawValue: rawValue)
+              let order = VoyagerShared.SortOrder(rawValue: rawValue)
         else { return }
         store.send(.entryViewLayout(.entryArrangements(.setSortOrder(order))))
     }
