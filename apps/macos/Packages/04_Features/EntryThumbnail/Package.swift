@@ -34,6 +34,7 @@ let package = Package(
             dependencies: [
                 .product(name: "VoyagerEntitiesEntry", package: "VoyagerEntitiesEntry"),
                 "VoyagerFeaturesEntryThumbnail",
+                .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
