@@ -1,7 +1,7 @@
 import ComposableArchitecture
 
 @CasePathable
-enum UpdaterAction: CasePathable, Sendable {
+public enum UpdaterAction: CasePathable, Sendable {
     case configureAtLaunch
     case startAtLaunch
     case checkForUpdates
