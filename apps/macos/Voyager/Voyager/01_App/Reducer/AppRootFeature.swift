@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
+import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared

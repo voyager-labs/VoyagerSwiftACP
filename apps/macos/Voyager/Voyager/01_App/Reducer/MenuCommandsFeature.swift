@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesUpdateVersion
 
 @Reducer
 struct MenuCommandsFeature {
