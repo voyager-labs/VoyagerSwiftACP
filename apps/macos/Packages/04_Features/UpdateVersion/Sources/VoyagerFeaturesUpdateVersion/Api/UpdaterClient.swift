@@ -10,23 +10,17 @@ public struct UpdaterClient: Sendable {
     public var startAtLaunch: @Sendable () async -> Void
     public var checkForUpdates: @Sendable () async -> Void
     public var setAutomaticUpdate: @Sendable (Bool) async -> Void
-    public var prepareForRelaunch: @Sendable () async -> Void
-    public var stopHelperApp: @Sendable () async -> Void
 
     public nonisolated init(
         configure: @escaping @Sendable () async -> Void,
         startAtLaunch: @escaping @Sendable () async -> Void,
         checkForUpdates: @escaping @Sendable () async -> Void,
-        setAutomaticUpdate: @escaping @Sendable (Bool) async -> Void,
-        prepareForRelaunch: @escaping @Sendable () async -> Void = {},
-        stopHelperApp: @escaping @Sendable () async -> Void = {}
+        setAutomaticUpdate: @escaping @Sendable (Bool) async -> Void
     ) {
         self.configure = configure
         self.startAtLaunch = startAtLaunch
         self.checkForUpdates = checkForUpdates
         self.setAutomaticUpdate = setAutomaticUpdate
-        self.prepareForRelaunch = prepareForRelaunch
-        self.stopHelperApp = stopHelperApp
     }
 }
 
@@ -46,12 +40,6 @@ extension UpdaterClient: DependencyKey {
                 },
                 setAutomaticUpdate: { enabled in
                     await coordinator.setAutomaticUpdate(enabled)
-                },
-                prepareForRelaunch: {
-                    await coordinator.prepareForRelaunch()
-                },
-                stopHelperApp: {
-                    await coordinator.stopHelperApp()
                 }
             )
         }
@@ -62,9 +50,7 @@ extension UpdaterClient: DependencyKey {
             configure: {},
             startAtLaunch: {},
             checkForUpdates: {},
-            setAutomaticUpdate: { _ in },
-            prepareForRelaunch: {},
-            stopHelperApp: {}
+            setAutomaticUpdate: { _ in }
         )
     }
 
@@ -73,9 +59,7 @@ extension UpdaterClient: DependencyKey {
             configure: {},
             startAtLaunch: {},
             checkForUpdates: {},
-            setAutomaticUpdate: { _ in },
-            prepareForRelaunch: {},
-            stopHelperApp: {}
+            setAutomaticUpdate: { _ in }
         )
     }
 }
