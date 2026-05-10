@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 @testable import Voyager
 import VoyagerFeaturesEntryArrangements
+import VoyagerShared
 import XCTest
 
 @MainActor

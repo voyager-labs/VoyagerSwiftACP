@@ -3,6 +3,7 @@ import ComposableArchitecture
 import struct VoyagerEntitiesCollection.CollectionContext
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import XCTest
 
 @MainActor
