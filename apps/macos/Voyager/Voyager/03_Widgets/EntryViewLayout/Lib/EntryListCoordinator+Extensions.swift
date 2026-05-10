@@ -3,6 +3,7 @@ import Combine
 import ComposableArchitecture
 
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
 extension EntryListCoordinator {

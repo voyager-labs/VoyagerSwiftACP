@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 struct AppPreferencesState: Equatable, Sendable {

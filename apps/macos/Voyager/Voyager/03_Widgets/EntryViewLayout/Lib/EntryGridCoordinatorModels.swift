@@ -1,6 +1,7 @@
 import AppKit
 
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
 struct EntryGridSection {

@@ -1,5 +1,6 @@
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesEntryArrangements
 
 enum ContentPageNavigationRoute: Equatable {
     case folder(String)

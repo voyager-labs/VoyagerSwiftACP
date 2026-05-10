@@ -1,5 +1,6 @@
 import CoreGraphics
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
 struct EntryListCoordinatorRenderSnapshot: Equatable {

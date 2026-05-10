@@ -1,4 +1,5 @@
 import AppKit
+import VoyagerFeaturesEntryArrangements
 
 enum ContentPaneContextMenuBuilder {
     struct Configuration {

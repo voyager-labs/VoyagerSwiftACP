@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
 struct ContentPaneContextMenu: View {

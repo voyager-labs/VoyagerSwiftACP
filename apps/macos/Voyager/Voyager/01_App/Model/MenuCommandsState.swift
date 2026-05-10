@@ -1,5 +1,6 @@
 import IdentifiedCollections
 
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
 struct MenuCommandsState: Equatable {

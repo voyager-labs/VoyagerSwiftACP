@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import VoyagerFeaturesEntryArrangements
 
 enum EntryListColumn: String, CaseIterable, Equatable, Sendable {
     case name
