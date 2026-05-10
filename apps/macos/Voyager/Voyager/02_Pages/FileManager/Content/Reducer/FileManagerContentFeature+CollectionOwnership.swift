@@ -92,14 +92,17 @@ extension FileManagerContentFeature {
     // MARK: - Private
 
     private func handleCollectionSaveCompleted(
-        result: Result<CollectionWriteBackCompletion, Error>,
+        result: Result<CollectionSaveCompletion, Error>,
         state _: inout State,
     ) -> Effect<Action> {
         switch result {
         case let .success(completion):
             .send(.collection(.writeBackCompleted(completion)))
         case .failure:
-            .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil)))))
+            .concatenate(
+                .send(.collection(.writeBackFailed)),
+                .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
+            )
         }
     }
 
@@ -125,7 +128,7 @@ extension FileManagerContentFeature {
     }
 
     private func handleCollectionDelegateAction(
-        _ delegateAction: CollectionFeature.Delegate,
+        _ delegateAction: CollectionAction.Delegate,
         state: inout State,
     ) -> Effect<Action>? {
         switch delegateAction {
@@ -144,7 +147,7 @@ extension FileManagerContentFeature {
     }
 
     private func handleCollectionSearchResultPrepared(
-        payload: CollectionSearchResultPreparedPayload,
+        payload: CollectionSearchResultPayload,
         state: inout State,
     ) -> Effect<Action> {
         let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot()
@@ -219,15 +222,19 @@ extension FileManagerContentFeature {
         if let pending = state.navigation.pendingNavigation {
             return .concatenate(
                 .concatenate(navigationEffects),
+                syncComposerCollectionStateEffect(state),
                 .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
                 .send(.internal(.performPendingNavigation(pending))),
             )
         }
 
-        return .concatenate(navigationEffects)
+        return .concatenate(
+            .concatenate(navigationEffects),
+            syncComposerCollectionStateEffect(state),
+        )
     }
 
-    private func syncComposerCollectionStateEffect(_ state: State) -> Effect<Action> {
+    func syncComposerCollectionStateEffect(_ state: State) -> Effect<Action> {
         .send(.composer(.syncCollectionState(
             context: state.collection.collectionContext,
             url: state.collection.collectionSession.document?.url,
