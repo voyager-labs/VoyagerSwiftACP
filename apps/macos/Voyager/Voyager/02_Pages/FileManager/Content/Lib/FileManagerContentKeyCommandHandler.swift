@@ -4,6 +4,7 @@ import Foundation
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 enum FileManagerContentKeyCommandHandler {
     private static let undoSelector = Selector(("undo:"))

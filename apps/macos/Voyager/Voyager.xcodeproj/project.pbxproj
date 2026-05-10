@@ -12,6 +12,10 @@
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
 		6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
+		6C9F4B5A2F12345600000001 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
+		6C9F4B5B2F12345600000002 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = 6C9F4B602F12345600000005 /* Dependencies */; };
+		6C9F4B5C2F12345600000003 /* Clocks in Frameworks */ = {isa = PBXBuildFile; productRef = 6C9F4B612F12345600000006 /* Clocks */; };
+		6C9F4B5D2F12345600000004 /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000015 /* VoyagerEntitiesAppPreferences */; };
 		6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
 		6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
 		F21000000000000000000021 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000011 /* IdentifiedCollections */; };
@@ -214,6 +218,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6C9F4B5A2F12345600000001 /* ComposableArchitecture in Frameworks */,
+				6C9F4B5B2F12345600000002 /* Dependencies in Frameworks */,
+				6C9F4B5C2F12345600000003 /* Clocks in Frameworks */,
+				6C9F4B5D2F12345600000004 /* VoyagerEntitiesAppPreferences in Frameworks */,
 				F21000000000000000000025 /* CasePaths in Frameworks */,
 				F21000000000000000000023 /* IdentifiedCollections in Frameworks */,
 				F21000000000000000000024 /* OrderedCollections in Frameworks */,
@@ -381,6 +389,11 @@
 				F21000000000000000000013 /* CasePaths */,
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
+				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
+				6C9F4B602F12345600000005 /* Dependencies */,
+				6C9F4B612F12345600000006 /* Clocks */,
+				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;
@@ -556,6 +569,8 @@
 				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
 				7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */,
+				6C9F4B5E2F12345600000003 /* XCRemoteSwiftPackageReference "swift-dependencies" */,
+				6C9F4B5F2F12345600000004 /* XCRemoteSwiftPackageReference "swift-clocks" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E14EDCD2E86622C005AC834 /* Products */;
@@ -1537,6 +1552,22 @@
 				version = 2.1.0;
 			};
 		};
+		6C9F4B5E2F12345600000003 /* XCRemoteSwiftPackageReference "swift-dependencies" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-dependencies";
+			requirement = {
+				kind = exactVersion;
+				version = 1.10.0;
+			};
+		};
+		6C9F4B5F2F12345600000004 /* XCRemoteSwiftPackageReference "swift-clocks" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-clocks";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.6;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1614,6 +1645,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */;
 			productName = InjectionNext;
+		};
+		6C9F4B602F12345600000005 /* Dependencies */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6C9F4B5E2F12345600000003 /* XCRemoteSwiftPackageReference "swift-dependencies" */;
+			productName = Dependencies;
+		};
+		6C9F4B612F12345600000006 /* Clocks */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6C9F4B5F2F12345600000004 /* XCRemoteSwiftPackageReference "swift-clocks" */;
+			productName = Clocks;
 		};
 		F20000000000000000000011 /* VoyagerPagesOnboarding */ = {
 			isa = XCSwiftPackageProductDependency;
