@@ -1,0 +1,9 @@
+Task 3: Side-Effect Ownership Evidence
+=======================================
+
+Thumbnail generation and cache logic remains entirely within the reducer layer:
+- EntryThumbnailRequestReducer owns all thumbnail generation via thumbnailGeneratorClient
+- EntryThumbnailRequestReducer owns all cache reads/writes via entryThumbnailCacheClient
+- No widget/view/coordinator generation or cache logic was introduced
+- NSScreen/NSImage usage stays in EntryThumbnailRequestReducer (AppKit import preserved)
+- MainActor.assumeIsolated calls preserved for cache client access

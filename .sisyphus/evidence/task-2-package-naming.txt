@@ -1,0 +1,5 @@
+/Users/jongmin/Desktop/voyager-fm/voyager-app.worktrees/refactor/voy-320/apps/macos/Packages/04_Features/EntryThumbnail/Package.swift:5:    name: "VoyagerFeaturesEntryThumbnail",
+/Users/jongmin/Desktop/voyager-fm/voyager-app.worktrees/refactor/voy-320/apps/macos/Packages/04_Features/EntryThumbnail/Package.swift:10:        .library(name: "VoyagerFeaturesEntryThumbnail", targets: ["VoyagerFeaturesEntryThumbnail"]),
+/Users/jongmin/Desktop/voyager-fm/voyager-app.worktrees/refactor/voy-320/apps/macos/Packages/04_Features/EntryThumbnail/Package.swift:22:            name: "VoyagerFeaturesEntryThumbnail",
+/Users/jongmin/Desktop/voyager-fm/voyager-app.worktrees/refactor/voy-320/apps/macos/Packages/04_Features/EntryThumbnail/Package.swift:33:            name: "VoyagerFeaturesEntryThumbnailTests",
+/Users/jongmin/Desktop/voyager-fm/voyager-app.worktrees/refactor/voy-320/apps/macos/Packages/04_Features/EntryThumbnail/Package.swift:36:                "VoyagerFeaturesEntryThumbnail",

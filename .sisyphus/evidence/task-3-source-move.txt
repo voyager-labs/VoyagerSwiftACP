@@ -1,0 +1,16 @@
+Task 3: Source Move Evidence
+===========================
+
+Old location: apps/macos/Voyager/Voyager/04_Features/EntryThumbnail/
+Status: DELETED (directory no longer exists)
+
+New location: apps/macos/Packages/04_Features/EntryThumbnail/Sources/VoyagerFeaturesEntryThumbnail/
+
+Files in new location:
+- Model/EntryThumbnailState.swift  (public struct, public properties, public init)
+- Model/EntryThumbnailAction.swift (public enum, public cases)
+- Reducer/EntryThumbnailFeature.swift (public @Reducer struct, public init, public typealiases)
+- Reducer/EntryThumbnailRequestReducer.swift (internal @Reducer struct - unchanged access)
+
+No .swift files remain in old location.
+No forbidden imports (import Voyager, import VoyagerPages) found in package source.
