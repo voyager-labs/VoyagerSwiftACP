@@ -18,6 +18,7 @@ struct FileManagerContentState: Equatable {
                 && lhs.entryViewLayout == rhs.entryViewLayout
                 && lhs.composer == rhs.composer
                 && lhs.collection == rhs.collection
+                && lhs.resetComposerOnNextDirectoryNavigation == rhs.resetComposerOnNextDirectoryNavigation
         }
     }
 
