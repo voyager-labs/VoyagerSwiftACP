@@ -24,17 +24,20 @@ public enum DateGroupBucket: Hashable, Sendable {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> DateGroupBucket {
-        if calendar.isDateInToday(date) {
+        let itemDate = calendar.startOfDay(for: date)
+        let todayStart = calendar.startOfDay(for: now)
+        let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+        let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
+
+        if itemDate >= todayStart, itemDate < tomorrowStart {
             return .today
         }
-        if calendar.isDateInYesterday(date) {
+        if itemDate >= yesterdayStart, itemDate < todayStart {
             return .yesterday
         }
 
-        let itemDate = calendar.startOfDay(for: date)
         let weekAgoDate = calendar.startOfDay(for: calendar.date(byAdding: .day, value: -8, to: now) ?? now)
-        let yesterdayDate = calendar.startOfDay(for: calendar.date(byAdding: .day, value: -1, to: now) ?? now)
-        if itemDate >= weekAgoDate, itemDate <= yesterdayDate {
+        if itemDate >= weekAgoDate, itemDate < yesterdayStart {
             return .previous7Days
         }
 
