@@ -1,16 +1,13 @@
-import AppKit
 import ComposableArchitecture
 import SwiftUI
 
 struct ScopePickerView: View {
     let store: StoreOf<ComposerFeature>
 
-    @State private var hoveredPath: String?
     @FocusState private var isSearchFocused: Bool
+    @State private var hoveredRowPath: String?
     @Environment(\.colorScheme)
     private var colorScheme
-    @Dependency(\.entryLoadingClient)
-    private var entryLoadingClient
 
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
@@ -115,163 +112,65 @@ private extension ScopePickerView {
 
     @ViewBuilder
     private func listContent(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
-        let sections = viewStore.scopeEditor.sections()
+        let rows = viewStore.scopeEditor.treeRows(
+            neighborhoodSeedItems: viewStore.scopeEditor.treeNeighborhoodSeedItems,
+        )
 
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(sections) { section in
-                    sectionView(section: section, viewStore: viewStore)
-                }
+                treeSection(rows: rows, viewStore: viewStore)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
     }
 
-    @ViewBuilder
-    private func sectionView(
-        section: ComposerScopeEditorSection,
+    private func treeSection(
+        rows: [ComposerScopeTreeRow],
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(sectionTitle(for: section.kind))
+            Text(treeSectionTitle(for: viewStore.scopeEditor.listState))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.secondary)
 
             VStack(alignment: .leading, spacing: 4) {
-                switch section.kind {
-                case .currentScopes:
-                    ForEach(section.items, id: \.id) { item in
-                        switch item {
-                        case .currentScope:
-                            currentScopeRow(item: item, viewStore: viewStore)
-                        case .exceptionScope:
-                            exceptionRow(item: item, viewStore: viewStore)
-                        case .addableCandidate:
-                            EmptyView()
-                        }
+                ForEach(rows) { row in
+                    ScopeTreeRowView(
+                        row: row,
+                        colorScheme: colorScheme,
+                        isHovering: hoveredRowPath == row.path,
+                        applicationsIcon: applicationsIcon(),
+                        onBodyTap: { handleTreeRowBodyTap(row, viewStore: viewStore) },
+                        onAction: { action in
+                            handleTreeRowAction(row, action: action, viewStore: viewStore)
+                        },
+                        actionAccessibilityIdentifier: { action in
+                            ScopePickerAccessibilityID.treeAction(action, path: row.path)
+                        },
+                    )
+                    .onHover { hovering in
+                        hoveredRowPath = hovering ? row.path : nil
                     }
-                case let .addableCandidates(listState):
-                    parentContextRow(for: listState)
-                    if section.items.isEmpty {
-                        addableCandidatesEmptyState(for: section.kind)
-                    } else {
-                        ForEach(section.items, id: \.id) { item in
-                            addableCandidateRow(item: item, viewStore: viewStore)
-                        }
-                    }
+                    .accessibilityIdentifier(ScopePickerAccessibilityID.treeRow(path: row.path))
+                }
+
+                if viewStore.scopeEditor.listState.noResultsQuery != nil {
+                    noResultsFooter(viewStore.scopeEditor.listState)
                 }
             }
         }
-        .accessibilityIdentifier(sectionAccessibilityIdentifier(for: section.kind))
-    }
-
-    private func sectionTitle(for kind: ComposerScopeEditorSection.Kind) -> String {
-        switch kind {
-        case .currentScopes:
-            "Current Scopes"
-        case let .addableCandidates(listState):
-            listState.candidateSectionTitle
-        }
+        .accessibilityIdentifier(ScopePickerAccessibilityID.treeSection)
     }
 
     @ViewBuilder
-    private func parentContextRow(for listState: ComposerScopeEditorListState) -> some View {
-        if case let .childFolders(parentPath) = listState {
-            ScopeEditorParentContextRow(
-                displayName: entryLoadingClient.displayName(parentPath),
-                path: parentPath,
-            )
-        }
-    }
-
-    private func currentScopeRow(
-        item: ComposerScopeEditorSectionItem,
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-    ) -> some View {
-        guard case let .currentScope(currentItem) = item else {
-            return AnyView(EmptyView())
-        }
-
-        return AnyView(
-            CurrentScopeRow(
-                currentItem: currentItem,
-                colorScheme: colorScheme,
-                displayName: entryLoadingClient.displayName(currentItem.base.path),
-                removeAccessibilityIdentifier: ScopePickerAccessibilityID.directRemove(path: currentItem.base.path),
-                removeAccessibilityLabel: "Remove direct scope rule for \(entryLoadingClient.displayName(currentItem.base.path))",
-                onTap: { handleCurrentScopeTap(currentItem, viewStore: viewStore) },
-                onRemove: { store.send(.currentScope(.remove(path: currentItem.base.path))) },
-            ),
-        )
-    }
-
-    private func exceptionRow(
-        item: ComposerScopeEditorSectionItem,
-        viewStore _: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-    ) -> some View {
-        guard case let .exceptionScope(exception) = item else {
-            return AnyView(EmptyView())
-        }
-
-        return AnyView(
-            ExceptionRow(
-                exception: exception,
-                colorScheme: colorScheme,
-                displayName: entryLoadingClient.displayName(exception.path),
-                restoreAccessibilityIdentifier: ScopePickerAccessibilityID.restore(path: exception.path),
-                restoreAccessibilityLabel: "Restore excluded scope \(entryLoadingClient.displayName(exception.path))",
-                onRestore: { store.send(.restoreScope(path: exception.path)) },
-            ),
-        )
-    }
-
-    private func addableCandidateRow(
-        item: ComposerScopeEditorSectionItem,
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-    ) -> some View {
-        guard case let .addableCandidate(candidate) = item else {
-            return AnyView(EmptyView())
-        }
-
-        let isHovering = hoveredPath == candidate.path
-        let selectionIntent = viewStore.scopeEditor.candidateSelectionIntent(for: candidate.path)
-        let identifier = candidateAccessibilityIdentifier(for: selectionIntent, candidate: candidate)
-        let actionKind = candidateActionKind(for: selectionIntent)
-        let button = Button(action: {
-            handleAddableCandidateTap(candidate, viewStore: viewStore)
-        }, label: {
-            AddableCandidateRow(
-                candidate: candidate,
-                isHovering: isHovering,
-                colorScheme: colorScheme,
-                applicationsIcon: applicationsIcon(),
-                actionKind: actionKind,
-                accessibilityIdentifier: identifier,
-            )
-        })
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            hoveredPath = hovering ? candidate.path : nil
-        }
-
-        return AnyView(
-            Group {
-                if let identifier {
-                    button.accessibilityIdentifier(identifier)
-                } else {
-                    button
-                }
-            },
-        )
-    }
-
-    @ViewBuilder
-    private func addableCandidatesEmptyState(for kind: ComposerScopeEditorSection.Kind) -> some View {
-        if case let .addableCandidates(listState) = kind,
-           let message = listState.emptyStateMessage
-        {
+    private func noResultsFooter(_ listState: ComposerScopeEditorListState) -> some View {
+        if let message = listState.emptyStateMessage {
             VStack(alignment: .leading, spacing: 2) {
+                Text("No Results")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+
                 Text(message)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
@@ -289,29 +188,16 @@ private extension ScopePickerView {
         }
     }
 
-    private func handleCurrentScopeTap(
-        _ currentItem: ComposerScopeEditorCurrentItem,
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-    ) {
-        let editingPath = currentItem.isEditingTarget ? nil : currentItem.base.path
-        store.send(.scopeEditorOpen(
-            editingPath: editingPath,
-            favorites: viewStore.scopeEditor.favorites,
-            backHistory: viewStore.scopeEditor.backHistory,
-        ))
-    }
-
-    private func handleAddableCandidateTap(
-        _ candidate: ComposerScopeEditorCandidateItem,
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-    ) {
-        switch viewStore.scopeEditor.candidateSelectionIntent(for: candidate.path) {
-        case let .add(path):
-            store.send(.candidateScope(.add(path: path)))
-        case let .replace(oldPath, newPath):
-            store.send(.currentScope(.replace(oldPath: oldPath, newPath: newPath)))
-        case let .exclude(path):
-            store.send(.exceptionScope(.exclude(path: path)))
+    private func treeSectionTitle(for listState: ComposerScopeEditorListState) -> String {
+        switch listState {
+        case .defaultCandidates:
+            "Suggested locations"
+        case .childFolders:
+            "Nearby folders"
+        case let .searchResults(query):
+            "Search Results for \"\(query)\""
+        case let .noResults(query):
+            "No Results for \"\(query)\""
         }
     }
 
@@ -323,71 +209,45 @@ private extension ScopePickerView {
         return appIcon
     }
 
-    private func sectionAccessibilityIdentifier(for kind: ComposerScopeEditorSection.Kind) -> String {
-        switch kind {
-        case .currentScopes:
-            ScopePickerAccessibilityID.currentSection
-        case .addableCandidates:
-            ScopePickerAccessibilityID.candidatesSection
+    private func handleTreeRowBodyTap(
+        _ row: ComposerScopeTreeRow,
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+    ) {
+        switch row.kind {
+        case .base:
+            store.send(.scopeEditorOpen(
+                editingPath: row.path,
+                favorites: viewStore.scopeEditor.favorites,
+                backHistory: viewStore.scopeEditor.backHistory,
+            ))
+        case .candidate:
+            if row.availableActions.count == 1,
+               let primaryAction = row.availableActions.first,
+               viewStore.scopeEditor.treeActionIntent(rowPath: row.path, action: primaryAction) != .none
+            {
+                handleTreeRowAction(row, action: primaryAction, viewStore: viewStore)
+            }
+        case .exception, .root:
+            break
         }
     }
 
-    private func candidateActionKind(for intent: ScopeCandidateIntent) -> ScopeEditorCandidateRowActionKind {
-        switch intent {
-        case .add:
-            .include
-        case .replace:
-            .replace
-        case .exclude:
-            .exclude
+    private func handleTreeRowAction(
+        _ row: ComposerScopeTreeRow,
+        action: ComposerScopeTreeRowAvailableAction,
+        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+    ) {
+        switch viewStore.scopeEditor.treeActionIntent(rowPath: row.path, action: action) {
+        case let .addBase(path):
+            store.send(.candidateScope(.add(path: path)))
+        case let .exclude(path):
+            store.send(.exceptionScope(.exclude(path: path)))
+        case let .removeBase(path):
+            store.send(.currentScope(.remove(path: path)))
+        case let .restoreException(path):
+            store.send(.exceptionScope(.restore(path: path)))
+        case .none:
+            break
         }
-    }
-
-    private func candidateAccessibilityIdentifier(
-        for intent: ScopeCandidateIntent,
-        candidate: ComposerScopeEditorCandidateItem,
-    ) -> String? {
-        switch intent {
-        case .add, .replace:
-            nil
-        case .exclude:
-            ScopePickerAccessibilityID.exclude(path: candidate.path)
-        }
-    }
-}
-
-private enum ScopePickerPresentationMetrics {
-    static let width: CGFloat = 420
-    static let maxHeight: CGFloat = 520
-}
-
-private enum ScopePickerAccessibilityID {
-    static let surface = "scopeEditor.surface"
-    static let searchField = "scopeEditor.searchField"
-    static let currentSummary = "scopeEditor.currentSummary"
-    static let currentSection = "scopeEditor.currentSection"
-    static let candidatesSection = "scopeEditor.candidatesSection"
-    static let noResults = "scopeEditor.noResults"
-    static let feedbackBanner = "scopeEditor.feedbackBanner"
-
-    static func directRemove(path: String) -> String {
-        "scopeEditor.row.directRemove.\(slug(for: path))"
-    }
-
-    static func exclude(path: String) -> String {
-        "scopeEditor.row.exclude.\(slug(for: path))"
-    }
-
-    static func restore(path: String) -> String {
-        "scopeEditor.row.restore.\(slug(for: path))"
-    }
-
-    private static func slug(for path: String) -> String {
-        let normalized = URL(fileURLWithPath: path).standardizedFileURL.path.lowercased()
-        let mapped = normalized.unicodeScalars.map { scalar -> Character in
-            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
-        }
-        let collapsed = String(mapped).replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
-        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 }
