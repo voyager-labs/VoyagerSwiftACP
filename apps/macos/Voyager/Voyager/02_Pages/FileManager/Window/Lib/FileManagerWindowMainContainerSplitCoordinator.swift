@@ -4,6 +4,7 @@ import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @MainActor
 final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {

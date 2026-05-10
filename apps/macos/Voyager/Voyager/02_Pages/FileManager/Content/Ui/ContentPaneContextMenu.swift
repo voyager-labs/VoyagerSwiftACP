@@ -4,6 +4,7 @@ import SwiftUI
 
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
