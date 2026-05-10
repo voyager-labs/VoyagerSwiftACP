@@ -36,8 +36,8 @@ public enum AppliedFilterValueUtils {
     private static func normalizeDateString(_ text: String, valueUIKind: String) -> String? {
         switch valueUIKind {
         case "singleDate", "rangeDate":
-            guard let date = parseDate(text) else { return nil }
-            return formatDateOnly(date)
+            guard let date = DateNormalizerUtils.parseDate(text) else { return nil }
+            return DateNormalizerUtils.formatDateOnly(date)
         default:
             return nil
         }
@@ -48,60 +48,5 @@ public enum AppliedFilterValueUtils {
             return String(Int64(value))
         }
         return String(value)
-    }
-
-    // MARK: - Inlined date helpers (from ValueNormalizerUtils)
-
-    private nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
-    private nonisolated(unsafe) static let dateOnlyFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    private nonisolated(unsafe) static let dateTimeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        return formatter
-    }()
-
-    private nonisolated(unsafe) static let dateTimeSpaceFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter
-    }()
-
-    private static func parseDate(_ text: String) -> Date? {
-        if let date = isoFormatter.date(from: text) { return normalizedDay(date) }
-        if let date = dateTimeFormatter.date(from: text) { return normalizedDay(date) }
-        if let date = dateTimeSpaceFormatter.date(from: text) { return normalizedDay(date) }
-        if let date = dateOnlyFormatter.date(from: text) { return normalizedDay(date) }
-        return nil
-    }
-
-    private static func formatDateOnly(_ date: Date) -> String {
-        dateOnlyFormatter.string(from: normalizedDay(date))
-    }
-
-    private static func normalizedDay(_ date: Date) -> Date {
-        var localCalendar = Calendar(identifier: .gregorian)
-        localCalendar.timeZone = .current
-        let comps = localCalendar.dateComponents([.year, .month, .day], from: date)
-
-        var utcCalendar = Calendar(identifier: .gregorian)
-        if let utc = TimeZone(secondsFromGMT: 0) { utcCalendar.timeZone = utc }
-        return utcCalendar.date(from: comps) ?? date
     }
 }
