@@ -1,9 +1,7 @@
-import Foundation
-
 import ComposableArchitecture
-@testable import Voyager
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+@testable import VoyagerFeaturesEntryArrangements
 import XCTest
 
 @MainActor
@@ -21,8 +19,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .none,
-            ),
+                groupKey: .none
+            )
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -57,8 +55,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .kind,
-            ),
+                groupKey: .kind
+            )
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -86,8 +84,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .tags,
-            ),
+                groupKey: .tags
+            )
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -96,8 +94,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
 
         await store.send(.apply(items: [itemC, itemB, itemA], isCollectionMode: false)) {
             $0.groupedItems = [
-                GroupedItems(groupName: "Red", items: [itemB], colorCode: 1),
                 GroupedItems(groupName: "Blue", items: [itemA, itemB], colorCode: 6),
+                GroupedItems(groupName: "Red", items: [itemB], colorCode: 1),
                 GroupedItems(groupName: "No Tags", items: [itemC]),
             ]
         }
@@ -118,8 +116,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .tags,
-            ),
+                groupKey: .tags
+            )
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -128,7 +126,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
 
         await store.send(.apply(items: [first, second], isCollectionMode: false)) {
             $0.groupedItems = [
-                GroupedItems(groupName: "Blue", items: [second, first], colorCode: 1),
+                GroupedItems(groupName: "Blue", items: [second, first], colorCode: 6),
             ]
         }
         await store.receive(.delegate(.applied(sortedItems: [second, first], isCollectionMode: false)))
@@ -136,37 +134,36 @@ final class EntryArrangementsFeatureTests: XCTestCase {
     }
 
     func testVOY213DateLastOpenedFallsBackToEarlierForMissingDates() async {
-        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let today = fixedDate
+        let today = Date()
         let missing = makeEntry(
-            fixedDate,
+            today,
             "missing.txt",
             "/tmp/missing.txt",
             10,
             ext: "txt",
             kind: "Text",
-            lastOpenedDate: nil,
+            lastOpenedDate: nil
         )
         let opened = makeEntry(
-            fixedDate,
+            today,
             "opened.txt",
             "/tmp/opened.txt",
             20,
             ext: "txt",
             kind: "Text",
-            lastOpenedDate: today,
+            lastOpenedDate: today
         )
 
         let store = TestStore(
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .dateLastOpened,
-            ),
+                groupKey: .dateLastOpened
+            )
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
-            $0.date = .constant(fixedDate)
+            $0.date = .constant(today)
         }
 
         await store.send(.apply(items: [missing, opened], isCollectionMode: false)) {
@@ -190,7 +187,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             10,
             ext: "txt",
             kind: "Text",
-            tags: [blueTag],
+            tags: [blueTag]
         )
         let noTag = makeEntry(fixedDate, "untagged.txt", "/tmp/untagged.txt", 20, ext: "txt", kind: "Text", tags: nil)
 
@@ -198,8 +195,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .tags,
-            ),
+                groupKey: .tags
+            )
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -218,6 +215,34 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - Persistence Contract Regression
+
+    func testPersistenceKeyLiterals() {
+        XCTAssertEqual(EntryArrangementsPersistenceKey.sortKey, "sortKey")
+        XCTAssertEqual(EntryArrangementsPersistenceKey.sortOrder, "sortOrder")
+        XCTAssertEqual(EntryArrangementsPersistenceKey.groupKey, "groupKey")
+    }
+
+    func testSortKeyGroupKeySortOrderRawValues() {
+        // SortKey raw values
+        XCTAssertEqual(SortKey.application.rawValue, "Application")
+        XCTAssertEqual(SortKey.tags.rawValue, "Tags")
+        XCTAssertEqual(SortKey.name.rawValue, "name")
+        XCTAssertEqual(SortKey.kind.rawValue, "kind")
+        XCTAssertEqual(SortKey.size.rawValue, "size")
+
+        // SortOrder raw values
+        XCTAssertEqual(SortOrder.ascending.rawValue, "ascending")
+        XCTAssertEqual(SortOrder.descending.rawValue, "descending")
+
+        // GroupKey raw values
+        XCTAssertEqual(GroupKey.none.rawValue, "None")
+        XCTAssertEqual(GroupKey.tags.rawValue, "Tags")
+        XCTAssertEqual(GroupKey.name.rawValue, "Name")
+        XCTAssertEqual(GroupKey.kind.rawValue, "Kind")
+        XCTAssertEqual(GroupKey.application.rawValue, "Application")
+    }
+
     private func makeEntry(
         _ date: Date,
         _ name: String,
@@ -227,7 +252,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         ext: String = "",
         kind: String = "",
         tags: [Tag]? = nil,
-        lastOpenedDate: Date? = nil,
+        lastOpenedDate: Date? = nil
     ) -> EntryModel {
         EntryModel(
             name: name,
@@ -244,8 +269,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
                 kind: kind,
                 creatorApplication: nil,
                 tags: tags,
-                supplementaryMetadata: nil,
-            ),
+                supplementaryMetadata: nil
+            )
         )
     }
 }

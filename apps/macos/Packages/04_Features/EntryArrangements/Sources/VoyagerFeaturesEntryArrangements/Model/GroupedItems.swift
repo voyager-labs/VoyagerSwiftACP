@@ -3,7 +3,7 @@ import Foundation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
-public struct GroupedItems: Equatable {
+public struct GroupedItems: Equatable, Sendable {
     public let groupName: String
     public let colorCode: Int?
     public let items: [EntryModel]

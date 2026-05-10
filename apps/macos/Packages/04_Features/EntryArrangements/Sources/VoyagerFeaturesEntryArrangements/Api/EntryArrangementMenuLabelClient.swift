@@ -1,8 +1,8 @@
 import Foundation
 import VoyagerEntitiesCollection
 
-public struct EntryArrangementMenuLabelClient {
-    public var labelForPropertyKey: (String) -> String
+public struct EntryArrangementMenuLabelClient: Sendable {
+    public var labelForPropertyKey: @Sendable (String) -> String
 }
 
 public extension EntryArrangementMenuLabelClient {
