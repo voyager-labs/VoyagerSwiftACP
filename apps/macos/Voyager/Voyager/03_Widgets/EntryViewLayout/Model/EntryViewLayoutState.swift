@@ -6,7 +6,6 @@ import SwiftUI
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
-import VoyagerShared
 
 @ObservableState
 struct EntryViewLayoutState: Equatable {

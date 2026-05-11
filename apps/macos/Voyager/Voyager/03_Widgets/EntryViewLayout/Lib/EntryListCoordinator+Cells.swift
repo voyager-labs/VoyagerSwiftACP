@@ -1,7 +1,6 @@
 import AppKit
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
-import VoyagerShared
 
 extension EntryListCoordinator {
     func makeEntryCellConfiguration(

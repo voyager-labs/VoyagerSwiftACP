@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
-import VoyagerShared
 
 func prepareLoadedCollectionOpenState(
     restorationPayload: CollectionOpenRestorationPayload,

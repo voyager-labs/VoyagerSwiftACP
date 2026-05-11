@@ -2,7 +2,6 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryOperations
-import VoyagerShared
 
 @ObservableState
 struct FileManagerContentState: Equatable {
