@@ -104,6 +104,12 @@ public struct AiSettingsFeature {
             )
             if !verificationResults.isEmpty {
                 await send(.bootstrapVerificationCompleted(verificationResults))
+                await Self.persistBootstrapVerificationResults(
+                    verificationResults,
+                    file: file,
+                    connectionsFileClient: connectionsFileClient,
+                    send: send
+                )
             }
         }
     }
@@ -172,6 +178,67 @@ public struct AiSettingsFeature {
         }
 
         return results
+    }
+
+    private static func persistBootstrapVerificationResults(
+        _ results: [AiProviderBootstrapResult],
+        file: AIConnectionsFile,
+        connectionsFileClient: AIConnectionsFileClient,
+        send: Send<Action>
+    ) async {
+        guard let updatedFile = bootstrapUpdatedConnectionsFile(file, applying: results) else { return }
+
+        let mutationResult = await (try? connectionsFileClient.save(updatedFile))
+        switch mutationResult {
+        case let .success(savedFile), let .partialSuccess(savedFile, _):
+            await send(.delegate(.connectionsFileUpdated(savedFile)))
+        case .fileSystemError, nil:
+            break
+        }
+    }
+
+    package static func bootstrapUpdatedConnectionsFile(
+        _ file: AIConnectionsFile,
+        applying results: [AiProviderBootstrapResult]
+    ) -> AIConnectionsFile? {
+        var providers = file.providers
+        var didUpdate = false
+
+        for result in results {
+            guard var record = providers[result.provider.rawValue],
+                  record.credential != nil
+            else { continue }
+
+            let lastErrorCode: ProviderStatusReason = result.connectionState == .connected ? .none : result.statusReason
+            guard record.snapshot.lastKnownStatus != result.connectionState
+                || record.snapshot.lastErrorCode != lastErrorCode
+            else { continue }
+
+            let snapshot = ProviderSnapshotFile(
+                lastKnownStatus: result.connectionState,
+                lastVerifiedAtMs: result.connectionState == .connected ? file.updatedAtMs : nil,
+                lastErrorCode: lastErrorCode
+            )
+
+            record = ProviderRecordFile(
+                providerId: record.providerId,
+                authMethod: record.authMethod,
+                credential: record.credential,
+                snapshot: snapshot,
+                provenance: record.provenance
+            )
+            providers[result.provider.rawValue] = record
+            didUpdate = true
+        }
+
+        guard didUpdate else { return nil }
+        return AIConnectionsFile(
+            schemaVersion: file.schemaVersion,
+            updatedAtMs: file.updatedAtMs,
+            lastUsedProviderId: file.lastUsedProviderId,
+            lastUsedAtMs: file.lastUsedAtMs,
+            providers: providers
+        )
     }
 
     private static func shouldVerify(snapshotState: ProviderConnectionState) -> Bool {
