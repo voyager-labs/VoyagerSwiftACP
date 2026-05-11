@@ -100,7 +100,7 @@ public struct ComposerState: Equatable {
         redoHistory.removeAll()
     }
 
-    mutating func applyCollectionDraftRestorePayload(_ payload: CollectionDraftRestorePayload) {
+    public mutating func applyCollectionDraftRestorePayload(_ payload: CollectionDraftRestorePayload) {
         let trimmedQuery = payload.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
         if payload.openedURL == nil {
@@ -116,7 +116,7 @@ public struct ComposerState: Equatable {
         clearHistory()
     }
 
-    mutating func applyCollectionNavigationComposerPayload(_ payload: CollectionNavigationStatePayload) {
+    public mutating func applyCollectionNavigationComposerPayload(_ payload: CollectionNavigationStatePayload) {
         let trimmedQuery = payload.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
         text = payload.composerText
@@ -128,7 +128,7 @@ public struct ComposerState: Equatable {
         clearHistory()
     }
 
-    mutating func applyCollectionOpenRestorationComposerPayload(
+    public mutating func applyCollectionOpenRestorationComposerPayload(
         _ payload: CollectionOpenRestorationPayload,
         registryClient: RegistryClient
     ) {
@@ -150,7 +150,7 @@ public struct ComposerState: Equatable {
         lastSearchResponse = nil
     }
 
-    mutating func applyHydratedCollectionOpenComposerPayload(
+    public mutating func applyHydratedCollectionOpenComposerPayload(
         _ payload: CollectionHydratedOpenPayload,
         navigation: ContentPageCollectionNavigation
     ) {
