@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiChat
 
 import VoyagerFeaturesEntryOperations
 
@@ -57,6 +58,9 @@ struct FileManagerFeature {
 
             case .inspector(.closeChat):
                 .cancel(id: CancelID.contextualAiChatOpen)
+
+            case let .aiConnectionsFileUpdated(file):
+                updateOpenAiChatModels(connectionsFile: file, state: state)
 
             default:
                 .none
@@ -248,6 +252,25 @@ struct FileManagerFeature {
         default:
             return .none
         }
+    }
+
+    private func updateOpenAiChatModels(
+        connectionsFile: AIConnectionsFile,
+        state: State,
+    ) -> Effect<Action> {
+        guard state.inspector.inspectorVisible,
+              state.inspector.inspectorPaneExists,
+              state.inspector.activeMode == .chat
+        else { return .none }
+
+        let modelSelection = FileManagerAiChatContextAdapter.makeAiChatModelSelection(
+            connectionsFile: connectionsFile,
+        )
+
+        return .send(.inspector(.aiChat(.availableModelsUpdated(
+            catalogRows: modelSelection.catalogRows,
+            selectedModelHandle: modelSelection.selectedModelHandle,
+        ))))
     }
 
     private func openContextualAiChatEffect(state: State) -> Effect<Action> {

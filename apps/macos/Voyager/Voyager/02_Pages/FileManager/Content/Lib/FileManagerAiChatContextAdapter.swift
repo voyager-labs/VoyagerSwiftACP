@@ -9,11 +9,21 @@ enum FileManagerAiChatContextAdapter {
         sessionID: AiChatSessionID,
         connectionsFile: AIConnectionsFile,
     ) -> AiChatSetupState {
-        let catalogRows = makeModelCatalogRows(from: connectionsFile)
+        let modelSelection = makeAiChatModelSelection(connectionsFile: connectionsFile)
 
         return AiChatSetupState(
             sessionID: sessionID,
             currentContext: makeCurrentContextSnapshot(content: state),
+            catalogRows: modelSelection.catalogRows,
+            selectedModelHandle: modelSelection.selectedModelHandle,
+        )
+    }
+
+    static func makeAiChatModelSelection(
+        connectionsFile: AIConnectionsFile,
+    ) -> (catalogRows: [AiModelCatalogRow], selectedModelHandle: AiModelHandle?) {
+        let catalogRows = makeModelCatalogRows(from: connectionsFile)
+        return (
             catalogRows: catalogRows,
             selectedModelHandle: preferredModelHandle(
                 in: catalogRows,
