@@ -33,7 +33,7 @@ public struct AiChatContextSummaryDisplayModel: Equatable, Sendable {
         referenceCount: Int,
         itemCount: Int,
         attachmentCount: Int,
-        isEmpty: Bool
+        isEmpty: Bool,
     ) {
         self.title = title
         self.detail = detail
@@ -41,6 +41,80 @@ public struct AiChatContextSummaryDisplayModel: Equatable, Sendable {
         self.itemCount = itemCount
         self.attachmentCount = attachmentCount
         self.isEmpty = isEmpty
+    }
+}
+
+public struct AiChatEmptyStateDisplayModel: Equatable, Sendable {
+    public var title: String
+    public var detail: String
+
+    public init(title: String, detail: String) {
+        self.title = title
+        self.detail = detail
+    }
+}
+
+public struct AiChatInputDisplayModel: Equatable, Sendable {
+    public var placeholder: String
+    public var contextAffordanceLabel: String
+    public var modelLabel: String
+    public var effortLabel: String
+    public var submitAccessibilityLabel: String
+    public var stopAccessibilityLabel: String
+    public var isSubmitVisible: Bool
+    public var isStopVisible: Bool
+    public var canSubmit: Bool
+    public var canStop: Bool
+
+    public init(
+        placeholder: String,
+        contextAffordanceLabel: String,
+        modelLabel: String,
+        effortLabel: String,
+        submitAccessibilityLabel: String,
+        stopAccessibilityLabel: String,
+        isSubmitVisible: Bool,
+        isStopVisible: Bool,
+        canSubmit: Bool,
+        canStop: Bool,
+    ) {
+        self.placeholder = placeholder
+        self.contextAffordanceLabel = contextAffordanceLabel
+        self.modelLabel = modelLabel
+        self.effortLabel = effortLabel
+        self.submitAccessibilityLabel = submitAccessibilityLabel
+        self.stopAccessibilityLabel = stopAccessibilityLabel
+        self.isSubmitVisible = isSubmitVisible
+        self.isStopVisible = isStopVisible
+        self.canSubmit = canSubmit
+        self.canStop = canStop
+    }
+}
+
+public enum AiChatSkeletonSurfaceDisplayModel: Equatable, Sendable {
+    case unconnected(AiChatConnectionMetadata)
+    case error(AiChatConnectionMetadata)
+    case empty(AiChatEmptyStateDisplayModel)
+    case ready
+    case processing(AiChatProcessingState)
+}
+
+public struct AiChatSkeletonDisplayModel: Equatable, Sendable {
+    public var headerTitle: String
+    public var currentContext: AiChatContextSummaryDisplayModel
+    public var surface: AiChatSkeletonSurfaceDisplayModel
+    public var chatInput: AiChatInputDisplayModel
+
+    public init(
+        headerTitle: String,
+        currentContext: AiChatContextSummaryDisplayModel,
+        surface: AiChatSkeletonSurfaceDisplayModel,
+        chatInput: AiChatInputDisplayModel,
+    ) {
+        self.headerTitle = headerTitle
+        self.currentContext = currentContext
+        self.surface = surface
+        self.chatInput = chatInput
     }
 }
 
@@ -110,7 +184,7 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
         isSelected: Bool,
         isLocked: Bool,
         isDefault: Bool,
-        isRecommended: Bool
+        isRecommended: Bool,
     ) {
         self.handle = handle
         self.label = label
@@ -131,7 +205,7 @@ public struct AiChatModelCatalogState: Equatable, Sendable {
         fieldLabel: String,
         rows: [AiChatModelCatalogRowDisplayModel],
         selectedModel: AiChatSelectedModelDisplayModel?,
-        lockedModel: AiChatLockedModelDisplayModel?
+        lockedModel: AiChatLockedModelDisplayModel?,
     ) {
         self.fieldLabel = fieldLabel
         self.rows = rows
@@ -148,7 +222,7 @@ public enum AiChatSurfaceState: Equatable, Sendable {
     case processing(
         processing: AiChatProcessingState,
         summary: AiChatContextSummaryDisplayModel,
-        selectedModel: AiChatSelectedModelDisplayModel?
+        selectedModel: AiChatSelectedModelDisplayModel?,
     )
 }
 
@@ -165,44 +239,40 @@ func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot
     let hasContent = referenceCount > 0 || itemCount > 0 || attachmentCount > 0
     let trimmedSummary = snapshot.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
     let title = trimmedSummary.flatMap { $0.isEmpty ? nil : $0 }
-        ?? (hasContent ? "Current context" : "No current context")
+        ?? (hasContent ? "Current context" : "No current selection")
     let detailParts = [
         referenceCount > 0 ? "\(referenceCount) \(referenceCount == 1 ? "reference" : "references")" : nil,
         itemCount > 0 ? "\(itemCount) \(itemCount == 1 ? "item" : "items")" : nil,
         attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil
-    ].compactMap { $0 }
+    ].compactMap(\.self)
     return AiChatContextSummaryDisplayModel(
         title: title,
         detail: detailParts.isEmpty ? nil : detailParts.joined(separator: " · "),
         referenceCount: referenceCount,
         itemCount: itemCount,
         attachmentCount: attachmentCount,
-        isEmpty: !hasContent && (trimmedSummary?.isEmpty ?? true)
+        isEmpty: !hasContent && (trimmedSummary?.isEmpty ?? true),
     )
 }
 
-func aiChatConnectionMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
-    if state.sessionID == nil {
-        return AiChatConnectionMetadata(
-            title: "No session connected",
-            detail: "Start or open a session to continue from the current context.",
-            fixLabel: "Open session"
-        )
+func aiChatUnconnectedMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
+    guard state.sessionID == nil || state.catalogRows.isEmpty || state.selectedModelDisplayModel == nil else {
+        return nil
     }
 
-    if state.catalogRows.isEmpty || state.selectedModelDisplayModel == nil {
-        return AiChatConnectionMetadata(
-            title: "No AI provider connected",
-            detail: "Connect an AI provider in Settings to start chatting.",
-            fixLabel: "Connect provider in Settings"
-        )
-    }
+    return AiChatConnectionMetadata(
+        title: "Connect an AI provider",
+        detail: "Set up a provider in Settings to chat with this context.",
+        fixLabel: "Open Settings",
+    )
+}
 
+func aiChatErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
     if let failure = state.lastExecutionFailure {
         return AiChatConnectionMetadata(
             title: "Chat unavailable",
             detail: failure.displayMessage,
-            fixLabel: "Retry"
+            fixLabel: "Retry",
         )
     }
 
@@ -211,18 +281,42 @@ func aiChatConnectionMetadata(for state: AiChatState) -> AiChatConnectionMetadat
         return AiChatConnectionMetadata(
             title: "Session failed",
             detail: "The current chat session could not be loaded.",
-            fixLabel: "Retry"
+            fixLabel: "Retry",
         )
     case .rebindRequired:
         return AiChatConnectionMetadata(
             title: "Session needs rebind",
             detail: "Reconnect the session before continuing.",
-            fixLabel: "Reconnect"
+            fixLabel: "Reconnect",
         )
     default:
         return nil
     }
 }
+
+func aiChatMockAssistantBodyLines(from content: String) -> [String]? {
+    let lines = content
+        .split(whereSeparator: \.isNewline)
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+
+    guard lines.count == 7,
+          lines.first == aiChatMockAssistantHeaderTitle,
+          Array(lines.suffix(aiChatMockAssistantProgressRows.count)) == aiChatMockAssistantProgressRows
+    else {
+        return nil
+    }
+
+    let bodyLines = Array(lines.dropFirst().dropLast(aiChatMockAssistantProgressRows.count))
+    return bodyLines.count == 3 ? bodyLines : nil
+}
+
+private let aiChatMockAssistantHeaderTitle = "Voyager AI"
+private let aiChatMockAssistantProgressRows = [
+    "✓ Context",
+    "✓ Queued",
+    "★ Mock ready"
+]
 
 extension AiChatExecutionFailure {
     var displayMessage: String {

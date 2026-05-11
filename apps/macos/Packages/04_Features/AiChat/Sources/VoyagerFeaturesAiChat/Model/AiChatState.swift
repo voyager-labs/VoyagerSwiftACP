@@ -33,7 +33,7 @@ public struct AiChatState: Equatable, Sendable {
         selectedModelHandle: AiModelHandle? = nil,
         lockedModelHandle: AiModelHandle? = nil,
         lastExecutionFailure: AiChatExecutionFailure? = nil,
-        executionPhase: AiChatExecutionPhase = .idle,
+        executionPhase: AiChatExecutionPhase = .idle
     ) {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
@@ -56,13 +56,60 @@ public struct AiChatState: Equatable, Sendable {
     }
 
     public var connectionState: AiChatConnectionState {
-        if let metadata = aiChatConnectionMetadata(for: self) {
-            if sessionID == nil {
-                return .unconnected(metadata)
-            }
+        if let metadata = aiChatUnconnectedMetadata(for: self) {
+            return .unconnected(metadata)
+        }
+        if let metadata = aiChatErrorMetadata(for: self) {
             return .error(metadata)
         }
         return .connected
+    }
+
+    public var emptyStateDisplayModel: AiChatEmptyStateDisplayModel {
+        AiChatEmptyStateDisplayModel(
+            title: "Ask about this context",
+            detail: "Send a message to start a contextual chat."
+        )
+    }
+
+    public var chatInputDisplayModel: AiChatInputDisplayModel {
+        let stopEnabled = isProcessing && (cancelAffordance?.isEnabled ?? false)
+        return AiChatInputDisplayModel(
+            placeholder: "Ask anything…",
+            contextAffordanceLabel: "+",
+            modelLabel: chatInputModelLabel,
+            effortLabel: "xhigh",
+            submitAccessibilityLabel: "Send",
+            stopAccessibilityLabel: "Stop",
+            isSubmitVisible: !isProcessing,
+            isStopVisible: isProcessing,
+            canSubmit: canSubmit,
+            canStop: stopEnabled
+        )
+    }
+
+    public var skeletonDisplayModel: AiChatSkeletonDisplayModel {
+        AiChatSkeletonDisplayModel(
+            headerTitle: "Chat",
+            currentContext: currentContextSummaryDisplayModel,
+            surface: skeletonSurfaceDisplayModel,
+            chatInput: chatInputDisplayModel
+        )
+    }
+
+    public var skeletonSurfaceDisplayModel: AiChatSkeletonSurfaceDisplayModel {
+        switch surfaceState {
+        case let .unconnected(connection, _):
+            .unconnected(connection)
+        case let .error(connection, _):
+            .error(connection)
+        case .empty:
+            .empty(emptyStateDisplayModel)
+        case .ready:
+            .ready
+        case let .processing(processing, _, _):
+            .processing(processing)
+        }
     }
 
     public var modelCatalogState: AiChatModelCatalogState {
@@ -80,11 +127,11 @@ public struct AiChatState: Equatable, Sendable {
                     isSelected: row.handle == selectedHandle,
                     isLocked: row.handle == lockedHandle,
                     isDefault: row.isDefault,
-                    isRecommended: row.isRecommended,
+                    isRecommended: row.isRecommended
                 )
             },
             selectedModel: selectedModel,
-            lockedModel: lockedModel,
+            lockedModel: lockedModel
         )
     }
 
@@ -94,6 +141,10 @@ public struct AiChatState: Equatable, Sendable {
     }
 
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
+        if case let .processing(lock) = executionPhase {
+            return lockedModelDisplayModel(for: lock)
+        }
+
         guard let handle = lockedModelHandle,
               let row = catalogRows.first(where: { $0.handle == handle })
         else { return nil }
@@ -105,8 +156,13 @@ public struct AiChatState: Equatable, Sendable {
         guard !isProcessing else { return false }
         guard resolvedSelectedModelRow != nil else { return false }
         guard connectionState == .connected else { return false }
-        guard case .ready = surfaceState else { return false }
-        return true
+
+        switch surfaceState {
+        case .empty, .ready:
+            return true
+        case .unconnected, .error, .processing:
+            return false
+        }
     }
 
     public var canRegenerate: Bool {
@@ -153,28 +209,33 @@ public struct AiChatState: Equatable, Sendable {
     }
 
     public var cancelAffordance: AiChatCancelAffordance? {
-        guard lockedModelDisplayModel != nil else { return nil }
+        guard executionPhase.isProcessing else { return nil }
         return AiChatCancelAffordance(title: "Cancel request", isEnabled: true)
     }
 
     public var surfaceState: AiChatSurfaceState {
+        switch executionPhase {
+        case let .processing(lock):
+            return .processing(
+                processing: AiChatProcessingState(
+                    lockedModel: lockedModelDisplayModel(for: lock),
+                    cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true)
+                ),
+                summary: currentContextSummaryDisplayModel,
+                selectedModel: selectedModelDisplayModel
+            )
+        case .completed, .failed, .cancelled, .persistenceRecovery:
+            return .ready(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
+        case .idle:
+            break
+        }
+
         switch connectionState {
         case let .unconnected(metadata):
             return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
         case let .error(metadata):
             return .error(connection: metadata, summary: currentContextSummaryDisplayModel)
         case .connected:
-            if let lockedModel = lockedModelDisplayModel {
-                return .processing(
-                    processing: AiChatProcessingState(
-                        lockedModel: lockedModel,
-                        cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true),
-                    ),
-                    summary: currentContextSummaryDisplayModel,
-                    selectedModel: selectedModelDisplayModel,
-                )
-            }
-
             if isInitialChatSurface {
                 return .empty(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
             }
@@ -185,11 +246,26 @@ public struct AiChatState: Equatable, Sendable {
 
     public var modelFieldLabel: String { "Model" }
 
-    public var isProcessing: Bool { lockedModelDisplayModel != nil }
+    public var isProcessing: Bool { executionPhase.isProcessing }
+
+    private var chatInputModelLabel: String {
+        selectedModelDisplayModel?.label.title
+            ?? lockedModelDisplayModel?.label.title
+            ?? "gpt-5.4"
+    }
+    private func lockedModelDisplayModel(for lock: AiChatRequestLock) -> AiChatLockedModelDisplayModel {
+        if let row = lock.selectedModelRow ?? catalogRows.first(where: { $0.handle == lock.selectedModelHandle }) {
+            return AiChatLockedModelDisplayModel(handle: row.handle, label: aiChatModelLabel(for: row))
+        }
+
+        return AiChatLockedModelDisplayModel(
+            handle: lock.selectedModelHandle,
+            label: AiChatModelLabel(title: lock.selectedModelHandle.rawValue)
+        )
+    }
 
     private var isInitialChatSurface: Bool {
         transcriptHistory.isEmpty
-            && draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && streamDraftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
