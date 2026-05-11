@@ -65,6 +65,33 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[1].handle)
     }
 
+    func testAvailableModelsUpdatedPreservesValidCurrentSelection() async {
+        let catalogRows = makeCatalogRows()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[1].handle
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.availableModelsUpdated(
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle
+        ))
+
+        XCTAssertEqual(store.state.selectedModelHandle, catalogRows[1].handle)
+
+        await store.send(.availableModelsUpdated(
+            catalogRows: [catalogRows[0]],
+            selectedModelHandle: catalogRows[0].handle
+        )) { state in
+            state.catalogRows = [catalogRows[0]]
+            state.selectedModelHandle = catalogRows[0].handle
+        }
+    }
+
     func testSetupFallsBackToFirstCatalogRowWhenSelectedModelIsUnresolvable() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()

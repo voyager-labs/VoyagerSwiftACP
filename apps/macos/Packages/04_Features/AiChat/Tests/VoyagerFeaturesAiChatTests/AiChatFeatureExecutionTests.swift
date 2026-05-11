@@ -4,11 +4,24 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+private let expectedMockAssistantMessage = """
+Voyager AI
+Context checked.
+Plan ready.
+Provider later.
+✓ Context
+✓ Queued
+★ Mock ready
+"""
+
+final class SettingsOpenSpy: @unchecked Sendable {
+    var callCount = 0
+}
+
 @MainActor
 final class AiChatFeatureExecutionTests: XCTestCase {
     // swiftlint:disable:next function_body_length
-    func testSubmitStreamsDraftOnlyAndFinalizesExactlyOnce() async {
-        let stream = AiChatExecutionStreamDriver()
+    func testSubmitWithLiveExecutionClientStartsThenFinalizesWithSingleMockAssistantResponse() async {
         let persistence = AiChatSessionPersistenceSpy()
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
@@ -25,20 +38,18 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )) {
             AiChatFeature()
         } withDependencies: {
             $0.uuid = .incrementing
-            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
-                stream.stream(for: request)
-            })
+            $0.aiChatExecutionClient = .liveValue
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { snapshot in
                     await persistence.save(snapshot)
                 },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -53,54 +64,40 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             XCTAssertEqual(state.sessionID, sessionID)
         }
 
-        guard let request = stream.requests.first else {
-            XCTFail("Expected execution request")
+        guard case let .processing(lock) = store.state.executionPhase else {
+            XCTFail("Expected processing state after submit")
             return
         }
-        let lock = makeRequestLock(
-            kind: .submit,
-            request: request,
-            selectedHandle: selectedHandle,
-            selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil,
+
+        let expectedResponse = AiChatResponse(
+            context: lock.request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: expectedMockAssistantMessage),
+            completedAtMs: 0
         )
 
-        XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello")])
-        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+        await store.receive(.executionEvent(.started(context: lock.request.context)))
 
-        stream.yield(.streamChunk(context: request.context, delta: "Hel"))
-        await store.receive(.executionEvent(.streamChunk(context: request.context, delta: "Hel"))) { state in
-            state.streamDraftText = "Hel"
-        }
-
-        stream.yield(.streamChunk(context: request.context, delta: "lo"))
-        await store.receive(.executionEvent(.streamChunk(context: request.context, delta: "lo"))) { state in
-            state.streamDraftText = "Hello"
-        }
-
-        let finalResponse = AiChatResponse(
-            context: request.context,
-            assistantMessage: AiChatMessage(role: .assistant, content: "Hello back"),
-            completedAtMs: 0,
-        )
-        stream.yield(.final(response: finalResponse))
-        stream.finish()
-
-        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+        await store.receive(.executionEvent(.final(response: expectedResponse))) { state in
             state.streamDraftText = ""
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Hello back")
+                AiChatMessage(role: .assistant, content: expectedMockAssistantMessage)
             ]
             state.lockedModelHandle = nil
             state.executionPhase = .completed(lock)
         }
 
         await store.finish()
+
+        let assistantMessages = store.state.transcriptHistory.filter { $0.role == .assistant }
+        XCTAssertEqual(assistantMessages, [AiChatMessage(role: .assistant, content: expectedMockAssistantMessage)])
         XCTAssertEqual(persistence.snapshots.count, 1)
-        XCTAssertEqual(persistence.snapshots.first?.transcriptHistory.count, 2)
-        XCTAssertEqual(persistence.snapshots.first?.lastRequestID, request.context.requestID)
-        XCTAssertEqual(persistence.snapshots.first?.lastRunID, request.context.runID)
+        XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, [
+            AiChatMessage(role: .user, content: "Hello"),
+            AiChatMessage(role: .assistant, content: expectedMockAssistantMessage)
+        ])
+        XCTAssertEqual(persistence.snapshots.first?.lastRequestID, lock.request.context.requestID)
+        XCTAssertEqual(persistence.snapshots.first?.lastRunID, lock.request.context.runID)
     }
 
     // swiftlint:disable:next function_body_length
@@ -121,7 +118,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -132,7 +129,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { _ in },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -152,7 +149,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil,
+            assistantReplacementIndex: nil
         )
 
         XCTAssertEqual(store.state.executionPhase, .processing(lock))
@@ -167,14 +164,36 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.send(.executionEvent(.final(response: AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "late final"),
-            completedAtMs: 0,
+            completedAtMs: 0
         ))))
+        await store.send(.executionEvent(.failed(context: request.context, reason: .unknown)))
 
+        let assistantMessages = store.state.transcriptHistory.filter { $0.role == .assistant }
+        XCTAssertTrue(assistantMessages.isEmpty)
         XCTAssertEqual(store.state.transcriptHistory, [AiChatMessage(role: .user, content: "Cancel me")])
         XCTAssertEqual(store.state.streamDraftText, "")
         XCTAssertNil(store.state.lockedModelHandle)
+        XCTAssertNil(store.state.lastExecutionFailure)
         XCTAssertEqual(store.state.executionPhase, .cancelled(lock))
 
         await store.finish()
+    }
+
+    func testOpenSettingsTappedInvokesSettingsClientWhenDisconnected() async {
+        let spy = SettingsOpenSpy()
+
+        let store = TestStore(initialState: AiChatFeature.State()) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSettingsClient = AiChatSettingsClient(openSettingsWindow: {
+                spy.callCount += 1
+                return true
+            })
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.openSettingsTapped)
+
+        XCTAssertEqual(spy.callCount, 1)
     }
 }

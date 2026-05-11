@@ -15,6 +15,8 @@ public struct AiChatFeature {
     var aiChatExecutionClient
     @Dependency(\.aiChatSessionPersistenceClient)
     var aiChatSessionPersistenceClient
+    @Dependency(\.aiChatSettingsClient)
+    var aiChatSettingsClient
     @Dependency(\.uuid)
     var uuid
 
@@ -34,6 +36,19 @@ public struct AiChatFeature {
                 state.sessionStatus = .restoring
                 return restoreSession(sessionID: restoreSessionID, state: state)
 
+            case let .availableModelsUpdated(catalogRows, selectedModelHandle):
+                let currentSelectedModelHandle = state.selectedModelHandle
+                state.catalogRows = catalogRows
+                if let currentSelectedModelHandle,
+                   catalogRows.contains(where: { $0.handle == currentSelectedModelHandle }) {
+                    state.selectedModelHandle = currentSelectedModelHandle
+                } else {
+                    state.selectedModelHandle = resolvedSelectionHandle(selectedModelHandle, in: catalogRows)
+                }
+                normalizeSelectionIfNeeded(&state)
+                clearRetryBlockingFailureIfNeeded(&state)
+                return .none
+
             case let .selectedModelChanged(handle):
                 let resolvedHandle = resolvedSelectionHandle(handle, in: state.catalogRows)
                 guard state.selectedModelHandle != resolvedHandle else { return .none }
@@ -45,6 +60,15 @@ public struct AiChatFeature {
                 state.draftText = text
                 clearRetryBlockingFailureIfNeeded(&state)
                 return .none
+
+            case .openSettingsTapped:
+                guard case .unconnected = state.connectionState else { return .none }
+                let openSettingsWindow = aiChatSettingsClient.openSettingsWindow
+                return .run { _ in
+                    await MainActor.run {
+                        _ = openSettingsWindow()
+                    }
+                }
 
             case .submitTapped:
                 guard state.canSubmit else { return .none }
