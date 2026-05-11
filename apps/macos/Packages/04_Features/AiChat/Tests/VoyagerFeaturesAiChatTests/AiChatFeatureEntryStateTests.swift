@@ -130,7 +130,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertNil(emptyContextState.currentContextSummaryDisplayModel.detail)
     }
 
-    func testProviderUnavailableSurfaceUsesFixedBannerAndFallbackComposerLabels() {
+    func testProviderUnavailableSurfaceUsesFixedBannerAndEmptyComposerModelLabel() {
         let state = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
             sessionStatus: .active,
@@ -151,7 +151,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             fixLabel: "Open Settings",
         )))
         XCTAssertFalse(state.canSubmit)
-        XCTAssertEqual(state.chatInputDisplayModel.modelLabel, "gpt-5.4")
+        XCTAssertNil(state.chatInputDisplayModel.modelLabel)
         XCTAssertEqual(state.chatInputDisplayModel.effortLabel, "xhigh")
 
         if case let .unconnected(connection, summary) = state.surfaceState {

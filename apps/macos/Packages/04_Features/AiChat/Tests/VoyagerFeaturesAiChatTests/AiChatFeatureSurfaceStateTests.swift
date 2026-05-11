@@ -256,4 +256,5 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
         XCTAssertFalse(disconnectedState.canSubmit)
         XCTAssertFalse(disconnectedState.chatInputDisplayModel.canSubmit)
     }
+
 }

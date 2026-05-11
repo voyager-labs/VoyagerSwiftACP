@@ -288,7 +288,7 @@ public struct AiChatView: View {
                     hoverColor: .primary
                 )
                 .fixedSize(horizontal: true, vertical: false)
-                HoverTextAffordance(title: input.modelLabel, systemName: "chevron.up.chevron.down")
+                HoverTextAffordance(title: input.modelLabel ?? "No model", systemName: "chevron.up.chevron.down")
                     .fixedSize(horizontal: true, vertical: false)
                 HoverTextAffordance(title: input.effortLabel, systemName: "dial.medium")
                     .fixedSize(horizontal: true, vertical: false)

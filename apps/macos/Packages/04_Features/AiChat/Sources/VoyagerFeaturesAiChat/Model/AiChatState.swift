@@ -228,6 +228,9 @@ public struct AiChatState: Equatable, Sendable {
             if let metadata = aiChatUnconnectedMetadata(for: self) {
                 return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
             }
+            if let metadata = aiChatTerminalErrorMetadata(for: self) {
+                return .error(connection: metadata, summary: currentContextSummaryDisplayModel)
+            }
             return .ready(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
         case .idle:
             break
@@ -251,11 +254,11 @@ public struct AiChatState: Equatable, Sendable {
 
     public var isProcessing: Bool { executionPhase.isProcessing }
 
-    private var chatInputModelLabel: String {
+    private var chatInputModelLabel: String? {
         selectedModelDisplayModel?.label.title
             ?? lockedModelDisplayModel?.label.title
-            ?? "gpt-5.4"
     }
+
     private func lockedModelDisplayModel(for lock: AiChatRequestLock) -> AiChatLockedModelDisplayModel {
         if let row = lock.selectedModelRow ?? catalogRows.first(where: { $0.handle == lock.selectedModelHandle }) {
             return AiChatLockedModelDisplayModel(handle: row.handle, label: aiChatModelLabel(for: row))
@@ -280,5 +283,21 @@ public struct AiChatState: Equatable, Sendable {
 
         guard !catalogRows.isEmpty else { return nil }
         return catalogRows.first
+    }
+}
+
+func aiChatTerminalErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
+    switch state.executionPhase {
+    case .persistenceRecovery:
+        if let failure = state.lastExecutionFailure {
+            return aiChatExecutionFailureMetadata(for: failure)
+        }
+        return aiChatSessionStatusErrorMetadata(for: state)
+    case .completed, .cancelled:
+        return aiChatSessionStatusErrorMetadata(for: state)
+    case .failed:
+        return nil
+    case .idle, .processing:
+        return nil
     }
 }

@@ -57,7 +57,7 @@ public struct AiChatEmptyStateDisplayModel: Equatable, Sendable {
 public struct AiChatInputDisplayModel: Equatable, Sendable {
     public var placeholder: String
     public var contextAffordanceLabel: String
-    public var modelLabel: String
+    public var modelLabel: String?
     public var effortLabel: String
     public var submitAccessibilityLabel: String
     public var stopAccessibilityLabel: String
@@ -69,7 +69,7 @@ public struct AiChatInputDisplayModel: Equatable, Sendable {
     public init(
         placeholder: String,
         contextAffordanceLabel: String,
-        modelLabel: String,
+        modelLabel: String?,
         effortLabel: String,
         submitAccessibilityLabel: String,
         stopAccessibilityLabel: String,
@@ -269,13 +269,21 @@ func aiChatUnconnectedMetadata(for state: AiChatState) -> AiChatConnectionMetada
 
 func aiChatErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
     if let failure = state.lastExecutionFailure {
-        return AiChatConnectionMetadata(
-            title: "Chat unavailable",
-            detail: failure.displayMessage,
-            fixLabel: "Retry",
-        )
+        return aiChatExecutionFailureMetadata(for: failure)
     }
 
+    return aiChatSessionStatusErrorMetadata(for: state)
+}
+
+func aiChatExecutionFailureMetadata(for failure: AiChatExecutionFailure) -> AiChatConnectionMetadata {
+    AiChatConnectionMetadata(
+        title: "Chat unavailable",
+        detail: failure.displayMessage,
+        fixLabel: "Retry",
+    )
+}
+
+func aiChatSessionStatusErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
     switch state.sessionStatus {
     case .failed:
         return AiChatConnectionMetadata(
