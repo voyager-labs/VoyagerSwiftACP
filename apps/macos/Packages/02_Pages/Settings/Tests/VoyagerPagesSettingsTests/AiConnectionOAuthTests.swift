@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
@@ -57,6 +58,7 @@ private actor SuspensionGate {
 }
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class AiConnectionOAuthTests: XCTestCase {
     private func makeCredential(
         accessToken: String = "test-access-token",
@@ -107,11 +109,13 @@ final class AiConnectionOAuthTests: XCTestCase {
             state.connectionState = .connectInProgress
         }
 
-        await store.receive(\.browserLoginCompleted) { state in
+        await store.receive(\._connectionResponse) { state in
             state.connectionState = .connected
-            state.flowState = .idle
             state.statusReason = .none
+            state.flowState = .idle
         }
+
+        await store.receive(\.browserLoginCompleted)
 
         await store.finish()
 
@@ -166,11 +170,13 @@ final class AiConnectionOAuthTests: XCTestCase {
 
         await gate.open()
 
-        await store.receive(\.browserLoginCompleted) { state in
+        await store.receive(\._connectionResponse) { state in
             state.connectionState = .connected
-            state.flowState = .idle
             state.statusReason = .none
+            state.flowState = .idle
         }
+
+        await store.receive(\.browserLoginCompleted)
 
         let snapshotAfterOpen = await log.snapshot()
         XCTAssertEqual(snapshotAfterOpen, ["verify", "connect"])
@@ -605,11 +611,13 @@ final class AiConnectionOAuthTests: XCTestCase {
             state.connectionState = .connectInProgress
         }
 
-        await store.receive(\.deviceAuthCompleted) { state in
+        await store.receive(\._connectionResponse) { state in
             state.connectionState = .connected
-            state.flowState = .idle
             state.statusReason = .none
+            state.flowState = .idle
         }
+
+        await store.receive(\.deviceAuthCompleted)
 
         await store.finish()
     }
@@ -698,11 +706,13 @@ final class AiConnectionOAuthTests: XCTestCase {
             state.connectionState = .connectInProgress
         }
 
-        await store.receive(\.browserLoginCompleted) { state in
+        await store.receive(\._connectionResponse) { state in
             state.connectionState = .connected
-            state.flowState = .idle
             state.statusReason = .none
+            state.flowState = .idle
         }
+
+        await store.receive(\.browserLoginCompleted)
 
         await store.finish()
 

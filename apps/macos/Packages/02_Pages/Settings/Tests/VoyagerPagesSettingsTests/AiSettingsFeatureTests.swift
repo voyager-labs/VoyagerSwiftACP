@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import VoyagerEntitiesAi
 @testable import VoyagerPagesSettings
@@ -22,7 +23,39 @@ private final class APIKeyConnectionController: @unchecked Sendable {
 }
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class AiSettingsFeatureTests: XCTestCase {
+    func testConnectionResponseEmitsConnectionsFileUpdatedDelegate() async {
+        let updatedFile = AIConnectionsFile.singleProvider(.chatgptCodex, state: .connected)
+        let store = TestStore(
+            initialState: AiSettingsState(rows: [
+                AiConnectionRowState(
+                    provider: .chatgptCodex,
+                    connectionState: .connectInProgress,
+                    flowState: .browserLoginInProgress
+                )
+            ])
+        ) {
+            AiSettingsFeature()
+        }
+
+        await store.send(.row(.element(
+            id: .chatgptCodex,
+            action: ._connectionResponse(AiProviderConnectionResult(
+                provider: .chatgptCodex,
+                state: .connected,
+                reason: .none,
+                updatedFile: updatedFile
+            ))
+        ))) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connected
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .chatgptCodex]?.flowState = .idle
+        }
+
+        await store.receive(.delegate(.connectionsFileUpdated(updatedFile)))
+    }
+
     // MARK: - Fresh Install (No Auth File)
 
     func testOnAppear_freshInstall_showsAllNotVerified() async {
@@ -68,7 +101,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .oauth,
                     credential: .oauth(OAuthCredentialFile(accessToken: "token-valid")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
-                ),
+                )
             ]
         )
 
@@ -123,7 +156,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastKnownStatus: .connectionFailed,
                         lastErrorCode: .expired
                     )
-                ),
+                )
             ]
         )
 
@@ -171,7 +204,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastKnownStatus: .connectionFailed,
                         lastErrorCode: .invalidAPIKey
                     )
-                ),
+                )
             ]
         )
 
@@ -263,7 +296,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
-                ),
+                )
             ]
         )
 
@@ -344,7 +377,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .disconnected)
-                ),
+                )
             ]
         )
 
@@ -383,7 +416,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .oauth,
                     credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connectInProgress)
-                ),
+                )
             ]
         )
 
@@ -418,7 +451,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .disconnecting)
-                ),
+                )
             ]
         )
 
