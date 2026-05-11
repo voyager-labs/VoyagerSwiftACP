@@ -225,6 +225,9 @@ public struct AiChatState: Equatable, Sendable {
                 selectedModel: selectedModelDisplayModel
             )
         case .completed, .failed, .cancelled, .persistenceRecovery:
+            if let metadata = aiChatUnconnectedMetadata(for: self) {
+                return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
+            }
             return .ready(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
         case .idle:
             break

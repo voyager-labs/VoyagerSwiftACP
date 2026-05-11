@@ -203,4 +203,57 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
         }
         XCTAssertEqual(errorState.requestStatusText, "The chat service is temporarily unavailable.")
     }
+
+    func testTerminalSurfaceReflectsDisconnectedProvider() {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: AiChatSessionID(rawValue: UUID()),
+                requestID: AiChatRequestID(rawValue: UUID()),
+                runID: AiChatRunID(rawValue: UUID()),
+                model: selectedHandle,
+                selectedRow: catalogRows[0]
+            ),
+            messages: []
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        )
+        let disconnectedState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "Hi")
+            ],
+            draftText: "Follow up",
+            streamDraftText: "",
+            catalogRows: [],
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .completed(lock)
+        )
+
+        if case let .unconnected(connection, summary) = disconnectedState.surfaceState {
+            XCTAssertEqual(connection.title, "Connect an AI provider")
+            XCTAssertEqual(connection.fixLabel, "Open Settings")
+            XCTAssertFalse(summary.isEmpty)
+        } else {
+            XCTFail("Expected completed session to surface provider disconnection")
+        }
+        if case let .unconnected(connection) = disconnectedState.skeletonSurfaceDisplayModel {
+            XCTAssertEqual(connection.fixLabel, "Open Settings")
+        } else {
+            XCTFail("Expected skeleton surface to expose provider disconnection")
+        }
+        XCTAssertFalse(disconnectedState.canSubmit)
+        XCTAssertFalse(disconnectedState.chatInputDisplayModel.canSubmit)
+    }
 }
