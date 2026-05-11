@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 
 enum FileManagerContentCollectionCoordinator {
     static func handleCollectionOwnerAction(

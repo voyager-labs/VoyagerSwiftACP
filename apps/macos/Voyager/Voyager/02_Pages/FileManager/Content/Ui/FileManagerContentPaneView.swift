@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 
 struct FileManagerContentPaneView: View {
