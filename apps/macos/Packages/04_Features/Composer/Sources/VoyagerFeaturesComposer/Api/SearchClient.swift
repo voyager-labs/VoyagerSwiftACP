@@ -9,8 +9,8 @@ public struct SearchClient: Sendable {
         .SearchResponsePayload
 }
 
-public extension SearchClient: DependencyKey {
-    static let liveValue: SearchClient = .init(
+extension SearchClient: DependencyKey {
+    public static let liveValue: SearchClient = .init(
         search: { request in
             try await SearchXPCTransport.querySearch(request)
         },
@@ -19,7 +19,7 @@ public extension SearchClient: DependencyKey {
         }
     )
 
-    nonisolated(unsafe) static var testValue: SearchClient = .init(
+    public nonisolated(unsafe) static var testValue: SearchClient = .init(
         search: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
         applyFilters: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) }
     )

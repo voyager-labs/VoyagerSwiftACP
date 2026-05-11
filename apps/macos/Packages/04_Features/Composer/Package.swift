@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "VoyagerFeaturesComposer", targets: ["VoyagerFeaturesComposer"]),
     ],
     dependencies: [
+        .package(path: "../ContentPageNavigation"),
         .package(name: "VoyagerEntitiesCollection", path: "../../05_Entities/Collection"),
         .package(name: "VoyagerEntitiesEntry", path: "../../05_Entities/Entry"),
         .package(name: "VoyagerEntitiesTag", path: "../../05_Entities/Tag"),
@@ -24,6 +25,7 @@ let package = Package(
         .target(
             name: "VoyagerFeaturesComposer",
             dependencies: [
+                .product(name: "VoyagerFeaturesContentPageNavigation", package: "ContentPageNavigation"),
                 .product(name: "VoyagerEntitiesCollection", package: "VoyagerEntitiesCollection"),
                 .product(name: "VoyagerEntitiesEntry", package: "VoyagerEntitiesEntry"),
                 .product(name: "VoyagerEntitiesTag", package: "VoyagerEntitiesTag"),
