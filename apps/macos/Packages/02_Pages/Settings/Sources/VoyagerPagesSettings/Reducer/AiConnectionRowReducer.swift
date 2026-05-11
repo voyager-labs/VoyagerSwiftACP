@@ -3,6 +3,7 @@ import Foundation
 import VoyagerEntitiesAi
 
 @Reducer
+// swiftlint:disable:next type_body_length
 public struct AiConnectionRowReducer {
     public typealias State = AiConnectionRowState
     public typealias Action = AiConnectionRowAction
@@ -133,6 +134,7 @@ public struct AiConnectionRowReducer {
         return .none
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func handleStartBrowserLogin(_ state: inout State) -> Effect<Action> {
         guard state.connectionState != .unavailable else { return .none }
         state.flowState = .browserLoginInProgress
@@ -173,6 +175,7 @@ public struct AiConnectionRowReducer {
                     await send(.browserLoginFailed(.networkError("Connection failed")))
                     return
                 }
+                await send(._connectionResponse(result))
                 await send(.browserLoginCompleted(credential))
             case let .invalid(reason):
                 await send(.verificationFailed(reason))
@@ -204,6 +207,7 @@ public struct AiConnectionRowReducer {
                         await send(.deviceAuthFailed(.networkError("Connection failed")))
                         return
                     }
+                    await send(._connectionResponse(result))
                     await send(.deviceAuthCompleted(credential))
                 case let .invalid(reason):
                     await send(.verificationFailed(reason))

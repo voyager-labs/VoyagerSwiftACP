@@ -42,6 +42,10 @@ public struct SettingsFeature {
                 }
             }
 
+            if case let .ai(.delegate(.connectionsFileUpdated(file))) = action {
+                return .send(.delegate(.aiConnectionsFileUpdated(file)))
+            }
+
             return .none
         }
     }

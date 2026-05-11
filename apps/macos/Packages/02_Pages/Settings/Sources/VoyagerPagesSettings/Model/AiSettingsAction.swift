@@ -2,13 +2,20 @@ import ComposableArchitecture
 import VoyagerEntitiesAi
 
 @CasePathable
-public enum AiSettingsAction: CasePathable, Sendable {
+public enum AiSettingsAction: CasePathable, Equatable, Sendable {
+    case delegate(Delegate)
+
     case onAppear
     case bootstrapCompleted([AiProviderBootstrapResult])
     case bootstrapVerificationCompleted([AiProviderBootstrapResult])
     case bootstrapFailed
     case retryBootstrapTapped
     case row(IdentifiedActionOf<AiConnectionRowReducer>)
+
+    @CasePathable
+    public enum Delegate: CasePathable, Equatable, Sendable {
+        case connectionsFileUpdated(AIConnectionsFile)
+    }
 }
 
 /// Result of bootstrapping a single provider from persisted credentials.

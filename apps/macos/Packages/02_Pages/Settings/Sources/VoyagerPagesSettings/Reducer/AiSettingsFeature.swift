@@ -49,7 +49,12 @@ public struct AiSettingsFeature {
                     verificationClient: verificationClient
                 )
 
-            case .row:
+            case let .row(.element(id: _, action: ._connectionResponse(result))),
+                 let .row(.element(id: _, action: ._disconnectResponse(result))):
+                return .send(.delegate(.connectionsFileUpdated(result.updatedFile)))
+
+            case .row,
+                 .delegate:
                 return .none
             }
         }
