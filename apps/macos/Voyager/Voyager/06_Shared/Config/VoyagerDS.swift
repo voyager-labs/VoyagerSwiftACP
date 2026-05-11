@@ -168,9 +168,7 @@ enum VoyagerDS {
         }
 
         static func inspectorPaneBackground(for scheme: ColorScheme) -> Color {
-            scheme == .dark
-                ? SystemColor.controlBackground
-                : Color(hex: 0xF5F5F5)
+            contentPaneBackground(for: scheme)
         }
 
         static func sidebarSelectionBackground(for scheme: ColorScheme) -> Color {
@@ -254,9 +252,7 @@ enum VoyagerDS {
         }
 
         static func inspectorPaneBackground(isDark: Bool) -> NSColor {
-            isDark
-                ? .controlBackgroundColor
-                : NSColor(hex: 0xF5F5F5)
+            contentPaneBackground(isDark: isDark)
         }
 
         // MARK: - Content Pane Overlay (피그마: Materials/Ultrathick 근사치)

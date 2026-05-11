@@ -13,6 +13,7 @@ struct InspectorPaneView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            Divider()
 
             if store.activeMode == .chat {
                 AiChatView(store: store.scope(state: \.aiChat, action: \.aiChat))
@@ -20,6 +21,8 @@ struct InspectorPaneView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(.thickMaterial)
+        .overlay(inspectorMaterialTint)
     }
 
     private var header: some View {
@@ -39,8 +42,8 @@ struct InspectorPaneView: View {
             .accessibilityLabel("Close AI Chat")
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var closeButtonLabel: some View {
@@ -48,7 +51,7 @@ struct InspectorPaneView: View {
             RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
                 .fill(closeButtonBackground)
 
-            Image(systemName: "xmark")
+            Image(systemName: "sidebar.trailing")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.secondary)
         }
@@ -60,5 +63,15 @@ struct InspectorPaneView: View {
         isCloseButtonHovered
             ? VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
             : .clear
+    }
+
+    @ViewBuilder private var inspectorMaterialTint: some View {
+        if colorScheme == .dark {
+            Color.white.opacity(0.06)
+                .allowsHitTesting(false)
+        } else {
+            Color.clear
+                .allowsHitTesting(false)
+        }
     }
 }

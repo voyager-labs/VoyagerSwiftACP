@@ -252,7 +252,7 @@ struct ToolbarView: View {
             action: { store.send(.view(.openContextualAiChatTapped)) },
             label: {
                 ToolbarHoverButtonLabel(
-                    systemName: "sparkles",
+                    systemName: "sidebar.trailing",
                     isEnabled: true,
                     font: nil,
                 )

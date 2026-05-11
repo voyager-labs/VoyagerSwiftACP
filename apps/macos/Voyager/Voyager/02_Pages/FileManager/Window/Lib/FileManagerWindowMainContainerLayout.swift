@@ -77,9 +77,9 @@ enum FileManagerWindowMainContainerLayout {
         view?.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
-    static func applyInspectorPaneStyle(_ view: NSView?, isDark: Bool) {
+    static func applyInspectorPaneStyle(_ view: NSView?, isDark _: Bool) {
         view?.wantsLayer = true
         view?.layer?.zPosition = 10
-        view?.layer?.backgroundColor = VoyagerDS.AppKitSurface.inspectorPaneBackground(isDark: isDark).cgColor
+        view?.layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
