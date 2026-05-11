@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -36,7 +37,12 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
 
         XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents · 1 selected")
-        assertCurrentContextInitialChatIsEmpty(store.state.inspector.aiChat)
+        assertConnectedCurrentContextSkeletonContract(
+            store.state.inspector.aiChat,
+            expectedSummaryTitle: "Documents · 1 selected",
+            expectedModelTitle: "GPT-4.1 Mini",
+            expectedCanSubmit: false,
+        )
     }
 
     func testOpenContextualAiChatTogglesClosedOnRepeatedCommand() async {
@@ -82,7 +88,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         XCTAssertEqual(store.state.inspector.aiChat.sessionID, firstSessionID)
     }
 
-    func testOpenContextualAiChatWithoutConfiguredProviderShowsSettingsGate() async {
+    func testToolbarSparklesWithoutConfiguredProviderShowsSettingsGate() async {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000030")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
         initialState.content.navigation.seedInitialFolderPath("/Users/test/Documents")
@@ -95,18 +101,70 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: .empty())
 
-        await store.send(.request(.openContextualAiChat))
+        await store.send(.content(.view(.openContextualAiChatTapped)))
+        await store.receive(\.content.delegate.openContextualAiChat)
+        await store.receive(\.request.openContextualAiChat)
         await assertOpenChat(on: store, expectedSetup: expectedSetup)
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
 
+        assertUnconnectedCurrentContextContract(
+            store.state.inspector.aiChat,
+            expectedSummaryTitle: "Documents",
+            expectedBanner: .init(
+                title: "Connect an AI provider",
+                detail: "Set up a provider in Settings to chat with this context.",
+                fixLabel: "Open Settings",
+            ),
+        )
         XCTAssertTrue(store.state.inspector.aiChat.catalogRows.isEmpty)
         XCTAssertNil(store.state.inspector.aiChat.selectedModelHandle)
         XCTAssertFalse(store.state.inspector.aiChat.canSubmit)
-        XCTAssertEqual(store.state.inspector.aiChat.connectionState, .error(.init(
-            title: "No AI provider connected",
-            detail: "Connect an AI provider in Settings to start chatting.",
-            fixLabel: "Connect provider in Settings",
+        XCTAssertEqual(store.state.inspector.aiChat.connectionState, .unconnected(.init(
+            title: "Connect an AI provider",
+            detail: "Set up a provider in Settings to chat with this context.",
+            fixLabel: "Open Settings",
         )))
+    }
+
+    func testAiConnectionUpdateRefreshesOpenInspectorChatWithoutReopening() async {
+        let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000031")
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.content.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: .empty())
+
+        await store.send(.request(.openContextualAiChat))
+        await assertOpenChat(on: store, expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: initialState.content,
+            sessionID: AiChatSessionID(rawValue: fixedUUID),
+            connectionsFile: .empty(),
+        ))
+        await assertAiChatSetup(on: store, expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: initialState.content,
+            sessionID: AiChatSessionID(rawValue: fixedUUID),
+            connectionsFile: .empty(),
+        ))
+        await store.send(.inspector(.setInspectorPaneExists(true))) {
+            $0.inspector.inspectorPaneExists = true
+        }
+
+        let connectedFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
+            .testFixture(provider: .openai, authMethod: .apiKey),
+        ])
+
+        await store.send(.aiConnectionsFileUpdated(connectedFile))
+        await store.receive(\.inspector.aiChat.availableModelsUpdated) {
+            let expectedSelection = FileManagerAiChatContextAdapter.makeAiChatModelSelection(
+                connectionsFile: connectedFile,
+            )
+            $0.inspector.aiChat.catalogRows = expectedSelection.catalogRows
+            $0.inspector.aiChat.selectedModelHandle = expectedSelection.selectedModelHandle
+        }
+
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, AiChatSessionID(rawValue: fixedUUID))
+        XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents")
+        XCTAssertEqual(store.state.inspector.aiChat.connectionState, .connected)
+        XCTAssertEqual(store.state.inspector.aiChat.chatInputDisplayModel.modelLabel, "GPT-4.1 Mini")
     }
 
     func testInspectorCloseChatActionHidesPaneFromWindow() async {
@@ -149,6 +207,13 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.receive(\.request.openContextualAiChat)
         await assertOpenChat(on: store, expectedSetup: expectedSetup)
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
+
+        assertConnectedCurrentContextSkeletonContract(
+            store.state.inspector.aiChat,
+            expectedSummaryTitle: "Documents · 1 selected",
+            expectedModelTitle: "GPT-4.1 Mini",
+            expectedCanSubmit: false,
+        )
 
         await store.send(.inspector(.setInspectorPaneExists(true))) {
             $0.inspector.inspectorPaneExists = true
@@ -214,8 +279,8 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await assertWindowManagerAiChatSetup(on: store, fixture: fixture)
         await store.send(.windows(.element(
             id: fixture.focusedUUID,
-            action: .window(.inspector(.setInspectorPaneExists(true)))
-        )) {
+            action: .window(.inspector(.setInspectorPaneExists(true))),
+        ))) {
             $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorPaneExists = true
         }
     }
@@ -280,23 +345,86 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
                 .lastExecutionFailure
             $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.executionPhase = .idle
         }
+
+        guard let aiChat = store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat else {
+            XCTFail("Missing focused window AI chat state")
+            return
+        }
+
+        assertConnectedCurrentContextSkeletonContract(
+            aiChat,
+            expectedSummaryTitle: "Documents · 1 selected",
+            expectedModelTitle: "GPT-4.1 Mini",
+            expectedCanSubmit: false,
+        )
     }
 }
 
 // swiftlint:enable type_name
 
 private extension FileManagerWindowInspectorChatRoutingTests {
-    private func assertCurrentContextInitialChatIsEmpty(_ state: AiChatFeature.State) {
+    private func assertConnectedCurrentContextSkeletonContract(
+        _ state: AiChatFeature.State,
+        expectedSummaryTitle: String,
+        expectedModelTitle: String,
+        expectedCanSubmit: Bool,
+    ) {
         guard case let .empty(summary, selectedModel) = state.surfaceState else {
             XCTFail("Expected current-context chat to start with empty surface")
             return
         }
 
-        XCTAssertEqual(summary.title, "Documents · 1 selected")
+        XCTAssertEqual(summary.title, expectedSummaryTitle)
         XCTAssertFalse(summary.isEmpty)
-        XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+        XCTAssertEqual(selectedModel?.label.title, expectedModelTitle)
+        XCTAssertEqual(state.currentContext.summary, expectedSummaryTitle)
+        XCTAssertEqual(state.currentContextSummaryDisplayModel.title, expectedSummaryTitle)
+        XCTAssertEqual(state.skeletonDisplayModel.headerTitle, "Chat")
+        XCTAssertEqual(state.skeletonDisplayModel.currentContext.title, expectedSummaryTitle)
+        XCTAssertEqual(state.chatInputDisplayModel.placeholder, "Ask anything…")
+        XCTAssertEqual(state.chatInputDisplayModel.modelLabel, expectedModelTitle)
+        XCTAssertEqual(state.chatInputDisplayModel.canSubmit, expectedCanSubmit)
+        XCTAssertEqual(state.canSubmit, expectedCanSubmit)
         XCTAssertTrue(state.transcriptHistory.isEmpty)
         XCTAssertTrue(state.draftText.isEmpty)
+        XCTAssertTrue(state.streamDraftText.isEmpty)
+
+        guard case let .empty(emptyDisplay) = state.skeletonDisplayModel.surface else {
+            XCTFail("Expected connected current-context skeleton empty surface")
+            return
+        }
+
+        XCTAssertEqual(emptyDisplay.title, "Ask about this context")
+        XCTAssertEqual(emptyDisplay.detail, "Send a message to start a contextual chat.")
+    }
+
+    private func assertUnconnectedCurrentContextContract(
+        _ state: AiChatFeature.State,
+        expectedSummaryTitle: String,
+        expectedBanner: AiChatConnectionMetadata,
+    ) {
+        XCTAssertEqual(state.currentContextSummaryDisplayModel.title, expectedSummaryTitle)
+        XCTAssertEqual(state.skeletonDisplayModel.headerTitle, "Chat")
+        XCTAssertEqual(state.skeletonDisplayModel.currentContext.title, expectedSummaryTitle)
+        XCTAssertEqual(state.chatInputDisplayModel.placeholder, "Ask anything…")
+
+        guard case let .unconnected(connection, summary) = state.surfaceState else {
+            XCTFail("Expected provider-missing unconnected surface state")
+            return
+        }
+
+        XCTAssertEqual(connection, expectedBanner)
+        XCTAssertEqual(summary.title, expectedSummaryTitle)
+        XCTAssertEqual(state.connectionState, .unconnected(expectedBanner))
+        XCTAssertFalse(state.canSubmit)
+        XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
+
+        guard case let .unconnected(skeletonConnection) = state.skeletonDisplayModel.surface else {
+            XCTFail("Expected provider-missing skeleton unconnected surface")
+            return
+        }
+
+        XCTAssertEqual(skeletonConnection, expectedBanner)
     }
 
     private func makeStore(
