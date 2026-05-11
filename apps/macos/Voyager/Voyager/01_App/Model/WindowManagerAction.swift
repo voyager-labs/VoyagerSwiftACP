@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntitiesAi
 
 @CasePathable
 enum WindowManagerAction: CasePathable, Sendable {
@@ -15,6 +16,7 @@ enum WindowManagerAction: CasePathable, Sendable {
         case openInitialWindowIfNeeded
         case reopenWindowIfNeeded(hasVisibleWindows: Bool)
         case applyAppPreferences(AppPreferencesState)
+        case aiConnectionsFileUpdated(AIConnectionsFile)
     }
 
     @CasePathable

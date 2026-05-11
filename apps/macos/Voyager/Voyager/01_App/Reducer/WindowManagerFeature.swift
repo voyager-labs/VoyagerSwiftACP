@@ -50,6 +50,13 @@ struct WindowManagerFeature {
                     },
                 )
 
+            case let .lifecycle(.aiConnectionsFileUpdated(file)):
+                return .merge(
+                    state.windows.ids.map { id in
+                        .send(.windows(.element(id: id, action: .window(.aiConnectionsFileUpdated(file)))))
+                    },
+                )
+
             case .file(.newWindow),
                  .file(.newTab),
                  .window(.closeFocusedWindow),
