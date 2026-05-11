@@ -1,9 +1,15 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Perception
 import SwiftUI
+import VoyagerEntitiesAi
 
+// swiftlint:disable:next type_body_length
 public struct AiChatView: View {
     let store: StoreOf<AiChatFeature>
+
+    @Environment(\.colorScheme)
+    private var colorScheme
 
     public init(store: StoreOf<AiChatFeature>) {
         self.store = store
@@ -12,119 +18,402 @@ public struct AiChatView: View {
     public var body: some View {
         WithPerceptionTracking {
             let state = store.state
+            let skeleton = state.skeletonDisplayModel
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text("AI Chat")
-                    .font(.headline)
-
-                Text(state.modelFieldLabel)
-                    .font(.subheadline)
-
-                if let selectedModel = state.modelCatalogState.selectedModel {
-                    Text(selectedModel.label.title)
-                    if let subtitle = selectedModel.label.subtitle {
-                        Text(subtitle)
-                            .font(.caption)
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        conversationSurface(state: state, skeleton: skeleton)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+                    .padding(.bottom, 8)
                 }
 
-                if let statusText = state.requestStatusText {
-                    Text(statusText)
-                        .font(.caption)
-                }
-
-                if let statusText = state.sessionStatusText {
-                    Text(statusText)
-                        .font(.caption)
-                }
-
-                Text(state.currentContextSummaryDisplayModel.title)
-                if let detail = state.currentContextSummaryDisplayModel.detail {
-                    Text(detail)
-                        .font(.caption)
-                }
-
-                switch state.surfaceState {
-                case let .unconnected(connection, _):
-                    surfaceBlock(title: connection.title, detail: connection.detail, actionLabel: connection.fixLabel)
-
-                case let .error(connection, _):
-                    surfaceBlock(title: connection.title, detail: connection.detail, actionLabel: connection.fixLabel)
-
-                case let .empty(_, selectedModel):
-                    Text("No messages yet")
-                    Text("Type a message to start chatting with this context.")
-                        .font(.caption)
-                    Text(selectedModel?.label.title ?? "No model selected")
-
-                case let .ready(_, selectedModel):
-                    Text(selectedModel?.label.title ?? "No model selected")
-
-                case let .processing(processing, _, selectedModel):
-                    Text(processing.lockedModel.label.title)
-                    if let selectedModel {
-                        Text("Next request: \(selectedModel.label.title)")
-                            .font(.caption)
-                    }
-                    Button(processing.cancelAffordance.title) {
-                        store.send(.cancelTapped)
-                    }
-                    .disabled(!processing.cancelAffordance.isEnabled)
-                }
-
-                if state.isProcessing, !state.streamDraftText.isEmpty {
-                    Text(state.streamDraftText)
-                        .font(.body)
-                }
-
-                ForEach(Array(state.transcriptHistory.enumerated()), id: \.offset) { item in
-                    Text("\(item.element.role.rawValue): \(item.element.content)")
-                        .font(.caption)
-                }
-
-                TextField(
-                    "Draft message",
-                    text: Binding(
-                        get: { state.draftText },
-                        set: { store.send(.draftTextChanged($0)) },
-                    ),
-                )
-
-                ForEach(state.modelCatalogState.rows) { row in
-                    Button {
-                        store.send(.selectedModelChanged(row.handle))
-                    } label: {
-                        Text(row.label.title)
-                    }
-                    .disabled(row.isSelected)
-                }
-
-                Button("Submit") {
-                    store.send(.submitTapped)
-                }
-                .disabled(!state.canSubmit)
-
-                Button("Regenerate") {
-                    store.send(.regenerateTapped)
-                }
-                .disabled(!state.canRegenerate)
-
-                Button("Reset draft") {
-                    store.send(.resetTapped)
-                }
+                chatInput(state: state, input: skeleton.chatInput)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
 
-    private func surfaceBlock(title: String, detail: String, actionLabel: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    @ViewBuilder
+    private func conversationSurface(state: AiChatState, skeleton: AiChatSkeletonDisplayModel) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            switch skeleton.surface {
+            case let .unconnected(connection):
+                statusBanner(
+                    title: connection.title,
+                    detail: connection.detail,
+                    actionLabel: connection.fixLabel,
+                    action: { store.send(.openSettingsTapped) }
+                )
+            case let .error(connection):
+                statusBanner(title: connection.title, detail: connection.detail, actionLabel: connection.fixLabel)
+            case .empty:
+                EmptyView()
+            case .ready:
+                transcriptSection(
+                    messages: state.transcriptHistory,
+                    isProcessing: false,
+                    statusText: state.requestStatusText
+                )
+            case .processing:
+                transcriptSection(messages: state.transcriptHistory, isProcessing: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func statusBanner(
+        title: String,
+        detail: String,
+        actionLabel: String,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "bolt.horizontal.circle")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(detail)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let action {
+                Button {
+                    action()
+                } label: {
+                    statusActionLabel(actionLabel)
+                }
+                .buttonStyle(.plain)
+            } else {
+                statusActionLabel(actionLabel)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private func statusActionLabel(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+    }
+    private func transcriptSection(
+        messages: [AiChatMessage],
+        isProcessing: Bool,
+        statusText: String? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+                messageRow(message)
+            }
+
+            if isProcessing {
+                assistantCard(content: nil, isProcessing: true)
+            } else if let statusText {
+                requestStatusRow(statusText)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func requestStatusRow(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func messageRow(_ message: AiChatMessage) -> some View {
+        switch message.role {
+        case .user:
+            HStack {
+                Spacer(minLength: 40)
+                Text(message.content)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                    )
+            }
+        case .assistant:
+            if aiChatMockAssistantBodyLines(from: message.content) != nil {
+                assistantCard(content: message.content, isProcessing: false)
+            } else {
+                plainAssistantMessage(message.content)
+            }
+        case .system, .tool:
+            Text(message.content)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 4)
+        }
+    }
+
+    private func plainAssistantMessage(_ content: String) -> some View {
+        Text(content)
+            .font(.system(size: 13))
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func assistantCard(content: String?, isProcessing: Bool) -> some View {
+        let bodyLines = assistantBodyLines(from: content)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.primary.opacity(0.07))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                .frame(width: 28, height: 28)
+
+                Text(Self.assistantHeaderTitle)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(bodyLines.enumerated()), id: \.offset) { index, line in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("\(index + 1).")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Text(line)
+                            .font(.system(size: 13))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                progressRow(symbol: "checkmark", title: Self.progressRows[0], tint: .secondary)
+                progressRow(symbol: "checkmark", title: Self.progressRows[1], tint: .secondary)
+                progressRow(
+                    symbol: isProcessing ? "ellipsis" : "star.fill",
+                    title: Self.progressRows[2],
+                    tint: isProcessing ? .secondary : .primary
+                )
+            }
+
+            if isProcessing {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func progressRow(symbol: String, title: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(tint)
+                .frame(width: 12)
+
             Text(title)
-            Text(detail)
-                .font(.caption)
-            Text(actionLabel)
-                .font(.caption)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tint)
+        }
+    }
+
+    private func chatInput(state: AiChatState, input: AiChatInputDisplayModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(
+                input.placeholder,
+                text: Binding(
+                    get: { state.draftText },
+                    set: { store.send(.draftTextChanged($0)) }
+                )
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 34, alignment: .topLeading)
+            .padding(.top, 2)
+            .onSubmit {
+                store.send(.submitTapped)
+            }
+            .disabled(state.isProcessing)
+
+            HStack(alignment: .bottom, spacing: 4) {
+                HoverTextAffordance(
+                    title: input.contextAffordanceLabel,
+                    systemName: nil,
+                    titleFontSize: 14,
+                    titleWeight: .semibold,
+                    hoverColor: .primary
+                )
+                .fixedSize(horizontal: true, vertical: false)
+                HoverTextAffordance(title: input.modelLabel, systemName: "chevron.up.chevron.down")
+                    .fixedSize(horizontal: true, vertical: false)
+                HoverTextAffordance(title: input.effortLabel, systemName: "dial.medium")
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 2)
+                chatInputActionButton(input: input)
+            }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(chatInputBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(chatInputBorder, lineWidth: 1)
+        )
+    }
+
+    private var chatInputBackground: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.06)
+            : Color.black.opacity(0.025)
+    }
+
+    private var chatInputBorder: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.09)
+            : Color.black.opacity(0.09)
+    }
+
+    private func chatInputActionButton(input: AiChatInputDisplayModel) -> some View {
+        Group {
+            if input.isStopVisible {
+                Button {
+                    store.send(.cancelTapped)
+                } label: {
+                    actionGlyph(symbol: "stop.fill")
+                }
+                .buttonStyle(.plain)
+                .disabled(!input.canStop)
+                .accessibilityLabel(input.stopAccessibilityLabel)
+            } else {
+                Button {
+                    store.send(.submitTapped)
+                } label: {
+                    actionGlyph(symbol: "arrow.up")
+                }
+                .buttonStyle(.plain)
+                .disabled(!input.canSubmit)
+                .accessibilityLabel(input.submitAccessibilityLabel)
+            }
+        }
+    }
+
+    private func actionGlyph(symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 24, height: 24)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary)
+            )
+            .opacity(1)
+    }
+
+    private func assistantBodyLines(from content: String?) -> [String] {
+        guard let content,
+              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return Self.mockAssistantBodyLines
+        }
+
+        if let mockBodyLines = aiChatMockAssistantBodyLines(from: content) {
+            return mockBodyLines
+        }
+
+        let lines = content
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return lines.isEmpty ? Self.mockAssistantBodyLines : lines
+    }
+
+    private static let assistantHeaderTitle = "Voyager AI"
+
+    private static let mockAssistantBodyLines = [
+        "Context checked.",
+        "Plan ready.",
+        "Provider later."
+    ]
+
+    private static let progressRows = [
+        "✓ Context",
+        "✓ Queued",
+        "★ Mock ready"
+    ]
+
+    private struct HoverTextAffordance: View {
+        let title: String
+        let systemName: String?
+        var titleFontSize: CGFloat = 12
+        var titleWeight: Font.Weight = .medium
+        var hoverColor: Color = .primary
+
+        @State private var isHovered = false
+
+        var body: some View {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: titleFontSize, weight: titleWeight))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let systemName {
+                    Image(systemName: systemName)
+                        .font(.system(size: 9, weight: .semibold))
+                }
+            }
+            .foregroundStyle(isHovered ? hoverColor : .secondary)
+            .contentShape(Rectangle())
+            .fixedSize(horizontal: true, vertical: false)
+            .onHover { hovering in
+                isHovered = hovering
+            }
         }
     }
 }
