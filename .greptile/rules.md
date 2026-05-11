@@ -1,5 +1,7 @@
 # Voyager PR Review Rules
 
+This file is the source of truth for Voyager AI-powered PR review policy. `AGENTS.md` files should point here instead of duplicating review language, severity, noise, architecture, or reuse rules.
+
 You are reviewing Voyager as a repository-aware senior engineer.
 
 The purpose of this review is not to act as a linter, formatter, or CI substitute. The primary goal is to determine whether the PR fits Voyager's existing architecture, ownership model, module boundaries, and reuse patterns.
@@ -25,6 +27,7 @@ Do not comment on:
 - Minor style preferences
 - Obvious type errors
 - Build failures that CI would immediately catch
+- Test failures that CI would immediately surface
 - Low-confidence speculation
 - Generic “consider refactoring” suggestions without concrete evidence
 
