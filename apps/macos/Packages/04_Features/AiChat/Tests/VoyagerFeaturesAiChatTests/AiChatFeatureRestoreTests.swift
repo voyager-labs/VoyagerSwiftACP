@@ -161,10 +161,10 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         XCTAssertNil(store.state.selectedModelHandle)
         XCTAssertNil(store.state.selectedModelDisplayModel)
         XCTAssertFalse(store.state.canSubmit)
-        guard case let .error(metadata) = store.state.connectionState else {
-            return XCTFail("Expected provider connection error")
+        guard case let .unconnected(metadata) = store.state.connectionState else {
+            return XCTFail("Expected provider connection banner")
         }
-        XCTAssertEqual(metadata.title, "No AI provider connected")
+        XCTAssertEqual(metadata.title, "Connect an AI provider")
     }
 
     // swiftlint:disable:next function_body_length

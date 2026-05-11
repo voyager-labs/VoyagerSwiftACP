@@ -6,7 +6,8 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureEntryStateTests: XCTestCase {
-    func testSetupBuildsUnconnectedEntryStateWithContextSummary() async {
+    // swiftlint:disable:next function_body_length
+    func testSetupBuildsUnconnectedEntryStateWithSkeletonDisplayContract() async {
         let store = TestStore(initialState: AiChatFeature.State()) {
             AiChatFeature()
         }
@@ -43,17 +44,24 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertEqual(store.state.currentContextSummaryDisplayModel.title, "Four files selected")
         XCTAssertEqual(store.state.currentContextSummaryDisplayModel.detail, "1 reference · 1 item · 1 attachment")
         XCTAssertEqual(store.state.connectionState, .unconnected(.init(
-            title: "No session connected",
-            detail: "Start or open a session to continue from the current context.",
-            fixLabel: "Open session",
+            title: "Connect an AI provider",
+            detail: "Set up a provider in Settings to chat with this context.",
+            fixLabel: "Open Settings",
         )))
 
         if case let .unconnected(connection, summaryDisplay) = store.state.surfaceState {
-            XCTAssertEqual(connection.fixLabel, "Open session")
+            XCTAssertEqual(connection.fixLabel, "Open Settings")
             XCTAssertEqual(summaryDisplay.title, "Four files selected")
         } else {
             XCTFail("Expected unconnected surface state")
         }
+
+        XCTAssertEqual(store.state.skeletonDisplayModel.headerTitle, "Chat")
+        XCTAssertEqual(store.state.chatInputDisplayModel.placeholder, "Ask anything…")
+        XCTAssertEqual(store.state.chatInputDisplayModel.modelLabel, "GPT-4.1 Mini")
+        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "xhigh")
+        XCTAssertFalse(store.state.chatInputDisplayModel.canSubmit)
+        XCTAssertFalse(store.state.canSubmit)
 
         XCTAssertEqual(store.state.modelFieldLabel, "Model")
         XCTAssertEqual(store.state.modelCatalogState.rows.first?.label.title, "GPT-4.1 Mini")
@@ -118,11 +126,11 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             lastExecutionFailure: nil,
             executionPhase: .idle,
         )
-        XCTAssertEqual(emptyContextState.currentContextSummaryDisplayModel.title, "No current context")
+        XCTAssertEqual(emptyContextState.currentContextSummaryDisplayModel.title, "No current selection")
         XCTAssertNil(emptyContextState.currentContextSummaryDisplayModel.detail)
     }
 
-    func testProviderUnavailableSurfaceUsesSettingsFixtureAndDisablesSubmit() {
+    func testProviderUnavailableSurfaceUsesFixedBannerAndFallbackComposerLabels() {
         let state = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
             sessionStatus: .active,
@@ -137,20 +145,22 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             executionPhase: .idle,
         )
 
-        XCTAssertEqual(state.connectionState, .error(.init(
-            title: "No AI provider connected",
-            detail: "Connect an AI provider in Settings to start chatting.",
-            fixLabel: "Connect provider in Settings",
+        XCTAssertEqual(state.connectionState, .unconnected(.init(
+            title: "Connect an AI provider",
+            detail: "Set up a provider in Settings to chat with this context.",
+            fixLabel: "Open Settings",
         )))
         XCTAssertFalse(state.canSubmit)
+        XCTAssertEqual(state.chatInputDisplayModel.modelLabel, "gpt-5.4")
+        XCTAssertEqual(state.chatInputDisplayModel.effortLabel, "xhigh")
 
-        if case let .error(connection, summary) = state.surfaceState {
-            XCTAssertEqual(connection.title, "No AI provider connected")
-            XCTAssertEqual(connection.detail, "Connect an AI provider in Settings to start chatting.")
-            XCTAssertEqual(connection.fixLabel, "Connect provider in Settings")
+        if case let .unconnected(connection, summary) = state.surfaceState {
+            XCTAssertEqual(connection.title, "Connect an AI provider")
+            XCTAssertEqual(connection.detail, "Set up a provider in Settings to chat with this context.")
+            XCTAssertEqual(connection.fixLabel, "Open Settings")
             XCTAssertEqual(summary.title, "Documents")
         } else {
-            XCTFail("Expected provider unavailable error surface")
+            XCTFail("Expected provider unavailable unconnected surface")
         }
     }
 
