@@ -1,8 +1,7 @@
 import AppKit
 import ComposableArchitecture
-@testable import Voyager
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryArrangements
+@testable import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 import XCTest
 
@@ -75,6 +74,25 @@ final class EntryThumbnailFeatureTests: XCTestCase {
             $0.renderVersion = 1
         }
         await store.finish()
+    }
+
+    func testRequestThumbnailsEmptyPathsNoEffect() async {
+        let generatorCalls = CallCounter()
+
+        let store = TestStore(initialState: EntryThumbnailFeature.State()) {
+            EntryThumbnailFeature()
+        } withDependencies: {
+            $0.thumbnailGeneratorClient.generateThumbnail = { _, _, _ in
+                await generatorCalls.increment()
+                return nil
+            }
+        }
+
+        await store.send(.requestThumbnails(paths: []))
+        await store.finish()
+
+        let callCount = await generatorCalls.value()
+        XCTAssertEqual(callCount, 0)
     }
 }
 

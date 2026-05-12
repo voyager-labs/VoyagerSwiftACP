@@ -4,6 +4,7 @@ import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 import XCTest
 

@@ -4,6 +4,7 @@ import IdentifiedCollections
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 extension WorkspaceClient {
