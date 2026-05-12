@@ -25,7 +25,7 @@ extension EntryListCoordinator {
                 isCut: isCut,
                 isRenaming: state.entryOperations.renamingItemId == entry.id,
                 renamingText: state.entryOperations.renamingText,
-                workspaceClient: workspaceClient.toShared(),
+                workspaceClient: workspaceClient,
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
