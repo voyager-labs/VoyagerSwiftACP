@@ -15,16 +15,16 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 requestID: AiChatRequestID(rawValue: UUID()),
                 runID: AiChatRunID(rawValue: UUID()),
                 model: catalogRows[0].handle,
-                selectedRow: catalogRows[0],
+                selectedRow: catalogRows[0]
             ),
-            messages: [],
+            messages: []
         )
         let placeholderLock = makeRequestLock(
             kind: .submit,
             request: placeholderRequest,
             selectedHandle: catalogRows[0].handle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil,
+            assistantReplacementIndex: nil
         )
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -32,12 +32,11 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             currentContext: summary,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
             draftText: "Draft",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: catalogRows[0].handle,
             lastExecutionFailure: nil,
-            executionPhase: .processing(placeholderLock),
+            executionPhase: .processing(placeholderLock)
         )) {
             AiChatFeature()
         }
@@ -110,14 +109,13 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: unresolvableHandle,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil,
+            lastExecutionFailure: nil
         ))) { state in
             state.sessionID = sessionID
             state.sessionStatus = .active
             state.currentContext = summary
             state.transcriptHistory = []
             state.draftText = ""
-            state.streamDraftText = ""
             state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows.first?.handle
             state.lockedModelHandle = nil

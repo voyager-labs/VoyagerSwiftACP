@@ -130,7 +130,6 @@ extension AiChatFeature {
         state.selectedModelHandle = selectedHandle
         state.lockedModelHandle = selectedHandle
         state.lastExecutionFailure = nil
-        state.streamDraftText = ""
         state.executionPhase = .processing(lock)
         state.sessionStatus = .active
 
@@ -152,16 +151,6 @@ extension AiChatFeature {
     func handleExecutionEvent(_ event: AiChatEvent, state: inout State) -> Effect<Action> {
         switch event {
         case .started:
-            return .none
-
-        case let .streamChunk(context, delta):
-            guard case let .processing(lock) = state.executionPhase,
-                  matches(lock: lock, context: context)
-            else {
-                return .none
-            }
-
-            state.streamDraftText += delta
             return .none
 
         case let .final(response):
@@ -192,7 +181,6 @@ extension AiChatFeature {
                 return .none
             }
 
-            state.streamDraftText = ""
             state.lockedModelHandle = nil
             state.lastExecutionFailure = reason
             state.executionPhase = .failed(lock, reason)
@@ -209,7 +197,6 @@ extension AiChatFeature {
             state.transcriptHistory.append(response.assistantMessage)
         }
 
-        state.streamDraftText = ""
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.executionPhase = .completed(lock)

@@ -80,14 +80,12 @@ public struct AiChatFeature {
             case .cancelTapped:
                 guard let lock = state.executionPhase.lock, state.executionPhase.isProcessing else { return .none }
                 state.lockedModelHandle = nil
-                state.streamDraftText = ""
                 state.executionPhase = .cancelled(lock)
                 return .cancel(id: CancelID.request)
 
             case .resetTapped:
                 state.draftText = ""
                 state.transcriptHistory = []
-                state.streamDraftText = ""
                 state.lastExecutionFailure = nil
                 state.lockedModelHandle = nil
                 state.executionPhase = .idle

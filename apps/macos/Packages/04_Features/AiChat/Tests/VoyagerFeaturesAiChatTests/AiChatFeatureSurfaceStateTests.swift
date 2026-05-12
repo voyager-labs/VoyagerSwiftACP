@@ -18,7 +18,6 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             currentContext: .init(),
             transcriptHistory: [],
             draftText: "",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
@@ -45,7 +44,6 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             currentContext: summary,
             transcriptHistory: [],
             draftText: "What changed?",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
@@ -74,7 +72,6 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             currentContext: summary,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
             draftText: "Draft",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
@@ -99,7 +96,6 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             currentContext: summary,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
             draftText: "Draft",
-            streamDraftText: "Streaming",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: catalogRows[1].handle,
@@ -145,7 +141,6 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             currentContext: summary,
             transcriptHistory: processingState.transcriptHistory,
             draftText: processingState.draftText,
-            streamDraftText: processingState.streamDraftText,
             catalogRows: [],
             selectedModelHandle: nil,
             lockedModelHandle: catalogRows[1].handle,
@@ -169,7 +164,6 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             currentContext: summary,
             transcriptHistory: [],
             draftText: "",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
@@ -233,7 +227,6 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
                 AiChatMessage(role: .assistant, content: "Hi")
             ],
             draftText: "Follow up",
-            streamDraftText: "",
             catalogRows: [],
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
@@ -256,5 +249,4 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
         XCTAssertFalse(disconnectedState.canSubmit)
         XCTAssertFalse(disconnectedState.chatInputDisplayModel.canSubmit)
     }
-
 }

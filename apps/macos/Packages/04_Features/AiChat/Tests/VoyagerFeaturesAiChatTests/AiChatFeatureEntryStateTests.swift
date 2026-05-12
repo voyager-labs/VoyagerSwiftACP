@@ -24,14 +24,13 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: nil,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil,
+            lastExecutionFailure: nil
         ))) { state in
             state.sessionID = nil
             state.sessionStatus = .idle
             state.currentContext = summary
             state.transcriptHistory = []
             state.draftText = ""
-            state.streamDraftText = ""
             state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows.first?.handle
             state.lockedModelHandle = nil
@@ -46,7 +45,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertEqual(store.state.connectionState, .unconnected(.init(
             title: "Connect an AI provider",
             detail: "Set up a provider in Settings to chat with this context.",
-            fixLabel: "Open Settings",
+            fixLabel: "Open Settings"
         )))
 
         if case let .unconnected(connection, summaryDisplay) = store.state.surfaceState {
@@ -67,12 +66,11 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertEqual(store.state.modelCatalogState.rows.first?.label.title, "GPT-4.1 Mini")
         XCTAssertEqual(
             store.state.modelCatalogState.rows.first?.label.subtitle,
-            ProviderDescriptor.descriptor(for: catalogRows[0].handle.provider)?.displayName,
+            ProviderDescriptor.descriptor(for: catalogRows[0].handle.provider)?.displayName
         )
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
     }
 
-    // swiftlint:disable:next function_body_length
     func testCurrentContextSummaryFixturesMatchInspectorContract() {
         let selectedHandle = makeCatalogRows()[0].handle
 
@@ -83,16 +81,15 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
                 summary: "Documents · 2 selected",
                 references: [],
                 items: [],
-                attachments: [],
+                attachments: []
             ),
             transcriptHistory: [],
             draftText: "",
-            streamDraftText: "",
             catalogRows: makeCatalogRows(),
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )
         XCTAssertEqual(selectedEntriesState.currentContextSummaryDisplayModel.title, "Documents · 2 selected")
         XCTAssertNil(selectedEntriesState.currentContextSummaryDisplayModel.detail)
@@ -103,12 +100,11 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
             transcriptHistory: [],
             draftText: "",
-            streamDraftText: "",
             catalogRows: makeCatalogRows(),
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )
         XCTAssertEqual(locationOnlyState.currentContextSummaryDisplayModel.title, "Documents")
         XCTAssertNil(locationOnlyState.currentContextSummaryDisplayModel.detail)
@@ -119,12 +115,11 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             currentContext: .init(),
             transcriptHistory: [],
             draftText: "",
-            streamDraftText: "",
             catalogRows: makeCatalogRows(),
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )
         XCTAssertEqual(emptyContextState.currentContextSummaryDisplayModel.title, "No current selection")
         XCTAssertNil(emptyContextState.currentContextSummaryDisplayModel.detail)
@@ -137,18 +132,17 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
             transcriptHistory: [],
             draftText: "Hello",
-            streamDraftText: "",
             catalogRows: [],
             selectedModelHandle: nil,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )
 
         XCTAssertEqual(state.connectionState, .unconnected(.init(
             title: "Connect an AI provider",
             detail: "Set up a provider in Settings to chat with this context.",
-            fixLabel: "Open Settings",
+            fixLabel: "Open Settings"
         )))
         XCTAssertFalse(state.canSubmit)
         XCTAssertNil(state.chatInputDisplayModel.modelLabel)
@@ -172,12 +166,11 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
             transcriptHistory: [],
             draftText: "Retry after failure",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: nil,
             lastExecutionFailure: .transportError,
-            executionPhase: .idle,
+            executionPhase: .idle
         )
         let store = TestStore(initialState: state) {
             AiChatFeature()
@@ -201,12 +194,11 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
             transcriptHistory: [],
             draftText: "Hello",
-            streamDraftText: "",
             catalogRows: [],
             selectedModelHandle: nil,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )) {
             AiChatFeature()
         } withDependencies: {

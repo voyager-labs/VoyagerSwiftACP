@@ -33,7 +33,6 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             currentContext: makeContextSnapshot(),
             transcriptHistory: [],
             draftText: "Hello",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
@@ -57,7 +56,6 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.send(.submitTapped) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
-            state.streamDraftText = ""
             state.selectedModelHandle = selectedHandle
             state.lockedModelHandle = selectedHandle
             state.lastExecutionFailure = nil
@@ -78,7 +76,6 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.receive(.executionEvent(.started(context: lock.request.context)))
 
         await store.receive(.executionEvent(.final(response: expectedResponse))) { state in
-            state.streamDraftText = ""
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
                 AiChatMessage(role: .assistant, content: expectedMockAssistantMessage)
@@ -101,7 +98,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
     }
 
     // swiftlint:disable:next function_body_length
-    func testCancelRejectsLateStreamAndFinalEvents() async {
+    func testCancelRejectsLateFinalAndFailureEvents() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
@@ -113,7 +110,6 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             currentContext: makeContextSnapshot(),
             transcriptHistory: [],
             draftText: "Cancel me",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
@@ -156,11 +152,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
 
         await store.send(.cancelTapped) { state in
             state.lockedModelHandle = nil
-            state.streamDraftText = ""
             state.executionPhase = .cancelled(lock)
         }
-
-        await store.send(.executionEvent(.streamChunk(context: request.context, delta: "late")))
         await store.send(.executionEvent(.final(response: AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "late final"),
@@ -171,7 +164,6 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         let assistantMessages = store.state.transcriptHistory.filter { $0.role == .assistant }
         XCTAssertTrue(assistantMessages.isEmpty)
         XCTAssertEqual(store.state.transcriptHistory, [AiChatMessage(role: .user, content: "Cancel me")])
-        XCTAssertEqual(store.state.streamDraftText, "")
         XCTAssertNil(store.state.lockedModelHandle)
         XCTAssertNil(store.state.lastExecutionFailure)
         XCTAssertEqual(store.state.executionPhase, .cancelled(lock))

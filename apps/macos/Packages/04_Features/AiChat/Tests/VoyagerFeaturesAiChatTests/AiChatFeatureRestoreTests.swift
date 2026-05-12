@@ -19,7 +19,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
 
@@ -34,7 +34,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[1].handle,
             lockedModelHandle: catalogRows[1].handle,
-            lastExecutionFailure: nil,
+            lastExecutionFailure: nil
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -44,7 +44,6 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.currentContext = summary
             state.transcriptHistory = staleTranscript
             state.draftText = "Draft"
-            state.streamDraftText = ""
             state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows[1].handle
             state.lockedModelHandle = catalogRows[1].handle
@@ -60,12 +59,12 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             model: catalogRows[1].handle,
             selectedModelRow: catalogRows[1],
             transcriptHistory: [],
-            updatedAtMs: 0,
+            updatedAtMs: 0
         )
 
         await store.receive(.restoreOutcome(
             .newSession(snapshot: fallbackSnapshot),
-            restoreFailure: .missingRecord,
+            restoreFailure: .missingRecord
         )) { state in
             state.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
             state.restoreFailure = .missingRecord
@@ -73,7 +72,6 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.sessionStatus = .idle
             state.transcriptHistory = []
             state.draftText = "Draft"
-            state.streamDraftText = ""
             state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows[1].handle
             state.lockedModelHandle = nil
@@ -98,7 +96,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
 
@@ -112,7 +110,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             catalogRows: [],
             selectedModelHandle: nil,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil,
+            lastExecutionFailure: nil
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -122,7 +120,6 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.currentContext = summary
             state.transcriptHistory = []
             state.draftText = "Draft"
-            state.streamDraftText = ""
             state.catalogRows = []
             state.selectedModelHandle = nil
             state.lockedModelHandle = nil
@@ -139,19 +136,18 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             model: unresolvedModel,
             selectedModelRow: nil,
             transcriptHistory: [],
-            updatedAtMs: 0,
+            updatedAtMs: 0
         )
 
         await store.receive(.restoreOutcome(
             .newSession(snapshot: fallbackSnapshot),
-            restoreFailure: .missingRecord,
+            restoreFailure: .missingRecord
         )) { state in
             state.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
             state.restoreFailure = .missingRecord
             state.sessionID = fallbackSessionID
             state.sessionStatus = .idle
             state.transcriptHistory = []
-            state.streamDraftText = ""
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
             state.executionPhase = .idle
@@ -179,7 +175,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             model: AiModelHandle(provider: .anthropic, rawValue: "stale-model"),
             selectedModelRow: nil,
             transcriptHistory: [AiChatMessage(role: .user, content: "old")],
-            updatedAtMs: 0,
+            updatedAtMs: 0
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in rebindSnapshot })
         let store = TestStore(initialState: AiChatFeature.State()) {
@@ -189,7 +185,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
 
@@ -203,7 +199,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: rebindSnapshot.model,
             lockedModelHandle: rebindSnapshot.model,
-            lastExecutionFailure: nil,
+            lastExecutionFailure: nil
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -213,7 +209,6 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.currentContext = summary
             state.transcriptHistory = [AiChatMessage(role: .assistant, content: "stale")]
             state.draftText = "Draft"
-            state.streamDraftText = ""
             state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows.first?.handle
             state.lockedModelHandle = rebindSnapshot.model
@@ -229,12 +224,12 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             model: catalogRows.first?.handle ?? AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
             selectedModelRow: catalogRows.first,
             transcriptHistory: [],
-            updatedAtMs: 0,
+            updatedAtMs: 0
         )
 
         await store.receive(.restoreOutcome(
             .newSession(snapshot: fallbackSnapshot),
-            restoreFailure: .contextMismatch,
+            restoreFailure: .contextMismatch
         )) { state in
             state.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
             state.restoreFailure = .contextMismatch
@@ -242,7 +237,6 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.sessionStatus = .idle
             state.transcriptHistory = []
             state.draftText = "Draft"
-            state.streamDraftText = ""
             state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows.first?.handle
             state.lockedModelHandle = nil

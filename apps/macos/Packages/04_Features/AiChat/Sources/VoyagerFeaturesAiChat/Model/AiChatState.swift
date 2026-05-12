@@ -12,7 +12,6 @@ public struct AiChatState: Equatable, Sendable {
     public var currentContext: AiChatCurrentContextSnapshot
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
-    public var streamDraftText: String
     public var catalogRows: [AiModelCatalogRow]
     public var selectedModelHandle: AiModelHandle?
     public var lockedModelHandle: AiModelHandle?
@@ -28,7 +27,6 @@ public struct AiChatState: Equatable, Sendable {
         currentContext: AiChatCurrentContextSnapshot = .init(),
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
-        streamDraftText: String = "",
         catalogRows: [AiModelCatalogRow] = [],
         selectedModelHandle: AiModelHandle? = nil,
         lockedModelHandle: AiModelHandle? = nil,
@@ -43,7 +41,6 @@ public struct AiChatState: Equatable, Sendable {
         self.currentContext = currentContext
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
-        self.streamDraftText = streamDraftText
         self.catalogRows = catalogRows
         self.selectedModelHandle = selectedModelHandle
         self.lockedModelHandle = lockedModelHandle
@@ -272,7 +269,6 @@ public struct AiChatState: Equatable, Sendable {
 
     private var isInitialChatSurface: Bool {
         transcriptHistory.isEmpty
-            && streamDraftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var resolvedSelectedModelRow: AiModelCatalogRow? {

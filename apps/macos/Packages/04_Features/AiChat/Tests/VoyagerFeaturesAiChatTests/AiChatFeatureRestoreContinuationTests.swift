@@ -23,7 +23,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             ],
             lastRequestID: AiChatRequestID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666")),
             lastRunID: AiChatRunID(rawValue: makeUUID("77777777-7777-7777-7777-777777777777")),
-            updatedAtMs: 0,
+            updatedAtMs: 0
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let staleLock = makeRequestLock(
@@ -34,13 +34,13 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
                     requestID: AiChatRequestID(rawValue: UUID()),
                     runID: AiChatRunID(rawValue: UUID()),
                     model: catalogRows[1].handle,
-                    selectedRow: catalogRows[1],
+                    selectedRow: catalogRows[1]
                 ),
-                messages: [],
+                messages: []
             ),
             selectedHandle: catalogRows[1].handle,
             selectedRow: catalogRows[1],
-            assistantReplacementIndex: nil,
+            assistantReplacementIndex: nil
         )
         let store = TestStore(initialState: AiChatFeature.State(
             restoreSessionID: targetSessionID,
@@ -49,12 +49,11 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             currentContext: summary,
             transcriptHistory: [AiChatMessage(role: .assistant, content: "stale")],
             draftText: "Draft",
-            streamDraftText: "stale stream",
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: catalogRows[1].handle,
             lastExecutionFailure: .transportError,
-            executionPhase: .processing(staleLock),
+            executionPhase: .processing(staleLock)
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -62,7 +61,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
 
@@ -76,7 +75,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: catalogRows[1].handle,
-            lastExecutionFailure: .transportError,
+            lastExecutionFailure: .transportError
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -86,7 +85,6 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.currentContext = summary
             state.transcriptHistory = [AiChatMessage(role: .assistant, content: "stale")]
             state.draftText = "Draft"
-            state.streamDraftText = ""
             state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows.first?.handle
             state.lockedModelHandle = catalogRows[1].handle
@@ -98,7 +96,6 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.sessionID = targetSessionID
             state.sessionStatus = .active
             state.transcriptHistory = restoredSnapshot.transcriptHistory
-            state.streamDraftText = ""
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
             state.executionPhase = .idle
@@ -125,7 +122,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             model: AiModelHandle(provider: .openai, rawValue: "missing-model"),
             selectedModelRow: nil,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            updatedAtMs: 0,
+            updatedAtMs: 0
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let store = TestStore(initialState: AiChatFeature.State()) {
@@ -135,7 +132,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
 
@@ -149,7 +146,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: restoredSnapshot.model,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil,
+            lastExecutionFailure: nil
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -159,7 +156,6 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.currentContext = summary
             state.transcriptHistory = []
             state.draftText = ""
-            state.streamDraftText = ""
             state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows.first?.handle
             state.lockedModelHandle = nil
@@ -176,14 +172,13 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             transcriptHistory: restoredSnapshot.transcriptHistory,
             lastRequestID: nil,
             lastRunID: nil,
-            updatedAtMs: 0,
+            updatedAtMs: 0
         )
 
         await store.receive(.restoreOutcome(.restored(snapshot: normalizedSnapshot), restoreFailure: nil)) { state in
             state.sessionID = targetSessionID
             state.sessionStatus = .active
             state.transcriptHistory = restoredSnapshot.transcriptHistory
-            state.streamDraftText = ""
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
             state.executionPhase = .idle

@@ -17,7 +17,6 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
             currentContext: summary,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
             draftText: "Draft",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[1].handle,
             lockedModelHandle: catalogRows[1].handle,
@@ -30,14 +29,14 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: catalogRows[1].handle,
-                        selectedRow: catalogRows[1],
+                        selectedRow: catalogRows[1]
                     ),
-                    messages: [],
+                    messages: []
                 ),
                 selectedHandle: catalogRows[1].handle,
                 selectedRow: catalogRows[1],
-                assistantReplacementIndex: nil,
-            )),
+                assistantReplacementIndex: nil
+            ))
         )) {
             AiChatFeature()
         }
@@ -66,7 +65,6 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
             currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
             draftText: "Draft",
-            streamDraftText: "Partial",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lastExecutionFailure: .transportError,
@@ -78,14 +76,14 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: selectedHandle,
-                        selectedRow: catalogRows[0],
+                        selectedRow: catalogRows[0]
                     ),
-                    messages: [],
+                    messages: []
                 ),
                 selectedHandle: selectedHandle,
                 selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil,
-            ), .transportError),
+                assistantReplacementIndex: nil
+            ), .transportError)
         )) {
             AiChatFeature()
         }
@@ -103,7 +101,6 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
         await store.send(.resetTapped) { state in
             state.draftText = ""
             state.transcriptHistory = []
-            state.streamDraftText = ""
             state.lastExecutionFailure = nil
             state.lockedModelHandle = nil
             state.executionPhase = .idle
@@ -122,7 +119,6 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
             currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
             transcriptHistory: [],
             draftText: "Retry me",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: firstHandle,
             lastExecutionFailure: .transportError,
@@ -134,14 +130,14 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: firstHandle,
-                        selectedRow: catalogRows[0],
+                        selectedRow: catalogRows[0]
                     ),
-                    messages: [],
+                    messages: []
                 ),
                 selectedHandle: firstHandle,
                 selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil,
-            ), .transportError),
+                assistantReplacementIndex: nil
+            ), .transportError)
         )) {
             AiChatFeature()
         }

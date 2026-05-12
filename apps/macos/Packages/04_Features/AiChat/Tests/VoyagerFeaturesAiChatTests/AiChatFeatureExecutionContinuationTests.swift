@@ -23,12 +23,11 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
                 AiChatMessage(role: .assistant, content: "Old answer")
             ],
             draftText: "",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -41,7 +40,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
                 saveSession: { snapshot in
                     await persistence.save(snapshot)
                 },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -59,7 +58,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: 1,
+            assistantReplacementIndex: 1
         )
 
         XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello")])
@@ -68,7 +67,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "New answer"),
-            completedAtMs: 0,
+            completedAtMs: 0
         )
         stream.yield(.final(response: finalResponse))
         stream.finish()
@@ -102,12 +101,11 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             currentContext: makeContextSnapshot(),
             transcriptHistory: [],
             draftText: "Hello",
-            streamDraftText: "",
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle,
+            executionPhase: .idle
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -121,7 +119,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
                     struct PersistenceBoom: Error {}
                     throw PersistenceBoom()
                 },
-                deleteSession: { _ in },
+                deleteSession: { _ in }
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -140,7 +138,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil,
+            assistantReplacementIndex: nil
         )
 
         XCTAssertEqual(store.state.executionPhase, .processing(lock))
@@ -148,13 +146,12 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "Hi"),
-            completedAtMs: 0,
+            completedAtMs: 0
         )
         stream.yield(.final(response: finalResponse))
         stream.finish()
 
         await store.receive(.executionEvent(.final(response: finalResponse))) { state in
-            state.streamDraftText = ""
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
                 AiChatMessage(role: .assistant, content: "Hi")

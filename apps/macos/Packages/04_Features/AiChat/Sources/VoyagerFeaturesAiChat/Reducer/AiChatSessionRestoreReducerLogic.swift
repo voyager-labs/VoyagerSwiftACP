@@ -60,7 +60,6 @@ extension AiChatFeature {
         state.selectedModelHandle = setup.selectedModelHandle
         state.lockedModelHandle = setup.lockedModelHandle
         state.lastExecutionFailure = setup.lastExecutionFailure
-        state.streamDraftText = ""
         state.executionPhase = .idle
     }
 
@@ -97,7 +96,6 @@ extension AiChatFeature {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
         state.transcriptHistory = snapshot.transcriptHistory
-        state.streamDraftText = ""
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.executionPhase = .idle
@@ -108,7 +106,6 @@ extension AiChatFeature {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
         state.transcriptHistory = []
-        state.streamDraftText = ""
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.executionPhase = .idle
