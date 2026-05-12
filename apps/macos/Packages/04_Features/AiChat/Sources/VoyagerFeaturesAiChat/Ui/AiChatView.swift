@@ -11,6 +11,9 @@ public struct AiChatView: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
+    @State private var isChatInputFocused = false
+    @State private var chatInputTextHeight = Self.chatInputMinTextHeight
+
     public init(store: StoreOf<AiChatFeature>) {
         self.store = store
     }
@@ -20,23 +23,50 @@ public struct AiChatView: View {
             let state = store.state
             let skeleton = state.skeletonDisplayModel
 
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        conversationSurface(state: state, skeleton: skeleton)
+            ScrollViewReader { scrollProxy in
+                VStack(spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            conversationSurface(state: state, skeleton: skeleton)
+                            Color.clear
+                                .frame(height: 1)
+                                .id(Self.transcriptBottomAnchorID)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .padding(.bottom, 8)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                    .padding(.bottom, 8)
-                }
+                    .onChange(of: transcriptScrollSignature(state: state)) { _ in
+                        scrollTranscriptToBottom(scrollProxy)
+                    }
 
-                chatInput(state: state, input: skeleton.chatInput)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-                    .padding(.bottom, 10)
+                    chatInput(state: state, input: skeleton.chatInput)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                        .padding(.bottom, 10)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private func transcriptScrollSignature(state: AiChatState) -> String {
+        let lastMessage = state.transcriptHistory.last
+        return [
+            String(state.transcriptHistory.count),
+            lastMessage?.role.rawValue ?? "none",
+            lastMessage?.content ?? "",
+            String(state.isProcessing),
+            state.requestStatusText ?? ""
+        ].joined(separator: "|")
+    }
+
+    private func scrollTranscriptToBottom(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo(Self.transcriptBottomAnchorID, anchor: .bottom)
+            }
         }
     }
 
@@ -127,6 +157,7 @@ public struct AiChatView: View {
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             )
     }
+
     private func transcriptSection(
         messages: [AiChatMessage],
         isProcessing: Bool,
@@ -262,22 +293,7 @@ public struct AiChatView: View {
 
     private func chatInput(state: AiChatState, input: AiChatInputDisplayModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField(
-                input.placeholder,
-                text: Binding(
-                    get: { state.draftText },
-                    set: { store.send(.draftTextChanged($0)) }
-                )
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: 13))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 34, alignment: .topLeading)
-            .padding(.top, 2)
-            .onSubmit {
-                store.send(.submitTapped)
-            }
-            .disabled(state.isProcessing)
+            chatInputTextField(state: state, input: input)
 
             HStack(alignment: .bottom, spacing: 4) {
                 HoverTextAffordance(
@@ -297,6 +313,11 @@ public struct AiChatView: View {
             }
         }
         .padding(8)
+        .onChange(of: state.isProcessing) { isProcessing in
+            if !isProcessing {
+                restoreChatInputFocus()
+            }
+        }
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(chatInputBackground)
@@ -304,6 +325,42 @@ public struct AiChatView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(chatInputBorder, lineWidth: 1)
+        )
+    }
+
+    private func chatInputTextField(state: AiChatState, input: AiChatInputDisplayModel) -> some View {
+        ZStack(alignment: .topLeading) {
+            AiChatInputTextView(
+                text: Binding(
+                    get: { state.draftText },
+                    set: { store.send(.draftTextChanged($0)) }
+                ),
+                isFocused: $isChatInputFocused,
+                measuredHeight: $chatInputTextHeight,
+                isDisabled: state.isProcessing,
+                maxVisibleHeight: Self.chatInputMaxTextHeight,
+                onSubmit: { submitAndRestoreInputFocus() }
+            )
+            .frame(height: boundedChatInputTextHeight)
+
+            if state.draftText.isEmpty {
+                Text(input.placeholder)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, AiChatInputTextView.textVerticalInset)
+                    .padding(.leading, AiChatInputTextView.textHorizontalInset)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: Self.chatInputMinTextHeight, alignment: .topLeading)
+        .padding(.top, 2)
+    }
+
+    private var boundedChatInputTextHeight: CGFloat {
+        min(
+            max(chatInputTextHeight, Self.chatInputMinTextHeight),
+            Self.chatInputMaxTextHeight
         )
     }
 
@@ -332,7 +389,7 @@ public struct AiChatView: View {
                 .accessibilityLabel(input.stopAccessibilityLabel)
             } else {
                 Button {
-                    store.send(.submitTapped)
+                    submitAndRestoreInputFocus()
                 } label: {
                     actionGlyph(symbol: "arrow.up")
                 }
@@ -340,6 +397,17 @@ public struct AiChatView: View {
                 .disabled(!input.canSubmit)
                 .accessibilityLabel(input.submitAccessibilityLabel)
             }
+        }
+    }
+
+    private func submitAndRestoreInputFocus() {
+        store.send(.submitTapped)
+        restoreChatInputFocus()
+    }
+
+    private func restoreChatInputFocus() {
+        Task { @MainActor in
+            isChatInputFocused = true
         }
     }
 
@@ -375,6 +443,11 @@ public struct AiChatView: View {
     }
 
     private static let assistantHeaderTitle = "Voyager AI"
+
+    private static let transcriptBottomAnchorID = "ai-chat-transcript-bottom"
+
+    private static let chatInputMinTextHeight: CGFloat = 34
+    private static let chatInputMaxTextHeight: CGFloat = 96
 
     private static let mockAssistantBodyLines = [
         "Context checked.",
