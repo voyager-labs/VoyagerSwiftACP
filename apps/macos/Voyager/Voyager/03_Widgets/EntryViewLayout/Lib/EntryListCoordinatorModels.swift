@@ -1,6 +1,9 @@
 import CoreGraphics
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
+import VoyagerShared
 
 struct EntryListCoordinatorRenderSnapshot: Equatable {
     let listVisibleColumns: [EntryListColumn]
@@ -16,7 +19,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let clipboardOperation: ClipboardOperation
     let renamingItemId: EntryModel.ID?
     let sortKey: SortKey
-    let sortOrder: SortOrder
+    let sortOrder: VoyagerShared.SortOrder
     let showHiddenFiles: Bool
     let shouldScrollToSelection: Bool
     let isDropTargeted: Bool

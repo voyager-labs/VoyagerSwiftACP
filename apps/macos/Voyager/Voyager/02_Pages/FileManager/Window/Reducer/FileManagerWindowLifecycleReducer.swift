@@ -1,5 +1,7 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 @Reducer

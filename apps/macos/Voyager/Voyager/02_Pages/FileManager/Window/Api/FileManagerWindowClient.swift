@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesContentPageNavigation
 
 struct FileManagerWindowClient: Sendable {
     var open: @Sendable (_ id: UUID) async -> Void

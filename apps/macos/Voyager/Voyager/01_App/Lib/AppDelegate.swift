@@ -1,6 +1,8 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerFeaturesUpdateVersion
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var appRootStore: StoreOf<AppRootFeature>?
 
@@ -13,6 +15,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_: Notification) {
+        UpdaterClient.registerRelaunchHandlers(
+            prepareForRelaunch: {
+                await VoyagerTerminationCoordinator.shared.begin(.sparkleRelaunch)
+            },
+            stopHelperApp: {
+                await HelperAppClient.liveValue.stop()
+            },
+        )
         withAppRootStore {
             $0.send(.lifecycle(.launch(.willFinishLaunching)))
             $0.send(.updater(.configureAtLaunch))

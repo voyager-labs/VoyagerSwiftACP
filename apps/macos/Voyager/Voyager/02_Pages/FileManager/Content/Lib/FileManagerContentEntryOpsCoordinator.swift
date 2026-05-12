@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 
 enum FileManagerContentEntryOpsCoordinator {
