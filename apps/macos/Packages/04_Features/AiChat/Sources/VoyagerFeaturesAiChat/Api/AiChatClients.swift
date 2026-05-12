@@ -23,10 +23,6 @@ extension AiChatSettingsClient: DependencyKey {
         AiChatSettingsClient(openSettingsWindow: { @MainActor in
             NSApp.activate(ignoringOtherApps: true)
 
-            if clickSettingsMenuItem(in: NSApp.mainMenu) {
-                return true
-            }
-
             let settingsSelector = Selector(("showSettingsWindow:"))
             if NSApp.sendAction(settingsSelector, to: nil, from: nil) {
                 return true
@@ -51,29 +47,6 @@ public extension DependencyValues {
         get { self[AiChatSettingsClient.self] }
         set { self[AiChatSettingsClient.self] = newValue }
     }
-}
-
-@MainActor
-private func clickSettingsMenuItem(in menu: NSMenu?) -> Bool {
-    guard let menu else { return false }
-
-    for item in menu.items {
-        let isSettingsItem = item.keyEquivalent == ","
-            || item.action == Selector(("showSettingsWindow:"))
-            || item.action == Selector(("showPreferencesWindow:"))
-        if isSettingsItem {
-            let index = menu.index(of: item)
-            guard index != -1 else { continue }
-            menu.performActionForItem(at: index)
-            return true
-        }
-
-        if clickSettingsMenuItem(in: item.submenu) {
-            return true
-        }
-    }
-
-    return false
 }
 
 private let aiChatMockAssistantMessageContent = """
