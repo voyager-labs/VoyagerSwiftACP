@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 
 @CasePathable
 enum FileManagerContentAction: ViewAction, CasePathable, Sendable {

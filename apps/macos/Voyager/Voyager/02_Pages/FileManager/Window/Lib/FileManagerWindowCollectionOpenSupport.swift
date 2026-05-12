@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 func prepareLoadedCollectionOpenState(
@@ -30,7 +32,7 @@ func makeWindowCollectionNavigation(
         context: payload.context,
         sortKey: state.content.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.content.entryViewLayout.entryArrangements.sortOrder,
-        viewLayout: state.content.entryViewLayout.mode,
+        viewLayout: contentPageNavigationViewLayout(from: state.content.entryViewLayout.mode),
         compatibility: payload.compatibility,
     )
 }
