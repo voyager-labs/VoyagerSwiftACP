@@ -195,7 +195,7 @@ private struct WindowNavUnsavedHarness {
 
     var body: some Reducer<State, Action> {
         Scope(state: \.content.navigation, action: \.navigation) {
-            ContentPageNavigationStateReducer()
+            ContentPageNavigationFeature()
         }
         FileManagerWindowNavigationReducer()
     }
