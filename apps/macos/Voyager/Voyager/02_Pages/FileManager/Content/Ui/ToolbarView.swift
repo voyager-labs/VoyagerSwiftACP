@@ -4,6 +4,7 @@ import SwiftUI
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 func showsToolbarRefreshButton(
     _ collectionStatus: ToolbarCollectionStatusViewState,
