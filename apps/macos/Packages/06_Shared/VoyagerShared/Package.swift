@@ -33,5 +33,9 @@ let package = Package(
                 .product(name: "PerceptionCore", package: "swift-perception"),
             ]
         ),
+        .testTarget(
+            name: "VoyagerSharedTests",
+            dependencies: ["VoyagerShared"]
+        ),
     ]
 )

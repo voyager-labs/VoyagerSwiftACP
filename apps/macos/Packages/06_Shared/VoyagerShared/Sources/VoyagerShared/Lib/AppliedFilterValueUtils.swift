@@ -1,8 +1,7 @@
 import Foundation
-import VoyagerShared
 
-enum AppliedFilterValueUtils {
-    static func stringValues(from value: VoyagerShared.JSONValue?, valueUIKind: String) -> [String]? {
+public enum AppliedFilterValueUtils {
+    public static func stringValues(from value: JSONValue?, valueUIKind: String) -> [String]? {
         guard let value else { return nil }
         switch value {
         case let .string(text):
@@ -19,7 +18,7 @@ enum AppliedFilterValueUtils {
         }
     }
 
-    static func stringValue(from value: VoyagerShared.JSONValue, valueUIKind: String) -> String? {
+    public static func stringValue(from value: JSONValue, valueUIKind: String) -> String? {
         switch value {
         case let .string(text):
             normalizeDateString(text, valueUIKind: valueUIKind) ?? text
@@ -32,12 +31,15 @@ enum AppliedFilterValueUtils {
         }
     }
 
+    // MARK: - Private
+
     private static func normalizeDateString(_ text: String, valueUIKind: String) -> String? {
         switch valueUIKind {
         case "singleDate", "rangeDate":
-            ValueNormalizerUtils.formatDateOnlyString(text)
+            guard let date = DateNormalizerUtils.parseDate(text) else { return nil }
+            return DateNormalizerUtils.formatDateOnly(date)
         default:
-            nil
+            return nil
         }
     }
 
