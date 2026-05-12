@@ -7,7 +7,6 @@ import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
-import VoyagerShared
 
 @main
 struct VoyagerApp: App {

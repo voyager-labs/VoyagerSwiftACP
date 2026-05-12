@@ -3,7 +3,6 @@ import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
-import VoyagerShared
 
 func prepareLoadedCollectionOpenState(
     restorationPayload: CollectionOpenRestorationPayload,
