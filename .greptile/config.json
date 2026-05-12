@@ -101,5 +101,20 @@
       "severity": "high"
     }
   ],
-  "disabledRules": []
+  "disabledRules": [],
+  "excludeBranches": [
+    "revert-*",
+    "*revert-*",
+    "revert/**",
+    "**/revert-*",
+    "**/*revert-*",
+    "**/revert/**"
+  ],
+  "disabledLabels": [
+    "skip-greptile",
+    "no-greptile",
+    "duplicate-diff",
+    "duplicate-pr"
+  ],
+  "ignoreKeywords": "Revert\nThis reverts commit\nskip-greptile\nno-greptile\nduplicate-diff\nduplicate-pr"
 }
