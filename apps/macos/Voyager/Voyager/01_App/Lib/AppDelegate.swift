@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import VoyagerFeaturesUpdateVersion
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var appRootStore: StoreOf<AppRootFeature>?
 

@@ -173,13 +173,12 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
 public extension UpdaterClient {
     /// Register App-layer relaunch handlers that the package cannot reference directly.
     /// Call this once during app startup before any update check runs.
+    @MainActor
     static func registerRelaunchHandlers(
         prepareForRelaunch: @escaping @Sendable () async -> Void,
         stopHelperApp: @escaping @Sendable () async -> Void
     ) {
-        Task { @MainActor in
-            UpdaterCoordinator.shared.prepareForRelaunchAction = prepareForRelaunch
-            UpdaterCoordinator.shared.stopHelperAppAction = stopHelperApp
-        }
+        UpdaterCoordinator.shared.prepareForRelaunchAction = prepareForRelaunch
+        UpdaterCoordinator.shared.stopHelperAppAction = stopHelperApp
     }
 }
