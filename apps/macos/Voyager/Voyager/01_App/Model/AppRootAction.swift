@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesUpdateVersion
 import VoyagerPagesSettings
 
 @CasePathable

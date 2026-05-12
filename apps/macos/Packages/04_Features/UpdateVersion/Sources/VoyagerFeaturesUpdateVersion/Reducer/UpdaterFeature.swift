@@ -4,16 +4,18 @@ import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
 @Reducer
-struct UpdaterFeature {
+public struct UpdaterFeature: Sendable {
     @Dependency(\.updaterClient)
     var updaterClient
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
 
-    typealias State = UpdaterState
-    typealias Action = UpdaterAction
+    public typealias State = UpdaterState
+    public typealias Action = UpdaterAction
 
-    var body: some Reducer<State, Action> {
+    public init() {}
+
+    public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .configureAtLaunch:

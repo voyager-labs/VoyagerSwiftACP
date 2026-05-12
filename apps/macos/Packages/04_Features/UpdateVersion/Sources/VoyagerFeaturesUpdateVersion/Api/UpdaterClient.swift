@@ -15,7 +15,7 @@ public struct UpdaterClient: Sendable {
         configure: @escaping @Sendable () async -> Void,
         startAtLaunch: @escaping @Sendable () async -> Void,
         checkForUpdates: @escaping @Sendable () async -> Void,
-        setAutomaticUpdate: @escaping @Sendable (Bool) async -> Void,
+        setAutomaticUpdate: @escaping @Sendable (Bool) async -> Void
     ) {
         self.configure = configure
         self.startAtLaunch = startAtLaunch
@@ -38,7 +38,7 @@ extension UpdaterClient: DependencyKey {
             },
             setAutomaticUpdate: { enabled in
                 await UpdaterCoordinator.shared.setAutomaticUpdate(enabled)
-            },
+            }
         )
     }
 
@@ -47,7 +47,7 @@ extension UpdaterClient: DependencyKey {
             configure: {},
             startAtLaunch: {},
             checkForUpdates: {},
-            setAutomaticUpdate: { _ in },
+            setAutomaticUpdate: { _ in }
         )
     }
 
@@ -56,7 +56,7 @@ extension UpdaterClient: DependencyKey {
             configure: {},
             startAtLaunch: {},
             checkForUpdates: {},
-            setAutomaticUpdate: { _ in },
+            setAutomaticUpdate: { _ in }
         )
     }
 }
@@ -69,11 +69,13 @@ public extension DependencyValues {
 }
 
 @MainActor
-private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
+private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDelegate {
     static let shared = UpdaterCoordinator()
     private var controller: SPUStandardUpdaterController?
     private var pendingRelaunchAttemptId: UUID?
     private var didInvokeInstallHandler = false
+    var prepareForRelaunchAction: @Sendable () async -> Void = {}
+    var stopHelperAppAction: @Sendable () async -> Void = {}
 
     override private init() {
         super.init()
@@ -85,7 +87,7 @@ private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
         controller = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: self,
-            userDriverDelegate: nil,
+            userDriverDelegate: nil
         )
     }
 
@@ -106,7 +108,7 @@ private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
         let notificationCenterClient = NotificationCenterClient.liveValue
         let notifications = notificationCenterClient.notifications(
             NSWindow.didBecomeMainNotification,
-            nil,
+            nil
         )
 
         if NSApp.keyWindow != nil {
@@ -120,10 +122,18 @@ private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
         }
     }
 
+    func prepareForRelaunch() async {
+        await prepareForRelaunchAction()
+    }
+
+    func stopHelperApp() async {
+        await stopHelperAppAction()
+    }
+
     func updater(
         _: SPUUpdater,
         shouldPostponeRelaunchForUpdate _: SUAppcastItem,
-        untilInvokingBlock installHandler: @escaping () -> Void,
+        untilInvokingBlock installHandler: @escaping () -> Void
     ) -> Bool {
         let logger = Logger(label: "Voyager")
         logger.info("sparkle_postpone_relaunch_begin")
@@ -138,8 +148,8 @@ private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
         }
 
         Task { @MainActor in
-            await VoyagerTerminationCoordinator.shared.begin(.sparkleRelaunch)
-            await HelperAppClient.liveValue.stop()
+            await prepareForRelaunch()
+            await stopHelperApp()
             logger.info("sparkle_postpone_relaunch_end")
             invokeInstallHandlerOnce(attemptId: attemptId, installHandler)
         }
@@ -157,5 +167,18 @@ private final class UpdaterCoordinator: NSObject, SPUUpdaterDelegate {
         didInvokeInstallHandler = true
         pendingRelaunchAttemptId = nil
         installHandler()
+    }
+}
+
+public extension UpdaterClient {
+    /// Register App-layer relaunch handlers that the package cannot reference directly.
+    /// Call this once during app startup before any update check runs.
+    @MainActor
+    static func registerRelaunchHandlers(
+        prepareForRelaunch: @escaping @Sendable () async -> Void,
+        stopHelperApp: @escaping @Sendable () async -> Void
+    ) {
+        UpdaterCoordinator.shared.prepareForRelaunchAction = prepareForRelaunch
+        UpdaterCoordinator.shared.stopHelperAppAction = stopHelperApp
     }
 }
