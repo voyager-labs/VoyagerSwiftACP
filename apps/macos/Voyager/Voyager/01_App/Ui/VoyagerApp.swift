@@ -4,6 +4,7 @@ import Foundation
 import Logging
 import SwiftUI
 import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
@@ -23,6 +24,23 @@ struct VoyagerApp: App {
         appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
         } withDependencies: {
+            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
+                let appLevel: MetricLogLevel = switch level {
+                case .trace: .trace
+                case .debug: .debug
+                case .info: .info
+                case .warn: .warn
+                case .error: .error
+                }
+                MainActor.assumeIsolated {
+                    VoyagerSentryMetricLogger.logMetric(
+                        name,
+                        value: value,
+                        tags: tags,
+                        level: appLevel,
+                    )
+                }
+            }
             $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { request in
                 await MainActor.run {
                     let resolvedPath: String = switch request {

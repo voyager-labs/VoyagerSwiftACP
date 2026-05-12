@@ -1,4 +1,5 @@
 import SwiftUI
+import VoyagerShared
 
 struct IconButtonLabel: View {
     let systemName: String

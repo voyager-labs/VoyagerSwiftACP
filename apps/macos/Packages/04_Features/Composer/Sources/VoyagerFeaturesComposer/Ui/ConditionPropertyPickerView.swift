@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct ConditionPropertyPickerView: View {
     let store: StoreOf<ConditionPropertyPickerFeature>
@@ -25,12 +26,12 @@ struct ConditionPropertyPickerView: View {
             .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
+                    .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1)
             )
             .shadow(
                 color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
                 radius: VoyagerDS.Shadow.popoverRadius,
-                y: VoyagerDS.Shadow.popoverYOffset,
+                y: VoyagerDS.Shadow.popoverYOffset
             )
             .onAppear {
                 viewStore.send(.onAppear)
@@ -56,12 +57,12 @@ struct ConditionPropertyPickerView: View {
                     FocusedTextField(
                         text: viewStore.binding(
                             get: \.searchText,
-                            send: ConditionPropertyPickerFeature.Action.searchTextChanged,
+                            send: ConditionPropertyPickerFeature.Action.searchTextChanged
                         ),
                         isFirstResponder: Binding(
                             get: { isSearchFocused },
-                            set: { isSearchFocused = $0 },
-                        ),
+                            set: { isSearchFocused = $0 }
+                        )
                     )
                     .font(.system(size: 13))
                 }
@@ -106,15 +107,15 @@ struct ConditionPropertyPickerView: View {
             existingKeys: viewStore.existingKeys,
             editingKey: viewStore.editingConditionKey,
             searchText: viewStore.searchText,
-            labels: viewStore.propertyLabels,
+            labels: viewStore.propertyLabels
         )
         let recommended = ConditionPropertyPickerDisplayUtils.recommendedProperties(
             from: filtered,
-            defaults: viewStore.propertyDefaults,
+            defaults: viewStore.propertyDefaults
         )
         let grouped = ConditionPropertyPickerDisplayUtils.groupedByCategory(
             filtered,
-            categories: viewStore.propertyCategories,
+            categories: viewStore.propertyCategories
         )
         let hasRecommended = !recommended.isEmpty
 
@@ -129,14 +130,14 @@ struct ConditionPropertyPickerView: View {
 
     private func categoryContent(
         _ viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
-        categoryKey: String,
+        categoryKey: String
     ) -> some View {
         let filtered = ConditionPropertyPickerDisplayUtils.filteredProperties(
             properties: viewStore.properties,
             existingKeys: viewStore.existingKeys,
             editingKey: viewStore.editingConditionKey,
             searchText: viewStore.searchText,
-            labels: viewStore.propertyLabels,
+            labels: viewStore.propertyLabels
         )
         let items = filtered.filter { viewStore.propertyCategories[$0] == categoryKey }
 
@@ -181,7 +182,7 @@ struct ConditionPropertyPickerView: View {
     @ViewBuilder
     private func recommendedSection(
         _ recommended: [String],
-        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
+        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>
     ) -> some View {
         if !recommended.isEmpty {
             ForEach(recommended, id: \.self) { key in
@@ -194,7 +195,7 @@ struct ConditionPropertyPickerView: View {
     private func categorySection(
         _ grouped: [String: [String]],
         hasRecommended: Bool,
-        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
+        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>
     ) -> some View {
         if !grouped.isEmpty {
             if hasRecommended {
@@ -206,7 +207,7 @@ struct ConditionPropertyPickerView: View {
                 categoryRow(
                     categoryKey: key,
                     items: grouped[key] ?? [],
-                    viewStore: viewStore,
+                    viewStore: viewStore
                 )
             }
         }
@@ -225,7 +226,7 @@ struct ConditionPropertyPickerView: View {
     private func categoryRow(
         categoryKey: String,
         items: [String],
-        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
+        viewStore: ViewStoreOf<ConditionPropertyPickerFeature>
     ) -> some View {
         Button {
             viewStore.send(.categoryTapped(categoryKey))
@@ -249,7 +250,7 @@ struct ConditionPropertyPickerView: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
+                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear)
             )
         }
         .buttonStyle(.plain)
@@ -261,7 +262,7 @@ struct ConditionPropertyPickerView: View {
     private func propertyRow(
         _ propertyKey: String,
         viewStore: ViewStoreOf<ConditionPropertyPickerFeature>,
-        showIcon: Bool = true,
+        showIcon: Bool = true
     ) -> some View {
         Button {
             viewStore.send(.propertyTapped(propertyKey))
@@ -276,8 +277,8 @@ struct ConditionPropertyPickerView: View {
                         systemName: ConditionPropertyIconUtils.iconName(
                             forKey: propertyKey,
                             category: category,
-                            type: type,
-                        ),
+                            type: type
+                        )
                     )
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
@@ -297,7 +298,7 @@ struct ConditionPropertyPickerView: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
+                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear)
             )
         }
         .buttonStyle(.plain)

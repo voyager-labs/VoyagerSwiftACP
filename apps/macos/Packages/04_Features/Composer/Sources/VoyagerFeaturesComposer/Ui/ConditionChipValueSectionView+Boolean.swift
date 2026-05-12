@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerShared
 
 private struct ConditionChipBooleanButtonLabelView: View {
     let currentText: String
@@ -22,8 +23,8 @@ private struct ConditionChipBooleanButtonLabelView: View {
                     .fill(
                         isHovering
                             ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
-                            : Color.white.opacity(0.0001),
-                    ),
+                            : Color.white.opacity(0.0001)
+                    )
             )
     }
 
@@ -41,13 +42,13 @@ extension ConditionChipValueSectionView {
         index: Int,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
         operatorCode: String,
-        valueUIKind: String,
+        valueUIKind: String
     ) -> some View {
         let isPresented = Binding<Bool>(
             get: { boolPopoverIndex == index },
             set: { show in
                 if !show { boolPopoverIndex = nil }
-            },
+            }
         )
         let isHovering = boolHoverIndex == index
 
@@ -59,7 +60,7 @@ extension ConditionChipValueSectionView {
                 editingIndex: index,
                 existingValues: condition.values,
                 includeDisplayState: false,
-                valueType: "boolean",
+                valueType: "boolean"
             )
             boolPopoverIndex = index
         } label: {
@@ -68,7 +69,7 @@ extension ConditionChipValueSectionView {
                 placeholderText: placeholderText,
                 isHovering: isHovering,
                 isDark: isDark,
-                hoverFillOpacity: hoverFillOpacity,
+                hoverFillOpacity: hoverFillOpacity
             )
         }
         .buttonStyle(.plain)
@@ -86,7 +87,7 @@ extension ConditionChipValueSectionView {
     }
 
     func booleanPopoverContent(
-        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             booleanOption("True", valueViewStore: valueViewStore)
@@ -96,13 +97,13 @@ extension ConditionChipValueSectionView {
         .frame(width: 150)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(VoyagerDS.Surface.popoverBackground(for: isDark ? .dark : .light)),
+                .fill(VoyagerDS.Surface.popoverBackground(for: isDark ? .dark : .light))
         )
     }
 
     func booleanOption(
         _ title: String,
-        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>
     ) -> some View {
         booleanOptionButton(title, isHovering: boolOptionHoverValue == title) {
             valueViewStore.send(.setValue(index: 0, text: title))
@@ -128,8 +129,8 @@ extension ConditionChipValueSectionView {
                     .fill(
                         isHovering
                             ? (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black.opacity(hoverFillOpacity))
-                            : Color.clear,
-                    ),
+                            : Color.clear
+                    )
             )
         }
         .buttonStyle(.plain)

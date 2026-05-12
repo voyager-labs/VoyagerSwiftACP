@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct ComposerTopRowView: View {
     let store: StoreOf<ComposerFeature>
@@ -26,7 +27,7 @@ struct ComposerTopRowView: View {
             observe: { $0 },
             content: { viewStore in
                 firstRow(viewStore: viewStore)
-            },
+            }
         )
     }
 }
@@ -51,7 +52,7 @@ private extension ComposerTopRowView {
     @ViewBuilder
     func undoButton(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        isLocked: Bool,
+        isLocked: Bool
     ) -> some View {
         let isEnabled = viewStore.canUndo && !isLocked
         Button {
@@ -64,7 +65,7 @@ private extension ComposerTopRowView {
                 .background(
                     RoundedRectangle(cornerRadius: 4)
                         .fill(isEnabled && isUndoHovering ? VoyagerDS.Interaction
-                            .controlHoverFill(for: colorScheme) : .clear),
+                            .controlHoverFill(for: colorScheme) : .clear)
                 )
         }
         .disabled(!isEnabled)
@@ -77,7 +78,7 @@ private extension ComposerTopRowView {
     @ViewBuilder
     func redoButton(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        isLocked: Bool,
+        isLocked: Bool
     ) -> some View {
         let isEnabled = viewStore.canRedo && !isLocked
         Button {
@@ -90,7 +91,7 @@ private extension ComposerTopRowView {
                 .background(
                     RoundedRectangle(cornerRadius: 4)
                         .fill(isEnabled && isRedoHovering ? VoyagerDS.Interaction
-                            .controlHoverFill(for: colorScheme) : .clear),
+                            .controlHoverFill(for: colorScheme) : .clear)
                 )
         }
         .disabled(!isEnabled)
@@ -102,7 +103,7 @@ private extension ComposerTopRowView {
 
     func textField(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        isLocked: Bool,
+        isLocked: Bool
     ) -> some View {
         ZStack(alignment: .trailing) {
             let isSubmitDisabled = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -137,7 +138,7 @@ private extension ComposerTopRowView {
         .background(
             Circle()
                 .fill(isStopHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
-                .frame(width: 20, height: 20),
+                .frame(width: 20, height: 20)
         )
         .padding(.trailing, 8)
         .onHover { hovering in
@@ -149,12 +150,12 @@ private extension ComposerTopRowView {
     func submitButton(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
         isLocked: Bool,
-        isSubmitDisabled: Bool,
+        isSubmitDisabled: Bool
     ) -> some View {
         let submitButtonBackground = Circle().fill(
             isSubmitDisabled
                 ? VoyagerDS.BrandSecondaryColor.c500.opacity(0.5)
-                : VoyagerDS.BrandSecondaryColor.c500,
+                : VoyagerDS.BrandSecondaryColor.c500
         )
 
         Button {
@@ -173,16 +174,16 @@ private extension ComposerTopRowView {
                 .fill(!isSubmitDisabled && !isLocked && isSubmitHovering
                     ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme)
                     : .clear)
-                .frame(width: 20, height: 20),
+                .frame(width: 20, height: 20)
         )
         .background(
             Circle()
                 .fill(
                     isSubmitDisabled
                         ? Color(red: 0.843, green: 0.714, blue: 0.322).opacity(0.5)
-                        : Color(red: 0.843, green: 0.714, blue: 0.322),
+                        : Color(red: 0.843, green: 0.714, blue: 0.322)
                 )
-                .allowsHitTesting(false),
+                .allowsHitTesting(false)
         )
         .padding(.trailing, 8)
         .onHover { hovering in
@@ -193,7 +194,7 @@ private extension ComposerTopRowView {
     func queryInputField(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
         isSubmitDisabled _: Bool,
-        isLocked: Bool,
+        isLocked: Bool
     ) -> some View {
         let placeholderText = "Describe the collection you want..."
 
@@ -209,12 +210,12 @@ private extension ComposerTopRowView {
                 text: viewStore.binding(get: \.text, send: ComposerFeature.Action.setText),
                 isFirstResponder: Binding(
                     get: { isComposeFieldFirstResponder },
-                    set: { isComposeFieldFirstResponder = $0 },
+                    set: { isComposeFieldFirstResponder = $0 }
                 ),
                 onCommit: {
                     let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty { viewStore.send(.submit) }
-                },
+                }
             )
             .font(.system(size: 13))
             .padding(.horizontal, 10)
@@ -224,11 +225,11 @@ private extension ComposerTopRowView {
         }
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(VoyagerDS.Surface.inputBackground(for: colorScheme)),
+                .fill(VoyagerDS.Surface.inputBackground(for: colorScheme))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1),
+                .stroke(VoyagerDS.Surface.inputBorder(for: colorScheme), lineWidth: 1)
         )
         .onSubmit {
             let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -248,7 +249,7 @@ private extension ComposerTopRowView {
 private extension ComposerTopRowView {
     func clearButton(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        isLocked: Bool,
+        isLocked: Bool
     ) -> some View {
         let trimmedText = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
@@ -276,7 +277,7 @@ private extension ComposerTopRowView {
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
-                    .allowsHitTesting(false),
+                    .allowsHitTesting(false)
             )
         }
         .buttonStyle(.borderless)
@@ -284,12 +285,12 @@ private extension ComposerTopRowView {
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isEnabled && isClearHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
-                .allowsHitTesting(false),
+                .allowsHitTesting(false)
         )
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
-                .allowsHitTesting(false),
+                .allowsHitTesting(false)
         )
         .onHover { hovering in
             isClearHovering = hovering
@@ -298,7 +299,7 @@ private extension ComposerTopRowView {
 
     func saveButton(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        isLocked: Bool,
+        isLocked: Bool
     ) -> some View {
         let isEnabled = canSaveCollection && !isLocked
         let isSaveAs = !isTemporaryCollection && isOptionKeyPressed
@@ -318,7 +319,7 @@ private extension ComposerTopRowView {
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
-                    .allowsHitTesting(false),
+                    .allowsHitTesting(false)
             )
         }
         .buttonStyle(.borderless)
@@ -326,12 +327,12 @@ private extension ComposerTopRowView {
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isEnabled && isSaveHovering ? VoyagerDS.Interaction.controlHoverFill(for: colorScheme) : .clear)
-                .allowsHitTesting(false),
+                .allowsHitTesting(false)
         )
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.08))
-                .allowsHitTesting(false),
+                .allowsHitTesting(false)
         )
         .onHover { hovering in
             isSaveHovering = hovering

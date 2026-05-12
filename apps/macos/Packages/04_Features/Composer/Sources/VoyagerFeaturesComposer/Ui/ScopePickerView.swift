@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesEntry
+import VoyagerShared
 
 public struct ScopePickerView: View {
     let oldPath: String?

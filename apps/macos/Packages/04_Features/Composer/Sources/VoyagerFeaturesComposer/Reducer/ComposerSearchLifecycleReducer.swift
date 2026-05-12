@@ -17,20 +17,22 @@ struct ComposerSearchLifecycleReducer {
     var registryClient
     @Dependency(\.continuousClock)
     var clock
+    @Dependency(\.composerMetricClient)
+    var composerMetricClient
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .view(.submit):
-                return handleSubmit(state: &state, searchClient: searchClient)
+                return handleSubmit(state: &state, searchClient: searchClient, composerMetricClient: composerMetricClient)
 
             case .view(.cancelSearch):
-                return handleCancelSearch(state: &state)
+                return handleCancelSearch(state: &state, composerMetricClient: composerMetricClient)
 
             case .view(.cancelFilters):
-                return handleCancelFilters(state: &state)
+                return handleCancelFilters(state: &state, composerMetricClient: composerMetricClient)
 
             case .view(.applyFilters):
-                return handleApplyFilters(state: &state, searchClient: searchClient)
+                return handleApplyFilters(state: &state, searchClient: searchClient, composerMetricClient: composerMetricClient)
 
             case let .internal(.searchResponse(requestID, response)):
                 guard state.activeSearchRequestID == requestID else {
@@ -54,10 +56,17 @@ struct ComposerSearchLifecycleReducer {
                     state.lastFiltersResponse = nil
                     applyQueryPhaseTransition(.searchSucceeded, state: &state)
                     applyAppliedFilters(normalizedAppliedFilters, state: &state, registryClient: registryClient)
-                    if state.searchStartedAt != nil {
-                        kComposerSearchLifecycleLogger.debug("composer metric")
+                    if let startedAt = state.searchStartedAt {
+                        composerMetricClient.logMetric(
+                            "voyager_search_roundtrip_duration_ms",
+                            value: round((Date().timeIntervalSince(startedAt)) * 1000)
+                        )
                     }
-                    kComposerSearchLifecycleLogger.debug("composer metric")
+                    composerMetricClient.logMetric(
+                        "voyager_search_result",
+                        value: 1,
+                        tags: ["result": response.itemCount > 0 ? "success" : "empty"]
+                    )
                     state.searchStartedAt = nil
                     if isNoOpResponse, state.openedCollectionURL == nil {
                         kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
@@ -100,7 +109,12 @@ struct ComposerSearchLifecycleReducer {
                         clock: clock
                     )
                     applyQueryPhaseTransition(.searchFailed, state: &state)
-                    kComposerSearchLifecycleLogger.debug("composer metric")
+                    composerMetricClient.logMetric(
+                        "voyager_search_result",
+                        value: 1,
+                        tags: ["result": "error"],
+                        level: .warn
+                    )
                     state.searchStartedAt = nil
                     kComposerSearchLifecycleLogger.warning(
                         "Composer query search failed: \(feedbackFailureMessage(for: error))"
@@ -120,8 +134,11 @@ struct ComposerSearchLifecycleReducer {
                     state.activeFiltersRequestID = nil
                     state.lastFiltersResponse = response
                     applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
-                    if state.filtersStartedAt != nil {
-                        kComposerSearchLifecycleLogger.debug("composer metric")
+                    if let startedAt = state.filtersStartedAt {
+                        composerMetricClient.logMetric(
+                            "voyager_filters_roundtrip_duration_ms",
+                            value: round((Date().timeIntervalSince(startedAt)) * 1000)
+                        )
                     }
                     state.filtersStartedAt = nil
                     return .none
@@ -157,16 +174,26 @@ struct ComposerSearchLifecycleReducer {
 
 private func handleSubmit(
     state: inout ComposerFeature.State,
-    searchClient: SearchClient
+    searchClient: SearchClient,
+    composerMetricClient: ComposerMetricClient
 ) -> Effect<ComposerFeature.Action> {
     let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return .none }
     let filters = buildFilters(from: state)
     let searchRequestID = UUID()
-    kComposerSearchLifecycleLogger.debug("composer metric")
-    kComposerSearchLifecycleLogger.debug("composer metric")
+    composerMetricClient.logMetric(
+        "voyager_composer_submit",
+        value: 1
+    )
+    composerMetricClient.logMetric(
+        "voyager_search_submit",
+        value: 1
+    )
     if state.hasSubmittedInSession {
-        kComposerSearchLifecycleLogger.debug("composer metric")
+        composerMetricClient.logMetric(
+            "voyager_search_resubmit",
+            value: 1
+        )
     }
     state.hasSubmittedInSession = true
     state.searchStartedAt = Date()
@@ -202,27 +229,42 @@ private func handleSubmit(
     )
 }
 
-private func handleCancelSearch(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+private func handleCancelSearch(
+    state: inout ComposerFeature.State,
+    composerMetricClient: ComposerMetricClient
+) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
     state.activeSearchRequestID = nil
     applyQueryPhaseTransition(.reset, state: &state)
-    kComposerSearchLifecycleLogger.debug("composer metric")
+    composerMetricClient.logMetric(
+        "voyager_search_cancel",
+        value: 1,
+        tags: ["type": "search"]
+    )
     return .cancel(id: ComposerFeature.CancelID.search)
 }
 
-private func handleCancelFilters(state: inout ComposerFeature.State) -> Effect<ComposerFeature.Action> {
+private func handleCancelFilters(
+    state: inout ComposerFeature.State,
+    composerMetricClient: ComposerMetricClient
+) -> Effect<ComposerFeature.Action> {
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
     state.pendingSearchQuery = nil
     applyQueryPhaseTransition(.reset, state: &state)
-    kComposerSearchLifecycleLogger.debug("composer metric")
+    composerMetricClient.logMetric(
+        "voyager_search_cancel",
+        value: 1,
+        tags: ["type": "filters"]
+    )
     return .cancel(id: ComposerFeature.CancelID.filters)
 }
 
 private func handleApplyFilters(
     state: inout ComposerFeature.State,
-    searchClient: SearchClient
+    searchClient: SearchClient,
+    composerMetricClient: ComposerMetricClient
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
     let filtersRequestID = UUID()
@@ -233,7 +275,10 @@ private func handleApplyFilters(
     state.activeFiltersRequestID = filtersRequestID
     state.lastAcceptedFiltersRequestID = nil
     applyQueryPhaseTransition(.reset, state: &state)
-    kComposerSearchLifecycleLogger.debug("composer metric")
+    composerMetricClient.logMetric(
+        "voyager_composer_filters_apply",
+        value: 1
+    )
     state.filtersStartedAt = Date()
     return .concatenate(
         .cancel(id: ComposerFeature.CancelID.search),

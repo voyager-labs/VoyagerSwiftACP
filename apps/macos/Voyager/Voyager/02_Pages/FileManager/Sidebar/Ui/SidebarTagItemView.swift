@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
-
 import VoyagerEntitiesTag
+import VoyagerShared
 
 struct SidebarTagItemView: View {
     let tag: Tag
