@@ -3,6 +3,7 @@ import Foundation
 import VoyagerEntitiesAi
 
 @Reducer
+// swiftlint:disable:next type_body_length
 public struct AiSettingsFeature {
     public typealias State = AiSettingsState
     public typealias Action = AiSettingsAction
@@ -186,7 +187,13 @@ public struct AiSettingsFeature {
         connectionsFileClient: AIConnectionsFileClient,
         send: Send<Action>
     ) async {
-        guard let updatedFile = bootstrapUpdatedConnectionsFile(file, applying: results) else { return }
+        guard let latestFile = try? await connectionsFileClient.load(),
+              let updatedFile = bootstrapUpdatedConnectionsFile(
+                verificationSourceFile: file,
+                latestFile: latestFile,
+                applying: results
+              )
+        else { return }
 
         let mutationResult = await (try? connectionsFileClient.save(updatedFile))
         switch mutationResult {
@@ -198,15 +205,19 @@ public struct AiSettingsFeature {
     }
 
     package static func bootstrapUpdatedConnectionsFile(
-        _ file: AIConnectionsFile,
+        verificationSourceFile: AIConnectionsFile,
+        latestFile: AIConnectionsFile,
         applying results: [AiProviderBootstrapResult]
     ) -> AIConnectionsFile? {
-        var providers = file.providers
+        var providers = latestFile.providers
         var didUpdate = false
 
         for result in results {
-            guard var record = providers[result.provider.rawValue],
-                  record.credential != nil
+            let providerKey = result.provider.rawValue
+            guard let sourceRecord = verificationSourceFile.providers[providerKey],
+                  var record = providers[providerKey],
+                  record.credential != nil,
+                  record.credential == sourceRecord.credential
             else { continue }
 
             let lastErrorCode: ProviderStatusReason = result.connectionState == .connected ? .none : result.statusReason
@@ -216,7 +227,7 @@ public struct AiSettingsFeature {
 
             let snapshot = ProviderSnapshotFile(
                 lastKnownStatus: result.connectionState,
-                lastVerifiedAtMs: result.connectionState == .connected ? file.updatedAtMs : nil,
+                lastVerifiedAtMs: result.connectionState == .connected ? latestFile.updatedAtMs : nil,
                 lastErrorCode: lastErrorCode
             )
 
@@ -227,16 +238,16 @@ public struct AiSettingsFeature {
                 snapshot: snapshot,
                 provenance: record.provenance
             )
-            providers[result.provider.rawValue] = record
+            providers[providerKey] = record
             didUpdate = true
         }
 
         guard didUpdate else { return nil }
         return AIConnectionsFile(
-            schemaVersion: file.schemaVersion,
-            updatedAtMs: file.updatedAtMs,
-            lastUsedProviderId: file.lastUsedProviderId,
-            lastUsedAtMs: file.lastUsedAtMs,
+            schemaVersion: latestFile.schemaVersion,
+            updatedAtMs: latestFile.updatedAtMs,
+            lastUsedProviderId: latestFile.lastUsedProviderId,
+            lastUsedAtMs: latestFile.lastUsedAtMs,
             providers: providers
         )
     }

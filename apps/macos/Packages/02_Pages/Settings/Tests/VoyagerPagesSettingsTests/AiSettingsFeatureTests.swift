@@ -31,6 +31,19 @@ private final class ConnectionsFileSaveSpy: @unchecked Sendable {
     }
 }
 
+private final class ConnectionsFileLoadSpy: @unchecked Sendable {
+    private var files: [AIConnectionsFile]
+
+    init(files: [AIConnectionsFile]) {
+        self.files = files
+    }
+
+    func load() async throws -> AIConnectionsFile {
+        guard files.count > 1 else { return files[0] }
+        return files.removeFirst()
+    }
+}
+
 @MainActor
 // swiftlint:disable:next type_body_length
 final class AiSettingsFeatureTests: XCTestCase {
@@ -115,6 +128,49 @@ final class AiSettingsFeatureTests: XCTestCase {
         await store.finish()
 
         XCTAssertEqual(saveSpy.savedFiles, [expectedFile])
+    }
+
+    func testBootstrapVerificationSkipsPersistWhenLatestCredentialChanged() async {
+        let staleFile = AIConnectionsFile.singleProvider(
+            .openai,
+            state: .connectionFailed,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-old")),
+            errorCode: .expired
+        )
+        let latestFile = AIConnectionsFile.singleProvider(
+            .openai,
+            state: .connected,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-new"))
+        )
+        let loadSpy = ConnectionsFileLoadSpy(files: [staleFile, latestFile])
+        let saveSpy = ConnectionsFileSaveSpy()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { try await loadSpy.load() }
+            $0.aiConnectionsFileClient.save = { try await saveSpy.save($0) }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: .openai]?.connectionState = .connected
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.finish()
+
+        XCTAssertTrue(saveSpy.savedFiles.isEmpty)
     }
 
     // MARK: - Fresh Install (No Auth File)
