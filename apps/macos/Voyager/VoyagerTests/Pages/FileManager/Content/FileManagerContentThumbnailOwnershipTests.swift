@@ -2,6 +2,7 @@ import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 import XCTest
 

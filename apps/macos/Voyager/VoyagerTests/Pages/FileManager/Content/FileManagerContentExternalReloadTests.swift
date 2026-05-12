@@ -1,7 +1,10 @@
 import ComposableArchitecture
 @testable import Voyager
 import struct VoyagerEntitiesCollection.CollectionContext
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import XCTest
 
 @MainActor

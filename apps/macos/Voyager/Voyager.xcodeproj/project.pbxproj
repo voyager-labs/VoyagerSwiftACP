@@ -12,10 +12,6 @@
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
 		6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2C2F0DF4A10012D44A /* Logging */; };
 		6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 6C727A2E2F0DF4AA0012D44A /* Logging */; };
-		6C9F4B5A2F12345600000001 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
-		6C9F4B5B2F12345600000002 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = 6C9F4B602F12345600000005 /* Dependencies */; };
-		6C9F4B5C2F12345600000003 /* Clocks in Frameworks */ = {isa = PBXBuildFile; productRef = 6C9F4B612F12345600000006 /* Clocks */; };
-		6C9F4B5D2F12345600000004 /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000015 /* VoyagerEntitiesAppPreferences */; };
 		6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 7E17C1202F24CB7500F6BD2B /* Sentry */; };
 		6CFB7B382E9D48B40005FDF6 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
 		F21000000000000000000021 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000011 /* IdentifiedCollections */; };
@@ -32,6 +28,24 @@
 		F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000015 /* VoyagerEntitiesAppPreferences */; };
 		F20000000000000000000028 /* VoyagerEntitiesTag in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000016 /* VoyagerEntitiesTag */; };
 		F20000000000000000000029 /* VoyagerEntitiesCollection in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000017 /* VoyagerEntitiesCollection */; };
+		F20000000000000000000030 /* VoyagerFeaturesEntryArrangements in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */; };
+		F20000000000000000000031 /* VoyagerFeaturesEntryArrangements in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */; };
+		F20000000000000000000032 /* VoyagerFeaturesEntryThumbnail in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */; };
+		F20000000000000000000033 /* VoyagerFeaturesEntryThumbnail in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */; };
+		F20000000000000000000034 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */; };
+		F20000000000000000000035 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
+		F20000000000000000000036 /* VoyagerFeaturesEntryOperations in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000014 /* VoyagerFeaturesEntryOperations */; };
+		F20000000000000000000037 /* VoyagerEntitiesTag in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000016 /* VoyagerEntitiesTag */; };
+		F20000000000000000000038 /* VoyagerEntitiesCollection in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000017 /* VoyagerEntitiesCollection */; };
+		F20000000000000000000039 /* VoyagerEntitiesEntry in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001A /* VoyagerEntitiesEntry */; };
+		F2000000000000000000003A /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000014 /* Dependencies */; };
+		F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001A /* VoyagerEntitiesEntry */; };
+		F2000000000000000000003C /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000014 /* Dependencies */; };
+		F2000000000000000000003D /* Clocks in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000015 /* Clocks */; };
+		F2000000000000000000003E /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000015 /* VoyagerEntitiesAppPreferences */; };
+		F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001B /* VoyagerFeaturesContentPageNavigation */; };
+		F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001B /* VoyagerFeaturesContentPageNavigation */; };
+		F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -190,6 +204,14 @@
 				F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */,
 				F20000000000000000000028 /* VoyagerEntitiesTag in Frameworks */,
 				F20000000000000000000029 /* VoyagerEntitiesCollection in Frameworks */,
+				F20000000000000000000030 /* VoyagerFeaturesEntryArrangements in Frameworks */,
+				F20000000000000000000032 /* VoyagerFeaturesEntryThumbnail in Frameworks */,
+				F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */,
+				F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */,
+				F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */,
+				F2000000000000000000003C /* Dependencies in Frameworks */,
+				F2000000000000000000003D /* Clocks in Frameworks */,
+				F2000000000000000000003E /* VoyagerEntitiesAppPreferences in Frameworks */,
 				7E6AF6AD2E8BABD8005DC7D3 /* Inject in Frameworks */,
 				7EEC64512E8CE684004ACEA5 /* SwiftDotenv in Frameworks */,
 				6C727A2D2F0DF4A10012D44A /* Logging in Frameworks */,
@@ -205,15 +227,21 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6C9F4B5A2F12345600000001 /* ComposableArchitecture in Frameworks */,
-				6C9F4B5B2F12345600000002 /* Dependencies in Frameworks */,
-				6C9F4B5C2F12345600000003 /* Clocks in Frameworks */,
-				6C9F4B5D2F12345600000004 /* VoyagerEntitiesAppPreferences in Frameworks */,
 				F21000000000000000000025 /* CasePaths in Frameworks */,
 				F21000000000000000000023 /* IdentifiedCollections in Frameworks */,
 				F21000000000000000000024 /* OrderedCollections in Frameworks */,
 				F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */,
 				F20000000000000000000025 /* VoyagerShared in Frameworks */,
+				F20000000000000000000031 /* VoyagerFeaturesEntryArrangements in Frameworks */,
+				F20000000000000000000033 /* VoyagerFeaturesEntryThumbnail in Frameworks */,
+				F20000000000000000000034 /* ComposableArchitecture in Frameworks */,
+				F20000000000000000000035 /* VoyagerShared in Frameworks */,
+				F20000000000000000000036 /* VoyagerFeaturesEntryOperations in Frameworks */,
+				F20000000000000000000037 /* VoyagerEntitiesTag in Frameworks */,
+				F20000000000000000000038 /* VoyagerEntitiesCollection in Frameworks */,
+				F20000000000000000000039 /* VoyagerEntitiesEntry in Frameworks */,
+				F2000000000000000000003A /* Dependencies in Frameworks */,
+				F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -339,7 +367,12 @@
 				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
 				F20000000000000000000016 /* VoyagerEntitiesTag */,
 				F20000000000000000000017 /* VoyagerEntitiesCollection */,
-				F21000000000000000000011 /* IdentifiedCollections */,
+				F2000000000000000000001A /* VoyagerEntitiesEntry */,
+				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
+				F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */,
+				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
+				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
+				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
 				7E1974702E8BDC0700D041D3 /* InjectionNext */,
@@ -373,14 +406,21 @@
 			name = VoyagerTests;
 			packageProductDependencies = (
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
+				F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */,
+				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
+				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
+				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000014 /* VoyagerFeaturesEntryOperations */,
+				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
+				F20000000000000000000016 /* VoyagerEntitiesTag */,
+				F20000000000000000000017 /* VoyagerEntitiesCollection */,
+				F2000000000000000000001A /* VoyagerEntitiesEntry */,
+				F21000000000000000000014 /* Dependencies */,
+				F21000000000000000000015 /* Clocks */,
 				F21000000000000000000013 /* CasePaths */,
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
-				6C9F4B602F12345600000005 /* Dependencies */,
-				6C9F4B612F12345600000006 /* Clocks */,
-				F20000000000000000000013 /* VoyagerShared */,
-				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;
@@ -544,9 +584,16 @@
 				F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */,
 				F20000000000000000000006 /* XCLocalSwiftPackageReference "05_Entities/Tag" */,
 				F20000000000000000000007 /* XCLocalSwiftPackageReference "05_Entities/Collection" */,
+				F20000000000000000000008 /* XCLocalSwiftPackageReference "04_Features/EntryArrangements" */,
+				F20000000000000000000009 /* XCLocalSwiftPackageReference "04_Features/EntryThumbnail" */,
+				F2000000000000000000000B /* XCLocalSwiftPackageReference "04_Features/ContentPageNavigation" */,
+				F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */,
+				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
+				F21000000000000000000004 /* XCRemoteSwiftPackageReference "swift-dependencies" */,
+				F21000000000000000000005 /* XCRemoteSwiftPackageReference "swift-clocks" */,
 				7E6AF6AB2E8BABD8005DC7D3 /* XCRemoteSwiftPackageReference "Inject" */,
 				7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */,
 				7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */,
@@ -556,8 +603,6 @@
 				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
 				7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */,
-				6C9F4B5E2F12345600000003 /* XCRemoteSwiftPackageReference "swift-dependencies" */,
-				6C9F4B5F2F12345600000004 /* XCRemoteSwiftPackageReference "swift-clocks" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E14EDCD2E86622C005AC834 /* Products */;
@@ -1440,6 +1485,26 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/05_Entities/Collection;
 		};
+		F20000000000000000000008 /* XCLocalSwiftPackageReference "04_Features/EntryArrangements" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/EntryArrangements;
+		};
+		F20000000000000000000009 /* XCLocalSwiftPackageReference "04_Features/EntryThumbnail" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/EntryThumbnail;
+		};
+		F2000000000000000000000B /* XCLocalSwiftPackageReference "04_Features/ContentPageNavigation" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/ContentPageNavigation;
+		};
+		F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/05_Entities/Entry;
+		};
+		F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/UpdateVersion;
+		};
 		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1499,6 +1564,14 @@
 				version = 1.22.3;
 			};
 		};
+		F21000000000000000000004 /* XCRemoteSwiftPackageReference "swift-dependencies" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-dependencies";
+			requirement = {
+				kind = exactVersion;
+				version = 1.10.0;
+			};
+		};
 		7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/siteline/SwiftUI-Introspect";
@@ -1539,15 +1612,7 @@
 				version = 2.1.0;
 			};
 		};
-		6C9F4B5E2F12345600000003 /* XCRemoteSwiftPackageReference "swift-dependencies" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/pointfreeco/swift-dependencies";
-			requirement = {
-				kind = exactVersion;
-				version = 1.10.0;
-			};
-		};
-		6C9F4B5F2F12345600000004 /* XCRemoteSwiftPackageReference "swift-clocks" */ = {
+		F21000000000000000000005 /* XCRemoteSwiftPackageReference "swift-clocks" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pointfreeco/swift-clocks";
 			requirement = {
@@ -1555,7 +1620,7 @@
 				version = 1.0.6;
 			};
 		};
-/* End XCRemoteSwiftPackageReference section */
+		/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		F21000000000000000000011 /* IdentifiedCollections */ = {
@@ -1572,6 +1637,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */;
 			productName = CasePaths;
+		};
+		F21000000000000000000014 /* Dependencies */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21000000000000000000004 /* XCRemoteSwiftPackageReference "swift-dependencies" */;
+			productName = Dependencies;
+		};
+		F21000000000000000000015 /* Clocks */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21000000000000000000005 /* XCRemoteSwiftPackageReference "swift-clocks" */;
+			productName = Clocks;
 		};
 		319E52B31FBB4D8FA03D33B9 /* StructuredQueries */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1633,16 +1708,6 @@
 			package = 7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */;
 			productName = InjectionNext;
 		};
-		6C9F4B602F12345600000005 /* Dependencies */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6C9F4B5E2F12345600000003 /* XCRemoteSwiftPackageReference "swift-dependencies" */;
-			productName = Dependencies;
-		};
-		6C9F4B612F12345600000006 /* Clocks */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6C9F4B5F2F12345600000004 /* XCRemoteSwiftPackageReference "swift-clocks" */;
-			productName = Clocks;
-		};
 		F20000000000000000000011 /* VoyagerPagesOnboarding */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */;
@@ -1678,7 +1743,32 @@
 			package = F20000000000000000000007 /* XCLocalSwiftPackageReference "05_Entities/Collection" */;
 			productName = VoyagerEntitiesCollection;
 		};
-/* End XCSwiftPackageProductDependency section */
+		F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000008 /* XCLocalSwiftPackageReference "04_Features/EntryArrangements" */;
+			productName = VoyagerFeaturesEntryArrangements;
+		};
+		F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000009 /* XCLocalSwiftPackageReference "04_Features/EntryThumbnail" */;
+			productName = VoyagerFeaturesEntryThumbnail;
+		};
+		F2000000000000000000001B /* VoyagerFeaturesContentPageNavigation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2000000000000000000000B /* XCLocalSwiftPackageReference "04_Features/ContentPageNavigation" */;
+			productName = VoyagerFeaturesContentPageNavigation;
+		};
+		F2000000000000000000001A /* VoyagerEntitiesEntry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */;
+			productName = VoyagerEntitiesEntry;
+		};
+		F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */;
+			productName = VoyagerFeaturesUpdateVersion;
+		};
+		/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7E14EDC42E86622C005AC834 /* Project object */;
 }

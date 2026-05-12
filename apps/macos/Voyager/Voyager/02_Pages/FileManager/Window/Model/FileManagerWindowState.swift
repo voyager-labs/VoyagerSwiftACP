@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 
 @ObservableState

@@ -1,6 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import XCTest
@@ -194,7 +195,7 @@ private struct WindowNavUnsavedHarness {
 
     var body: some Reducer<State, Action> {
         Scope(state: \.content.navigation, action: \.navigation) {
-            ContentPageNavigationStateReducer()
+            ContentPageNavigationFeature()
         }
         FileManagerWindowNavigationReducer()
     }

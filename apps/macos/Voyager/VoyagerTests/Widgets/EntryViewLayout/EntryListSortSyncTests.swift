@@ -1,6 +1,9 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
+import VoyagerShared
 import XCTest
 
 @MainActor

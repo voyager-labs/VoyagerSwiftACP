@@ -3,7 +3,10 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import XCTest
 
 @MainActor
