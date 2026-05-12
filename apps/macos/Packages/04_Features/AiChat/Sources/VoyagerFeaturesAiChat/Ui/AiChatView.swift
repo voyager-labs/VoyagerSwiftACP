@@ -82,7 +82,12 @@ public struct AiChatView: View {
                     action: { store.send(.openSettingsTapped) }
                 )
             case let .error(connection):
-                statusBanner(title: connection.title, detail: connection.detail, actionLabel: connection.fixLabel)
+                statusBanner(
+                    title: connection.title,
+                    detail: connection.detail,
+                    actionLabel: connection.fixLabel,
+                    action: { store.send(.errorRecoveryTapped) }
+                )
             case .empty:
                 EmptyView()
             case .ready:

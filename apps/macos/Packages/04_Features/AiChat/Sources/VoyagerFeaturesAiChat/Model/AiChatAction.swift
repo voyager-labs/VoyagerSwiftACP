@@ -9,6 +9,7 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case selectedModelChanged(AiModelHandle?)
     case draftTextChanged(String)
     case openSettingsTapped
+    case errorRecoveryTapped
     case submitTapped
     case regenerateTapped
     case cancelTapped
@@ -20,4 +21,6 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     )
     case executionEvent(AiChatEvent)
     case persistenceFailed(AiChatRequestLock, AiChatExecutionFailure)
+    case persistenceRecoverySucceeded(AiChatRequestLock)
+    case persistenceRecoveryRetryFailed(AiChatRequestLock, AiChatExecutionFailure)
 }

@@ -10,6 +10,7 @@ public struct AiChatFeature {
     enum CancelID: Hashable, Sendable {
         case request
         case restore
+        case persistenceRecovery
     }
 
     @Dependency(\.aiChatExecutionClient)
@@ -64,12 +65,10 @@ public struct AiChatFeature {
 
             case .openSettingsTapped:
                 guard case .unconnected = state.connectionState else { return .none }
-                let openSettingsWindow = aiChatSettingsClient.openSettingsWindow
-                return .run { _ in
-                    await MainActor.run {
-                        _ = openSettingsWindow()
-                    }
-                }
+                return openSettingsWindow()
+
+            case .errorRecoveryTapped:
+                return recoverFromError(state: &state)
 
             case .submitTapped:
                 guard state.canSubmit else { return .none }
@@ -110,6 +109,22 @@ public struct AiChatFeature {
                     return .none
                 }
 
+                state.executionPhase = .persistenceRecovery(lock, failure)
+                state.lastExecutionFailure = failure
+                return .none
+
+            case let .persistenceRecoverySucceeded(lock):
+                guard case let .persistenceRecovery(currentLock, _) = state.executionPhase,
+                      currentLock.requestID == lock.requestID
+                else { return .none }
+                state.executionPhase = .completed(lock)
+                state.lastExecutionFailure = nil
+                return .none
+
+            case let .persistenceRecoveryRetryFailed(lock, failure):
+                guard case let .persistenceRecovery(currentLock, _) = state.executionPhase,
+                      currentLock.requestID == lock.requestID
+                else { return .none }
                 state.executionPhase = .persistenceRecovery(lock, failure)
                 state.lastExecutionFailure = failure
                 return .none
