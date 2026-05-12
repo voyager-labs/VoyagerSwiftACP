@@ -1,13 +1,14 @@
 import CoreGraphics
 import Foundation
 import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 struct AppPreferencesState: Equatable, Sendable {
     var showHiddenFiles: Bool = false
     var viewLayout: EntryViewLayoutState.Mode = .list
     var sortKey: SortKey = .name
-    var sortOrder: SortOrder = .ascending
+    var sortOrder: VoyagerShared.SortOrder = .ascending
     var groupKey: GroupKey = .none
 
     var listIconSize: CGFloat = AppearanceSettingsDefaults.listIconSize
@@ -27,7 +28,7 @@ struct AppPreferencesState: Equatable, Sendable {
         state.sortKey = SortKey(
             rawValue: userDefaultsClient.string(EntryArrangementsPersistenceKey.sortKey) ?? "",
         ) ?? .name
-        state.sortOrder = SortOrder(
+        state.sortOrder = VoyagerShared.SortOrder(
             rawValue: userDefaultsClient.string(EntryArrangementsPersistenceKey.sortOrder) ?? "",
         ) ?? .ascending
         state.groupKey = GroupKey(

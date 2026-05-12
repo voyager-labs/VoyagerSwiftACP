@@ -1,6 +1,7 @@
 import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
