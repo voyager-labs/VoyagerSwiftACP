@@ -43,7 +43,10 @@ func hydrateOpenedCollectionSnapshot(
     navigation: ContentPageCollectionNavigation,
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
-    state.content.composer.applyHydratedCollectionOpenComposerPayload(payload, navigation: navigation)
+    state.content.composer.applyHydratedCollectionOpenComposerPayload(
+        payload,
+        isNavigationQueryEmpty: navigation.context.query.isEmpty,
+    )
 
     let showHidden = state.content.entryViewLayout.showHiddenFiles
 

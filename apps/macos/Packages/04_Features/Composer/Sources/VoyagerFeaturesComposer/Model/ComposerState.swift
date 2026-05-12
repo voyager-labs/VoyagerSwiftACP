@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
-import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
 public struct FilterSnapshot: Equatable {
@@ -152,10 +151,10 @@ public struct ComposerState: Equatable {
 
     public mutating func applyHydratedCollectionOpenComposerPayload(
         _ payload: CollectionHydratedOpenPayload,
-        navigation: ContentPageCollectionNavigation
+        isNavigationQueryEmpty: Bool
     ) {
         lastFiltersResponse = payload.lastFiltersResponse
         lastSearchResponse = payload
-            .lastSearchResponse ?? (navigation.context.query.isEmpty ? nil : payload.lastFiltersResponse)
+            .lastSearchResponse ?? (isNavigationQueryEmpty ? nil : payload.lastFiltersResponse)
     }
 }
