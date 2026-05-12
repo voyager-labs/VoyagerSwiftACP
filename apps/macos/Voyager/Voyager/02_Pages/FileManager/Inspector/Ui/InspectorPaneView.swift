@@ -8,8 +8,6 @@ struct InspectorPaneView: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
-    @State private var isCloseButtonHovered = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -35,34 +33,22 @@ struct InspectorPaneView: View {
                 closeButtonLabel
             }
             .buttonStyle(.borderless)
-            .onHover { hovering in
-                isCloseButtonHovered = hovering
-            }
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
             .help("Close AI Chat")
             .accessibilityLabel("Close AI Chat")
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .frame(height: 40)
     }
 
     private var closeButtonLabel: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: VoyagerDS.Radius.toolbarButton)
-                .fill(closeButtonBackground)
-
-            Image(systemName: "sidebar.trailing")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-        }
-        .frame(width: 24, height: 24)
-        .contentShape(Rectangle())
-    }
-
-    private var closeButtonBackground: Color {
-        isCloseButtonHovered
-            ? VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
-            : .clear
+        ToolbarHoverButtonLabel(
+            systemName: "sidebar.trailing",
+            isEnabled: true,
+            font: nil,
+        )
     }
 
     @ViewBuilder private var inspectorMaterialTint: some View {

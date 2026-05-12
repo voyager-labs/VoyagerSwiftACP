@@ -186,7 +186,7 @@ struct ToolbarView: View {
     }
 
     private func normalModeContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             ToolbarNavigationButtons(
                 onNavigationAction: onNavigationAction,
                 backHistoryItems: viewStore.backHistoryItems,
@@ -197,6 +197,10 @@ struct ToolbarView: View {
             )
 
             toolbarTitleArea(viewStore: viewStore)
+
+            if !chromeProps.isContextualAiChatPresented {
+                contextualAiChatButton
+            }
         }
     }
 
@@ -214,7 +218,6 @@ struct ToolbarView: View {
             if isTitleAreaHovered {
                 ViewToggleButton(store: store)
                 SortGroupButton(store: store)
-                contextualAiChatButton
             }
         }
         .padding(.horizontal, 6)
@@ -244,9 +247,7 @@ struct ToolbarView: View {
     }
 
     private var contextualAiChatButton: some View {
-        let title = chromeProps.isContextualAiChatPresented
-            ? "Close Contextual AI Chat"
-            : "Open Contextual AI Chat"
+        let title = "Open Contextual AI Chat"
 
         return Button(
             action: { store.send(.view(.openContextualAiChatTapped)) },
