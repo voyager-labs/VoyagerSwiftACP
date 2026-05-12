@@ -128,41 +128,21 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.executionPhase = .idle
         }
 
-        let fallbackSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
-        let unresolvedModel = AiModelHandle(provider: .openai, rawValue: "unknown")
-        let fallbackSnapshot = AiChatSessionSnapshot(
-            sessionID: fallbackSessionID,
-            status: .idle,
-            provider: unresolvedModel.provider,
-            model: unresolvedModel,
-            selectedModelRow: nil,
-            transcriptHistory: [],
-            updatedAtMs: 0
-        )
-
         await store.receive(.restoreOutcome(
             requestedSessionID: targetSessionID,
-            .newSession(snapshot: fallbackSnapshot),
+            .failed(reason: .missingRecord),
             restoreFailure: .missingRecord
         )) { state in
-            state.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
+            state.sessionStatus = .failed
             state.restoreFailure = .missingRecord
-            state.sessionID = fallbackSessionID
-            state.sessionStatus = .idle
-            state.transcriptHistory = []
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.executionPhase = .idle
-            state.selectedModelHandle = nil
+            state.restoreOutcome = nil
         }
 
         XCTAssertNil(store.state.selectedModelHandle)
         XCTAssertNil(store.state.selectedModelDisplayModel)
         XCTAssertFalse(store.state.canSubmit)
-        guard case let .unconnected(metadata) = store.state.connectionState else {
-            return XCTFail("Expected provider connection banner")
-        }
-        XCTAssertEqual(metadata.title, "Connect an AI provider")
+        XCTAssertEqual(store.state.restoreFailure, .missingRecord)
+        XCTAssertEqual(store.state.sessionStatus, .failed)
     }
 
     // swiftlint:disable:next function_body_length

@@ -12,16 +12,23 @@ extension AiChatFeature {
             do {
                 if let snapshot = try await aiChatSessionPersistenceClient.loadSession(sessionID) {
                     if snapshot.status == .rebindRequired {
-                        let fallbackSnapshot = Self.makeNewSessionSnapshot(
+                        if let fallbackSnapshot = Self.makeNewSessionSnapshot(
                             sessionID: AiChatSessionID(rawValue: uuid()),
                             catalogRows: catalogRows,
                             selectedHandle: selectedHandle
-                        )
-                        await send(.restoreOutcome(
-                            requestedSessionID: sessionID,
-                            .newSession(snapshot: fallbackSnapshot),
-                            restoreFailure: .contextMismatch
-                        ))
+                        ) {
+                            await send(.restoreOutcome(
+                                requestedSessionID: sessionID,
+                                .newSession(snapshot: fallbackSnapshot),
+                                restoreFailure: .contextMismatch
+                            ))
+                        } else {
+                            await send(.restoreOutcome(
+                                requestedSessionID: sessionID,
+                                .failed(reason: .contextMismatch),
+                                restoreFailure: .contextMismatch
+                            ))
+                        }
                     } else {
                         let normalizedSnapshot = Self.normalizeRestoredSnapshot(snapshot, catalogRows: catalogRows)
                         let result = AiChatSessionRestoreResult.restored(snapshot: normalizedSnapshot)
@@ -34,27 +41,41 @@ extension AiChatFeature {
                     return
                 }
 
-                let snapshot = Self.makeFallbackRestoreSnapshot(
+                if let snapshot = Self.makeFallbackRestoreSnapshot(
                     uuid: uuid,
                     catalogRows: catalogRows,
                     selectedHandle: selectedHandle
-                )
-                await send(.restoreOutcome(
-                    requestedSessionID: sessionID,
-                    .newSession(snapshot: snapshot),
-                    restoreFailure: .missingRecord
-                ))
+                ) {
+                    await send(.restoreOutcome(
+                        requestedSessionID: sessionID,
+                        .newSession(snapshot: snapshot),
+                        restoreFailure: .missingRecord
+                    ))
+                } else {
+                    await send(.restoreOutcome(
+                        requestedSessionID: sessionID,
+                        .failed(reason: .missingRecord),
+                        restoreFailure: .missingRecord
+                    ))
+                }
             } catch {
-                let snapshot = Self.makeFallbackRestoreSnapshot(
+                if let snapshot = Self.makeFallbackRestoreSnapshot(
                     uuid: uuid,
                     catalogRows: catalogRows,
                     selectedHandle: selectedHandle
-                )
-                await send(.restoreOutcome(
-                    requestedSessionID: sessionID,
-                    .newSession(snapshot: snapshot),
-                    restoreFailure: .corruptedRecord
-                ))
+                ) {
+                    await send(.restoreOutcome(
+                        requestedSessionID: sessionID,
+                        .newSession(snapshot: snapshot),
+                        restoreFailure: .corruptedRecord
+                    ))
+                } else {
+                    await send(.restoreOutcome(
+                        requestedSessionID: sessionID,
+                        .failed(reason: .corruptedRecord),
+                        restoreFailure: .corruptedRecord
+                    ))
+                }
             }
         }
         .cancellable(id: CancelID.restore, cancelInFlight: true)
@@ -64,7 +85,7 @@ extension AiChatFeature {
         uuid: UUIDGenerator,
         catalogRows: [AiModelCatalogRow],
         selectedHandle: AiModelHandle?
-    ) -> AiChatSessionSnapshot {
+    ) -> AiChatSessionSnapshot? {
         makeNewSessionSnapshot(
             sessionID: AiChatSessionID(rawValue: uuid()),
             catalogRows: catalogRows,
@@ -110,6 +131,7 @@ extension AiChatFeature {
             state.restoreFailure = restoreFailure ?? .contextMismatch
 
         case let .failed(reason):
+            state.sessionStatus = .failed
             state.restoreFailure = reason
             state.restoreOutcome = nil
         }
@@ -169,9 +191,9 @@ extension AiChatFeature {
         sessionID: AiChatSessionID,
         catalogRows: [AiModelCatalogRow],
         selectedHandle: AiModelHandle?
-    ) -> AiChatSessionSnapshot {
+    ) -> AiChatSessionSnapshot? {
         let selectedRow = catalogRows.first(where: { $0.handle == selectedHandle }) ?? catalogRows.first
-        let model = selectedRow?.handle ?? selectedHandle ?? AiModelHandle(provider: .openai, rawValue: "unknown")
+        guard let model = selectedRow?.handle ?? selectedHandle else { return nil }
 
         return AiChatSessionSnapshot(
             sessionID: sessionID,
