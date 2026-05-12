@@ -44,7 +44,8 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     private var currentContentChromeProps: FileManagerContentChromeProps?
     private var currentContentOverlayProps: FileManagerContentOverlayProps?
     private var needsInspectorWidthApply = false
-    private var pendingInspectorReconcile = false
+    private var pendingInspectorWidthApply = false
+    private var pendingInspectorMountRetry = false
     private var isApplyingInspectorWidth = false
 
     private var inspectorHosting: NSHostingController<InspectorPaneView>?
@@ -251,7 +252,8 @@ private extension MainContainerSplitCoordinator {
         updateInspectorWidthFromSplitView()
         setInspectorWidthConstraint(to: 0)
         needsInspectorWidthApply = false
-        pendingInspectorReconcile = false
+        pendingInspectorWidthApply = false
+        pendingInspectorMountRetry = false
         if hosting.view.superview === splitView {
             splitView.removeArrangedSubview(hosting.view)
             hosting.view.removeFromSuperview()
@@ -292,7 +294,7 @@ private extension MainContainerSplitCoordinator {
         splitView.adjustSubviews()
         inspectorWidth = max(targetInspectorWidth, inspectorView.frame.width)
         needsInspectorWidthApply = false
-        pendingInspectorReconcile = false
+        pendingInspectorWidthApply = false
     }
 
     private func setInspectorWidthConstraint(to width: CGFloat) {
@@ -313,30 +315,30 @@ private extension MainContainerSplitCoordinator {
     private func scheduleInspectorWidthApplyIfNeeded() {
         guard mainSplitView != nil else { return }
 
-        guard !pendingInspectorReconcile else { return }
-        pendingInspectorReconcile = true
+        guard !pendingInspectorWidthApply else { return }
+        pendingInspectorWidthApply = true
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            guard pendingInspectorReconcile,
+            guard pendingInspectorWidthApply,
                   currentInspectorVisible == true,
                   inspectorHosting != nil,
                   mainSplitView != nil
             else {
-                pendingInspectorReconcile = false
+                pendingInspectorWidthApply = false
                 return
             }
 
             guard let splitView = mainSplitView,
                   canMountInspectorPane(in: splitView)
             else {
-                pendingInspectorReconcile = false
+                pendingInspectorWidthApply = false
                 needsInspectorWidthApply = true
                 scheduleInspectorMountRetry()
                 return
             }
 
-            pendingInspectorReconcile = false
+            pendingInspectorWidthApply = false
             if let inspectorView = inspectorHosting?.view,
                !splitView.arrangedSubviews.contains(inspectorView)
             {
@@ -402,12 +404,12 @@ private extension MainContainerSplitCoordinator {
     }
 
     private func scheduleInspectorMountRetry() {
-        guard !pendingInspectorReconcile else { return }
-        pendingInspectorReconcile = true
+        guard !pendingInspectorMountRetry else { return }
+        pendingInspectorMountRetry = true
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16)) { [weak self] in
             guard let self else { return }
-            pendingInspectorReconcile = false
+            pendingInspectorMountRetry = false
             retryPendingInspectorMountIfNeeded()
         }
     }
@@ -479,7 +481,7 @@ extension MainContainerSplitCoordinator {
         guard let splitView = notification.object as? NSSplitView,
               splitView === mainSplitView
         else { return }
-        if needsInspectorWidthApply || pendingInspectorReconcile {
+        if needsInspectorWidthApply || pendingInspectorWidthApply {
             scheduleInspectorWidthApplyIfNeeded()
         }
         updateInspectorWidthFromSplitView()
