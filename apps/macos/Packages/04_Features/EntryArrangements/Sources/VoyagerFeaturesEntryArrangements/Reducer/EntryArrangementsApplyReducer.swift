@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
@@ -20,19 +21,19 @@ struct EntryArrangementsApplyReducer {
                 let sortedItems = sortItems(
                     items,
                     by: state.sortKey,
-                    order: state.sortOrder,
+                    order: state.sortOrder
                 )
 
                 let groupedItems = groupItems(
                     sortedItems,
                     by: state.groupKey,
-                    now: date(),
+                    now: date()
                 )
                 state.groupedItems = groupedItems
 
                 return .send(.delegate(.applied(
                     sortedItems: sortedItems,
-                    isCollectionMode: isCollectionMode,
+                    isCollectionMode: isCollectionMode
                 )))
 
             case .setSortKey,
@@ -49,7 +50,7 @@ struct EntryArrangementsApplyReducer {
     private func sortItems(
         _ items: [EntryModel],
         by sortKey: SortKey,
-        order: SortOrder,
+        order: VoyagerShared.SortOrder
     ) -> [EntryModel] {
         items.sorted { item1, item2 in
             let comparison = stableComparison(item1, item2, by: sortKey)
@@ -60,7 +61,7 @@ struct EntryArrangementsApplyReducer {
     private func stableComparison(
         _ item1: EntryModel,
         _ item2: EntryModel,
-        by sortKey: SortKey,
+        by sortKey: SortKey
     ) -> ComparisonResult {
         let primary = compareItems(item1, item2, by: sortKey)
         guard primary == .orderedSame else {
@@ -88,7 +89,7 @@ struct EntryArrangementsApplyReducer {
         case .dateLastOpened:
             return compareDates(
                 item1.facets.lastOpenedDate ?? .distantPast,
-                item2.facets.lastOpenedDate ?? .distantPast,
+                item2.facets.lastOpenedDate ?? .distantPast
             )
         case .dateAdded:
             return compareDates(item1.facets.addedDate, item2.facets.addedDate)
@@ -122,7 +123,7 @@ private extension EntryArrangementsApplyReducer {
     func groupItems(
         _ items: [EntryModel],
         by groupKey: GroupKey,
-        now: Date,
+        now: Date
     ) -> [GroupedItems] {
         guard groupKey != .none else {
             return [GroupedItems(groupName: "", items: items)]
@@ -151,7 +152,7 @@ private extension EntryArrangementsApplyReducer {
     func groupItemsByKey(
         _ items: [EntryModel],
         groupKey: GroupKey,
-        now: Date,
+        now: Date
     ) -> [GroupedItems] {
         switch groupKey {
         case .none:
@@ -192,7 +193,7 @@ private extension EntryArrangementsApplyReducer {
             result.append(contentsOf: groupByDate(
                 itemsWithDates,
                 dateProvider: { $0.facets.lastOpenedDate ?? .distantPast },
-                now: now,
+                now: now
             ))
         }
 
@@ -206,7 +207,7 @@ private extension EntryArrangementsApplyReducer {
     func groupByDate(
         _ files: [EntryModel],
         dateProvider: (EntryModel) -> Date = { $0.modifiedDate },
-        now: Date,
+        now: Date
     ) -> [GroupedItems] {
         let calendar = Calendar.current
 
@@ -227,9 +228,9 @@ private extension EntryArrangementsApplyReducer {
                     for: bucket,
                     now: now,
                     calendar: calendar,
-                    monthFormatter: monthFormatter,
+                    monthFormatter: monthFormatter
                 ),
-                items: groupedItems,
+                items: groupedItems
             )
         }
     }
@@ -238,7 +239,7 @@ private extension EntryArrangementsApplyReducer {
         for bucket: DateGroupBucket,
         now: Date,
         calendar: Calendar,
-        monthFormatter: DateFormatter,
+        monthFormatter: DateFormatter
     ) -> String {
         switch bucket {
         case .today:
@@ -398,7 +399,7 @@ private extension EntryArrangementsApplyReducer {
                         groupName: tagName,
                         items: taggedItems
                             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
-                        colorCode: resolvedColorCode,
+                        colorCode: resolvedColorCode
                     ))
                     processedTags.insert(tagName)
                 }
@@ -412,7 +413,7 @@ private extension EntryArrangementsApplyReducer {
                 result.append(GroupedItems(
                     groupName: tagName,
                     items: taggedItems.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
-                    colorCode: resolveTagColorCode(tagName: tagName, items: taggedItems),
+                    colorCode: resolveTagColorCode(tagName: tagName, items: taggedItems)
                 ))
             }
         }
@@ -421,7 +422,7 @@ private extension EntryArrangementsApplyReducer {
             result.append(GroupedItems(
                 groupName: "No Tags",
                 items: itemsWithoutTags
-                    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
+                    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             ))
         }
 

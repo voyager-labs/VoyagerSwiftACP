@@ -5,6 +5,7 @@ import IdentifiedCollections
 import SwiftUI
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 

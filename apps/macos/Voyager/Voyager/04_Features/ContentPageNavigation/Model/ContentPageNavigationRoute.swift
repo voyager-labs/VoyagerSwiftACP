@@ -1,5 +1,6 @@
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerShared
 
 enum ContentPageNavigationRoute: Equatable {
     case folder(String)
@@ -40,7 +41,7 @@ struct ContentPageCollectionNavigation: Equatable, Sendable {
     var kind: ContentPageCollectionKind
     var context: CollectionContext
     var sortKey: SortKey
-    var sortOrder: SortOrder
+    var sortOrder: VoyagerShared.SortOrder
     var viewLayout: EntryViewLayoutState.Mode
     var compatibility: CollectionFileCompatibilityMetadata?
 }

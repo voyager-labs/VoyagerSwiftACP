@@ -1,17 +1,17 @@
 import Foundation
 import VoyagerEntitiesCollection
 
-struct EntryArrangementMenuLabelClient {
-    var labelForPropertyKey: (String) -> String
+public struct EntryArrangementMenuLabelClient: Sendable {
+    public var labelForPropertyKey: @Sendable (String) -> String
 }
 
-extension EntryArrangementMenuLabelClient {
+public extension EntryArrangementMenuLabelClient {
     static let live: EntryArrangementMenuLabelClient = {
         let registryClient = RegistryClient.live(snapshot: RegistrySnapshot.load())
         return EntryArrangementMenuLabelClient(
             labelForPropertyKey: { propertyKey in
                 registryClient.label(for: propertyKey)
-            },
+            }
         )
     }()
 }

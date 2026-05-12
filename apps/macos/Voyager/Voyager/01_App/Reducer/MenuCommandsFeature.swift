@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerFeaturesEntryArrangements
 
 @Reducer
 struct MenuCommandsFeature {

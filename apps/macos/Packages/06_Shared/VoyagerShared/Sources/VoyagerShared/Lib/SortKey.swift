@@ -1,6 +1,6 @@
 import Foundation
 
-enum SortKey: String, Equatable, CaseIterable, Sendable {
+public enum SortKey: String, Equatable, CaseIterable, Sendable {
     case name
     case kind
     case application = "Application"
@@ -11,7 +11,7 @@ enum SortKey: String, Equatable, CaseIterable, Sendable {
     case size
     case tags = "Tags"
 
-    static let menuKeys: [SortKey] = [
+    public static let menuKeys: [SortKey] = [
         .name,
         .kind,
         .application,
@@ -23,7 +23,7 @@ enum SortKey: String, Equatable, CaseIterable, Sendable {
         .tags,
     ]
 
-    var systemPropertyKey: String {
+    public var systemPropertyKey: String {
         switch self {
         case .name: "name_stem"
         case .kind: "file_kind"
@@ -38,7 +38,7 @@ enum SortKey: String, Equatable, CaseIterable, Sendable {
     }
 }
 
-enum SortOrder: String, Equatable, Sendable {
+public enum SortOrder: String, Equatable, Sendable {
     case ascending
     case descending
 }

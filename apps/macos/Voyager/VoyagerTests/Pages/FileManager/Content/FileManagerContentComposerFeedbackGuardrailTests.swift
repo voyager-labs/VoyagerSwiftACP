@@ -3,6 +3,7 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 import XCTest
 

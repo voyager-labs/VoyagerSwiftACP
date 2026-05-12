@@ -1,6 +1,6 @@
 import Foundation
 
-enum GroupKey: String, Equatable, CaseIterable, Sendable {
+public enum GroupKey: String, Equatable, CaseIterable, Sendable {
     case none = "None"
     case name = "Name"
     case kind = "Kind"
@@ -12,7 +12,7 @@ enum GroupKey: String, Equatable, CaseIterable, Sendable {
     case size = "Size"
     case tags = "Tags"
 
-    static let menuKeys: [GroupKey] = [
+    public static let menuKeys: [GroupKey] = [
         .none,
         .name,
         .kind,
@@ -25,7 +25,7 @@ enum GroupKey: String, Equatable, CaseIterable, Sendable {
         .tags,
     ]
 
-    var systemPropertyKey: String? {
+    public var systemPropertyKey: String? {
         switch self {
         case .none: nil
         case .name: "name_stem"

@@ -1,11 +1,13 @@
 import ComposableArchitecture
 
 @Reducer
-struct EntryArrangementsFeature {
-    typealias State = EntryArrangementsState
-    typealias Action = EntryArrangementsAction
+public struct EntryArrangementsFeature {
+    public init() {}
 
-    var body: some Reducer<State, Action> {
+    public typealias State = EntryArrangementsState
+    public typealias Action = EntryArrangementsAction
+
+    public var body: some Reducer<State, Action> {
         CombineReducers {
             EntryArrangementsSortingReducer()
             EntryArrangementsGroupingReducer()
