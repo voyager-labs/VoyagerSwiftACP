@@ -63,6 +63,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         )
 
         await store.receive(.restoreOutcome(
+            requestedSessionID: targetSessionID,
             .newSession(snapshot: fallbackSnapshot),
             restoreFailure: .missingRecord
         )) { state in
@@ -140,6 +141,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         )
 
         await store.receive(.restoreOutcome(
+            requestedSessionID: targetSessionID,
             .newSession(snapshot: fallbackSnapshot),
             restoreFailure: .missingRecord
         )) { state in
@@ -228,6 +230,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         )
 
         await store.receive(.restoreOutcome(
+            requestedSessionID: targetSessionID,
             .newSession(snapshot: fallbackSnapshot),
             restoreFailure: .contextMismatch
         )) { state in

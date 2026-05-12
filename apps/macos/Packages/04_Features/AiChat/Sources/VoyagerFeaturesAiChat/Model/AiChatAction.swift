@@ -13,7 +13,11 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case regenerateTapped
     case cancelTapped
     case resetTapped
-    case restoreOutcome(AiChatSessionRestoreResult, restoreFailure: AiChatSessionRestoreFailure?)
+    case restoreOutcome(
+        requestedSessionID: AiChatSessionID,
+        AiChatSessionRestoreResult,
+        restoreFailure: AiChatSessionRestoreFailure?
+    )
     case executionEvent(AiChatEvent)
     case persistenceFailed(AiChatRequestLock, AiChatExecutionFailure)
 }

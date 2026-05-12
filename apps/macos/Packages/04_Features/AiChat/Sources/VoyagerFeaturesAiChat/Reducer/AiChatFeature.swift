@@ -7,8 +7,9 @@ public struct AiChatFeature {
     public typealias State = AiChatState
     public typealias Action = AiChatAction
 
-    enum CancelID {
+    enum CancelID: Hashable, Sendable {
         case request
+        case restore
     }
 
     @Dependency(\.aiChatExecutionClient)
@@ -32,7 +33,7 @@ public struct AiChatFeature {
             case let .setup(setup):
                 apply(setup: setup, to: &state)
                 normalizeSelectionIfNeeded(&state)
-                guard let restoreSessionID = setup.restoreSessionID else { return .none }
+                guard let restoreSessionID = setup.restoreSessionID else { return .cancel(id: CancelID.restore) }
                 state.sessionStatus = .restoring
                 return restoreSession(sessionID: restoreSessionID, state: state)
 
@@ -91,7 +92,8 @@ public struct AiChatFeature {
                 state.executionPhase = .idle
                 return .cancel(id: CancelID.request)
 
-            case let .restoreOutcome(result, restoreFailure):
+            case let .restoreOutcome(requestedSessionID, result, restoreFailure):
+                guard state.restoreSessionID == requestedSessionID else { return .none }
                 applyRestoreOutcome(result, restoreFailure: restoreFailure, state: &state)
                 return .none
 

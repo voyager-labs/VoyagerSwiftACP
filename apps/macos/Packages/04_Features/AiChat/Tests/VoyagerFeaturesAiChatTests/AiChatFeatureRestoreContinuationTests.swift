@@ -92,7 +92,11 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.executionPhase = .idle
         }
 
-        await store.receive(.restoreOutcome(.restored(snapshot: restoredSnapshot), restoreFailure: nil)) { state in
+        await store.receive(.restoreOutcome(
+            requestedSessionID: targetSessionID,
+            .restored(snapshot: restoredSnapshot),
+            restoreFailure: nil
+        )) { state in
             state.sessionID = targetSessionID
             state.sessionStatus = .active
             state.transcriptHistory = restoredSnapshot.transcriptHistory
@@ -175,7 +179,11 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             updatedAtMs: 0
         )
 
-        await store.receive(.restoreOutcome(.restored(snapshot: normalizedSnapshot), restoreFailure: nil)) { state in
+        await store.receive(.restoreOutcome(
+            requestedSessionID: targetSessionID,
+            .restored(snapshot: normalizedSnapshot),
+            restoreFailure: nil
+        )) { state in
             state.sessionID = targetSessionID
             state.sessionStatus = .active
             state.transcriptHistory = restoredSnapshot.transcriptHistory
