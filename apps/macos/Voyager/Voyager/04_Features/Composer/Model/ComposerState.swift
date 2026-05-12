@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
 struct FilterSnapshot: Equatable {

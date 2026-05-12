@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 
 enum FileManagerContentKeyCommandHandler {

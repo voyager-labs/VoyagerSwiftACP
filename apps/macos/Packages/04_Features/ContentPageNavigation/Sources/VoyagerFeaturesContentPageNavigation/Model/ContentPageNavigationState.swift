@@ -5,17 +5,19 @@ import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
 @ObservableState
-struct ContentPageNavigationState: Equatable {
-    var navigationState: ContentPageNavigationRoute =
+public struct ContentPageNavigationState: Equatable {
+    public init() {}
+
+    public var navigationState: ContentPageNavigationRoute =
         .folder(SettingsDefaults.defaultTabPath())
-    var titlePath: String = SettingsDefaults.defaultTabPath()
-    var scrollPositions: [String: CGPoint] = [:]
+    public var titlePath: String = SettingsDefaults.defaultTabPath()
+    public var scrollPositions: [String: CGPoint] = [:]
 
-    var backHistory: [ContentPageNavigationHistorySnapshot] = []
-    var forwardHistory: [ContentPageNavigationHistorySnapshot] = []
-    var pendingNavigation: ContentPageNavigationPending?
+    public var backHistory: [ContentPageNavigationHistorySnapshot] = []
+    public var forwardHistory: [ContentPageNavigationHistorySnapshot] = []
+    public var pendingNavigation: ContentPageNavigationPending?
 
-    var currentPath: String {
+    public var currentPath: String {
         switch navigationState {
         case let .folder(path):
             path
@@ -24,7 +26,7 @@ struct ContentPageNavigationState: Equatable {
         case let .tags(tagName):
             tagName
         case .computer:
-            "" // Will be computed in View using navigationClient
+            ""
         case let .collection(navigation):
             switch navigation.kind {
             case .temporary:
@@ -35,19 +37,19 @@ struct ContentPageNavigationState: Equatable {
         }
     }
 
-    var canGoBack: Bool {
+    public var canGoBack: Bool {
         !backHistory.isEmpty
     }
 
-    var canGoForward: Bool {
+    public var canGoForward: Bool {
         !forwardHistory.isEmpty
     }
 
-    var canGoToEnclosingDirectory: Bool {
+    public var canGoToEnclosingDirectory: Bool {
         enclosingDirectoryPath != nil
     }
 
-    var enclosingDirectoryPath: String? {
+    public var enclosingDirectoryPath: String? {
         switch navigationState {
         case let .folder(path):
             let url = URL(fileURLWithPath: path)
@@ -64,22 +66,22 @@ struct ContentPageNavigationState: Equatable {
         }
     }
 
-    mutating func seedInitialFolderPath(_ path: String) {
+    public mutating func seedInitialFolderPath(_ path: String) {
         navigationState = .folder(path)
         titlePath = path
     }
 
-    mutating func appendBackHistory(_ entry: ContentPageNavigationHistorySnapshot) {
+    public mutating func appendBackHistory(_ entry: ContentPageNavigationHistorySnapshot) {
         backHistory.append(entry)
         trimHistory()
     }
 
-    mutating func appendForwardHistory(_ entry: ContentPageNavigationHistorySnapshot) {
+    public mutating func appendForwardHistory(_ entry: ContentPageNavigationHistorySnapshot) {
         forwardHistory.append(entry)
         trimHistory()
     }
 
-    mutating func trimHistory() {
+    public mutating func trimHistory() {
         if backHistory.count > 10 {
             backHistory.removeFirst(backHistory.count - 10)
         }
@@ -88,7 +90,7 @@ struct ContentPageNavigationState: Equatable {
         }
     }
 
-    func makeContentPageNavigationHistorySnapshot() -> ContentPageNavigationHistorySnapshot {
+    public func makeContentPageNavigationHistorySnapshot() -> ContentPageNavigationHistorySnapshot {
         ContentPageNavigationHistorySnapshot(navigationState: navigationState)
     }
 }
