@@ -14,7 +14,7 @@ Configured skip paths in `.greptile/config.json`:
 
 - Branch filters: exclude revert branches such as `revert-*`, `*revert-*`, `revert/**`, `**/revert-*`, `**/*revert-*`, and `**/revert/**`.
 - Labels: skip PRs labeled `skip-greptile`, `no-greptile`, `duplicate-diff`, or `duplicate-pr`.
-- Keywords: skip PRs whose title/description/last commit message contains `Revert`, `This reverts commit`, `skip-greptile`, `no-greptile`, `duplicate-diff`, or `duplicate-pr`.
+- Keywords: skip PRs whose title/description/last commit message contains the narrow automatic-revert marker `This reverts commit`, or explicit operational markers `skip-greptile`, `no-greptile`, `duplicate-diff`, or `duplicate-pr`. Do not use broad standalone words such as `Revert` as skip keywords.
 
 Duplicate-diff PRs are not automatically detectable from Greptile configuration alone. Mark intentionally re-uploaded equivalent diffs with one of the configured labels or keywords so Greptile skips automatic review.
 

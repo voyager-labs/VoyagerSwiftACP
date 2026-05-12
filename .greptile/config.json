@@ -116,5 +116,5 @@
     "duplicate-diff",
     "duplicate-pr"
   ],
-  "ignoreKeywords": "Revert\nThis reverts commit\nskip-greptile\nno-greptile\nduplicate-diff\nduplicate-pr"
+  "ignoreKeywords": "This reverts commit\nskip-greptile\nno-greptile\nduplicate-diff\nduplicate-pr"
 }
