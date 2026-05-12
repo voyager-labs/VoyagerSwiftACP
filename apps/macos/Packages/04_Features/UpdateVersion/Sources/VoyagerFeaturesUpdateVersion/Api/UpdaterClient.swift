@@ -26,23 +26,20 @@ public struct UpdaterClient: Sendable {
 
 extension UpdaterClient: DependencyKey {
     public nonisolated static var liveValue: UpdaterClient {
-        MainActor.assumeIsolated {
-            let coordinator = UpdaterCoordinator.shared
-            return UpdaterClient(
-                configure: {
-                    await coordinator.configureIfNeeded()
-                },
-                startAtLaunch: {
-                    await coordinator.startAtLaunch()
-                },
-                checkForUpdates: {
-                    await coordinator.checkForUpdates()
-                },
-                setAutomaticUpdate: { enabled in
-                    await coordinator.setAutomaticUpdate(enabled)
-                }
-            )
-        }
+        UpdaterClient(
+            configure: {
+                await UpdaterCoordinator.shared.configureIfNeeded()
+            },
+            startAtLaunch: {
+                await UpdaterCoordinator.shared.startAtLaunch()
+            },
+            checkForUpdates: {
+                await UpdaterCoordinator.shared.checkForUpdates()
+            },
+            setAutomaticUpdate: { enabled in
+                await UpdaterCoordinator.shared.setAutomaticUpdate(enabled)
+            }
+        )
     }
 
     public nonisolated static var testValue: UpdaterClient {
