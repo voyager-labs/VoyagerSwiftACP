@@ -46,6 +46,7 @@
 		F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001B /* VoyagerFeaturesContentPageNavigation */; };
 		F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001B /* VoyagerFeaturesContentPageNavigation */; };
 		F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */; };
+		F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -208,6 +209,7 @@
 				F20000000000000000000032 /* VoyagerFeaturesEntryThumbnail in Frameworks */,
 				F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */,
+				F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */,
 				F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */,
 				F2000000000000000000003C /* Dependencies in Frameworks */,
 				F2000000000000000000003D /* Clocks in Frameworks */,
@@ -372,6 +374,7 @@
 				F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */,
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
+				F2000000000000000000001D /* VoyagerFeaturesComposer */,
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
@@ -589,6 +592,7 @@
 				F2000000000000000000000B /* XCLocalSwiftPackageReference "04_Features/ContentPageNavigation" */,
 				F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */,
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
+				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -1505,6 +1509,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/UpdateVersion;
 		};
+		F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/Composer;
+		};
 		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1767,6 +1775,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */;
 			productName = VoyagerFeaturesUpdateVersion;
+		};
+		F2000000000000000000001D /* VoyagerFeaturesComposer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */;
+			productName = VoyagerFeaturesComposer;
 		};
 		/* End XCSwiftPackageProductDependency section */
 	};

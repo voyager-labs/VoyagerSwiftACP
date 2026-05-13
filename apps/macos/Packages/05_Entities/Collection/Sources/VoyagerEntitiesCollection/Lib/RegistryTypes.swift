@@ -12,8 +12,8 @@ public enum SystemPropertyTypeKey: String, Equatable, Sendable {
     case unknown
 
     public var valueType: String { rawValue }
-    var operatorKey: String { rawValue }
-    var operatorKeyOrNil: String? { self == .unknown ? nil : rawValue }
+    public var operatorKey: String { rawValue }
+    public var operatorKeyOrNil: String? { self == .unknown ? nil : rawValue }
 
     public init(rawType: String) {
         switch rawType.lowercased() {
@@ -31,11 +31,11 @@ public enum SystemPropertyTypeKey: String, Equatable, Sendable {
         SystemPropertyTypeKey(rawType: rawType).valueType
     }
 
-    static func operatorKey(from rawType: String) -> String {
+    public static func operatorKey(from rawType: String) -> String {
         SystemPropertyTypeKey(rawType: rawType).operatorKey
     }
 
-    static func operatorKeyOrNil(from rawType: String) -> String? {
+    public static func operatorKeyOrNil(from rawType: String) -> String? {
         SystemPropertyTypeKey(rawType: rawType).operatorKeyOrNil
     }
 }

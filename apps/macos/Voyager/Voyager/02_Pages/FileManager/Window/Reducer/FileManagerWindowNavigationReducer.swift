@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerEntitiesTag
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 

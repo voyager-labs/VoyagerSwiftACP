@@ -1,5 +1,5 @@
 import IdentifiedCollections
-
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations

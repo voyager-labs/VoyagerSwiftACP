@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
