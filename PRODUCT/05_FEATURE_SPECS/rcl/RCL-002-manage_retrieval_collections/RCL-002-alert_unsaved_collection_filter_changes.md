@@ -1,5 +1,5 @@
 ---
-interaction_id: "RCL-002-alert_unsasved_collection_filter_changes"
+interaction_id: "RCL-002-alert_unsaved_collection_filter_changes"
 interaction_type: "display"
 feature: "Manage Retrieval Collections"
 category_key: "RCL"
@@ -11,7 +11,7 @@ menu: "-"
 shortcut: "-"
 ---
 
-# Alert Unsasved Collection Filter Changes
+# Alert Unsaved Collection Filter Changes
 
 ## Intent
 

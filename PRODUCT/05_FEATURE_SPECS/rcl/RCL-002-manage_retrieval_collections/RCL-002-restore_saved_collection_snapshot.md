@@ -74,7 +74,7 @@ shortcut: "-"
 
 ## Related Interactions
 
-- [RCL-002-alert_unsasved_collection_filter_changes](RCL-002-alert_unsasved_collection_filter_changes.md)
+- [RCL-002-alert_unsaved_collection_filter_changes](RCL-002-alert_unsaved_collection_filter_changes.md)
 - [RCL-002-delete_collection](RCL-002-delete_collection.md)
 - [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
 - [RCL-002-import_smart_folder_as_collection](RCL-002-import_smart_folder_as_collection.md)

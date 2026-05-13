@@ -143,7 +143,7 @@ Discard Collection Filter Changes	RCL-002-discard_collection_filter_changes	comm
 Save Collection Filter Changes	RCL-002-save_collection_filter_changes	command	Manage Retrieval Collections	RCL	RCL-002	배포 완료	현재 콜렉션 파일에 필터 변경 사항을 저장해 정의를 갱신	file_manager_window.content_pane.content_header.page_menu_area	file_menu	⌘⌥S
 Rename Collection	RCL-002-rename_collection	input	Manage Retrieval Collections	RCL	RCL-002	배포 완료	현재 보고 있는 콜렉션의 파일 이름을 변경	file_manager_window.content_pane.content_header.page_menu_area	-	-
 Delete Collection	RCL-002-delete_collection	command	Manage Retrieval Collections	RCL	RCL-002	배포 완료	현재 보고 있는 콜렉션 파일을 삭제하고 닫음	file_manager_window.content_pane.content_header.page_menu_area	file_menu	-
-Alert Unsasved Collection Filter Changes	RCL-002-alert_unsasved_collection_filter_changes	display	Manage Retrieval Collections	RCL	RCL-002	배포 완료	미저장 필터 변경 사항이 존재하는 경우 페이지를 벗어날 때 경고창을 띄움	-	-	-
+Alert Unsaved Collection Filter Changes	RCL-002-alert_unsaved_collection_filter_changes	display	Manage Retrieval Collections	RCL	RCL-002	배포 완료	미저장 필터 변경 사항이 존재하는 경우 페이지를 벗어날 때 경고창을 띄움	-	-	-
 Import Smart Folder as Collection	RCL-002-import_smart_folder_as_collection	command	Manage Retrieval Collections	RCL	RCL-002	아이디어	Finder Smart Folder 조건을 파싱해 콜렉션 파일로 생성	settings_window	-	-
 Execute Filtered Collection Retrieval	RCL-003-execute_filtered_collection_retrieval	background	Retrieve Entries with Filters	RCL	RCL-003	배포 완료	현재 설정된 필터를 기준으로 엔트리 검색을 자동 실행해 결과 목록을 계산하고 결과를 반환	-	-	-
 Update Collection Results On Filter Change	RCL-003-update_collection_results_on_filter_change	background	Retrieve Entries with Filters	RCL	RCL-003	배포 완료	필터 정의가 변경될 때 해당 필터로 엔트리 검색을 자동 실행해 결과 목록을 백그라운드에서 갱신	-	-	-
