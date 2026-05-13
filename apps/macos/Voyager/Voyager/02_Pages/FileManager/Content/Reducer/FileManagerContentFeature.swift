@@ -24,6 +24,13 @@ struct FileManagerContentFeature {
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
     var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            guard case let .collection(.saveCompleted(result)) = action else {
+                return .none
+            }
+            return handleCollectionSaveCompleted(result: result, state: &state)
+        }
+
         Scope(state: \.composer, action: \.composer) {
             ComposerFeature()
         }

@@ -40,11 +40,36 @@ final class FileManagerContentSaveWriteBackTests: XCTestCase {
             return true
         }
 
-        await store.finish()
-
         XCTAssertNotEqual(
             store.state.collection.collectionSession.phase.inflightStatus,
             .writingBackRefreshedSnapshot,
+        )
+    }
+
+    func testGeneralSaveFailureDoesNotEnterWriteBackFailure() async {
+        struct SaveError: Error {}
+
+        var initialState = makeWriteBackState()
+        initialState.navigation.pendingNavigation = .back
+        initialState.collection.collectionSession.phase = .opened(
+            kind: .definition,
+            base: .ready,
+            inflight: .none,
+        )
+
+        let store = makeWriteBackStore(initialState: initialState)
+
+        await store.send(.collection(.saveCompleted(.failure(SaveError()))))
+
+        await store.receive { action in
+            guard case .internal(.requestNavigation(.internal(.setPendingNavigation(nil)))) = action
+            else { return false }
+            return true
+        }
+
+        XCTAssertEqual(
+            store.state.collection.collectionSession.phase,
+            .opened(kind: .definition, base: .ready, inflight: .none),
         )
     }
 

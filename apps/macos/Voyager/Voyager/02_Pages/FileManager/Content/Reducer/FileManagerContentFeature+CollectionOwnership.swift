@@ -43,9 +43,6 @@ extension FileManagerContentFeature {
         case .view(.discardCollectionChanges):
             handleDiscardCollectionChanges(state: state)
 
-        case let .collection(.saveCompleted(result)):
-            handleCollectionSaveCompleted(result: result, state: &state)
-
         case let .collection(.delegate(.draftRestorePrepared(payload))):
             .concatenate(
                 .send(.composer(.applyCollectionDraftRestore(payload))),
@@ -90,18 +87,21 @@ extension FileManagerContentFeature {
 
     // MARK: - Private
 
-    private func handleCollectionSaveCompleted(
+    func handleCollectionSaveCompleted(
         result: Result<CollectionSaveCompletion, Error>,
-        state _: inout State,
+        state: inout State,
     ) -> Effect<Action> {
         switch result {
         case let .success(completion):
-            .send(.collection(.writeBackCompleted(completion)))
+            return .send(.collection(.writeBackCompleted(completion)))
         case .failure:
-            .concatenate(
-                .send(.collection(.writeBackFailed)),
-                .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
-            )
+            if state.collection.collectionSession.phase.isInflightWriteBack {
+                return .concatenate(
+                    .send(.collection(.writeBackFailed)),
+                    .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
+                )
+            }
+            return .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil)))))
         }
     }
 
