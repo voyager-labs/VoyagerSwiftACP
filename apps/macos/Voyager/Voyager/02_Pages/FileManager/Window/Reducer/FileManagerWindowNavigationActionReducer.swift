@@ -447,31 +447,24 @@ private func handleCollectionFileLoadedFailure(
 }
 
 private func handleEmptyCollectionFile(
-    state: inout FileManagerWindowState,
+    state _: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
-    let resetContext = state.content.collection.collectionContext
-    let resetURL = state.content.collection.collectionSession.document?.url
-    let resetCompat = state.content.collection.collectionSession.document?.compatibility
-    let resetIsCollectionMode = state.content.isCollectionMode
-
-    return .concatenate(
-        .send(.content(.composer(.resetComposerAndSync(
-            context: resetContext,
-            url: resetURL,
-            compatibility: resetCompat,
-            isCollectionMode: resetIsCollectionMode,
-        )))),
+    .concatenate(
         .send(.content(.collection(.sessionResetRequested))),
+        .send(.content(.internal(.exitCollectionMode))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
-        .merge(
-            .send(.content(.internal(.exitCollectionMode))),
-            .run { _ in
-                await collectionAlertClient.showCollectionOpenErrorAlert(
-                    "Empty Collection",
-                    "This collection file has no query, scope, or filters.",
-                )
-            },
-        ),
+        .send(.content(.composer(.resetComposerAndSync(
+            context: nil,
+            url: nil,
+            compatibility: nil,
+            isCollectionMode: false,
+        )))),
+        .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Empty Collection",
+                "This collection file has no query, scope, or filters.",
+            )
+        },
     )
 }
