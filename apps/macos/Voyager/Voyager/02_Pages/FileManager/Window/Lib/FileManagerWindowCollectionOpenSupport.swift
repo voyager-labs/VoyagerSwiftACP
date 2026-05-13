@@ -14,7 +14,6 @@ func prepareLoadedCollectionOpenState(
         restorationPayload,
         registryClient: registryClient,
     )
-    state.content.syncComposerCollectionState()
 }
 
 func makeWindowCollectionNavigation(
