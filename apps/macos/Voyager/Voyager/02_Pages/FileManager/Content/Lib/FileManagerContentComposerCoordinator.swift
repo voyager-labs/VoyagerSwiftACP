@@ -129,6 +129,9 @@ enum FileManagerContentComposerCoordinator {
             return .none
         }
         let wasDirtyBeforeApplyingResponse = state.isOpenedCollectionDirty
+        let shouldWriteBackAfterRefresh = state.collection.shouldWriteBackAfterRefresh(
+            wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
+        )
         let query = state.composer.pendingSearchQuery ?? ""
         let nextContext = CollectionContext(
             query: query,
@@ -155,6 +158,7 @@ enum FileManagerContentComposerCoordinator {
                 isCollectionMode: true,
             ))),
             .send(.delegate(.composerCollectionSearchSucceeded)),
+            shouldWriteBackAfterRefresh ? .send(.composer(.saveCollection)) : .none,
         )
     }
 

@@ -36,7 +36,6 @@ public enum CollectionAction: CasePathable, Sendable {
         case draftRestorePrepared(CollectionDraftRestorePayload)
         case searchResultPrepared(CollectionSearchResultPayload)
         case writeBackNavigationPrepared(CollectionWriteBackNavigationPayload)
-        case refreshWriteBackRequested
     }
 }
 

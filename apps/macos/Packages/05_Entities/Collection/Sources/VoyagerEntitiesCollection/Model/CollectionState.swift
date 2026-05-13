@@ -60,16 +60,23 @@ public extension CollectionState {
     }
 
     mutating func applyRefreshResponse(wasDirtyBeforeApplyingResponse: Bool) -> Bool {
-        let writeBackAllowed = collectionSession.document?.compatibility?.writeBackAllowed != false
         guard collectionSession.phase.isInflightRefresh else {
             return false
         }
-        if wasDirtyBeforeApplyingResponse || !writeBackAllowed {
+        if !shouldWriteBackAfterRefresh(wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse) {
             collectionSession.finishRefreshWithoutWriteBack()
             return false
         }
         collectionSession.beginWriteBackAfterRefresh()
         return true
+    }
+
+    func shouldWriteBackAfterRefresh(wasDirtyBeforeApplyingResponse: Bool) -> Bool {
+        guard collectionSession.phase.isInflightRefresh else {
+            return false
+        }
+        let writeBackAllowed = collectionSession.document?.compatibility?.writeBackAllowed != false
+        return !wasDirtyBeforeApplyingResponse && writeBackAllowed
     }
 
     func refreshBlockingReason(

@@ -167,7 +167,7 @@ final class CollectionRefreshWritebackPolicyTests: XCTestCase {
         XCTAssertEqual(state.collectionSession.phase, phaseBefore)
     }
 
-    func testReducer_refreshResponseReceived_withWriteback_emitDelegate() async {
+    func testReducer_refreshResponseReceived_withWriteback_marksWritebackInFlightWithoutDelegate() async {
         let store = TestStore(
             initialState: makeOpenedHydratedState(
                 compatibility: makeWriteBackAllowedCompatibility()
@@ -185,8 +185,6 @@ final class CollectionRefreshWritebackPolicyTests: XCTestCase {
                 inflight: .writingBackRefreshedSnapshot
             )
         }
-
-        await store.receive(\.delegate.refreshWriteBackRequested)
     }
 
     func testReducer_refreshResponseReceived_withoutWriteback_noDelegate() async {

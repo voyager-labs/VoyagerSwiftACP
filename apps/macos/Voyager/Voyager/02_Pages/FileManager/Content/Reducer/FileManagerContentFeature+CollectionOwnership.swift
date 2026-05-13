@@ -139,9 +139,6 @@ extension FileManagerContentFeature {
 
         case .writeBackNavigationPrepared:
             .none
-
-        case .refreshWriteBackRequested:
-            .send(.composer(.saveCollection))
         }
     }
 
