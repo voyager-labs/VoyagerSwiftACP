@@ -25,6 +25,13 @@ struct FileManagerContentFeature {
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
     var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            guard case let .collection(.saveCompleted(result)) = action else {
+                return .none
+            }
+            return handleCollectionSaveCompleted(result: result, state: &state)
+        }
+
         Scope(state: \.composer, action: \.composer) {
             ComposerFeature()
         }
@@ -50,14 +57,7 @@ struct FileManagerContentFeature {
                 return effect
             }
 
-            if let effect = handleCollectionDraftAction(action, state: &state) {
-                return effect
-            }
-
-            if let effect = FileManagerContentCollectionCoordinator.handleCollectionOwnerAction(
-                action,
-                state: &state,
-            ) {
+            if let effect = handleCollectionOwnerAction(action, state: &state) {
                 return effect
             }
 
@@ -76,10 +76,14 @@ struct FileManagerContentFeature {
                 ))))
 
             case .view(.refreshStaleCollection):
-                guard state.refreshBlockingReason == nil else {
+                guard state.collection.refreshBlockingReason(
+                    isCollectionMode: state.isCollectionMode,
+                    isDirty: state.collection.isDirty,
+                    isSearching: state.composer.isCollectionSearching,
+                ) == nil else {
                     return .none
                 }
-                let trimmedQuery = state.collectionContext?
+                let trimmedQuery = state.collection.collectionContext?
                     .query
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
@@ -132,13 +136,13 @@ struct FileManagerContentFeature {
                 let hasActiveRename = state.entryViewLayout.entryOperations.renamingItemId != nil
 
                 state.entryViewLayout.mode = layout
-                state.syncComposerCollectionState()
                 userDefaultsClient.setString(layout.rawValue, SettingsKeys.viewLayout)
-
-                if isModeChanging, hasActiveRename {
-                    return .send(.entryViewLayout(.entryOperations(.edit(.cancelRename))))
-                }
-                return .none
+                return .concatenate(
+                    syncComposerCollectionStateEffect(state),
+                    isModeChanging && hasActiveRename
+                        ? .send(.entryViewLayout(.entryOperations(.edit(.cancelRename))))
+                        : .none,
+                )
 
             case let .internal(.saveScrollOffset(offset, forPath: path)):
                 state.navigation.scrollPositions[path] = offset
@@ -165,9 +169,22 @@ struct FileManagerContentFeature {
                 let entryOperationsAction = EntryOperationsAction.lifecycle(.appDidBecomeActive)
                 return sendEntryOperations(entryOperationsAction)
 
-            case .internal(.syncComposerCollectionState):
-                state.syncComposerCollectionState()
-                return .none
+            case .internal(.resetComposer):
+                return resetComposerAndSyncEffect(state)
+
+            case .internal(.resetComposerAfterDirectoryNavigation):
+                guard state.resetComposerOnNextDirectoryNavigation else {
+                    return .none
+                }
+                state.resetComposerOnNextDirectoryNavigation = false
+                return resetComposerAndSyncEffect(state)
+
+            case .internal(.clearCollectionMode), .internal(.exitCollectionMode):
+                return handleCollectionModeAction(
+                    action,
+                    state: &state,
+                    computerName: fileManagerClient.displayName("/"),
+                )
 
             default:
                 return .none
@@ -235,7 +252,6 @@ struct FileManagerContentFeature {
             state: &state,
             dependencies: .init(
                 collectionAlertClient: collectionAlertClient,
-                computerName: fileManagerClient.displayName("/"),
             ),
         )
     }

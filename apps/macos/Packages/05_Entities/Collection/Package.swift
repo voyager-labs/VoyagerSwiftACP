@@ -33,6 +33,7 @@ let package = Package(
                 "VoyagerEntitiesCollection",
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ]
         ),
     ]

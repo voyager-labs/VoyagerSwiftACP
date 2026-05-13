@@ -59,12 +59,12 @@ struct FileManagerContentSyncReducer {
 
     private func collectionPathsAffectCurrentContext(_ paths: [String], state: State) -> Bool {
         let relevantPaths = paths.filter {
-            !isOpenedCollectionDocumentPath($0, openedURL: state.collectionSession.document?.url)
+            !isOpenedCollectionDocumentPath($0, openedURL: state.collection.collectionSession.document?.url)
         }
         guard !relevantPaths.isEmpty else {
             return false
         }
-        guard let context = state.collectionContext else {
+        guard let context = state.collection.collectionContext else {
             return true
         }
         return collectionChangeIsRelevant(changedPaths: relevantPaths, scopes: context.scopes)

@@ -152,6 +152,14 @@ public extension CollectionSessionPhase {
         }
     }
 
+    var isInflightRefresh: Bool {
+        inflightStatus == .refreshingHydratedSnapshot
+    }
+
+    var isInflightWriteBack: Bool {
+        inflightStatus == .writingBackRefreshedSnapshot
+    }
+
     var openKind: OpenKind? {
         switch self {
         case let .reopening(kind, _, _), let .opened(kind, _, _), let .refreshFailed(kind):

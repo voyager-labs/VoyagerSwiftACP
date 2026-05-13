@@ -4,6 +4,8 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import XCTest
 
+@testable import Voyager
+
 @MainActor
 final class WindowDependencyInvariantTests: XCTestCase {
     func testCreateInitialStateSeedsPathForFreshWindow() {

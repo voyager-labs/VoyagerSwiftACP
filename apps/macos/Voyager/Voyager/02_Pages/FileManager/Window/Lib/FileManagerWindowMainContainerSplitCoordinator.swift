@@ -327,10 +327,10 @@ private func makeContentOverlayProps(from state: FileManagerWindowState) -> File
             return nil
         },
         isDiscardEnabled: state.content.isCollectionMode
-            && state.content.collectionSession.metadata.baseline != nil
+            && state.content.collection.collectionSession.metadata.baseline != nil
             && state.content.isOpenedCollectionDirty,
         canSaveCollection: state.content.canSaveCollection,
-        isTemporaryCollection: state.content.collectionSession.document?.url == nil,
+        isTemporaryCollection: state.content.collection.collectionSession.document?.url == nil,
     )
 }
 

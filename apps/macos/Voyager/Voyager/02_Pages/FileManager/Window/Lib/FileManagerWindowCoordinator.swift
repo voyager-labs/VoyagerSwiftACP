@@ -228,7 +228,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
 
     private func currentWindowTitle(makeWindowTitle: (String) -> String) -> String {
         makeTitle(
-            openedCollectionName: store.state.content.collectionSession.document?.name,
+            openedCollectionName: store.state.content.collection.collectionSession.document?.name,
             isCollectionMode: store.state.content.isCollectionMode,
             titlePath: store.state.content.navigation.titlePath,
             makeWindowTitle: makeWindowTitle,
@@ -239,7 +239,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         makeWindowTitle: @escaping (String) -> String,
     ) -> some Publisher<String, Never> {
         Publishers.CombineLatest3(
-            store.publisher.content.collectionSession.document
+            store.publisher.content.collection.collectionSession.document
                 .map { $0?.name }
                 .removeDuplicates(),
             store.publisher.content.isCollectionMode.removeDuplicates(),

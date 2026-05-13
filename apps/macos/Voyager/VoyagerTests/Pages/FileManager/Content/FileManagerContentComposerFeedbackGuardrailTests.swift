@@ -3,6 +3,7 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
@@ -47,7 +48,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(alerts.count(), 0)
-        XCTAssertFalse(store.state.collectionSession.phase.isOpening)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isOpening)
         XCTAssertEqual(
             store.state.composer.transientFeedback?.message,
             ComposerQueryFeedbackPolicy.executionFailureMessage,
@@ -85,12 +86,12 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
 
         XCTAssertEqual(alerts.count(), 1)
         XCTAssertEqual(alerts.lastTitle(), "Unable to Run Collection Search")
-        XCTAssertFalse(store.state.collectionSession.phase.isOpening)
-        XCTAssertNil(store.state.collectionSession.document?.name)
-        XCTAssertNil(store.state.collectionSession.document?.url)
-        XCTAssertNil(store.state.collectionSession.metadata.baseline)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isOpening)
+        XCTAssertNil(store.state.collection.collectionSession.document?.name)
+        XCTAssertNil(store.state.collection.collectionSession.document?.url)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.baseline)
         XCTAssertFalse(store.state.entryViewLayout.isCollectionMode)
-        XCTAssertNil(store.state.collectionContext)
+        XCTAssertNil(store.state.collection.collectionContext)
     }
 }
 
@@ -129,8 +130,8 @@ private func assertCollectionOpenFailureRollback(
 @MainActor
 private func makeCollectionOpeningState(requestID: UUID) -> FileManagerContentState {
     var state = FileManagerContentState()
-    state.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
-    state.collectionSession.document = .init(
+    state.collection.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
+    state.collection.collectionSession.document = .init(
         url: URL(fileURLWithPath: "/tmp/saved-search.voyager-collection"),
         name: "Saved Search",
         compatibility: nil,

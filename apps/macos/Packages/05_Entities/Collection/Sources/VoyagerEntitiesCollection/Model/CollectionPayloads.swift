@@ -4,6 +4,11 @@ import VoyagerShared
 public struct CollectionDraftRestorePayload: Equatable, Sendable {
     public let context: CollectionContext
     public let openedURL: URL?
+
+    public init(context: CollectionContext, openedURL: URL?) {
+        self.context = context
+        self.openedURL = openedURL
+    }
 }
 
 public enum CollectionNavigationKindPayload: Equatable, Sendable {

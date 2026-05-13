@@ -23,11 +23,9 @@ func handleNavigationDelegate(
         return .none
 
     case .resetComposer:
-        let exitEffect = exitCollectionMode(
-            state: &state.content,
-            computerName: computerName,
+        return .concatenate(
+            .send(.content(.internal(.resetComposer))),
+            .send(.content(.internal(.exitCollectionMode))),
         )
-        state.content.resetComposer()
-        return exitEffect.map(FileManagerWindowAction.content)
     }
 }

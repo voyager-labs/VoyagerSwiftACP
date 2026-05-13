@@ -25,6 +25,7 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case selectAllEntries
         case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
+        case discardCollectionChanges
     }
 
     @CasePathable
@@ -36,12 +37,15 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case startObservingSystemNotifications
         case stopObservingSystemNotifications
         case systemAppDidBecomeActive
-        case syncComposerCollectionState
+        case clearCollectionMode
+        case exitCollectionMode
+        case resetComposer
+        case resetComposerAfterDirectoryNavigation
     }
 
     @CasePathable
     enum Delegate: Sendable {
-        case discardCollectionChanges
+        case collectionChangesDiscarded
         case composerCollectionSearchSucceeded
         case composerCollectionSearchFailed
         case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)

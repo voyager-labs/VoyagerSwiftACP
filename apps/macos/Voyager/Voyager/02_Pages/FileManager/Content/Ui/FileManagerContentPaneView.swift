@@ -53,7 +53,7 @@ struct FileManagerContentPaneView: View {
                         canSaveCollection: overlayProps.canSaveCollection,
                         isTemporaryCollection: overlayProps.isTemporaryCollection,
                         onDiscardCollectionChanges: {
-                            store.send(.delegate(.discardCollectionChanges))
+                            store.send(.view(.discardCollectionChanges))
                         },
                         onExitComposer: {
                             store.send(.composer(.setPresented(false)))

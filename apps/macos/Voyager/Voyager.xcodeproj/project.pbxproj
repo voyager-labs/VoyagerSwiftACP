@@ -47,6 +47,7 @@
 		F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001B /* VoyagerFeaturesContentPageNavigation */; };
 		F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */; };
 		F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
+		F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -244,6 +245,7 @@
 				F20000000000000000000039 /* VoyagerEntitiesEntry in Frameworks */,
 				F2000000000000000000003A /* Dependencies in Frameworks */,
 				F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */,
+				F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -424,6 +426,7 @@
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
+				F2000000000000000000001D /* VoyagerFeaturesComposer */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;

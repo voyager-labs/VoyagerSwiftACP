@@ -5,6 +5,8 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+@testable import Voyager
+
 @MainActor
 final class FileManagerFeatureNavigationTests: XCTestCase {
     func testInitialWindowStateContainsDefaultSlices() {

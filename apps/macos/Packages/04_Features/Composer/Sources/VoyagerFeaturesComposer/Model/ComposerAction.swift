@@ -44,6 +44,25 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         case filtersResponse(UUID, Result<VoyagerShared.SearchResponsePayload, Error>)
         case dismissTransientFeedback(UUID)
         case searchListApplied
+        case applyCollectionDraftRestore(CollectionDraftRestorePayload)
+        case applyCollectionNavigationComposer(CollectionNavigationStatePayload)
+        case syncCollectionState(
+            context: CollectionContext?,
+            url: URL?,
+            compatibility: CollectionFileCompatibilityMetadata?,
+            isCollectionMode: Bool,
+        )
+        case updateLastFiltersResponse(VoyagerShared.SearchResponsePayload)
+        case clearPendingSearchQuery
+        case setPendingSearchQuery(String?)
+        case setLoadingFilters(Bool)
+        case setInitialScope(String)
+        case resetComposerAndSync(
+            context: CollectionContext?,
+            url: URL?,
+            compatibility: CollectionFileCompatibilityMetadata?,
+            isCollectionMode: Bool,
+        )
     }
 
     @CasePathable
@@ -113,4 +132,58 @@ public extension ComposerAction {
     }
 
     static var searchListApplied: Self { .internal(.searchListApplied) }
+
+    static func applyCollectionDraftRestore(_ payload: CollectionDraftRestorePayload) -> Self {
+        .internal(.applyCollectionDraftRestore(payload))
+    }
+
+    static func applyCollectionNavigationComposer(_ payload: CollectionNavigationStatePayload) -> Self {
+        .internal(.applyCollectionNavigationComposer(payload))
+    }
+
+    static func syncCollectionState(
+        context: CollectionContext?,
+        url: URL?,
+        compatibility: CollectionFileCompatibilityMetadata?,
+        isCollectionMode: Bool,
+    ) -> Self {
+        .internal(.syncCollectionState(
+            context: context,
+            url: url,
+            compatibility: compatibility,
+            isCollectionMode: isCollectionMode,
+        ))
+    }
+
+    static func updateLastFiltersResponse(_ response: VoyagerShared.SearchResponsePayload) -> Self {
+        .internal(.updateLastFiltersResponse(response))
+    }
+
+    static var clearPendingSearchQuery: Self { .internal(.clearPendingSearchQuery) }
+
+    static func setPendingSearchQuery(_ query: String?) -> Self {
+        .internal(.setPendingSearchQuery(query))
+    }
+
+    static func setLoadingFilters(_ isLoading: Bool) -> Self {
+        .internal(.setLoadingFilters(isLoading))
+    }
+
+    static func setInitialScope(_ path: String) -> Self {
+        .internal(.setInitialScope(path))
+    }
+
+    static func resetComposerAndSync(
+        context: CollectionContext?,
+        url: URL?,
+        compatibility: CollectionFileCompatibilityMetadata?,
+        isCollectionMode: Bool,
+    ) -> Self {
+        .internal(.resetComposerAndSync(
+            context: context,
+            url: url,
+            compatibility: compatibility,
+            isCollectionMode: isCollectionMode,
+        ))
+    }
 }
