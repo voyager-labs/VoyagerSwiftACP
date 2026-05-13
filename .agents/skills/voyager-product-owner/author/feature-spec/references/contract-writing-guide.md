@@ -73,6 +73,24 @@ Bad:
 
 If an object is only needed to explain one local implementation detail, it probably does not belong in the contract.
 
+### Do not promote UI regions to objects
+
+Before adding a new row to `OBJECTS`, check `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv`.
+
+If the term is already a `WINDOW_STRUCTURE.structure_key`, keep it as a UI region reference instead of creating an object row.
+
+Rules:
+
+- use `display_region`, `scope_region`, or ownership-level `control_region` for UI surfaces and panes
+- use `primary_object_key`, `secondary_object_keys`, `target_object`, `creates_objects`, and `preserves_objects` only for `OBJECTS.key` values
+- do not add window, pane, sidebar, toolbar, field, list, or container terms to `OBJECTS` just to satisfy contract validation
+- for UI-region-centered behavior, choose the nearest real product object such as `command`, `action`, `page`, `entry`, `filter`, or `provider`, then express the UI boundary through region fields
+
+Example:
+
+- good: `primary_object_key = "command"` and `display_region = "file_manager_window"`
+- bad: adding `file_manager_window`, `sidebar`, or `inspector_pane` as `OBJECTS` rows when they already belong to `WINDOW_STRUCTURE`
+
 ### Start from `OBJECTS`
 
 If the object is product-wide, use the existing `OBJECTS.key` as the contract object key.
