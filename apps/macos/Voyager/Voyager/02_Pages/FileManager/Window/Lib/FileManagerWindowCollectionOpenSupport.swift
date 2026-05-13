@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 
@@ -13,6 +14,7 @@ func prepareLoadedCollectionOpenState(
         restorationPayload,
         registryClient: registryClient,
     )
+    state.content.syncComposerCollectionState()
 }
 
 func makeWindowCollectionNavigation(
@@ -41,7 +43,10 @@ func hydrateOpenedCollectionSnapshot(
     navigation: ContentPageCollectionNavigation,
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
-    state.content.composer.applyHydratedCollectionOpenComposerPayload(payload, navigation: navigation)
+    state.content.composer.applyHydratedCollectionOpenComposerPayload(
+        payload,
+        isNavigationQueryEmpty: navigation.context.query.isEmpty,
+    )
 
     let showHidden = state.content.entryViewLayout.showHiddenFiles
     let collectionURL: URL? = if case let .file(url, _) = navigation.kind { url } else { nil }

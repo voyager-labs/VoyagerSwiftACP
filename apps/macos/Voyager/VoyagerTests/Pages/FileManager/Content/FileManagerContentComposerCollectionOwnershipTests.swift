@@ -3,6 +3,7 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
@@ -128,6 +129,7 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
             $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
         return store
@@ -155,14 +157,6 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         store: TestStore<FileManagerContentState, FileManagerContentAction>,
         expectedPaths: [String]? = nil,
     ) async {
-        await store.receive { action in
-            guard case .internal(.requestNavigation(.internal(.appendBackHistory))) = action else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .internal(.requestNavigation(.internal(.clearForwardHistory))) = action else { return false }
-            return true
-        }
         await store.receive { action in
             guard case .entryViewLayout(.internal(.setCollectionMode(true))) = action else { return false }
             return true

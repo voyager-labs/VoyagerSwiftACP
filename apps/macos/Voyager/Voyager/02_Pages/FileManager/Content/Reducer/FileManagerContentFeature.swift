@@ -4,6 +4,7 @@ import Foundation
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -167,6 +168,16 @@ struct FileManagerContentFeature {
             case .internal(.systemAppDidBecomeActive):
                 let entryOperationsAction = EntryOperationsAction.lifecycle(.appDidBecomeActive)
                 return sendEntryOperations(entryOperationsAction)
+
+            case .internal(.resetComposer):
+                return resetComposerAndSyncEffect(state)
+
+            case .internal(.resetComposerAfterDirectoryNavigation):
+                guard state.resetComposerOnNextDirectoryNavigation else {
+                    return .none
+                }
+                state.resetComposerOnNextDirectoryNavigation = false
+                return resetComposerAndSyncEffect(state)
 
             case .internal(.clearCollectionMode), .internal(.exitCollectionMode):
                 return handleCollectionModeAction(

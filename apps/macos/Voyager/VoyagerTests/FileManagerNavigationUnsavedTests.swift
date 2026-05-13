@@ -1,6 +1,8 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -61,12 +63,12 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
             await store.receive {
                 guard case let .navigation(.internal(.performNavigation(pending))) = $0 else { return false }
                 return pendingMatches(pending, testCase.pending)
-            } assert: { state in
-                state.content.resetComposerOnNextDirectoryNavigation = false
-                state.content.composer.text = ""
             }
+            await store.skipReceivedActions()
 
             XCTAssertNil(store.state.content.navigation.pendingNavigation)
+            XCTAssertFalse(store.state.content.resetComposerOnNextDirectoryNavigation)
+            XCTAssertEqual(store.state.content.composer.text, "")
 
             await store.finish()
         }
@@ -182,7 +184,14 @@ private func makeStore(
         $0.collectionFileClient = .testValue
         $0.registryClient = .testValue
         $0.userDefaultsClient = .testValue
+        $0.fileManagerClient = .testValue
+        $0.thumbnailGeneratorClient = .testValue
+        $0.entryThumbnailCacheClient = .testValue
+        $0.notificationCenterClient = .testValue
+        $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
     }
+
+    store.exhaustivity = .off
 
     return store
 }
@@ -196,6 +205,9 @@ private struct WindowNavUnsavedHarness {
     var body: some Reducer<State, Action> {
         Scope(state: \.content.navigation, action: \.navigation) {
             ContentPageNavigationFeature()
+        }
+        Scope(state: \.content, action: \.content) {
+            FileManagerContentFeature()
         }
         FileManagerWindowNavigationReducer()
     }

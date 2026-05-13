@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
@@ -200,11 +201,10 @@ struct FileManagerNavigationActionReducer {
         case let .unsavedNavigationAlertResponse(pending, choice):
             return handleUnsavedNavigationAlertResponse(pending: pending, choice: choice, state: &state)
         case .performNavigation:
-            if state.content.resetComposerOnNextDirectoryNavigation {
-                state.content.resetComposer()
-                state.content.resetComposerOnNextDirectoryNavigation = false
+            guard state.content.resetComposerOnNextDirectoryNavigation else {
+                return .none
             }
-            return .none
+            return .send(.content(.internal(.resetComposerAfterDirectoryNavigation)))
         default:
             return .none
         }

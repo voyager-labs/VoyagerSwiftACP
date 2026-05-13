@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
@@ -118,6 +119,10 @@ extension FileManagerContentFeature {
     }
 
     private func handleCollectionSessionReset(state: State) -> Effect<Action> {
+        resetComposerAndSyncEffect(state)
+    }
+
+    func resetComposerAndSyncEffect(_ state: State) -> Effect<Action> {
         .send(.composer(.resetComposerAndSync(
             context: state.collection.collectionContext,
             url: state.collection.collectionSession.document?.url,

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 
 func handleNavigationDelegate(
@@ -22,7 +23,9 @@ func handleNavigationDelegate(
         return .none
 
     case .resetComposer:
-        state.content.resetComposer()
-        return .send(.content(.internal(.exitCollectionMode)))
+        return .concatenate(
+            .send(.content(.internal(.resetComposer))),
+            .send(.content(.internal(.exitCollectionMode))),
+        )
     }
 }

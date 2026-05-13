@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
@@ -38,6 +39,8 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case systemAppDidBecomeActive
         case clearCollectionMode
         case exitCollectionMode
+        case resetComposer
+        case resetComposerAfterDirectoryNavigation
     }
 
     @CasePathable

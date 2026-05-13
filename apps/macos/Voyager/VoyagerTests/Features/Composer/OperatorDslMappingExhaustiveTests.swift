@@ -2,6 +2,7 @@ import XCTest
 
 @testable import Voyager
 import VoyagerEntitiesCollection
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 
 @MainActor
