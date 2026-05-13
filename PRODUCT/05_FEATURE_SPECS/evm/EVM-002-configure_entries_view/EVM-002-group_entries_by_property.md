@@ -5,9 +5,9 @@ feature: "Configure Entries View"
 category_key: "EVM"
 feature_id: "EVM-002"
 status: "배포 완료"
-summary: "Entries View에서 선택한 Property 값으로 Entries를 그룹화해 섹션 헤더 아래에 표시하며, 그룹 라벨과 색상은 동일한 규칙에 따라 표현"
+summary: "Entries View에서 선택한 Property 값으로 Entries를 그룹화해 섹션 헤더 아래에 표시하며, 그룹 라벨·색상은 동일한 규칙에 따라 표현"
 related_region: "file_manager_window.content_pane"
-menu: "View"
+menu: "view_menu"
 shortcut: "-"
 ---
 
@@ -15,62 +15,66 @@ shortcut: "-"
 
 ## Intent
 
-- 사용자가 많은 Entries를 특정 Property 값 기준으로 묶어 빠르게 훑고, 그룹 단위로 탐색할 수 있어야 한다.
-- List View와 Icon View가 동일한 그룹 데이터 의미와 표현 규칙을 공유해야 한다.
+- 현재 Page의 Entries View 표시 방식, 정렬, 그룹, selection 정보를 조정한다.
 
 ## Trigger / Entry Points
 
-- 메뉴 `View`에서 그룹핑 기준(Property)을 선택
+- `view_menu` 메뉴의 Group Entries by Property 항목
+- file_manager_window.content_pane 영역에서 관련 컨트롤 또는 명령을 실행한 경우
 
 ## Preconditions
 
-- Entries View가 List View 또는 Icon View로 표시 중인 상태
+- 대상 Entries View이 현재 File Manager Window에서 접근 가능한 상태다.
 
 ## Expected Outcome
 
-- 선택한 Property의 값으로 Entries가 그룹 섹션으로 나뉘어 표시된다.
-- 각 그룹은 그룹 헤더를 가지며, 그룹 라벨과 색상 표현은 동일한 규칙에 따라 적용된다.
-- Property 값이 없는 Entry는 “미지정” 그룹에 포함된다.
-- 동일한 그룹 데이터는 List View와 Icon View에서 일관되게 해석되어 표시된다.
+- Entries View에서 선택한 Property 값으로 Entries를 그룹화해 섹션 헤더 아래에 표시하며, 그룹 라벨·색상은 동일한 규칙에 따라 표현.
+- 사용자에게 보이는 결과는 `group_entries_by_property_applied` 상태로 정리된다.
 
 ## State Changes
 
-- Entries View의 그룹핑 기준이 선택한 Property로 갱신된다.
-- 현재 열려 있는 List View와 Icon View는 동일한 그룹핑 상태를 반영해 다시 렌더링된다.
+- Entries View의 표시 또는 실행 상태를 갱신한다.
+- 이 인터랙션은 [evm_contract.toml](../contracts/evm_contract.toml)의 `group_entries_by_property_applied` 상태 어휘를 따른다.
 
 ## User-visible Feedback
 
-- 그룹 헤더가 추가되고, Entries가 그룹 섹션 아래로 재배치되어 표시된다.
+- 성공 시 현재 화면의 표시, 선택, 정렬, 실행 결과가 즉시 갱신된다.
+- 실패 시 기존 상태를 보존하고 실패 사유를 사용자에게 표시한다.
 
 ## Edge Cases / Failure Handling
 
-- 선택한 Property 값이 일부 Entry에 없는 경우, 해당 Entry는 “미지정” 그룹에 표시한다.
-- 선택한 Property를 그룹핑 기준으로 해석할 수 없는 경우, 기존 그룹핑 상태를 유지하고 사용자에게 변경 불가 상태를 안내한다.
+- 대상 Entries View이 사라졌거나 권한이 없으면 작업을 중단한다.
+- 동일 요청이 반복되면 마지막으로 확정된 상태를 기준으로 중복 반영을 피한다.
 
 ## Acceptance Criteria
 
-- [ ] 현재 Entries View가 List View 또는 Icon View인 상황에서, 해당 인터랙션을 호출하면, 선택한 프로퍼티를 기준으로 Entries가 그룹 섹션으로 묶여 표시되어야 한다.
-- [ ] 특정 프로퍼티 그룹 섹션으로 묶여 표시될 때, 해당 프로퍼티가 없는 엔트리가 존재한다면, “미지정”
-       그룹에 표시됨
-- [ ] 그룹 섹션이 표시되는 상황에서, 그룹 헤더의 라벨·색상 표현은 동일한 규칙에 따라 적용되어야 한다.
-- [ ] 동일한 그룹핑이 적용된 상황에서, List View와 Icon View는 동일한 그룹 데이터 의미로 렌더링되어야 한다.
+- [ ] 대상 Entries View이 현재 File Manager Window에서 접근 가능한 상태다. 사용자가 Group Entries by Property을 실행하면, Entries View에서 선택한 Property 값으로 Entries를 그룹화해 섹션 헤더 아래에 표시하며, 그룹 라벨·색상은 동일한 규칙에 따라 표현 결과가 `group_entries_by_property_applied` 상태로 반영되어야 한다.
+- [ ] 작업을 완료할 수 없는 조건이면, 앱은 기존 상태를 보존하고 실패 피드백을 표시해야 한다.
+- [ ] 같은 interaction이 반복 호출되어도 중복되거나 모순된 상태가 남지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- Entries 목록 데이터가 로드되어 있어야 한다.
-- 그룹 라벨·색상 및 태그 색상 규칙에 필요한 정보를 참조할 수 있어야 한다.
+- 현재 Page, selection, 파일 시스템 접근 권한, File Manager Window layout 상태에 의존한다.
 
 ## Observability / Analytics
 
-- 그룹핑 기준 변경(프로퍼티)
+- `evm.group_entries_by_property` 이벤트에 성공 여부와 대상 수, 실패 사유를 기록한다.
 
 ## Related Interactions
 
-- `EVM-002-set_entries_view_as_list_table`
-- `EVM-002-set_entries_view_as_icon_grid`
-- `EVM-002-sort_entrires_by_property`
+- [EVM-002-customize_list_view_column](EVM-002-customize_list_view_column.md)
+- [EVM-002-set_entries_view_as_column](EVM-002-set_entries_view_as_column.md)
+- [EVM-002-set_entries_view_as_graph](EVM-002-set_entries_view_as_graph.md)
+- [EVM-002-set_entries_view_as_icon_grid](EVM-002-set_entries_view_as_icon_grid.md)
+- [EVM-002-set_entries_view_as_list_table](EVM-002-set_entries_view_as_list_table.md)
+- [EVM-002-show_hide_hidden_entry](EVM-002-show_hide_hidden_entry.md)
+- [EVM-002-show_selected_entry_counts](EVM-002-show_selected_entry_counts.md)
+- [EVM-002-sort_entrires_by_property](EVM-002-sort_entrires_by_property.md)
+- [EVM-002-update_entry_selection](EVM-002-update_entry_selection.md)
+- [EVM-002-view_entry_counts_in_current_page](EVM-002-view_entry_counts_in_current_page.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `28`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:28`
+- Flows: [evm_flow.md](../flows/evm_flow.md)
+- Contract: [evm_contract.toml](../contracts/evm_contract.toml)

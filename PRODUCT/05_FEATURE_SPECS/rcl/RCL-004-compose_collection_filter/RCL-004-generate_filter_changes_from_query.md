@@ -11,86 +11,79 @@ menu: "-"
 shortcut: "-"
 ---
 
-# Generate Filter Changes from Query
+# Generate Filter Changes From Query
 
 ## Intent
 
-- 제출된 query를 현재 필터 조건 문맥에 맞는 구조화된 변경 결과로 해석해, 사용자가 바로 반영 가능한 조건 구성을 얻도록 한다.
+- 제출된 쿼리를 해석해 현재 필터에 반영할 구조화 조건 변경안을 산출해 반환.
+- `RCL-004`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md) 이후 가장 최근 제출 흐름이 시작되었을 때
+- 사용자가 filter query 필드에 입력하거나 Enter로 제출할 때 호출된다.
+- query 변환 결과가 돌아오거나 변환/실행 실패가 발생했을 때 호출된다.
 
 ## Preconditions
 
-- Submit Collection Filter Query가 발생한 상태
-- 현재 처리 중인 요청이 해당 Composer 문맥의 가장 최근 제출인 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- 시스템이 제출된 query를 해석해 적용 가능한 조건 변경 결과, 실질 변경 없음, 기존 조건 구성 유지, 또는 실패 결과 중 하나로 정리한다.
-- 정상 계열 결과는 변환 실패와 분리되어 이후 반영 여부를 결정할 수 있어야 한다.
+- 제출된 쿼리를 해석해 현재 필터에 반영할 구조화 조건 변경안을 산출해 반환.
+- 입력 query는 trim된 값으로 처리하고 빈 query는 불필요한 변환 요청을 만들지 않아야 한다.
+- 변환 결과는 suggestion 대기 상태가 아니라 현재 filter draft에 일괄 반영하는 경로를 기본으로 삼는다.
+- 동일 failure가 반복되면 피드백을 누적하지 않고 갱신 또는 병합한다.
 
 ## State Changes
 
-- `query_submitting` -> `query_changes_generated`
-    - 시스템이 적용 가능한 조건 변경 결과를 만들면 현재 요청을 성공 결과 상태로 전환한다.
-- `query_submitting` -> `query_changes_generated`
-    - 실질 변경이 없는 결과여도 실패가 아니라 성공 결과 상태로 귀결된다.
-- `query_submitting` -> `query_changes_generated`
-    - 기존 조건 구성을 유지하는 편이 더 적절하다고 판단되더라도 성공 결과 상태로 귀결된다.
-- `query_submitting` -> `conversion_failure_feedback_visible`
-    - 자연어 해석 자체가 성립하지 않으면 변환 실패 feedback 경로로 넘긴다.
-- `query_submitting` -> `execution_failure_feedback_visible`
-    - 해석 이후 실행 단계 또는 보조 실행 계층에서 실패가 확인되면 실행 실패 피드백 경로로 넘긴다.
+- query draft, submittedSearchFilters, active request id, feedback toast 상태를 갱신한다.
+- 변환 성공 시 returned appliedFilters 또는 structured filter changes를 현재 Composer state로 반영한다.
+- conversion failure와 execution failure는 서로 다른 failure reason으로 남긴다.
 
 ## User-visible Feedback
 
-- 이 백그라운드 단계 자체가 별도 모달을 만들지는 않지만, 이후 정상 반영 / 실질 변경 없음 / 기존 조건 구성 유지 / 실패 분기가 사용자에게 일관된 다음 상태를 제공해야 한다.
+- query 입력 중에는 field 값을 즉시 반영한다.
+- 변환/실행 실패는 Composer 흐름을 막지 않는 가벼운 피드백으로 보여준다.
+- 반복 failure는 같은 영역에서 최신 reason 중심으로 갱신한다.
+- background interaction은 별도 화면을 만들기보다 연결된 display/command interaction이 읽을 상태를 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 만들어진 변경 내용이 비어 있지만 현재 조건 구성을 유지하는 편이 맞는 경우
-- 기존 조건 구성을 유지하는 결과가 사용자에게 변환 실패처럼 보이면 안 되는 경우
-- 더 오래된 제출 결과가 늦게 도착하는 경우
-- 조건 변경 결과 생성은 성공했지만 반영 이후 실행 실패로 이어지는 경우
+- 빈 query submit은 네트워크 요청 없이 무시한다.
+- 변환은 성공했지만 적용 가능한 조건이 없으면 현재 filter를 임의로 비우지 않는다.
+- 취소된 suggestion 기반 interaction은 현재 기본 흐름에서 노출하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] Submit Collection Filter Query가 발생한 상황에서, 시스템이 query를 해석하면 현재 필터 조건 구성에 적용 가능한 구조화 변경 결과를 산출해야 한다.
-- [ ] 시스템이 실질 변경이 없는 결과를 얻었을 때, 이를 실패가 아니라 정상 종료된 결과로 유지해야 한다.
-- [ ] 시스템이 내부 대체 규칙이나 직전 유효 조건 구성을 유지하는 쪽을 선택했을 때, 이를 변환 실패로 승격하지 않고 정상 계열 결과로 유지해야 한다.
-- [ ] 자연어 해석 자체가 성립하지 않으면, 시스템은 conversion failure 경로로 분기해야 한다.
-- [ ] 해석 이후 실행 단계 또는 보조 실행 계층 문제가 발생하면, 시스템은 실행 실패 경로로 분기해야 한다.
-- [ ] 더 오래된 제출 결과가 늦게 도착하더라도, 시스템은 가장 최근 제출 상태를 덮어쓰지 않아야 한다.
+- [ ] query를 입력하면 Composer query draft가 갱신되어야 한다.
+- [ ] query를 제출하면 구조화 filter 변경안 생성과 적용이 순서대로 진행되어야 한다.
+- [ ] 동일 failure가 짧은 시간 안에 반복되면 실패 메시지는 중복 누적되지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- 현재 Composer 문맥의 가장 최근 제출 정보와 기존 조건 구성 기준점을 함께 참조할 수 있어야 한다.
-- 조건 변경 결과는 과거 제안 목록 형태가 아니라 바로 반영 가능한 현재 모델이어야 한다.
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 이 interaction은 특정 UI region 없이 background/domain state를 갱신한다.
 
 ## Observability / Analytics
 
-- query 해석 결과를 정상 반영 / 실질 변경 없음 / 기존 조건 구성 유지 / 변환 실패 / 실행 실패로 구분해 기록할 수 있어야 한다.
-- 가장 최근 제출만 채택되었는지와 오래된 응답이 무시되었는지 추적할 수 있어야 한다.
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-004-apply_all_generated_filter_suggestions](RCL-004-apply_all_generated_filter_suggestions.md)
+- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
+- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
 - [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
-- [RCL-004-apply_generated_filter_suggestion](RCL-004-apply_generated_filter_suggestion.md)
-- [RCL-004-coalesce_repeated_query_failure_feedback](RCL-004-coalesce_repeated_query_failure_feedback.md)
-- [RCL-004-generate_filter_suggestions_from_query](RCL-004-generate_filter_suggestions_from_query.md)
-- [RCL-004-reject_all_generated_filter_suggestions](RCL-004-reject_all_generated_filter_suggestions.md)
-- [RCL-004-reject_generated_filter_suggestion](RCL-004-reject_generated_filter_suggestion.md)
-- [RCL-004-show_generated_filter_suggestions](RCL-004-show_generated_filter_suggestions.md)
 - [RCL-004-show_query_conversion_failure_feedback](RCL-004-show_query_conversion_failure_feedback.md)
 - [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
-- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
-- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
+- [RCL-004-coalesce_repeated_query_failure_feedback](RCL-004-coalesce_repeated_query_failure_feedback.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:108`
-- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
-- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md)
+- Flows: [collection_query_composition_flow.md](../flows/collection_query_composition_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

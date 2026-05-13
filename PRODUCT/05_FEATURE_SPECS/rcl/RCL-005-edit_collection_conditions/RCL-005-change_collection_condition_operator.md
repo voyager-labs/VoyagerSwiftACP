@@ -15,47 +15,62 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- 선택한 컨디션의 연산자를 다른 연산자로 변경.
+- `RCL-005`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- 사용자가 condition chip을 추가하거나 property/operator/value를 변경할 때 호출된다.
+- 사용자가 condition 삭제 입력을 실행할 때 호출된다.
 
 ## Preconditions
 
-- Generate Filter Changes from Query가 실행 중이지 않은 상태
-- 편집 대상 컨디션이 존재하는 상태
-- 해당 컨디션의 프로퍼티가 설정된 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- TBD
+- 선택한 컨디션의 연산자를 다른 연산자로 변경.
+- condition은 registry가 허용하는 property, operator, value shape로 구성되어야 한다.
+- 값 입력은 operator arity와 value type에 맞게 정규화되고, 실패하면 payload에 포함되지 않아야 한다.
+- condition 변경 뒤에는 필요한 경우 applyFilters가 예약되어 결과 state를 갱신한다.
 
 ## State Changes
 
-- TBD
+- conditions 배열, selected property/operator/value, validation error, applyFilters in-flight 상태를 갱신한다.
+- property 변경 시 기존 operator/value가 새 property와 호환되지 않으면 안전한 초기 상태로 재설정한다.
+- delete는 선택된 condition만 제거하고 남은 condition 순서를 유지한다.
 
 ## User-visible Feedback
 
-- TBD
+- 중복 property 추가, 값 필수 누락, 숫자/날짜 파싱 실패, range 역전은 condition chip 안에서 즉시 표시한다.
+- condition 삭제 또는 변경 후 결과 적용 중이면 loading feedback을 유지한다.
 
 ## Edge Cases / Failure Handling
 
-- 오퍼레이터 변경으로 기존 값이 무효가 되는 경우
+- 이미 추가된 property는 중복 추가를 막고 안내한다.
+- operatorValueArity가 0이면 value 없이 `null` payload로 전송할 수 있다.
+- unknown key가 appliedFilters로 돌아오면 비활성 condition으로 남겨 원인을 확인할 수 있게 한다.
+- 입력이 유효하지 않으면 저장/적용을 실행하지 않고 수정 가능한 오류 상태를 유지한다.
 
 ## Acceptance Criteria
 
-- [ ] 해당 컨디션이 오퍼레이터 편집 상태일 때, 사용자가 해당 인터랙션을 호출하면, 해당 컨디션의
-      오퍼레이터가 갱신됨
-- [ ] 사용자가 오퍼레이터를 변경했을 때, 기존 값이 무효가 된다면, 값을 초기화함
+- [ ] 새 condition을 추가하면 property 선택 가능한 draft condition이 생성되어야 한다.
+- [ ] operator를 바꾸면 value 입력 UI와 arity가 registry 기준으로 바뀌어야 한다.
+- [ ] 값 검증에 실패하면 condition은 payload에 포함되지 않고 오류 메시지가 표시되어야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.content_header.collection_filter_composer`
 
 ## Observability / Analytics
 
-- TBD
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
@@ -66,5 +81,6 @@ shortcut: "-"
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `132`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:132`
+- Flows: [collection_condition_editing_flow.md](../flows/collection_condition_editing_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

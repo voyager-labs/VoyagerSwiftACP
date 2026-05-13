@@ -15,80 +15,75 @@ shortcut: "-"
 
 ## Intent
 
-- 동일한 변환 실패 또는 실행 실패가 짧은 시간 안에 반복될 때, Composer 문맥의 실패 안내가 과하게 쌓이지 않도록 중복 노출을 합치거나 최신 의미로만 갱신한다.
+- 동일한 실패 상태가 짧은 시간 안에 반복될 때 실패 피드백을 중복 누적하지 않고 노출 정책에 따라 합치거나 갱신함.
+- `RCL-004`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- [RCL-004-show_query_conversion_failure_feedback](RCL-004-show_query_conversion_failure_feedback.md) 또는 [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)가 새 실패 안내를 표시하려 할 때
+- 사용자가 filter query 필드에 입력하거나 Enter로 제출할 때 호출된다.
+- query 변환 결과가 돌아오거나 변환/실행 실패가 발생했을 때 호출된다.
 
 ## Preconditions
 
-- 현재 실패 안내가 이미 표시 중인 상태
-- 짧은 시간 안에 동일하거나 의미가 다른 새 실패가 다시 도착한 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- 동일 메시지 반복은 하나의 안내로 유지되고, 의미가 다른 실패만 최신 의미 기준으로 교체된다.
-- 중복 억제는 사용자의 재시도 권한을 막지 않는다.
+- 동일한 실패 상태가 짧은 시간 안에 반복될 때 실패 피드백을 중복 누적하지 않고 노출 정책에 따라 합치거나 갱신함.
+- 입력 query는 trim된 값으로 처리하고 빈 query는 불필요한 변환 요청을 만들지 않아야 한다.
+- 변환 결과는 suggestion 대기 상태가 아니라 현재 filter draft에 일괄 반영하는 경로를 기본으로 삼는다.
+- 동일 failure가 반복되면 피드백을 누적하지 않고 갱신 또는 병합한다.
 
 ## State Changes
 
-- `conversion_failure_feedback_visible` -> `conversion_failure_feedback_visible`
-    - 동일 변환 실패가 반복되면 새 toast를 추가하지 않고 기존 표시를 유지한다.
-- `execution_failure_feedback_visible` -> `execution_failure_feedback_visible`
-    - 동일 실행 실패가 반복되면 새 toast를 추가하지 않고 기존 표시를 유지한다.
-- `conversion_failure_feedback_visible` -> `execution_failure_feedback_visible`
-    - 의미가 다른 최신 실패가 도착하면 마지막 실패 의미 기준으로 갱신한다.
-- `execution_failure_feedback_visible` -> `conversion_failure_feedback_visible`
-    - 마지막 실패 의미가 변환 실패로 바뀌면 해당 피드백으로 갱신한다.
+- query draft, submittedSearchFilters, active request id, feedback toast 상태를 갱신한다.
+- 변환 성공 시 returned appliedFilters 또는 structured filter changes를 현재 Composer state로 반영한다.
+- conversion failure와 execution failure는 서로 다른 failure reason으로 남긴다.
 
 ## User-visible Feedback
 
-- 사용자는 같은 실패가 반복되어도 toast가 연속 적층되지 않는다고 느껴야 한다.
-- 마지막 실패 의미가 달라졌을 때만 피드백 문구가 갱신되어야 한다.
+- query 입력 중에는 field 값을 즉시 반영한다.
+- 변환/실행 실패는 Composer 흐름을 막지 않는 가벼운 피드백으로 보여준다.
+- 반복 failure는 같은 영역에서 최신 reason 중심으로 갱신한다.
+- background interaction은 별도 화면을 만들기보다 연결된 display/command interaction이 읽을 상태를 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 오래된 request 응답이 더 늦게 도착하는 경우
-- 동일한 실패가 매우 짧은 간격으로 여러 번 발생하는 경우
-- 변환 실패와 실행 실패가 교차 발생하는 경우
-- 이전 자동 해제 타이머가 더 새로운 feedback 이후 늦게 도착하는 경우
+- 빈 query submit은 네트워크 요청 없이 무시한다.
+- 변환은 성공했지만 적용 가능한 조건이 없으면 현재 filter를 임의로 비우지 않는다.
+- 취소된 suggestion 기반 interaction은 현재 기본 흐름에서 노출하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 동일한 변환 실패 또는 동일한 실행 실패가 짧은 시간 안에 반복되면, 시스템은 새 피드백을 적층하지 않고 기존 피드백을 유지해야 한다.
-- [ ] 시스템은 중복 억제 기준을 실패 의미 단위로 적용해야 하며, 변환 실패와 실행 실패를 하나의 일반 실패로 뭉개지 않아야 한다.
-- [ ] 의미가 다른 최신 실패가 도착하면, 시스템은 마지막 실패 의미 기준으로 피드백을 교체하거나 갱신해야 한다.
-- [ ] 오래된 request 응답이나 늦게 도착한 자동 해제 이벤트가 더 새로운 feedback을 잘못 제거하지 않아야 한다.
-- [ ] 중복 억제는 사용자가 Composer 편집 문맥으로 돌아가 query 또는 조건 값을 다시 조정하거나 다시 제출하는 흐름을 막지 않아야 한다.
+- [ ] query를 입력하면 Composer query draft가 갱신되어야 한다.
+- [ ] query를 제출하면 구조화 filter 변경안 생성과 적용이 순서대로 진행되어야 한다.
+- [ ] 동일 failure가 짧은 시간 안에 반복되면 실패 메시지는 중복 누적되지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- 실패 의미 비교와 가장 최근 제출만 채택하는 규칙이 함께 유지되어야 한다.
-- 피드백 자동 해제 정책은 중복 억제 후에도 불필요하게 다시 시작되거나 연장되지 않아야 한다.
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 이 interaction은 특정 UI region 없이 background/domain state를 갱신한다.
 
 ## Observability / Analytics
 
-- 동일 실패 중복 억제 횟수와 유형 교체 횟수를 분리해 추적할 수 있어야 한다.
-- 중복 억제 대상이 변환 실패인지 실행 실패인지 구분 가능해야 한다.
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-004-apply_all_generated_filter_suggestions](RCL-004-apply_all_generated_filter_suggestions.md)
-- [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
-- [RCL-004-apply_generated_filter_suggestion](RCL-004-apply_generated_filter_suggestion.md)
+- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
+- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
 - [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
-- [RCL-004-generate_filter_suggestions_from_query](RCL-004-generate_filter_suggestions_from_query.md)
-- [RCL-004-reject_all_generated_filter_suggestions](RCL-004-reject_all_generated_filter_suggestions.md)
-- [RCL-004-reject_generated_filter_suggestion](RCL-004-reject_generated_filter_suggestion.md)
-- [RCL-004-show_generated_filter_suggestions](RCL-004-show_generated_filter_suggestions.md)
+- [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
 - [RCL-004-show_query_conversion_failure_feedback](RCL-004-show_query_conversion_failure_feedback.md)
 - [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
-- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
-- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:112`
-- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
-- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md)
+- Flows: [collection_query_composition_flow.md](../flows/collection_query_composition_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

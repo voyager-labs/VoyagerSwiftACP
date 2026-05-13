@@ -15,73 +15,77 @@ shortcut: "-"
 
 ## Intent
 
-- 저장된 collection을 다시 열 때 조건 구성과 저장된 결과 정보·관련 메타데이터를 함께 읽어, 즉시 복원 가능한 저장 결과가 있으면 곧바로 결과 맥락을 복원하고 그렇지 않으면 조건 구성 기준의 재검색 경로로 자연스럽게 넘어가게 한다.
+- 저장된 콜렉션을 다시 열 때 마지막 결과 snapshot과 정의 메타데이터를 먼저 복원해 즉시 확인 가능한 초기 상태를 구성.
+- `RCL-002`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md) 이후 reopen 경로가 시작되었을 때
+- 사용자가 현재 filter를 새 collection으로 저장하거나 기존 collection 변경분을 저장/폐기할 때 호출된다.
+- 저장된 `.voycoll` 파일을 열거나 이름 변경, 삭제, 닫기 전 경고가 필요한 때 호출된다.
 
 ## Preconditions
 
-- 저장된 collection을 여는 흐름이 시작된 상태
-- 저장된 collection 조건 구성을 읽을 수 있고 저장된 결과 정보·관련 메타데이터가 즉시 복원에 쓸 수 있는지 판단할 수 있는 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 collection context 또는 저장된 `.voycoll` 파일 경로를 확인할 수 있어야 한다.
 
 ## Expected Outcome
 
-- 즉시 복원 가능한 저장 결과가 있으면 결과를 바로 복원하고, 그렇지 않으면 열기 자체를 실패로 끝내지 않고 조건 구성 기준의 재검색 경로로 전환한다.
+- 저장된 콜렉션을 다시 열 때 마지막 결과 snapshot과 정의 메타데이터를 먼저 복원해 즉시 확인 가능한 초기 상태를 구성.
+- collection file은 query, scopes, conditions와 표시 상태를 함께 보존해야 한다.
+- 저장 중이거나 검색/필터 요청이 진행 중이면 불완전한 상태 저장을 막아야 한다.
+- 미저장 변경이 있을 때는 title affordance 또는 경고 흐름으로 이탈 위험을 표시해야 한다.
 
 ## State Changes
 
-- `snapshot_restore_pending` -> `snapshot_restored`
-    - 저장된 결과와 관련 메타데이터, 조건 일치 여부가 모두 맞으면 즉시 복원 가능한 상태로 전환한다.
-- `snapshot_restore_pending` -> `snapshot_fallback_required`
-    - 즉시 복원 가능한 저장 결과가 아니면 조건 구성 기준의 재검색이 필요한 상태로 전환한다.
+- openedCollectionURL, collectionContext, lastFiltersResponse, unsaved-change 상태를 갱신한다.
+- Save As는 새 `.voycoll` 패키지 파일을 만들고 현재 context를 저장 기준으로 삼는다.
+- discard는 마지막 저장본 또는 복원된 snapshot 기준으로 draft를 되돌린다.
 
 ## User-visible Feedback
 
-- 사용자는 다시 열기 직후 즉시 복원 가능한 저장 결과가 있을 때 결과를 먼저 볼 수 있어야 한다.
-- 저장된 결과가 즉시 복원에 쓰기 어렵더라도 열기 전체가 실패했다고 느끼지 않도록 대체 경로 전환이 자연스러워야 한다.
+- 저장 가능 여부, 미저장 변경 표시, 파일 이름 변경 결과, 삭제/닫기 경고를 사용자에게 노출한다.
+- 저장 실패나 삭제 실패는 현재 collection page를 임의로 닫지 않고 recovery action을 유지한다.
+- background interaction은 별도 화면을 만들기보다 연결된 display/command interaction이 읽을 상태를 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 저장된 결과는 있으나 관련 메타데이터가 없어 즉시 복원에 쓰기 어려운 경우
-- 저장된 결과와 조건 구성이 서로 맞지 않아 즉시 복원을 건너뛰어야 하는 경우
-- 조건 구성은 유효하지만 저장된 결과를 즉시 복원에 쓰기 어려워 재검색 경로로 전환되는 경우
-- 최신성 판단에 필요한 메타데이터가 없어 최신 여부 판단 이전에 즉시 복원 대상에서 제외해야 하는 경우
+- query, scopes, conditions가 모두 비어 있으면 collection 저장을 막는다.
+- 검색 또는 filter apply가 진행 중이면 저장을 지연하거나 막아 불완전 payload를 저장하지 않는다.
+- 레거시 단일 파일 `.voycoll`은 열 수 있되 저장 시 현재 패키지 포맷으로 정규화될 수 있다.
 
 ## Acceptance Criteria
 
-- [ ] 저장된 collection을 다시 열 때, 시스템은 조건 구성과 저장된 결과 정보·관련 메타데이터를 함께 읽어 복원 경로를 판단해야 한다.
-- [ ] 시스템은 저장된 결과, 관련 메타데이터, 조건 일치 여부를 모두 만족할 때만 해당 결과를 즉시 복원 가능하다고 판단해야 한다.
-- [ ] 즉시 복원 가능한 저장 결과가 있으면, 시스템은 결과를 먼저 표시할 수 있는 `snapshot_restored` 경로를 사용해야 한다.
-- [ ] 저장된 결과가 즉시 복원 가능하지 않다면, 시스템은 열기를 실패로 끝내지 않고 `snapshot_fallback_required` 경로로 전환해 조건 구성 기준의 재검색 경로를 이어가야 한다.
-- [ ] 최신성 메타데이터가 부족하면, 시스템은 저장된 결과를 그대로 신뢰하지 않고 즉시 복원 가능하지 않은 것으로 처리해야 한다.
+- [ ] 현재 filter가 비어 있지 않은 상황에서 Save As를 실행하면 `.voycoll` collection 파일이 생성되어야 한다.
+- [ ] 저장된 collection을 수정하면 미저장 변경 표시가 나타나야 한다.
+- [ ] 미저장 변경이 있는 상태에서 이탈하면 경고 또는 discard/save 선택지가 제공되어야 한다.
 
 ## Permissions / Dependencies
 
-- collection 조건 구성, 저장된 결과 정보, 관련 메타데이터, 조건 일치 비교 정보가 모두 접근 가능해야 한다.
-- 다시 열기 대체 경로는 saved collection open의 기존 alert/조건 구성 경계와 충돌하지 않아야 한다.
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 collection context 또는 저장된 `.voycoll` 파일 경로를 확인할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.page_container.page_mode_collection`
 
 ## Observability / Analytics
 
-- 즉시 복원 완료 / 재검색 전환 필요를 분리해 기록할 수 있어야 한다.
-- 즉시 복원이 어려운 이유가 메타데이터 부족인지 조건 불일치인지 구분 가능해야 한다.
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-002-alert_unsasved_collection_filter_changes](RCL-002-alert_unsasved_collection_filter_changes.md)
-- [RCL-002-delete_collection](RCL-002-delete_collection.md)
-- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
-- [RCL-002-import_smart_folder_as_collection](RCL-002-import_smart_folder_as_collection.md)
-- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
 - [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md)
-- [RCL-002-rename_collection](RCL-002-rename_collection.md)
-- [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
-- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
 - [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
+- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
+- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
+- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
+- [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
+- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-delete_collection](RCL-002-delete_collection.md)
+- [RCL-002-alert_unsasved_collection_filter_changes](RCL-002-alert_unsasved_collection_filter_changes.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:138`
-- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
-- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md)
+- Flows: [collection_management_flow.md](../flows/collection_management_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

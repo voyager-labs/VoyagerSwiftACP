@@ -15,82 +15,75 @@ shortcut: "-"
 
 ## Intent
 
-- query 해석 자체가 성립하지 않을 때, 사용자가 입력을 막힘 없이 수정·재시도할 수 있도록 Composer 문맥의 가벼운 실패 안내만 표시한다.
+- 자연어 쿼리 해석 단계에서 변환 실패가 발생했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 반영되지 않은 이유를 이해할 수 있게 함.
+- `RCL-004`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)가 변환 실패로 종료되었을 때
+- 사용자가 filter query 필드에 입력하거나 Enter로 제출할 때 호출된다.
+- query 변환 결과가 돌아오거나 변환/실행 실패가 발생했을 때 호출된다.
 
 ## Preconditions
 
-- Submit Collection Filter Query가 발생한 상태
-- 현재 제출된 자연어 쿼리에 대한 응답이 유효한 최신 제출 흐름에 속한 상태
-- Generate Filter Changes from Query가 변환 실패로 종료된 상태
-- saved collection open alert 경로가 아닌 일반 Composer query 제출 흐름인 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- 사용자는 왜 반영되지 않았는지 이해할 수 있는 가벼운 안내를 보되, 같은 입력 필드에서 즉시 수정·재시도할 수 있다.
-- 실질 변경이 없거나 기존 조건 구성을 유지하는 결과는 이 인터랙션으로 승격되지 않는다.
+- 자연어 쿼리 해석 단계에서 변환 실패가 발생했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 반영되지 않은 이유를 이해할 수 있게 함.
+- 입력 query는 trim된 값으로 처리하고 빈 query는 불필요한 변환 요청을 만들지 않아야 한다.
+- 변환 결과는 suggestion 대기 상태가 아니라 현재 filter draft에 일괄 반영하는 경로를 기본으로 삼는다.
+- 동일 failure가 반복되면 피드백을 누적하지 않고 갱신 또는 병합한다.
 
 ## State Changes
 
-- `query_submitting` -> `conversion_failure_feedback_visible`
-    - 현재 query 제출 흐름이 변환 실패로 종료되면 가벼운 안내가 표시된다.
-- `conversion_failure_feedback_visible` -> `editable`
-    - 사용자가 Composer 문맥으로 돌아가 query 또는 condition 값을 다시 조정하기 시작하면 현재 feedback이 정리되고 편집 문맥이 유지된다.
-- `conversion_failure_feedback_visible` -> `query_submitting`
-    - 사용자가 다시 submit하면 새 최신 제출 흐름으로 전환된다.
+- query draft, submittedSearchFilters, active request id, feedback toast 상태를 갱신한다.
+- 변환 성공 시 returned appliedFilters 또는 structured filter changes를 현재 Composer state로 반영한다.
+- conversion failure와 execution failure는 서로 다른 failure reason으로 남긴다.
+- display interaction은 원본 데이터 자체를 임의로 변경하지 않고 표시 가능한 view state를 계산한다.
 
 ## User-visible Feedback
 
-- 피드백은 Composer 문맥 안의 가벼운 비차단 안내여야 한다.
-- 사용자는 변환 실패와 실행 실패를 서로 다른 의미의 실패로 구분할 수 있어야 한다.
+- query 입력 중에는 field 값을 즉시 반영한다.
+- 변환/실행 실패는 Composer 흐름을 막지 않는 가벼운 피드백으로 보여준다.
+- 반복 failure는 같은 영역에서 최신 reason 중심으로 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 오래된 제출 응답이 늦게 도착하는 경우
-- 변환 실패 직후 사용자가 입력 내용을 수정해 다시 제출하는 경우
-- 변환 실패와 실행 실패가 연속으로 발생하는 경우
-- 실질적 필터 변경이 없는 경우에도 사용자 failure로 과도하게 확대하면 안 되는 경우
-- 이전 feedback의 자동 해제가 새 feedback 표시 이후 늦게 도착하는 경우
+- 빈 query submit은 네트워크 요청 없이 무시한다.
+- 변환은 성공했지만 적용 가능한 조건이 없으면 현재 filter를 임의로 비우지 않는다.
+- 취소된 suggestion 기반 interaction은 현재 기본 흐름에서 노출하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] Submit Collection Filter Query 이후 Generate Filter Changes from Query가 변환 실패로 종료되면, 시스템은 입력 흐름을 막지 않는 가벼운 실패 안내를 Collection Filter Composer 문맥에 표시해야 한다.
-- [ ] 시스템은 변환 실패에 대응하는 고정 문구를 사용해 사용자가 왜 반영되지 않았는지 이해할 수 있게 해야 한다.
-- [ ] 시스템은 피드백을 modal이나 blocking alert가 아니라 가벼운 인라인 안내로 표시해야 한다.
-- [ ] 사용자는 feedback이 표시 중이어도 동일한 입력 필드에서 즉시 수정·재입력·재시도를 진행할 수 있어야 한다.
-- [ ] 실질 변경이 없거나 기존 조건 구성을 유지하는 결과는 이 인터랙션의 표시 조건으로 취급되지 않아야 한다.
-- [ ] 오래된 제출 결과나 늦게 도착한 자동 해제 이벤트가 현재 최신 제출 피드백 상태를 잘못 덮어쓰지 않아야 한다.
+- [ ] query를 입력하면 Composer query draft가 갱신되어야 한다.
+- [ ] query를 제출하면 구조화 filter 변경안 생성과 적용이 순서대로 진행되어야 한다.
+- [ ] 동일 failure가 짧은 시간 안에 반복되면 실패 메시지는 중복 누적되지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- 가장 최근 제출만 채택하는 규칙과 가벼운 인라인 안내 표시 규칙이 함께 유지되어야 한다.
-- saved collection open failure alert 경로는 이 spec의 범위 밖이며 별도 기존 경로를 유지한다.
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.content_header.collection_filter_composer`
 
 ## Observability / Analytics
 
-- 변환 실패 발생 횟수와 동일 실패 반복 여부를 실행 실패와 구분해 추적할 수 있어야 한다.
-- feedback 표시 후 retry submit으로 이어졌는지 확인할 수 있어야 한다.
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-004-apply_all_generated_filter_suggestions](RCL-004-apply_all_generated_filter_suggestions.md)
-- [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
-- [RCL-004-apply_generated_filter_suggestion](RCL-004-apply_generated_filter_suggestion.md)
-- [RCL-004-coalesce_repeated_query_failure_feedback](RCL-004-coalesce_repeated_query_failure_feedback.md)
-- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
-- [RCL-004-generate_filter_suggestions_from_query](RCL-004-generate_filter_suggestions_from_query.md)
-- [RCL-004-reject_all_generated_filter_suggestions](RCL-004-reject_all_generated_filter_suggestions.md)
-- [RCL-004-reject_generated_filter_suggestion](RCL-004-reject_generated_filter_suggestion.md)
-- [RCL-004-show_generated_filter_suggestions](RCL-004-show_generated_filter_suggestions.md)
-- [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
-- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
 - [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
+- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
+- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
+- [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
+- [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
+- [RCL-004-coalesce_repeated_query_failure_feedback](RCL-004-coalesce_repeated_query_failure_feedback.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:110`
-- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
-- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md)
+- Flows: [collection_query_composition_flow.md](../flows/collection_query_composition_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
