@@ -426,18 +426,7 @@ private func handleCollectionFileLoadedFailure(
     state: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
-    let resetContext = state.content.collection.collectionContext
-    let resetURL = state.content.collection.collectionSession.document?.url
-    let resetCompat = state.content.collection.collectionSession.document?.compatibility
-    let resetIsCollectionMode = state.content.isCollectionMode
-
     var effects: [Effect<FileManagerWindowAction>] = [
-        .send(.content(.composer(.resetComposerAndSync(
-            context: resetContext,
-            url: resetURL,
-            compatibility: resetCompat,
-            isCollectionMode: resetIsCollectionMode,
-        )))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
     ]
     if state.sidebar.pendingSidebarSelectionRestore != nil {
@@ -445,10 +434,16 @@ private func handleCollectionFileLoadedFailure(
     }
     effects.append(.send(.content(.collection(.sessionResetRequested))))
     effects.append(.send(.content(.internal(.exitCollectionMode))))
+    effects.append(.send(.content(.composer(.resetComposerAndSync(
+        context: nil,
+        url: nil,
+        compatibility: nil,
+        isCollectionMode: false,
+    )))))
     effects.append(.run { _ in
         await collectionAlertClient.showCollectionOpenErrorAlert("Unable to Open Collection", error.message)
     })
-    return .merge(effects)
+    return .concatenate(effects)
 }
 
 private func handleEmptyCollectionFile(
