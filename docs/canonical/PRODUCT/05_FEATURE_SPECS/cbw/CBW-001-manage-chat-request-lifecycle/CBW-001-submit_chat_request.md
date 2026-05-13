@@ -36,15 +36,17 @@ shortcut: "Enter"
 - 새 user request가 생성되고 message list에 즉시 반영되어야 한다.
 - draft request context가 snapshot 고정 단계로 넘어가고 request preparation 흐름이 시작되어야 한다.
 - 사용자는 제출 직후 해당 요청이 `processing` 상태로 전환된 것을 확인할 수 있어야 한다.
+- 전송 직후 Chat Field는 다음 request message를 바로 입력할 수 있는 준비 상태가 되어야 한다.
 
 ## State Changes
 
 - draft request message가 제출된 request 실행 입력의 일부로 고정된다.
-- 입력창은 비워지거나 전송 직후 다음 입력을 받을 수 있는 상태로 전환된다.
+- 입력창은 전송 직후 비워지고, 입력 focus는 Chat Field로 돌아오거나 유지되어 다음 입력을 받을 수 있는 상태로 전환된다.
 - 요청 lifecycle state가 `draft` 또는 idle에서 `processing`으로 전환된다.
 
 ## User-visible Feedback
 
+- 긴 request message는 Chat Field 안에서 여러 줄로 줄바꿈되어야 하며, 가로 스크롤이나 텍스트 잘림 없이 입력 내용을 확인할 수 있어야 한다.
 - 제출한 user message가 즉시 message area에 나타나야 한다.
 - 동시에 `processing` indicator가 표시되어 응답 생성이 시작되었음을 알려야 한다.
 - 제출이 막히는 경우에는 막힌 이유와 해소 방법을 바로 보여줘야 한다.
@@ -59,6 +61,8 @@ shortcut: "Enter"
 
 - [ ] 사용자가 Chat Field에 유효한 메시지를 입력한 상황에서 전송을 수행하면, 새 user request가 생성되고 `processing` 상태가 시작되어야 한다.
 - [ ] Chat Field가 focus 상태이고 전송 가능한 preconditions가 충족된 상황에서 사용자가 `Enter`를 누르면, submit button과 동일하게 새 user request가 생성되어야 한다.
+- [ ] 사용자가 유효한 메시지를 전송하면, Chat Field가 비워지고 입력 focus가 Chat Field로 돌아오거나 유지되어 다음 메시지를 바로 입력할 수 있어야 한다.
+- [ ] 사용자가 긴 request message를 입력하면, Chat Field는 입력 내용을 여러 줄로 줄바꿈해 보여줘야 하며 가로 스크롤이나 텍스트 잘림이 발생하면 안 된다.
 - [ ] 입력이 비어 있는 상황에서 사용자가 전송을 수행하면, request가 생성되지 않아야 하고 전송 불가 상태가 사용자에게 설명되어야 한다.
 - [ ] Chat Field가 focus 상태가 아니거나 submit preconditions가 충족되지 않은 상황에서 사용자가 `Enter`를 눌러도, request가 생성되지 않아야 하며 오작동으로 간주되면 안 된다.
 - [ ] 일부 context가 제외되는 상황에서 사용자가 전송을 수행하면, 요청 실행은 이어지되 제외된 context가 후속 상태 또는 메타데이터에 반영되어야 한다.

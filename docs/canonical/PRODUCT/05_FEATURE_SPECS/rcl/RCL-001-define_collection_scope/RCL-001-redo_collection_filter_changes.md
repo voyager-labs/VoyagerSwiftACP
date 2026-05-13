@@ -15,85 +15,84 @@ shortcut: "⌘⇧Z"
 
 ## Intent
 
-- 사용자가 되돌린 최근 변경을 다시 적용해 직전 undo 이전 상태로 복귀할 수 있게 한다.
-- redo는 undo와 대칭인 1단계 복원 흐름으로 동작해야 한다.
+- 되돌린 필터 편집 작업을 한 단계 다시 적용해 되돌리기 전으로 복원.
+- `RCL-001`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- 키보드 단축키 `⌘⇧Z`
-- redo 액션을 실행할 때
+- 사용자가 Collection Filter Composer를 열거나 scope summary/menu에서 범위 편집을 시작할 때 호출된다.
+- scope candidate 선택, 예외 복원, include-subfolders 토글, undo/redo 입력이 발생할 때 호출된다.
 
 ## Preconditions
 
-- Generate Filter Changes from Query가 실행 중이지 않은 상태
-- 필터 편집 되돌린 내역이 존재하는 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- 가장 최근에 되돌린 변경 1건이 다시 적용되어야 한다.
-- redo 후 현재 범위 의미와 표시가 redo 대상 상태와 일치해야 한다.
-- redo는 더 오래된 다른 변경까지 함께 다시 적용하면 안 된다.
-- 이 문서는 `redo_available` 상태에서만 유효한 다시 적용 흐름을 다룬다.
-- redo가 끝나면 현재 변경 피드백은 다시 `change_feedback_visible` 상태를 기준으로 읽혀야 한다.
+- 되돌린 필터 편집 작업을 한 단계 다시 적용해 되돌리기 전으로 복원.
+- current scope는 빈 값이 아니라 root-only 또는 명시적 scope 집합으로 계산되어야 한다.
+- scope 변경 뒤에는 최근 변경 1건 기준의 피드백과 undo/redo 가능 상태가 갱신되어야 한다.
 
 ## State Changes
 
-- 가장 최근 undo 대상 1건이 다시 적용된다.
-- 현재 범위 요약, 조건 상태, 변경 피드백이 redo된 상태 기준으로 갱신된다.
-- redo 가능한 항목이 더 없으면 redo 진입은 사라지거나 무효 처리되어야 한다.
+- scope draft, exception 목록, include-subfolders 값, history/redoHistory를 필요한 범위에서 갱신한다.
+- candidate 검색은 기본 후보, 검색 결과, no-results 상태 중 하나로 정리된다.
+- scope 의미 계산은 기준 범위 합집합, include-subfolders 해석, exception 차감 순서를 따른다.
 
 ## User-visible Feedback
 
-- 사용자는 어떤 변경이 다시 적용되었는지 이해할 수 있어야 한다.
-- redo 후에는 결과가 왜 다시 바뀌었는지도 읽을 수 있어야 한다.
-- redo 가능한 내역이 없으면 redo를 성공한 것처럼 보이면 안 된다.
-- redo를 수행할 수 있는 상황에서는 contract 용어 기준의 `다시 적용 가능` 상태가 함께 읽혀야 한다.
+- 현재 scope summary, 후보 목록, 예외 목록, 변경 피드백을 같은 Composer surface 안에 표시한다.
+- 동명 후보는 위치 보조 정보를 함께 보여 오선택을 줄인다.
+- 실패 또는 지연 상태는 scope가 비었다는 의미로 표시하지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- redo 가능한 내역이 없는 경우
-- 연속 redo가 가능한 경우
-- redo 적용 실패가 발생하는 경우
-- 조건 변경과 스코프 변경 redo가 섞이는 경우
+- 현재 scope와 같은 candidate는 추가 후보로 반복 노출하지 않는다.
+- exception은 현재 기준 범위 아래에 속한 하위 범위에만 적용한다.
+- undo는 최근 1건만 되돌리고 redo는 가장 최근 undo 1건만 다시 적용한다.
+- 명령 실행 중 실패하면 대상 상태를 부분 적용된 것처럼 표시하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 필터 편집을 되돌린 내역이 존재하는 상태일 때, 사용자가 해당 인터랙션을 호출하면, 되돌린 필터
-      편집을 다시 적용하여 필터 상태를 갱신함
-- [ ] redo 가능한 내역이 없는 상황에서는, 시스템이 redo를 성공한 것처럼 보이면 안 되며 현재 redo 불가 상태를 명확히 보여줘야 한다.
-- [ ] redo가 스코프 변경을 다시 적용하는 상황에서는, 시스템은 현재 범위 의미와 결과 해석을 redo 대상 상태로 함께 복원해야 한다.
-- [ ] 연속 redo가 가능한 상황에서는, 시스템은 한 번에 가장 최근 undo 대상 1건만 다시 적용해야 한다.
+- [ ] Collection Filter Composer가 열린 상황에서 scope를 변경하면 current scope summary가 새 의미로 갱신되어야 한다.
+- [ ] 동명 candidate가 있는 상황에서 검색 결과를 표시하면 위치 보조 정보가 함께 보여야 한다.
+- [ ] scope 변경 직후 undo를 실행하면 직전 scope 의미로 복원되어야 한다.
 
 ## Permissions / Dependencies
 
-- `RCL-001-undo_collection_filter_changes`
-- Contract: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
-- Flow: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.content_header.collection_filter_composer`
+- [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)의 scope 상태 vocabulary를 따른다.
 
 ## Observability / Analytics
 
-- redo 호출
-- redo 대상 변경 유형
-- redo 성공 / 실패
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
-- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
-- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
 - [RCL-001-open_collection_filter_composer](RCL-001-open_collection_filter_composer.md)
+- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
 - [RCL-001-open_collection_scope_menu](RCL-001-open_collection_scope_menu.md)
-- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
-- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
+- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
 - [RCL-001-search_collection_scope_candidates](RCL-001-search_collection_scope_candidates.md)
 - [RCL-001-show_collection_scope_candidate_disambiguation](RCL-001-show_collection_scope_candidate_disambiguation.md)
-- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
-- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
-- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
+- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
+- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
+- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
+- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
 - [RCL-001-toggle_collection_scope_subfolder_inclusion](RCL-001-toggle_collection_scope_subfolder_inclusion.md)
+- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
+- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
 - [RCL-001-undo_collection_filter_changes](RCL-001-undo_collection_filter_changes.md)
+
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:136`
 - Contracts: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
 - Flows: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

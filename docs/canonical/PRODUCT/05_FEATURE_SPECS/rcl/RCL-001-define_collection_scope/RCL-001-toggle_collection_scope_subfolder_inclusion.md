@@ -15,92 +15,84 @@ shortcut: "-"
 
 ## Intent
 
-- 사용자가 선택한 범위의 하위 폴더가 기본적으로 함께 포함되는지 이해하고 조정할 수 있게 한다.
-- 현재 스코프 의미와 실제 포함 범위 해석이 어긋나지 않게 한다.
-- 이 문서는 `single_explicit_scope`(단일 명시적 스코프), `multi_explicit_scope`(다중 명시적 스코프), `exception_present`(예외 포함 상태) 상태에서 include-subfolders 해석을 조정하는 경로를 다룬다.
+- 하위 폴더 자동 포함 규칙을 켜거나 꺼 현재 스코프가 어떤 범위까지 포함하는지 조정.
+- `RCL-001`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- 스코프 편집창 안에서 하위 폴더 포함 규칙을 켜거나 끌 때
-- 현재 범위 의미를 더 넓게 또는 더 좁게 조정하려고 할 때
+- 사용자가 Collection Filter Composer를 열거나 scope summary/menu에서 범위 편집을 시작할 때 호출된다.
+- scope candidate 선택, 예외 복원, include-subfolders 토글, undo/redo 입력이 발생할 때 호출된다.
 
 ## Preconditions
 
-- Collection Filter Composer가 열린 상태
-- 스코프 편집창이 열린 상태
-- 스코프 의미를 해석할 수 있는 기준 범위가 존재하는 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- 하위 폴더 자동 포함 규칙의 현재 상태를 읽을 수 있다.
-- 규칙이 켜져 있으면 기준 범위 아래 하위 폴더는 기본 포함으로 해석되어야 한다.
-- 규칙이 꺼져 있으면 기준 범위 자체만 포함되고 하위 폴더는 기본 포함으로 해석되면 안 된다.
-- 사용자가 규칙을 바꾸면 현재 스코프 의미도 그에 맞게 즉시 다시 해석되어야 한다.
-- 이 동작은 `single_explicit_scope`, `multi_explicit_scope`, `exception_present` 상태 모두에서 같은 규칙으로 적용되어야 한다.
-- 규칙 변경은 `single_explicit_scope`, `multi_explicit_scope`, `exception_present` 상태를 해석하는 방식에 직접 영향을 준다.
+- 하위 폴더 자동 포함 규칙을 켜거나 꺼 현재 스코프가 어떤 범위까지 포함하는지 조정.
+- current scope는 빈 값이 아니라 root-only 또는 명시적 scope 집합으로 계산되어야 한다.
+- scope 변경 뒤에는 최근 변경 1건 기준의 피드백과 undo/redo 가능 상태가 갱신되어야 한다.
 
 ## State Changes
 
-- 하위 폴더 자동 포함 규칙 상태가 갱신된다.
-- 현재 범위 요약과 예외 해석이 새 규칙에 맞게 갱신된다.
-- 규칙이 켜짐에서 꺼짐으로 바뀌면 하위 폴더의 기본 포함 의미가 제거된다.
-- 규칙이 꺼짐에서 켜짐으로 바뀌면 하위 폴더의 기본 포함 의미가 다시 추가된다.
-- 규칙 변경 후에는 변경 피드백(`change_feedback_visible`)과 되돌리기 가능(`undo_available`) 상태가 함께 갱신될 수 있다.
-- 규칙 변경 뒤 `exception_present` 상태가 있었다면 그 표시도 같은 해석 규칙에 맞게 유지되어야 한다.
-- 규칙 변경 뒤에는 `change_feedback_visible`과 `undo_available` 상태가 함께 갱신되고, 기존 예외가 있으면 계속 `exception_present` 상태로 읽혀야 한다.
+- scope draft, exception 목록, include-subfolders 값, history/redoHistory를 필요한 범위에서 갱신한다.
+- candidate 검색은 기본 후보, 검색 결과, no-results 상태 중 하나로 정리된다.
+- scope 의미 계산은 기준 범위 합집합, include-subfolders 해석, exception 차감 순서를 따른다.
 
 ## User-visible Feedback
 
-- 사용자는 현재 규칙이 켜져 있는지 꺼져 있는지 분명히 이해할 수 있어야 한다.
-- 규칙이 켜져 있어도 모든 하위 폴더가 현재 직접 선택된 것처럼 읽히면 안 된다.
-- 일부 하위 폴더가 예외로 제외된 상태에서도 현재 규칙이 함께 이해되어야 한다.
-- 규칙이 꺼져 있을 때는 하위 폴더가 기본 포함되는 것처럼 읽히면 안 된다.
-- 규칙 상태가 바뀌면 현재 범위 요약과 예외 표시는 같은 상태 전환을 기준으로 갱신되어야 한다.
+- 현재 scope summary, 후보 목록, 예외 목록, 변경 피드백을 같은 Composer surface 안에 표시한다.
+- 동명 후보는 위치 보조 정보를 함께 보여 오선택을 줄인다.
+- 실패 또는 지연 상태는 scope가 비었다는 의미로 표시하지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- 예외가 존재하는 상황에서도 규칙과 예외가 서로 모순되게 읽히지 않아야 한다.
-- 다중 기준 범위 상태에서도 하나의 일관된 해석 기준이 유지되어야 한다.
-- 현재 규칙을 바꿨을 때 범위 의미가 크게 바뀌더라도 사용자가 이를 이해할 수 있어야 한다.
+- 현재 scope와 같은 candidate는 추가 후보로 반복 노출하지 않는다.
+- exception은 현재 기준 범위 아래에 속한 하위 범위에만 적용한다.
+- undo는 최근 1건만 되돌리고 redo는 가장 최근 undo 1건만 다시 적용한다.
+- 입력이 유효하지 않으면 저장/적용을 실행하지 않고 수정 가능한 오류 상태를 유지한다.
 
 ## Acceptance Criteria
 
-- [ ] 사용자가 특정 범위를 선택한 상태에서 하위 폴더 자동 포함 규칙을 켜면, 시스템은 그 범위의 하위 폴더가 기본적으로 함께 포함된다는 의미를 읽을 수 있게 해야 한다.
-- [ ] 예외가 존재하는 상황에서, 사용자가 현재 스코프를 보면, 시스템은 자동 포함 규칙과 예외 규칙을 함께 일관되게 읽히게 해야 한다.
-- [ ] 사용자가 자동 포함 규칙을 끄거나 켜면, 시스템은 현재 범위 의미가 바뀌었음을 요약과 표시에서 이해할 수 있게 해야 한다.
-- [ ] 규칙이 꺼져 있는 상황에서, 시스템은 하위 폴더가 기본 포함되는 것처럼 읽히게 하면 안 된다.
-- [ ] 규칙 상태가 바뀌면, 시스템은 현재 범위 요약과 예외 표시를 같은 상태 전환에 맞춰 함께 갱신해야 한다.
+- [ ] Collection Filter Composer가 열린 상황에서 scope를 변경하면 current scope summary가 새 의미로 갱신되어야 한다.
+- [ ] 동명 candidate가 있는 상황에서 검색 결과를 표시하면 위치 보조 정보가 함께 보여야 한다.
+- [ ] scope 변경 직후 undo를 실행하면 직전 scope 의미로 복원되어야 한다.
 
 ## Permissions / Dependencies
 
-- `RCL-001-show_collection_scope_summary`
-- `RCL-001-show_collection_scope_exceptions`
-- `RCL-001-show_collection_scope_change_feedback`
-- Contract: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
-- Flow: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.content_header.collection_filter_composer`
+- [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)의 scope 상태 vocabulary를 따른다.
 
 ## Observability / Analytics
 
-- 하위 폴더 포함 규칙 변경
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
-- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
-- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
 - [RCL-001-open_collection_filter_composer](RCL-001-open_collection_filter_composer.md)
+- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
 - [RCL-001-open_collection_scope_menu](RCL-001-open_collection_scope_menu.md)
-- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
-- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
-- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
+- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
 - [RCL-001-search_collection_scope_candidates](RCL-001-search_collection_scope_candidates.md)
 - [RCL-001-show_collection_scope_candidate_disambiguation](RCL-001-show_collection_scope_candidate_disambiguation.md)
-- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
+- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
+- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
+- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
+- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
 - [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
-- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
+- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
 - [RCL-001-undo_collection_filter_changes](RCL-001-undo_collection_filter_changes.md)
+- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
+
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:127`
 - Contracts: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
 - Flows: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

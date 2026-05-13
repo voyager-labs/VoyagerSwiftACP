@@ -1,7 +1,7 @@
 order	category_title	category_key	description
 1	File Manager Window	FMW	파일 관리자 창에 대한 직접적인 조작∙관리 기능 묶음
 2	Entry View Management	EVM	현재 페이지 상 엔트리를 어떤 형태의 레이아웃, 그룹, 정렬로 보여줄지 제어하는 기능 묶음
-3	Entry Actions	EAC	이동, 삭제, 복사, 이름 변경 등 엔트리에게 직접적인 파일 조작을 수행하는 기능 묶음
+3	Entry Operations	EOP	실행, 배치, 생명주기, 참조 복사 등 엔트리에 대한 파일 시스템 작업을 수행하는 기능 묶음
 4	Entry Indexing	EIX	엔트리 시스템 속성을 비롯한 여러 속성을 추출해 검색 등에 사용할 시스템을 구축하는 백그라운드 기능 묶음
 5	Retrieval Collection	RCL	엔트리 프로퍼티 기반 필터로 동일 조건을 만족하는 엔트리 집합을 논리적으로 구성하는 기능 묶음
 6	Custom Entry Properties	CEP	엔트리 프로퍼티 스키마를 정의·편집·삭제하여 구조와 분류 체계를 설계∙유지하는 기능 묶음
