@@ -1,0 +1,407 @@
+[contract]
+id = "rcl.collection_filter_editing"
+category = "RCL"
+primary_object_key = "filter"
+secondary_object_keys = [
+  "condition",
+  "property",
+  "collection",
+  "page",
+  "execution",
+]
+display_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
+scope_region = "file_manager_window.content_pane.page_container.page_mode_collection"
+
+[vocabulary]
+query_input = "Collection Filter Composer 텍스트필드에 입력된 자연어 기반 필터 요청"
+generated_change_set = "query_input을 현재 filter definition에 맞춰 해석한 구조화 조건 변경안"
+unchanged_result = "제출은 성공했지만 현재 filter definition 대비 실질 변경이 없는 성공 결과"
+fallback_reuse = "새 해석 대신 직전 유효 definition 또는 내부 fallback rule을 재사용해 현재 filter definition을 유지하는 성공 결과"
+assisted_value_entry = "condition value 편집 중 Recents 또는 Tags 후보를 이용해 값을 빠르게 채우는 보조 입력 경로"
+usable_snapshot = "definition과 persisted snapshot/meta를 함께 확인했을 때 reopen 직후 바로 표시 가능한 snapshot"
+
+[policy]
+query_submission_uses_latest_request_only = true
+query_submission_serializes_per_composer = true
+unchanged_result_is_success_not_failure = true
+fallback_reuse_is_success_not_conversion_failure = true
+conversion_failure_uses_local_feedback = true
+execution_failure_uses_local_feedback = true
+repeated_same_failure_feedback_is_coalesced = true
+manual_editing_remains_available_after_query_feedback = true
+assisted_value_entry_does_not_replace_manual_input = true
+date_range_requires_complete_pair = true
+date_range_v1_absolute_only = true
+single_date_relative_editing_allowed = true
+today_operator_allowed = true
+save_requires_complete_filter_definition = true
+save_failure_preserves_dirty_changes = true
+reopen_prefers_usable_snapshot = true
+reopen_without_usable_snapshot_uses_definition_first_fallback = true
+
+[user_visible_states]
+allowed = [
+  "editable",
+  "query_submitting",
+  "query_changes_generated",
+  "condition_value_incomplete",
+  "conversion_failure_feedback_visible",
+  "execution_failure_feedback_visible",
+  "save_ready",
+  "save_blocked",
+  "save_failed",
+  "snapshot_restore_pending",
+  "snapshot_restored",
+  "snapshot_fallback_required",
+]
+forbidden = [
+  "generated_suggestions",
+  "suggestion_pending",
+  "query_failure_generic",
+  "empty_condition_saved",
+]
+
+[state.editable]
+description = "Collection Filter Composer에서 현재 filter definition을 계속 편집하거나 다시 제출할 수 있는 기본 상태"
+entered_by = [
+  "RCL-004-apply_generated_filter_changes",
+  "RCL-004-type_collection_filter_query",
+  "RCL-005-change_collection_condition_value",
+  "RCL-002-save_collection_filter_changes",
+]
+exits_to = [
+  "editable",
+  "query_submitting",
+  "condition_value_incomplete",
+  "save_ready",
+]
+terminal = false
+user_visible = true
+terms = ["편집 가능 상태"]
+
+[state.query_submitting]
+description = "현재 query_input을 기준으로 generated_change_set 산출이 진행 중인 상태"
+entered_by = ["RCL-004-submit_collection_filter_query"]
+exits_to = [
+  "query_changes_generated",
+  "conversion_failure_feedback_visible",
+  "execution_failure_feedback_visible",
+]
+terminal = false
+user_visible = true
+terms = ["쿼리 제출 중"]
+
+[state.query_changes_generated]
+description = "가장 최근 제출에 대한 구조화 조건 변경 결과 또는 실질 변경 없음/기존 조건 구성 유지 성공 결과가 확정된 상태"
+entered_by = ["RCL-004-generate_filter_changes_from_query"]
+exits_to = ["editable", "save_ready", "execution_failure_feedback_visible"]
+terminal = false
+user_visible = true
+terms = ["변경안 생성 완료"]
+
+[state.condition_value_incomplete]
+description = "condition value가 절반만 채워졌거나 연산자 요건을 아직 만족하지 못해 저장할 수 없는 상태"
+entered_by = ["RCL-005-change_collection_condition_value"]
+exits_to = ["editable", "save_blocked"]
+terminal = false
+user_visible = true
+terms = ["미완성 조건 상태"]
+
+[state.conversion_failure_feedback_visible]
+description = "자연어 해석 단계의 conversion failure를 non-blocking local feedback으로 표시 중인 상태"
+entered_by = ["RCL-004-show_query_conversion_failure_feedback"]
+exits_to = [
+  "editable",
+  "query_submitting",
+  "execution_failure_feedback_visible",
+]
+terminal = false
+user_visible = true
+terms = ["변환 실패 피드백 표시"]
+
+[state.execution_failure_feedback_visible]
+description = "apply 이후 검색 실행 또는 Helper/XPC 계층의 execution failure를 non-blocking local feedback으로 표시 중인 상태"
+entered_by = ["RCL-004-show_query_execution_failure_feedback"]
+exits_to = [
+  "editable",
+  "query_submitting",
+  "conversion_failure_feedback_visible",
+]
+terminal = false
+user_visible = true
+terms = ["실행 실패 피드백 표시"]
+
+[state.save_ready]
+description = "현재 filter definition이 유효하고 마지막 저장 기준점과 달라 저장 가능한 상태"
+entered_by = [
+  "RCL-004-apply_generated_filter_changes",
+  "RCL-005-change_collection_condition_value",
+]
+exits_to = ["editable", "save_failed"]
+terminal = false
+user_visible = true
+terms = ["저장 가능 상태"]
+
+[state.save_blocked]
+description = "미완성 condition 또는 유효하지 않은 정의 때문에 save를 진행할 수 없는 상태"
+entered_by = ["RCL-002-save_collection_filter_changes"]
+exits_to = ["condition_value_incomplete", "save_ready"]
+terminal = false
+user_visible = true
+terms = ["저장 차단 상태"]
+
+[state.save_failed]
+description = "save를 시도했지만 storage 또는 conflict 문제로 dirty change를 유지한 채 실패한 상태"
+entered_by = ["RCL-002-save_collection_filter_changes"]
+exits_to = ["save_ready", "query_submitting"]
+terminal = false
+user_visible = true
+terms = ["저장 실패 상태"]
+
+[state.snapshot_restore_pending]
+description = "저장된 collection reopen 직후 definition과 persisted snapshot/meta를 함께 읽어 usable_snapshot 여부를 판단 중인 상태"
+entered_by = ["RCL-002-open_saved_collection"]
+exits_to = ["snapshot_restored", "snapshot_fallback_required"]
+terminal = false
+user_visible = true
+terms = ["snapshot 복원 판단 중"]
+
+[state.snapshot_restored]
+description = "usable_snapshot을 먼저 표시해 collection context를 즉시 복원한 상태"
+entered_by = ["RCL-002-restore_saved_collection_snapshot"]
+exits_to = []
+terminal = true
+user_visible = true
+terms = ["snapshot 복원 완료"]
+
+[state.snapshot_fallback_required]
+description = "usable_snapshot이 없어 definition-first search fallback으로 reopen을 이어가야 하는 상태"
+entered_by = ["RCL-002-restore_saved_collection_snapshot"]
+exits_to = []
+terminal = true
+user_visible = true
+terms = ["snapshot fallback 필요"]
+
+[ownership."RCL-004-submit_collection_filter_query"]
+reads = [
+  "editable",
+  "condition_value_incomplete",
+  "conversion_failure_feedback_visible",
+  "execution_failure_feedback_visible",
+]
+writes = ["query_submitting"]
+target_object = "filter"
+control_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
+
+[ownership."RCL-004-generate_filter_changes_from_query"]
+reads = ["query_submitting"]
+writes = [
+  "query_changes_generated",
+  "conversion_failure_feedback_visible",
+  "execution_failure_feedback_visible",
+]
+target_object = "filter"
+preserves_objects = ["condition"]
+
+[ownership."RCL-004-apply_generated_filter_changes"]
+reads = ["query_changes_generated"]
+writes = ["editable", "save_ready"]
+target_object = "filter"
+display_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
+
+[ownership."RCL-004-show_query_conversion_failure_feedback"]
+reads = ["query_submitting"]
+writes = ["conversion_failure_feedback_visible"]
+target_object = "filter"
+display_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
+
+[ownership."RCL-004-show_query_execution_failure_feedback"]
+reads = ["query_submitting", "query_changes_generated"]
+writes = ["execution_failure_feedback_visible"]
+target_object = "execution"
+display_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
+
+[ownership."RCL-004-coalesce_repeated_query_failure_feedback"]
+reads = [
+  "conversion_failure_feedback_visible",
+  "execution_failure_feedback_visible",
+]
+writes = [
+  "conversion_failure_feedback_visible",
+  "execution_failure_feedback_visible",
+]
+target_object = "execution"
+
+[ownership."RCL-004-type_collection_filter_query"]
+reads = [
+  "editable",
+  "conversion_failure_feedback_visible",
+  "execution_failure_feedback_visible",
+]
+writes = ["editable"]
+target_object = "filter"
+control_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
+
+[ownership."RCL-005-change_collection_condition_value"]
+reads = ["editable", "condition_value_incomplete", "save_ready"]
+writes = ["editable", "condition_value_incomplete", "save_ready"]
+target_object = "condition"
+display_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
+
+[ownership."RCL-002-save_collection_filter_changes"]
+reads = ["save_ready", "condition_value_incomplete"]
+writes = ["editable", "save_blocked", "save_failed"]
+target_object = "collection"
+control_region = "file_manager_window.content_pane.content_header.page_menu_area"
+
+[ownership."RCL-002-open_saved_collection"]
+reads = []
+writes = ["snapshot_restore_pending"]
+target_object = "collection"
+display_region = "file_manager_window.content_pane.page_container.page_mode_collection"
+
+[ownership."RCL-002-restore_saved_collection_snapshot"]
+reads = ["snapshot_restore_pending"]
+writes = ["snapshot_restored", "snapshot_fallback_required"]
+target_object = "collection"
+display_region = "file_manager_window.content_pane.page_container.page_mode_collection"
+
+[transitions.editable_to_editable]
+from = "editable"
+to = "editable"
+trigger = "RCL-004-type_collection_filter_query"
+
+[transitions.editable_to_query_submitting]
+from = "editable"
+to = "query_submitting"
+trigger = "RCL-004-submit_collection_filter_query"
+
+[transitions.query_submitting_to_query_changes_generated]
+from = "query_submitting"
+to = "query_changes_generated"
+trigger = "RCL-004-generate_filter_changes_from_query"
+
+[transitions.query_submitting_to_conversion_failure_feedback_visible]
+from = "query_submitting"
+to = "conversion_failure_feedback_visible"
+trigger = "RCL-004-show_query_conversion_failure_feedback"
+
+[transitions.query_submitting_to_execution_failure_feedback_visible]
+from = "query_submitting"
+to = "execution_failure_feedback_visible"
+trigger = "RCL-004-show_query_execution_failure_feedback"
+
+[transitions.query_changes_generated_to_editable]
+from = "query_changes_generated"
+to = "editable"
+trigger = "RCL-004-apply_generated_filter_changes"
+
+[transitions.query_changes_generated_to_save_ready]
+from = "query_changes_generated"
+to = "save_ready"
+trigger = "RCL-004-apply_generated_filter_changes"
+
+[transitions.query_changes_generated_to_execution_failure_feedback_visible]
+from = "query_changes_generated"
+to = "execution_failure_feedback_visible"
+trigger = "RCL-004-show_query_execution_failure_feedback"
+
+[transitions.editable_to_condition_value_incomplete]
+from = "editable"
+to = "condition_value_incomplete"
+trigger = "RCL-005-change_collection_condition_value"
+
+[transitions.condition_value_incomplete_to_editable]
+from = "condition_value_incomplete"
+to = "editable"
+trigger = "RCL-005-change_collection_condition_value"
+
+[transitions.editable_to_save_ready]
+from = "editable"
+to = "save_ready"
+trigger = "RCL-005-change_collection_condition_value"
+
+[transitions.conversion_failure_feedback_visible_to_editable]
+from = "conversion_failure_feedback_visible"
+to = "editable"
+trigger = "RCL-004-type_collection_filter_query"
+
+[transitions.conversion_failure_feedback_visible_to_editable_via_condition_change]
+from = "conversion_failure_feedback_visible"
+to = "editable"
+trigger = "RCL-005-change_collection_condition_value"
+
+[transitions.execution_failure_feedback_visible_to_editable]
+from = "execution_failure_feedback_visible"
+to = "editable"
+trigger = "RCL-004-type_collection_filter_query"
+
+[transitions.execution_failure_feedback_visible_to_editable_via_condition_change]
+from = "execution_failure_feedback_visible"
+to = "editable"
+trigger = "RCL-005-change_collection_condition_value"
+
+[transitions.condition_value_incomplete_to_save_blocked]
+from = "condition_value_incomplete"
+to = "save_blocked"
+trigger = "RCL-002-save_collection_filter_changes"
+
+[transitions.conversion_failure_feedback_visible_to_query_submitting]
+from = "conversion_failure_feedback_visible"
+to = "query_submitting"
+trigger = "RCL-004-submit_collection_filter_query"
+
+[transitions.execution_failure_feedback_visible_to_query_submitting]
+from = "execution_failure_feedback_visible"
+to = "query_submitting"
+trigger = "RCL-004-submit_collection_filter_query"
+
+[transitions.conversion_failure_feedback_visible_to_execution_failure_feedback_visible]
+from = "conversion_failure_feedback_visible"
+to = "execution_failure_feedback_visible"
+trigger = "RCL-004-coalesce_repeated_query_failure_feedback"
+
+[transitions.execution_failure_feedback_visible_to_conversion_failure_feedback_visible]
+from = "execution_failure_feedback_visible"
+to = "conversion_failure_feedback_visible"
+trigger = "RCL-004-coalesce_repeated_query_failure_feedback"
+
+[transitions.save_ready_to_editable]
+from = "save_ready"
+to = "editable"
+trigger = "RCL-002-save_collection_filter_changes"
+
+[transitions.save_ready_to_save_failed]
+from = "save_ready"
+to = "save_failed"
+trigger = "RCL-002-save_collection_filter_changes"
+
+[transitions.snapshot_restore_pending_to_snapshot_restored]
+from = "snapshot_restore_pending"
+to = "snapshot_restored"
+trigger = "RCL-002-restore_saved_collection_snapshot"
+
+[transitions.snapshot_restore_pending_to_snapshot_fallback_required]
+from = "snapshot_restore_pending"
+to = "snapshot_fallback_required"
+trigger = "RCL-002-restore_saved_collection_snapshot"
+
+[transitions.save_blocked_to_condition_value_incomplete]
+from = "save_blocked"
+to = "condition_value_incomplete"
+trigger = "RCL-005-change_collection_condition_value"
+
+[transitions.save_blocked_to_save_ready]
+from = "save_blocked"
+to = "save_ready"
+trigger = "RCL-005-change_collection_condition_value"
+
+[transitions.save_failed_to_save_ready]
+from = "save_failed"
+to = "save_ready"
+trigger = "RCL-005-change_collection_condition_value"
+
+[transitions.save_failed_to_query_submitting]
+from = "save_failed"
+to = "query_submitting"
+trigger = "RCL-004-submit_collection_filter_query"

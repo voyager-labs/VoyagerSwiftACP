@@ -6,7 +6,7 @@
 
 ## Contract References
 
-- 이 흐름은 `filter`, `scope`, `condition`, `collection` 객체 vocabulary와 Composer search lifecycle 정책을 사용한다.
+- [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 
 ## Interaction Coverage
 
@@ -52,6 +52,7 @@ flowchart LR
 
 ## Boundary Notes
 
+- 이 흐름은 `collection_filter_editing_contract`의 Composer filter handoff를 소비하지만, `query_submitting`, `save_ready`, `snapshot_restored` 같은 contract state를 직접 소유하지 않는다.
 - 실제 결과 row rendering은 Entry View가 소유하고, 이 흐름은 payload, request lifecycle, appliedFilters 반영을 소유한다.
 - lexical/semantic hybrid ranking은 아이디어 상태이며 현재 구현 완료 흐름에 포함하지 않는다.
 
@@ -59,3 +60,4 @@ flowchart LR
 
 - Category: `RCL`
 - Covered feature: `RCL-003 Retrieve Entries with Filters`
+- Related contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)

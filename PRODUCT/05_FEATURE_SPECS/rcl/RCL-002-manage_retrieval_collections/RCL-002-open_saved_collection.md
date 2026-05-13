@@ -30,34 +30,33 @@ shortcut: "-"
 
 ## Expected Outcome
 
-- 저장된 콜렉션을 선택해 해당 콜렉션 페이지를 열고 복원 흐름을 시작.
-- collection file은 query, scopes, conditions와 표시 상태를 함께 보존해야 한다.
-- 저장 중이거나 검색/필터 요청이 진행 중이면 불완전한 상태 저장을 막아야 한다.
-- 미저장 변경이 있을 때는 title affordance 또는 경고 흐름으로 이탈 위험을 표시해야 한다.
+- 저장된 `.voycoll` collection을 열 때 definition과 persisted snapshot/meta를 읽어 `snapshot_restore_pending` 상태를 시작한다.
+- `usable_snapshot`이 있으면 restore 흐름이 즉시 표시 가능한 snapshot으로 이어질 수 있어야 한다.
+- snapshot이 없거나 사용할 수 없으면 definition-first fallback을 준비한다.
+- collection open은 저장된 query/scopes/conditions/display state를 함께 복원해야 한다.
 
 ## State Changes
 
-- openedCollectionURL, collectionContext, lastFiltersResponse, unsaved-change 상태를 갱신한다.
-- Save As는 새 `.voycoll` 패키지 파일을 만들고 현재 context를 저장 기준으로 삼는다.
-- discard는 마지막 저장본 또는 복원된 snapshot 기준으로 draft를 되돌린다.
+- `snapshot_restore_pending`을 쓴다.
+- openedCollectionURL, collectionContext, persisted snapshot/meta를 reopen 기준으로 갱신한다.
+- 이후 `RCL-002-restore_saved_collection_snapshot`이 `snapshot_restored` 또는 `snapshot_fallback_required`를 결정한다.
 
 ## User-visible Feedback
 
-- 저장 가능 여부, 미저장 변경 표시, 파일 이름 변경 결과, 삭제/닫기 경고를 사용자에게 노출한다.
-- 저장 실패나 삭제 실패는 현재 collection page를 임의로 닫지 않고 recovery action을 유지한다.
+- collection page는 복원 판단 중임을 즉시 표시하고, 사용 가능한 snapshot이 있으면 빠르게 표시될 수 있어야 한다.
+- snapshot fallback이 필요한 경우에도 파일 열기 자체를 실패처럼 표시하지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- query, scopes, conditions가 모두 비어 있으면 collection 저장을 막는다.
-- 검색 또는 filter apply가 진행 중이면 저장을 지연하거나 막아 불완전 payload를 저장하지 않는다.
-- 레거시 단일 파일 `.voycoll`은 열 수 있되 저장 시 현재 패키지 포맷으로 정규화될 수 있다.
-- 명령 실행 중 실패하면 대상 상태를 부분 적용된 것처럼 표시하지 않는다.
+- `.voycoll` 파일이 legacy single-file 형식이면 읽기는 허용하되 저장 시 현재 package format으로 정규화될 수 있다.
+- snapshot/meta가 손상되어도 저장된 definition을 우선 복원하는 fallback 경로를 남긴다.
+- open 실패와 query execution failure를 같은 피드백으로 합치지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 현재 filter가 비어 있지 않은 상황에서 Save As를 실행하면 `.voycoll` collection 파일이 생성되어야 한다.
-- [ ] 저장된 collection을 수정하면 미저장 변경 표시가 나타나야 한다.
-- [ ] 미저장 변경이 있는 상태에서 이탈하면 경고 또는 discard/save 선택지가 제공되어야 한다.
+- [ ] 저장된 collection을 열면 `snapshot_restore_pending` 상태가 시작되어야 한다.
+- [ ] usable snapshot이 없으면 definition-first fallback 경로가 준비되어야 한다.
+- [ ] open 실패는 query execution failure feedback과 구분되어야 한다.
 
 ## Permissions / Dependencies
 
@@ -74,18 +73,20 @@ shortcut: "-"
 
 ## Related Interactions
 
-- [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
-- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
-- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
-- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
-- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
-- [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
-- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-alert_unsaved_collection_filter_changes](RCL-002-alert_unsaved_collection_filter_changes.md)
 - [RCL-002-delete_collection](RCL-002-delete_collection.md)
-- [RCL-002-alert_unsasved_collection_filter_changes](RCL-002-alert_unsasved_collection_filter_changes.md)
+- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
+- [RCL-002-import_smart_folder_as_collection](RCL-002-import_smart_folder_as_collection.md)
+- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
+- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
+- [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
+- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
+- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:137`
-- Flows: [collection_management_flow.md](../flows/collection_management_flow.md)
+- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 - Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
+- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md), [collection_management_flow.md](../flows/collection_management_flow.md)
