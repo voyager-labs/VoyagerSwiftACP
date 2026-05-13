@@ -63,6 +63,7 @@ shortcut: "-"
 - [RCL-005-change_collection_condition_property](RCL-005-change_collection_condition_property.md)
 - [RCL-005-change_collection_condition_value](RCL-005-change_collection_condition_value.md)
 - [RCL-005-delete_collection_condition](RCL-005-delete_collection_condition.md)
+
 ## Source
 
 - Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`

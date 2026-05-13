@@ -44,7 +44,7 @@ shortcut: "-"
 
 ## Acceptance Criteria
 
--   -
+- TBD
 
 ## Permissions / Dependencies
 
@@ -68,6 +68,7 @@ shortcut: "-"
 - [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
 - [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
 - [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
+
 ## Source
 
 - Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
