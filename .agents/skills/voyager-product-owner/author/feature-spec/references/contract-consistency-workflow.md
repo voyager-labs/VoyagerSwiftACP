@@ -53,6 +53,7 @@ Rules:
 - use TOML, not markdown
 - keep it machine-readable first
 - use exact object names from `PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/data.tsv` and exact state names
+- use exact region names from `PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv` for `display_region`, `scope_region`, and `control_region`
 - prefer keyed subtables when entries are naturally keyed by an identifier such as `interaction_id`
 - do not put long explanatory prose here
 - follow `contract-toml-spec.md` for field-level conventions
@@ -61,6 +62,7 @@ Rules:
     - avoid `object_terms`, `relation_terms`, and similar alias registries unless synonym normalization is an explicit requirement
 - only list true core object keys in `primary_object_key` and `secondary_object_keys`
     - if a term is a directional or relational concept such as `downstream_turn`, keep it in `vocabulary` only
+    - if a term is a window, pane, sidebar, toolbar, field, list, or container already present in `WINDOW_STRUCTURE`, keep it in a region field only
 - use `[vocabulary]` only for category-local terms that do not already belong in `OBJECTS`
 - tolerate legacy `primary_object` and `secondary_objects` only as a migration bridge
 - prefer product-native terms over invented execution abstractions
@@ -152,9 +154,10 @@ When a category already has `contracts/*.toml`, keep the contract, flow docs, an
 
 1. Resolve term ownership before editing policy.
     - decide whether the repeated term belongs to `OBJECTS`, `[vocabulary]`, or the linked flow doc
+    - check `WINDOW_STRUCTURE` before adding an `OBJECTS` row; UI surfaces and panes stay as region references
     - if the current contract shape has no dedicated action section, define repeated action or branch terms in `[vocabulary]` and the linked flow doc before using them in `[policy]`
 
-2. Update the relevant contract file.
+1. Update the relevant contract file.
    Example:
     - add a new product-wide object to `OBJECTS` and then reference it from the contract
     - add a missing category-local term definition that policy or ownership depends on
@@ -163,35 +166,35 @@ When a category already has `contracts/*.toml`, keep the contract, flow docs, an
     - add or change an ownership binding
     - add or revise policy only after the referenced terms are already defined
 
-3. Update the category flow doc.
+1. Update the category flow doc.
     - reference the current contract files directly
     - link the interaction specs that own each step
     - keep happy-path and branch semantics aligned with the contract vocabulary
     - make the sequence consequence of repeated action or branch terms explicit instead of leaving policy keys to imply the meaning
 
-4. Update the affected interaction specs.
+1. Update the affected interaction specs.
     - use the exact object and state vocabulary declared in the contract
     - add or update contract references in the interaction specs
     - add or update flow references in the interaction specs
     - remove obsolete terms that the contract now forbids
 
-5. Run the contract consistency checker.
+1. Run the contract consistency checker.
 
 ```bash
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py CBW
 ```
 
-6. Run the existing FI/IA/FS bundle checker for the affected features.
+1. Run the existing FI/IA/FS bundle checker for the affected features.
 
 ```bash
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_feature_bundle.py CBW-001
 ```
 
-7. Resolve warnings before widening the rollout.
+1. Resolve warnings before widening the rollout.
     - `spec.contract_reference_missing`: add the missing contract reference
     - `spec.state_term_missing`: replace vague wording with the declared state term or one of its allowed terms
     - `spec.object_term_missing`: name the correct object explicitly
     - `spec.forbidden_state_term_present`: remove or rewrite the forbidden term
     - undefined repeated policy term: treat as a manual review failure even if the current checker does not yet emit a dedicated code for it
 
-8. If the user confirms human review of a long-text field, remove the `<<AI>>` marker from FI and FS in the same pass.
+1. If the user confirms human review of a long-text field, remove the `<<AI>>` marker from FI and FS in the same pass.

@@ -10,6 +10,8 @@ This checker is narrower than bundle consistency.
 
 It answers:
 
+- does every FEATURE_SPEC category with interaction specs have a category contract?
+- does every FEATURE_SPEC category with interaction specs have a category flow?
 - do interaction specs use the same object terms as the contract?
 - do interaction specs use the same state vocabulary as the contract?
 - do interaction specs avoid contract-forbidden terms?
@@ -42,7 +44,11 @@ Start with `check_contract_consistency.py`.
 
 That script already checks:
 
+- missing `contracts/*.toml` for categories that contain interaction spec markdown
+- missing `flows/*.md` for categories that contain interaction spec markdown
 - missing `primary_object_key` migration or unknown `OBJECTS.key` references
+- object-reference fields that incorrectly use `WINDOW_STRUCTURE.structure_key` values
+- unknown region references in `display_region`, `scope_region`, or `control_region`
 - unused contract vocabulary declarations
 - contract vocabulary that redefines an `OBJECTS` key
 - ownership object references that fall outside declared contract scope
@@ -103,8 +109,12 @@ Check these explicitly:
 
 ### `FAIL`
 
+- category has interaction specs but no `contracts/*.toml`
+- category has interaction specs but no `flows/*.md`
 - flow links an interaction that does not exist
 - a contract references an interaction that has no spec
+- a contract uses a window, pane, sidebar, toolbar, field, list, or container key as an object reference
+- a contract region field references a key that does not exist in `WINDOW_STRUCTURE`
 - a spec depends on an unknown state term
 - a transition names a state not declared by the contract
 

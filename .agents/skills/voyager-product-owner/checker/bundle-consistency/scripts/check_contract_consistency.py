@@ -21,6 +21,7 @@ REPO_MARKERS = [
 
 INTERACTIONS_TSV = Path("PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv")
 OBJECTS_TSV = Path("PRODUCT/03_INFORMATION_ARCHITECTURE/OBJECTS/data.tsv")
+WINDOW_STRUCTURE_TSV = Path("PRODUCT/03_INFORMATION_ARCHITECTURE/WINDOW_STRUCTURE/data.tsv")
 FEATURE_SPECS_DIR = Path("PRODUCT/05_FEATURE_SPECS")
 MARKDOWN_LINK_RE = re.compile(r"\]\(([^)]+)\)")
 
@@ -133,6 +134,14 @@ def load_object_keys(path: Path) -> set[str]:
     }
 
 
+def load_window_structure_keys(path: Path) -> set[str]:
+    return {
+        normalize(row.get("structure_key"), "")
+        for _line_no, row in read_tsv_rows(path)
+        if normalize(row.get("structure_key"), "")
+    }
+
+
 def load_category_doc_texts(category_dir: Path) -> dict[Path, str]:
     texts: dict[Path, str] = {}
     for path in sorted(category_dir.rglob("*")):
@@ -146,13 +155,38 @@ def load_category_doc_texts(category_dir: Path) -> dict[Path, str]:
 def ensure_known_object(
     object_name: str,
     object_keys: set[str],
+    window_structure_keys: set[str],
     issues: list[Issue],
     code: str,
     message: str,
     contract_path: Path,
 ) -> None:
-    if object_name and object_name not in object_keys:
+    if not object_name:
+        return
+    if object_name in window_structure_keys:
+        issues.append(
+            Issue(
+                "FAIL",
+                "contract.object_uses_window_structure_key",
+                f"Object reference '{object_name}' is a WINDOW_STRUCTURE.structure_key; use display_region, scope_region, or control_region instead",
+                str(contract_path),
+            )
+        )
+        return
+    if object_name not in object_keys:
         issues.append(Issue("FAIL", code, message.format(object_name=object_name), str(contract_path)))
+
+
+def ensure_known_region(
+    region_key: str,
+    window_structure_keys: set[str],
+    issues: list[Issue],
+    code: str,
+    message: str,
+    contract_path: Path,
+) -> None:
+    if region_key and region_key not in window_structure_keys:
+        issues.append(Issue("FAIL", code, message.format(region_key=region_key), str(contract_path)))
 
 
 def check_contract_file(
@@ -161,6 +195,7 @@ def check_contract_file(
     category_dir: Path,
     flow_paths: list[Path],
     object_keys: set[str],
+    window_structure_keys: set[str],
     category_doc_texts: dict[Path, str],
 ) -> list[Issue]:
     issues: list[Issue] = []
@@ -175,6 +210,8 @@ def check_contract_file(
     secondary_object_keys = contract.get("secondary_object_keys") or []
     legacy_secondary_objects = contract.get("secondary_objects") or []
     secondary_objects = secondary_object_keys or legacy_secondary_objects
+    display_region = normalize(contract.get("display_region"), "")
+    scope_region = normalize(contract.get("scope_region"), "")
     if not category:
         issues.append(Issue("FAIL", "contract.missing_category", "Contract is missing category", str(contract_path)))
     if not primary_object:
@@ -200,6 +237,7 @@ def check_contract_file(
     ensure_known_object(
         primary_object,
         object_keys,
+        window_structure_keys,
         issues,
         "contract.primary_object_unknown",
         "Primary object '{object_name}' is not defined in IA OBJECTS",
@@ -209,11 +247,28 @@ def check_contract_file(
         ensure_known_object(
             normalize(object_name, ""),
             object_keys,
+            window_structure_keys,
             issues,
             "contract.secondary_object_unknown",
             "Secondary object '{object_name}' is not defined in IA OBJECTS",
             contract_path,
         )
+    ensure_known_region(
+        display_region,
+        window_structure_keys,
+        issues,
+        "contract.display_region_unknown",
+        "Contract display_region '{region_key}' is not defined in IA WINDOW_STRUCTURE",
+        contract_path,
+    )
+    ensure_known_region(
+        scope_region,
+        window_structure_keys,
+        issues,
+        "contract.scope_region_unknown",
+        "Contract scope_region '{region_key}' is not defined in IA WINDOW_STRUCTURE",
+        contract_path,
+    )
     normalized_secondary_objects = [normalize(object_name, "") for object_name in secondary_objects if normalize(object_name, "")]
     if primary_object and primary_object in normalized_secondary_objects:
         issues.append(
@@ -416,9 +471,26 @@ def check_contract_file(
         ensure_known_object(
             target_object,
             object_keys,
+            window_structure_keys,
             issues,
             "contract.ownership_unknown_object",
             f"{interaction_id} references unknown object '{{object_name}}'",
+            contract_path,
+        )
+        ensure_known_region(
+            normalize(binding.get("display_region"), ""),
+            window_structure_keys,
+            issues,
+            "contract.ownership_display_region_unknown",
+            f"{interaction_id} display_region '{{region_key}}' is not defined in IA WINDOW_STRUCTURE",
+            contract_path,
+        )
+        ensure_known_region(
+            normalize(binding.get("control_region"), ""),
+            window_structure_keys,
+            issues,
+            "contract.ownership_control_region_unknown",
+            f"{interaction_id} control_region '{{region_key}}' is not defined in IA WINDOW_STRUCTURE",
             contract_path,
         )
         if target_object and target_object not in in_scope_objects:
@@ -435,6 +507,7 @@ def check_contract_file(
             ensure_known_object(
                 normalized_object,
                 object_keys,
+                window_structure_keys,
                 issues,
                 "contract.ownership_unknown_object",
                 f"{interaction_id} references unknown object '{{object_name}}'",
@@ -454,6 +527,7 @@ def check_contract_file(
             ensure_known_object(
                 normalized_object,
                 object_keys,
+                window_structure_keys,
                 issues,
                 "contract.ownership_unknown_object",
                 f"{interaction_id} references unknown object '{{object_name}}'",
@@ -573,9 +647,21 @@ def collect_contract_paths(repo_root: Path, target: str) -> tuple[str, list[Path
     category = target.upper()
     contract_dir = repo_root / FEATURE_SPECS_DIR / category.lower() / "contracts"
     paths = sorted(contract_dir.glob("*.toml"))
-    if not paths:
-        raise FileNotFoundError(f"No contract TOML files found for category: {category}")
     return category, paths
+
+
+def collect_category_keys(repo_root: Path) -> list[str]:
+    feature_specs_root = repo_root / FEATURE_SPECS_DIR
+    return [
+        path.name.upper()
+        for path in sorted(feature_specs_root.iterdir())
+        if path.is_dir()
+        and any(
+            spec_path.is_file()
+            for spec_path in path.rglob("*.md")
+            if "flows" not in spec_path.parts and "contracts" not in spec_path.parts
+        )
+    ]
 
 
 def summarize(category: str, contract_paths: list[Path], issues: list[Issue]) -> str:
@@ -605,21 +691,20 @@ def summarize(category: str, contract_paths: list[Path], issues: list[Issue]) ->
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Audit contract-driven consistency for one category or contract file")
-    parser.add_argument("target", help="Category key like CBW or a path to one contract TOML file")
+    parser.add_argument("target", nargs="?", help="Category key like CBW or a path to one contract TOML file")
+    parser.add_argument("--all", action="store_true", help="Audit every FEATURE_SPEC category with interaction spec markdown")
     parser.add_argument("--json", action="store_true", help="Emit JSON result")
     parser.add_argument("--repo-root", type=Path, default=None, help="Override repo root detection")
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
-    repo_root = args.repo_root.resolve() if args.repo_root else find_repo_root(Path(__file__).resolve().parent)
-    category, contract_paths = collect_contract_paths(repo_root, args.target)
+def audit_category(repo_root: Path, category: str, contract_paths: list[Path]) -> tuple[Path, list[Issue]]:
     category_dir = repo_root / FEATURE_SPECS_DIR / category.lower()
     flow_paths = collect_flow_paths(category_dir)
 
     interactions_rows = read_tsv_rows(repo_root / INTERACTIONS_TSV)
     object_keys = load_object_keys(repo_root / OBJECTS_TSV)
+    window_structure_keys = load_window_structure_keys(repo_root / WINDOW_STRUCTURE_TSV)
     category_doc_texts = load_category_doc_texts(category_dir)
     interactions_by_id = {
         normalize(row.get("interaction_id"), ""): (line_no, row)
@@ -627,10 +712,21 @@ def main() -> int:
         if normalize(row.get("interaction_id"), "")
     }
 
-    issues: list[Issue] = [
-        Issue("INFO", "contracts.found", f"Loaded {len(contract_paths)} contract file(s)", str(path))
-        for path in contract_paths
-    ]
+    issues: list[Issue] = []
+    if not contract_paths:
+        issues.append(
+            Issue(
+                "FAIL",
+                "contract.missing",
+                f"Category '{category}' has no required contract TOML under PRODUCT/05_FEATURE_SPECS/{category.lower()}/contracts/",
+                str(category_dir / "contracts"),
+            )
+        )
+    else:
+        issues.extend(
+            Issue("INFO", "contracts.found", f"Loaded {len(contract_paths)} contract file(s)", str(path))
+            for path in contract_paths
+        )
     if not flow_paths:
         issues.append(
             Issue(
@@ -647,20 +743,70 @@ def main() -> int:
         )
         issues.extend(check_flow_files(flow_paths, contract_paths))
     for contract_path in contract_paths:
-        issues.extend(check_contract_file(contract_path, interactions_by_id, category_dir, flow_paths, object_keys, category_doc_texts))
+        issues.extend(
+            check_contract_file(
+                contract_path,
+                interactions_by_id,
+                category_dir,
+                flow_paths,
+                object_keys,
+                window_structure_keys,
+                category_doc_texts,
+            )
+        )
+
+    return category_dir, issues
+
+
+def main() -> int:
+    args = parse_args()
+    repo_root = args.repo_root.resolve() if args.repo_root else find_repo_root(Path(__file__).resolve().parent)
+    if args.all:
+        categories = collect_category_keys(repo_root)
+    elif args.target:
+        category, _contract_paths = collect_contract_paths(repo_root, args.target)
+        categories = [category]
+    else:
+        raise SystemExit("target category/path is required unless --all is set")
+
+    results = []
+    has_failures = False
+    for category in categories:
+        if args.target and Path(args.target).suffix == ".toml":
+            _category, contract_paths = collect_contract_paths(repo_root, args.target)
+        else:
+            _category, contract_paths = collect_contract_paths(repo_root, category)
+        category_dir, issues = audit_category(repo_root, category, contract_paths)
+        has_failures = has_failures or any(issue.severity == "FAIL" for issue in issues)
+        results.append((category, contract_paths, category_dir, issues))
 
     if args.json:
-        payload = {
-            "category": category,
-            "contracts": [str(path) for path in contract_paths],
-            "ok": not any(issue.severity == "FAIL" for issue in issues),
-            "issues": [asdict(issue) for issue in issues],
-        }
+        if args.all:
+            payload = {
+                "ok": not has_failures,
+                "results": [
+                    {
+                        "category": category,
+                        "contracts": [str(path) for path in contract_paths],
+                        "ok": not any(issue.severity == "FAIL" for issue in issues),
+                        "issues": [asdict(issue) for issue in issues],
+                    }
+                    for category, contract_paths, _category_dir, issues in results
+                ],
+            }
+        else:
+            category, contract_paths, _category_dir, issues = results[0]
+            payload = {
+                "category": category,
+                "contracts": [str(path) for path in contract_paths],
+                "ok": not any(issue.severity == "FAIL" for issue in issues),
+                "issues": [asdict(issue) for issue in issues],
+            }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        print(summarize(category, contract_paths, issues))
+        print("\n\n".join(summarize(category, contract_paths, issues) for category, contract_paths, _category_dir, issues in results))
 
-    return 1 if any(issue.severity == "FAIL" for issue in issues) else 0
+    return 1 if has_failures else 0
 
 
 if __name__ == "__main__":
