@@ -3,7 +3,6 @@ import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
-import VoyagerShared
 
 @ObservableState
 struct FileManagerContentState: Equatable {

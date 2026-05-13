@@ -39,10 +39,12 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         )
     }
 
-    func testClearCollectionModeSendsClearCollectionPresentation() async {
+    func testClearCollectionModeResetsComposerAfterClearingPresentation() async {
         var initialState = makeInitialState()
         initialState.collection.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
         initialState.collection.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
+        initialState.entryViewLayout.isCollectionMode = true
+        initialState.composer.isCollectionMode = true
         initialState.navigation.navigationState = .collection(
             ContentPageCollectionNavigation(
                 kind: .temporary,
@@ -62,24 +64,33 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
             $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
 
-        await store.send(FileManagerContentAction.composer(.view(.setText(""))))
+        await store.send(FileManagerContentAction.internal(.clearCollectionMode))
 
         await store.receive { action in
-            guard case .internal(.requestNavigation(.internal(.setNavigationState))) = action else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .internal(.requestNavigation(.internal(.setPendingNavigation(nil)))) = action
-            else { return false }
+            guard case .composer(.internal(.clearPendingSearchQuery)) = action else { return false }
             return true
         }
         await store.receive { action in
             guard case .entryViewLayout(.internal(.clearCollectionPresentation)) = action else { return false }
             return true
         }
+        await store.receive { action in
+            guard case .collection(.sessionResetRequested) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .composer(.internal(.resetComposerAndSync(_, _, _, isCollectionMode))) = action else {
+                return false
+            }
+            return !isCollectionMode
+        }
+
+        XCTAssertFalse(store.state.entryViewLayout.isCollectionMode)
+        XCTAssertFalse(store.state.composer.isCollectionMode)
     }
 
     func testCanSaveCollectionReadsFromCanonicalSource() {

@@ -147,16 +147,6 @@
 		F10000000000000000000002 /* FilterSearchXPC.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = FilterSearchXPC.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AA0000000000000000000001 /* Exceptions for "Voyager" folder in "Voyager" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				06_Shared/Api/SearchXPCTransport.swift,
-			);
-			target = 7E14EDCB2E86622C005AC834 /* Voyager */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		24DD04D6008045F2B081D402 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -165,9 +155,6 @@
 		};
 		7E14EDCE2E86622C005AC834 /* Voyager */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				AA0000000000000000000001 /* Exceptions for "Voyager" folder in "Voyager" target */,
-			);
 			path = Voyager;
 			sourceTree = "<group>";
 		};
@@ -433,6 +420,7 @@
 				F21000000000000000000013 /* CasePaths */,
 				F21000000000000000000011 /* IdentifiedCollections */,
 				F21000000000000000000012 /* OrderedCollections */,
+				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;

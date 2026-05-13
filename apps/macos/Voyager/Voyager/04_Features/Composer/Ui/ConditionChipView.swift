@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerShared
 
 struct ConditionChipView: View {
     let propertyPickerStore: StoreOf<ConditionPropertyPickerFeature>

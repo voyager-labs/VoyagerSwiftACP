@@ -3,6 +3,7 @@ import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerFeaturesEntryOperations
 import VoyagerShared
 

@@ -79,12 +79,12 @@ extension FileManagerContentFeature {
     func clearCollectionModeEffect() -> Effect<Action> {
         .concatenate(
             .send(.composer(.clearPendingSearchQuery)),
+            .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
             .send(.collection(.sessionResetRequested)),
             .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
             .cancel(id: "openCollectionFile"),
             .cancel(id: ComposerFeature.CancelID.search),
             .cancel(id: ComposerFeature.CancelID.filters),
-            .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
         )
     }
 
