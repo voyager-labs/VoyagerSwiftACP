@@ -15,84 +15,84 @@ shortcut: "-"
 
 ## Intent
 
-- 사용자가 예외로 제외한 하위 경로를 다시 포함 상태로 복원할 수 있게 한다.
-- 예외 복원으로 현재 스코프 의미를 더 넓히거나 원래 범위에 가깝게 되돌릴 수 있게 한다.
-- 이 문서는 `exception_present`(예외 포함 상태) 상태를 `single_explicit_scope`(단일 명시적 스코프) 또는 `multi_explicit_scope`(다중 명시적 스코프) 쪽으로 되돌리는 restore 경로를 다룬다.
+- 예외로 제외된 하위 경로를 다시 포함 상태로 복원해 현재 스코프 의미를 조정.
+- `RCL-001`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- 현재 예외 목록에서 특정 항목을 복원할 때
-- 현재 범위 표시 안에서 제외된 항목을 다시 포함하려고 할 때
+- 사용자가 Collection Filter Composer를 열거나 scope summary/menu에서 범위 편집을 시작할 때 호출된다.
+- scope candidate 선택, 예외 복원, include-subfolders 토글, undo/redo 입력이 발생할 때 호출된다.
 
 ## Preconditions
 
-- Collection Filter Composer가 열린 상태
-- 스코프 편집창이 열린 상태
-- 복원 가능한 예외가 존재하는 상태
-- Generate Filter Changes from Query가 실행 중이지 않은 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- 선택한 예외 항목이 제거된다.
-- 기준 범위는 유지되고 현재 범위 의미만 더 넓어진다.
-- 마지막 예외가 사라지면 `exception_present`(예외 포함 상태)가 아닌 상태로 돌아가야 한다.
+- 예외로 제외된 하위 경로를 다시 포함 상태로 복원해 현재 스코프 의미를 조정.
+- current scope는 빈 값이 아니라 root-only 또는 명시적 scope 집합으로 계산되어야 한다.
+- scope 변경 뒤에는 최근 변경 1건 기준의 피드백과 undo/redo 가능 상태가 갱신되어야 한다.
 
 ## State Changes
 
-- 예외 목록이 갱신된다.
-- 마지막 예외가 복원되면 현재 범위는 예외 없는 상태로 돌아간다.
-- 현재 범위 요약과 예외 표시가 새 상태에 맞게 갱신된다.
-- 복원 후에는 변경 피드백(`change_feedback_visible`)과 되돌리기 가능(`undo_available`) 상태가 함께 갱신될 수 있다.
-- 마지막 예외가 사라지면 `exception_present` 상태는 끝나야 한다.
-- 복원 후 현재 스코프는 `single_explicit_scope` 또는 `multi_explicit_scope` 상태로 남고, 필요 시 `change_feedback_visible`과 `undo_available`를 함께 갱신할 수 있다.
+- scope draft, exception 목록, include-subfolders 값, history/redoHistory를 필요한 범위에서 갱신한다.
+- candidate 검색은 기본 후보, 검색 결과, no-results 상태 중 하나로 정리된다.
+- scope 의미 계산은 기준 범위 합집합, include-subfolders 해석, exception 차감 순서를 따른다.
 
 ## User-visible Feedback
 
-- 사용자는 어떤 예외가 복원되었는지 이해할 수 있어야 한다.
-- 예외가 사라진 뒤 현재 범위가 더 넓어졌다는 의미를 읽을 수 있어야 한다.
+- 현재 scope summary, 후보 목록, 예외 목록, 변경 피드백을 같은 Composer surface 안에 표시한다.
+- 동명 후보는 위치 보조 정보를 함께 보여 오선택을 줄인다.
+- 실패 또는 지연 상태는 scope가 비었다는 의미로 표시하지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- 복원할 예외가 없는 상태에서는 복원 흐름이 허용되지 않아야 한다.
-- 마지막 예외를 복원하는 경우에는 예외 목록이 사라진 상태가 자연스럽게 읽혀야 한다.
-- 이미 복원된 항목을 다시 복원하려는 경우에는 현재 상태를 유지해야 한다.
+- 현재 scope와 같은 candidate는 추가 후보로 반복 노출하지 않는다.
+- exception은 현재 기준 범위 아래에 속한 하위 범위에만 적용한다.
+- undo는 최근 1건만 되돌리고 redo는 가장 최근 undo 1건만 다시 적용한다.
+- 명령 실행 중 실패하면 대상 상태를 부분 적용된 것처럼 표시하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 예외가 존재하는 상황에서, 사용자가 특정 예외를 복원하면, 시스템은 기준 범위는 유지한 채 해당 예외만 제거해야 한다.
-- [ ] 마지막 예외를 복원하는 상황에서, 시스템은 예외 없는 상태로 자연스럽게 전환되어야 한다.
-- [ ] 복원할 예외가 없는 상황에서는, 시스템이 이를 허용하지 않거나 명확히 막아야 한다.
+- [ ] Collection Filter Composer가 열린 상황에서 scope를 변경하면 current scope summary가 새 의미로 갱신되어야 한다.
+- [ ] 동명 candidate가 있는 상황에서 검색 결과를 표시하면 위치 보조 정보가 함께 보여야 한다.
+- [ ] scope 변경 직후 undo를 실행하면 직전 scope 의미로 복원되어야 한다.
 
 ## Permissions / Dependencies
 
-- `RCL-001-show_collection_scope_exceptions`
-- `RCL-001-show_collection_scope_change_feedback`
-- Contract: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
-- Flow: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.content_header.collection_filter_composer`
+- [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)의 scope 상태 vocabulary를 따른다.
 
 ## Observability / Analytics
 
-- 예외 복원 시도
-- 예외 복원 성공
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
-- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
-- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
 - [RCL-001-open_collection_filter_composer](RCL-001-open_collection_filter_composer.md)
+- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
 - [RCL-001-open_collection_scope_menu](RCL-001-open_collection_scope_menu.md)
-- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
-- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
+- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
 - [RCL-001-search_collection_scope_candidates](RCL-001-search_collection_scope_candidates.md)
 - [RCL-001-show_collection_scope_candidate_disambiguation](RCL-001-show_collection_scope_candidate_disambiguation.md)
-- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
-- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
-- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
+- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
+- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
+- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
 - [RCL-001-toggle_collection_scope_subfolder_inclusion](RCL-001-toggle_collection_scope_subfolder_inclusion.md)
+- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
+- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
 - [RCL-001-undo_collection_filter_changes](RCL-001-undo_collection_filter_changes.md)
+- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
+
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:126`
 - Contracts: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
 - Flows: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

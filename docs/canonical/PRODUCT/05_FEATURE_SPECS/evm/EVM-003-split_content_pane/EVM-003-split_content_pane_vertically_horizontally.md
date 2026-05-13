@@ -15,56 +15,59 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- Content Pane을 분할해 여러 Page 맥락을 동시에 비교하거나 탐색한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- file_manager_window.content_pane 영역에서 관련 컨트롤 또는 명령을 실행한 경우
 
 ## Preconditions
 
-- <<AI>> Content Pane이 표시 상태.
-- <<AI>> 분할을 위한 최소 폭/높이가 확보된 상태.
-- <<AI>> 현재 Pane에 치명적 오류/모달 진행 중이 아닌 상태.
+- 대상 Page이 현재 File Manager Window에서 접근 가능한 상태다.
 
 ## Expected Outcome
 
-- TBD
+- 현재 Content Pane을 수직 또는 수평으로 분할하여 두 개의 독립 뷰를 동시에 표시합니다.
+- 사용자에게 보이는 결과는 `split_content_pane_vertically_horizontally_applied` 상태로 정리된다.
 
 ## State Changes
 
-- TBD
+- Page의 표시 또는 실행 상태를 갱신한다.
+- 이 인터랙션은 [evm_contract.toml](../contracts/evm_contract.toml)의 `split_content_pane_vertically_horizontally_applied` 상태 어휘를 따른다.
 
 ## User-visible Feedback
 
-- TBD
+- 성공 시 현재 화면의 표시, 선택, 정렬, 실행 결과가 즉시 갱신된다.
+- 실패 시 기존 상태를 보존하고 실패 사유를 사용자에게 표시한다.
 
 ## Edge Cases / Failure Handling
 
-- <<AI>> 창/레이아웃이 너무 작아 두 Pane 최소 크기를 충족하지 못하는 경우.
-- <<AI>> Sidebar/Inspector가 넓게 열려 있어 분할 후 각 Pane 최소 폭을 만족하지 못하는 경우.
-- <<AI>> 현재 페이지가 렌더링 대기/오류로 분할 직후 동일 콘텐츠 동기화가 지연되는 경우.
+- 대상 Page이 사라졌거나 권한이 없으면 작업을 중단한다.
+- 동일 요청이 반복되면 마지막으로 확정된 상태를 기준으로 중복 반영을 피한다.
 
 ## Acceptance Criteria
 
-- [ ] <<AI>> 사용자가 인터랙션을 호출하면 Content Pane이 지정한 방향(수직/수평)으로 즉시 두 Pane으로
-      분할됨.
-- [ ] <<AI>> 기본으로 두 Pane는 동일 페이지를 독립 스크롤로 표시하고, 중앙 디바이더가 생성됨.
-- [ ] <<AI>> 포커스는 새로 생성된 Pane로 전환되고 키보드 네비게이션이 해당 Pane에 라우팅됨.
+- [ ] 대상 Page이 현재 File Manager Window에서 접근 가능한 상태다. 사용자가 Split Content Pane Vertically/Horizontally을 실행하면, 현재 Content Pane을 수직 또는 수평으로 분할하여 두 개의 독립 뷰를 동시에 표시합니다 결과가 `split_content_pane_vertically_horizontally_applied` 상태로 반영되어야 한다.
+- [ ] 작업을 완료할 수 없는 조건이면, 앱은 기존 상태를 보존하고 실패 피드백을 표시해야 한다.
+- [ ] 같은 interaction이 반복 호출되어도 중복되거나 모순된 상태가 남지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- 현재 Page, selection, 파일 시스템 접근 권한, File Manager Window layout 상태에 의존한다.
 
 ## Observability / Analytics
 
-- TBD
+- `evm.split_content_pane_vertically_horizontally` 이벤트에 성공 여부와 대상 수, 실패 사유를 기록한다.
 
 ## Related Interactions
 
-- TBD
+- [EVM-003-adjust_splited_content_pane_size](EVM-003-adjust_splited_content_pane_size.md)
+- [EVM-003-convert_split_pane_orientation](EVM-003-convert_split_pane_orientation.md)
+- [EVM-003-seprated_splited_content_pane](EVM-003-seprated_splited_content_pane.md)
+- [EVM-003-switch_focus_between_split_panes](EVM-003-switch_focus_between_split_panes.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `34`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:35`
+- Flows: [evm_flow.md](../flows/evm_flow.md)
+- Contract: [evm_contract.toml](../contracts/evm_contract.toml)

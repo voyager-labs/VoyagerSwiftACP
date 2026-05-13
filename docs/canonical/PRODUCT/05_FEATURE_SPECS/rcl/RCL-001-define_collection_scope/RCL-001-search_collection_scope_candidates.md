@@ -15,82 +15,84 @@ shortcut: "-"
 
 ## Intent
 
-- 사용자가 스코프 편집창 안에서 원하는 폴더 후보를 빠르게 찾을 수 있게 한다.
-- 기본 후보 목록과 검색 결과 목록을 자연스럽게 오가며 범위를 고를 수 있게 한다.
+- 스코프 편집창 안에서 폴더 후보를 검색해 기본 후보 목록에서 검색 결과 상태로 전환.
+- `RCL-001`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- 스코프 편집창 안의 검색 입력 영역에 문자를 입력할 때
-- 기존 검색어를 수정하거나 지울 때
+- 사용자가 Collection Filter Composer를 열거나 scope summary/menu에서 범위 편집을 시작할 때 호출된다.
+- scope candidate 선택, 예외 복원, include-subfolders 토글, undo/redo 입력이 발생할 때 호출된다.
 
 ## Preconditions
 
-- Collection Filter Composer가 열린 상태
-- 스코프 편집창이 열린 상태
-- 검색 가능한 후보 목록이 준비된 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- 검색어가 비어 있으면 기본 후보 목록이 보인다.
-- 검색어를 입력하면 사용자는 검색 결과 상태로 전환된 것을 이해할 수 있어야 한다.
-- 검색 결과가 없으면 단순 빈 목록이 아니라 결과 없음 상태로 읽혀야 한다.
+- 스코프 편집창 안에서 폴더 후보를 검색해 기본 후보 목록에서 검색 결과 상태로 전환.
+- current scope는 빈 값이 아니라 root-only 또는 명시적 scope 집합으로 계산되어야 한다.
+- scope 변경 뒤에는 최근 변경 1건 기준의 피드백과 undo/redo 가능 상태가 갱신되어야 한다.
 
 ## State Changes
 
-- 현재 검색어가 갱신된다.
-- 후보 목록 상태가 기본 후보, 검색 결과, 결과 없음 중 하나로 전환된다.
-- 검색어를 지우면 기본 후보 상태로 복귀한다.
+- scope draft, exception 목록, include-subfolders 값, history/redoHistory를 필요한 범위에서 갱신한다.
+- candidate 검색은 기본 후보, 검색 결과, no-results 상태 중 하나로 정리된다.
+- scope 의미 계산은 기준 범위 합집합, include-subfolders 해석, exception 차감 순서를 따른다.
 
 ## User-visible Feedback
 
-- 사용자는 지금 기본 후보를 보고 있는지, 검색 결과를 보고 있는지 자연스럽게 이해할 수 있어야 한다.
-- 검색 결과가 없을 때는 다음 행동을 알 수 있는 결과 없음 상태가 보여야 한다.
-- 검색은 트리 전체를 펼쳐 필터링하는 흐름이 아니라 원하는 후보로 빠르게 이동하는 흐름으로 읽혀야 한다.
+- 현재 scope summary, 후보 목록, 예외 목록, 변경 피드백을 같은 Composer surface 안에 표시한다.
+- 동명 후보는 위치 보조 정보를 함께 보여 오선택을 줄인다.
+- 실패 또는 지연 상태는 scope가 비었다는 의미로 표시하지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- 검색어를 빠르게 입력하고 지우는 경우에도 상태 전환이 일관되어야 한다.
-- 검색 결과가 하나도 없는 경우에도 기존 화면이 깨지지 않아야 한다.
-- 동일 이름 후보가 여러 개 보이면 별도 구분 표시와 함께 읽혀야 한다.
+- 현재 scope와 같은 candidate는 추가 후보로 반복 노출하지 않는다.
+- exception은 현재 기준 범위 아래에 속한 하위 범위에만 적용한다.
+- undo는 최근 1건만 되돌리고 redo는 가장 최근 undo 1건만 다시 적용한다.
+- 입력이 유효하지 않으면 저장/적용을 실행하지 않고 수정 가능한 오류 상태를 유지한다.
 
 ## Acceptance Criteria
 
-- [ ] 검색어가 비어 있는 상황에서, 사용자가 스코프 편집창을 보면, 시스템은 기본 후보 목록을 기본 상태로 보여줘야 한다.
-- [ ] 검색어를 입력했을 때, 결과가 존재하면, 시스템은 검색 결과 상태로 전환되어야 한다.
-- [ ] 검색 결과가 없는 상황에서, 사용자가 검색을 수행하면, 시스템은 결과 없음 상태와 검색 수정 또는 기본 후보 복귀 가능성을 보여줘야 한다.
-- [ ] 사용자가 검색어를 지우면, 시스템은 기본 후보 상태로 자연스럽게 돌아가야 한다.
+- [ ] Collection Filter Composer가 열린 상황에서 scope를 변경하면 current scope summary가 새 의미로 갱신되어야 한다.
+- [ ] 동명 candidate가 있는 상황에서 검색 결과를 표시하면 위치 보조 정보가 함께 보여야 한다.
+- [ ] scope 변경 직후 undo를 실행하면 직전 scope 의미로 복원되어야 한다.
 
 ## Permissions / Dependencies
 
-- `RCL-001-open_collection_scope_menu`
-- `RCL-001-show_collection_scope_candidate_disambiguation`
-- Contract: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
-- Flow: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.content_header.collection_filter_composer`
+- [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)의 scope 상태 vocabulary를 따른다.
 
 ## Observability / Analytics
 
-- 스코프 후보 검색 진입
-- 검색 결과 없음 노출
-- 검색어 지우기 후 기본 후보 복귀
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
-- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
-- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
 - [RCL-001-open_collection_filter_composer](RCL-001-open_collection_filter_composer.md)
+- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
 - [RCL-001-open_collection_scope_menu](RCL-001-open_collection_scope_menu.md)
-- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
-- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
-- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
-- [RCL-001-show_collection_scope_candidate_disambiguation](RCL-001-show_collection_scope_candidate_disambiguation.md)
-- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
-- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
 - [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
+- [RCL-001-show_collection_scope_candidate_disambiguation](RCL-001-show_collection_scope_candidate_disambiguation.md)
+- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
+- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
+- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
+- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
 - [RCL-001-toggle_collection_scope_subfolder_inclusion](RCL-001-toggle_collection_scope_subfolder_inclusion.md)
+- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
+- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
 - [RCL-001-undo_collection_filter_changes](RCL-001-undo_collection_filter_changes.md)
+- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
+
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:121`
 - Contracts: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
 - Flows: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
