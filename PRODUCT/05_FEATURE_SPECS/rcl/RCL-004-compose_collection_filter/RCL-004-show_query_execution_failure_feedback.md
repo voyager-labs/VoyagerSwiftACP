@@ -5,7 +5,7 @@ feature: "Compose Collection Filter"
 category_key: "RCL"
 feature_id: "RCL-004"
 status: "기획 완료"
-summary: "검색 실행 또는 Helper/XPC 계층 오류로 적용이 실패했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 실패 원인을 구분할 수 있게 함"
+summary: "검색 실행 단계 오류로 반영이 실패했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 실패 원인을 구분할 수 있게 함"
 related_region: "file_manager_window.content_pane.content_header.collection_filter_composer"
 menu: "-"
 shortcut: "-"
@@ -30,35 +30,33 @@ shortcut: "-"
 
 ## Expected Outcome
 
-- 검색 실행 또는 Helper/XPC 계층 오류로 적용이 실패했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 실패 원인을 구분할 수 있게 함.
-- 입력 query는 trim된 값으로 처리하고 빈 query는 불필요한 변환 요청을 만들지 않아야 한다.
-- 변환 결과는 suggestion 대기 상태가 아니라 현재 filter draft에 일괄 반영하는 경로를 기본으로 삼는다.
-- 동일 failure가 반복되면 피드백을 누적하지 않고 갱신 또는 병합한다.
+- `query_submitting` 또는 `query_changes_generated` 이후 적용/검색 실행 경계에서 실패하면 `execution_failure_feedback_visible` 상태를 표시한다.
+- conversion failure와 다른 reason으로 남겨 사용자가 해석 실패와 실행 실패를 구분할 수 있어야 한다.
+- 부분 적용된 상태처럼 결과를 표시하지 않는다.
+- 사용자는 query 수정 또는 재제출로 회복할 수 있다.
 
 ## State Changes
 
-- query draft, submittedSearchFilters, active request id, feedback toast 상태를 갱신한다.
-- 변환 성공 시 returned appliedFilters 또는 structured filter changes를 현재 Composer state로 반영한다.
-- conversion failure와 execution failure는 서로 다른 failure reason으로 남긴다.
-- display interaction은 원본 데이터 자체를 임의로 변경하지 않고 표시 가능한 view state를 계산한다.
+- `query_submitting` 또는 `query_changes_generated`를 읽고 `execution_failure_feedback_visible`을 쓴다.
+- 이후 사용자가 query를 수정하면 `editable`로, 다시 제출하면 `query_submitting`으로 돌아갈 수 있다.
+- conversion failure가 이어지는 경우 `conversion_failure_feedback_visible`과 구분해 coalesce한다.
 
 ## User-visible Feedback
 
-- query 입력 중에는 field 값을 즉시 반영한다.
-- 변환/실행 실패는 Composer 흐름을 막지 않는 가벼운 피드백으로 보여준다.
-- 반복 failure는 같은 영역에서 최신 reason 중심으로 갱신한다.
+- Composer 안에 실행 실패 reason을 non-blocking local feedback으로 표시한다.
+- repeated same failure는 별도 toast 누적 없이 현재 feedback을 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 빈 query submit은 네트워크 요청 없이 무시한다.
-- 변환은 성공했지만 적용 가능한 조건이 없으면 현재 filter를 임의로 비우지 않는다.
-- 취소된 suggestion 기반 interaction은 현재 기본 흐름에서 노출하지 않는다.
+- execution failure를 conversion failure로 오분류하지 않는다.
+- 실패한 실행 결과를 성공적으로 적용된 filter처럼 표시하지 않는다.
+- 저장된 collection open failure는 이 query execution feedback이 아니라 RCL-002 management 경계에서 다룬다.
 
 ## Acceptance Criteria
 
-- [ ] query를 입력하면 Composer query draft가 갱신되어야 한다.
-- [ ] query를 제출하면 구조화 filter 변경안 생성과 적용이 순서대로 진행되어야 한다.
-- [ ] 동일 failure가 짧은 시간 안에 반복되면 실패 메시지는 중복 누적되지 않아야 한다.
+- [ ] 실행 실패 시 `execution_failure_feedback_visible` 상태가 표시되어야 한다.
+- [ ] execution failure는 conversion failure와 구분되어야 한다.
+- [ ] 실패한 실행 결과는 부분 적용된 성공 상태처럼 표시되지 않아야 한다.
 
 ## Permissions / Dependencies
 
@@ -75,15 +73,22 @@ shortcut: "-"
 
 ## Related Interactions
 
-- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
-- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
-- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
+- [RCL-004-apply_all_generated_filter_suggestions](RCL-004-apply_all_generated_filter_suggestions.md)
 - [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
-- [RCL-004-show_query_conversion_failure_feedback](RCL-004-show_query_conversion_failure_feedback.md)
+- [RCL-004-apply_generated_filter_suggestion](RCL-004-apply_generated_filter_suggestion.md)
 - [RCL-004-coalesce_repeated_query_failure_feedback](RCL-004-coalesce_repeated_query_failure_feedback.md)
+- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
+- [RCL-004-generate_filter_suggestions_from_query](RCL-004-generate_filter_suggestions_from_query.md)
+- [RCL-004-reject_all_generated_filter_suggestions](RCL-004-reject_all_generated_filter_suggestions.md)
+- [RCL-004-reject_generated_filter_suggestion](RCL-004-reject_generated_filter_suggestion.md)
+- [RCL-004-show_generated_filter_suggestions](RCL-004-show_generated_filter_suggestions.md)
+- [RCL-004-show_query_conversion_failure_feedback](RCL-004-show_query_conversion_failure_feedback.md)
+- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
+- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:111`
-- Flows: [collection_query_composition_flow.md](../flows/collection_query_composition_flow.md)
+- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 - Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
+- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md), [collection_query_composition_flow.md](../flows/collection_query_composition_flow.md)
