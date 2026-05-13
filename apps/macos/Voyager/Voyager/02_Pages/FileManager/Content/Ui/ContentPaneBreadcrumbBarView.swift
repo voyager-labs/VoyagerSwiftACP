@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 

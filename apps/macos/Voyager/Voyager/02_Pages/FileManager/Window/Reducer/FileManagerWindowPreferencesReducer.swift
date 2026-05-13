@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesCollection
+import VoyagerFeaturesEntryArrangements
 
 @Reducer
 struct FileManagerWindowPreferencesReducer {

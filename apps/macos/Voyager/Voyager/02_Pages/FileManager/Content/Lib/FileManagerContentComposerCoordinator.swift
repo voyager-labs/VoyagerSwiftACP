@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
@@ -119,8 +121,8 @@ enum FileManagerContentComposerCoordinator {
     }
 
     private static func handleFiltersResponseSuccess(
-        requestID: String,
-        response: ComposerSearchResponse,
+        requestID: UUID,
+        response: VoyagerShared.SearchResponsePayload,
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction>? {
         guard state.composer.lastAcceptedFiltersRequestID == requestID else {
@@ -136,8 +138,8 @@ enum FileManagerContentComposerCoordinator {
         let searchEffect = handleSearchSuccess(
             items: response.items ?? [],
             query: query,
-            nextContext: nextContext,
             state: &state,
+            nextContext: nextContext,
         )
         return .concatenate(
             .send(.composer(.updateLastFiltersResponse(response))),

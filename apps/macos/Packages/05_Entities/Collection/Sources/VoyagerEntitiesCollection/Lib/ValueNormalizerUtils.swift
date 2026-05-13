@@ -1,11 +1,9 @@
 import Foundation
+import VoyagerShared
 
 public struct ValueNormalizeResult: Equatable {
-    /// 정상 변환된 값 배열 (전송용)
     public let values: [String]?
-    /// 에러 메시지 (nil이면 성공)
     public let errorMessage: String?
-    /// 에러 시 비울 인덱스 목록
     public let resetIndices: [Int]
 
     public init(values: [String]?, errorMessage: String?, resetIndices: [Int]) {
@@ -16,67 +14,21 @@ public struct ValueNormalizeResult: Equatable {
 }
 
 public enum ValueNormalizerUtils {
-    // 공용 날짜 포맷터 (ISO 8601, 초까지, UTC, Z 표기)
-    private nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-
-    // 날짜만 있는 경우 파싱용
-    private nonisolated(unsafe) static let dateOnlyFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    // 시간까지 포함된 경우 (타임존 없음)
-    private nonisolated(unsafe) static let dateTimeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        return formatter
-    }()
-
-    private nonisolated(unsafe) static let dateTimeSpaceFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter
-    }()
-
     static func formatDate(_ date: Date) -> String {
-        isoFormatter.string(from: normalizedDay(date))
+        DateNormalizerUtils.formatDate(date)
     }
 
     public static func formatDateOnly(_ date: Date) -> String {
-        dateOnlyFormatter.string(from: normalizedDay(date))
+        DateNormalizerUtils.formatDateOnly(date)
     }
 
     public static func formatDateOnlyString(_ text: String) -> String? {
-        guard let date = parseDate(text) else { return nil }
-        return formatDateOnly(date)
+        guard let date = DateNormalizerUtils.parseDate(text) else { return nil }
+        return DateNormalizerUtils.formatDateOnly(date)
     }
 
     public static func parseDate(_ text: String) -> Date? {
-        if let date = isoFormatter.date(from: text) {
-            return normalizedDay(date)
-        }
-        if let date = dateTimeFormatter.date(from: text) {
-            return normalizedDay(date)
-        }
-        if let date = dateTimeSpaceFormatter.date(from: text) {
-            return normalizedDay(date)
-        }
-        if let date = dateOnlyFormatter.date(from: text) {
-            return normalizedDay(date)
-        }
-        return nil
+        DateNormalizerUtils.parseDate(text)
     }
 
     static func startOfDayString(for date: Date) -> String {
@@ -164,20 +116,6 @@ public enum ValueNormalizerUtils {
         }
 
         return result
-    }
-
-    private static func normalizedDay(_ date: Date) -> Date {
-        // 캘린더 컴포넌트는 사용자의 현지 시간대를 기준으로 뽑고,
-        // 최종 Date는 UTC 자정으로 고정해 날짜가 하루 당겨지지 않도록 맞춤.
-        var localCalendar = Calendar(identifier: .gregorian)
-        localCalendar.timeZone = .current
-        let comps = localCalendar.dateComponents([.year, .month, .day], from: date)
-
-        var utcCalendar = Calendar(identifier: .gregorian)
-        if let utc = TimeZone(secondsFromGMT: 0) {
-            utcCalendar.timeZone = utc
-        }
-        return utcCalendar.date(from: comps) ?? date
     }
 
     private static func requireNonEmpty(_ texts: [String]) -> [String]? {

@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerFeaturesUpdateVersion
 
 enum MenuCommandsAction: ViewAction, Sendable {
     case view(View)

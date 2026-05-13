@@ -2,7 +2,9 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     let windowID: UUID

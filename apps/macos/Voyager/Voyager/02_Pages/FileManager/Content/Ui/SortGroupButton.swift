@@ -1,6 +1,8 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerFeaturesEntryArrangements
+import VoyagerShared
 
 struct SortGroupButton: View {
     let store: StoreOf<FileManagerContentFeature>
@@ -64,7 +66,7 @@ struct SortGroupButton: View {
         )
     }
 
-    private func sortOrderToggle(_ title: String, order: SortOrder) -> some View {
+    private func sortOrderToggle(_ title: String, order: VoyagerShared.SortOrder) -> some View {
         Toggle(
             title,
             isOn: Binding(

@@ -97,9 +97,12 @@ final class ComposerInternalActionTests: XCTestCase {
         let context = CollectionContext(query: "sync", scopes: [], conditions: [])
         let url = URL(fileURLWithPath: "/test.collection")
         let compatibility = CollectionFileCompatibilityMetadata(
-            version: 1,
-            isCompatible: true,
-            incompatibilityReasons: [],
+            sourceSchemaVersion: CollectionFileSchemaVersion.current,
+            migrationPath: [.currentSchemaV2],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: true,
+            writeBackReason: .allowed,
         )
 
         let store = TestStore(initialState: ComposerState()) {
@@ -230,9 +233,12 @@ final class ComposerInternalActionTests: XCTestCase {
         let context = CollectionContext(query: "synced", scopes: [], conditions: [])
         let url = URL(fileURLWithPath: "/synced.collection")
         let compatibility = CollectionFileCompatibilityMetadata(
-            version: 1,
-            isCompatible: true,
-            incompatibilityReasons: [],
+            sourceSchemaVersion: CollectionFileSchemaVersion.current,
+            migrationPath: [.currentSchemaV2],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: true,
+            writeBackReason: .allowed,
         )
 
         let store = TestStore(initialState: initialState) {

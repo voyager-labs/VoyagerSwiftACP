@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 extension FileManagerContentFeature {
@@ -56,11 +58,8 @@ extension FileManagerContentFeature {
         case let .collection(.delegate(delegateAction)):
             handleCollectionDelegateAction(delegateAction, state: &state)
 
-        case let .collection(.navigationStateApplied(payload)):
-            .concatenate(
-                .send(.composer(.applyCollectionNavigationComposer(payload))),
-                syncComposerCollectionStateEffect(state),
-            )
+        case .collection(.navigationStateApplied):
+            .none
 
         case .collection(.openSearchPresentationCancelled),
              .collection(.temporaryContextResetRequested):

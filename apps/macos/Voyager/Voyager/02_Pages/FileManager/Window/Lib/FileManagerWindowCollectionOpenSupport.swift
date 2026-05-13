@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 func prepareLoadedCollectionOpenState(
@@ -30,7 +32,7 @@ func makeWindowCollectionNavigation(
         context: payload.context,
         sortKey: state.content.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.content.entryViewLayout.entryArrangements.sortOrder,
-        viewLayout: state.content.entryViewLayout.mode,
+        viewLayout: contentPageNavigationViewLayout(from: state.content.entryViewLayout.mode),
         compatibility: payload.compatibility,
     )
 }
@@ -106,6 +108,12 @@ func makeCollectionOpenFollowupEffects(
             .send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))))),
             .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
             .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
+            .send(.content(.composer(.syncCollectionState(
+                context: navigation.context,
+                url: collectionURL(from: navigation),
+                compatibility: navigation.compatibility,
+                isCollectionMode: true,
+            )))),
         ])
     }
 
@@ -127,6 +135,13 @@ func makeCollectionOpenFollowupEffects(
     }
 
     return effects
+}
+
+private func collectionURL(from navigation: ContentPageCollectionNavigation) -> URL? {
+    if case let .file(url, _) = navigation.kind {
+        return url
+    }
+    return nil
 }
 
 func unsupportedFilterWarningEffects(

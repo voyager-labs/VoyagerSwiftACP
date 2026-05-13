@@ -1,9 +1,12 @@
 import ComposableArchitecture
 import Foundation
-@testable import Voyager
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 import XCTest
+
+@testable import Voyager
 
 @MainActor
 final class CollectionReopenStaleTests: XCTestCase {
@@ -40,12 +43,14 @@ final class CollectionReopenStaleTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.navigation(.view(.openCollectionFile(url))))
+        await assertOpenCollectionFileRequestSequence(store: store, url: url)
         await store.receive { action in
             guard case .navigation(.internal(.collectionFileLoaded(.success))) = action else {
                 return false
             }
             return store.state.content.collection.collectionSession.phase.isStale
         }
+        await assertCollectionModeNavigation(store: store)
 
         XCTAssertEqual(
             store.state.content.composer.openedCollectionURL,
@@ -55,7 +60,10 @@ final class CollectionReopenStaleTests: XCTestCase {
             store.state.content.composer.collectionContext,
             store.state.content.collection.collectionContext,
         )
-        XCTAssertNil(store.state.content.composer.openedCollectionCompatibility)
+        XCTAssertEqual(
+            store.state.content.composer.openedCollectionCompatibility,
+            store.state.content.collection.collectionSession.document?.compatibility,
+        )
         XCTAssertEqual(
             store.state.content.composer.isCollectionMode,
             store.state.content.isCollectionMode,
@@ -122,7 +130,10 @@ final class CollectionReopenStaleTests: XCTestCase {
             store.state.content.composer.collectionContext,
             store.state.content.collection.collectionContext,
         )
-        XCTAssertNil(store.state.content.composer.openedCollectionCompatibility)
+        XCTAssertEqual(
+            store.state.content.composer.openedCollectionCompatibility,
+            store.state.content.collection.collectionSession.document?.compatibility,
+        )
         XCTAssertEqual(
             store.state.content.composer.isCollectionMode,
             store.state.content.isCollectionMode,
@@ -164,12 +175,14 @@ final class CollectionReopenStaleTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.navigation(.view(.openCollectionFile(url))))
+        await assertOpenCollectionFileRequestSequence(store: store, url: url)
         await store.receive { action in
             guard case .navigation(.internal(.collectionFileLoaded(.success))) = action else {
                 return false
             }
             return store.state.content.collection.collectionSession.phase.isStale
         }
+        await assertCollectionModeNavigation(store: store)
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
 
@@ -181,7 +194,10 @@ final class CollectionReopenStaleTests: XCTestCase {
             store.state.content.composer.collectionContext,
             store.state.content.collection.collectionContext,
         )
-        XCTAssertNil(store.state.content.composer.openedCollectionCompatibility)
+        XCTAssertEqual(
+            store.state.content.composer.openedCollectionCompatibility,
+            store.state.content.collection.collectionSession.document?.compatibility,
+        )
         XCTAssertEqual(
             store.state.content.composer.isCollectionMode,
             store.state.content.isCollectionMode,
@@ -223,7 +239,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             $0.content.composer.scopes = ["/tmp/voyager"]
             $0.content.composer.conditions = []
             $0.content.collection.collectionSession.metadata.baseline = .init(
-                context: .init(query: "", scopes: ["/tmp/voyager"], conditions: []),
+                context: reopenContext,
             )
         }
 
@@ -244,7 +260,10 @@ final class CollectionReopenStaleTests: XCTestCase {
             store.state.content.composer.collectionContext,
             store.state.content.collection.collectionContext,
         )
-        XCTAssertNil(store.state.content.composer.openedCollectionCompatibility)
+        XCTAssertEqual(
+            store.state.content.composer.openedCollectionCompatibility,
+            store.state.content.collection.collectionSession.document?.compatibility,
+        )
         XCTAssertEqual(
             store.state.content.composer.isCollectionMode,
             store.state.content.isCollectionMode,
@@ -283,18 +302,45 @@ final class CollectionReopenStaleTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.navigation(.internal(.navigateToCollection(navigation)))) {
+        await store.send(.navigation(.internal(.navigateToCollection(navigation))))
+        await store.receive { action in
+            guard case .content(.collection(.navigationStateApplied)) = action else { return false }
+            return true
+        } assert: {
             $0.content.collection.collectionSession.document?.compatibility = compatibility
             $0.content.collection.collectionSession.metadata.baseline = .init(context: navigation.context)
             $0.content.collection.collectionContext = navigation.context
-            $0.content.composer.collectionContext = navigation.context
+        }
+        await store.receive { action in
+            guard case .content(.composer(.internal(.applyCollectionNavigationComposer))) = action else { return false }
+            return true
+        } assert: {
             $0.content.composer.pendingSearchQuery = "report"
             $0.content.composer.text = "report"
             $0.content.composer.scopes = ["/tmp"]
             $0.content.composer.conditions = []
         }
+        await store.receive { action in
+            guard case .content(.composer(.internal(.syncCollectionState))) = action else { return false }
+            return true
+        } assert: {
+            $0.content.composer.collectionContext = navigation.context
+            $0.content.composer.openedCollectionURL = URL(fileURLWithPath: "/tmp/history.voycoll")
+            $0.content.composer.openedCollectionCompatibility = compatibility
+            $0.content.composer.isCollectionMode = true
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryArrangements(.reapply))) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .content(.composer(.view(.submit))) = action else { return false }
+            return true
+        }
 
         XCTAssertEqual(store.state.content.collection.collectionSession.document?.compatibility, compatibility)
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
+        XCTAssertEqual(store.state.content.composer.openedCollectionCompatibility, compatibility)
     }
 }
 
@@ -387,6 +433,21 @@ private func makeCollectionLoadResult(
 }
 
 @MainActor
+private func assertOpenCollectionFileRequestSequence(
+    store: TestStore<FileManagerWindowState, FileManagerWindowAction>,
+    url: URL,
+) async {
+    await store.receive { action in
+        guard case let .content(.collection(.openRequested(receivedURL, _, _))) = action else { return false }
+        return receivedURL.path == url.path
+    }
+    await store.receive { action in
+        guard case let .navigation(.internal(.prepareCollectionFileOpen(receivedURL))) = action else { return false }
+        return receivedURL.path == url.path
+    }
+}
+
+@MainActor
 private func assertCollectionModeNavigation(
     store: TestStore<FileManagerWindowState, FileManagerWindowAction>,
 ) async {
@@ -404,6 +465,12 @@ private func assertCollectionModeNavigation(
     }
     await store.receive {
         guard case .content(.entryViewLayout(.internal(.setCollectionMode(true)))) = $0 else {
+            return false
+        }
+        return true
+    }
+    await store.receive {
+        guard case .content(.composer(.internal(.syncCollectionState))) = $0 else {
             return false
         }
         return true

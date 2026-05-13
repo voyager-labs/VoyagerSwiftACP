@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
@@ -319,7 +321,7 @@ private func handleCollectionFileLoaded(
 
 private func handleNavigateToCollection(
     _ navigation: ContentPageCollectionNavigation,
-    state: inout FileManagerWindowState,
+    state _: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
     let (openedURL, openedName): (URL?, String?) = switch navigation.kind {
     case .temporary:
@@ -342,24 +344,20 @@ private func handleNavigateToCollection(
         conditions: navigation.context.conditions,
     )
 
-    let syncContext = state.content.collection.collectionContext
-    let syncURL = state.content.collection.collectionSession.document?.url
-    let syncCompat = state.content.collection.collectionSession.document?.compatibility
-    let syncIsCollectionMode = state.content.isCollectionMode
-
     let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
     let queryEffect: Effect<FileManagerWindowAction> = trimmedQuery.isEmpty
         ? .send(.content(.composer(.applyFilters)))
         : .send(.content(.composer(.submit)))
     return .concatenate(
-        .send(.content(.composer(.syncCollectionState(
-            context: syncContext,
-            url: syncURL,
-            compatibility: syncCompat,
-            isCollectionMode: syncIsCollectionMode,
-        )))),
         .send(.content(.collection(.navigationStateApplied(payload)))),
+        .send(.content(.composer(.applyCollectionNavigationComposer(payload)))),
         .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
+        .send(.content(.composer(.syncCollectionState(
+            context: payload.context,
+            url: payload.document?.url,
+            compatibility: payload.document?.compatibility,
+            isCollectionMode: true,
+        )))),
         .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
         queryEffect,
     )

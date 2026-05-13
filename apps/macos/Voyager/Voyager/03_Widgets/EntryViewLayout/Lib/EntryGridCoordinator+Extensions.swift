@@ -4,7 +4,9 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 extension EntryGridCoordinator {
@@ -242,7 +244,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             isRenaming: isRenaming,
             renamingText: state.entryOperations.renamingText,
             isDropTargeted: isDropTargeted,
-            workspaceClient: workspaceClient.toShared(),
+            workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
                 self?.sendEntryOperations(.edit(.updateRenamingText(text)))
             },

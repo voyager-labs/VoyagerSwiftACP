@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
 import XCTest
 
