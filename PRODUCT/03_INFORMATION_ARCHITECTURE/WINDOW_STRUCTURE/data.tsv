@@ -43,6 +43,6 @@ settings_window	tab_ai	provider_list_area	Provider List Area	프로바이더 목
 settings_window	settings_body	tab_about	Settings About Tab	세팅 어바웃 탭	3	mode	settings_window.settings_body.tab_about	앱 버전, 라이선스 등 메타 정보를 표시하는 설정 탭	TBD	CBT
 onboarding_window	-	root	Onboarding Window	온보딩 스크린	1	root	onboarding_window	최초 실행·주요 업데이트 시 온보딩 플로우를 진행하는 온보딩 화면 루트	TBD	CBT
 onboarding_window	root	welcome_screen	Welcome Screen	웰컴 스크린	2	mode	onboarding_window.welcome_screen	제품 소개와 기본 안내, 시작 액션을 제공하는 온보딩 첫 화면	TBD	CBT
-onboarding_window	root	beta_access_screen	Beta Access Screen	베타 검증 스크린	2	mode	onboarding_window.beta_access_screen	<<AI>> [CBT 한정] 초대 코드·계정 상태로 클로즈 베타 접근 권한을 검증하고 다음 단계 진입을 제어하는 화면	TBD	CBT
-onboarding_window	root	permission_screen	Permission Screen	권한 요청 스크린	2	mode	onboarding_window.permission_screen	<<AI>> Full Disk Access 필요 사유 안내, FDA/Launch at Login 권한 요청·상태 라벨링·재검증 및 시스템 설정 이동까지 한 화면 처리	TBD	CBT
-onboarding_window	root	indexing_preset_screen	Indexing Preset Screen	인덱싱 프리셋 스크린	2	mode	onboarding_window.indexing_preset_screen	<<AI>> 제외 규칙 프리셋 확인·편집 UI를 제공하는 온보딩 단계. 현재 빌드에는 기본 프리셋만 적용, 편집 UI는 OBT로 예정	TBD	OBT
+onboarding_window	root	beta_access_screen	Beta Access Screen	베타 검증 스크린	2	mode	onboarding_window.beta_access_screen	[CBT 한정] 이메일과 토큰으로 베타 접근 권한을 검증하고 다음 단계 진입을 제어하는 화면	TBD	CBT
+onboarding_window	root	permission_screen	Permission Screen	권한 요청 스크린	2	mode	onboarding_window.permission_screen	Full Disk Access와 Helper folder access 상태를 확인하고, 시스템 설정 이동 및 Launch at Login 선택을 제공하는 권한 단계 화면	TBD	CBT
+onboarding_window	root	complete_screen	Complete Screen	완료 스크린	2	mode	onboarding_window.complete_screen	온보딩 완료 후 기본 파일 관리자 창을 열고 온보딩 창을 닫는 마지막 단계 화면	TBD	CBT

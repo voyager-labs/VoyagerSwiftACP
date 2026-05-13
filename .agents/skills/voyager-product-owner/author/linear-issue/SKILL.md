@@ -37,7 +37,7 @@ python3 .agents/skills/voyager-product-owner/author/linear-issue/scripts/draft_l
 3. Batch-generate files into an explicit scratch/output directory only when needed
 
 ```bash
-python3 .agents/skills/voyager-product-owner/author/linear-issue/scripts/draft_linear_issue.py EVM-002 EAC-005 --output-dir /tmp/voyager-linear-issues --overwrite
+python3 .agents/skills/voyager-product-owner/author/linear-issue/scripts/draft_linear_issue.py EVM-002 EOP-005 --output-dir /tmp/voyager-linear-issues --overwrite
 ```
 
 4. Review and refine

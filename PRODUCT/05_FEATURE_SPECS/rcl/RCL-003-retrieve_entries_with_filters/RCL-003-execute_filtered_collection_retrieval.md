@@ -15,69 +15,76 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- 현재 설정된 필터를 기준으로 엔트리 검색을 자동 실행해 결과 목록을 계산하고 결과를 반환.
+- `RCL-003`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- query submit, condition 변경, scope 변경, 수동 refresh 입력이 검색 결과 재계산을 요구할 때 호출된다.
+- 열린 collection 또는 다시 열린 collection이 stale 상태일 때 refresh 정책을 실행한다.
 
 ## Preconditions
 
-- 실행할 필터 스냅샷이 확정된 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 검색 API에 전달할 `SearchFiltersPayload`를 만들 수 있어야 한다.
 
 ## Expected Outcome
 
-- TBD
+- 현재 설정된 필터를 기준으로 엔트리 검색을 자동 실행해 결과 목록을 계산하고 결과를 반환.
+- `SearchFiltersPayload`에 포함 가능한 active condition만 전송되어야 한다.
+- 서버가 반환한 `appliedFilters`는 UI state의 정규화 기준으로 다시 반영되어야 한다.
+- 진행 중인 search/applyFilters 요청은 cancellation id로 마지막 요청만 유효하게 관리되어야 한다.
 
 ## State Changes
 
-- TBD
+- isLoadingSearch, isLoadingFilters, isFilteringInFlight, active request id, lastFiltersResponse를 갱신한다.
+- registry 기반 key resolution으로 canonical, legacy, unknown condition 상태를 정리한다.
+- stale 상태는 즉시 결과를 폐기하는 대신 refresh 필요 상태로 기록한다.
 
 ## User-visible Feedback
 
-- TBD
+- 검색/필터 적용 중에는 loading 상태를 표시하고 중복 실행을 막는다.
+- unknown property key는 제거하지 않고 비활성 condition으로 남겨 사용자가 원인을 볼 수 있게 한다.
+- stale 결과는 최신성이 보장되지 않음을 표시하고 refresh 진입점을 제공한다.
+- background interaction은 별도 화면을 만들기보다 연결된 display/command interaction이 읽을 상태를 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 실행 중 필터 정의가 다시 변경되어 최신 정의만 반영하도록 기존 실행을 대체해야 하는 경우
-- 실행 중 인덱스 갱신이나 파일 변경이 발생해 실행 결과가 변동될 수 있는 경우
-- 검색 실행이 시간 또는 리소스 한계를 초과해 중단되거나 부분 결과로 종료되는 경우
+- 조건이 비어 있거나 값 인코딩에 실패한 condition은 payload에서 제외한다.
+- submit은 진행 중인 filter 요청을 취소하고, filter apply는 진행 중인 search 요청을 취소한다.
+- 서버 응답에 적용 불가능한 조건이 있으면 appliedFilters 기준으로 UI를 보정한다.
 
 ## Acceptance Criteria
 
-- [ ] 검색 실행 요청이 발생했을 때, 실행할 필터 스냅샷이 확정된 상태에서 검색을 수행하면, 결정론
-      필터로 후보 엔트리 집합을 산출하고 텍스트 쿼리 컨디션을 평가해 결과 목록을 계산하여 반환함
-- [ ] 검색을 실행 중일 때, 필터 정의가 다시 변경되어 새 스냅샷이 확정된다면, 기존 실행을 대체하고
-      최신 스냅샷 기준 결과만 최종 반영함
-- [ ] 검색을 실행 중일 때, 인덱스 갱신이나 파일 변경이 발생한다면, 실행 시점 기준으로 가능한 최신
-      상태를 반영해 결과를 계산함
-- [ ] 검색을 실행 중일 때, 실행이 시간 또는 리소스 한계를 초과한다면, 부분 결과로 종료하거나 안전한
-      폴백 정책을 적용해 결과를 반환함
+- [ ] active condition과 scope가 있는 상황에서 refresh를 실행하면 검색 API가 호출되고 결과 state가 갱신되어야 한다.
+- [ ] legacy property key가 appliedFilters로 돌아오면 canonical key로 보정되어야 한다.
+- [ ] 모든 condition이 제거되면 filter apply 요청은 스킵되고 in-flight filter 요청은 취소되어야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 검색 API에 전달할 `SearchFiltersPayload`를 만들 수 있어야 한다.
+- 이 interaction은 특정 UI region 없이 background/domain state를 갱신한다.
 
 ## Observability / Analytics
 
-- TBD
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-003-apply_deterministic_filters](RCL-003-apply_deterministic_filters.md)
-- [RCL-003-combine_hybrid_scores](RCL-003-combine_hybrid_scores.md)
-- [RCL-003-evaluate_text_query_condition_lexically](RCL-003-evaluate_text_query_condition_lexically.md)
-- [RCL-003-evaluate_text_query_condition_semantically](RCL-003-evaluate_text_query_condition_semantically.md)
-- [RCL-003-indicate_collection_results_staleness](RCL-003-indicate_collection_results_staleness.md)
-- [RCL-003-invalidate_closed_collection_staleness_on_external_change](RCL-003-invalidate_closed_collection_staleness_on_external_change.md)
-- [RCL-003-mark_collection_results_as_stale](RCL-003-mark_collection_results_as_stale.md)
-- [RCL-003-mark_open_collection_as_stale_on_external_change](RCL-003-mark_open_collection_as_stale_on_external_change.md)
-- [RCL-003-rank_entries_by_relevance](RCL-003-rank_entries_by_relevance.md)
-- [RCL-003-refresh_collection_results](RCL-003-refresh_collection_results.md)
-- [RCL-003-refresh_stale_collection_results_on_reopen](RCL-003-refresh_stale_collection_results_on_reopen.md)
-- [RCL-003-request_collection_results_refresh](RCL-003-request_collection_results_refresh.md)
 - [RCL-003-update_collection_results_on_filter_change](RCL-003-update_collection_results_on_filter_change.md)
+- [RCL-003-apply_deterministic_filters](RCL-003-apply_deterministic_filters.md)
+- [RCL-003-refresh_collection_results](RCL-003-refresh_collection_results.md)
+- [RCL-003-mark_collection_results_as_stale](RCL-003-mark_collection_results_as_stale.md)
+- [RCL-003-refresh_stale_collection_results_on_reopen](RCL-003-refresh_stale_collection_results_on_reopen.md)
+- [RCL-003-invalidate_closed_collection_staleness_on_external_change](RCL-003-invalidate_closed_collection_staleness_on_external_change.md)
+- [RCL-003-mark_open_collection_as_stale_on_external_change](RCL-003-mark_open_collection_as_stale_on_external_change.md)
+
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `148`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:148`
+- Flows: [collection_retrieval_flow.md](../flows/collection_retrieval_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

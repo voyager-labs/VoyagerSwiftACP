@@ -25,5 +25,10 @@
     "/.githooks": true,
     "/.mypy_cache": true,
     "/.venv": true
-  }
+  },
+  "rainbow_csv.highlight_rows": false,
+  "rainbow_csv.virtual_alignment_mode": "always",
+  "rainbow_csv.virtual_alignment_vertical_grid": true,
+  "rainbow_csv.enable_context_menu_head": false,
+  "rainbow_csv.virtual_alignment_char": "middot"
 }
