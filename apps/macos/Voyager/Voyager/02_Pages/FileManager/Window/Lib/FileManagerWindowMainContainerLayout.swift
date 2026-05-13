@@ -54,6 +54,7 @@ enum FileManagerWindowMainContainerLayout {
         let hosting = NSHostingController(rootView: InspectorPaneView(store: store))
         hosting.safeAreaRegions = []
         applyInspectorPaneStyle(hosting.view, isDark: isDark)
+        hosting.view.setFrameSize(NSSize(width: 300, height: 0))
         return hosting
     }
 
@@ -76,9 +77,9 @@ enum FileManagerWindowMainContainerLayout {
         view?.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
-    static func applyInspectorPaneStyle(_ view: NSView?, isDark: Bool) {
+    static func applyInspectorPaneStyle(_ view: NSView?, isDark _: Bool) {
         view?.wantsLayer = true
         view?.layer?.zPosition = 10
-        view?.layer?.backgroundColor = VoyagerDS.AppKitSurface.inspectorPaneBackground(isDark: isDark).cgColor
+        view?.layer?.backgroundColor = NSColor.clear.cgColor
     }
 }

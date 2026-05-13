@@ -309,7 +309,6 @@ public struct AiChatResponse: Codable, Equatable, Sendable {
 
 public enum AiChatEvent: Codable, Equatable, Sendable {
     case started(context: AiChatRequestContextSnapshot)
-    case streamChunk(context: AiChatRequestContextSnapshot, delta: String)
     case final(response: AiChatResponse)
     case failed(context: AiChatRequestContextSnapshot, reason: AiChatExecutionFailure)
 }

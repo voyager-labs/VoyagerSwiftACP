@@ -7,14 +7,28 @@ enum FileManagerAiChatContextAdapter {
     static func makeAiChatSetupState(
         content state: FileManagerContentState,
         sessionID: AiChatSessionID,
+        connectionsFile: AIConnectionsFile,
     ) -> AiChatSetupState {
-        let catalogRows = makeModelCatalogRows()
+        let modelSelection = makeAiChatModelSelection(connectionsFile: connectionsFile)
 
         return AiChatSetupState(
             sessionID: sessionID,
             currentContext: makeCurrentContextSnapshot(content: state),
+            catalogRows: modelSelection.catalogRows,
+            selectedModelHandle: modelSelection.selectedModelHandle,
+        )
+    }
+
+    static func makeAiChatModelSelection(
+        connectionsFile: AIConnectionsFile,
+    ) -> (catalogRows: [AiModelCatalogRow], selectedModelHandle: AiModelHandle?) {
+        let catalogRows = makeModelCatalogRows(from: connectionsFile)
+        return (
             catalogRows: catalogRows,
-            selectedModelHandle: catalogRows.first?.handle,
+            selectedModelHandle: preferredModelHandle(
+                in: catalogRows,
+                lastUsedProviderID: connectionsFile.lastUsedProviderId,
+            ),
         )
     }
 
@@ -34,7 +48,14 @@ enum FileManagerAiChatContextAdapter {
         )
     }
 
-    private static func makeModelCatalogRows() -> [AiModelCatalogRow] {
+    private static func makeModelCatalogRows(from connectionsFile: AIConnectionsFile) -> [AiModelCatalogRow] {
+        let availableProviders = availableProviders(from: connectionsFile)
+        guard !availableProviders.isEmpty else { return [] }
+
+        return allModelCatalogRows().filter { availableProviders.contains($0.handle.provider) }
+    }
+
+    private static func allModelCatalogRows() -> [AiModelCatalogRow] {
         [
             AiModelCatalogRow(
                 handle: AiModelHandle(provider: .chatgptCodex, rawValue: "codex-cli-chat"),
@@ -64,6 +85,35 @@ enum FileManagerAiChatContextAdapter {
                 isRecommended: false,
             ),
         ]
+    }
+
+    private static func availableProviders(from connectionsFile: AIConnectionsFile) -> Set<AiProvider> {
+        Set(
+            connectionsFile.providers.values.compactMap { record in
+                guard ProviderDescriptor.supportedProviders.contains(record.providerId), record.credential != nil else {
+                    return nil
+                }
+
+                guard record.snapshot.lastKnownStatus == .connected else {
+                    return nil
+                }
+
+                return record.providerId
+            },
+        )
+    }
+
+    private static func preferredModelHandle(
+        in catalogRows: [AiModelCatalogRow],
+        lastUsedProviderID: AiProvider?,
+    ) -> AiModelHandle? {
+        if let lastUsedProviderID,
+           let preferredRow = catalogRows.first(where: { $0.handle.provider == lastUsedProviderID })
+        {
+            return preferredRow.handle
+        }
+
+        return catalogRows.first?.handle
     }
 
     private static func makeCurrentViewReference(

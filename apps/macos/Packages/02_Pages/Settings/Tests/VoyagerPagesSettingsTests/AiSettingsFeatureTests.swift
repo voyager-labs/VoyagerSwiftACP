@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import VoyagerEntitiesAi
 @testable import VoyagerPagesSettings
@@ -21,8 +22,157 @@ private final class APIKeyConnectionController: @unchecked Sendable {
     }
 }
 
+private final class ConnectionsFileSaveSpy: @unchecked Sendable {
+    private(set) var savedFiles: [AIConnectionsFile] = []
+
+    func save(_ file: AIConnectionsFile) async throws -> AiConnectionMutationResult {
+        savedFiles.append(file)
+        return .success(file)
+    }
+}
+
+private final class ConnectionsFileLoadSpy: @unchecked Sendable {
+    private var files: [AIConnectionsFile]
+
+    init(files: [AIConnectionsFile]) {
+        self.files = files
+    }
+
+    func load() async throws -> AIConnectionsFile {
+        guard files.count > 1 else { return files[0] }
+        return files.removeFirst()
+    }
+}
+
 @MainActor
+// swiftlint:disable:next type_body_length
 final class AiSettingsFeatureTests: XCTestCase {
+    func testConnectionResponseEmitsConnectionsFileUpdatedDelegate() async {
+        let updatedFile = AIConnectionsFile.singleProvider(.chatgptCodex, state: .connected)
+        let store = TestStore(
+            initialState: AiSettingsState(rows: [
+                AiConnectionRowState(
+                    provider: .chatgptCodex,
+                    connectionState: .connectInProgress,
+                    flowState: .browserLoginInProgress
+                )
+            ])
+        ) {
+            AiSettingsFeature()
+        }
+
+        await store.send(.row(.element(
+            id: .chatgptCodex,
+            action: ._connectionResponse(AiProviderConnectionResult(
+                provider: .chatgptCodex,
+                state: .connected,
+                reason: .none,
+                updatedFile: updatedFile
+            ))
+        ))) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connected
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+            state.rows[id: .chatgptCodex]?.flowState = .idle
+        }
+
+        await store.receive(.delegate(.connectionsFileUpdated(updatedFile)))
+    }
+
+    func testBootstrapVerificationSuccessPersistsAndEmitsConnectionsFileUpdatedDelegate() async {
+        let staleFile = AIConnectionsFile.singleProvider(
+            .openai,
+            state: .connectionFailed,
+            errorCode: .expired
+        )
+        let expectedFile = AIConnectionsFile(
+            updatedAtMs: staleFile.updatedAtMs,
+            providers: [
+                AiProvider.openai.rawValue: ProviderRecordFile(
+                    providerId: .openai,
+                    authMethod: .apiKey,
+                    credential: staleFile.providers[AiProvider.openai.rawValue]?.credential,
+                    snapshot: ProviderSnapshotFile(
+                        lastKnownStatus: .connected,
+                        lastVerifiedAtMs: staleFile.updatedAtMs,
+                        lastErrorCode: .none
+                    )
+                )
+            ]
+        )
+        let saveSpy = ConnectionsFileSaveSpy()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { staleFile }
+            $0.aiConnectionsFileClient.save = { try await saveSpy.save($0) }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: .openai]?.connectionState = .connected
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(.delegate(.connectionsFileUpdated(expectedFile)))
+        await store.finish()
+
+        XCTAssertEqual(saveSpy.savedFiles, [expectedFile])
+    }
+
+    func testBootstrapVerificationSkipsPersistWhenLatestCredentialChanged() async {
+        let staleFile = AIConnectionsFile.singleProvider(
+            .openai,
+            state: .connectionFailed,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-old")),
+            errorCode: .expired
+        )
+        let latestFile = AIConnectionsFile.singleProvider(
+            .openai,
+            state: .connected,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-new"))
+        )
+        let loadSpy = ConnectionsFileLoadSpy(files: [staleFile, latestFile])
+        let saveSpy = ConnectionsFileSaveSpy()
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { try await loadSpy.load() }
+            $0.aiConnectionsFileClient.save = { try await saveSpy.save($0) }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: .openai]?.connectionState = .connected
+            state.rows[id: .openai]?.statusReason = .none
+        }
+
+        await store.finish()
+
+        XCTAssertTrue(saveSpy.savedFiles.isEmpty)
+    }
+
     // MARK: - Fresh Install (No Auth File)
 
     func testOnAppear_freshInstall_showsAllNotVerified() async {
@@ -68,7 +218,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .oauth,
                     credential: .oauth(OAuthCredentialFile(accessToken: "token-valid")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
-                ),
+                )
             ]
         )
 
@@ -123,7 +273,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastKnownStatus: .connectionFailed,
                         lastErrorCode: .expired
                     )
-                ),
+                )
             ]
         )
 
@@ -171,7 +321,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastKnownStatus: .connectionFailed,
                         lastErrorCode: .invalidAPIKey
                     )
-                ),
+                )
             ]
         )
 
@@ -263,7 +413,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
-                ),
+                )
             ]
         )
 
@@ -344,7 +494,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .disconnected)
-                ),
+                )
             ]
         )
 
@@ -383,7 +533,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .oauth,
                     credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connectInProgress)
-                ),
+                )
             ]
         )
 
@@ -418,7 +568,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .disconnecting)
-                ),
+                )
             ]
         )
 

@@ -229,6 +229,9 @@ struct AppRootFeature {
             case .menuCommands:
                 effect = .none
 
+            case let .settings(.delegate(.aiConnectionsFileUpdated(file))):
+                effect = .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))
+
             case .settings(.general(.checkForUpdates)):
                 effect = .send(.updater(.checkForUpdates))
 

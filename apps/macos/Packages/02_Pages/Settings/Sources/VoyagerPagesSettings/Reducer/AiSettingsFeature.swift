@@ -3,6 +3,7 @@ import Foundation
 import VoyagerEntitiesAi
 
 @Reducer
+// swiftlint:disable:next type_body_length
 public struct AiSettingsFeature {
     public typealias State = AiSettingsState
     public typealias Action = AiSettingsAction
@@ -49,7 +50,12 @@ public struct AiSettingsFeature {
                     verificationClient: verificationClient
                 )
 
-            case .row:
+            case let .row(.element(id: _, action: ._connectionResponse(result))),
+                 let .row(.element(id: _, action: ._disconnectResponse(result))):
+                return .send(.delegate(.connectionsFileUpdated(result.updatedFile)))
+
+            case .row,
+                 .delegate:
                 return .none
             }
         }
@@ -99,6 +105,12 @@ public struct AiSettingsFeature {
             )
             if !verificationResults.isEmpty {
                 await send(.bootstrapVerificationCompleted(verificationResults))
+                await Self.persistBootstrapVerificationResults(
+                    verificationResults,
+                    file: file,
+                    connectionsFileClient: connectionsFileClient,
+                    send: send
+                )
             }
         }
     }
@@ -167,6 +179,77 @@ public struct AiSettingsFeature {
         }
 
         return results
+    }
+
+    private static func persistBootstrapVerificationResults(
+        _ results: [AiProviderBootstrapResult],
+        file: AIConnectionsFile,
+        connectionsFileClient: AIConnectionsFileClient,
+        send: Send<Action>
+    ) async {
+        guard let latestFile = try? await connectionsFileClient.load(),
+              let updatedFile = bootstrapUpdatedConnectionsFile(
+                verificationSourceFile: file,
+                latestFile: latestFile,
+                applying: results
+              )
+        else { return }
+
+        let mutationResult = await (try? connectionsFileClient.save(updatedFile))
+        switch mutationResult {
+        case let .success(savedFile), let .partialSuccess(savedFile, _):
+            await send(.delegate(.connectionsFileUpdated(savedFile)))
+        case .fileSystemError, nil:
+            break
+        }
+    }
+
+    package static func bootstrapUpdatedConnectionsFile(
+        verificationSourceFile: AIConnectionsFile,
+        latestFile: AIConnectionsFile,
+        applying results: [AiProviderBootstrapResult]
+    ) -> AIConnectionsFile? {
+        var providers = latestFile.providers
+        var didUpdate = false
+
+        for result in results {
+            let providerKey = result.provider.rawValue
+            guard let sourceRecord = verificationSourceFile.providers[providerKey],
+                  var record = providers[providerKey],
+                  record.credential != nil,
+                  record.credential == sourceRecord.credential
+            else { continue }
+
+            let lastErrorCode: ProviderStatusReason = result.connectionState == .connected ? .none : result.statusReason
+            guard record.snapshot.lastKnownStatus != result.connectionState
+                || record.snapshot.lastErrorCode != lastErrorCode
+            else { continue }
+
+            let snapshot = ProviderSnapshotFile(
+                lastKnownStatus: result.connectionState,
+                lastVerifiedAtMs: result.connectionState == .connected ? latestFile.updatedAtMs : nil,
+                lastErrorCode: lastErrorCode
+            )
+
+            record = ProviderRecordFile(
+                providerId: record.providerId,
+                authMethod: record.authMethod,
+                credential: record.credential,
+                snapshot: snapshot,
+                provenance: record.provenance
+            )
+            providers[providerKey] = record
+            didUpdate = true
+        }
+
+        guard didUpdate else { return nil }
+        return AIConnectionsFile(
+            schemaVersion: latestFile.schemaVersion,
+            updatedAtMs: latestFile.updatedAtMs,
+            lastUsedProviderId: latestFile.lastUsedProviderId,
+            lastUsedAtMs: latestFile.lastUsedAtMs,
+            providers: providers
+        )
     }
 
     private static func shouldVerify(snapshotState: ProviderConnectionState) -> Bool {

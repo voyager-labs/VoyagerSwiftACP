@@ -91,6 +91,7 @@ struct MenuCommandsFeature {
         case .requestUndo: .send(.delegate(.windowManager(.edit(.requestUndo))))
         case .requestRedo: .send(.delegate(.windowManager(.edit(.requestRedo))))
         case .toggleComposer: .send(.delegate(.windowManager(.edit(.toggleComposer))))
+        case .openContextualAiChat: .send(.delegate(.windowManager(.edit(.openContextualAiChat))))
         case .cut: .send(.delegate(.windowManager(.edit(.cut))))
         case .copy: .send(.delegate(.windowManager(.edit(.copy))))
         case .paste: .send(.delegate(.windowManager(.edit(.paste))))

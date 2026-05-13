@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesAi
 
@@ -9,9 +10,72 @@ public struct AiChatExecutionClient: Sendable {
     }
 }
 
+public struct AiChatSettingsClient: Sendable {
+    public var openSettingsWindow: @MainActor @Sendable () -> Bool
+
+    public init(openSettingsWindow: @escaping @MainActor @Sendable () -> Bool) {
+        self.openSettingsWindow = openSettingsWindow
+    }
+}
+
+extension AiChatSettingsClient: DependencyKey {
+    public nonisolated static var liveValue: AiChatSettingsClient {
+        AiChatSettingsClient(openSettingsWindow: { @MainActor in
+            NSApp.activate(ignoringOtherApps: true)
+
+            let settingsSelector = Selector(("showSettingsWindow:"))
+            if NSApp.sendAction(settingsSelector, to: nil, from: nil) {
+                return true
+            }
+
+            let preferencesSelector = Selector(("showPreferencesWindow:"))
+            return NSApp.sendAction(preferencesSelector, to: nil, from: nil)
+        })
+    }
+
+    public nonisolated static var testValue: AiChatSettingsClient {
+        AiChatSettingsClient(openSettingsWindow: { false })
+    }
+
+    public nonisolated static var previewValue: AiChatSettingsClient {
+        AiChatSettingsClient(openSettingsWindow: { false })
+    }
+}
+
+public extension DependencyValues {
+    nonisolated var aiChatSettingsClient: AiChatSettingsClient {
+        get { self[AiChatSettingsClient.self] }
+        set { self[AiChatSettingsClient.self] = newValue }
+    }
+}
+
+private let aiChatMockAssistantMessageContent = """
+Voyager AI
+Context checked.
+Plan ready.
+Provider later.
+✓ Context
+✓ Queued
+★ Mock ready
+"""
+
+private func makeMockAiChatResponse(for request: AiChatRequest) -> AiChatResponse {
+    AiChatResponse(
+        context: request.context,
+        assistantMessage: AiChatMessage(role: .assistant, content: aiChatMockAssistantMessageContent),
+        completedAtMs: 0
+    )
+}
+
 extension AiChatExecutionClient: DependencyKey {
     public nonisolated static var liveValue: AiChatExecutionClient {
-        AiChatExecutionClient(execute: { _ in AsyncStream { $0.finish() } })
+        AiChatExecutionClient(execute: { request in
+            AsyncStream { continuation in
+                continuation.yield(.started(context: request.context))
+                continuation.yield(.final(response: makeMockAiChatResponse(for: request)))
+                continuation.finish()
+            }
+        })
     }
 
     public nonisolated static var testValue: AiChatExecutionClient {

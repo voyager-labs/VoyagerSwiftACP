@@ -9,7 +9,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class FileManagerContentAiChatPresentationTests: XCTestCase {
+final class ContentAiChatPresentationTests: XCTestCase {
     func testCurrentViewSnapshotUsesCanonicalNavigationContext() {
         var state = makeState()
         state.navigation.seedInitialFolderPath("/tmp/voyager")
@@ -43,23 +43,41 @@ final class FileManagerContentAiChatPresentationTests: XCTestCase {
         XCTAssertEqual(snapshot.items.first?.references.first?.identifier, "/tmp/voyager")
     }
 
-    func testPresentAiChatMountsStoreWithContextWithoutOwningChatSemantics() async {
+    func testAiChatSetupUsesPersistedProviderAvailability() {
+        let state = makeState()
+        let noProviderSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: state,
+            sessionID: makeSessionID("00000000-0000-0000-0000-000000000001"),
+            connectionsFile: .empty(),
+        )
+
+        XCTAssertEqual(noProviderSetup.catalogRows, [])
+        XCTAssertNil(noProviderSetup.selectedModelHandle)
+
+        let configuredSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: state,
+            sessionID: makeSessionID("00000000-0000-0000-0000-000000000002"),
+            connectionsFile: .testFixture(lastUsedProviderId: .anthropic, providers: [
+                .testFixture(provider: .openai, authMethod: .apiKey, state: .connected),
+                .testFixture(provider: .anthropic, authMethod: .apiKey, state: .connected),
+                .testFixture(provider: .chatgptCodex, authMethod: .oauth, state: .connectionFailed),
+            ]),
+        )
+
+        XCTAssertEqual(configuredSetup.catalogRows.map(\.handle.provider), [.openai, .anthropic])
+        XCTAssertEqual(configuredSetup.selectedModelHandle?.provider, .anthropic)
+    }
+
+    func testOpenContextualAiChatTapDelegatesToWindowCommandPath() async {
         let selected = makeEntry(name: "Draft.md", fullPath: "/tmp/voyager/Draft.md")
         var initialState = makeState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
         initialState.entryViewLayout.entryOperations.items = [selected]
         initialState.entryViewLayout.selectedIds = [selected.id]
 
-        let expectedSessionID = AiChatSessionID(rawValue: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!)
-        let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
-            content: initialState,
-            sessionID: expectedSessionID,
-        )
-
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
         } withDependencies: {
-            $0.uuid = .incrementing
             $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
             $0.collectionAlertClient = CollectionAlertClient.testValue
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
@@ -68,28 +86,12 @@ final class FileManagerContentAiChatPresentationTests: XCTestCase {
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
 
-        await store.send(FileManagerContentAction.view(.presentAiChat)) {
-            $0.isAiChatPresented = true
-        }
+        await store.send(FileManagerContentAction.view(.openContextualAiChatTapped))
 
-        await store.receive(\.aiChat) {
-            $0.aiChat.sessionID = expectedSessionID
-            $0.aiChat.sessionStatus = .idle
-            $0.aiChat.currentContext = expectedSetup.currentContext
-            $0.aiChat.transcriptHistory = []
-            $0.aiChat.draftText = ""
-            $0.aiChat.streamDraftText = ""
-            $0.aiChat.catalogRows = expectedSetup.catalogRows
-            $0.aiChat.selectedModelHandle = expectedSetup.selectedModelHandle
-            $0.aiChat.lockedModelHandle = nil
-            $0.aiChat.lastExecutionFailure = nil
-            $0.aiChat.executionPhase = .idle
+        await store.receive { action in
+            guard case .delegate(.openContextualAiChat) = action else { return false }
+            return true
         }
-
-        XCTAssertEqual(store.state.aiChat.sessionID, expectedSessionID)
-        XCTAssertEqual(store.state.aiChat.currentContext, expectedSetup.currentContext)
-        XCTAssertEqual(store.state.aiChat.catalogRows, expectedSetup.catalogRows)
-        XCTAssertEqual(store.state.aiChat.selectedModelHandle, expectedSetup.selectedModelHandle)
     }
 
     private func makeState() -> FileManagerContentState {
@@ -116,5 +118,13 @@ final class FileManagerContentAiChatPresentationTests: XCTestCase {
                 supplementaryMetadata: nil,
             ),
         )
+    }
+
+    private func makeSessionID(_ rawValue: String) -> AiChatSessionID {
+        guard let uuid = UUID(uuidString: rawValue) else {
+            XCTFail("Invalid UUID fixture: \(rawValue)")
+            return AiChatSessionID(rawValue: UUID())
+        }
+        return AiChatSessionID(rawValue: uuid)
     }
 }

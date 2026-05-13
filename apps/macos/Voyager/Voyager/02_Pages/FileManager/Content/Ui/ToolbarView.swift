@@ -186,7 +186,7 @@ struct ToolbarView: View {
     }
 
     private func normalModeContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             ToolbarNavigationButtons(
                 onNavigationAction: onNavigationAction,
                 backHistoryItems: viewStore.backHistoryItems,
@@ -196,60 +196,83 @@ struct ToolbarView: View {
                 canGoToEnclosingDirectory: viewStore.canGoToEnclosingDirectory,
             )
 
-            HStack(spacing: 8) {
-                Button(
-                    action: { store.send(.composer(.setPresented(true))) },
-                    label: {
-                        HStack(spacing: 4) {
-                            titleContent(viewStore: viewStore)
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                    },
-                )
-                .buttonStyle(.borderless)
+            toolbarTitleArea(viewStore: viewStore)
 
-                Button(
-                    action: { store.send(.view(.presentAiChat)) },
-                    label: {
-                        ToolbarHoverButtonLabel(
-                            systemName: "sparkles",
-                            isEnabled: true,
-                            font: nil,
-                        )
-                    },
-                )
-                .buttonStyle(.borderless)
-
-                if showsToolbarRefreshButton(
-                    viewStore.collectionStatus,
-                    isTitleAreaHovered: isTitleAreaHovered,
-                ) {
-                    toolbarRefreshButton(viewStore: viewStore)
-                }
-
-                if isTitleAreaHovered {
-                    ViewToggleButton(store: store)
-                    SortGroupButton(store: store)
-                }
+            if !chromeProps.isContextualAiChatPresented {
+                contextualAiChatButton
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 6)
-            .frame(height: 32)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                isTitleAreaHovered = hovering
+        }
+    }
+
+    private func toolbarTitleArea(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
+        HStack(spacing: 8) {
+            composerTitleButton(viewStore: viewStore)
+
+            if showsToolbarRefreshButton(
+                viewStore.collectionStatus,
+                isTitleAreaHovered: isTitleAreaHovered,
+            ) {
+                toolbarRefreshButton(viewStore: viewStore)
             }
-            .background(
-                Group {
-                    if isTitleAreaHovered {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(VoyagerDS.Interaction.toolbarTitleHoverFill(for: colorScheme))
-                    }
-                },
-            )
+
+            if isTitleAreaHovered {
+                ViewToggleButton(store: store)
+                SortGroupButton(store: store)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .frame(height: 32)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isTitleAreaHovered = hovering
+        }
+        .background(titleAreaHoverBackground)
+    }
+
+    private func composerTitleButton(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
+        Button(
+            action: { store.send(.composer(.setPresented(true))) },
+            label: {
+                HStack(spacing: 4) {
+                    titleContent(viewStore: viewStore)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+            },
+        )
+        .buttonStyle(.borderless)
+    }
+
+    private var contextualAiChatButton: some View {
+        let title = "Open Contextual AI Chat"
+
+        return Button(
+            action: { store.send(.view(.openContextualAiChatTapped)) },
+            label: {
+                ToolbarHoverButtonLabel(
+                    systemName: "sidebar.trailing",
+                    isEnabled: true,
+                    font: nil,
+                )
+            },
+        )
+        .buttonStyle(.borderless)
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
+        .zIndex(2)
+        .help(title)
+        .accessibilityLabel(title)
+    }
+
+    private var titleAreaHoverBackground: some View {
+        Group {
+            if isTitleAreaHovered {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(VoyagerDS.Interaction.toolbarTitleHoverFill(for: colorScheme))
+            }
         }
     }
 
