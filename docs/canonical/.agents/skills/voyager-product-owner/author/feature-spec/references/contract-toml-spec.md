@@ -77,8 +77,10 @@ secondary_object_keys = ["response", "turn"]
 Rules:
 
 - `primary_object_key` and `secondary_object_keys` must reference `OBJECTS.key`
+- `display_region` and `scope_region` must reference `WINDOW_STRUCTURE.structure_key`
 - if a truly product-wide object is missing from `OBJECTS`, add it there first before standardizing the contract around it
 - keep category-local relational terms out of these fields
+- keep window, pane, sidebar, toolbar, field, list, and container terms out of object fields when those terms are UI regions
 - legacy `primary_object` and `secondary_objects` may remain temporarily during migration, but new or revised contracts should prefer the `_key` field names
 
 ### `[vocabulary]`
@@ -203,6 +205,9 @@ Rules:
 
 - the key must be the exact `interaction_id`
 - use this section to map interaction responsibility, not to repeat full prose behavior
+- `target_object`, `creates_objects`, and `preserves_objects` must reference `OBJECTS.key`
+- `display_region` and `control_region` must reference `WINDOW_STRUCTURE.structure_key`
+- do not use a `WINDOW_STRUCTURE.structure_key` as an object reference; put it in a region field instead
 
 ### `[transitions.<name>]`
 
@@ -236,6 +241,7 @@ Rules:
 - use lowercase snake_case for TOML table keys where a free key name is needed
 - use exact `interaction_id` for ownership keys
 - use exact `OBJECTS.key` values for object-reference fields such as `primary_object_key`, `secondary_object_keys`, `target_object`, `creates_objects`, and `preserves_objects`
+- use exact `WINDOW_STRUCTURE.structure_key` values for region-reference fields such as `display_region`, `scope_region`, and `control_region`
 - use exact state names in `allowed`, `forbidden`, `from`, `to`, `reads`, and `writes`
 
 ## What Not To Put Here
