@@ -30,34 +30,35 @@ shortcut: "⌘⌥S"
 
 ## Expected Outcome
 
-- 현재 콜렉션 파일에 필터 변경 사항을 저장해 정의를 갱신.
-- collection file은 query, scopes, conditions와 표시 상태를 함께 보존해야 한다.
-- 저장 중이거나 검색/필터 요청이 진행 중이면 불완전한 상태 저장을 막아야 한다.
-- 미저장 변경이 있을 때는 title affordance 또는 경고 흐름으로 이탈 위험을 표시해야 한다.
+- 현재 collection file에 query, scopes, conditions, 표시 상태를 함께 저장해 filter definition을 갱신한다.
+- `save_ready` 상태의 유효한 filter definition만 저장 가능하다.
+- `condition_value_incomplete` 상태에서 저장을 시도하면 `save_blocked`로 처리하고 불완전 condition을 저장하지 않는다.
+- 저장 실패 시 `save_failed`를 표시하고 dirty change와 현재 collection page를 보존한다.
 
 ## State Changes
 
-- openedCollectionURL, collectionContext, lastFiltersResponse, unsaved-change 상태를 갱신한다.
-- Save As는 새 `.voycoll` 패키지 파일을 만들고 현재 context를 저장 기준으로 삼는다.
-- discard는 마지막 저장본 또는 복원된 snapshot 기준으로 draft를 되돌린다.
+- `save_ready`와 `condition_value_incomplete`를 읽고 `editable`, `save_blocked`, `save_failed`를 쓴다.
+- 저장 성공 시 dirty 기준점을 갱신하고 Composer를 `editable` 상태로 되돌린다.
+- 저장 실패 시 dirty change, openedCollectionURL, collectionContext를 유지한다.
 
 ## User-visible Feedback
 
-- 저장 가능 여부, 미저장 변경 표시, 파일 이름 변경 결과, 삭제/닫기 경고를 사용자에게 노출한다.
-- 저장 실패나 삭제 실패는 현재 collection page를 임의로 닫지 않고 recovery action을 유지한다.
+- 저장 가능 여부, 미저장 변경 표시, 저장 차단 사유, 저장 실패 recovery action을 사용자에게 노출한다.
+- `save_blocked`는 미완성 condition을 수정하라는 안내로 표시한다.
+- `save_failed`는 현재 collection page를 임의로 닫지 않고 재시도 가능하게 표시한다.
 
 ## Edge Cases / Failure Handling
 
 - query, scopes, conditions가 모두 비어 있으면 collection 저장을 막는다.
+- `condition_value_incomplete` 상태에서는 빈 condition 또는 절반짜리 Date range를 저장하지 않는다.
+- storage 오류나 conflict가 발생하면 `save_failed`로 처리하고 dirty change를 보존한다.
 - 검색 또는 filter apply가 진행 중이면 저장을 지연하거나 막아 불완전 payload를 저장하지 않는다.
-- 레거시 단일 파일 `.voycoll`은 열 수 있되 저장 시 현재 패키지 포맷으로 정규화될 수 있다.
-- 명령 실행 중 실패하면 대상 상태를 부분 적용된 것처럼 표시하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 현재 filter가 비어 있지 않은 상황에서 Save As를 실행하면 `.voycoll` collection 파일이 생성되어야 한다.
-- [ ] 저장된 collection을 수정하면 미저장 변경 표시가 나타나야 한다.
-- [ ] 미저장 변경이 있는 상태에서 이탈하면 경고 또는 discard/save 선택지가 제공되어야 한다.
+- [ ] `save_ready` 상태에서 Save를 실행하면 현재 `.voycoll` collection 파일이 갱신되어야 한다.
+- [ ] `condition_value_incomplete` 상태에서 Save를 실행하면 `save_blocked`로 저장이 막혀야 한다.
+- [ ] 저장 실패가 발생하면 `save_failed` 피드백과 dirty change가 유지되어야 한다.
 
 ## Permissions / Dependencies
 
@@ -74,18 +75,20 @@ shortcut: "⌘⌥S"
 
 ## Related Interactions
 
-- [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md)
-- [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
-- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
-- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
-- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
-- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
-- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-alert_unsaved_collection_filter_changes](RCL-002-alert_unsaved_collection_filter_changes.md)
 - [RCL-002-delete_collection](RCL-002-delete_collection.md)
-- [RCL-002-alert_unsasved_collection_filter_changes](RCL-002-alert_unsasved_collection_filter_changes.md)
+- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
+- [RCL-002-import_smart_folder_as_collection](RCL-002-import_smart_folder_as_collection.md)
+- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
+- [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md)
+- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
+- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
+- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:143`
-- Flows: [collection_management_flow.md](../flows/collection_management_flow.md)
+- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 - Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
+- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md), [collection_management_flow.md](../flows/collection_management_flow.md)

@@ -44,18 +44,21 @@ allowed = [
   "change_feedback_failed",
   "change_feedback_visible",
   "undo_available",
-  "redo_available"
+  "redo_available",
 ]
 forbidden = [
   "empty_scope",
   "candidate_equals_current_scope",
   "exception_as_candidate",
-  "partial_undo_stack_browser"
+  "partial_undo_stack_browser",
 ]
 
 [state.root_only]
 description = "명시적 범위가 없고 현재 페이지 또는 현재 콜렉션 문맥이 제공하는 기본 적용 범위가 현재 스코프를 정의하는 상태"
-entered_by = ["RCL-001-open_collection_filter_composer", "RCL-001-remove_directory_from_collection_scope"]
+entered_by = [
+  "RCL-001-open_collection_filter_composer",
+  "RCL-001-remove_directory_from_collection_scope",
+]
 exits_to = ["single_explicit_scope"]
 terminal = false
 user_visible = true
@@ -80,7 +83,12 @@ terms = ["변경 반영 실패 상태"]
 [state.single_explicit_scope]
 description = "하나의 명시적 기준 범위가 현재 스코프를 대표하는 상태"
 entered_by = ["RCL-001-add_directory_to_collection_scope"]
-exits_to = ["multi_explicit_scope", "root_only", "exception_present", "change_feedback_delayed"]
+exits_to = [
+  "multi_explicit_scope",
+  "root_only",
+  "exception_present",
+  "change_feedback_delayed",
+]
 terminal = false
 user_visible = true
 terms = ["단일 명시적 스코프"]
@@ -103,7 +111,10 @@ terms = ["예외 포함 상태"]
 
 [state.default_candidates]
 description = "검색어가 비어 있고 기본 후보 목록이 보이는 상태"
-entered_by = ["RCL-001-open_collection_scope_menu", "RCL-001-search_collection_scope_candidates"]
+entered_by = [
+  "RCL-001-open_collection_scope_menu",
+  "RCL-001-search_collection_scope_candidates",
+]
 exits_to = ["search_results", "no_results"]
 terminal = false
 user_visible = true
@@ -132,7 +143,7 @@ entered_by = [
   "RCL-001-remove_directory_from_collection_scope",
   "RCL-001-exclude_directory_from_collection_scope",
   "RCL-001-restore_directory_to_collection_scope",
-  "RCL-001-toggle_collection_scope_subfolder_inclusion"
+  "RCL-001-toggle_collection_scope_subfolder_inclusion",
 ]
 exits_to = ["undo_available"]
 terminal = false
@@ -146,7 +157,7 @@ entered_by = [
   "RCL-001-remove_directory_from_collection_scope",
   "RCL-001-exclude_directory_from_collection_scope",
   "RCL-001-restore_directory_to_collection_scope",
-  "RCL-001-toggle_collection_scope_subfolder_inclusion"
+  "RCL-001-toggle_collection_scope_subfolder_inclusion",
 ]
 exits_to = ["redo_available"]
 terminal = false
@@ -168,13 +179,26 @@ target_object = "scope"
 display_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
 
 [ownership."RCL-001-open_collection_scope_menu"]
-reads = ["root_only", "single_explicit_scope", "multi_explicit_scope", "exception_present", "default_candidates", "search_results", "no_results"]
+reads = [
+  "root_only",
+  "single_explicit_scope",
+  "multi_explicit_scope",
+  "exception_present",
+  "default_candidates",
+  "search_results",
+  "no_results",
+]
 writes = ["default_candidates", "search_results", "no_results"]
 target_object = "scope"
 display_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
 
 [ownership."RCL-001-show_collection_scope_summary"]
-reads = ["root_only", "single_explicit_scope", "multi_explicit_scope", "exception_present"]
+reads = [
+  "root_only",
+  "single_explicit_scope",
+  "multi_explicit_scope",
+  "exception_present",
+]
 writes = []
 target_object = "scope"
 display_region = "file_manager_window.content_pane.content_header.collection_filter_composer"
@@ -190,13 +214,30 @@ writes = []
 target_object = "directory"
 
 [ownership."RCL-001-add_directory_to_collection_scope"]
-reads = ["root_only", "single_explicit_scope", "multi_explicit_scope", "exception_present"]
-writes = ["single_explicit_scope", "multi_explicit_scope", "exception_present", "change_feedback_visible", "undo_available"]
+reads = [
+  "root_only",
+  "single_explicit_scope",
+  "multi_explicit_scope",
+  "exception_present",
+]
+writes = [
+  "single_explicit_scope",
+  "multi_explicit_scope",
+  "exception_present",
+  "change_feedback_visible",
+  "undo_available",
+]
 target_object = "scope"
 
 [ownership."RCL-001-remove_directory_from_collection_scope"]
 reads = ["single_explicit_scope", "multi_explicit_scope", "exception_present"]
-writes = ["single_explicit_scope", "root_only", "exception_present", "change_feedback_visible", "undo_available"]
+writes = [
+  "single_explicit_scope",
+  "root_only",
+  "exception_present",
+  "change_feedback_visible",
+  "undo_available",
+]
 target_object = "scope"
 
 [ownership."RCL-001-exclude_directory_from_collection_scope"]
@@ -206,7 +247,12 @@ target_object = "scope"
 
 [ownership."RCL-001-restore_directory_to_collection_scope"]
 reads = ["exception_present"]
-writes = ["single_explicit_scope", "multi_explicit_scope", "change_feedback_visible", "undo_available"]
+writes = [
+  "single_explicit_scope",
+  "multi_explicit_scope",
+  "change_feedback_visible",
+  "undo_available",
+]
 target_object = "scope"
 
 [ownership."RCL-001-toggle_collection_scope_subfolder_inclusion"]
@@ -220,8 +266,19 @@ writes = []
 target_object = "scope"
 
 [ownership."RCL-001-show_collection_scope_change_feedback"]
-reads = ["change_feedback_visible", "change_feedback_delayed", "change_feedback_failed", "undo_available", "redo_available"]
-writes = ["change_feedback_delayed", "change_feedback_failed", "change_feedback_visible", "undo_available"]
+reads = [
+  "change_feedback_visible",
+  "change_feedback_delayed",
+  "change_feedback_failed",
+  "undo_available",
+  "redo_available",
+]
+writes = [
+  "change_feedback_delayed",
+  "change_feedback_failed",
+  "change_feedback_visible",
+  "undo_available",
+]
 target_object = "scope"
 
 [ownership."RCL-001-undo_collection_filter_changes"]

@@ -30,35 +30,33 @@ shortcut: "-"
 
 ## Expected Outcome
 
-- 자연어 쿼리 해석 단계에서 변환 실패가 발생했을 때 입력 흐름을 막지 않는 가벼운 실패 피드백을 표시해 반영되지 않은 이유를 이해할 수 있게 함.
-- 입력 query는 trim된 값으로 처리하고 빈 query는 불필요한 변환 요청을 만들지 않아야 한다.
-- 변환 결과는 suggestion 대기 상태가 아니라 현재 filter draft에 일괄 반영하는 경로를 기본으로 삼는다.
-- 동일 failure가 반복되면 피드백을 누적하지 않고 갱신 또는 병합한다.
+- `query_submitting` 중 자연어 해석 단계가 실패하면 `conversion_failure_feedback_visible` 상태를 표시한다.
+- 현재 filter draft와 기존 condition은 비우지 않는다.
+- 사용자는 Composer 안에서 query를 수정하거나 다시 제출할 수 있다.
+- 이 실패는 execution failure와 합쳐서 포괄 실패 상태으로 표시하지 않는다.
 
 ## State Changes
 
-- query draft, submittedSearchFilters, active request id, feedback toast 상태를 갱신한다.
-- 변환 성공 시 returned appliedFilters 또는 structured filter changes를 현재 Composer state로 반영한다.
-- conversion failure와 execution failure는 서로 다른 failure reason으로 남긴다.
-- display interaction은 원본 데이터 자체를 임의로 변경하지 않고 표시 가능한 view state를 계산한다.
+- `query_submitting`을 읽고 `conversion_failure_feedback_visible`을 쓴다.
+- 이후 사용자가 query를 수정하면 `editable`로, 다시 제출하면 `query_submitting`으로 돌아갈 수 있다.
+- execution failure가 이어지는 경우에는 `execution_failure_feedback_visible`과 구분해 coalesce한다.
 
 ## User-visible Feedback
 
-- query 입력 중에는 field 값을 즉시 반영한다.
-- 변환/실행 실패는 Composer 흐름을 막지 않는 가벼운 피드백으로 보여준다.
-- 반복 failure는 같은 영역에서 최신 reason 중심으로 갱신한다.
+- Composer 안에 해석 실패 reason을 non-blocking local feedback으로 표시한다.
+- 반복되는 같은 conversion failure는 최신 reason 중심으로 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 빈 query submit은 네트워크 요청 없이 무시한다.
-- 변환은 성공했지만 적용 가능한 조건이 없으면 현재 filter를 임의로 비우지 않는다.
-- 취소된 suggestion 기반 interaction은 현재 기본 흐름에서 노출하지 않는다.
+- conversion failure 때문에 현재 filter draft를 빈 조건으로 저장 가능하게 만들지 않는다.
+- fallback reuse가 가능한 경우에는 failure가 아니라 `fallback_reuse` 성공으로 취급한다.
+- 포괄적인 포괄 실패 상태 상태를 만들지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] query를 입력하면 Composer query draft가 갱신되어야 한다.
-- [ ] query를 제출하면 구조화 filter 변경안 생성과 적용이 순서대로 진행되어야 한다.
-- [ ] 동일 failure가 짧은 시간 안에 반복되면 실패 메시지는 중복 누적되지 않아야 한다.
+- [ ] query 해석 실패 시 `conversion_failure_feedback_visible` 상태가 표시되어야 한다.
+- [ ] 해석 실패 후에도 기존 filter draft는 보존되어야 한다.
+- [ ] fallback reuse는 conversion failure로 표시되지 않아야 한다.
 
 ## Permissions / Dependencies
 
@@ -75,15 +73,22 @@ shortcut: "-"
 
 ## Related Interactions
 
-- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
-- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
-- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
+- [RCL-004-apply_all_generated_filter_suggestions](RCL-004-apply_all_generated_filter_suggestions.md)
 - [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
-- [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
+- [RCL-004-apply_generated_filter_suggestion](RCL-004-apply_generated_filter_suggestion.md)
 - [RCL-004-coalesce_repeated_query_failure_feedback](RCL-004-coalesce_repeated_query_failure_feedback.md)
+- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
+- [RCL-004-generate_filter_suggestions_from_query](RCL-004-generate_filter_suggestions_from_query.md)
+- [RCL-004-reject_all_generated_filter_suggestions](RCL-004-reject_all_generated_filter_suggestions.md)
+- [RCL-004-reject_generated_filter_suggestion](RCL-004-reject_generated_filter_suggestion.md)
+- [RCL-004-show_generated_filter_suggestions](RCL-004-show_generated_filter_suggestions.md)
+- [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
+- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
+- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:110`
-- Flows: [collection_query_composition_flow.md](../flows/collection_query_composition_flow.md)
+- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 - Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
+- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md), [collection_query_composition_flow.md](../flows/collection_query_composition_flow.md)

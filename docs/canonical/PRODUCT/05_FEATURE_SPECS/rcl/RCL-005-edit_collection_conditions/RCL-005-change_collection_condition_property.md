@@ -82,5 +82,5 @@ shortcut: "-"
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:131`
-- Flows: [collection_condition_editing_flow.md](../flows/collection_condition_editing_flow.md)
 - Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
+- Flows: [collection_condition_editing_flow.md](../flows/collection_condition_editing_flow.md)

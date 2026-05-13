@@ -30,34 +30,32 @@ shortcut: "-"
 
 ## Expected Outcome
 
-- 저장된 콜렉션을 다시 열 때 복원된 snapshot 결과를 먼저 표시해 이후 필요한 경우에만 refresh가 이어질 수 있게 함.
-- collection file은 query, scopes, conditions와 표시 상태를 함께 보존해야 한다.
-- 저장 중이거나 검색/필터 요청이 진행 중이면 불완전한 상태 저장을 막아야 한다.
-- 미저장 변경이 있을 때는 title affordance 또는 경고 흐름으로 이탈 위험을 표시해야 한다.
+- `snapshot_restored` 상태의 마지막 결과 snapshot과 definition metadata를 collection page에 표시한다.
+- snapshot 표시 뒤에도 사용자는 Composer를 `editable` 상태로 열어 filter를 수정할 수 있어야 한다.
+- snapshot이 없으면 `snapshot_fallback_required` 경로에서 definition-first refresh 안내를 보여준다.
 
 ## State Changes
 
-- openedCollectionURL, collectionContext, lastFiltersResponse, unsaved-change 상태를 갱신한다.
-- Save As는 새 `.voycoll` 패키지 파일을 만들고 현재 context를 저장 기준으로 삼는다.
-- discard는 마지막 저장본 또는 복원된 snapshot 기준으로 draft를 되돌린다.
-- display interaction은 원본 데이터 자체를 임의로 변경하지 않고 표시 가능한 view state를 계산한다.
+- `snapshot_restored` 또는 `snapshot_fallback_required` 표시 상태를 읽어 page rendering state를 갱신한다.
+- snapshot 표시가 성공해도 saved definition과 current filter context를 분리하지 않는다.
+- 이후 사용자가 filter를 수정하면 `save_ready` 또는 `condition_value_incomplete`로 이어질 수 있다.
 
 ## User-visible Feedback
 
-- 저장 가능 여부, 미저장 변경 표시, 파일 이름 변경 결과, 삭제/닫기 경고를 사용자에게 노출한다.
-- 저장 실패나 삭제 실패는 현재 collection page를 임의로 닫지 않고 recovery action을 유지한다.
+- 복원된 snapshot은 마지막 결과 기준임을 사용자가 이해할 수 있게 표시한다.
+- fallback 필요 시 결과가 비어 있는 실패가 아니라 refresh 필요 상태로 안내한다.
 
 ## Edge Cases / Failure Handling
 
-- query, scopes, conditions가 모두 비어 있으면 collection 저장을 막는다.
-- 검색 또는 filter apply가 진행 중이면 저장을 지연하거나 막아 불완전 payload를 저장하지 않는다.
-- 레거시 단일 파일 `.voycoll`은 열 수 있되 저장 시 현재 패키지 포맷으로 정규화될 수 있다.
+- snapshot 결과가 오래됐더라도 즉시 삭제하지 않고 RCL-003 stale/refresh 흐름으로 넘긴다.
+- snapshot 표시 실패를 저장 실패와 혼동하지 않는다.
+- definition-first fallback 시 저장된 조건 구성을 먼저 보여준다.
 
 ## Acceptance Criteria
 
-- [ ] 현재 filter가 비어 있지 않은 상황에서 Save As를 실행하면 `.voycoll` collection 파일이 생성되어야 한다.
-- [ ] 저장된 collection을 수정하면 미저장 변경 표시가 나타나야 한다.
-- [ ] 미저장 변경이 있는 상태에서 이탈하면 경고 또는 discard/save 선택지가 제공되어야 한다.
+- [ ] `snapshot_restored` 상태에서는 마지막 snapshot 결과가 즉시 표시되어야 한다.
+- [ ] fallback 필요 시 저장된 definition이 먼저 복원되어야 한다.
+- [ ] snapshot 표시 후 사용자는 filter를 계속 편집할 수 있어야 한다.
 
 ## Permissions / Dependencies
 
@@ -74,18 +72,20 @@ shortcut: "-"
 
 ## Related Interactions
 
-- [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md)
-- [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
-- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
-- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
-- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
-- [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
-- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-alert_unsaved_collection_filter_changes](RCL-002-alert_unsaved_collection_filter_changes.md)
 - [RCL-002-delete_collection](RCL-002-delete_collection.md)
-- [RCL-002-alert_unsasved_collection_filter_changes](RCL-002-alert_unsasved_collection_filter_changes.md)
+- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
+- [RCL-002-import_smart_folder_as_collection](RCL-002-import_smart_folder_as_collection.md)
+- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
+- [RCL-002-open_saved_collection](RCL-002-open_saved_collection.md)
+- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
+- [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
+- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
 
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:139`
-- Flows: [collection_management_flow.md](../flows/collection_management_flow.md)
+- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
 - Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
+- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md), [collection_management_flow.md](../flows/collection_management_flow.md)
