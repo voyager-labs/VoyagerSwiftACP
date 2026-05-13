@@ -8,7 +8,6 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
-import VoyagerShared
 
 @main
 struct VoyagerApp: App {

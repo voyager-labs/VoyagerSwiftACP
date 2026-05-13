@@ -6,6 +6,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @MainActor
 final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {

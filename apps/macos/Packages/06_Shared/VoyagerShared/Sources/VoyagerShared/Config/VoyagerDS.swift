@@ -19,7 +19,7 @@ public enum VoyagerDS {
         public static let c800 = Color(hex: 0x745E1C)
         public static let c700 = Color(hex: 0x9D7F24)
         public static let c600 = Color(hex: 0xC7A12E)
-        public static let c500 = Color(hex: 0xD7B652)
+        public static let c500 = Color(hex: 0xD7B652) // 포인트 컬러(기존 UI에서 사용)
         public static let c400 = Color(hex: 0xE0C77B)
         public static let c300 = Color(hex: 0xEAD8A4)
         public static let c200 = Color(hex: 0xF3EACD)
@@ -62,6 +62,8 @@ public enum VoyagerDS {
     }
 
     public enum Spacing {
+        // MARK: - Composer
+
         public static let composerHorizontalPadding: CGFloat = 7
         public static let composerTopPadding: CGFloat = 5
     }
@@ -96,6 +98,8 @@ public enum VoyagerDS {
 
     public enum Surface {
         public static let overlayBorder = SystemColor.separator
+
+        // MARK: - Composer (피그마: Materials + Stroke 검정 50%)
 
         public static let composerBorder = Color.black.opacity(0.5)
 
@@ -135,12 +139,15 @@ public enum VoyagerDS {
             if scheme == .dark {
                 return SystemColor.controlBackground
             }
+            // 기존 UI 톤을 유지하기 위한 값(추후 semantic token으로 재매핑 예정)
             return Color(red: 245 / 255.0, green: 245 / 255.0, blue: 245 / 255.0)
         }
 
         public static func popoverSearchFieldBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03)
         }
+
+        // MARK: - Shell (Toolbar / Sidebar / SplitView)
 
         public static func shellBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark
@@ -172,6 +179,8 @@ public enum VoyagerDS {
                 : Color.black.opacity(0.12)
         }
 
+        // MARK: - Status Button / Folder Chip
+
         public static func statusButtonBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark
                 ? Color(hex: 0x373430)
@@ -189,6 +198,8 @@ public enum VoyagerDS {
                 ? Color(hex: 0xDAD7D2)
                 : Color(hex: 0x323232)
         }
+
+        // MARK: - Chat Input
 
         public static func chatInputBackground(for scheme: ColorScheme) -> Color {
             scheme == .dark
@@ -219,6 +230,10 @@ public enum VoyagerDS {
         }
     }
 
+    // MARK: - AppKit (NSColor) 토큰
+
+    /// AppKit 레이어에서 사용하는 NSColor 기반 토큰
+    /// NSAppearance.performAsCurrentDrawingAppearance 블록 내에서 사용
     public enum AppKitSurface {
         public static func shellBackground(isDark: Bool) -> NSColor {
             isDark
@@ -244,6 +259,9 @@ public enum VoyagerDS {
                 : NSColor(hex: 0xF5F5F5)
         }
 
+        // MARK: - Content Pane Overlay (피그마: Materials/Ultrathick 근사치)
+
+        /// Content pane 배경 오버레이 (블러 위에 반투명 레이어)
         public static func contentPaneOverlay(isDark: Bool) -> NSColor {
             if isDark {
                 NSColor(white: 0.2, alpha: 0.75)
@@ -252,4 +270,10 @@ public enum VoyagerDS {
             }
         }
     }
+
+    // MARK: - Material 참조 (문서화용)
+
+    // 피그마 Materials → AppKit NSVisualEffectView.Material 매핑:
+    // - thin-dark → .hudWindow (가장 유사)
+    // - ultrathick → 직접 매핑 없음, 반투명 색상으로 대체
 }

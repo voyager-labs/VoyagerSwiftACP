@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+@testable import Voyager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation

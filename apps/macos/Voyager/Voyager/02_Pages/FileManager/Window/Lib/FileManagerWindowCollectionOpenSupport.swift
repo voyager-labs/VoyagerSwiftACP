@@ -4,7 +4,6 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
-import VoyagerShared
 
 func prepareLoadedCollectionOpenState(
     restorationPayload: CollectionOpenRestorationPayload,

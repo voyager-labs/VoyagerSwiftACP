@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 @testable import Voyager
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import XCTest
 

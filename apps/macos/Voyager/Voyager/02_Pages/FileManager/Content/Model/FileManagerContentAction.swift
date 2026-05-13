@@ -5,6 +5,7 @@ import SwiftUI
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
+import VoyagerShared
 
 @CasePathable
 enum FileManagerContentAction: ViewAction, CasePathable, Sendable {

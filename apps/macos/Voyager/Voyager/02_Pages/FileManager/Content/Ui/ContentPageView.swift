@@ -4,6 +4,7 @@ import SwiftUI
 
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>

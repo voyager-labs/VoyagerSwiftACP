@@ -2,7 +2,9 @@ import ComposableArchitecture
 import Foundation
 @testable import Voyager
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -78,6 +80,8 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
 
             let store = TestStore(initialState: initialState) {
                 FileManagerContentFeature()
+            } withDependencies: {
+                $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
             }
             store.exhaustivity = .off
 
@@ -142,10 +146,22 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         var initialState = FileManagerContentState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
         initialState.entryViewLayout.entries = [selected]
+        initialState.entryViewLayout.entryOperations.items = [selected]
         initialState.entryViewLayout.selectedIds = [selected.id]
 
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
+            $0.entryFileOpsClient = .previewValue
+            $0.entryOpenClient = .previewValue
+            $0.entryQuickLookClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.uuid = UUIDGenerator.incrementing
         }
         store.exhaustivity = .off
 
@@ -188,10 +204,22 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         initialState.entryViewLayout.mode = layout
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
         initialState.entryViewLayout.entries = [selected]
+        initialState.entryViewLayout.entryOperations.items = [selected]
         initialState.entryViewLayout.selectedIds = [selected.id]
 
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
+            $0.entryFileOpsClient = .previewValue
+            $0.entryOpenClient = .previewValue
+            $0.entryQuickLookClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.uuid = UUIDGenerator.incrementing
         }
         store.exhaustivity = .off
 
@@ -227,6 +255,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                 initialState.entryViewLayout.mode = layout
                 initialState.navigation.seedInitialFolderPath("/tmp/voyager")
                 initialState.entryViewLayout.entries = [selected]
+                initialState.entryViewLayout.entryOperations.items = [selected]
                 initialState.entryViewLayout.selectedIds = [selected.id]
 
                 let store = TestStore(initialState: initialState) {
@@ -257,6 +286,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                 initialState.entryViewLayout.mode = layout
                 initialState.navigation.seedInitialFolderPath("/tmp/voyager")
                 initialState.entryViewLayout.entries = [selected]
+                initialState.entryViewLayout.entryOperations.items = [selected]
                 initialState.entryViewLayout.selectedIds = [selected.id]
                 initialState.entryViewLayout.entryOperations.renamingItemId = selected.id
 
@@ -297,6 +327,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                 multiSelectionState.entryViewLayout.mode = layout
                 multiSelectionState.navigation.seedInitialFolderPath("/tmp/voyager")
                 multiSelectionState.entryViewLayout.entries = [entry1, entry2]
+                multiSelectionState.entryViewLayout.entryOperations.items = [entry1, entry2]
                 multiSelectionState.entryViewLayout.selectedIds = [entry1.id, entry2.id]
 
                 let multiStore = TestStore(initialState: multiSelectionState) {
