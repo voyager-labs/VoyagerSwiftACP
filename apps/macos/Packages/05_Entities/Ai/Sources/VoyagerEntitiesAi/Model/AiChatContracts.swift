@@ -184,7 +184,9 @@ public struct AiChatRequestContextSnapshot: Codable, Equatable, Sendable {
     public let runID: AiChatRunID
     public let provider: AiProvider
     public let model: AiModelHandle
+    public let selectedModel: AiProviderModel?
     public let selectedModelRow: AiModelCatalogRow?
+    public let selectedThinking: AiThinkingSelection?
     public let sessionStatus: AiChatSessionStatus
     public let currentContext: AiChatCurrentContextSnapshot
     public let promptSummary: String?
@@ -196,7 +198,9 @@ public struct AiChatRequestContextSnapshot: Codable, Equatable, Sendable {
         runID: AiChatRunID,
         provider: AiProvider,
         model: AiModelHandle,
+        selectedModel: AiProviderModel? = nil,
         selectedModelRow: AiModelCatalogRow? = nil,
+        selectedThinking: AiThinkingSelection? = nil,
         sessionStatus: AiChatSessionStatus,
         currentContext: AiChatCurrentContextSnapshot = .init(),
         promptSummary: String? = nil,
@@ -207,7 +211,9 @@ public struct AiChatRequestContextSnapshot: Codable, Equatable, Sendable {
         self.runID = runID
         self.provider = provider
         self.model = model
+        self.selectedModel = selectedModel
         self.selectedModelRow = selectedModelRow
+        self.selectedThinking = selectedThinking
         self.sessionStatus = sessionStatus
         self.currentContext = currentContext
         self.promptSummary = promptSummary
@@ -221,6 +227,7 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
     public let provider: AiProvider
     public let model: AiModelHandle
     public let selectedModelRow: AiModelCatalogRow?
+    public let selectedThinking: AiThinkingSelection?
     public let transcriptHistory: [AiChatMessage]
     public let lastRequestID: AiChatRequestID?
     public let lastRunID: AiChatRunID?
@@ -232,6 +239,7 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
         provider: AiProvider,
         model: AiModelHandle,
         selectedModelRow: AiModelCatalogRow? = nil,
+        selectedThinking: AiThinkingSelection? = nil,
         transcriptHistory: [AiChatMessage] = [],
         lastRequestID: AiChatRequestID? = nil,
         lastRunID: AiChatRunID? = nil,
@@ -242,6 +250,7 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
         self.provider = provider
         self.model = model
         self.selectedModelRow = selectedModelRow
+        self.selectedThinking = selectedThinking
         self.transcriptHistory = transcriptHistory
         self.lastRequestID = lastRequestID
         self.lastRunID = lastRunID
