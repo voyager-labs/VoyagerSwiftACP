@@ -14,10 +14,6 @@ Provider later.
 ★ Mock ready
 """
 
-final class SettingsOpenSpy: @unchecked Sendable {
-    var callCount = 0
-}
-
 @MainActor
 final class AiChatFeatureExecutionTests: XCTestCase {
     // swiftlint:disable:next function_body_length
@@ -78,7 +74,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.receive(.executionEvent(.final(response: expectedResponse))) { state in
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: expectedMockAssistantMessage)
+                AiChatMessage(role: .assistant, content: expectedMockAssistantMessage),
             ]
             state.lockedModelHandle = nil
             state.executionPhase = .completed(lock)
@@ -91,7 +87,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertEqual(persistence.snapshots.count, 1)
         XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, [
             AiChatMessage(role: .user, content: "Hello"),
-            AiChatMessage(role: .assistant, content: expectedMockAssistantMessage)
+            AiChatMessage(role: .assistant, content: expectedMockAssistantMessage),
         ])
         XCTAssertEqual(persistence.snapshots.first?.lastRequestID, lock.request.context.requestID)
         XCTAssertEqual(persistence.snapshots.first?.lastRunID, lock.request.context.runID)
@@ -171,21 +167,27 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.finish()
     }
 
-    func testOpenSettingsTappedInvokesSettingsClientWhenDisconnected() async {
-        let spy = SettingsOpenSpy()
-
-        let store = TestStore(initialState: AiChatFeature.State()) {
+    func testOpenSettingsTappedDelegatesOpenAISettingsForNoProviderCTA() async {
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            providerConnectionSnapshot: .known([])
+        )) {
             AiChatFeature()
-        } withDependencies: {
-            $0.aiChatSettingsClient = AiChatSettingsClient(openSettingsWindow: {
-                spy.callCount += 1
-                return true
-            })
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.openSettingsTapped)
+        await store.receive(.delegate(.openAISettings))
 
-        XCTAssertEqual(spy.callCount, 1)
+        XCTAssertEqual(
+            store.state.connectionState,
+            .unconnected(.init(
+                title: "Connect an AI provider",
+                detail: "Set up a provider in Settings to chat with this context.",
+                fixLabel: "Open Settings"
+            ))
+        )
     }
+
 }

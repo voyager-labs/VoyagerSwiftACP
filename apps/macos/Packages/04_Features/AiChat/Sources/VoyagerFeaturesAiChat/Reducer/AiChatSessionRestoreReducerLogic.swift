@@ -6,7 +6,8 @@ extension AiChatFeature {
     // swiftlint:disable:next function_body_length
     func restoreSession(sessionID: AiChatSessionID, state: State) -> Effect<Action> {
         let catalogRows = state.catalogRows
-        let selectedHandle = resolvedSelectedModelRow(in: state)?.handle ?? state.selectedModelHandle
+        let selectedHandle = state.selectedModelHandle
+        let selectedThinking = state.selectedThinking
 
         return .run { [aiChatSessionPersistenceClient, uuid] send in
             do {
@@ -15,7 +16,8 @@ extension AiChatFeature {
                         if let fallbackSnapshot = Self.makeNewSessionSnapshot(
                             sessionID: AiChatSessionID(rawValue: uuid()),
                             catalogRows: catalogRows,
-                            selectedHandle: selectedHandle
+                            selectedHandle: selectedHandle,
+                            selectedThinking: selectedThinking
                         ) {
                             await send(.restoreOutcome(
                                 requestedSessionID: sessionID,
@@ -44,7 +46,8 @@ extension AiChatFeature {
                 if let snapshot = Self.makeFallbackRestoreSnapshot(
                     uuid: uuid,
                     catalogRows: catalogRows,
-                    selectedHandle: selectedHandle
+                    selectedHandle: selectedHandle,
+                    selectedThinking: selectedThinking
                 ) {
                     await send(.restoreOutcome(
                         requestedSessionID: sessionID,
@@ -62,7 +65,8 @@ extension AiChatFeature {
                 if let snapshot = Self.makeFallbackRestoreSnapshot(
                     uuid: uuid,
                     catalogRows: catalogRows,
-                    selectedHandle: selectedHandle
+                    selectedHandle: selectedHandle,
+                    selectedThinking: selectedThinking
                 ) {
                     await send(.restoreOutcome(
                         requestedSessionID: sessionID,
@@ -84,12 +88,14 @@ extension AiChatFeature {
     static func makeFallbackRestoreSnapshot(
         uuid: UUIDGenerator,
         catalogRows: [AiModelCatalogRow],
-        selectedHandle: AiModelHandle?
+        selectedHandle: AiModelHandle?,
+        selectedThinking: AiThinkingSelection?
     ) -> AiChatSessionSnapshot? {
         makeNewSessionSnapshot(
             sessionID: AiChatSessionID(rawValue: uuid()),
             catalogRows: catalogRows,
-            selectedHandle: selectedHandle
+            selectedHandle: selectedHandle,
+            selectedThinking: selectedThinking
         )
     }
 
@@ -103,10 +109,19 @@ extension AiChatFeature {
         state.transcriptHistory = setup.transcriptHistory
         state.draftText = setup.draftText
         state.catalogRows = setup.catalogRows
+        state.modelListState = State.modelListState(from: setup.catalogRows)
         state.selectedModelHandle = setup.selectedModelHandle
+        state.selectedThinking = setup.selectedThinking
+        state.unavailableSelectedModelHandle = nil
         state.lockedModelHandle = setup.lockedModelHandle
         state.lastExecutionFailure = setup.lastExecutionFailure
         state.executionPhase = .idle
+        state.modelListRequestID = nil
+        state.modelListProvider = nil
+        state.modelListProviderOrder = []
+        state.modelListPendingProviders = []
+        state.modelListLoadedModelsByProvider = [:]
+        state.modelListFailedProviders = [:]
     }
 
     func applyRestoreOutcome(
@@ -147,6 +162,7 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.executionPhase = .idle
         state.selectedModelHandle = snapshot.model
+        state.selectedThinking = snapshot.selectedThinking
     }
 
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
@@ -157,29 +173,21 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.executionPhase = .idle
         state.selectedModelHandle = snapshot.model
+        state.selectedThinking = snapshot.selectedThinking
     }
 
     static func normalizeRestoredSnapshot(
         _ snapshot: AiChatSessionSnapshot,
         catalogRows: [AiModelCatalogRow]
     ) -> AiChatSessionSnapshot {
-        let selectedRow: AiModelCatalogRow?
-        if let row = snapshot.selectedModelRow,
-           catalogRows.contains(where: { $0.handle == row.handle }) {
-            selectedRow = row
-        } else if let matchingRow = catalogRows.first(where: { $0.handle == snapshot.model }) {
-            selectedRow = matchingRow
-        } else {
-            selectedRow = catalogRows.first
-        }
-
-        let model = selectedRow?.handle ?? snapshot.model
+        let selectedRow = catalogRows.first(where: { $0.handle == snapshot.model })
         return AiChatSessionSnapshot(
             sessionID: snapshot.sessionID,
             status: .active,
-            provider: model.provider,
-            model: model,
+            provider: snapshot.provider,
+            model: snapshot.model,
             selectedModelRow: selectedRow,
+            selectedThinking: snapshot.selectedThinking,
             transcriptHistory: snapshot.transcriptHistory,
             lastRequestID: snapshot.lastRequestID,
             lastRunID: snapshot.lastRunID,
@@ -190,17 +198,22 @@ extension AiChatFeature {
     static func makeNewSessionSnapshot(
         sessionID: AiChatSessionID,
         catalogRows: [AiModelCatalogRow],
-        selectedHandle: AiModelHandle?
+        selectedHandle: AiModelHandle?,
+        selectedThinking: AiThinkingSelection?
     ) -> AiChatSessionSnapshot? {
-        let selectedRow = catalogRows.first(where: { $0.handle == selectedHandle }) ?? catalogRows.first
-        guard let model = selectedRow?.handle ?? selectedHandle else { return nil }
+        guard let selectedHandle,
+              let selectedRow = catalogRows.first(where: { $0.handle == selectedHandle })
+        else {
+            return nil
+        }
 
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .idle,
-            provider: model.provider,
-            model: model,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
             selectedModelRow: selectedRow,
+            selectedThinking: selectedThinking,
             transcriptHistory: [],
             updatedAtMs: 0
         )

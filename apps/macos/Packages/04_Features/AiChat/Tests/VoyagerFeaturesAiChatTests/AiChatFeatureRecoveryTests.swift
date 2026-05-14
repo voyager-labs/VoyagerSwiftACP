@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureRecoveryTests: XCTestCase {
-    func testSelectedModelChangedFallsBackToFirstCatalogRowWithoutMutatingLockedModel() async {
+    func testSelectedModelChangedClearsUnavailableSelectionWithoutMutatingLockedModel() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
         let sessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222222"))
@@ -42,17 +42,18 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
         }
 
         await store.send(.selectedModelChanged(unresolvableHandle)) { state in
-            state.selectedModelHandle = catalogRows.first?.handle
+            state.selectedModelHandle = nil
+            state.unavailableSelectedModelHandle = nil
         }
 
         XCTAssertEqual(store.state.lockedModelHandle, catalogRows[1].handle)
-        XCTAssertEqual(store.state.selectedModelHandle, catalogRows.first?.handle)
+        XCTAssertNil(store.state.selectedModelHandle)
 
         if case let .processing(processing, _, selectedModel) = store.state.surfaceState {
             XCTAssertEqual(processing.lockedModel.label.title, "Claude Sonnet 4")
-            XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel)
         } else {
-            XCTFail("Expected processing surface state after fallback")
+            XCTFail("Expected processing surface state after clearing invalid selection")
         }
     }
 

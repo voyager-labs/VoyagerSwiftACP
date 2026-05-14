@@ -4,10 +4,6 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
-final class ErrorRecoverySettingsOpenSpy: @unchecked Sendable {
-    var callCount = 0
-}
-
 @MainActor
 final class AiChatFeatureErrorRecoveryTests: XCTestCase {
     // swiftlint:disable:next function_body_length
@@ -181,8 +177,7 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
         await store.finish()
     }
 
-    func testErrorRecoveryOpensSettingsForRebindRequiredSession() async {
-        let spy = ErrorRecoverySettingsOpenSpy()
+    func testErrorRecoveryDelegatesOpenSettingsForRebindRequiredSession() async {
         let catalogRows = makeCatalogRows()
         let store = TestStore(initialState: AiChatFeature.State(
             sessionStatus: .rebindRequired,
@@ -192,16 +187,10 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
             executionPhase: .idle
         )) {
             AiChatFeature()
-        } withDependencies: {
-            $0.aiChatSettingsClient = AiChatSettingsClient(openSettingsWindow: {
-                spy.callCount += 1
-                return true
-            })
         }
 
         await store.send(.errorRecoveryTapped)
-
-        XCTAssertEqual(spy.callCount, 1)
+        await store.receive(.delegate(.openAISettings))
         await store.finish()
     }
 }
