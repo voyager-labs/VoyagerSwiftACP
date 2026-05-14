@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 
 typealias FileManagerWindowFeature = FileManagerFeature

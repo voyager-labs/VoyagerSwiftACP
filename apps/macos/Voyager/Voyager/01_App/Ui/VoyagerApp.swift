@@ -6,6 +6,7 @@ import SwiftUI
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 

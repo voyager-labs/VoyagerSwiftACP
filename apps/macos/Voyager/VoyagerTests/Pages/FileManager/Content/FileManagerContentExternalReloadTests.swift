@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+@testable import VoyagerPagesFileManager
 import struct VoyagerEntitiesCollection.CollectionContext
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements

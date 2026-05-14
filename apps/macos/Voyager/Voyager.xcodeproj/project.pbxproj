@@ -377,6 +377,7 @@
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
+				F2000000000000000000001E /* VoyagerPagesFileManager */,
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
@@ -411,6 +412,7 @@
 			name = VoyagerTests;
 			packageProductDependencies = (
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
+				F2000000000000000000001E /* VoyagerPagesFileManager */,
 				F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */,
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
@@ -596,6 +598,7 @@
 				F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */,
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
+				F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -1516,6 +1519,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/Composer;
 		};
+		F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/02_Pages/FileManager;
+		};
 		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1783,6 +1790,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */;
 			productName = VoyagerFeaturesComposer;
+		};
+		F2000000000000000000001E /* VoyagerPagesFileManager */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */;
+			productName = VoyagerPagesFileManager;
 		};
 		/* End XCSwiftPackageProductDependency section */
 	};

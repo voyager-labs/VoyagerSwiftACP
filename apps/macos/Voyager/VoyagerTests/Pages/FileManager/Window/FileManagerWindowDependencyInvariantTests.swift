@@ -2,9 +2,8 @@ import ComposableArchitecture
 @testable import Voyager
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import XCTest
-
-@testable import Voyager
 
 @MainActor
 final class WindowDependencyInvariantTests: XCTestCase {

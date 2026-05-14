@@ -2,6 +2,7 @@ import AppKit
 @preconcurrency import Combine
 import ComposableArchitecture
 @testable import Voyager
+@testable import VoyagerPagesFileManager
 import XCTest
 
 @MainActor

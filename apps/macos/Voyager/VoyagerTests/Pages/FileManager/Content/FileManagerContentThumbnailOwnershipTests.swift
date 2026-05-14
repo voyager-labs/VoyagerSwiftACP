@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryThumbnail
