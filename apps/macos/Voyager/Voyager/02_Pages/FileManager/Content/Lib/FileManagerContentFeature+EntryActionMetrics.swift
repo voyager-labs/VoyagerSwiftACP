@@ -10,7 +10,7 @@ extension FileManagerContentFeature {
         let entryKind: DAUEntryKind
     }
 
-    func logEntryActionMetricIfNeeded(for action: EntryOperationsAction) {
+    static func logEntryActionMetricIfNeeded(for action: EntryOperationsAction) {
         guard let payload = dauEntryActionPayload(for: action) else {
             return
         }
@@ -21,7 +21,7 @@ extension FileManagerContentFeature {
         )
     }
 
-    private func dauEntryActionPayload(for action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func dauEntryActionPayload(for action: EntryOperationsAction) -> EntryActionPayload? {
         payloadForOpenActions(action)
             ?? payloadForOpenWithActions(action)
             ?? payloadForCreateActions(action)
@@ -30,14 +30,14 @@ extension FileManagerContentFeature {
             ?? payloadForTagActions(action)
     }
 
-    private func payloadForOpenActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func payloadForOpenActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
         guard case let .open(openAction) = action else {
             return nil
         }
         return payloadForOpenAction(openAction)
     }
 
-    private func payloadForOpenWithActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func payloadForOpenWithActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
         switch action {
         case let .openWith(.openFileWithApp(file)):
             return EntryActionPayload(actionKind: .openWithApp, entryKind: entryKind(for: file))
@@ -61,11 +61,11 @@ extension FileManagerContentFeature {
         }
     }
 
-    private func payloadForCreateActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func payloadForCreateActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
         payloadForEditCreateActions(action) ?? payloadForClipboardCreateActions(action)
     }
 
-    private func payloadForTrashActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func payloadForTrashActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
         switch action {
         case let .trash(.moveToTrash(paths)):
             guard let entryKind = entryKind(for: paths) else { return nil }
@@ -88,7 +88,7 @@ extension FileManagerContentFeature {
         }
     }
 
-    private func payloadForArchiveActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func payloadForArchiveActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
         switch action {
         case let .archive(.compressItems(paths)):
             guard let entryKind = entryKind(for: paths) else { return nil }
@@ -102,7 +102,7 @@ extension FileManagerContentFeature {
         }
     }
 
-    private func payloadForTagActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func payloadForTagActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
         switch action {
         case let .tagging(.requestTagMutation(request: request)):
             guard let entryKind = entryKind(for: request.paths) else { return nil }
@@ -113,7 +113,7 @@ extension FileManagerContentFeature {
         }
     }
 
-    private func entryKind(for entries: [EntryModel]) -> DAUEntryKind? {
+    private static func entryKind(for entries: [EntryModel]) -> DAUEntryKind? {
         guard !entries.isEmpty else { return nil }
         let kinds = Set(entries.map(entryKind(for:)))
         if kinds.count == 1, let kind = kinds.first {
@@ -122,14 +122,14 @@ extension FileManagerContentFeature {
         return .mixed
     }
 
-    private func entryKind(for entry: EntryModel) -> DAUEntryKind {
+    private static func entryKind(for entry: EntryModel) -> DAUEntryKind {
         if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             return .collection
         }
         return entry.isFolder ? .directory : .file
     }
 
-    private func entryKind(for paths: [String]) -> DAUEntryKind? {
+    private static func entryKind(for paths: [String]) -> DAUEntryKind? {
         guard !paths.isEmpty else { return nil }
         let kinds = Set(paths.map(entryKind(forPath:)))
         if kinds.count == 1, let kind = kinds.first {
@@ -138,7 +138,7 @@ extension FileManagerContentFeature {
         return .mixed
     }
 
-    private func entryKind(forPath path: String) -> DAUEntryKind {
+    private static func entryKind(forPath path: String) -> DAUEntryKind {
         let pathExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
         if pathExtension == CollectionConstants.fileExtension {
             return .collection
@@ -146,19 +146,19 @@ extension FileManagerContentFeature {
         return .file
     }
 
-    private func dauActionKind(for operationKind: OperationKind) -> DAUEntryActionKind? {
+    private static func dauActionKind(for operationKind: OperationKind) -> DAUEntryActionKind? {
         guard operationKind.isUndoable else { return nil }
-        return Self.dauActionKindMap[operationKind]
+        return dauActionKindMap[operationKind]
     }
 
-    private func payloadForOpenAction(_ action: EntryOperationsAction.Open) -> EntryActionPayload? {
+    private static func payloadForOpenAction(_ action: EntryOperationsAction.Open) -> EntryActionPayload? {
         guard let (actionKind, paths) = openMetricInputs(for: action) else {
             return nil
         }
         return payload(actionKind: actionKind, paths: paths)
     }
 
-    private func payloadForEditCreateActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func payloadForEditCreateActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
         switch action {
         case .edit(.createNewFolder):
             return EntryActionPayload(actionKind: .createFolder, entryKind: .directory)
@@ -173,7 +173,7 @@ extension FileManagerContentFeature {
         }
     }
 
-    private func payloadForClipboardCreateActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
+    private static func payloadForClipboardCreateActions(_ action: EntryOperationsAction) -> EntryActionPayload? {
         switch action {
         case let .clipboard(.copySelectedItems(files)):
             guard let entryKind = entryKind(for: files) else { return nil }
@@ -192,7 +192,7 @@ extension FileManagerContentFeature {
         }
     }
 
-    private func openMetricInputs(for action: EntryOperationsAction.Open) -> (DAUEntryActionKind, [String])? {
+    private static func openMetricInputs(for action: EntryOperationsAction.Open) -> (DAUEntryActionKind, [String])? {
         switch action {
         case let .openFiles(paths):
             (.openDefault, paths)
@@ -209,7 +209,7 @@ extension FileManagerContentFeature {
         }
     }
 
-    private func payload(
+    private static func payload(
         actionKind: DAUEntryActionKind,
         paths: [String],
     ) -> EntryActionPayload? {
