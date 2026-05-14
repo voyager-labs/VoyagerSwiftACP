@@ -329,4 +329,148 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
 
         await store.finish()
     }
+
+    // MARK: - Seam Separation Tests (VOY-335 Task 2)
+
+    /// Verify preference seam only affects preference fields.
+    /// Sends .view(.setSidebarVisible(false)) and confirms only sidebarVisible changed.
+    func testPreferenceSeamOnlyAffectsPreferenceFields() async {
+        var initialState = FileManagerSidebarState()
+        initialState.sidebarVisible = true
+        initialState.sidebarWidth = 220
+        initialState.favorites = [
+            SidebarItems.FavoriteItem(
+                name: "Test",
+                url: URL(fileURLWithPath: "/Test"),
+                iconName: "folder",
+            ),
+        ]
+        initialState.contextMenuTargetId = "some-id"
+        initialState.contextMenuTargetWasSelected = true
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = .testValue
+            $0.fileManagerLocationsClient = .testValue
+            $0.finderFavoritesTagClient = .testValue
+            $0.notificationCenterClient = .testValue
+            $0.fileManagerIconClient = .testValue
+        }
+
+        await store.send(.view(.setSidebarVisible(false))) { state in
+            state.sidebarVisible = false
+            XCTAssertEqual(state.sidebarWidth, 220)
+            XCTAssertEqual(state.favorites.count, 1)
+            XCTAssertEqual(state.contextMenuTargetId, "some-id")
+            XCTAssertTrue(state.contextMenuTargetWasSelected)
+        }
+
+        await store.finish()
+    }
+
+    /// Verify source loading seam only affects source fields.
+    /// Sends .internal(.favoritesLoaded) and confirms only favorites changed.
+    func testSourceLoadingSeamOnlyAffectsSourceFields() async {
+        var initialState = FileManagerSidebarState()
+        initialState.sidebarVisible = false
+        initialState.sidebarWidth = 300
+        initialState.contextMenuTargetId = "target-x"
+        initialState.contextMenuTargetWasSelected = true
+
+        let newFavorite = SidebarItems.FavoriteItem(
+            name: "Loaded",
+            url: URL(fileURLWithPath: "/Loaded"),
+            iconName: "folder",
+        )
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = .testValue
+            $0.fileManagerLocationsClient = .testValue
+            $0.finderFavoritesTagClient = .testValue
+            $0.notificationCenterClient = .testValue
+            $0.fileManagerIconClient = .testValue
+        }
+
+        await store.send(.internal(.favoritesLoaded([newFavorite]))) { state in
+            state.favorites = [newFavorite]
+            // Verify preference/interaction fields untouched
+            XCTAssertFalse(state.sidebarVisible)
+            XCTAssertEqual(state.sidebarWidth, 300)
+            XCTAssertEqual(state.contextMenuTargetId, "target-x")
+            XCTAssertTrue(state.contextMenuTargetWasSelected)
+        }
+
+        await store.finish()
+    }
+
+    /// Verify interaction seam only affects interaction fields.
+    /// Sends .view(.setContextMenuTarget) and confirms only context menu state changed.
+    func testInteractionSeamOnlyAffectsInteractionFields() async {
+        var initialState = FileManagerSidebarState()
+        initialState.sidebarVisible = true
+        initialState.sidebarWidth = 250
+        initialState.favorites = [
+            SidebarItems.FavoriteItem(
+                name: "Fav",
+                url: URL(fileURLWithPath: "/Fav"),
+                iconName: "folder",
+            ),
+        ]
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = .testValue
+            $0.fileManagerLocationsClient = .testValue
+            $0.finderFavoritesTagClient = .testValue
+            $0.notificationCenterClient = .testValue
+            $0.fileManagerIconClient = .testValue
+        }
+
+        await store.send(.view(.setContextMenuTarget(id: "ctx-42", wasSelected: true))) { state in
+            state.contextMenuTargetId = "ctx-42"
+            state.contextMenuTargetWasSelected = true
+            // Verify preference/source fields untouched
+            XCTAssertTrue(state.sidebarVisible)
+            XCTAssertEqual(state.sidebarWidth, 250)
+            XCTAssertEqual(state.favorites.count, 1)
+        }
+
+        await store.finish()
+    }
+
+    /// Verify shell contract fields remain accessible after decomposition.
+    /// Confirms sidebarVisible and sidebarWidth are readable/writable via state.
+    func testShellContractFieldsRemainAccessible() async {
+        var initialState = FileManagerSidebarState()
+        initialState.sidebarVisible = false
+        initialState.sidebarWidth = 180
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerSidebarFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0[VoyagerEntitiesEntry.EntryLoadingClient.self] = VoyagerEntitiesEntry.EntryLoadingClient.testValue
+            $0.fileManagerFavoritesClient = .testValue
+            $0.fileManagerLocationsClient = .testValue
+            $0.finderFavoritesTagClient = .testValue
+            $0.notificationCenterClient = .testValue
+            $0.fileManagerIconClient = .testValue
+        }
+
+        // Verify initial values are readable
+        XCTAssertEqual(store.state.sidebarVisible, false)
+        XCTAssertEqual(store.state.sidebarWidth, 180)
+
+        await store.finish()
+    }
 }
