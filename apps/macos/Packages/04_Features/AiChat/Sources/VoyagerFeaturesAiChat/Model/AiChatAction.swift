@@ -1,12 +1,20 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAi
 
 @CasePathable
 public enum AiChatAction: CasePathable, Equatable, Sendable {
+    case delegate(Delegate)
     case onAppear
     case setup(AiChatSetupState)
-    case availableModelsUpdated(catalogRows: [AiModelCatalogRow], selectedModelHandle: AiModelHandle?)
+    case providerConnectionsUpdated(AIConnectionsFile)
+    case modelListLoading(requestID: UUID, provider: AiProvider, credential: StoredCredentialPayload?)
+    case modelListLoaded(requestID: UUID, provider: AiProvider, models: [AiProviderModel])
+    case modelListLoadFailed(requestID: UUID, provider: AiProvider, failure: AiModelListFailure)
+    case modelSelectorTapped
+    case modelSelectorDismissed
     case selectedModelChanged(AiModelHandle?)
+    case selectedThinkingChanged(AiThinkingSelection?)
     case draftTextChanged(String)
     case openSettingsTapped
     case errorRecoveryTapped
@@ -23,4 +31,9 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case persistenceFailed(AiChatRequestLock, AiChatExecutionFailure)
     case persistenceRecoverySucceeded(AiChatRequestLock)
     case persistenceRecoveryRetryFailed(AiChatRequestLock, AiChatExecutionFailure)
+
+    @CasePathable
+    public enum Delegate: CasePathable, Equatable, Sendable {
+        case openAISettings
+    }
 }

@@ -2,6 +2,34 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 
+public struct AiModelListFailure: Equatable, Sendable {
+    public var message: String
+    public var reason: AiModelListFailureReason
+
+    public init(message: String, reason: AiModelListFailureReason = .generic) {
+        self.message = message
+        self.reason = reason
+    }
+}
+
+public enum AiModelListFailureReason: Equatable, Sendable {
+    case generic
+    case unsupportedProvider
+}
+
+public enum AiChatProviderConnectionSnapshot: Equatable, Sendable {
+    case unknown
+    case known([AiProvider])
+}
+
+public enum AiChatModelListState: Equatable, Sendable {
+    case idle
+    case loading
+    case loaded([AiProviderModel])
+    case empty
+    case failed(AiModelListFailure)
+}
+
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     public var restoreSessionID: AiChatSessionID?
@@ -13,10 +41,22 @@ public struct AiChatState: Equatable, Sendable {
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
     public var catalogRows: [AiModelCatalogRow]
+    public var modelListState: AiChatModelListState
+    public var isModelSelectorPresented: Bool
     public var selectedModelHandle: AiModelHandle?
+    public var selectedThinking: AiThinkingSelection?
+    public var unavailableSelectedModelHandle: AiModelHandle?
     public var lockedModelHandle: AiModelHandle?
     public var lastExecutionFailure: AiChatExecutionFailure?
     public var executionPhase: AiChatExecutionPhase
+    public var modelListRequestID: UUID?
+    public var modelListProvider: AiProvider?
+    public var modelListProviderOrder: [AiProvider]
+    public var modelListPendingProviders: Set<AiProvider>
+    public var modelListLoadedModelsByProvider: [AiProvider: [AiProviderModel]]
+    public var modelListFailedProviders: [AiProvider: AiModelListFailure]
+    public var providerConnectionSnapshot: AiChatProviderConnectionSnapshot
+    public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
 
     public init(
         restoreSessionID: AiChatSessionID? = nil,
@@ -28,10 +68,22 @@ public struct AiChatState: Equatable, Sendable {
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
         catalogRows: [AiModelCatalogRow] = [],
+        modelListState: AiChatModelListState? = nil,
+        isModelSelectorPresented: Bool = false,
         selectedModelHandle: AiModelHandle? = nil,
+        selectedThinking: AiThinkingSelection? = nil,
+        unavailableSelectedModelHandle: AiModelHandle? = nil,
         lockedModelHandle: AiModelHandle? = nil,
         lastExecutionFailure: AiChatExecutionFailure? = nil,
-        executionPhase: AiChatExecutionPhase = .idle
+        executionPhase: AiChatExecutionPhase = .idle,
+        modelListRequestID: UUID? = nil,
+        modelListProvider: AiProvider? = nil,
+        modelListProviderOrder: [AiProvider] = [],
+        modelListPendingProviders: Set<AiProvider> = [],
+        modelListLoadedModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
+        modelListFailedProviders: [AiProvider: AiModelListFailure] = [:],
+        providerConnectionSnapshot: AiChatProviderConnectionSnapshot = .unknown,
+        availableModelsByProvider: [AiProvider: [AiProviderModel]] = [:]
     ) {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
@@ -41,11 +93,33 @@ public struct AiChatState: Equatable, Sendable {
         self.currentContext = currentContext
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
-        self.catalogRows = catalogRows
+        let resolvedModelListState = modelListState ?? Self.modelListState(from: catalogRows)
+        self.catalogRows = catalogRows.isEmpty ? Self.makeCatalogRows(for: resolvedModelListState) : catalogRows
+        self.modelListState = resolvedModelListState
+        self.isModelSelectorPresented = isModelSelectorPresented
         self.selectedModelHandle = selectedModelHandle
+        self.selectedThinking = selectedThinking
+        self.unavailableSelectedModelHandle = unavailableSelectedModelHandle
         self.lockedModelHandle = lockedModelHandle
         self.lastExecutionFailure = lastExecutionFailure
         self.executionPhase = executionPhase
+        self.modelListRequestID = modelListRequestID
+        self.modelListProvider = modelListProvider
+        self.modelListProviderOrder = modelListProviderOrder
+        self.modelListPendingProviders = modelListPendingProviders
+        self.modelListLoadedModelsByProvider = modelListLoadedModelsByProvider
+        self.modelListFailedProviders = modelListFailedProviders
+        self.providerConnectionSnapshot = providerConnectionSnapshot
+        self.availableModelsByProvider = availableModelsByProvider
+    }
+
+    public var availableModels: [AiProviderModel] {
+        switch modelListState {
+        case let .loaded(models):
+            models
+        case .idle, .loading, .empty, .failed:
+            []
+        }
     }
 
     public var currentContextSummaryDisplayModel: AiChatContextSummaryDisplayModel {
@@ -75,7 +149,7 @@ public struct AiChatState: Equatable, Sendable {
             placeholder: "Ask anything…",
             contextAffordanceLabel: "+",
             modelLabel: chatInputModelLabel,
-            effortLabel: "xhigh",
+            effortLabel: chatInputThinkingLabel,
             submitAccessibilityLabel: "Send",
             stopAccessibilityLabel: "Stop",
             isSubmitVisible: !isProcessing,
@@ -114,27 +188,89 @@ public struct AiChatState: Equatable, Sendable {
         let lockedModel = lockedModelDisplayModel
         let selectedHandle = selectedModel?.handle
         let lockedHandle = lockedModel?.handle
-
-        return AiChatModelCatalogState(
-            fieldLabel: "Model",
-            rows: catalogRows.map { row in
-                AiChatModelCatalogRowDisplayModel(
+        let rows: [AiChatModelCatalogRowDisplayModel] = switch modelListState {
+        case .loaded:
+            catalogRows.map { row in
+                let label = aiChatModelLabel(for: row)
+                return AiChatModelCatalogRowDisplayModel(
                     handle: row.handle,
-                    label: aiChatModelLabel(for: row),
+                    label: label,
+                    providerBadge: label.subtitle,
                     isSelected: row.handle == selectedHandle,
                     isLocked: row.handle == lockedHandle,
                     isDefault: row.isDefault,
                     isRecommended: row.isRecommended
                 )
-            },
+            }
+        case .idle, .loading, .empty, .failed:
+            []
+        }
+        let rowsByHandle = Dictionary(uniqueKeysWithValues: rows.map { ($0.handle, $0) })
+        let sections = modelCatalogSections(rowsByHandle: rowsByHandle)
+
+        return AiChatModelCatalogState(
+            fieldLabel: "Model",
+            rows: rows,
+            sections: sections,
             selectedModel: selectedModel,
             lockedModel: lockedModel
         )
     }
 
+    public var modelSelectorContentState: AiChatModelSelectorContentState {
+        switch modelListState {
+        case .idle, .loading:
+            return .loading(.init(
+                title: "Loading models",
+                detail: "Fetching available models from connected providers."
+            ))
+        case .empty:
+            return .empty(.init(
+                title: "No models available",
+                detail: "No selectable models are available for the current provider setup."
+            ))
+        case let .failed(failure):
+            if failure.reason == .unsupportedProvider {
+                return .unsupported(.init(
+                    title: "Provider unsupported",
+                    detail: failure.message
+                ))
+            }
+
+            return .failed(.init(
+                title: "Models unavailable",
+                detail: failure.message
+            ))
+        case .loaded:
+            let sections = modelCatalogState.sections
+            if sections.isEmpty {
+                return .empty(.init(
+                    title: "No models available",
+                    detail: "No selectable models are available for the current provider setup."
+                ))
+            }
+            return .loaded(sections)
+        }
+    }
+
+    public var modelSelectorHasPresentableContent: Bool {
+        modelSelectorContentState.hasPresentableContent
+    }
+
+    public var modelSelectorIsDisabled: Bool {
+        switch modelSelectorContentState {
+        case .empty:
+            return true
+        case let .loaded(sections):
+            return sections.isEmpty
+        case .loading, .failed, .unsupported:
+            return false
+        }
+    }
+
     public var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? {
-        guard let row = resolvedSelectedModelRow else { return nil }
-        return AiChatSelectedModelDisplayModel(handle: row.handle, label: aiChatModelLabel(for: row))
+        guard let model = resolvedSelectedModel else { return nil }
+        return AiChatSelectedModelDisplayModel(handle: model.id, label: AiChatModelLabel(title: model.displayName))
     }
 
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
@@ -142,16 +278,15 @@ public struct AiChatState: Equatable, Sendable {
             return lockedModelDisplayModel(for: lock)
         }
 
-        guard let handle = lockedModelHandle,
-              let row = catalogRows.first(where: { $0.handle == handle })
-        else { return nil }
-        return AiChatLockedModelDisplayModel(handle: row.handle, label: aiChatModelLabel(for: row))
+        guard let row = resolvedModelRow(for: lockedModelHandle) else { return nil }
+        return AiChatLockedModelDisplayModel(handle: row.handle, label: AiChatModelLabel(title: row.displayName))
     }
 
     public var canSubmit: Bool {
         guard !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard !isProcessing else { return false }
-        guard resolvedSelectedModelRow != nil else { return false }
+        guard case .loaded = modelListState else { return false }
+        guard resolvedSelectedModel != nil else { return false }
         guard connectionState == .connected else { return false }
 
         switch surfaceState {
@@ -251,14 +386,50 @@ public struct AiChatState: Equatable, Sendable {
 
     public var isProcessing: Bool { executionPhase.isProcessing }
 
+    public var resolvedSelectedModelHandle: AiModelHandle? {
+        resolvedSelectedModel?.id
+    }
+
+    public var resolvedSelectedModel: AiProviderModel? {
+        resolvedModel(for: selectedModelHandle)
+    }
+
     private var chatInputModelLabel: String? {
-        selectedModelDisplayModel?.label.title
-            ?? lockedModelDisplayModel?.label.title
+        if let model = resolvedSelectedModel {
+            return model.displayName
+        }
+
+        return modelListStatusLabel
+    }
+
+    private var chatInputThinkingLabel: String {
+        if let model = resolvedSelectedModel {
+            if let selectedThinking {
+                return Self.thinkingLabel(for: selectedThinking)
+            }
+
+            return Self.defaultThinkingLabel(for: model.thinkingCapability)
+        }
+
+        return modelListStatusLabel
+    }
+
+    private var modelListStatusLabel: String {
+        switch modelListState {
+        case .idle, .loading:
+            return "Loading models"
+        case .empty:
+            return "No models available"
+        case let .failed(failure):
+            return failure.message
+        case .loaded:
+            return "Select model"
+        }
     }
 
     private func lockedModelDisplayModel(for lock: AiChatRequestLock) -> AiChatLockedModelDisplayModel {
-        if let row = lock.selectedModelRow ?? catalogRows.first(where: { $0.handle == lock.selectedModelHandle }) {
-            return AiChatLockedModelDisplayModel(handle: row.handle, label: aiChatModelLabel(for: row))
+        if let row = lock.selectedModelRow ?? resolvedModelRow(for: lock.selectedModelHandle) {
+            return AiChatLockedModelDisplayModel(handle: row.handle, label: AiChatModelLabel(title: row.displayName))
         }
 
         return AiChatLockedModelDisplayModel(
@@ -271,14 +442,198 @@ public struct AiChatState: Equatable, Sendable {
         transcriptHistory.isEmpty
     }
 
-    private var resolvedSelectedModelRow: AiModelCatalogRow? {
-        if let handle = selectedModelHandle,
-           let row = catalogRows.first(where: { $0.handle == handle }) {
-            return row
+    private func modelCatalogSections(
+        rowsByHandle: [AiModelHandle: AiChatModelCatalogRowDisplayModel]
+    ) -> [AiChatModelCatalogSectionDisplayModel] {
+        guard case .loaded = modelListState else { return [] }
+
+        let discoveredProviders = availableModels.reduce(into: [AiProvider]()) { providers, model in
+            if !providers.contains(model.provider) {
+                providers.append(model.provider)
+            }
         }
 
-        guard !catalogRows.isEmpty else { return nil }
-        return catalogRows.first
+        let groupedProviders: [AiProvider]
+        switch providerConnectionSnapshot {
+        case let .known(providers):
+            groupedProviders = providers + discoveredProviders.filter { !providers.contains($0) }
+        case .unknown:
+            groupedProviders = discoveredProviders
+        }
+
+        return groupedProviders.compactMap { provider in
+            let providerModels = availableModelsByProvider[provider] ?? availableModels.filter { $0.provider == provider }
+            let providerRows = providerModels.compactMap { model in
+                rowsByHandle[model.id]
+            }
+            guard !providerRows.isEmpty else { return nil }
+            return AiChatModelCatalogSectionDisplayModel(
+                provider: provider,
+                title: aiChatProviderSectionTitle(for: provider),
+                rows: providerRows
+            )
+        }
+    }
+
+    func normalizedSelectionHandle(
+        _ preferredHandle: AiModelHandle?,
+        in models: [AiProviderModel]? = nil
+    ) -> AiModelHandle? {
+        resolvedModel(for: preferredHandle, in: models)?.id
+    }
+
+    func normalizedSelectionHandlePreservingCurrentSelection(
+        in models: [AiProviderModel],
+        preferredHandle: AiModelHandle?
+    ) -> AiModelHandle? {
+        if let currentHandle = resolvedSelectedModelHandle,
+           Self.containsModelHandle(currentHandle, in: models)
+        {
+            return currentHandle
+        }
+
+        return normalizedSelectionHandle(preferredHandle, in: models)
+    }
+
+    func resolvedModel(for handle: AiModelHandle?, in models: [AiProviderModel]? = nil) -> AiProviderModel? {
+        Self.resolvedModel(for: handle, in: models ?? availableModels)
+    }
+
+    func resolvedModelRow(for handle: AiModelHandle?, in rows: [AiModelCatalogRow]? = nil) -> AiModelCatalogRow? {
+        Self.resolvedModelRow(for: handle, in: rows ?? catalogRows)
+    }
+
+    static func normalizedSelectionHandle(
+        _ preferredHandle: AiModelHandle?,
+        in models: [AiProviderModel]
+    ) -> AiModelHandle? {
+        resolvedModel(for: preferredHandle, in: models)?.id
+    }
+
+    static func resolvedModel(for handle: AiModelHandle?, in models: [AiProviderModel]) -> AiProviderModel? {
+        guard let handle else { return nil }
+        return models.first(where: { $0.id == handle })
+    }
+
+    static func resolvedModelRow(for handle: AiModelHandle?, in rows: [AiModelCatalogRow]) -> AiModelCatalogRow? {
+        guard let handle else { return nil }
+        return rows.first(where: { $0.handle == handle })
+    }
+
+    static func containsModelHandle(_ handle: AiModelHandle, in models: [AiProviderModel]) -> Bool {
+        models.contains(where: { $0.id == handle })
+    }
+
+    static func containsModelHandle(_ handle: AiModelHandle, in rows: [AiModelCatalogRow]) -> Bool {
+        rows.contains(where: { $0.handle == handle })
+    }
+
+    static func normalizeSelectedThinking(
+        _ selectedThinking: AiThinkingSelection?,
+        for model: AiProviderModel?
+    ) -> AiThinkingSelection? {
+        guard let selectedThinking, let model else { return nil }
+
+        switch (selectedThinking, model.thinkingCapability) {
+        case let (.effort(value), .effort(values, _)):
+            return values.contains(value) ? selectedThinking : nil
+        case let (.effort(value), .adaptive(values, _)):
+            return values.contains(value) ? selectedThinking : nil
+        case let (.tokenBudget(value), .tokenBudget(min, max, _)):
+            return (min ... max).contains(value) ? selectedThinking : nil
+        case (.effort, .unknown), (.tokenBudget, .unknown):
+            return selectedThinking
+        case (.effort, .tokenBudget), (.tokenBudget, .effort), (.tokenBudget, .adaptive), (.effort, .unsupported),
+             (.tokenBudget, .unsupported):
+            return nil
+        }
+    }
+
+    static func modelListState(from catalogRows: [AiModelCatalogRow]) -> AiChatModelListState {
+        let models = catalogRows.map { row in
+            let providerDisplayName = ProviderDescriptor.descriptor(for: row.handle.provider)?.displayName
+                ?? row.handle.provider.rawValue
+            return AiProviderModel(
+                id: row.handle,
+                provider: row.handle.provider,
+                rawModelID: row.handle.rawValue,
+                displayName: row.displayName,
+                providerDisplayName: providerDisplayName,
+                thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
+                unavailableReason: nil
+            )
+        }
+
+        return models.isEmpty ? .empty : .loaded(models)
+    }
+
+    static func makeCatalogRows(
+        for models: [AiProviderModel],
+        preserving existingRows: [AiModelCatalogRow] = []
+    ) -> [AiModelCatalogRow] {
+        models.enumerated().map { index, model in
+            if let existingRow = existingRows.first(where: { $0.handle == model.id }) {
+                return existingRow
+            }
+
+            return AiModelCatalogRow(
+                handle: model.id,
+                displayName: model.displayName,
+                authMethod: ProviderDescriptor.descriptor(for: model.provider)?.authMethod ?? .apiKey,
+                subtitle: nil,
+                sortOrder: index,
+                isDefault: false,
+                isRecommended: false
+            )
+        }
+    }
+
+    static func makeCatalogRows(for modelListState: AiChatModelListState) -> [AiModelCatalogRow] {
+        switch modelListState {
+        case let .loaded(models):
+            return makeCatalogRows(for: models)
+        case .idle, .loading, .empty, .failed:
+            return []
+        }
+    }
+
+    static func defaultThinkingLabel(for capability: AiModelThinkingCapability) -> String {
+        switch capability {
+        case .unsupported, .unknown:
+            return "Thinking unavailable"
+        case let .effort(_, defaultValue), let .adaptive(_, defaultValue):
+            if let defaultValue {
+                return thinkingLabel(for: .effort(defaultValue))
+            }
+            return "Select thinking"
+        case let .tokenBudget(_, _, defaultValue):
+            if let defaultValue {
+                return thinkingLabel(for: .tokenBudget(defaultValue))
+            }
+            return "Select thinking"
+        }
+    }
+
+    static func thinkingLabel(for selection: AiThinkingSelection) -> String {
+        switch selection {
+        case let .effort(value):
+            switch value {
+            case .minimal:
+                return "Minimal thinking"
+            case .low:
+                return "Low thinking"
+            case .medium:
+                return "Medium thinking"
+            case .high:
+                return "High thinking"
+            case .xhigh:
+                return "X-High thinking"
+            case .max:
+                return "Max thinking"
+            }
+        case let .tokenBudget(value):
+            return "\(value) tokens"
+        }
     }
 }
 
