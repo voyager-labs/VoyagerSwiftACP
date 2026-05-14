@@ -13,7 +13,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
         let lockURL = AIConnectionFSLocation.lockFileURL(homeDirectoryURL: fixture.homeURL)
         store = AIConnectionFileStore(
             payloadURL: payloadURL,
-            lockURL: lockURL
+            lockURL: lockURL,
         )
     }
 
@@ -35,12 +35,12 @@ final class AIConnectionFileStoreTests: XCTestCase {
             providerId: .chatgptCodex,
             authMethod: .oauth,
             credential: .oauth(oauth),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
             lastUsedProviderId: .chatgptCodex,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
         try await store.write(file)
 
@@ -48,11 +48,35 @@ final class AIConnectionFileStoreTests: XCTestCase {
         XCTAssertEqual(loaded.providers["chatgptCodex"]?.providerId, .chatgptCodex)
     }
 
+    func testLoadNormalizesMissingCredentialSnapshotWhilePreservingLastUsedMetadata() async throws {
+        let file = AIConnectionsFile(
+            updatedAtMs: 1000,
+            lastUsedProviderId: .openai,
+            lastUsedAtMs: 2000,
+            providers: [
+                "openai": ProviderRecordFile(
+                    providerId: .openai,
+                    authMethod: .apiKey,
+                    credential: nil,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+        try await store.write(file)
+
+        let loaded = try await store.load()
+        let record = try XCTUnwrap(loaded.providers["openai"])
+        XCTAssertEqual(loaded.lastUsedProviderId, .openai)
+        XCTAssertEqual(loaded.lastUsedAtMs, 2000)
+        XCTAssertEqual(record.snapshot.lastKnownStatus, .notVerified)
+        XCTAssertEqual(record.snapshot.lastErrorCode, .missingCredential)
+    }
+
     func testMigrateFromHomeIfNeededWritesPayloadWithCorrectPermissions() async throws {
         let homePayloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         try FileManager.default.createDirectory(
             at: homePayloadURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
         )
 
         let file = AIConnectionsFile.empty(updatedAtMs: 1234)
@@ -77,7 +101,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
         let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         try FileManager.default.createDirectory(
             at: payloadURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
         )
         try Data("{ not valid json".utf8).write(to: payloadURL)
 
@@ -86,7 +110,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
 
         let dirContents = try FileManager.default.contentsOfDirectory(
             at: payloadURL.deletingLastPathComponent(),
-            includingPropertiesForKeys: nil
+            includingPropertiesForKeys: nil,
         )
         let quarantined = dirContents.filter { $0.lastPathComponent.hasPrefix("auth.corrupted") }
         XCTAssertEqual(quarantined.count, 1, "Corrupt file should be quarantined")
@@ -98,7 +122,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
         let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         try FileManager.default.createDirectory(
             at: payloadURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
         )
         try Data().write(to: payloadURL)
 
@@ -144,7 +168,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
         let file2 = AIConnectionsFile(
             updatedAtMs: 2000,
             lastUsedProviderId: .chatgptCodex,
-            providers: [:]
+            providers: [:],
         )
         try await store.write(file2)
 
@@ -160,7 +184,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
             accessToken: "test-at",
             refreshToken: "test-rt",
             scopes: ["scope1"],
-            expiresAtMs: 1_700_000_000_000
+            expiresAtMs: 1_700_000_000_000,
         )
         let record = ProviderRecordFile(
             providerId: .chatgptCodex,
@@ -168,14 +192,14 @@ final class AIConnectionFileStoreTests: XCTestCase {
             credential: .oauth(oauth),
             snapshot: ProviderSnapshotFile(
                 lastKnownStatus: .connected,
-                lastVerifiedAtMs: 1_700_000_000_000
-            )
+                lastVerifiedAtMs: 1_700_000_000_000,
+            ),
         )
         let original = AIConnectionsFile(
             updatedAtMs: 1_700_000_000_000,
             lastUsedProviderId: .chatgptCodex,
             lastUsedAtMs: 1_700_000_000_000,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
 
         try await store.write(original)
@@ -203,13 +227,13 @@ final class AIConnectionFileStoreTests: XCTestCase {
             providerId: .chatgptCodex,
             authMethod: .oauth,
             credential: .oauth(oauth),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
             lastUsedProviderId: .chatgptCodex,
             lastUsedAtMs: 1000,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
         try await store.write(file)
 
@@ -247,7 +271,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
         let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         try FileManager.default.createDirectory(
             at: payloadURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
         )
         try Data("corrupt content".utf8).write(to: payloadURL)
 
@@ -255,7 +279,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
 
         let dirContents = try FileManager.default.contentsOfDirectory(
             at: payloadURL.deletingLastPathComponent(),
-            includingPropertiesForKeys: nil
+            includingPropertiesForKeys: nil,
         )
         let quarantined = dirContents.filter { $0.lastPathComponent.hasPrefix("auth.corrupted") }
         guard let qFile = quarantined.first else {
