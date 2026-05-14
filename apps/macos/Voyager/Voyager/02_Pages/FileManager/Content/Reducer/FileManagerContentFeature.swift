@@ -39,6 +39,10 @@ struct FileManagerContentFeature {
 
         FileManagerContentNavigationBridgeReducer()
 
+        FileManagerContentEntryOperationsBridgeReducer()
+
+        FileManagerContentKeyCommandReducer()
+
         FileManagerContentSyncReducer()
 
         Reduce { state, action in
