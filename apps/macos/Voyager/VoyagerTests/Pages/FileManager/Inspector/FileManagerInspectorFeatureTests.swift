@@ -17,7 +17,7 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
             FileManagerInspectorFeature()
         }
 
-        await store.send(.openChat(setup)) {
+        await store.send(.openChat(setup, .empty())) {
             $0.inspectorVisible = true
             $0.activeMode = .chat
         }
@@ -28,13 +28,14 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
             $0.aiChat.currentContext = setup.currentContext
             $0.aiChat.transcriptHistory = setup.transcriptHistory
             $0.aiChat.draftText = setup.draftText
-            $0.aiChat.streamDraftText = ""
             $0.aiChat.catalogRows = setup.catalogRows
             $0.aiChat.selectedModelHandle = setup.selectedModelHandle
             $0.aiChat.lockedModelHandle = setup.lockedModelHandle
             $0.aiChat.lastExecutionFailure = setup.lastExecutionFailure
             $0.aiChat.executionPhase = .idle
         }
+
+        await store.receive(\.aiChat.providerConnectionsUpdated)
 
         XCTAssertTrue(store.state.inspectorVisible)
         XCTAssertEqual(store.state.activeMode, .chat)
@@ -58,6 +59,15 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
         XCTAssertTrue(store.state.inspectorPaneExists)
     }
 
+    func testAiChatOpenSettingsDelegateRoutesToInspectorDelegate() async {
+        let store = TestStore(initialState: FileManagerInspectorFeature.State()) {
+            FileManagerInspectorFeature()
+        }
+
+        await store.send(.aiChat(.delegate(.openAISettings)))
+        await store.receive(.delegate(.openAISettings))
+    }
+
     func testOpenChatWhileProcessingPreservesInFlightState() async {
         let existingSetup = makeSetup(
             sessionID: makeSessionID("00000000-0000-0000-0000-000000000010"),
@@ -73,7 +83,7 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
             FileManagerInspectorFeature()
         }
 
-        await store.send(.openChat(replacementSetup)) {
+        await store.send(.openChat(replacementSetup, .empty())) {
             $0.inspectorVisible = true
             $0.activeMode = .chat
         }
@@ -84,7 +94,6 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
             AiChatMessage(role: .user, content: "Hello"),
             AiChatMessage(role: .assistant, content: "Hi"),
         ])
-        XCTAssertEqual(store.state.aiChat.streamDraftText, "Streaming response")
         XCTAssertEqual(store.state.aiChat.executionPhase, .processing(processingFixture.inFlightLock))
     }
 
@@ -118,7 +127,6 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
                     AiChatMessage(role: .assistant, content: "Hi"),
                 ],
                 draftText: "",
-                streamDraftText: "Streaming response",
                 catalogRows: existingSetup.catalogRows,
                 selectedModelHandle: existingSetup.selectedModelHandle,
                 lockedModelHandle: existingSetup.lockedModelHandle,

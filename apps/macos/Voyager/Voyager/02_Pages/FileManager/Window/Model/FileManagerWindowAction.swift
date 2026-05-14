@@ -53,5 +53,6 @@ enum FileManagerWindowAction: CasePathable, Sendable {
     enum Delegate: Sendable {
         case openPathInNewWindow(String)
         case openPathInNewTab(String)
+        case openAISettings
     }
 }
