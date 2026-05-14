@@ -3,6 +3,7 @@ import VoyagerEntitiesAi
 
 @CasePathable
 enum WindowManagerAction: CasePathable, Sendable {
+    case delegate(Delegate)
     case lifecycle(Lifecycle)
     case file(FileCommand)
     case window(WindowCommand)
@@ -10,6 +11,11 @@ enum WindowManagerAction: CasePathable, Sendable {
     case edit(EditCommand)
     case event(WindowEvent)
     case windows(IdentifiedActionOf<WindowSessionFeature>)
+
+    @CasePathable
+    enum Delegate: Sendable {
+        case openAISettings
+    }
 
     @CasePathable
     enum Lifecycle: CasePathable, Sendable {

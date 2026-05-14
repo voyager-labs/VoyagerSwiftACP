@@ -226,6 +226,19 @@ struct AppRootFeature {
             case let .menuCommands(.delegate(.updater(action))):
                 effect = .send(.updater(action))
 
+            case .windowManager(.delegate(.openAISettings)):
+                effect = .send(.openAISettings)
+
+            case .openAISettings:
+                effect = .concatenate(
+                    .send(.settings(.selectSection(.ai))),
+                    .run { _ in
+                        await MainActor.run {
+                            openNativeSettingsScene()
+                        }
+                    },
+                )
+
             case .menuCommands:
                 effect = .none
 
@@ -260,6 +273,76 @@ struct AppRootFeature {
             return effect
         }
     }
+}
+
+@MainActor
+private func openNativeSettingsScene() {
+    NSApp.activate(ignoringOtherApps: true)
+
+    if performSettingsMenuItem() {
+        return
+    }
+
+    let settingsSelector = Selector(("showSettingsWindow:"))
+    if NSApp.sendAction(settingsSelector, to: nil, from: nil) {
+        return
+    }
+
+    let preferencesSelector = Selector(("showPreferencesWindow:"))
+    _ = NSApp.sendAction(preferencesSelector, to: nil, from: nil)
+}
+
+@MainActor
+private func performSettingsMenuItem() -> Bool {
+    guard let mainMenu = NSApp.mainMenu else { return false }
+
+    for item in mainMenu.items {
+        guard let submenu = item.submenu,
+              let match = findSettingsMenuItem(in: submenu)
+        else { continue }
+
+        if let action = match.item.action,
+           NSApp.sendAction(action, to: match.item.target, from: match.item)
+        {
+            return true
+        }
+
+        match.menu.performActionForItem(at: match.index)
+        return true
+    }
+
+    return false
+}
+
+@MainActor
+private func findSettingsMenuItem(in menu: NSMenu) -> (menu: NSMenu, item: NSMenuItem, index: Int)? {
+    for index in 0 ..< menu.numberOfItems {
+        let item = menu.item(at: index)!
+        if isSettingsMenuItem(item) {
+            return (menu, item, index)
+        }
+
+        if let submenu = item.submenu,
+           let match = findSettingsMenuItem(in: submenu)
+        {
+            return match
+        }
+    }
+
+    return nil
+}
+
+private func isSettingsMenuItem(_ item: NSMenuItem) -> Bool {
+    let normalizedTitle = item.title
+        .replacingOccurrences(of: "…", with: "")
+        .replacingOccurrences(of: "...", with: "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+
+    return normalizedTitle == "settings"
+        || normalizedTitle == "preferences"
+        || item.action == Selector(("showSettingsWindow:"))
+        || item.action == Selector(("showPreferencesWindow:"))
 }
 
 private func forwardExternalFileChanges(

@@ -170,7 +170,10 @@ struct WindowManagerFeature {
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewTab(path))))):
                 return .send(.file(.newTab(path: path)))
 
-            case .windows:
+            case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
+                return .send(.delegate(.openAISettings))
+
+            case .delegate, .windows:
                 return .none
             }
         }

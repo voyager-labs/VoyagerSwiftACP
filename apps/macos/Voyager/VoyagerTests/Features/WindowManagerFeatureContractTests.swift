@@ -110,9 +110,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         ]
         initialState.focusedWindowID = focusedID
 
-        let connectionsFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
-            .testFixture(provider: .openai, authMethod: .apiKey),
-        ])
+        let connectionsFile = AIConnectionsFile.empty()
         let expectedSetup = makeExpectedSetup(
             initialState: initialState,
             focusedID: focusedID,
@@ -141,7 +139,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             return id == focusedID
         }
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.inspector(.openChat(setup))))) = action else {
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.inspector(.openChat(setup, openedConnectionsFile))),
+            )) = action else {
                 return false
             }
             return id == focusedID
@@ -149,9 +150,36 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 && setup.currentContext == expectedSetup.currentContext
                 && setup.catalogRows == expectedSetup.catalogRows
                 && setup.selectedModelHandle == expectedSetup.selectedModelHandle
+                && openedConnectionsFile == connectionsFile
         }
         await assertAiChatSetupReceived(on: store, focusedID: focusedID, expectedSetup: expectedSetup)
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.inspector(.aiChat(.providerConnectionsUpdated(file)))),
+            )) = action else {
+                return false
+            }
+            return id == focusedID && file == connectionsFile
+        }
         await store.finish()
+    }
+
+    func testWindowOpenSettingsDelegateRoutesToWindowManagerDelegate() async {
+        let focusedID = UUID()
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: focusedID, window: .makeInitial(path: "/tmp")),
+        ]
+        initialState.focusedWindowID = focusedID
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.windows(.element(id: focusedID, action: .window(.delegate(.openAISettings)))))
+        await store.receive(.delegate(.openAISettings))
     }
 
     func testToggleSidebarRoutesToFocusedWindow() async {
@@ -193,20 +221,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         initialState: WindowManagerFeature.State,
         focusedID: UUID,
         sessionID: AiChatSessionID,
-        connectionsFile: AIConnectionsFile,
+        connectionsFile _: AIConnectionsFile,
     ) -> AiChatSetupState {
         guard let content = initialState.windows[id: focusedID]?.window.content else {
             XCTFail("Missing focused window fixture")
             return FileManagerAiChatContextAdapter.makeAiChatSetupState(
                 content: .init(),
                 sessionID: sessionID,
-                connectionsFile: connectionsFile,
             )
         }
         return FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: content,
             sessionID: sessionID,
-            connectionsFile: connectionsFile,
         )
     }
 
@@ -221,7 +247,6 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.windows[id: focusedID]?.window.inspector.aiChat.currentContext = expectedSetup.currentContext
             $0.windows[id: focusedID]?.window.inspector.aiChat.transcriptHistory = expectedSetup.transcriptHistory
             $0.windows[id: focusedID]?.window.inspector.aiChat.draftText = expectedSetup.draftText
-            $0.windows[id: focusedID]?.window.inspector.aiChat.streamDraftText = ""
             $0.windows[id: focusedID]?.window.inspector.aiChat.catalogRows = expectedSetup.catalogRows
             $0.windows[id: focusedID]?.window.inspector.aiChat.selectedModelHandle = expectedSetup.selectedModelHandle
             $0.windows[id: focusedID]?.window.inspector.aiChat.lockedModelHandle = expectedSetup.lockedModelHandle

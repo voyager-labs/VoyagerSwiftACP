@@ -41,6 +41,17 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.receive(\.updater.checkForUpdates)
     }
 
+    func testWindowManagerOpenAISettingsDelegateSelectsAISettings() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.windowManager(.delegate(.openAISettings)))
+        await store.receive(.openAISettings)
+        await store.receive(.settings(.selectSection(.ai)))
+    }
+
     func testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()

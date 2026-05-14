@@ -13,6 +13,7 @@ enum AppRootAction: CasePathable, Sendable {
     case pendingReplayLoaded([String])
     case registerHelperWatchRootsIfNeeded
     case registerHelperWatchRoots([String])
+    case openAISettings
     case appPreferences(AppPreferencesFeature.Action)
     case windowManager(WindowManagerFeature.Action)
     case updater(UpdaterFeature.Action)
