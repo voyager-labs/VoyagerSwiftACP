@@ -1,5 +1,5 @@
 import AppKit
-import @preconcurrency import Combine
+@preconcurrency import Combine
 import ComposableArchitecture
 @testable import Voyager
 import XCTest
