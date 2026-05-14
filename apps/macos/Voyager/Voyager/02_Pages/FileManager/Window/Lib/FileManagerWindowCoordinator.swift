@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import ComposableArchitecture
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
@@ -15,9 +14,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
     private let onWillClose: (@MainActor (UUID) -> Void)?
     private let initialWindowSizeProvider: (() -> NSSize?)?
     private var cancellables: Set<AnyCancellable> = []
-    /// 외부에서 store/undoManager를 주입하는 designated initializer.
-    ///
-    /// - AppRootFeature 기반 윈도우 세션으로 전환할 때 사용한다.
+
     init(
         windowID: UUID,
         store: StoreOf<FileManagerFeature>,
@@ -46,7 +43,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-        bindWindowTitle(window)
+        FileManagerWindowChrome.bindTitle(to: window, store: store, cancellables: &cancellables)
     }
 
     init(
@@ -68,7 +65,6 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
             registryClient: registryClient,
         )
 
-        // Route windowID initialization through the lifecycle reducer
         if duplicateState != nil {
             store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID: windowID))))))
         } else {
@@ -92,7 +88,7 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-        bindWindowTitle(window)
+        FileManagerWindowChrome.bindTitle(to: window, store: store, cancellables: &cancellables)
     }
 
     @available(*, unavailable)
@@ -141,133 +137,22 @@ final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
         } else {
             FileManagerWindowSplitCoordinator(
                 store: store,
-                isDark: currentIsDark,
+                isDark: FileManagerWindowChrome.currentIsDark,
             )
         }
 
         let window = NSWindow(contentViewController: contentViewController)
-        configureWindowStyle(window)
-        applyInitialFrame(window, initialWindowSizeProvider: initialWindowSizeProvider)
+        FileManagerWindowChrome.configureWindowStyle(window)
+        FileManagerWindowChrome.applyInitialFrame(window, initialWindowSizeProvider: initialWindowSizeProvider)
         return window
     }
 
-    private static var currentIsDark: Bool {
-        let appearance = NSApp.effectiveAppearance
-        let best = appearance.bestMatch(from: [.darkAqua, .aqua])
-        return best == .darkAqua
-    }
-
     static func configureWindowStyle(_ window: NSWindow) {
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        window.minSize = NSSize(width: 600, height: 350)
-
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-
-        let toolbar = NSToolbar(identifier: "VoyagerMainToolbar")
-        toolbar.showsBaselineSeparator = false
-        toolbar.displayMode = .iconOnly
-        toolbar.allowsUserCustomization = false
-        toolbar.autosavesConfiguration = false
-        window.toolbar = toolbar
-
-        window.toolbarStyle = .unified
-        window.isMovableByWindowBackground = true
-
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.tabbingIdentifier = "file-manager"
-        window.tabbingMode = .preferred
+        FileManagerWindowChrome.configureWindowStyle(window)
     }
 
     static func applyTrafficLightVisibility(to window: NSWindow, isSidebarVisible: Bool) {
-        let shouldHide = !isSidebarVisible
-        window.standardWindowButton(.closeButton)?.isHidden = shouldHide
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = shouldHide
-        window.standardWindowButton(.zoomButton)?.isHidden = shouldHide
-    }
-
-    private static func applyInitialFrame(
-        _ window: NSWindow,
-        initialWindowSizeProvider: (() -> NSSize?)?,
-    ) {
-        window.setFrameAutosaveName("VoyagerMainWindow")
-
-        if !window.setFrameUsingName("VoyagerMainWindow") {
-            let desiredSize: NSSize = initialWindowSizeProvider?() ?? NSSize(width: 960, height: 510)
-            let screenFrame = NSScreen.main?.visibleFrame ?? .zero
-            let origin = NSPoint(
-                x: screenFrame.midX - desiredSize.width / 2,
-                y: screenFrame.midY - desiredSize.height / 2,
-            )
-            window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
-        }
-    }
-
-    private func bindWindowTitle(_ window: NSWindow) {
-        let makeWindowTitle: (String) -> String = { path in
-            let computerName = FileManagerClient.liveValue.displayName("/")
-            if path == "/" {
-                return computerName
-            }
-            if path == computerName {
-                return path
-            }
-            return FileManagerClient.liveValue.displayName(path)
-        }
-
-        let initialTitle = currentWindowTitle(makeWindowTitle: makeWindowTitle)
-        makeWindowTitlePublisher(makeWindowTitle: makeWindowTitle)
-            .prepend(initialTitle)
-            .removeDuplicates()
-            .sink { [weak window] title in
-                window?.title = title
-            }
-            .store(in: &cancellables)
-    }
-
-    private func currentWindowTitle(makeWindowTitle: (String) -> String) -> String {
-        makeTitle(
-            openedCollectionName: store.state.content.collection.collectionSession.document?.name,
-            isCollectionMode: store.state.content.isCollectionMode,
-            titlePath: store.state.content.navigation.titlePath,
-            makeWindowTitle: makeWindowTitle,
-        )
-    }
-
-    private func makeWindowTitlePublisher(
-        makeWindowTitle: @escaping (String) -> String,
-    ) -> some Publisher<String, Never> {
-        Publishers.CombineLatest3(
-            store.publisher.content.collection.collectionSession.document
-                .map { $0?.name }
-                .removeDuplicates(),
-            store.publisher.content.isCollectionMode.removeDuplicates(),
-            store.publisher.content.navigation.titlePath.removeDuplicates(),
-        )
-        .map { [self] openedCollectionName, isCollectionMode, titlePath in
-            makeTitle(
-                openedCollectionName: openedCollectionName,
-                isCollectionMode: isCollectionMode,
-                titlePath: titlePath,
-                makeWindowTitle: makeWindowTitle,
-            )
-        }
-    }
-
-    private func makeTitle(
-        openedCollectionName: String?,
-        isCollectionMode: Bool,
-        titlePath: String,
-        makeWindowTitle: (String) -> String,
-    ) -> String {
-        if let openedCollectionName {
-            return openedCollectionName
-        }
-        if isCollectionMode {
-            return "New Collection"
-        }
-        return makeWindowTitle(titlePath)
+        FileManagerWindowChrome.applyTrafficLightVisibility(to: window, isSidebarVisible: isSidebarVisible)
     }
 
     private func tearDownBindings() {
