@@ -19,6 +19,8 @@ struct FileManagerNavigationActionReducer {
     var registryClient
     @Dependency(\.collectionStalenessClient)
     var collectionStalenessClient
+    @Dependency(\.metricsClient)
+    var metricsClient
 
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
@@ -34,7 +36,7 @@ struct FileManagerNavigationActionReducer {
 
     private func handleNavigationAction(
         _ action: ContentPageNavigationAction,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch action {
         case let .view(viewAction):
@@ -48,13 +50,14 @@ struct FileManagerNavigationActionReducer {
                 delegateAction,
                 state: &state,
                 computerName: fileManagerClient.displayName("/"),
+                metricsClient: metricsClient
             )
         }
     }
 
     private func handleViewAction(
         _ action: ContentPageNavigationAction.View,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch action {
         case .navigateToPath,
@@ -75,13 +78,14 @@ struct FileManagerNavigationActionReducer {
                 state: &state,
                 collectionFileClient: collectionFileClient,
                 collectionStalenessClient: collectionStalenessClient,
+                metricsClient: metricsClient
             )
         }
     }
 
     private func handleInternalAction(
         _ action: ContentPageNavigationAction.Internal,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch action {
         case .collectionFileLoaded,
@@ -110,7 +114,7 @@ struct FileManagerNavigationActionReducer {
 
     private func handleDirectNavigationAction(
         _ action: ContentPageNavigationAction.View,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch action {
         case let .navigateToPath(path):
@@ -136,7 +140,7 @@ struct FileManagerNavigationActionReducer {
 
     private func handleCollectionNavigationAction(
         _ action: ContentPageNavigationAction.Internal,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch action {
         case let .collectionFileLoaded(result):
@@ -145,7 +149,7 @@ struct FileManagerNavigationActionReducer {
                 state: &state,
                 collectionAlertClient: collectionAlertClient,
                 registryClient: registryClient,
-                collectionStalenessClient: collectionStalenessClient,
+                collectionStalenessClient: collectionStalenessClient
             )
 
         case let .navigateToCollection(navigation):
@@ -158,7 +162,7 @@ struct FileManagerNavigationActionReducer {
 
     private func handleHistoryNavigationAction(
         _ action: ContentPageNavigationAction.View,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch action {
         case .goBack:
@@ -180,7 +184,7 @@ struct FileManagerNavigationActionReducer {
 
     private func handleNavigationRequest(
         _ pending: ContentPageNavigationPending,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         if shouldPromptForUnsavedNavigation(state.content) {
             return .send(.navigation(.internal(.showUnsavedNavigationAlert(pending))))
@@ -190,7 +194,7 @@ struct FileManagerNavigationActionReducer {
 
     private func handleUnsavedNavigationAction(
         _ action: ContentPageNavigationAction.Internal,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch action {
         case let .showUnsavedNavigationAlert(pending):
@@ -213,7 +217,7 @@ struct FileManagerNavigationActionReducer {
     private func handleUnsavedNavigationAlertResponse(
         pending: ContentPageNavigationPending,
         choice: CollectionNavigationChoice,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action> {
         switch choice {
         case .cancel:
@@ -225,7 +229,7 @@ struct FileManagerNavigationActionReducer {
             state.content.resetComposerOnNextDirectoryNavigation = true
             return .concatenate(
                 .send(.navigation(.internal(.setPendingNavigation(pending)))),
-                .send(.content(.composer(.saveCollection))),
+                .send(.content(.composer(.saveCollection)))
             )
         }
     }
@@ -240,9 +244,10 @@ private func handleOpenCollectionFile(
     state: inout FileManagerWindowState,
     collectionFileClient: CollectionFileClient,
     collectionStalenessClient: CollectionStalenessClient,
+    metricsClient: MetricsClient
 ) -> Effect<FileManagerWindowAction> {
     if state.content.collection.collectionSession.document?.url.path != url.path {
-        VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
+        metricsClient.logDAUNavigation(.collection)
     }
 
     let canonicalPath = url.standardizedFileURL.path
@@ -264,8 +269,8 @@ private func handleOpenCollectionFile(
         } catch {
             await send(
                 .navigation(
-                    .internal(.collectionFileLoaded(.failure(ContentPageNavigationErrorFingerprint(error: error)))),
-                ),
+                    .internal(.collectionFileLoaded(.failure(ContentPageNavigationErrorFingerprint(error: error))))
+                )
             )
         }
     }
@@ -276,10 +281,10 @@ private func handleOpenCollectionFile(
         .send(.content(.collection(.openRequested(
             url,
             reopenContext: reopenContext,
-            isAlreadyStale: isAlreadyStale,
+            isAlreadyStale: isAlreadyStale
         )))),
         .send(.navigation(.internal(.prepareCollectionFileOpen(url)))),
-        loadEffect,
+        loadEffect
     )
 }
 
@@ -288,7 +293,7 @@ private func handleCollectionFileLoaded(
     state: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
     registryClient: RegistryClient,
-    collectionStalenessClient: CollectionStalenessClient,
+    collectionStalenessClient: CollectionStalenessClient
 ) -> Effect<FileManagerWindowAction> {
     switch result {
     case let .success(loadResult):
@@ -307,21 +312,21 @@ private func handleCollectionFileLoaded(
             state: &state,
             environment: .init(
                 collectionAlertClient: collectionAlertClient,
-                registryClient: registryClient,
-            ),
+                registryClient: registryClient
+            )
         )
     case let .failure(error):
         return handleCollectionFileLoadedFailure(
             error,
             state: &state,
-            collectionAlertClient: collectionAlertClient,
+            collectionAlertClient: collectionAlertClient
         )
     }
 }
 
 private func handleNavigateToCollection(
     _ navigation: ContentPageCollectionNavigation,
-    state _: inout FileManagerWindowState,
+    state _: inout FileManagerWindowState
 ) -> Effect<FileManagerWindowAction> {
     let (openedURL, openedName): (URL?, String?) = switch navigation.kind {
     case .temporary:
@@ -335,13 +340,13 @@ private func handleNavigateToCollection(
             CollectionOpenedDocumentState(
                 url: $0,
                 name: openedName ?? $0.deletingPathExtension().lastPathComponent,
-                compatibility: navigation.compatibility,
+                compatibility: navigation.compatibility
             )
         },
         baseline: openedURL.map { _ in CollectionBaseline(context: navigation.context) },
         composerText: navigation.context.query,
         scopes: navigation.context.scopes,
-        conditions: navigation.context.conditions,
+        conditions: navigation.context.conditions
     )
 
     let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -356,10 +361,10 @@ private func handleNavigateToCollection(
             context: payload.context,
             url: payload.document?.url,
             compatibility: payload.document?.compatibility,
-            isCollectionMode: true,
+            isCollectionMode: true
         )))),
         .send(.content(.entryViewLayout(.entryArrangements(.reapply)))),
-        queryEffect,
+        queryEffect
     )
 }
 
@@ -368,14 +373,14 @@ private func handleCollectionFileLoadedSuccess(
     compatibility: CollectionFileCompatibilityMetadata,
     isStale: Bool,
     state: inout FileManagerWindowState,
-    environment: CollectionOpenEnvironment,
+    environment: CollectionOpenEnvironment
 ) -> Effect<FileManagerWindowAction> {
     let resolved = file.resolveCollectionFilters(registryClient: environment.registryClient)
     let openPayload = state.content.collection.makeOpenRestorationPayload(
         file: file,
         resolved: resolved,
         isStale: isStale,
-        compatibility: compatibility,
+        compatibility: compatibility
     )
 
     let dismissComposerEffect: Effect<FileManagerWindowAction> = .send(.content(.composer(.setPresented(false))))
@@ -385,21 +390,21 @@ private func handleCollectionFileLoadedSuccess(
             dismissComposerEffect,
             handleEmptyCollectionFile(
                 state: &state,
-                collectionAlertClient: environment.collectionAlertClient,
-            ),
+                collectionAlertClient: environment.collectionAlertClient
+            )
         )
     }
 
     prepareLoadedCollectionOpenState(
         restorationPayload: openPayload,
         registryClient: environment.registryClient,
-        state: &state,
+        state: &state
     )
 
     if let effects = makeHydratedCollectionOpenEffects(
         payload: openPayload,
         collectionAlertClient: environment.collectionAlertClient,
-        state: &state,
+        state: &state
     ) {
         return .concatenate(dismissComposerEffect, .concatenate(effects))
     }
@@ -407,7 +412,7 @@ private func handleCollectionFileLoadedSuccess(
     let effects = makeCollectionOpenFollowupEffects(
         payload: openPayload,
         collectionAlertClient: environment.collectionAlertClient,
-        state: state,
+        state: state
     )
 
     if effects.isEmpty {
@@ -424,7 +429,7 @@ private struct CollectionOpenEnvironment {
 private func handleCollectionFileLoadedFailure(
     _ error: ContentPageNavigationErrorFingerprint,
     state: inout FileManagerWindowState,
-    collectionAlertClient: CollectionAlertClient,
+    collectionAlertClient: CollectionAlertClient
 ) -> Effect<FileManagerWindowAction> {
     var effects: [Effect<FileManagerWindowAction>] = [
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
@@ -438,7 +443,7 @@ private func handleCollectionFileLoadedFailure(
         context: nil,
         url: nil,
         compatibility: nil,
-        isCollectionMode: false,
+        isCollectionMode: false
     )))))
     effects.append(.run { _ in
         await collectionAlertClient.showCollectionOpenErrorAlert("Unable to Open Collection", error.message)
@@ -448,7 +453,7 @@ private func handleCollectionFileLoadedFailure(
 
 private func handleEmptyCollectionFile(
     state _: inout FileManagerWindowState,
-    collectionAlertClient: CollectionAlertClient,
+    collectionAlertClient: CollectionAlertClient
 ) -> Effect<FileManagerWindowAction> {
     .concatenate(
         .send(.content(.collection(.sessionResetRequested))),
@@ -458,13 +463,13 @@ private func handleEmptyCollectionFile(
             context: nil,
             url: nil,
             compatibility: nil,
-            isCollectionMode: false,
+            isCollectionMode: false
         )))),
         .run { _ in
             await collectionAlertClient.showCollectionOpenErrorAlert(
                 "Empty Collection",
-                "This collection file has no query, scope, or filters.",
+                "This collection file has no query, scope, or filters."
             )
-        },
+        }
     )
 }

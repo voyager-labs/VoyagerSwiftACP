@@ -60,6 +60,23 @@ struct VoyagerApp: App {
                     resolveFileManagerUndoManager(windowID: windowID)
                 }
             })
+            $0.metricsClient = .init(
+                logMetric: { name, value, tags in
+                    VoyagerSentryMetricLogger.logMetric(name, value: value, tags: tags)
+                },
+                logDAUNavigation: { kind in
+                    switch kind {
+                    case .folder: VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
+                    case .collection: VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
+                    }
+                },
+                logDAUEntryAction: { actionKind, entryKind in
+                    VoyagerSentryMetricLogger.logDAUEntryAction(
+                        actionKind: .init(rawValue: actionKind.rawValue)!,
+                        entryKind: .init(rawValue: entryKind.rawValue)!,
+                    )
+                },
+            )
         }
 
         configureFileManagerWindowClientLive(

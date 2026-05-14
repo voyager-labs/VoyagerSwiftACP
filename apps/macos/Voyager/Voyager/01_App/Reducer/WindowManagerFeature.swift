@@ -46,9 +46,10 @@ struct WindowManagerFeature {
 
             case let .lifecycle(.applyAppPreferences(preferences)):
                 state.appPreferences = preferences
+                let packagePreferences = preferences.toPackageState()
                 return .merge(
                     state.windows.ids.map { id in
-                        .send(.windows(.element(id: id, action: .window(.applyAppPreferences(preferences)))))
+                        .send(.windows(.element(id: id, action: .window(.applyAppPreferences(packagePreferences)))))
                     },
                 )
 
@@ -190,7 +191,7 @@ struct WindowManagerFeature {
                 ))),
                 .send(.windows(.element(
                     id: windowSession.id,
-                    action: .window(.applyAppPreferences(state.appPreferences)),
+                    action: .window(.applyAppPreferences(state.appPreferences.toPackageState())),
                 ))),
                 .run { [id = windowSession.id] _ in
                     await fileManagerWindowClient.open(id)
@@ -214,7 +215,7 @@ struct WindowManagerFeature {
                 ))),
                 .send(.windows(.element(
                     id: windowSession.id,
-                    action: .window(.applyAppPreferences(state.appPreferences)),
+                    action: .window(.applyAppPreferences(state.appPreferences.toPackageState())),
                 ))),
                 .run { [id = windowSession.id] _ in
                     await fileManagerWindowClient.openTab(id)

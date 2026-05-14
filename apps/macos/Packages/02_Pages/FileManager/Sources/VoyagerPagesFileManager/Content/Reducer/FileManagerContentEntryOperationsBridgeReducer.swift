@@ -8,6 +8,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
+    @Dependency(\.metricsClient)
+    var metricsClient
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             // Bridge: entry view layout delegate → entry operations
@@ -25,13 +28,13 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             case let .delegate(.dropItemsToSidebarFolder(providers, targetURL)):
                 return sendEntryOperations(.routing(.handleDrop(
                     providers: providers,
-                    destinationPath: targetURL.path,
+                    destinationPath: targetURL.path
                 )))
 
             case let .delegate(.dropItemsToTag(providers, tagName)):
                 return sendEntryOperations(.routing(.handleDropToTag(
                     providers: providers,
-                    tagName: tagName,
+                    tagName: tagName
                 )))
 
             default:
@@ -44,7 +47,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
     private func handleEntryViewLayoutDelegateBridgeAction(
         _ action: Action,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action>? {
         guard case let .entryViewLayout(.delegate(delegateAction)) = action else {
             return nil
@@ -54,7 +57,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .executeCommand(command):
             let entryOperationsAction = EntryOperationsAction.routing(.executeCommand(
                 command: command,
-                context: makeEntryOperationsCommandContext(state: state),
+                context: makeEntryOperationsCommandContext(state: state)
             ))
             return sendEntryOperations(entryOperationsAction)
 
@@ -74,7 +77,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
     private func handleEntryOperationsBridgeAction(
         _ action: Action,
-        state: inout State,
+        state: inout State
     ) -> Effect<Action>? {
         // Bridge entry operations delegate → navigation
         if case let .entryViewLayout(.entryOperations(.delegate(delegate))) = action {
@@ -94,10 +97,10 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             return nil
         }
 
-        FileManagerContentFeature.logEntryActionMetricIfNeeded(for: entryOperationsAction)
+        FileManagerContentFeature.logEntryActionMetricIfNeeded(for: entryOperationsAction, metricsClient: metricsClient)
         return FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
             entryOperationsAction,
-            state: &state,
+            state: &state
         )
     }
 
@@ -111,7 +114,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         EntryOperationsCommandContext(
             selectedIds: state.entryViewLayout.selectedIds,
             displayItems: state.entryViewLayout.entries,
-            currentPath: state.navigation.currentPath,
+            currentPath: state.navigation.currentPath
         )
     }
 }

@@ -7,6 +7,7 @@ func handleNavigationDelegate(
     _ delegateAction: ContentPageNavigationAction.Delegate,
     state: inout FileManagerWindowState,
     computerName: String,
+    metricsClient: MetricsClient
 ) -> Effect<FileManagerWindowAction> {
     switch delegateAction {
     case let .navigateToState(navigationState):
@@ -16,16 +17,16 @@ func handleNavigationDelegate(
     case let .logDAUNavigation(previous, next):
         guard previous != next else { return .none }
         if next.isCollection {
-            VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
+            metricsClient.logDAUNavigation(.collection)
         } else {
-            VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
+            metricsClient.logDAUNavigation(.folder)
         }
         return .none
 
     case .resetComposer:
         return .concatenate(
             .send(.content(.internal(.resetComposer))),
-            .send(.content(.internal(.exitCollectionMode))),
+            .send(.content(.internal(.exitCollectionMode)))
         )
     }
 }

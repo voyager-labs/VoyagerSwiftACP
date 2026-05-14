@@ -15,7 +15,7 @@ struct FileManagerWindowPreferencesReducer {
                 state.sidebar.sidebarVisible = preferences.sidebarVisible
                 state.sidebar.sidebarWidth = preferences.sidebarWidth
 
-                state.content.entryViewLayout.mode = preferences.viewLayout
+                state.content.entryViewLayout.mode = .init(rawValue: preferences.viewLayoutMode.rawValue) ?? .list
                 state.content.entryViewLayout.listIconSize = preferences.listIconSize
                 state.content.entryViewLayout.gridIconSize = preferences.gridIconSize
                 state.content.entryViewLayout.listTextSize = preferences.listTextSize
@@ -29,7 +29,7 @@ struct FileManagerWindowPreferencesReducer {
                 return .merge(
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(preferences.sortKey))))),
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(preferences.sortOrder))))),
-                    .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(preferences.groupKey))))),
+                    .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(preferences.groupKey)))))
                 )
 
             default:

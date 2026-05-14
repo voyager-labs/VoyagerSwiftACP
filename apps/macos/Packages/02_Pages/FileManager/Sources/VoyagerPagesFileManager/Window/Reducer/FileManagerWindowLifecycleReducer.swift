@@ -8,6 +8,8 @@ import VoyagerShared
 struct FileManagerWindowLifecycleReducer {
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
+    @Dependency(\.metricsClient)
+    var metricsClient
 
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
@@ -17,27 +19,27 @@ struct FileManagerWindowLifecycleReducer {
             switch action {
             case .onAppear:
                 if shouldLogDailyFileManagerOpen(userDefaultsClient) {
-                    VoyagerSentryMetricLogger.logMetric(
+                    metricsClient.logMetric(
                         "voyager_file_manager_first_open",
-                        value: 1,
-                        tags: ["date": currentDateKey()],
+                        1,
+                        ["date": currentDateKey()]
                     )
                 }
 
                 return .merge(
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(
-                        state.content.entryViewLayout.entryArrangements.sortKey,
+                        state.content.entryViewLayout.entryArrangements.sortKey
                     ))))),
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(
-                        state.content.entryViewLayout.entryArrangements.sortOrder,
+                        state.content.entryViewLayout.entryArrangements.sortOrder
                     ))))),
                     .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(
-                        state.content.entryViewLayout.entryArrangements.groupKey,
+                        state.content.entryViewLayout.entryArrangements.groupKey
                     ))))),
                     .send(.content(.internal(.applyNavigationState(state.content.navigation.navigationState)))),
                     .send(.sidebar(.internal(.loadFavorites))),
                     .send(.sidebar(.internal(.loadLocations))),
-                    .send(.sidebar(.internal(.loadTags))),
+                    .send(.sidebar(.internal(.loadTags)))
                 )
 
             case .onDisappear:

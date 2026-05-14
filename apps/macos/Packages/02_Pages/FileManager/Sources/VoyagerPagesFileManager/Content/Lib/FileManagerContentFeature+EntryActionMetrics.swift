@@ -10,15 +10,12 @@ extension FileManagerContentFeature {
         let entryKind: DAUEntryKind
     }
 
-    static func logEntryActionMetricIfNeeded(for action: EntryOperationsAction) {
+    static func logEntryActionMetricIfNeeded(for action: EntryOperationsAction, metricsClient: MetricsClient) {
         guard let payload = dauEntryActionPayload(for: action) else {
             return
         }
 
-        VoyagerSentryMetricLogger.logDAUEntryAction(
-            actionKind: payload.actionKind,
-            entryKind: payload.entryKind,
-        )
+        metricsClient.logDAUEntryAction(payload.actionKind, payload.entryKind)
     }
 
     private static func dauEntryActionPayload(for action: EntryOperationsAction) -> EntryActionPayload? {
@@ -182,7 +179,7 @@ extension FileManagerContentFeature {
             sourcePaths: sourcePaths,
             destinationPath: _,
             operation: _,
-            operationKind: operationKind,
+            operationKind: operationKind
         )):
             guard let entryKind = entryKind(for: sourcePaths) else { return nil }
             guard let actionKind = dauActionKind(for: operationKind) else { return nil }
@@ -211,7 +208,7 @@ extension FileManagerContentFeature {
 
     private static func payload(
         actionKind: DAUEntryActionKind,
-        paths: [String],
+        paths: [String]
     ) -> EntryActionPayload? {
         guard let entryKind = entryKind(for: paths) else { return nil }
         return EntryActionPayload(actionKind: actionKind, entryKind: entryKind)
