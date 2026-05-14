@@ -5,6 +5,7 @@ import XCTest
 
 // MARK: - Restore / Bootstrap Regression Tests (SET-007)
 
+// swiftlint:disable type_body_length
 @MainActor
 final class AiConnectionRestoreTests: XCTestCase {
     // MARK: 1. Valid stored credential → checkingStatus → connected
@@ -56,9 +57,9 @@ final class AiConnectionRestoreTests: XCTestCase {
                     providerId: .openai,
                     authMethod: .apiKey,
                     credential: nil,
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
                 ),
-            ]
+            ],
         )
 
         let store = TestStore(initialState: AiSettingsState()) {
@@ -119,7 +120,7 @@ final class AiConnectionRestoreTests: XCTestCase {
         let file = AIConnectionsFile.singleProvider(
             .openai,
             state: .connectionFailed,
-            errorCode: .expired
+            errorCode: .expired,
         )
 
         let store = TestStore(initialState: AiSettingsState()) {
@@ -190,7 +191,7 @@ final class AiConnectionRestoreTests: XCTestCase {
         let file = AIConnectionsFile.singleProvider(
             .anthropic,
             state: .unavailable,
-            errorCode: .providerUnsupportedInBuild
+            errorCode: .providerUnsupportedInBuild,
         )
 
         let store = TestStore(initialState: AiSettingsState()) {
@@ -238,9 +239,9 @@ final class AiConnectionRestoreTests: XCTestCase {
                     providerId: .chatgptCodex,
                     authMethod: .oauth,
                     credential: nil,
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connectInProgress)
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connectInProgress),
                 ),
-            ]
+            ],
         )
 
         let store = TestStore(initialState: AiSettingsState()) {
@@ -268,12 +269,50 @@ final class AiConnectionRestoreTests: XCTestCase {
         XCTAssertEqual(codexRow?.primaryAction, .connect)
     }
 
+    func testRestore_connectInProgressWithCredential_resetsToNotVerifiedWithoutMissingCredentialReason() async {
+        let file = AIConnectionsFile(
+            updatedAtMs: 1_760_000_000_000,
+            providers: [
+                "chatgptCodex": ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(OAuthCredentialFile.testFixture()),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connectInProgress),
+                ),
+            ],
+        )
+
+        let store = TestStore(initialState: AiSettingsState()) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { file }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .chatgptCodex]?.connectionState = .notVerified
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+        }
+
+        await store.finish()
+
+        let codexRow = store.state.rows[id: .chatgptCodex]
+        XCTAssertEqual(codexRow?.connectionState, .notVerified)
+        XCTAssertEqual(codexRow?.statusReason, ProviderStatusReason.none)
+        XCTAssertEqual(codexRow?.primaryAction, .connect)
+    }
+
     // MARK: 8. disconnecting snapshot → maps to disconnected (mid-disconnect from previous session)
 
     func testRestore_disconnectingSnapshot_mapsToDisconnected() async {
         let file = AIConnectionsFile.singleProvider(
             .anthropic,
-            state: .disconnecting
+            state: .disconnecting,
         )
 
         let store = TestStore(initialState: AiSettingsState()) {
@@ -306,7 +345,7 @@ final class AiConnectionRestoreTests: XCTestCase {
     func testRestore_disconnectedSnapshot_mapsToDisconnected() async {
         let file = AIConnectionsFile.singleProvider(
             .openai,
-            state: .disconnected
+            state: .disconnected,
         )
 
         let store = TestStore(initialState: AiSettingsState()) {
@@ -336,6 +375,7 @@ final class AiConnectionRestoreTests: XCTestCase {
 
     // MARK: 10. Multiple providers with mixed states
 
+    // swiftlint:disable:next function_body_length
     func testRestore_multipleProviders_mixedStates() async {
         let file = AIConnectionsFile(
             updatedAtMs: 1_760_000_000_000,
@@ -344,7 +384,7 @@ final class AiConnectionRestoreTests: XCTestCase {
                     providerId: .chatgptCodex,
                     authMethod: .oauth,
                     credential: .oauth(OAuthCredentialFile.testFixture()),
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
                 ),
                 "openai": ProviderRecordFile(
                     providerId: .openai,
@@ -352,11 +392,11 @@ final class AiConnectionRestoreTests: XCTestCase {
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-expired")),
                     snapshot: ProviderSnapshotFile(
                         lastKnownStatus: .connectionFailed,
-                        lastErrorCode: .expired
-                    )
+                        lastErrorCode: .expired,
+                    ),
                 ),
                 // anthropic has no record → notVerified
-            ]
+            ],
         )
 
         let store = TestStore(initialState: AiSettingsState()) {
@@ -411,3 +451,5 @@ final class AiConnectionRestoreTests: XCTestCase {
         XCTAssertEqual(anthropicRow?.primaryAction, .connect)
     }
 }
+
+// swiftlint:enable type_body_length

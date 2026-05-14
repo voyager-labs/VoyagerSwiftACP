@@ -3,8 +3,6 @@ import SwiftUI
 import VoyagerEntitiesAi
 
 struct AiConnectionRowView: View {
-    @State private var keyText: String = ""
-
     let store: StoreOf<AiConnectionRowReducer>
 
     private static let checkingStatusRawValue = "checkingStatus"
@@ -164,18 +162,24 @@ struct AiConnectionRowView: View {
     @ViewBuilder
     private var apiKeyEntryRow: some View {
         HStack {
-            SecureField("Enter API key", text: $keyText)
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.small)
+            SecureField(
+                "Enter API key",
+                text: Binding(
+                    get: { store.enteredKey },
+                    set: { store.send(.enteredKeyChanged($0)) }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+            .controlSize(.small)
 
             Button("Submit") {
-                let trimmed = keyText.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmed = store.enteredKey.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
                 store.send(.submitAPIKey(trimmed))
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .disabled(keyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(store.enteredKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 

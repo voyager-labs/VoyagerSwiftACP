@@ -92,6 +92,10 @@ public struct AiConnectionRowReducer {
             case let .deviceAuthFailed(error):
                 return handleAuthError(&state, error: error)
 
+            case let .enteredKeyChanged(key):
+                state.enteredKey = key
+                return .none
+
             case let .submitAPIKey(key):
                 return handleSubmitAPIKey(&state, key: key)
 
@@ -310,9 +314,6 @@ public struct AiConnectionRowReducer {
         state.connectionState = result.state
         state.statusReason = result.reason
         state.flowState = .idle
-        if result.state == .connected {
-            state.enteredKey = ""
-        }
         return .none
     }
 }

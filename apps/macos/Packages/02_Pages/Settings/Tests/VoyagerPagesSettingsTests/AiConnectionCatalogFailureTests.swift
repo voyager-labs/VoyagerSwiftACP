@@ -96,7 +96,8 @@ final class AiConnectionCatalogFailureTests: XCTestCase {
         await store.finish()
 
         let loadCalls = await loadCounter.currentValue()
-        XCTAssertEqual(loadCalls, 2)
+        // Retry performs one bootstrap load, then verification persistence reloads the latest file before saving.
+        XCTAssertEqual(loadCalls, 3)
         XCTAssertEqual(store.state.bootstrapPhase, .loaded)
         XCTAssertEqual(store.state.rows[id: .openai]?.connectionState, .connected)
     }
