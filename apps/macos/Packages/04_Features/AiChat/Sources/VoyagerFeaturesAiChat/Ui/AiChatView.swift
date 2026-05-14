@@ -13,6 +13,8 @@ public struct AiChatView: View {
 
     @State private var isChatInputFocused = false
     @State private var chatInputTextHeight = Self.chatInputMinTextHeight
+    @State private var isModelSelectorPopoverPresented = false
+    @State private var isThinkingSelectorPresented = false
 
     public init(store: StoreOf<AiChatFeature>) {
         self.store = store
@@ -58,7 +60,7 @@ public struct AiChatView: View {
             lastMessage?.role.rawValue ?? "none",
             lastMessage?.content ?? "",
             String(state.isProcessing),
-            state.requestStatusText ?? ""
+            state.requestStatusText ?? "",
         ].joined(separator: "|")
     }
 
@@ -309,10 +311,8 @@ public struct AiChatView: View {
                     hoverColor: .primary
                 )
                 .fixedSize(horizontal: true, vertical: false)
-                HoverTextAffordance(title: input.modelLabel ?? "No model", systemName: "chevron.up.chevron.down")
-                    .fixedSize(horizontal: true, vertical: false)
-                HoverTextAffordance(title: input.effortLabel, systemName: "dial.medium")
-                    .fixedSize(horizontal: true, vertical: false)
+                modelSelectorButton(state: state, input: input)
+                thinkingSelectorButton(state: state, input: input)
                 Spacer(minLength: 2)
                 chatInputActionButton(input: input)
             }
@@ -331,6 +331,313 @@ public struct AiChatView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(chatInputBorder, lineWidth: 1)
         )
+    }
+
+    private func modelSelectorButton(state: AiChatState, input _: AiChatInputDisplayModel) -> some View {
+        Button {
+            isModelSelectorPopoverPresented.toggle()
+            if isModelSelectorPopoverPresented {
+                store.send(.modelSelectorTapped)
+            } else {
+                store.send(.modelSelectorDismissed)
+            }
+        } label: {
+            HoverTextAffordance(title: Self.modelSelectorLabel(for: state), systemName: "chevron.down")
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isModelSelectorPopoverPresented, arrowEdge: .bottom) {
+            modelSelectorDropdownContent(state: state)
+                .onDisappear {
+                    store.send(.modelSelectorDismissed)
+                }
+        }
+        .onChange(of: state.modelSelectorIsDisabled) { isDisabled in
+            guard isDisabled, isModelSelectorPopoverPresented else { return }
+            isModelSelectorPopoverPresented = false
+            store.send(.modelSelectorDismissed)
+        }
+        .disabled(modelSelectorIsDisabled(for: state))
+        .accessibilityLabel("Model")
+        .accessibilityValue(modelSelectorAccessibilityValue(for: state))
+    }
+
+    private func thinkingSelectorButton(state: AiChatState, input: AiChatInputDisplayModel) -> some View {
+        let capability = state.resolvedSelectedModel?.thinkingCapability
+
+        return Button {
+            isThinkingSelectorPresented.toggle()
+        } label: {
+            HoverTextAffordance(
+                title: thinkingSelectorLabel(for: state, input: input),
+                systemName: "chevron.down"
+            )
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isThinkingSelectorPresented, arrowEdge: .bottom) {
+            selectorPopoverContainer {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(thinkingSelectorOptions(for: capability), id: \.id) { option in
+                        thinkingSelectorRow(option, isSelected: state.selectedThinking == option.selection)
+                    }
+                }
+            }
+        }
+        .disabled(thinkingSelectorIsDisabled(for: state))
+        .accessibilityLabel("Thinking")
+        .accessibilityValue(thinkingSelectorAccessibilityValue(for: state))
+    }
+
+    static func modelSelectorLabel(for state: AiChatState) -> String {
+        if let selectedModel = state.selectedModelDisplayModel {
+            return selectedModel.title
+        }
+
+        return switch state.modelListState {
+        case .loading, .idle:
+            "Loading"
+        case .failed:
+            "Unavailable"
+        case .empty:
+            "No models"
+        case .loaded:
+            "Model"
+        }
+    }
+
+    static func modelSelectorUsesScrollableContent(for contentState: AiChatModelSelectorContentState) -> Bool {
+        if case .loaded = contentState {
+            return true
+        }
+
+        return false
+    }
+
+    private func thinkingSelectorLabel(for state: AiChatState, input: AiChatInputDisplayModel) -> String {
+        guard let model = state.resolvedSelectedModel else {
+            return "Thinking"
+        }
+
+        switch model.thinkingCapability {
+        case .unsupported, .unknown:
+            return "Unavailable"
+        case .effort, .adaptive, .tokenBudget:
+            return state.selectedThinking.map(AiChatState.thinkingLabel(for:)) ?? input.effortLabel
+        }
+    }
+
+    private func thinkingSelectorAccessibilityValue(for state: AiChatState) -> String {
+        guard let model = state.resolvedSelectedModel else { return "No selection" }
+
+        switch model.thinkingCapability {
+        case .unsupported, .unknown:
+            return "Unavailable"
+        case .effort, .adaptive, .tokenBudget:
+            return state.selectedThinking.map(AiChatState.thinkingLabel(for:))
+                ?? AiChatState.defaultThinkingLabel(for: model.thinkingCapability)
+        }
+    }
+
+    private func thinkingSelectorIsDisabled(for state: AiChatState) -> Bool {
+        guard let model = state.resolvedSelectedModel else { return true }
+
+        switch model.thinkingCapability {
+        case .unsupported, .unknown:
+            return true
+        case let .effort(values, _):
+            return values.isEmpty
+        case let .adaptive(effortValues, _):
+            return effortValues.isEmpty
+        case let .tokenBudget(min, max, _):
+            return min > max
+        }
+    }
+
+    private func thinkingSelectorOptions(for capability: AiModelThinkingCapability?) -> [ThinkingSelectorOption] {
+        switch capability {
+        case let .effort(values, _):
+            return values.map { ThinkingSelectorOption(selection: AiThinkingSelection.effort($0), title: AiChatState.thinkingLabel(for: AiThinkingSelection.effort($0))) }
+        case let .adaptive(effortValues, _):
+            return effortValues.map { ThinkingSelectorOption(selection: AiThinkingSelection.effort($0), title: AiChatState.thinkingLabel(for: AiThinkingSelection.effort($0))) }
+        case let .tokenBudget(min, max, defaultValue):
+            let candidateValues = thinkingBudgetValues(min: min, max: max, defaultValue: defaultValue)
+            return candidateValues.map { ThinkingSelectorOption(selection: AiThinkingSelection.tokenBudget($0), title: AiChatState.thinkingLabel(for: AiThinkingSelection.tokenBudget($0))) }
+        case .unsupported, .unknown, nil:
+            return []
+        }
+    }
+
+    private func thinkingBudgetValues(min: Int, max: Int, defaultValue: Int?) -> [Int] {
+        var values: [Int] = [min]
+        if let defaultValue, defaultValue != min, defaultValue != max {
+            values.append(defaultValue)
+        }
+        if max != min {
+            values.append(max)
+        }
+        return values
+    }
+
+    @ViewBuilder
+    private func thinkingSelectorRow(_ option: ThinkingSelectorOption, isSelected: Bool) -> some View {
+        Button {
+            store.send(.selectedThinkingChanged(option.selection))
+            isThinkingSelectorPresented = false
+        } label: {
+            HStack(spacing: 8) {
+                Text(option.title)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 8)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(option.title)
+    }
+
+    private func modelSelectorIsDisabled(for state: AiChatState) -> Bool {
+        state.modelSelectorIsDisabled
+    }
+
+    @ViewBuilder
+    private func modelSelectorDropdownContent(state: AiChatState) -> some View {
+        selectorPopoverContainer {
+            switch state.modelSelectorContentState {
+            case let .loaded(sections):
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                            if index > 0 {
+                                Divider()
+                                    .padding(.vertical, 4)
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(section.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.top, index == 0 ? 0 : 2)
+
+                                ForEach(section.rows) { row in
+                                    modelSelectorRow(row)
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: Self.modelSelectorContentMaxHeight)
+
+            case let .loading(status),
+                 let .empty(status),
+                 let .failed(status),
+                 let .unsupported(status):
+                modelSelectorStatusRow(status)
+            }
+        }
+    }
+
+    private func selectorPopoverContainer<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .padding(8)
+            .frame(width: Self.selectorPopoverWidth, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.16), radius: 12, x: 0, y: 6)
+    }
+
+    @ViewBuilder
+    private func modelSelectorStatusRow(_ status: AiChatModelSelectorStatusDisplayModel) -> some View {
+        Button {
+            store.send(.modelSelectorTapped)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(status.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Text(status.detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .disabled(true)
+        .accessibilityLabel(status.title)
+        .accessibilityValue(status.detail)
+    }
+
+    @ViewBuilder
+    private func modelSelectorRow(_ row: AiChatModelCatalogRowDisplayModel) -> some View {
+        Button {
+            store.send(.selectedModelChanged(row.handle))
+            store.send(.modelSelectorDismissed)
+            isModelSelectorPopoverPresented = false
+        } label: {
+            HStack(spacing: 8) {
+                Text(row.title)
+                    .font(.system(size: 13, weight: row.isSelected ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if row.isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(row.isSelected ? Color.primary.opacity(0.08) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(row.title)
+        .accessibilityHint(row.providerBadge ?? "")
+    }
+
+    private func modelSelectorAccessibilityValue(for state: AiChatState) -> String {
+        switch state.modelSelectorContentState {
+        case .loading:
+            return "Loading"
+        case .empty:
+            return "No models"
+        case .failed:
+            return "Unavailable"
+        case .unsupported:
+            return "Unsupported"
+        case .loaded:
+            return state.selectedModelDisplayModel?.title ?? "No selection"
+        }
     }
 
     private func chatInputTextField(state: AiChatState, input: AiChatInputDisplayModel) -> some View {
@@ -453,17 +760,18 @@ public struct AiChatView: View {
 
     private static let chatInputMinTextHeight: CGFloat = 34
     private static let chatInputMaxTextHeight: CGFloat = 96
-
+    static let selectorPopoverWidth: CGFloat = 260
+    static let modelSelectorContentMaxHeight: CGFloat = 280
     private static let mockAssistantBodyLines = [
         "Context checked.",
         "Plan ready.",
-        "Provider later."
+        "Provider later.",
     ]
 
     private static let progressRows = [
         "✓ Context",
         "✓ Queued",
-        "★ Mock ready"
+        "★ Mock ready",
     ]
 
     private struct HoverTextAffordance: View {
@@ -493,5 +801,12 @@ public struct AiChatView: View {
                 isHovered = hovering
             }
         }
+    }
+
+    private struct ThinkingSelectorOption: Identifiable {
+        let selection: AiThinkingSelection
+        let title: String
+
+        var id: AiThinkingSelection { selection }
     }
 }

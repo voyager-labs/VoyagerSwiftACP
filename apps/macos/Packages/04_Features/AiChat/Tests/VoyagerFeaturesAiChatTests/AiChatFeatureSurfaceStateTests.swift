@@ -22,12 +22,14 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         if case let .empty(summaryDisplay, selectedModel) = emptyState.surfaceState {
             XCTAssertTrue(summaryDisplay.isEmpty)
             XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertEqual(selectedModel?.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
         } else {
             XCTFail("Expected empty surface state")
         }
@@ -48,23 +50,25 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         if case let .empty(summaryDisplay, selectedModel) = currentContextInitialState.surfaceState {
             XCTAssertFalse(summaryDisplay.isEmpty)
             XCTAssertEqual(summaryDisplay.title, "Four files selected")
             XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
         } else {
             XCTFail("Expected current-context draft to keep empty surface state")
         }
         XCTAssertTrue(currentContextInitialState.canSubmit)
         XCTAssertEqual(currentContextInitialState.chatInputDisplayModel.placeholder, "Ask anything…")
         XCTAssertEqual(currentContextInitialState.chatInputDisplayModel.modelLabel, "GPT-4.1 Mini")
-        XCTAssertEqual(currentContextInitialState.chatInputDisplayModel.effortLabel, "xhigh")
+        XCTAssertEqual(currentContextInitialState.chatInputDisplayModel.effortLabel, "Thinking unavailable")
         XCTAssertTrue(currentContextInitialState.chatInputDisplayModel.canSubmit)
         XCTAssertTrue(currentContextInitialState.chatInputDisplayModel.isSubmitVisible)
         XCTAssertFalse(currentContextInitialState.chatInputDisplayModel.isStopVisible)
+        XCTAssertNil(currentContextInitialState.modelCatalogState.rows.first?.providerBadge)
 
         let readyState = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -76,12 +80,14 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         if case let .ready(summaryDisplay, selectedModel) = readyState.surfaceState {
             XCTAssertFalse(summaryDisplay.isEmpty)
             XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertEqual(selectedModel?.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
         } else {
             XCTFail("Expected ready surface state")
         }
@@ -108,20 +114,23 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: catalogRows[1].handle,
-                        selectedRow: catalogRows[1]
+                        selectedRow: catalogRows[1],
                     ),
-                    messages: []
+                    messages: [],
                 ),
                 selectedHandle: catalogRows[1].handle,
                 selectedRow: catalogRows[1],
-                assistantReplacementIndex: nil
-            ))
+                assistantReplacementIndex: nil,
+            )),
         )
 
         if case let .processing(processing, _, selectedModel) = processingState.surfaceState {
             XCTAssertEqual(processing.lockedModel.label.title, "Claude Sonnet 4")
+            XCTAssertEqual(processing.lockedModel.title, "Claude Sonnet 4")
             XCTAssertEqual(processing.cancelAffordance.title, "Cancel request")
             XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertEqual(selectedModel?.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
         } else {
             XCTFail("Expected processing surface state")
         }
@@ -145,7 +154,7 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             selectedModelHandle: nil,
             lockedModelHandle: catalogRows[1].handle,
             lastExecutionFailure: nil,
-            executionPhase: processingState.executionPhase
+            executionPhase: processingState.executionPhase,
         )
 
         if case let .processing(processing, _, selectedModel) = refreshedProcessingState.surfaceState {
@@ -155,6 +164,7 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             XCTFail("Expected processing surface state to survive model refresh")
         }
         XCTAssertTrue(refreshedProcessingState.isProcessing)
+        XCTAssertEqual(refreshedProcessingState.chatInputDisplayModel.modelLabel, "No models available")
         XCTAssertTrue(refreshedProcessingState.chatInputDisplayModel.isStopVisible)
         XCTAssertTrue(refreshedProcessingState.chatInputDisplayModel.canStop)
 
@@ -176,18 +186,20 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: selectedHandle,
-                        selectedRow: catalogRows[0]
+                        selectedRow: catalogRows[0],
                     ),
-                    messages: []
+                    messages: [],
                 ),
                 selectedHandle: selectedHandle,
                 selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil
-            ), .transportError)
+                assistantReplacementIndex: nil,
+            ), .transportError),
         )
 
         if case let .ready(_, selectedModel) = errorState.surfaceState {
             XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertEqual(selectedModel?.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
         } else {
             XCTFail("Expected terminal failure to remain in message-area ready surface")
         }
@@ -207,16 +219,16 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
                 requestID: AiChatRequestID(rawValue: UUID()),
                 runID: AiChatRunID(rawValue: UUID()),
                 model: selectedHandle,
-                selectedRow: catalogRows[0]
+                selectedRow: catalogRows[0],
             ),
-            messages: []
+            messages: [],
         )
         let lock = makeRequestLock(
             kind: .submit,
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
         let disconnectedState = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -224,27 +236,25 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             currentContext: makeContextSnapshot(),
             transcriptHistory: [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Hi")
+                AiChatMessage(role: .assistant, content: "Hi"),
             ],
             draftText: "Follow up",
             catalogRows: [],
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .completed(lock)
+            executionPhase: .completed(lock),
         )
 
-        if case let .unconnected(connection, summary) = disconnectedState.surfaceState {
-            XCTAssertEqual(connection.title, "Connect an AI provider")
-            XCTAssertEqual(connection.fixLabel, "Open Settings")
+        if case let .ready(summary, selectedModel) = disconnectedState.surfaceState {
             XCTAssertFalse(summary.isEmpty)
+            XCTAssertNil(selectedModel)
         } else {
-            XCTFail("Expected completed session to surface provider disconnection")
+            XCTFail("Expected completed session to remain ready while model selection is unavailable")
         }
-        if case let .unconnected(connection) = disconnectedState.skeletonSurfaceDisplayModel {
-            XCTAssertEqual(connection.fixLabel, "Open Settings")
+        if case .ready = disconnectedState.skeletonSurfaceDisplayModel {
         } else {
-            XCTFail("Expected skeleton surface to expose provider disconnection")
+            XCTFail("Expected skeleton surface to remain ready after request completion")
         }
         XCTAssertFalse(disconnectedState.canSubmit)
         XCTAssertFalse(disconnectedState.chatInputDisplayModel.canSubmit)

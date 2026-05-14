@@ -33,7 +33,7 @@ public struct AiChatContextSummaryDisplayModel: Equatable, Sendable {
         referenceCount: Int,
         itemCount: Int,
         attachmentCount: Int,
-        isEmpty: Bool,
+        isEmpty: Bool
     ) {
         self.title = title
         self.detail = detail
@@ -76,7 +76,7 @@ public struct AiChatInputDisplayModel: Equatable, Sendable {
         isSubmitVisible: Bool,
         isStopVisible: Bool,
         canSubmit: Bool,
-        canStop: Bool,
+        canStop: Bool
     ) {
         self.placeholder = placeholder
         self.contextAffordanceLabel = contextAffordanceLabel
@@ -109,7 +109,7 @@ public struct AiChatSkeletonDisplayModel: Equatable, Sendable {
         headerTitle: String,
         currentContext: AiChatContextSummaryDisplayModel,
         surface: AiChatSkeletonSurfaceDisplayModel,
-        chatInput: AiChatInputDisplayModel,
+        chatInput: AiChatInputDisplayModel
     ) {
         self.headerTitle = headerTitle
         self.currentContext = currentContext
@@ -132,6 +132,8 @@ public struct AiChatSelectedModelDisplayModel: Equatable, Sendable {
     public var handle: AiModelHandle
     public var label: AiChatModelLabel
 
+    public var title: String { label.title }
+
     public init(handle: AiModelHandle, label: AiChatModelLabel) {
         self.handle = handle
         self.label = label
@@ -141,6 +143,8 @@ public struct AiChatSelectedModelDisplayModel: Equatable, Sendable {
 public struct AiChatLockedModelDisplayModel: Equatable, Sendable {
     public var handle: AiModelHandle
     public var label: AiChatModelLabel
+
+    public var title: String { label.title }
 
     public init(handle: AiModelHandle, label: AiChatModelLabel) {
         self.handle = handle
@@ -173,21 +177,26 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
 
     public var handle: AiModelHandle
     public var label: AiChatModelLabel
+    public var providerBadge: String?
     public var isSelected: Bool
     public var isLocked: Bool
     public var isDefault: Bool
     public var isRecommended: Bool
 
+    public var title: String { label.title }
+
     public init(
         handle: AiModelHandle,
         label: AiChatModelLabel,
+        providerBadge: String?,
         isSelected: Bool,
         isLocked: Bool,
         isDefault: Bool,
-        isRecommended: Bool,
+        isRecommended: Bool
     ) {
         self.handle = handle
         self.label = label
+        self.providerBadge = providerBadge
         self.isSelected = isSelected
         self.isLocked = isLocked
         self.isDefault = isDefault
@@ -195,22 +204,70 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
     }
 }
 
+public struct AiChatModelCatalogSectionDisplayModel: Identifiable, Equatable, Sendable {
+    public var id: AiProvider { provider }
+
+    public var provider: AiProvider
+    public var title: String
+    public var rows: [AiChatModelCatalogRowDisplayModel]
+
+    public init(
+        provider: AiProvider,
+        title: String,
+        rows: [AiChatModelCatalogRowDisplayModel]
+    ) {
+        self.provider = provider
+        self.title = title
+        self.rows = rows
+    }
+}
+
 public struct AiChatModelCatalogState: Equatable, Sendable {
     public var fieldLabel: String
     public var rows: [AiChatModelCatalogRowDisplayModel]
+    public var sections: [AiChatModelCatalogSectionDisplayModel]
     public var selectedModel: AiChatSelectedModelDisplayModel?
     public var lockedModel: AiChatLockedModelDisplayModel?
 
     public init(
         fieldLabel: String,
         rows: [AiChatModelCatalogRowDisplayModel],
+        sections: [AiChatModelCatalogSectionDisplayModel] = [],
         selectedModel: AiChatSelectedModelDisplayModel?,
-        lockedModel: AiChatLockedModelDisplayModel?,
+        lockedModel: AiChatLockedModelDisplayModel?
     ) {
         self.fieldLabel = fieldLabel
         self.rows = rows
+        self.sections = sections
         self.selectedModel = selectedModel
         self.lockedModel = lockedModel
+    }
+}
+
+public struct AiChatModelSelectorStatusDisplayModel: Equatable, Sendable {
+    public var title: String
+    public var detail: String
+
+    public init(title: String, detail: String) {
+        self.title = title
+        self.detail = detail
+    }
+}
+
+public enum AiChatModelSelectorContentState: Equatable, Sendable {
+    case loading(AiChatModelSelectorStatusDisplayModel)
+    case empty(AiChatModelSelectorStatusDisplayModel)
+    case failed(AiChatModelSelectorStatusDisplayModel)
+    case unsupported(AiChatModelSelectorStatusDisplayModel)
+    case loaded([AiChatModelCatalogSectionDisplayModel])
+
+    public var hasPresentableContent: Bool {
+        switch self {
+        case .loading, .empty, .failed, .unsupported:
+            return true
+        case let .loaded(sections):
+            return !sections.isEmpty
+        }
     }
 }
 
@@ -222,14 +279,20 @@ public enum AiChatSurfaceState: Equatable, Sendable {
     case processing(
         processing: AiChatProcessingState,
         summary: AiChatContextSummaryDisplayModel,
-        selectedModel: AiChatSelectedModelDisplayModel?,
+        selectedModel: AiChatSelectedModelDisplayModel?
     )
 }
 
 func aiChatModelLabel(for row: AiModelCatalogRow) -> AiChatModelLabel {
-    let providerLabel = ProviderDescriptor.descriptor(for: row.handle.provider)?.displayName
-        ?? row.handle.provider.rawValue
-    return AiChatModelLabel(title: row.displayName, subtitle: row.subtitle ?? providerLabel)
+    AiChatModelLabel(title: row.displayName, subtitle: row.subtitle)
+}
+
+func aiChatModelLabel(for model: AiProviderModel) -> AiChatModelLabel {
+    AiChatModelLabel(title: model.displayName, subtitle: model.providerDisplayName)
+}
+
+func aiChatProviderSectionTitle(for provider: AiProvider) -> String {
+    ProviderDescriptor.descriptor(for: provider)?.displayName ?? provider.rawValue
 }
 
 func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot) -> AiChatContextSummaryDisplayModel {
@@ -243,7 +306,7 @@ func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot
     let detailParts = [
         referenceCount > 0 ? "\(referenceCount) \(referenceCount == 1 ? "reference" : "references")" : nil,
         itemCount > 0 ? "\(itemCount) \(itemCount == 1 ? "item" : "items")" : nil,
-        attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil
+        attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil,
     ].compactMap(\.self)
     return AiChatContextSummaryDisplayModel(
         title: title,
@@ -251,19 +314,26 @@ func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot
         referenceCount: referenceCount,
         itemCount: itemCount,
         attachmentCount: attachmentCount,
-        isEmpty: !hasContent && (trimmedSummary?.isEmpty ?? true),
+        isEmpty: !hasContent && (trimmedSummary?.isEmpty ?? true)
     )
 }
 
 func aiChatUnconnectedMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
-    guard state.sessionID == nil || state.catalogRows.isEmpty || state.selectedModelDisplayModel == nil else {
+    let isUnconnected = switch state.providerConnectionSnapshot {
+    case let .known(providers):
+        providers.isEmpty
+    case .unknown:
+        state.sessionID == nil
+    }
+
+    guard isUnconnected else {
         return nil
     }
 
     return AiChatConnectionMetadata(
         title: "Connect an AI provider",
         detail: "Set up a provider in Settings to chat with this context.",
-        fixLabel: "Open Settings",
+        fixLabel: "Open Settings"
     )
 }
 
@@ -279,26 +349,26 @@ func aiChatExecutionFailureMetadata(for failure: AiChatExecutionFailure) -> AiCh
     AiChatConnectionMetadata(
         title: "Chat unavailable",
         detail: failure.displayMessage,
-        fixLabel: "Retry",
+        fixLabel: "Retry"
     )
 }
 
 func aiChatSessionStatusErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
     switch state.sessionStatus {
     case .failed:
-        return AiChatConnectionMetadata(
+        AiChatConnectionMetadata(
             title: "Session failed",
             detail: "The current chat session could not be loaded.",
-            fixLabel: "Retry",
+            fixLabel: "Retry"
         )
     case .rebindRequired:
-        return AiChatConnectionMetadata(
+        AiChatConnectionMetadata(
             title: "Session needs rebind",
             detail: "Reconnect the session before continuing.",
-            fixLabel: "Reconnect",
+            fixLabel: "Reconnect"
         )
     default:
-        return nil
+        nil
     }
 }
 
@@ -309,21 +379,21 @@ func aiChatMockAssistantBodyLines(from content: String) -> [String]? {
         .filter { !$0.isEmpty }
 
     guard lines.count == 7,
-          lines.first == aiChatMockAssistantHeaderTitle,
-          Array(lines.suffix(aiChatMockAssistantProgressRows.count)) == aiChatMockAssistantProgressRows
+          lines.first == kAiChatMockAssistantHeaderTitle,
+          Array(lines.suffix(kAiChatMockAssistantProgressRows.count)) == kAiChatMockAssistantProgressRows
     else {
         return nil
     }
 
-    let bodyLines = Array(lines.dropFirst().dropLast(aiChatMockAssistantProgressRows.count))
+    let bodyLines = Array(lines.dropFirst().dropLast(kAiChatMockAssistantProgressRows.count))
     return bodyLines.count == 3 ? bodyLines : nil
 }
 
-private let aiChatMockAssistantHeaderTitle = "Voyager AI"
-private let aiChatMockAssistantProgressRows = [
+private let kAiChatMockAssistantHeaderTitle = "Voyager AI"
+private let kAiChatMockAssistantProgressRows = [
     "✓ Context",
     "✓ Queued",
-    "★ Mock ready"
+    "★ Mock ready",
 ]
 
 extension AiChatExecutionFailure {
