@@ -1,6 +1,10 @@
 import Foundation
 
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 func makeContentChromeProps(
     from state: FileManagerWindowState,
@@ -47,10 +51,10 @@ func makeContentOverlayProps(from state: FileManagerWindowState) -> FileManagerC
             return nil
         },
         isDiscardEnabled: state.content.isCollectionMode
-            && state.content.collectionSession.metadata.baseline != nil
+            && state.content.collection.collectionSession.metadata.baseline != nil
             && state.content.isOpenedCollectionDirty,
         canSaveCollection: state.content.canSaveCollection,
-        isTemporaryCollection: state.content.collectionSession.document?.url == nil,
+        isTemporaryCollection: state.content.collection.collectionSession.document?.url == nil,
     )
 }
 

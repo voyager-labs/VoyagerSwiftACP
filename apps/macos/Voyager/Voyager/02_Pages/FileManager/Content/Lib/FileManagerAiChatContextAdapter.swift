@@ -2,6 +2,7 @@ import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
+import VoyagerFeaturesContentPageNavigation
 
 enum FileManagerAiChatContextAdapter {
     static func makeAiChatSetupState(

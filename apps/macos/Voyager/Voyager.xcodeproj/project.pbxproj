@@ -48,6 +48,8 @@
 		F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */; };
 		F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
 		F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
+		F20000000000000000000044 /* VoyagerFeaturesAiChat in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001E /* VoyagerFeaturesAiChat */; };
+		F20000000000000000000045 /* VoyagerFeaturesAiChat in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001E /* VoyagerFeaturesAiChat */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -211,6 +213,7 @@
 				F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */,
 				F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */,
+				F20000000000000000000044 /* VoyagerFeaturesAiChat in Frameworks */,
 				F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */,
 				F2000000000000000000003C /* Dependencies in Frameworks */,
 				F2000000000000000000003D /* Clocks in Frameworks */,
@@ -246,6 +249,7 @@
 				F2000000000000000000003A /* Dependencies in Frameworks */,
 				F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */,
+				F20000000000000000000045 /* VoyagerFeaturesAiChat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -377,6 +381,7 @@
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
+				F2000000000000000000001E /* VoyagerFeaturesAiChat */,
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
@@ -427,6 +432,7 @@
 				F21000000000000000000012 /* OrderedCollections */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
+				F2000000000000000000001E /* VoyagerFeaturesAiChat */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;
@@ -596,6 +602,7 @@
 				F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */,
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
+				F2000000000000000000000E /* XCLocalSwiftPackageReference "04_Features/AiChat" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -1516,6 +1523,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/Composer;
 		};
+		F2000000000000000000000E /* XCLocalSwiftPackageReference "04_Features/AiChat" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/AiChat;
+		};
 		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1783,6 +1794,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */;
 			productName = VoyagerFeaturesComposer;
+		};
+		F2000000000000000000001E /* VoyagerFeaturesAiChat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2000000000000000000000E /* XCLocalSwiftPackageReference "04_Features/AiChat" */;
+			productName = VoyagerFeaturesAiChat;
 		};
 		/* End XCSwiftPackageProductDependency section */
 	};

@@ -1,9 +1,11 @@
 import ComposableArchitecture
+import VoyagerEntitiesAi
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 @CasePathable
 enum WindowManagerAction: CasePathable, Sendable {
+    case delegate(Delegate)
     case lifecycle(Lifecycle)
     case file(FileCommand)
     case window(WindowCommand)
@@ -13,10 +15,16 @@ enum WindowManagerAction: CasePathable, Sendable {
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable
+    enum Delegate: Sendable {
+        case openAISettings
+    }
+
+    @CasePathable
     enum Lifecycle: CasePathable, Sendable {
         case openInitialWindowIfNeeded
         case reopenWindowIfNeeded(hasVisibleWindows: Bool)
         case applyAppPreferences(AppPreferencesState)
+        case aiConnectionsFileUpdated(AIConnectionsFile)
     }
 
     @CasePathable
@@ -54,6 +62,7 @@ enum WindowManagerAction: CasePathable, Sendable {
         case requestUndo
         case requestRedo
         case toggleComposer
+        case openContextualAiChat
         case cut
         case copy
         case paste

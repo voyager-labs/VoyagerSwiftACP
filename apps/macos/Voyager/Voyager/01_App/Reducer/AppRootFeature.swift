@@ -63,217 +63,262 @@ struct AppRootFeature {
         }
 
         Reduce { state, action in
-            let effect: Effect<Action>
-            switch action {
-            case .lifecycle(.launch(.willFinishLaunching)):
-                let helperStateClient = helperStateClient
-                effect = .merge(
-                    .send(.appPreferences(.load)),
-                    .run { send in
-                        for await helperState in helperStateClient.observe() {
-                            await send(.helperStateUpdated(helperState))
-                        }
-                    }
-                    .cancellable(id: CancelID.helperStateObserver, cancelInFlight: true),
-                    .run { [notificationCenterClient] send in
-                        for await _ in notificationCenterClient.notifications(
-                            NSApplication.didBecomeActiveNotification,
-                            nil,
-                        ) {
-                            await send(.appDidBecomeActive)
-                        }
-                    }
-                    .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true),
-                )
+            reduceAppLifecycle(into: &state, action: action)
+        }
+        Reduce { state, action in
+            reduceHelperFileBridge(into: &state, action: action)
+        }
+        Reduce { state, action in
+            reducePreferencesAndCommands(into: &state, action: action)
+        }
+        Reduce { state, action in
+            reduceWindowPostAction(into: &state, action: action)
+        }
+        Reduce { state, _ in
+            state.menuCommands = MenuCommandsState(state: state)
+            return .none
+        }
+    }
 
-            case .startHelperExternalFileBridge:
-                guard !state.isHelperExternalFileBridgeStarted else {
-                    effect = .none
-                    break
-                }
-                state.isHelperExternalFileBridgeStarted = true
-                let helperExternalFileChangeClient = helperExternalFileChangeClient
-                effect = .run { send in
-                    for await event in helperExternalFileChangeClient.observeChangedPaths() {
-                        await send(.helperExternalFileChanged(event))
-                    }
-                }
-                .cancellable(id: CancelID.helperExternalFileBridge, cancelInFlight: true)
+    private func reduceAppLifecycle(
+        into state: inout State,
+        action: Action,
+    ) -> Effect<Action> {
+        switch action {
+        case .lifecycle(.launch(.willFinishLaunching)):
+            return startLaunchObservers()
 
-            case let .lifecycle(.delegate(delegateAction)):
-                switch delegateAction {
-                case .openInitialWindowIfNeeded:
-                    effect = .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+        case let .lifecycle(.delegate(delegateAction)):
+            switch delegateAction {
+            case .openInitialWindowIfNeeded:
+                return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
-                case let .reopenWindowIfNeeded(hasVisibleWindows):
-                    effect =
-                        .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
-                }
-
-            case .lifecycle:
-                switch action {
-                case .lifecycle(.termination(.willTerminate)):
-                    state.isHelperExternalFileBridgeStarted = false
-                    state.lastHelperReady = false
-                    state.windowPresenceBeforeWindowManagerAction = nil
-                    effect = .merge(
-                        .cancel(id: CancelID.helperExternalFileBridge),
-                        .cancel(id: CancelID.helperStateObserver),
-                        .cancel(id: CancelID.appDidBecomeActiveObserver),
-                    )
-                default:
-                    effect = .none
-                }
-
-            case .appDidBecomeActive:
-                effect = state.lastHelperReady && !state.windowManager.windows.isEmpty
-                    ? .send(.registerHelperWatchRootsIfNeeded)
-                    : .none
-
-            case let .helperStateUpdated(helperState):
-                let shouldRegister = helperState.helperReady
-                    && !state.windowManager.windows.isEmpty
-                state.lastHelperReady = helperState.helperReady
-                effect = shouldRegister ? .send(.registerHelperWatchRootsIfNeeded) : .none
-
-            case let .helperExternalFileChanged(event):
-                let helperExternalFileChangeClient = helperExternalFileChangeClient
-                collectionStalenessClient.invalidateRecords(event.paths)
-                if event.source == .replay, state.windowManager.windows.isEmpty {
-                    effect = .run { _ in
-                        await PendingReplayPathsStore.shared.append(event.paths)
-                    }
-                } else if event.source == .replay, !state.windowManager.windows.isEmpty {
-                    effect = .merge(
-                        forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids),
-                        .run { _ in
-                            await helperExternalFileChangeClient.acknowledgeDeliveredPaths(event.paths)
-                        },
-                    )
-                } else if !state.windowManager.windows.isEmpty {
-                    effect = .merge(
-                        forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids),
-                        .run { _ in
-                            await helperExternalFileChangeClient.acknowledgeDeliveredPaths(event.paths)
-                        },
-                    )
-                } else {
-                    effect = .none
-                }
-
-            case .flushPendingReplay:
-                guard !state.windowManager.windows.isEmpty else {
-                    effect = .none
-                    break
-                }
-                effect = .run { send in
-                    let paths = await PendingReplayPathsStore.shared.takeAll()
-                    await send(.pendingReplayLoaded(paths))
-                }
-
-            case let .pendingReplayLoaded(paths):
-                guard !paths.isEmpty else {
-                    effect = .none
-                    break
-                }
-                let helperExternalFileChangeClient = helperExternalFileChangeClient
-                effect = .merge(
-                    forwardExternalFileChanges(paths, windowIDs: state.windowManager.windows.ids),
-                    .run { _ in
-                        await helperExternalFileChangeClient.acknowledgeDeliveredPaths(paths)
-                    },
-                )
-
-            case .registerHelperWatchRootsIfNeeded:
-                let helperExternalFileChangeClient = helperExternalFileChangeClient
-                let helperStateClient = helperStateClient
-                let onboardingWindowClient = onboardingWindowClient
-                let helperFolderAccess = helperFolderAccessClient
-                let userDefaultsClient = userDefaultsClient
-                effect = .run { send in
-                    guard let helperState = await helperStateClient.resolve(), helperState.helperReady else {
-                        return
-                    }
-                    let access: HelperFolderAccessResult
-                    if onboardingWindowClient.isRequired() == false,
-                       let persisted = persistedHelperFolderAccess(userDefaultsClient: userDefaultsClient),
-                       persisted.status == .granted
-                    {
-                        access = await helperFolderAccess.checkAccess()
-                        let data = try? JSONEncoder().encode(access)
-                        userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
-                    } else {
-                        access = await helperFolderAccess.requestAccess()
-                        let data = try? JSONEncoder().encode(access)
-                        userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
-                    }
-                    let watchRoots = helperGrantedWatchRoots(from: access)
-                    await helperExternalFileChangeClient.updateWatchRoots(watchRoots)
-                    await send(.registerHelperWatchRoots(watchRoots))
-                }
-
-            case .registerHelperWatchRoots:
-                effect = .none
-
-            case let .appPreferences(.delegate(.updated(preferences))):
-                state.appPreferences = preferences
-                effect = .send(.windowManager(.lifecycle(.applyAppPreferences(preferences))))
-
-            case .appPreferences:
-                effect = .none
-
-            case let .menuCommands(.delegate(.windowManager(action))):
-                effect = .send(.windowManager(action))
-
-            case let .menuCommands(.delegate(.updater(action))):
-                effect = .send(.updater(action))
-
-            case .windowManager(.delegate(.openAISettings)):
-                effect = .send(.openAISettings)
-
-            case .openAISettings:
-                effect = .concatenate(
-                    .send(.settings(.selectSection(.ai))),
-                    .run { _ in
-                        await MainActor.run {
-                            openNativeSettingsScene()
-                        }
-                    },
-                )
-
-            case .menuCommands:
-                effect = .none
-
-            case let .settings(.delegate(.aiConnectionsFileUpdated(file))):
-                effect = .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))
-
-            case .settings(.general(.checkForUpdates)):
-                effect = .send(.updater(.checkForUpdates))
-
-            case let .settings(.general(.toggleAutomaticUpdate(enabled))):
-                effect = .send(.updater(.setAutomaticUpdate(enabled)))
-
-            case .windowManager, .updater, .settings:
-                switch action {
-                case .windowManager:
-                    let hadWindowsBeforeAction = state.windowPresenceBeforeWindowManagerAction ?? false
-                    let hasWindowsAfterAction = !state.windowManager.windows.isEmpty
-                    let didOpenFirstWindow = !hadWindowsBeforeAction && hasWindowsAfterAction
-                    state.windowPresenceBeforeWindowManagerAction = nil
-                    effect = .merge(
-                        didOpenFirstWindow ? .send(.startHelperExternalFileBridge) : .none,
-                        didOpenFirstWindow ? .send(.flushPendingReplay) : .none,
-                        (didOpenFirstWindow && state.lastHelperReady) ? .send(.registerHelperWatchRootsIfNeeded) :
-                            .none,
-                    )
-                default:
-                    effect = .none
-                }
+            case let .reopenWindowIfNeeded(hasVisibleWindows):
+                return .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
             }
 
-            state.menuCommands = MenuCommandsState(state: state)
-            return effect
+        case .lifecycle(.termination(.willTerminate)):
+            state.isHelperExternalFileBridgeStarted = false
+            state.lastHelperReady = false
+            state.windowPresenceBeforeWindowManagerAction = nil
+            return .merge(
+                .cancel(id: CancelID.helperExternalFileBridge),
+                .cancel(id: CancelID.helperStateObserver),
+                .cancel(id: CancelID.appDidBecomeActiveObserver),
+            )
+
+        case .appDidBecomeActive:
+            return state.lastHelperReady && !state.windowManager.windows.isEmpty
+                ? .send(.registerHelperWatchRootsIfNeeded)
+                : .none
+
+        default:
+            return .none
         }
+    }
+
+    private func startLaunchObservers() -> Effect<Action> {
+        let helperStateClient = helperStateClient
+        return .merge(
+            .send(.appPreferences(.load)),
+            .run { send in
+                for await helperState in helperStateClient.observe() {
+                    await send(.helperStateUpdated(helperState))
+                }
+            }
+            .cancellable(id: CancelID.helperStateObserver, cancelInFlight: true),
+            .run { [notificationCenterClient] send in
+                for await _ in notificationCenterClient.notifications(
+                    NSApplication.didBecomeActiveNotification,
+                    nil,
+                ) {
+                    await send(.appDidBecomeActive)
+                }
+            }
+            .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true),
+        )
+    }
+
+    private func reduceHelperFileBridge(
+        into state: inout State,
+        action: Action,
+    ) -> Effect<Action> {
+        switch action {
+        case .startHelperExternalFileBridge:
+            return startHelperExternalFileBridgeIfNeeded(state: &state)
+
+        case let .helperStateUpdated(helperState):
+            let shouldRegister = helperState.helperReady && !state.windowManager.windows.isEmpty
+            state.lastHelperReady = helperState.helperReady
+            return shouldRegister ? .send(.registerHelperWatchRootsIfNeeded) : .none
+
+        case let .helperExternalFileChanged(event):
+            return handleHelperExternalFileChanged(event, state: state)
+
+        case .flushPendingReplay:
+            guard !state.windowManager.windows.isEmpty else { return .none }
+            return .run { send in
+                let paths = await PendingReplayPathsStore.shared.takeAll()
+                await send(.pendingReplayLoaded(paths))
+            }
+
+        case let .pendingReplayLoaded(paths):
+            return handlePendingReplayLoaded(paths, state: state)
+
+        case .registerHelperWatchRootsIfNeeded:
+            return registerHelperWatchRootsIfNeeded()
+
+        default:
+            return .none
+        }
+    }
+
+    private func startHelperExternalFileBridgeIfNeeded(state: inout State) -> Effect<Action> {
+        guard !state.isHelperExternalFileBridgeStarted else { return .none }
+        state.isHelperExternalFileBridgeStarted = true
+        let helperExternalFileChangeClient = helperExternalFileChangeClient
+        return .run { send in
+            for await event in helperExternalFileChangeClient.observeChangedPaths() {
+                await send(.helperExternalFileChanged(event))
+            }
+        }
+        .cancellable(id: CancelID.helperExternalFileBridge, cancelInFlight: true)
+    }
+
+    private func handleHelperExternalFileChanged(
+        _ event: HelperExternalFileChangeEvent,
+        state: State,
+    ) -> Effect<Action> {
+        let helperExternalFileChangeClient = helperExternalFileChangeClient
+        collectionStalenessClient.invalidateRecords(event.paths)
+
+        if event.source == .replay, state.windowManager.windows.isEmpty {
+            return .run { _ in
+                await PendingReplayPathsStore.shared.append(event.paths)
+            }
+        }
+
+        guard !state.windowManager.windows.isEmpty else { return .none }
+        return .merge(
+            forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids),
+            .run { _ in
+                await helperExternalFileChangeClient.acknowledgeDeliveredPaths(event.paths)
+            },
+        )
+    }
+
+    private func handlePendingReplayLoaded(
+        _ paths: [String],
+        state: State,
+    ) -> Effect<Action> {
+        guard !paths.isEmpty else { return .none }
+        let helperExternalFileChangeClient = helperExternalFileChangeClient
+        return .merge(
+            forwardExternalFileChanges(paths, windowIDs: state.windowManager.windows.ids),
+            .run { _ in
+                await helperExternalFileChangeClient.acknowledgeDeliveredPaths(paths)
+            },
+        )
+    }
+
+    private func registerHelperWatchRootsIfNeeded() -> Effect<Action> {
+        let helperExternalFileChangeClient = helperExternalFileChangeClient
+        let helperStateClient = helperStateClient
+        let onboardingWindowClient = onboardingWindowClient
+        let helperFolderAccess = helperFolderAccessClient
+        let userDefaultsClient = userDefaultsClient
+        return .run { send in
+            guard let helperState = await helperStateClient.resolve(), helperState.helperReady else {
+                return
+            }
+            let access = await resolveHelperFolderAccess(
+                onboardingWindowClient: onboardingWindowClient,
+                helperFolderAccess: helperFolderAccess,
+                userDefaultsClient: userDefaultsClient,
+            )
+            let watchRoots = helperGrantedWatchRoots(from: access)
+            await helperExternalFileChangeClient.updateWatchRoots(watchRoots)
+            await send(.registerHelperWatchRoots(watchRoots))
+        }
+    }
+
+    private func resolveHelperFolderAccess(
+        onboardingWindowClient: OnboardingWindowClient,
+        helperFolderAccess: VoyagerEntitiesAppPreferences.HelperFolderAccessClient,
+        userDefaultsClient: UserDefaultsClient,
+    ) async -> HelperFolderAccessResult {
+        let access: HelperFolderAccessResult = if onboardingWindowClient.isRequired() == false,
+                                                  let persisted =
+                                                  persistedHelperFolderAccess(userDefaultsClient: userDefaultsClient),
+                                                  persisted.status == .granted
+        {
+            await helperFolderAccess.checkAccess()
+        } else {
+            await helperFolderAccess.requestAccess()
+        }
+
+        let data = try? JSONEncoder().encode(access)
+        userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
+        return access
+    }
+
+    private func reducePreferencesAndCommands(
+        into state: inout State,
+        action: Action,
+    ) -> Effect<Action> {
+        switch action {
+        case let .appPreferences(.delegate(.updated(preferences))):
+            state.appPreferences = preferences
+            return .send(.windowManager(.lifecycle(.applyAppPreferences(preferences))))
+
+        case let .menuCommands(.delegate(.windowManager(action))):
+            return .send(.windowManager(action))
+
+        case let .menuCommands(.delegate(.updater(action))):
+            return .send(.updater(action))
+
+        case .windowManager(.delegate(.openAISettings)):
+            return .send(.openAISettings)
+
+        case .openAISettings:
+            return .concatenate(
+                .send(.settings(.selectSection(.ai))),
+                .run { _ in
+                    await MainActor.run {
+                        openNativeSettingsScene()
+                    }
+                },
+            )
+
+        case let .settings(.delegate(.aiConnectionsFileUpdated(file))):
+            return .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))
+
+        case .settings(.general(.checkForUpdates)):
+            return .send(.updater(.checkForUpdates))
+
+        case let .settings(.general(.toggleAutomaticUpdate(enabled))):
+            return .send(.updater(.setAutomaticUpdate(enabled)))
+
+        default:
+            return .none
+        }
+    }
+
+    private func reduceWindowPostAction(
+        into state: inout State,
+        action: Action,
+    ) -> Effect<Action> {
+        guard case .windowManager = action else { return .none }
+
+        let hadWindowsBeforeAction = state.windowPresenceBeforeWindowManagerAction ?? false
+        let hasWindowsAfterAction = !state.windowManager.windows.isEmpty
+        let didOpenFirstWindow = !hadWindowsBeforeAction && hasWindowsAfterAction
+        state.windowPresenceBeforeWindowManagerAction = nil
+        return .merge(
+            didOpenFirstWindow ? .send(.startHelperExternalFileBridge) : .none,
+            didOpenFirstWindow ? .send(.flushPendingReplay) : .none,
+            (didOpenFirstWindow && state.lastHelperReady) ? .send(.registerHelperWatchRootsIfNeeded) : .none,
+        )
     }
 }
 
@@ -299,45 +344,38 @@ private func performSettingsMenuItem() -> Bool {
     guard let mainMenu = NSApp.mainMenu else { return false }
 
     for item in mainMenu.items {
-        guard let submenu = item.submenu,
-              let match = findSettingsMenuItem(in: submenu)
-        else { continue }
-
-        if let action = match.item.action,
-           NSApp.sendAction(action, to: match.item.target, from: match.item)
-        {
+        guard let submenu = item.submenu else { continue }
+        if performSettingsMenuItem(in: submenu) {
             return true
         }
-
-        match.menu.performActionForItem(at: match.index)
-        return true
     }
 
     return false
 }
 
-private struct SettingsMenuItemMatch {
-    let menu: NSMenu
-    let item: NSMenuItem
-    let index: Int
-}
-
 @MainActor
-private func findSettingsMenuItem(in menu: NSMenu) -> SettingsMenuItemMatch? {
+private func performSettingsMenuItem(in menu: NSMenu) -> Bool {
     for index in 0 ..< menu.numberOfItems {
         guard let item = menu.item(at: index) else { continue }
         if isSettingsMenuItem(item) {
-            return SettingsMenuItemMatch(menu: menu, item: item, index: index)
+            if let action = item.action,
+               NSApp.sendAction(action, to: item.target, from: item)
+            {
+                return true
+            }
+
+            menu.performActionForItem(at: index)
+            return true
         }
 
         if let submenu = item.submenu,
-           let match = findSettingsMenuItem(in: submenu)
+           performSettingsMenuItem(in: submenu)
         {
-            return match
+            return true
         }
     }
 
-    return nil
+    return false
 }
 
 private func isSettingsMenuItem(_ item: NSMenuItem) -> Bool {
