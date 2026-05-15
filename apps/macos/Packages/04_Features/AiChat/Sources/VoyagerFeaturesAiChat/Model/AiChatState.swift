@@ -535,6 +535,8 @@ public struct AiChatState: Equatable, Sendable {
         guard let selectedThinking, let model else { return nil }
 
         switch (selectedThinking, model.thinkingCapability) {
+        case (.none, .effort), (.none, .adaptive), (.none, .tokenBudget), (.none, .unknown):
+            return selectedThinking
         case let (.effort(value), .effort(values, _)):
             return values.contains(value) ? selectedThinking : nil
         case let (.effort(value), .adaptive(values, _)):
@@ -543,8 +545,8 @@ public struct AiChatState: Equatable, Sendable {
             return (min ... max).contains(value) ? selectedThinking : nil
         case (.effort, .unknown), (.tokenBudget, .unknown):
             return selectedThinking
-        case (.effort, .tokenBudget), (.tokenBudget, .effort), (.tokenBudget, .adaptive), (.effort, .unsupported),
-             (.tokenBudget, .unsupported):
+        case (.none, .unsupported), (.effort, .tokenBudget), (.tokenBudget, .effort), (.tokenBudget, .adaptive),
+             (.effort, .unsupported), (.tokenBudget, .unsupported):
             return nil
         }
     }
@@ -601,35 +603,29 @@ public struct AiChatState: Equatable, Sendable {
         switch capability {
         case .unsupported, .unknown:
             return "Thinking unavailable"
-        case let .effort(_, defaultValue), let .adaptive(_, defaultValue):
-            if let defaultValue {
-                return thinkingLabel(for: .effort(defaultValue))
-            }
-            return "Select thinking"
-        case let .tokenBudget(_, _, defaultValue):
-            if let defaultValue {
-                return thinkingLabel(for: .tokenBudget(defaultValue))
-            }
-            return "Select thinking"
+        case .effort, .adaptive, .tokenBudget:
+            return "default"
         }
     }
 
     static func thinkingLabel(for selection: AiThinkingSelection) -> String {
         switch selection {
+        case .none:
+            return "none"
         case let .effort(value):
             switch value {
             case .minimal:
-                return "Minimal thinking"
+                return "minimal"
             case .low:
-                return "Low thinking"
+                return "low"
             case .medium:
-                return "Medium thinking"
+                return "medium"
             case .high:
-                return "High thinking"
+                return "high"
             case .xhigh:
-                return "X-High thinking"
+                return "x-high"
             case .max:
-                return "Max thinking"
+                return "max"
             }
         case let .tokenBudget(value):
             return "\(value) tokens"

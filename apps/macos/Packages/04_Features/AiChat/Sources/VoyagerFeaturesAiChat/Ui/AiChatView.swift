@@ -457,15 +457,42 @@ public struct AiChatView: View {
     private func thinkingSelectorOptions(for capability: AiModelThinkingCapability?) -> [ThinkingSelectorOption] {
         switch capability {
         case let .effort(values, _):
-            return values.map { ThinkingSelectorOption(selection: AiThinkingSelection.effort($0), title: AiChatState.thinkingLabel(for: AiThinkingSelection.effort($0))) }
+            return defaultThinkingSelectorOptions()
+                + values.map { effortSelectorOption($0) }
         case let .adaptive(effortValues, _):
-            return effortValues.map { ThinkingSelectorOption(selection: AiThinkingSelection.effort($0), title: AiChatState.thinkingLabel(for: AiThinkingSelection.effort($0))) }
+            return defaultThinkingSelectorOptions()
+                + effortValues.map { effortSelectorOption($0) }
         case let .tokenBudget(min, max, defaultValue):
             let candidateValues = thinkingBudgetValues(min: min, max: max, defaultValue: defaultValue)
-            return candidateValues.map { ThinkingSelectorOption(selection: AiThinkingSelection.tokenBudget($0), title: AiChatState.thinkingLabel(for: AiThinkingSelection.tokenBudget($0))) }
+            return defaultThinkingSelectorOptions()
+                + candidateValues.map { tokenBudgetSelectorOption($0) }
         case .unsupported, .unknown, nil:
             return []
         }
+    }
+
+    private func defaultThinkingSelectorOptions() -> [ThinkingSelectorOption] {
+        [
+            ThinkingSelectorOption(selection: nil, title: "default"),
+            ThinkingSelectorOption(
+                selection: AiThinkingSelection.none,
+                title: AiChatState.thinkingLabel(for: .none)
+            )
+        ]
+    }
+
+    private func effortSelectorOption(_ effort: AiThinkingEffort) -> ThinkingSelectorOption {
+        ThinkingSelectorOption(
+            selection: .effort(effort),
+            title: AiChatState.thinkingLabel(for: .effort(effort))
+        )
+    }
+
+    private func tokenBudgetSelectorOption(_ value: Int) -> ThinkingSelectorOption {
+        ThinkingSelectorOption(
+            selection: .tokenBudget(value),
+            title: AiChatState.thinkingLabel(for: .tokenBudget(value))
+        )
     }
 
     private func thinkingBudgetValues(min: Int, max: Int, defaultValue: Int?) -> [Int] {
@@ -804,9 +831,11 @@ public struct AiChatView: View {
     }
 
     private struct ThinkingSelectorOption: Identifiable {
-        let selection: AiThinkingSelection
+        let selection: AiThinkingSelection?
         let title: String
 
-        var id: AiThinkingSelection { selection }
+        var id: String {
+            selection.map(AiChatState.thinkingLabel(for:)) ?? "provider-default"
+        }
     }
 }

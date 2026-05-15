@@ -526,7 +526,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         }
 
         XCTAssertEqual(store.state.chatInputDisplayModel.modelLabel, "GPT-5.5")
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "Medium thinking")
+        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "default")
         XCTAssertEqual(
             store.state.resolvedSelectedModel?.thinkingCapability,
             .effort(values: [.minimal, .low, .medium, .high, .xhigh], defaultValue: .medium)

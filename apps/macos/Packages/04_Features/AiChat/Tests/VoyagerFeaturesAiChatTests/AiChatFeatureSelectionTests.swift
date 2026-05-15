@@ -214,13 +214,13 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             })
         }
 
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "Medium thinking")
+        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "default")
 
         await store.send(.selectedThinkingChanged(.effort(.high))) { state in
             state.selectedThinking = .effort(.high)
         }
 
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "High thinking")
+        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "high")
 
         await store.send(.submitTapped) { state in
             let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
@@ -263,6 +263,33 @@ final class AiChatFeatureSelectionTests: XCTestCase {
 
         XCTAssertEqual(requestSpy.requests.count, 1)
         XCTAssertEqual(requestSpy.requests[0].context.selectedThinking, .effort(.high))
+    }
+
+    func testSelectedThinkingChangedDistinguishesProviderDefaultFromNoThinking() async {
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium)
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.selectedThinkingChanged(AiThinkingSelection.none)) { state in
+            state.selectedThinking = AiThinkingSelection.none
+        }
+
+        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "none")
+
+        await store.send(.selectedThinkingChanged(nil)) { state in
+            state.selectedThinking = nil
+        }
+
+        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "default")
     }
 
     func testModelSelectorPresentationTogglesWithoutTouchingSelection() async {

@@ -108,7 +108,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
 
         XCTAssertEqual(unknownState.chatInputDisplayModel.effortLabel, "Thinking unavailable")
         XCTAssertEqual(unsupportedState.chatInputDisplayModel.effortLabel, "Thinking unavailable")
-        XCTAssertEqual(supportedState.chatInputDisplayModel.effortLabel, "Medium thinking")
+        XCTAssertEqual(supportedState.chatInputDisplayModel.effortLabel, "default")
     }
 
     func testModelSelectorContentStateProvidesExplicitNonLoadedStates() {
