@@ -18,6 +18,7 @@ public enum AiThinkingEffort: String, Equatable, Sendable, CaseIterable, Codable
 }
 
 public enum AiThinkingSelection: Equatable, Sendable, Hashable, Codable {
+    case none
     case effort(AiThinkingEffort)
     case tokenBudget(Int)
 }
