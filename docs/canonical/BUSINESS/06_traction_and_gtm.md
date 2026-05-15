@@ -1,5 +1,5 @@
 ---
-updated: 2026-05-13
+updated: 2026-05-15
 status: canonical
 ---
 
@@ -26,12 +26,12 @@ status: canonical
 
 ## Onboarding Trend
 
-| Month        | Cumulative onboarding completed |
-| ------------ | ------------------------------: |
-| 2026-02      |                               3 |
-| 2026-03      |                              13 |
-| 2026-04      |                              28 |
-| 2026-05      |                              37 |
+| Month   | Cumulative onboarding completed |
+| ------- | ------------------------------: |
+| 2026-02 |                               3 |
+| 2026-03 |                              13 |
+| 2026-04 |                              28 |
+| 2026-05 |                              37 |
 
 ## Weekly KPI
 
@@ -63,6 +63,7 @@ status: canonical
 - Uneed 제품 런칭 일간 랭킹 6위를 달성했다.
 - Reddit, Indie Hackers 누적 조회수 8만 이상, 좋아요 101개를 기록했다.
 - X를 통한 build in public로 제품 개발 과정과 문제 인식을 공유했다.
+- Raycast에 Voyager 제품 컨셉과 유사한 파일 관리 앱 플러그인을 개발해 심사 제출했다.
 
 ## GTM Strategy
 
@@ -73,6 +74,21 @@ status: canonical
 | 상시 유입 운영   | 상시                         | 문제 인식형 콘텐츠로 타깃 유입 확보       | X, Reddit, Indie Hackers, Voyager Blog, LinkedIn     |
 | 제품 이벤트 노출 | 대형 업데이트·런칭·연동 시점 | 리뷰, 업보트, 랭킹 등 레퍼런스 확보       | Product Hunt, Uneed, Peerlist, Raycast, BTT, KM      |
 | 사용 사례 확산   | 핵심 워크플로 검증 이후      | 핵심 워크플로와 데모를 공유 자산으로 확산 | Discord, Automators, MPU, TikTok, YouTube, Instagram |
+
+## Channel Roles
+
+| Channel                   | Role                                                  |
+| ------------------------- | ----------------------------------------------------- |
+| X                         | 빌드 인 퍼블릭 채널로 개발 과정과 문제 인식 공유      |
+| Reddit                    | 기능 제안, 문제 제보, 버그 리포트 등 직접 피드백 수집 |
+| Indie Hackers             | 창업자·인디메이커 대상 개발 현황과 학습 내용 공유     |
+| Product Hunt              | 메이저 업데이트와 런칭 시점의 집중 노출 및 리뷰 확보  |
+| Uneed, Peerlist           | 초기 제품 이벤트 노출과 소셜 프루프 확보              |
+| Raycast, BetterTouchTool  | 생산성·자동화 중심 데스크탑 파워유저 접점 확보        |
+| MacPowerUsers, Automators | macOS 파워유저와 자동화 사용자 대상 사용 사례 확산    |
+| YouTube                   | 핵심 기능 데모와 실제 활용 튜토리얼 운영              |
+| TikTok, Instagram         | 사용 사례 중심의 숏폼 확산과 바이럴 실험              |
+| LinkedIn                  | 지식노동자 업무 상황과 도입 효과 중심의 문제 제기     |
 
 ## GTM Target KPI
 
