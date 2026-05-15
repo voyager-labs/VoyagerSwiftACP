@@ -90,8 +90,7 @@ final class AiConnectionDisconnectTests: XCTestCase {
         XCTAssertEqual(store.state.primaryAction, .connect)
     }
 
-
-    func testDisconnectConfirm_success_preservesEnteredAPIKey() async {
+    func testDisconnectConfirm_successClearsEnteredAPIKey() async {
         let store = TestStore(
             initialState: AiConnectionRowState(
                 provider: .openai,
@@ -117,11 +116,12 @@ final class AiConnectionDisconnectTests: XCTestCase {
             state.flowState = .idle
             state.connectionState = .notVerified
             state.statusReason = .none
+            state.enteredKey = ""
         }
 
         await store.finish()
 
-        XCTAssertEqual(store.state.enteredKey, "sk-preserved")
+        XCTAssertEqual(store.state.enteredKey, "")
     }
 
     // MARK: - Confirm Disconnect → Failure

@@ -111,6 +111,7 @@ public struct AiConnectionRowReducer {
                 case .notVerified:
                     state.connectionState = .notVerified
                     state.statusReason = .none
+                    state.enteredKey = ""
                 default:
                     state.connectionState = .connected
                     state.statusReason = .none
@@ -314,6 +315,9 @@ public struct AiConnectionRowReducer {
         state.connectionState = result.state
         state.statusReason = result.reason
         state.flowState = .idle
+        if result.state == .connected {
+            state.enteredKey = ""
+        }
         return .none
     }
 }

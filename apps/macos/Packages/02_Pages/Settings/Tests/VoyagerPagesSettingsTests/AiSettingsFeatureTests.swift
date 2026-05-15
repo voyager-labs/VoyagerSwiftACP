@@ -55,7 +55,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     provider: .chatgptCodex,
                     connectionState: .connectInProgress,
                     flowState: .browserLoginInProgress,
-                ),
+                )
             ]),
         ) {
             AiSettingsFeature()
@@ -96,7 +96,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastVerifiedAtMs: staleFile.updatedAtMs,
                         lastErrorCode: .none,
                     ),
-                ),
+                )
             ],
         )
         let saveSpy = ConnectionsFileSaveSpy()
@@ -137,7 +137,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                 AiConnectionRowState(
                     provider: .openai,
                     connectionState: .disconnecting,
-                ),
+                )
             ]),
         ) {
             AiSettingsFeature()
@@ -178,7 +178,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastVerifiedAtMs: nil,
                         lastErrorCode: .providerUnsupportedInBuild,
                     ),
-                ),
+                )
             ],
         )
         let saveSpy = ConnectionsFileSaveSpy()
@@ -300,7 +300,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .oauth,
                     credential: .oauth(OAuthCredentialFile(accessToken: "token-valid")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
-                ),
+                )
             ],
         )
 
@@ -355,7 +355,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastKnownStatus: .connectionFailed,
                         lastErrorCode: .expired,
                     ),
-                ),
+                )
             ],
         )
 
@@ -403,7 +403,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastKnownStatus: .connectionFailed,
                         lastErrorCode: .invalidAPIKey,
                     ),
-                ),
+                )
             ],
         )
 
@@ -495,7 +495,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
-                ),
+                )
             ],
         )
 
@@ -576,7 +576,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .disconnected),
-                ),
+                )
             ],
         )
 
@@ -615,7 +615,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .oauth,
                     credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connectInProgress),
-                ),
+                )
             ],
         )
 
@@ -650,7 +650,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .disconnecting),
-                ),
+                )
             ],
         )
 
@@ -706,6 +706,7 @@ final class AiSettingsFeatureTests: XCTestCase {
             state.connectionState = .connected
             state.statusReason = .none
             state.flowState = .idle
+            state.enteredKey = ""
         }
 
         await store.finish()
@@ -886,6 +887,7 @@ final class AiSettingsFeatureTests: XCTestCase {
             state.connectionState = .connected
             state.statusReason = .none
             state.flowState = .idle
+            state.enteredKey = ""
         }
 
         await store.finish()
