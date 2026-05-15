@@ -72,7 +72,7 @@ extension AiProviderModelListClientTests {
 }
 
 extension AiProviderModelListClientTests {
-    func testLoadModels_openAI_usesModelAPIResponseAndLeavesThinkingUnknownWhenMetadataIsAbsent() async throws {
+    func testLoadModels_openAI_infersReasoningMetadataFromAPIModelIdentifiers() async throws {
         let client = makeLiveClient { request in
             XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/models")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sk-openai")
@@ -84,11 +84,40 @@ extension AiProviderModelListClientTests {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
         )
 
-        XCTAssertEqual(models.map(\.id.rawValue), ["gpt-4.1", "o4-mini", "custom-openai-model"])
-        XCTAssertEqual(models.map(\.displayName), ["gpt-4.1", "o4-mini", "custom-openai-model"])
+        XCTAssertEqual(
+            models.map(\.id.rawValue),
+            ["gpt-4.1", "gpt-5.1", "gpt-5-pro", "gpt-5.5", "o4-mini", "custom-openai-model"]
+        )
         XCTAssertEqual(
             models.map(\.thinkingCapability),
-            [unknownThinkingCapability, unknownThinkingCapability, unknownThinkingCapability]
+            [
+                unknownThinkingCapability,
+                .effort(values: [.low, .medium, .high], defaultValue: nil),
+                .effort(values: [.high], defaultValue: .high),
+                .effort(values: [.minimal, .low, .medium, .high, .xhigh], defaultValue: .medium),
+                .effort(values: [.minimal, .low, .medium, .high, .xhigh], defaultValue: .medium),
+                unknownThinkingCapability
+            ]
+        )
+    }
+
+    func testLoadModels_openAI_prefersReturnedReasoningMetadataWhenPresent() async throws {
+        let client = makeLiveClient { _ in
+            makeHTTPResponse(statusCode: 200, json: openAIModelsWithReasoningMetadataJSON())
+        }
+
+        let models = try await client.loadModels(
+            .openai,
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+        )
+
+        XCTAssertEqual(models.map(\.id.rawValue), ["gpt-5.5", "custom-reasoning-model"])
+        XCTAssertEqual(
+            models.map(\.thinkingCapability),
+            [
+                .effort(values: [.low, .high], defaultValue: .high),
+                .effort(values: [.minimal, .medium], defaultValue: nil)
+            ]
         )
     }
 
@@ -139,6 +168,7 @@ extension AiProviderModelListClientTests {
 
     func testThinkingCapability_supportsPlanNeutralShapesWithoutProviderPayloads() {
         XCTAssertEqual(AiThinkingEffort.allCases, [.minimal, .low, .medium, .high, .xhigh, .max])
+        XCTAssertEqual(AiThinkingSelection.none, .none)
         XCTAssertEqual(AiThinkingSelection.effort(.medium), .effort(.medium))
         XCTAssertEqual(AiThinkingSelection.tokenBudget(2048), .tokenBudget(2048))
         XCTAssertEqual(
@@ -240,138 +270,4 @@ private func makeHTTPResponse(statusCode: Int, json: String) -> (HTTPURLResponse
     let url = URL(string: "https://example.com")!
     let response = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil)!
     return (response, Data(json.utf8))
-}
-
-private func codexModelsWithThinkingJSON() -> String {
-    """
-    {
-      "models": [
-        {
-          "slug": "gpt-5.5",
-          "display_name": "GPT-5.5",
-          "supported_reasoning_levels": [
-            { "effort": "low", "description": "Low" },
-            { "effort": "medium", "description": "Medium" },
-            { "effort": "high", "description": "High" }
-          ],
-          "default_reasoning_level": "medium",
-          "hidden": false
-        },
-        {
-          "slug": "gpt-5.3-codex-spark",
-          "display_name": "GPT-5.3 Codex Spark",
-          "hidden": false
-        },
-        {
-          "slug": "gpt-5.4",
-          "display_name": "GPT-5.4",
-          "hidden": true
-        }
-      ]
-    }
-    """
-}
-
-private func codexAppServerModelsJSON() -> String {
-    """
-    {
-      "data": [
-        {
-          "id": "preset-gpt-5.5",
-          "model": "gpt-5.5",
-          "displayName": "GPT-5.5",
-          "hidden": true,
-          "supportedReasoningEfforts": [
-            { "reasoningEffort": "minimal", "description": "Minimal" },
-            { "reasoningEffort": "xhigh", "description": "Extra high" }
-          ],
-          "defaultReasoningEffort": "xhigh"
-        },
-        {
-          "id": "internal-disabled",
-          "model": "internal-disabled",
-          "displayName": "Internal Disabled",
-          "visibility": "none"
-        },
-        {
-          "model": "gpt-5.4-mini",
-          "display_name": "GPT-5.4 mini",
-          "supported_reasoning_efforts": ["low", "medium", "high"],
-          "default_reasoning_effort": "medium"
-        }
-      ]
-    }
-    """
-}
-
-private func codexSingleModelJSON() -> String {
-    """
-    {
-      "models": [
-        {
-          "slug": "gpt-5.2",
-          "display_name": "gpt-5.2"
-        }
-      ]
-    }
-    """
-}
-
-private func openAIModelsJSON() -> String {
-    """
-    {
-      "data": [
-        { "id": "gpt-4.1" },
-        { "id": "o4-mini" },
-        { "id": "custom-openai-model" }
-      ]
-    }
-    """
-}
-
-private func anthropicModelsJSON() -> String {
-    """
-    {
-      "data": [
-        {
-          "id": "claude-sonnet-4-5",
-          "display_name": "Claude Sonnet 4.5",
-          "capabilities": {
-            "thinking": {
-              "supported": true,
-              "types": {
-                "enabled": { "supported": true }
-              }
-            },
-            "effort": {
-              "supported": true,
-              "low": { "supported": true },
-              "medium": { "supported": true },
-              "high": { "supported": true },
-              "xhigh": { "supported": false },
-              "max": { "supported": true }
-            }
-          }
-        },
-        {
-          "id": "claude-adaptive",
-          "display_name": "Claude Adaptive",
-          "capabilities": {
-            "thinking": {
-              "supported": true,
-              "types": {
-                "adaptive": { "supported": true }
-              }
-            },
-            "effort": {
-              "supported": false,
-              "low": { "supported": true },
-              "high": { "supported": true }
-            }
-          }
-        },
-        { "id": "claude-custom" }
-      ]
-    }
-    """
 }

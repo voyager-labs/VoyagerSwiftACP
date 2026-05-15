@@ -4,6 +4,106 @@ struct OpenAIModelsResponse: Decodable, Sendable {
 
 struct OpenAIModelPayload: Decodable, Sendable {
     let id: String
+    let supportedReasoningEfforts: [OpenAIReasoningEffortPayload]
+    let defaultReasoningEffort: AiThinkingEffort?
+
+    var thinkingCapability: AiModelThinkingCapability? {
+        let decodedEfforts = supportedReasoningEfforts.compactMap(\.effortValue).uniquePreservingOrder()
+        if !decodedEfforts.isEmpty {
+            return .effort(
+                values: decodedEfforts,
+                defaultValue: defaultReasoningEffort.flatMap { decodedEfforts.contains($0) ? $0 : nil }
+            )
+        }
+
+        return OpenAIReasoningCapability.inferred(for: id)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case supportedReasoningEfforts = "supported_reasoning_efforts"
+        case supportedReasoningEffortsCamel = "supportedReasoningEfforts"
+        case reasoningEfforts = "reasoning_efforts"
+        case reasoningEffortsCamel = "reasoningEfforts"
+        case defaultReasoningEffort = "default_reasoning_effort"
+        case defaultReasoningEffortCamel = "defaultReasoningEffort"
+        case reasoningEffort = "reasoning_effort"
+        case reasoningEffortCamel = "reasoningEffort"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        supportedReasoningEfforts = try container.decodeFirstPresentOpenAIEfforts(
+            forKeys: [
+                .supportedReasoningEfforts,
+                .supportedReasoningEffortsCamel,
+                .reasoningEfforts,
+                .reasoningEffortsCamel
+            ]
+        )
+        defaultReasoningEffort = try container.decodeFirstPresentOpenAIEffort(
+            forKeys: [
+                .defaultReasoningEffort,
+                .defaultReasoningEffortCamel,
+                .reasoningEffort,
+                .reasoningEffortCamel
+            ]
+        )
+    }
+}
+
+struct OpenAIReasoningEffortPayload: Decodable, Sendable {
+    let effortValue: AiThinkingEffort?
+
+    enum CodingKeys: String, CodingKey {
+        case effort
+        case reasoningEffort = "reasoning_effort"
+        case reasoningEffortCamel = "reasoningEffort"
+    }
+
+    init(from decoder: Decoder) throws {
+        if let singleValue = try? decoder.singleValueContainer(),
+           let rawEffort = try? singleValue.decode(String.self) {
+            effortValue = AiThinkingEffort(rawValue: rawEffort)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        for key in [CodingKeys.effort, .reasoningEffort, .reasoningEffortCamel] {
+            if let rawEffort = try container.decodeIfPresent(String.self, forKey: key) {
+                effortValue = AiThinkingEffort(rawValue: rawEffort)
+                return
+            }
+        }
+        effortValue = nil
+    }
+}
+
+enum OpenAIReasoningCapability {
+    static func inferred(for modelID: String) -> AiModelThinkingCapability? {
+        let normalizedID = modelID.lowercased()
+
+        if normalizedID.hasPrefix("gpt-5-pro") {
+            return .effort(values: [.high], defaultValue: .high)
+        }
+
+        if normalizedID.hasPrefix("gpt-5.1") {
+            return .effort(values: [.low, .medium, .high], defaultValue: nil)
+        }
+
+        if normalizedID.hasPrefix("gpt-5") || isOReasoningModel(normalizedID) {
+            return .effort(values: [.minimal, .low, .medium, .high, .xhigh], defaultValue: .medium)
+        }
+
+        return nil
+    }
+
+    private static func isOReasoningModel(_ modelID: String) -> Bool {
+        modelID.hasPrefix("o1")
+            || modelID.hasPrefix("o3")
+            || modelID.hasPrefix("o4")
+    }
 }
 
 struct AnthropicModelsResponse: Decodable, Sendable {
@@ -175,6 +275,26 @@ struct CodexReasoningEffortPayload: Decodable, Sendable {
         effortValue = try container.decodeIfPresent(AiThinkingEffort.self, forKey: .effort)
             ?? container.decodeIfPresent(AiThinkingEffort.self, forKey: .reasoningEffort)
             ?? container.decodeIfPresent(AiThinkingEffort.self, forKey: .reasoningEffortCamel)
+    }
+}
+
+extension KeyedDecodingContainer where Key == OpenAIModelPayload.CodingKeys {
+    func decodeFirstPresentOpenAIEfforts(forKeys keys: [Key]) throws -> [OpenAIReasoningEffortPayload] {
+        for key in keys {
+            if let values = try decodeIfPresent([OpenAIReasoningEffortPayload].self, forKey: key) {
+                return values
+            }
+        }
+        return []
+    }
+
+    func decodeFirstPresentOpenAIEffort(forKeys keys: [Key]) throws -> AiThinkingEffort? {
+        for key in keys {
+            if let value = try decodeIfPresent(String.self, forKey: key) {
+                return AiThinkingEffort(rawValue: value)
+            }
+        }
+        return nil
     }
 }
 

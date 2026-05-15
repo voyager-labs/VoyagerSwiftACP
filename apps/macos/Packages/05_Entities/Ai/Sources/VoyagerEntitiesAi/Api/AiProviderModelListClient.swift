@@ -68,12 +68,12 @@ public extension AiProviderModelListClient {
                 case .openai:
                     let secret = try secret(for: provider, credential: credential)
                     let response = try await fetchOpenAIModels(secret: secret, session: session)
-                    return response.data.map {
+                    return response.data.map { payload in
                         makeModel(
                             provider: provider,
-                            rawModelID: $0.id,
-                            displayName: $0.id,
-                            thinkingCapability: Self.unknownThinkingCapability
+                            rawModelID: payload.id,
+                            displayName: payload.id,
+                            thinkingCapability: payload.thinkingCapability ?? Self.unknownThinkingCapability
                         )
                     }
                 case .anthropic:
