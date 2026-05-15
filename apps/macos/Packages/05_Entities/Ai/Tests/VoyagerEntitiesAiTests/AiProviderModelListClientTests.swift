@@ -45,7 +45,7 @@ extension AiProviderModelListClientTests {
         )
 
         XCTAssertEqual(models.map(\.rawModelID), ["gpt-5.4-mini"])
-        XCTAssertEqual(models.map(\.displayName), ["GPT-5.4 mini"])
+        XCTAssertEqual(models.map(\.displayName), ["GPT-5.4 Mini"])
         XCTAssertEqual(
             models.map(\.thinkingCapability),
             [
@@ -65,7 +65,7 @@ extension AiProviderModelListClientTests {
         )
 
         XCTAssertEqual(models.map(\.rawModelID), ["gpt-5.2"])
-        XCTAssertEqual(models.map(\.displayName), ["gpt-5.2"])
+        XCTAssertEqual(models.map(\.displayName), ["GPT-5.2"])
         XCTAssertEqual(models.map(\.thinkingCapability), [unknownThinkingCapability])
         XCTAssertTrue(models.allSatisfy { $0.provider == .chatgptCodex })
     }
@@ -87,6 +87,10 @@ extension AiProviderModelListClientTests {
         XCTAssertEqual(
             models.map(\.id.rawValue),
             ["gpt-4.1", "gpt-5.1", "gpt-5-pro", "gpt-5.5", "o4-mini", "custom-openai-model"]
+        )
+        XCTAssertEqual(
+            models.map(\.displayName),
+            ["GPT-4.1", "GPT-5.1", "GPT-5 Pro", "GPT-5.5", "o4-mini", "custom-openai-model"]
         )
         XCTAssertEqual(
             models.map(\.thinkingCapability),

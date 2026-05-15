@@ -61,7 +61,11 @@ public extension AiProviderModelListClient {
                         makeModel(
                             provider: provider,
                             rawModelID: payload.modelID,
-                            displayName: payload.displayName ?? payload.modelID,
+                            displayName: Self.displayName(
+                                provider: provider,
+                                rawModelID: payload.modelID,
+                                providerDisplayName: payload.displayName
+                            ),
                             thinkingCapability: payload.thinkingCapability ?? Self.unknownThinkingCapability
                         )
                     }
@@ -72,7 +76,7 @@ public extension AiProviderModelListClient {
                         makeModel(
                             provider: provider,
                             rawModelID: payload.id,
-                            displayName: payload.id,
+                            displayName: Self.displayName(provider: provider, rawModelID: payload.id),
                             thinkingCapability: payload.thinkingCapability ?? Self.unknownThinkingCapability
                         )
                     }
@@ -83,7 +87,11 @@ public extension AiProviderModelListClient {
                         makeModel(
                             provider: provider,
                             rawModelID: $0.id,
-                            displayName: $0.displayName ?? $0.id,
+                            displayName: Self.displayName(
+                                provider: provider,
+                                rawModelID: $0.id,
+                                providerDisplayName: $0.displayName
+                            ),
                             thinkingCapability: $0.thinkingCapability ?? Self.unknownThinkingCapability
                         )
                     }
@@ -147,6 +155,18 @@ private extension AiProviderModelListClient {
             reason: AiThinkingUnavailableReason(
                 message: "Thinking capability metadata was not provided by the model API."
             )
+        )
+    }
+
+    static func displayName(
+        provider: AiProvider,
+        rawModelID: String,
+        providerDisplayName: String? = nil
+    ) -> String {
+        AiModelDisplayNameFormatter.displayName(
+            provider: provider,
+            rawModelID: rawModelID,
+            providerDisplayName: providerDisplayName
         )
     }
 
