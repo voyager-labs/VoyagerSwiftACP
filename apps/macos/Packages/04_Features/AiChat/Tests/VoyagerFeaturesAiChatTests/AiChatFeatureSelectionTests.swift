@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
@@ -5,6 +6,7 @@ import VoyagerEntitiesAi
 import XCTest
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class AiChatFeatureSelectionTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     func testModelSelectionIsNextRequestOnlyAndSameModelIsNoOp() async {
@@ -67,7 +69,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 context: context,
                 messages: [
                     AiChatMessage(role: .user, content: "Hello"),
-                    AiChatMessage(role: .user, content: "Draft"),
+                    AiChatMessage(role: .user, content: "Draft")
                 ]
             )
             state.transcriptHistory = request.messages
@@ -174,7 +176,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(requestSpy.requests[1].context.selectedThinking, .effort(.medium))
     }
 
-
+    // swiftlint:disable:next function_body_length
     func testSelectedThinkingChangedUpdatesDisplayModelAndNextRequestContext() async {
         final class ExecutionRequestSpy: @unchecked Sendable {
             private(set) var requests: [AiChatRequest] = []
@@ -243,7 +245,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 context: context,
                 messages: [
                     AiChatMessage(role: .user, content: "Hello"),
-                    AiChatMessage(role: .user, content: "Use high thinking"),
+                    AiChatMessage(role: .user, content: "Use high thinking")
                 ]
             )
             state.transcriptHistory = request.messages
@@ -319,6 +321,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertFalse(store.state.isModelSelectorPresented)
     }
 
+    // swiftlint:disable:next function_body_length
     func testProviderConnectionsUpdatedPreservesValidCurrentSelection() async {
         let catalogRows = makeCatalogRows()
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
@@ -380,6 +383,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[1].handle)
     }
 
+    // swiftlint:disable:next function_body_length
     func testProviderConnectionsUpdatedClearsSelectionWhenCurrentModelDisappears() async {
         let catalogRows = makeCatalogRows()
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))

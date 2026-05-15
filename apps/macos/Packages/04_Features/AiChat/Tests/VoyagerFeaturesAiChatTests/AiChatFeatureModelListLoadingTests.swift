@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
@@ -5,7 +6,9 @@ import VoyagerEntitiesAi
 import XCTest
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class AiChatFeatureModelListLoadingTests: XCTestCase {
+    // swiftlint:disable:next function_body_length
     func testProviderConnectionUpdatesCancelInFlightBatchAndIgnoreStaleResponse() async {
         actor LoadDriver {
             var startedProviders: [AiProvider] = []
@@ -132,6 +135,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.unavailableSelectedModelHandle, catalogRows[0].handle)
     }
 
+    // swiftlint:disable:next function_body_length
     func testProviderConnectionsUpdatedMergesModelsFromMultipleConnectedProviders() async {
         actor LoadDriver {
             func load(provider: AiProvider, credential _: StoredCredentialPayload?) async throws -> [AiProviderModel] {
@@ -155,7 +159,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
             lastUsedProviderId: .openai,
             providers: [
                 makeProviderRecord(provider: .openai, credential: openAICredential),
-                makeProviderRecord(provider: .anthropic, credential: anthropicCredential),
+                makeProviderRecord(provider: .anthropic, credential: anthropicCredential)
             ]
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
@@ -232,13 +236,14 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
 
         XCTAssertEqual(store.state.modelCatalogState.sections.map(\.title), [
             aiChatProviderSectionTitle(for: .openai),
-            aiChatProviderSectionTitle(for: .anthropic),
+            aiChatProviderSectionTitle(for: .anthropic)
         ])
         XCTAssertEqual(store.state.modelCatalogState.sections.first?.rows.map(\.title), ["GPT-4.1 Mini"])
         XCTAssertNil(store.state.modelCatalogState.sections.first?.rows.first?.providerBadge)
         XCTAssertEqual(store.state.modelCatalogState.sections.last?.rows.first?.providerBadge, "Reasoning-first chat")
     }
 
+    // swiftlint:disable:next function_body_length
     func testModelListPartialFailurePreservesSuccessfulModelsFromAnotherProvider() async {
         actor LoadDriver {
             func load(provider: AiProvider, credential _: StoredCredentialPayload?) async throws -> [AiProviderModel] {
@@ -262,7 +267,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
             lastUsedProviderId: .openai,
             providers: [
                 makeProviderRecord(provider: .openai, credential: openAICredential),
-                makeProviderRecord(provider: .anthropic, credential: anthropicCredential),
+                makeProviderRecord(provider: .anthropic, credential: anthropicCredential)
             ]
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
@@ -342,6 +347,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelListFailedProviders, [.anthropic: anthropicFailure])
     }
 
+    // swiftlint:disable:next function_body_length
     func testModelListCodexFailurePreservesSuccessfulOpenAIModels() async {
         actor LoadDriver {
             func load(provider: AiProvider, credential _: StoredCredentialPayload?) async throws -> [AiProviderModel] {
@@ -365,7 +371,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
             lastUsedProviderId: .openai,
             providers: [
                 makeProviderRecord(provider: .openai, credential: openAICredential),
-                makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential),
+                makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential)
             ]
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
@@ -447,12 +453,13 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelListFailedProviders, [.chatgptCodex: codexFailure])
     }
 
+    // swiftlint:disable:next function_body_length
     func testModelListCodexOnlySuccessLoadsCodexModelsAndThinkingMetadata() async {
         let codexCredential = StoredCredentialPayload.oauth(OAuthCredentialFile(accessToken: "codex-token"))
         let connectionsFile = makeConnectionsFile(
             lastUsedProviderId: .chatgptCodex,
             providers: [
-                makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential),
+                makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential)
             ]
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
@@ -533,12 +540,13 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     func testModelListCodexOnlyFailureTransitionsToFailedStateAndExposesUnsupportedProvider() async {
         let codexCredential = StoredCredentialPayload.oauth(OAuthCredentialFile(accessToken: "codex-token"))
         let connectionsFile = makeConnectionsFile(
             lastUsedProviderId: .chatgptCodex,
             providers: [
-                makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential),
+                makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential)
             ]
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
@@ -751,7 +759,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
     func testProviderConnectionsUpdatedWithNoConnectedProvidersRestoresUnconnectedState() async {
         let selectedHandle = makeCatalogRows()[0].handle
         let file = makeConnectionsFile(providers: [
-            makeProviderRecord(provider: .openai, state: .disconnected),
+            makeProviderRecord(provider: .openai, state: .disconnected)
         ])
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),

@@ -5,6 +5,7 @@ import VoyagerEntitiesAi
 import XCTest
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class AiChatFeatureEntryStateTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     func testSetupBuildsUnconnectedEntryStateWithSkeletonDisplayContract() async {
@@ -114,7 +115,9 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
     func testModelSelectorContentStateProvidesExplicitNonLoadedStates() {
         let loadingState = AiChatFeature.State(modelListState: .loading)
         let emptyState = AiChatFeature.State(modelListState: .empty)
-        let failedState = AiChatFeature.State(modelListState: .failed(.init(message: "Anthropic model list request failed (500).")))
+        let failedState = AiChatFeature.State(modelListState: .failed(.init(
+            message: "Anthropic model list request failed (500)."
+        )))
         let unsupportedState = AiChatFeature.State(modelListState: .failed(.init(
             message: "ChatGPT Codex model listing is unavailable.",
             reason: .unsupportedProvider
@@ -122,7 +125,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
 
         XCTAssertTrue(loadingState.modelSelectorHasPresentableContent)
         XCTAssertFalse(loadingState.modelSelectorIsDisabled)
-        XCTAssertFalse(AiChatView.modelSelectorUsesScrollableContent(for: loadingState.modelSelectorContentState))
+        XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: loadingState.modelSelectorContentState))
         XCTAssertEqual(loadingState.modelSelectorContentState, .loading(.init(
             title: "Loading models",
             detail: "Fetching available models from connected providers."
@@ -130,7 +133,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
 
         XCTAssertTrue(emptyState.modelSelectorHasPresentableContent)
         XCTAssertTrue(emptyState.modelSelectorIsDisabled)
-        XCTAssertFalse(AiChatView.modelSelectorUsesScrollableContent(for: emptyState.modelSelectorContentState))
+        XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: emptyState.modelSelectorContentState))
         XCTAssertEqual(emptyState.modelSelectorContentState, .empty(.init(
             title: "No models available",
             detail: "No selectable models are available for the current provider setup."
@@ -138,7 +141,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
 
         XCTAssertTrue(failedState.modelSelectorHasPresentableContent)
         XCTAssertFalse(failedState.modelSelectorIsDisabled)
-        XCTAssertFalse(AiChatView.modelSelectorUsesScrollableContent(for: failedState.modelSelectorContentState))
+        XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: failedState.modelSelectorContentState))
         XCTAssertEqual(failedState.modelSelectorContentState, .failed(.init(
             title: "Models unavailable",
             detail: "Anthropic model list request failed (500)."
@@ -146,7 +149,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
 
         XCTAssertTrue(unsupportedState.modelSelectorHasPresentableContent)
         XCTAssertFalse(unsupportedState.modelSelectorIsDisabled)
-        XCTAssertFalse(AiChatView.modelSelectorUsesScrollableContent(for: unsupportedState.modelSelectorContentState))
+        XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: unsupportedState.modelSelectorContentState))
         XCTAssertEqual(unsupportedState.modelSelectorContentState, .unsupported(.init(
             title: "Provider unsupported",
             detail: "ChatGPT Codex model listing is unavailable."
@@ -169,14 +172,14 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
 
         XCTAssertEqual(sections.map(\.title), [
             aiChatProviderSectionTitle(for: .openai),
-            aiChatProviderSectionTitle(for: .anthropic),
+            aiChatProviderSectionTitle(for: .anthropic)
         ])
         XCTAssertEqual(sections.first?.rows.map(\.title), ["GPT-4.1 Mini"])
         XCTAssertEqual(sections.last?.rows.map(\.title), ["Claude Sonnet 4"])
         XCTAssertTrue(state.modelSelectorHasPresentableContent)
         XCTAssertFalse(state.modelSelectorIsDisabled)
-        XCTAssertTrue(AiChatView.modelSelectorUsesScrollableContent(for: state.modelSelectorContentState))
-        XCTAssertGreaterThan(AiChatView.modelSelectorContentMaxHeight, 0)
+        XCTAssertTrue(AiChatModelSelectorLayout.usesScrollableContent(for: state.modelSelectorContentState))
+        XCTAssertGreaterThan(AiChatModelSelectorLayout.contentMaxHeight, 0)
     }
 
     func testModelSelectorLabelUsesSelectedModelDisplayNameWhenLoaded() {
@@ -189,7 +192,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: catalogRows[1].handle
         )
 
-        XCTAssertEqual(AiChatView.modelSelectorLabel(for: state), "Claude Sonnet 4")
+        XCTAssertEqual(AiChatSelectorLabels.modelSelectorLabel(for: state), "Claude Sonnet 4")
     }
 
     func testModelSelectorLabelFallsBackToGenericLoadedLabelWithoutSelection() {
@@ -201,7 +204,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: nil
         )
 
-        XCTAssertEqual(AiChatView.modelSelectorLabel(for: state), "Model")
+        XCTAssertEqual(AiChatSelectorLabels.modelSelectorLabel(for: state), "Model")
     }
 
     func testCurrentContextSummaryFixturesMatchInspectorContract() {
