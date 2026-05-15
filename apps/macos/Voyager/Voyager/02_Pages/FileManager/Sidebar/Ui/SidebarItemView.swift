@@ -1,6 +1,9 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import VoyagerShared
+
+import VoyagerShared
 
 struct SidebarItemView: View {
     let iconName: String

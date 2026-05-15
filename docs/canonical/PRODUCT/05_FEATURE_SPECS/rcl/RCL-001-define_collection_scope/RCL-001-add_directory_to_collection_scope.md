@@ -15,94 +15,84 @@ shortcut: "-"
 
 ## Intent
 
-- 사용자가 현재 콜렉션의 대상 범위를 더 명확하게 정의하기 위해 명시적 스코프를 추가한다.
-- 이 문서는 `root_only`, `single_explicit_scope`, `multi_explicit_scope`, `exception_present` 상태 전환의 add 경로를 다룬다.
+- 스코프 편집창에서 명시적 범위를 추가해 현재 콜렉션의 대상 범위를 더 구체적으로 정의.
+- `RCL-001`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- 스코프 편집창에서 후보 범위를 선택
-- 검색 결과에서 특정 범위를 선택
+- 사용자가 Collection Filter Composer를 열거나 scope summary/menu에서 범위 편집을 시작할 때 호출된다.
+- scope candidate 선택, 예외 복원, include-subfolders 토글, undo/redo 입력이 발생할 때 호출된다.
 
 ## Preconditions
 
-- Collection Filter Composer가 열린 상태
-- 스코프 편집창이 열린 상태
-- Generate Filter Changes from Query가 실행 중이지 않은 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- root-only 상태에서는 첫 명시적 스코프가 추가되어 현재 범위가 더 구체적으로 정의된다.
-- 명시적 스코프가 이미 있으면 새 범위가 기존 기준 범위 목록에 추가된다.
-- 이미 포함된 범위는 중복으로 추가되지 않는다.
-- 이 동작은 `root_only`에서 `single_explicit_scope`로, 필요 시 `single_explicit_scope`에서 `multi_explicit_scope`로 전환되는 흐름이다.
-- 예외가 이미 있으면 새 기준 범위 추가 뒤에도 `exception_present` 상태가 유지될 수 있다.
-- add 직후 현재 스코프는 `single_explicit_scope`(단일 명시적 스코프) 또는 `multi_explicit_scope`(다중 명시적 스코프) 상태로 읽혀야 하며, 필요 시 `exception_present`(예외 포함 상태)를 함께 유지할 수 있다.
+- 스코프 편집창에서 명시적 범위를 추가해 현재 콜렉션의 대상 범위를 더 구체적으로 정의.
+- current scope는 빈 값이 아니라 root-only 또는 명시적 scope 집합으로 계산되어야 한다.
+- scope 변경 뒤에는 최근 변경 1건 기준의 피드백과 undo/redo 가능 상태가 갱신되어야 한다.
 
 ## State Changes
 
-- root-only 상태는 명시적 스코프 상태로 전환될 수 있다.
-- 명시적 스코프 목록이 갱신된다.
-- 현재 범위 요약과 현재 필터 내용이 함께 갱신된다.
-- 기존 예외가 새 기준 범위 목록과 더 이상 연결되지 않는 경우, 시스템은 해당 예외를 현재 스코프에서 제거해야 한다.
-- 기존 예외가 여전히 하나 이상의 기준 범위 아래에 포함되는 경우에는 그대로 유지해야 한다.
-- 결과적으로 예외 포함 상태(`exception_present`)와 되돌리기 가능(`undo_available`) 상태가 함께 갱신될 수 있다.
-- 변경 직후에는 변경 피드백(`change_feedback_visible`) 상태도 함께 갱신될 수 있다.
-- 결과적으로 `single_explicit_scope` / `multi_explicit_scope` / `exception_present` / `change_feedback_visible` / `undo_available` 상태가 함께 재해석될 수 있다.
+- scope draft, exception 목록, include-subfolders 값, history/redoHistory를 필요한 범위에서 갱신한다.
+- candidate 검색은 기본 후보, 검색 결과, no-results 상태 중 하나로 정리된다.
+- scope 의미 계산은 기준 범위 합집합, include-subfolders 해석, exception 차감 순서를 따른다.
 
 ## User-visible Feedback
 
-- 추가 직후 현재 범위가 어떻게 바뀌었는지 이해할 수 있어야 한다.
-- 동명 폴더 검색 결과에서는 선택한 항목이 어느 위치의 폴더인지 식별 가능해야 한다.
-- 변경 직후 변경 피드백 또는 undo 가능 여부가 함께 드러나야 한다.
+- 현재 scope summary, 후보 목록, 예외 목록, 변경 피드백을 같은 Composer surface 안에 표시한다.
+- 동명 후보는 위치 보조 정보를 함께 보여 오선택을 줄인다.
+- 실패 또는 지연 상태는 scope가 비었다는 의미로 표시하지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- 이미 포함된 범위를 다시 추가하려는 경우에는 중복 추가 없이 현재 상태를 유지한다.
-- 동명 폴더가 여러 개인 경우에는 보조 정보로 구분 가능해야 한다.
-- 검색 결과가 없으면 추가 동작이 아니라 검색 수정 또는 기본 후보 복귀로 이어져야 한다.
-- 새 기준 범위 추가로 인해 일부 예외가 더 이상 어떤 기준 범위에도 속하지 않게 되면, 해당 예외는 제거되어야 한다.
+- 현재 scope와 같은 candidate는 추가 후보로 반복 노출하지 않는다.
+- exception은 현재 기준 범위 아래에 속한 하위 범위에만 적용한다.
+- undo는 최근 1건만 되돌리고 redo는 가장 최근 undo 1건만 다시 적용한다.
+- 명령 실행 중 실패하면 대상 상태를 부분 적용된 것처럼 표시하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] root-only 상태에서, 사용자가 특정 범위를 추가하면, 현재 콜렉션은 명시적 스코프 상태로 전환되어야 한다.
-- [ ] 하나 이상의 명시적 스코프가 있는 상황에서, 사용자가 다른 범위를 추가하면, 기존 범위는 유지되고 새 범위가 함께 반영되어야 한다.
-- [ ] 이미 포함된 범위를 다시 추가하려는 상황에서, 사용자가 해당 범위를 선택하면, 시스템은 중복 추가 없이 현재 범위를 유지해야 한다.
-- [ ] 동명 폴더 후보가 여러 개인 상황에서, 사용자가 보조 위치 정보를 보고 특정 후보를 선택하면, 의도한 범위가 추가되어야 한다.
-- [ ] 새 기준 범위를 추가한 뒤 기존 예외가 어떤 기준 범위에도 속하지 않게 되면, 시스템은 해당 예외를 현재 스코프에서 제거해야 한다.
-- [ ] 새 기준 범위를 추가한 뒤 기존 예외가 여전히 하나 이상의 기준 범위 아래에 속하면, 시스템은 해당 예외를 유지해야 한다.
+- [ ] Collection Filter Composer가 열린 상황에서 scope를 변경하면 current scope summary가 새 의미로 갱신되어야 한다.
+- [ ] 동명 candidate가 있는 상황에서 검색 결과를 표시하면 위치 보조 정보가 함께 보여야 한다.
+- [ ] scope 변경 직후 undo를 실행하면 직전 scope 의미로 복원되어야 한다.
 
 ## Permissions / Dependencies
 
-- `RCL-001-open_collection_scope_menu`
-- 변경 피드백이 존재하는 경우 현재 범위 변화와 자연스럽게 연결되어야 한다.
-- 기준 범위 추가는 예외 규칙과 모순되지 않아야 하며, 예외의 유효 여부는 "하나 이상의 현재 기준 범위 아래에 포함되는가"를 기준으로 해석해야 한다.
-- Contract: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
-- Flow: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.content_header.collection_filter_composer`
+- [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)의 scope 상태 vocabulary를 따른다.
 
 ## Observability / Analytics
 
-- 명시적 스코프 추가 시도
-- 추가 성공
-- 중복 추가 방지
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
-- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
 - [RCL-001-open_collection_filter_composer](RCL-001-open_collection_filter_composer.md)
+- [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
 - [RCL-001-open_collection_scope_menu](RCL-001-open_collection_scope_menu.md)
-- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
-- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
-- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
+- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
 - [RCL-001-search_collection_scope_candidates](RCL-001-search_collection_scope_candidates.md)
 - [RCL-001-show_collection_scope_candidate_disambiguation](RCL-001-show_collection_scope_candidate_disambiguation.md)
-- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
-- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
-- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
+- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
+- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
+- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
 - [RCL-001-toggle_collection_scope_subfolder_inclusion](RCL-001-toggle_collection_scope_subfolder_inclusion.md)
+- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
+- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
 - [RCL-001-undo_collection_filter_changes](RCL-001-undo_collection_filter_changes.md)
+- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
+
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:123`
 - Contracts: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
 - Flows: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

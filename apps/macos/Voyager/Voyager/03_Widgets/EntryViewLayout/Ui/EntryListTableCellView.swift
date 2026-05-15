@@ -1,6 +1,8 @@
 import AppKit
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerShared
 
 struct EntryListEntryCellViewConfiguration {
     let context: Context
@@ -16,7 +18,7 @@ struct EntryListEntryCellViewConfiguration {
         let isCut: Bool
         let isRenaming: Bool
         let renamingText: String
-        let workspaceClient: WorkspaceClient
+        let workspaceClient: VoyagerShared.WorkspaceClient
         let onRenameUpdate: ((String) -> Void)?
         let onRenameCommit: (() -> Void)?
         let onRenameCancel: (() -> Void)?
@@ -116,8 +118,8 @@ final class EntryListGroupHeaderCellView: NSTableCellView {
         }
 
         let attachment = NSTextAttachment()
-        attachment.image = TagDotImageFactory.make(
-            tagColor: TagColor(colorCode: colorCode),
+        attachment.image = ColorDotImageFactory.make(
+            color: TagColor(colorCode: colorCode).nsColor,
             size: 10,
             inset: 1,
         )
@@ -345,7 +347,7 @@ final class EntryListEntryCellView: NSTableCellView {
         if let tags, !tags.isEmpty {
             let visibleTags = Array(tags.prefix(3))
             for tag in visibleTags {
-                let dot = TagDotNSView(tagColor: tag.tagColor, size: 8)
+                let dot = ColorDotNSView(color: tag.tagColor.nsColor, size: 8)
                 tagStackView.addArrangedSubview(dot)
             }
             tagStackView.isHidden = false

@@ -4,6 +4,7 @@ import Foundation
 import OSLog
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 @Reducer
 struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_length

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 

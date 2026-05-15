@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 enum SidebarItems {
     struct LocationItem: Equatable {

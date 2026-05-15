@@ -1,4 +1,5 @@
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 

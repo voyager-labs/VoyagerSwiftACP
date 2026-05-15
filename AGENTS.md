@@ -12,34 +12,15 @@ This repository separates agent-facing instructions from human-facing documentat
 - Never automatically reset, revert, or discard changes in `opencode.json`.
 - Never include `opencode.json` in commits unless the user explicitly asks for it.
 
-## Review guidelines
+## Commit attribution
 
-This project uses AI-powered PR review. The reviewer is NOT a linter, formatter, or CI substitute. It should behave like a senior engineer who knows this project well.
+- Agents must **never** add `Co-authored-by: Sisyphus`, `Co-authored-by: Sisyphus <...>`, `Ultraworked with Sisyphus`, or any similar AI/Sisyphus co-author trailer to commit messages.
+- This applies to commit subjects, bodies, and footers alike.
+- The only exception is when the user explicitly requests such a trailer.
 
-### Output language
+## PR review rules
 
-- All review comments and explanations MUST be written in Korean (한국어).
-- Code symbols, file paths, API names, and commands remain in English.
+Codex and other agents read `AGENTS.md`, but PR review policy must stay centralized in Greptile rules.
 
-### Always check
-
-- Whether the change reuses existing functions, utilities, types, or patterns that already exist in the codebase instead of introducing new ones.
-- Whether the change respects the project's layer boundaries, ownership model, and FSD dependency direction.
-- Whether responsibilities are placed in the correct owner (reducer vs view vs service vs infra).
-- Whether the change introduces duplicate or near-duplicate abstractions when extending an existing one would suffice.
-- Whether failure, cancellation, teardown, and rollback paths are handled.
-- Whether the change follows established project conventions in both letter and intent — not just syntactically but structurally.
-
-### Skip
-
-- Formatting, import ordering, naming nits, or anything a linter/formatter already catches.
-- Type errors, build breaks, or test failures that CI would surface immediately.
-- Generic style observations that do not imply a correctness, maintenance, or architectural risk.
-- Low-confidence or speculative suggestions without concrete evidence from the diff or surrounding code.
-
-### Severity and noise policy
-
-- Leave only P0 (blocker) and P1 (high-confidence structural or runtime risk) findings.
-- P2/nit-level comments are prohibited unless they directly imply correctness, data-loss, security, or architectural drift.
-- When several local symptoms share one root cause, leave ONE consolidated finding at the strongest representative location — do not scatter related comments.
-- Each comment must explain WHY this matters for this specific project, not just what looks off.
+- For AI-powered PR reviews, read and follow `.greptile/rules.md`.
+- Do not duplicate PR review language, severity, noise, architecture, or reuse rules in this file.

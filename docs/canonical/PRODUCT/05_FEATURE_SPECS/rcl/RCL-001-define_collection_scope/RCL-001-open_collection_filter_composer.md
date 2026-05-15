@@ -15,80 +15,84 @@ shortcut: "⌘F"
 
 ## Intent
 
-- 사용자가 Collection Filter Composer shared shell에 진입해 현재 콜렉션의 스코프 요약을 중심으로 필터 작업을 위한 컨텍스트를 확보할 수 있게 한다.
-- 사용자는 현재 범위가 기본 범위 상태인지, 명시적 스코프가 있는지, 예외가 있는지의 기본 의미를 읽을 수 있어야 한다.
+- Entries View 상단에서 Collection Filter Composer를 열어 현재 콜렉션의 스코프 요약, query 입력, 조건 편집 영역이 함께 보이는 shared shell 상태로 전환.
+- `RCL-001`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- Entries View 상단에서 Collection Filter Composer를 호출
-- 저장된 콜렉션을 연 뒤 현재 콜렉션의 범위(스코프)를 확인하거나 조정하려는 흐름에서 진입
+- 사용자가 Collection Filter Composer를 열거나 scope summary/menu에서 범위 편집을 시작할 때 호출된다.
+- scope candidate 선택, 예외 복원, include-subfolders 토글, undo/redo 입력이 발생할 때 호출된다.
 
 ## Preconditions
 
-- 현재 페이지가 Collection Filter Composer를 지원하는 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- Collection Filter Composer가 열리고, 현재 콜렉션의 범위(스코프) 요약이 사용자가 읽을 수 있는 형태로 노출된다.
-- Composer는 shared shell로서 필터 정의 표면을 포함할 수 있으나, 이 문서는 정의를 생성하거나 편집하는 semantics를 설명하지 않는다.
-- 사용자는 현재 범위 요약 영역을 통해 범위 편집 진입점을 확인할 수 있다.
-- 스코프 관련 정보와 컨디션 관련 정보는 같은 Composer 안에 있더라도 다른 역할로 읽혀야 한다.
-- 이 문서는 Composer shell 진입과 스코프 요약 문맥을 설명하며, query 기반 필터 재구성은 RCL-004, 개별 조건 수동 편집은 RCL-005에서 정의한다.
+- Entries View 상단에서 Collection Filter Composer를 열어 현재 콜렉션의 스코프 요약, query 입력, 조건 편집 영역이 함께 보이는 shared shell 상태로 전환.
+- current scope는 빈 값이 아니라 root-only 또는 명시적 scope 집합으로 계산되어야 한다.
+- scope 변경 뒤에는 최근 변경 1건 기준의 피드백과 undo/redo 가능 상태가 갱신되어야 한다.
 
 ## State Changes
 
-- Composer가 열린 상태가 된다.
-- Collection Filter Composer가 상단 헤더의 primary context로 활성화된다.
-- 미저장 변경이 있었다면 그 변경 맥락을 유지한 채 Composer 컨텍스트로 전환된다.
+- scope draft, exception 목록, include-subfolders 값, history/redoHistory를 필요한 범위에서 갱신한다.
+- candidate 검색은 기본 후보, 검색 결과, no-results 상태 중 하나로 정리된다.
+- scope 의미 계산은 기준 범위 합집합, include-subfolders 해석, exception 차감 순서를 따른다.
 
 ## User-visible Feedback
 
-- 현재 기본 범위 상태인지 명시적 스코프가 있는지 요약이 보여야 한다.
-- 예외가 존재하면 현재 범위가 단순 경로 나열이 아님을 알 수 있어야 한다.
-- 미저장 변경이 있으면 해당 상태가 유지된 채 composer가 열린다.
+- 현재 scope summary, 후보 목록, 예외 목록, 변경 피드백을 같은 Composer surface 안에 표시한다.
+- 동명 후보는 위치 보조 정보를 함께 보여 오선택을 줄인다.
+- 실패 또는 지연 상태는 scope가 비었다는 의미로 표시하지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- 이미 Collection Filter Composer가 열린 상태에서 다시 호출되면 중복된 창을 만들지 않고 현재 입력 맥락으로 복귀한다.
-- 미저장 필터 변경이 존재하는 상태에서 다시 진입해도 현재 편집 중 상태를 잃지 않는다.
+- 현재 scope와 같은 candidate는 추가 후보로 반복 노출하지 않는다.
+- exception은 현재 기준 범위 아래에 속한 하위 범위에만 적용한다.
+- undo는 최근 1건만 되돌리고 redo는 가장 최근 undo 1건만 다시 적용한다.
+- 명령 실행 중 실패하면 대상 상태를 부분 적용된 것처럼 표시하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 현재 페이지가 필터 편집을 지원하는 상황에서, 사용자가 해당 인터랙션을 호출하면, Collection Filter Composer가 열리고 현재 필터 편집 상태가 표시되어야 한다.
-- [ ] composer가 이미 열린 상황에서, 사용자가 해당 인터랙션을 다시 호출하면, 중복 창을 만들지 않고 현재 편집 맥락을 유지해야 한다.
-- [ ] 미저장 변경이 존재하는 상황에서, 사용자가 composer를 열면, 해당 변경이 유지된 상태로 현재 범위와 조건을 다시 확인할 수 있어야 한다.
+- [ ] Collection Filter Composer가 열린 상황에서 scope를 변경하면 current scope summary가 새 의미로 갱신되어야 한다.
+- [ ] 동명 candidate가 있는 상황에서 검색 결과를 표시하면 위치 보조 정보가 함께 보여야 한다.
+- [ ] scope 변경 직후 undo를 실행하면 직전 scope 의미로 복원되어야 한다.
 
 ## Permissions / Dependencies
 
-- 필터 편집을 지원하는 페이지 맥락이어야 한다.
-- 현재 범위 요약 표시는 Composer 안에서 일관되게 유지되어야 한다.
-- 현재 문서는 범위 요약에 대한 기본 계약을 설명하며, 더 세부적인 범위 표시 방식은 후속 문서에서 구체화될 수 있다.
-- Contract: [../contracts/collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
-- Flow: [../flows/collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.content_header.collection_filter_composer`
+- [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)의 scope 상태 vocabulary를 따른다.
 
 ## Observability / Analytics
 
-- Composer 열기 진입
-- 열릴 당시 스코프 상태 유형(root-only / 명시적 스코프 / 예외 포함 여부)
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
 - [RCL-001-collapse_collection_filter_composer](RCL-001-collapse_collection_filter_composer.md)
-- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
 - [RCL-001-open_collection_scope_menu](RCL-001-open_collection_scope_menu.md)
-- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
-- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
-- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
+- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
 - [RCL-001-search_collection_scope_candidates](RCL-001-search_collection_scope_candidates.md)
 - [RCL-001-show_collection_scope_candidate_disambiguation](RCL-001-show_collection_scope_candidate_disambiguation.md)
-- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
-- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
-- [RCL-001-show_collection_scope_summary](RCL-001-show_collection_scope_summary.md)
+- [RCL-001-add_directory_to_collection_scope](RCL-001-add_directory_to_collection_scope.md)
+- [RCL-001-remove_directory_from_collection_scope](RCL-001-remove_directory_from_collection_scope.md)
+- [RCL-001-exclude_directory_from_collection_scope](RCL-001-exclude_directory_from_collection_scope.md)
+- [RCL-001-restore_directory_to_collection_scope](RCL-001-restore_directory_to_collection_scope.md)
 - [RCL-001-toggle_collection_scope_subfolder_inclusion](RCL-001-toggle_collection_scope_subfolder_inclusion.md)
+- [RCL-001-show_collection_scope_exceptions](RCL-001-show_collection_scope_exceptions.md)
+- [RCL-001-show_collection_scope_change_feedback](RCL-001-show_collection_scope_change_feedback.md)
 - [RCL-001-undo_collection_filter_changes](RCL-001-undo_collection_filter_changes.md)
+- [RCL-001-redo_collection_filter_changes](RCL-001-redo_collection_filter_changes.md)
+
 ## Source
 
 - Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:104`
 - Contracts: [collection_scope_contract.toml](../contracts/collection_scope_contract.toml)
 - Flows: [collection_scope_editing_flow.md](../flows/collection_scope_editing_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

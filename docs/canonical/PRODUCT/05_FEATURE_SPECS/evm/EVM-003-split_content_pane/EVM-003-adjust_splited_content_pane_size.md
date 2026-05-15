@@ -15,56 +15,59 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- Content Pane을 분할해 여러 Page 맥락을 동시에 비교하거나 탐색한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- file_manager_window.content_pane 영역에서 관련 컨트롤 또는 명령을 실행한 경우
 
 ## Preconditions
 
-- <<AI>> Content Pane이 분할 상태.
-- <<AI>> 디바이더가 상호작용 가능 상태.
+- 대상 Page이 현재 File Manager Window에서 접근 가능한 상태다.
 
 ## Expected Outcome
 
-- TBD
+- 분할된 Pane 사이의 디바이더를 드래그해 각 Pane의 크기를 조절합니다..
+- 사용자에게 보이는 결과는 `adjust_splited_content_pane_size_applied` 상태로 정리된다.
 
 ## State Changes
 
-- TBD
+- Page의 표시 또는 실행 상태를 갱신한다.
+- 이 인터랙션은 [evm_contract.toml](../contracts/evm_contract.toml)의 `adjust_splited_content_pane_size_applied` 상태 어휘를 따른다.
 
 ## User-visible Feedback
 
-- TBD
+- 성공 시 현재 화면의 표시, 선택, 정렬, 실행 결과가 즉시 갱신된다.
+- 실패 시 기존 상태를 보존하고 실패 사유를 사용자에게 표시한다.
 
 ## Edge Cases / Failure Handling
 
-- <<AI>> 드래그로 한 Pane가 최소 허용 크기 이하로 줄어들려는 경우(클램핑).
-- <<AI>> 최대 허용 크기 이상으로 넓히려는 경우(클램핑).
-- <<AI>> 드래그 중 Sidebar/Inspector 토글로 가용 공간이 변해 즉시 재계산이 필요한 경우.
+- 대상 Page이 사라졌거나 권한이 없으면 작업을 중단한다.
+- 동일 요청이 반복되면 마지막으로 확정된 상태를 기준으로 중복 반영을 피한다.
 
 ## Acceptance Criteria
 
-- [ ] <<AI>> 사용자가 디바이더를 드래그하면 두 Pane의 크기가 정의된 최소–최대 범위 내에서 실시간으로
-      조정됨.
-- [ ] <<AI>> 경계를 넘어가려는 경우 디바이더가 가장 가까운 허용값에서 멈춤.
-- [ ] <<AI>> 레이아웃 제약(예: Sidebar/Inspector 변화)이 발생하면 즉시 반영되어 겹침/잘림 없이
-      갱신됨.
+- [ ] 대상 Page이 현재 File Manager Window에서 접근 가능한 상태다. 사용자가 Adjust Splited Content Pane Size을 실행하면, 분할된 Pane 사이의 디바이더를 드래그해 각 Pane의 크기를 조절합니다. 결과가 `adjust_splited_content_pane_size_applied` 상태로 반영되어야 한다.
+- [ ] 작업을 완료할 수 없는 조건이면, 앱은 기존 상태를 보존하고 실패 피드백을 표시해야 한다.
+- [ ] 같은 interaction이 반복 호출되어도 중복되거나 모순된 상태가 남지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- 현재 Page, selection, 파일 시스템 접근 권한, File Manager Window layout 상태에 의존한다.
 
 ## Observability / Analytics
 
-- TBD
+- `evm.adjust_splited_content_pane_size` 이벤트에 성공 여부와 대상 수, 실패 사유를 기록한다.
 
 ## Related Interactions
 
-- TBD
+- [EVM-003-convert_split_pane_orientation](EVM-003-convert_split_pane_orientation.md)
+- [EVM-003-seprated_splited_content_pane](EVM-003-seprated_splited_content_pane.md)
+- [EVM-003-split_content_pane_vertically_horizontally](EVM-003-split_content_pane_vertically_horizontally.md)
+- [EVM-003-switch_focus_between_split_panes](EVM-003-switch_focus_between_split_panes.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `37`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:38`
+- Flows: [evm_flow.md](../flows/evm_flow.md)
+- Contract: [evm_contract.toml](../contracts/evm_contract.toml)

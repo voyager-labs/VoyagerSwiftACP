@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
-
-import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerShared
 
 struct SidebarTagItemView: View {
     let tag: Tag
@@ -48,7 +48,7 @@ struct SidebarTagItemView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TagDotView(tagColor: tag.tagColor, size: 8)
+            ColorDotView(nsColor: tag.tagColor.nsColor, size: 8)
             Text(tag.name)
                 .foregroundColor(isDropTarget ? .white : .primary)
                 .lineLimit(1)

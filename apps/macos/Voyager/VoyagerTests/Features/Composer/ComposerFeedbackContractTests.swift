@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
@@ -8,10 +9,9 @@ import XCTest
 final class ComposerFeedbackContractTests: XCTestCase {
     func testSubmitStoresBaselineAndRequestIDs() async throws {
         let recorder = SearchRequestRecorder()
-        let initialState = ComposerState(
-            text: "images tagged blue",
-            scopes: ["/tmp"],
-        )
+        var initialState = ComposerState()
+        initialState.text = "images tagged blue"
+        initialState.scopes = ["/tmp"]
 
         let store = TestStore(initialState: initialState) {
             ComposerFeature()

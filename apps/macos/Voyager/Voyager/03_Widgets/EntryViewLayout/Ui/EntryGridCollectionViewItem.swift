@@ -1,7 +1,8 @@
 import AppKit
 import UniformTypeIdentifiers
-
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerShared
 
 final class EntryGridCollectionViewItem: NSCollectionViewItem {
     struct Configuration {
@@ -14,7 +15,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         let isRenaming: Bool
         let renamingText: String
         let isDropTargeted: Bool
-        let workspaceClient: WorkspaceClient
+        let workspaceClient: VoyagerShared.WorkspaceClient
         let onRenameUpdate: (String) -> Void
         let onRenameCommit: () -> Void
         let onRenameCancel: () -> Void
@@ -41,7 +42,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
     private var isHiddenEntry: Bool = false
     private var isRenaming: Bool = false
     private var isDropTargeted: Bool = false
-    private var workspaceClient: WorkspaceClient?
+    private var workspaceClient: VoyagerShared.WorkspaceClient?
 
     var onRenameUpdate: ((String) -> Void)?
     var onRenameCommit: (() -> Void)?
@@ -318,7 +319,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         tagStackView.isHidden = false
         let visibleTags = tags.prefix(3)
         for tag in visibleTags {
-            let dot = TagDotNSView(tagColor: tag.tagColor, size: 8)
+            let dot = ColorDotNSView(color: tag.tagColor.nsColor, size: 8)
             tagStackView.addArrangedSubview(dot)
         }
     }

@@ -1,7 +1,8 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerShared
-
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 
 @ObservableState
@@ -11,22 +12,29 @@ struct FileManagerContentState: Equatable {
     var composer: ComposerFeature.State = .init()
     var collection: CollectionFeature.State = .init()
 
+    // Suppresses Swift 6 InferIsolatedConformances @MainActor-isolated Equatable synthesis.
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.navigation == rhs.navigation
+                && lhs.entryViewLayout == rhs.entryViewLayout
+                && lhs.composer == rhs.composer
+                && lhs.collection == rhs.collection
+                && lhs.resetComposerOnNextDirectoryNavigation == rhs.resetComposerOnNextDirectoryNavigation
+        }
+    }
+
     // 컴포저 관련
-    var collectionContext: CollectionContext? {
-        get { collection.collectionContext }
-        set { collection.collectionContext = newValue }
-    }
-
     var resetComposerOnNextDirectoryNavigation: Bool = false
-
-    // 콜렉션 관련
-    var collectionSession: CollectionDocumentSessionState {
-        get { collection.collectionSession }
-        set { collection.collectionSession = newValue }
-    }
 
     var isCollectionMode: Bool {
         entryViewLayout.isCollectionMode
+    }
+
+    mutating func syncComposerCollectionState() {
+        composer.collectionContext = collection.collectionContext
+        composer.openedCollectionURL = collection.collectionSession.document?.url
+        composer.openedCollectionCompatibility = collection.collectionSession.document?.compatibility
+        composer.isCollectionMode = isCollectionMode
     }
 
     mutating func resetComposer() {
@@ -34,38 +42,11 @@ struct FileManagerContentState: Equatable {
         syncComposerCollectionState()
     }
 
-    mutating func syncComposerCollectionState() {
-        composer.collectionContext = collectionContext
-        composer.openedCollectionURL = collectionSession.document?.url
-        composer.openedCollectionCompatibility = collectionSession.document?.compatibility
-        composer.isCollectionMode = isCollectionMode
-    }
-
     var canSaveCollection: Bool {
-        guard isCollectionMode, collectionContext != nil else {
-            return false
-        }
-        if collectionSession.metadata.baseline == nil {
-            return true
-        }
-        return isOpenedCollectionDirty
+        collection.canSave(isCollectionMode: isCollectionMode)
     }
 
     var isOpenedCollectionDirty: Bool {
-        guard let baseline = collectionSession.metadata.baseline, let context = collectionContext else { return false }
-        if baseline.context != context { return true }
-        return false
-    }
-
-    var isOpenedCollectionStale: Bool {
-        isCollectionMode && collectionSession.phase.isStale
-    }
-
-    var refreshBlockingReason: CollectionSessionRefreshBlockingReason? {
-        collection.refreshBlockingReason(
-            isCollectionMode: isCollectionMode,
-            isDirty: isOpenedCollectionDirty,
-            isSearching: composer.isCollectionSearching,
-        )
+        collection.isDirty
     }
 }

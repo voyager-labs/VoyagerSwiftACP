@@ -3,6 +3,10 @@ import Foundation
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiChat
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
 @Reducer

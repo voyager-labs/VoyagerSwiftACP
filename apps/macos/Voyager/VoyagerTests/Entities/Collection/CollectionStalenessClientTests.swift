@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
@@ -141,12 +142,8 @@ final class CollectionStalenessClientTests: XCTestCase {
         XCTAssertEqual(record?.relevanceRoots, ["/tmp/legacy"])
         XCTAssertNotNil(record?.lastInvalidatedAt)
 
-        let migratedData = userDefaultsClient.object(CollectionKeys.stalenessRecords) as? Data
-        let migratedDataUnwrapped = try XCTUnwrap(migratedData)
-        let migrated = try PropertyListDecoder().decode(
-            [String: CollectionStalenessRecord].self,
-            from: migratedDataUnwrapped,
-        )
+        let migratedData = try XCTUnwrap(userDefaultsClient.object(CollectionKeys.stalenessRecords) as? Data)
+        let migrated = try PropertyListDecoder().decode([String: CollectionStalenessRecord].self, from: migratedData)
         XCTAssertEqual(migrated[path]?.relevanceRoots, ["/tmp/legacy"])
         XCTAssertNotNil(migrated[path]?.lastInvalidatedAt)
     }

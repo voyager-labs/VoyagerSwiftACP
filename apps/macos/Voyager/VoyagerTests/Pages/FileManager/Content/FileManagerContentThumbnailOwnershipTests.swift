@@ -1,20 +1,33 @@
+// swiftlint:disable type_name
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 import XCTest
 
 @MainActor
 final class FileManagerContentThumbnailOwnershipTests: XCTestCase {
     func testEntryViewLayoutThumbnailActionUsesCanonicalThumbnailHost() async {
-        var state = FileManagerContentState()
-        let reducer = FileManagerContentFeature()
+        let store = TestStore(initialState: FileManagerContentState()) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.collectionAlertClient = .testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.notificationCenterClient = .testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = .testValue
+        }
 
-        _ = reducer.reduce(
-            into: &state,
-            action: .entryViewLayout(.entryThumbnail(.thumbnailsReady(paths: ["/tmp/file1.txt"]))),
-        )
+        await store.send(.entryViewLayout(.entryThumbnail(.thumbnailsReady(paths: ["/tmp/file1.txt"])))) {
+            $0.entryViewLayout.entryThumbnail.readyPaths = ["/tmp/file1.txt"]
+            $0.entryViewLayout.entryThumbnail.renderVersion = 1
+        }
+        await store.finish()
 
-        XCTAssertEqual(state.entryViewLayout.entryThumbnail.readyPaths, ["/tmp/file1.txt"])
-        XCTAssertEqual(state.entryViewLayout.entryThumbnail.renderVersion, 1)
+        XCTAssertEqual(store.state.entryViewLayout.entryThumbnail.readyPaths, ["/tmp/file1.txt"])
     }
 }
+// swiftlint:enable type_name

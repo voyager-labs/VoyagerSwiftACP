@@ -15,53 +15,77 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- 미완료 온보딩이 존재할 경우 마지막 유효 스텝에서 재개.
+- `ONB-001`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- Onboarding window가 표시되거나 사용자가 Next/Back/Start Using 계열 action을 실행할 때 호출된다.
+- Welcome, Beta Access, Permissions, Complete child step에서 상태 변경이 발생할 때 호출된다.
 
 ## Preconditions
 
-- 미완료 온보딩 상태가 저장된 상태
+- Onboarding state와 progress snapshot store를 읽고 쓸 수 있어야 한다.
+- 온보딩 단계는 Welcome, Beta Access, Permissions, Complete 순서를 따른다.
 
 ## Expected Outcome
 
-- TBD
+- 미완료 온보딩이 존재할 경우 마지막 유효 스텝에서 재개.
+- 온보딩 단계는 Welcome, Beta Access, Permissions, Complete 순서로 표시되어야 한다.
+- progress snapshot은 currentStep과 각 step completion 상태를 저장해 재실행 시 복원 가능해야 한다.
+- Next는 현재 step이 complete일 때만 다음 step으로 이동해야 한다.
 
 ## State Changes
 
-- TBD
+- currentStep, welcome/betaAccess/permissions/complete completion state, progress snapshot을 갱신한다.
+- 저장된 snapshot이 유효하지 않으면 마지막 유효 step 또는 Welcome으로 되돌린다.
+- Complete step에서 main window open 성공 시 onboarding window를 닫는다.
 
 ## User-visible Feedback
 
-- TBD
+- 현재 step의 제목, 설명, 입력 UI, progress indicator, Back/Next/Start Using 상태를 표시한다.
+- Permissions step은 Full Disk Access와 Helper folder access 상태 및 시스템 설정 진입 오류를 표시한다.
+- Complete step의 main window open 실패는 retry 가능한 오류로 표시한다.
+- background interaction은 별도 화면을 만들기보다 연결된 display/command interaction이 읽을 상태를 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 저장된 진행 지점이 현재 온보딩 버전과 불일치하는 경우
-- 진행 상태 저장소 접근 실패로 재개를 시작할 수 없는 경우
+- 저장된 snapshot이 resetRequired이면 progress store를 reset하고 새 snapshot을 저장한다.
+- 현재 step이 incomplete인데 snapshot currentStep으로 저장되어 있으면 완료된 가장 최근 step으로 복구한다.
+- Full Disk Access 설정을 열 수 없으면 수동으로 열라는 오류를 표시한다.
+- main window open에 실패하면 onboarding window를 닫지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 온보딩 세션이 시작되었을 때, 미완료 상태가 있는 상태라면, 마지막 유효 스텝에서 온보딩이 재개됨
-- [ ] 온보딩 세션을 재개했을 때, 저장된 진행 지점이 현재 온보딩 버전과 불일치하는 상태라면, 온보딩
-      단계를 초기화함
-- [ ] 온보딩 세션을 재개했을 때, 진행 상태 저장소 접근을 실패한다면, 온보딩 단계를 초기화함
+- [ ] 온보딩을 중간 단계에서 종료하고 다시 열면 마지막 유효 step과 completion state가 복원되어야 한다.
+- [ ] 현재 step이 complete가 아니면 Next가 다음 step으로 이동하지 않아야 한다.
+- [ ] Permissions에서 Full Disk Access와 Helper folder access가 모두 granted이면 step complete가 되어야 한다.
+- [ ] Complete에서 Start Using이 성공하면 main window가 열리고 onboarding window가 닫혀야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- Onboarding state와 progress snapshot store를 읽고 쓸 수 있어야 한다.
+- 온보딩 단계는 Welcome, Beta Access, Permissions, Complete 순서를 따른다.
+- 관련 UI region: `onboarding_window`
 
 ## Observability / Analytics
 
-- TBD
+- 온보딩 세션 시작/재개/완료
+- 현재 step 변경
+- 권한 상태 변경
+- 메인 윈도우 오픈 실패
 
 ## Related Interactions
 
-- TBD
+- [ONB-001-start_onboarding_session](ONB-001-start_onboarding_session.md)
+- [ONB-001-show_onboarding_step](ONB-001-show_onboarding_step.md)
+- [ONB-001-update_onboarding_step_state](ONB-001-update_onboarding_step_state.md)
+- [ONB-001-advance_onboarding_step](ONB-001-advance_onboarding_step.md)
+- [ONB-001-go_back_onboarding_step](ONB-001-go_back_onboarding_step.md)
+- [ONB-001-complete_onboarding_session](ONB-001-complete_onboarding_session.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `244`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:258`
+- Flows: [onboarding_session_flow.md](../flows/onboarding_session_flow.md)
+- Implementation references: `../voyager-app/docs/features/onboarding.md`, `../voyager-app/apps/macos/Packages/02_Pages/Onboarding/Sources/VoyagerPagesOnboarding/Reducer/OnboardingFeature.swift`, `../voyager-app/apps/macos/Packages/02_Pages/Onboarding/Sources/VoyagerPagesOnboarding/Reducer/PermissionsFeature.swift`, `../voyager-app/apps/macos/Packages/02_Pages/Onboarding/Sources/VoyagerPagesOnboarding/Reducer/CompleteFeature.swift`

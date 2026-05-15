@@ -1,6 +1,7 @@
 import Foundation
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerFeaturesEntryOperations
 
 struct EntryContextMenuTagSpec {

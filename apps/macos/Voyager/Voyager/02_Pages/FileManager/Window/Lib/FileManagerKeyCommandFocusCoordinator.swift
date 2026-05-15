@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import VoyagerShared
 
 @MainActor
 final class FileManagerKeyCommandFocusCoordinator {

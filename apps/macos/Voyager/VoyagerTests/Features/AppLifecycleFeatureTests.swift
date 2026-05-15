@@ -7,7 +7,9 @@ final class AppLifecycleFeatureTests: XCTestCase {
     func testStartTerminationCleanupDoesNotStopHelperOnNormalQuit() async {
         await VoyagerTerminationCoordinator.shared.end()
         let attemptID = UUID()
-        let recorder = Recorder()
+
+        // Use actor-isolated storage class to avoid concurrent mutation issues
+        let state = TestState()
 
         let store = TestStore(
             initialState: AppLifecycleState(
@@ -17,46 +19,32 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.helperAppClient.stop = {
-                await recorder.recordDidStopHelper()
+            $0.helperAppClient.stop = { @MainActor in
+                state.didStopHelper = true
             }
-            $0.appTerminationReplyClient.reply = { shouldTerminate in
-                await recorder.appendReply(shouldTerminate)
+            $0.appTerminationReplyClient.reply = { @MainActor reply in
+                state.repliedValues.append(reply)
             }
             $0.uuid = .incrementing
         }
 
-        await store.send(.termination(.startTerminationCleanup(attemptID: attemptID)))
-        await store.receive(\.termination.willTerminate)
-        await store.receive(\.termination.completeTerminationAttempt) {
+        await store.send(AppLifecycleAction.termination(.startTerminationCleanup(attemptID: attemptID)))
+        await store.send(AppLifecycleAction.termination(.willTerminate))
+        await store.send(AppLifecycleAction.termination(.completeTerminationAttempt(
+            attemptID: attemptID,
+            shouldTerminate: true,
+        ))) {
             $0.terminationAttemptID = nil
         }
 
-        let didStopHelper = await recorder.didStopHelperValue()
-        let repliedValues = await recorder.repliedValuesValue()
-        XCTAssertFalse(didStopHelper)
-        XCTAssertEqual(repliedValues, [true])
+        XCTAssertFalse(state.didStopHelper)
+        XCTAssertEqual(state.repliedValues, [true])
         await VoyagerTerminationCoordinator.shared.end()
     }
-}
 
-private actor Recorder {
-    private var didStopHelperFlag = false
-    private var replyValues: [Bool] = []
-
-    func recordDidStopHelper() {
-        didStopHelperFlag = true
-    }
-
-    func appendReply(_ value: Bool) {
-        replyValues.append(value)
-    }
-
-    func didStopHelperValue() -> Bool {
-        didStopHelperFlag
-    }
-
-    func repliedValuesValue() -> [Bool] {
-        replyValues
+    @MainActor
+    private final class TestState: @unchecked Sendable {
+        var didStopHelper = false
+        var repliedValues: [Bool] = []
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesTag
 
 public enum EntryModelTagColorNormalizer {
     public nonisolated static func normalize(_ entries: [EntryModel], favoriteTags: [Tag]) -> [EntryModel] {
@@ -26,8 +27,8 @@ public enum EntryModelTagColorNormalizer {
                 kind: entry.facets.kind,
                 creatorApplication: entry.facets.creatorApplication,
                 tags: normalizedTags,
-                supplementaryMetadata: entry.facets.supplementaryMetadata,
-            ),
+                supplementaryMetadata: entry.facets.supplementaryMetadata
+            )
         )
     }
 }

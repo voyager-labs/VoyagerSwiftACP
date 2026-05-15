@@ -2,6 +2,8 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesCollection
+import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
@@ -314,12 +316,18 @@ private func performSettingsMenuItem() -> Bool {
     return false
 }
 
+private struct SettingsMenuItemMatch {
+    let menu: NSMenu
+    let item: NSMenuItem
+    let index: Int
+}
+
 @MainActor
-private func findSettingsMenuItem(in menu: NSMenu) -> (menu: NSMenu, item: NSMenuItem, index: Int)? {
+private func findSettingsMenuItem(in menu: NSMenu) -> SettingsMenuItemMatch? {
     for index in 0 ..< menu.numberOfItems {
-        let item = menu.item(at: index)!
+        guard let item = menu.item(at: index) else { continue }
         if isSettingsMenuItem(item) {
-            return (menu, item, index)
+            return SettingsMenuItemMatch(menu: menu, item: item, index: index)
         }
 
         if let submenu = item.submenu,

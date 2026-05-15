@@ -1,6 +1,10 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 import XCTest
 
@@ -9,16 +13,24 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
     func testRefreshStaleCollectionStartsRefreshingAndClearsWriteBackFlag() async {
         let store = makeRefreshStore(initialState: makeRefreshState())
 
-        XCTAssertNil(store.state.refreshBlockingReason)
+        XCTAssertNil(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ))
 
         await store.send(.view(.refreshStaleCollection)) {
-            $0.collectionSession.phase = .opened(
+            $0.collection.collectionSession.phase = .opened(
                 kind: .hydratedSnapshot,
                 base: .stale,
                 inflight: .refreshingHydratedSnapshot,
             )
         }
-        XCTAssertEqual(store.state.refreshBlockingReason, .refreshInFlight)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .refreshInFlight)
         await store.receive { action in
             guard case .composer(.view(.setText("report"))) = action else {
                 return false
@@ -43,16 +55,19 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
         ))
 
         await store.send(.composer(.internal(.filtersResponse(requestID, .failure(RefreshError()))))) {
-            $0.collectionSession.phase = .refreshFailed(kind: .hydratedSnapshot)
+            $0.collection.collectionSession.phase = .refreshFailed(kind: .hydratedSnapshot)
         }
         await store.finish()
 
-        XCTAssertTrue(store.state.collectionSession.phase.isStale)
-        XCTAssertNil(store.state.collectionSession.metadata.lastRefreshAt)
-        let inflightStatus = store.state.collectionSession.phase.inflightStatus
-        XCTAssertNotEqual(inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(inflightStatus, .writingBackRefreshedSnapshot)
-        XCTAssertNil(store.state.refreshBlockingReason)
+        XCTAssertTrue(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertNil(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ))
     }
 
     func testRefreshSuccessTransitionsFromRefreshingToWriteBackBeforeSaveCompletes() async {
@@ -66,18 +81,22 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
         await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
             $0.composer.lastFiltersResponse = response
             $0.composer.isLoadingFilters = false
-            $0.collectionSession.phase = .opened(
+            $0.collection.collectionSession.phase = .opened(
                 kind: .hydratedSnapshot,
                 base: .stale,
                 inflight: .writingBackRefreshedSnapshot,
             )
         }
-        XCTAssertEqual(store.state.refreshBlockingReason, .writeBackInFlight)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .writeBackInFlight)
     }
 
     private func makeRefreshState(
         requestID: UUID? = nil,
-        isRefreshing: Bool = false,
+        isRefreshing _: Bool = false,
     ) -> FileManagerContentState {
         var state = FileManagerContentState()
         state.entryViewLayout.isCollectionMode = true
@@ -90,19 +109,13 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
                 viewLayout: .list,
             ),
         )
-        state.collectionSession.document = .init(
+        state.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/voyager/sample.voycoll"),
             name: "sample",
             compatibility: makeAllowedCompatibility(),
         )
-        state.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
-        state.collectionSession.phase = .opened(
-            kind: .hydratedSnapshot,
-            base: .stale,
-            inflight: isRefreshing ? .refreshingHydratedSnapshot : .none,
-        )
-        state.collectionContext = makeReportContext()
-        state.collectionSession.metadata.baseline = state.collectionContext.map(CollectionBaseline.init(context:))
+        state.collection.collectionSession.metadata.baseline = state.collection.collectionContext
+            .map { CollectionBaseline(context: $0) }
         state.composer.scopes = ["/tmp/voyager"]
         state.composer.conditions = []
         state.composer.pendingSearchQuery = "report"
@@ -151,7 +164,7 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
 
     private func makeAllowedCompatibility() -> CollectionFileCompatibilityMetadata {
         .init(
-            sourceSchemaVersion: CollectionFileSchemaVersion.current,
+            sourceSchemaVersion: SchemaVersion(legacyInt: 2),
             migrationPath: [.currentSchemaV2],
             warnings: [],
             usedDefinitionFallback: false,

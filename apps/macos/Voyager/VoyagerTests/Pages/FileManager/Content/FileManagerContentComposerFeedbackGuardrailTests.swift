@@ -1,7 +1,11 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 import XCTest
 
@@ -27,8 +31,8 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
                 },
             )
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = VoyagerEntitiesEntry.ThumbnailGeneratorClient.testValue
-            $0.entryThumbnailCacheClient = VoyagerEntitiesEntry.EntryThumbnailCacheClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
         store.exhaustivity = .off
@@ -44,8 +48,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(alerts.count(), 0)
-        let isOpening = store.state.collectionSession.phase.isOpening
-        XCTAssertFalse(isOpening)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isOpening)
         XCTAssertEqual(
             store.state.composer.transientFeedback?.message,
             ComposerQueryFeedbackPolicy.executionFailureMessage,
@@ -68,8 +71,8 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
                 },
             )
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = VoyagerEntitiesEntry.ThumbnailGeneratorClient.testValue
-            $0.entryThumbnailCacheClient = VoyagerEntitiesEntry.EntryThumbnailCacheClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
         store.exhaustivity = .off
@@ -83,13 +86,12 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
 
         XCTAssertEqual(alerts.count(), 1)
         XCTAssertEqual(alerts.lastTitle(), "Unable to Run Collection Search")
-        let isOpening = store.state.collectionSession.phase.isOpening
-        XCTAssertFalse(isOpening)
-        XCTAssertNil(store.state.collectionSession.document?.name)
-        XCTAssertNil(store.state.collectionSession.document?.url)
-        XCTAssertNil(store.state.collectionSession.metadata.baseline)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isOpening)
+        XCTAssertNil(store.state.collection.collectionSession.document?.name)
+        XCTAssertNil(store.state.collection.collectionSession.document?.url)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.baseline)
         XCTAssertFalse(store.state.entryViewLayout.isCollectionMode)
-        XCTAssertNil(store.state.collectionContext)
+        XCTAssertNil(store.state.collection.collectionContext)
     }
 }
 
@@ -128,8 +130,8 @@ private func assertCollectionOpenFailureRollback(
 @MainActor
 private func makeCollectionOpeningState(requestID: UUID) -> FileManagerContentState {
     var state = FileManagerContentState()
-    state.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
-    state.collectionSession.document = .init(
+    state.collection.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
+    state.collection.collectionSession.document = .init(
         url: URL(fileURLWithPath: "/tmp/saved-search.voyager-collection"),
         name: "Saved Search",
         compatibility: nil,

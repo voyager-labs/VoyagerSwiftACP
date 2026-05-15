@@ -1,6 +1,6 @@
 import ComposableArchitecture
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
-import VoyagerShared
 
 enum FileManagerContentEntryOpsCoordinator {
     static func handleEntryOperationsAction(

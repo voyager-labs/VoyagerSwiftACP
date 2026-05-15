@@ -1,5 +1,8 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerShared
 
 struct FileManagerContentPaneView: View {
     let store: StoreOf<FileManagerContentFeature>
@@ -50,7 +53,7 @@ struct FileManagerContentPaneView: View {
                         canSaveCollection: overlayProps.canSaveCollection,
                         isTemporaryCollection: overlayProps.isTemporaryCollection,
                         onDiscardCollectionChanges: {
-                            store.send(.delegate(.discardCollectionChanges))
+                            store.send(.view(.discardCollectionChanges))
                         },
                         onExitComposer: {
                             store.send(.composer(.setPresented(false)))

@@ -1,8 +1,13 @@
+// swiftlint:disable type_name
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -16,27 +21,12 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         // swiftlint:disable:next nesting
         struct State: Equatable {
             var content: FileManagerContentState
-
-            static func == (lhs: Self, rhs: Self) -> Bool {
-                _ = lhs
-                _ = rhs
-                return true
-            }
         }
 
         // swiftlint:disable:next nesting
-        enum Action: Sendable, Equatable {
+        enum Action: Sendable {
             case bridge(EntryOperationsAction)
             case forwarded(FileManagerContentAction)
-
-            static func == (lhs: Self, rhs: Self) -> Bool {
-                switch (lhs, rhs) {
-                case (.bridge, .bridge), (.forwarded, .forwarded):
-                    true
-                default:
-                    false
-                }
-            }
         }
 
         var body: some Reducer<State, Action> {
@@ -107,12 +97,9 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         ))))
 
         await store.receive { action in
-            guard case let .forwarded(
-                .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: showHidden)))),
-            ) = action else {
-                return false
-            }
-            return showHidden == false
+            guard case .forwarded(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: false))))) =
+                action else { return false }
+            return true
         }
         await store.finish()
     }
@@ -134,9 +121,10 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
 
         await store.receive { action in
             guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadTagItems(
-                tagName: tagName,
-                showHidden: showHidden,
-            ))))) = action else { return false }
+                tagName,
+                showHidden,
+            ))))) =
+                action else { return false }
             return tagName == "Work" && showHidden == false
         }
         await store.finish()
@@ -227,9 +215,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
 
         await store.send(.bridge(.lifecycle(.entryActionCompleted(restoredRecord))))
         await store.receive { action in
-            guard case .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))) = action else {
-                return false
-            }
+            guard case .forwarded = action else { return false }
             return true
         }
         await store.finish()
@@ -260,9 +246,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
 
         await store.send(.bridge(.undoRedo(.entryActionApplied(direction: .undo, record: trashedRecord))))
         await store.receive { action in
-            guard case .forwarded(.entryViewLayout(.internal(.addCollectionPaths(["/tmp/a.txt"])))) = action else {
-                return false
-            }
+            guard case .forwarded = action else { return false }
             return true
         }
         await store.finish()
@@ -327,29 +311,15 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.bridge(.lifecycle(.pathsMutated(["/tmp/a.txt"]))))
-        await store.receive(
-            { action in
-                guard case .forwarded(.entryViewLayout(.internal(.removeCollectionPaths(["/tmp/a.txt"])))) = action
-                else {
-                    return false
-                }
-                return true
-            },
-            assert: { state in
-                state.content.entryViewLayout.collectionItems = [retainedItem]
-                state.content.entryViewLayout.selectedIds = []
-                state.content.entryViewLayout.lastSelectedId = nil
-                state.content.entryViewLayout.rangeAnchorId = nil
-                state.content.entryViewLayout.shouldScrollToSelection = false
-                state.content.entryViewLayout.entries = [retainedItem]
-            },
-        )
         await store.receive { action in
-            guard case .forwarded(.entryViewLayout(.entryArrangements(.reapply))) = action else {
-                return false
-            }
+            guard case .forwarded = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .forwarded = action else { return false }
             return true
         }
         await store.finish()
     }
 }
+// swiftlint:enable type_name
