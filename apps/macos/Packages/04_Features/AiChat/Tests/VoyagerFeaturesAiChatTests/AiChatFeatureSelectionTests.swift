@@ -176,6 +176,37 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(requestSpy.requests[1].context.selectedThinking, .effort(.medium))
     }
 
+    func testCatalogRowsRefreshDisplayNameWhenExistingHandleIsPreserved() {
+        let handle = AiModelHandle(provider: .openai, rawValue: "gpt-5.4-mini")
+        let staleRow = AiModelCatalogRow(
+            handle: handle,
+            displayName: "gpt-5.4-mini",
+            authMethod: .apiKey,
+            subtitle: "Existing subtitle",
+            sortOrder: 42,
+            isDefault: true,
+            isRecommended: true
+        )
+        let refreshedModel = AiProviderModel(
+            id: handle,
+            provider: .openai,
+            rawModelID: "gpt-5.4-mini",
+            displayName: "GPT-5.4 Mini",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .unknown(reason: .init(message: "Metadata pending")),
+            unavailableReason: nil
+        )
+
+        let rows = AiChatFeature.State.makeCatalogRows(for: [refreshedModel], preserving: [staleRow])
+
+        XCTAssertEqual(rows.map(\.handle), [handle])
+        XCTAssertEqual(rows.map(\.displayName), ["GPT-5.4 Mini"])
+        XCTAssertEqual(rows.first?.subtitle, "Existing subtitle")
+        XCTAssertEqual(rows.first?.sortOrder, 42)
+        XCTAssertEqual(rows.first?.isDefault, true)
+        XCTAssertEqual(rows.first?.isRecommended, true)
+    }
+
     // swiftlint:disable:next function_body_length
     func testSelectedThinkingChangedUpdatesDisplayModelAndNextRequestContext() async {
         final class ExecutionRequestSpy: @unchecked Sendable {

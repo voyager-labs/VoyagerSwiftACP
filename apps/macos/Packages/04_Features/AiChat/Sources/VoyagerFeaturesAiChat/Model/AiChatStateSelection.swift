@@ -73,7 +73,15 @@ enum AiChatStateSelection {
     ) -> [AiModelCatalogRow] {
         models.enumerated().map { index, model in
             if let existingRow = existingRows.first(where: { $0.handle == model.id }) {
-                return existingRow
+                return AiModelCatalogRow(
+                    handle: existingRow.handle,
+                    displayName: model.displayName,
+                    authMethod: existingRow.authMethod,
+                    subtitle: existingRow.subtitle,
+                    sortOrder: existingRow.sortOrder,
+                    isDefault: existingRow.isDefault,
+                    isRecommended: existingRow.isRecommended
+                )
             }
             return AiModelCatalogRow(
                 handle: model.id,
