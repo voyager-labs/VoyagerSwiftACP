@@ -29,6 +29,7 @@ final class AiChatContractTests: XCTestCase {
         XCTAssertEqual(ProviderDescriptor.descriptor(for: decoded.handle.provider)?.authMethod, decoded.authMethod)
     }
 
+    // swiftlint:disable:next function_body_length
     func testRequestContextSnapshot_roundTrips() throws {
         let snapshot = AiChatRequestContextSnapshot(
             sessionID: AiChatSessionID(rawValue: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!),
@@ -52,8 +53,8 @@ final class AiChatContractTests: XCTestCase {
                         title: "Readme.md",
                         subtitle: "Project readme",
                         metadata: ["path": "docs/Readme.md"]
-                    ),
-                ],
+                    )
+                ]
                 items: [
                     AiChatContextItem(
                         kind: .file,
@@ -69,15 +70,15 @@ final class AiChatContractTests: XCTestCase {
                                 metadata: ["line": "12"]
                             ),
                         ]
-                    ),
-                ],
+                    )
+                ]
                 attachments: [
                     AiChatContextAttachment(
                         identifier: "attachment-1",
                         title: "Screenshot",
                         subtitle: "Current state",
                         metadata: ["mimeType": "image/png"]
-                    ),
+                    )
                 ]
             ),
             promptSummary: "Summarize the selected files",
@@ -104,7 +105,7 @@ final class AiChatContractTests: XCTestCase {
             model: AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
             transcriptHistory: [
                 AiChatMessage(role: .user, content: "Summarize the diffs"),
-                AiChatMessage(role: .assistant, content: "Here is a summary"),
+                AiChatMessage(role: .assistant, content: "Here is a summary")
             ],
             lastRequestID: AiChatRequestID(rawValue: UUID(uuidString: "55555555-5555-5555-5555-555555555555")!),
             lastRunID: AiChatRunID(rawValue: UUID(uuidString: "66666666-6666-6666-6666-666666666666")!),
@@ -127,7 +128,7 @@ final class AiChatContractTests: XCTestCase {
     func testSessionStatusAndMessageRoles_coverAllCases() {
         XCTAssertEqual(AiChatSessionStatus.allCases.count, 6)
         XCTAssertEqual(AiChatMessageRole.allCases.count, 4)
-        XCTAssertEqual(AiChatExecutionFailure.allCases.count, 5)
+        XCTAssertEqual(AiChatExecutionFailure.allCases.count, 12)
         XCTAssertEqual(AiChatSessionRestoreFailure.allCases.count, 5)
     }
 
@@ -146,7 +147,7 @@ final class AiChatContractTests: XCTestCase {
                         identifier: "note-1",
                         title: "Locked context",
                         metadata: ["locked": "true"]
-                    ),
+                    )
                 ]
             ),
             promptSummary: "Keep it short",
@@ -156,7 +157,7 @@ final class AiChatContractTests: XCTestCase {
             context: context,
             messages: [
                 AiChatMessage(role: .system, content: "You are helpful."),
-                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .user, content: "Hello")
             ]
         )
         let response = AiChatResponse(
@@ -164,11 +165,27 @@ final class AiChatContractTests: XCTestCase {
             assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
             completedAtMs: 1_700_000_000_300
         )
-        let event: AiChatEvent = .failed(context: context, reason: .transportError)
+        let events: [AiChatEvent] = [
+            .started(context: context),
+            .delta(context: context, text: "Hi"),
+            .final(response: response),
+            .failed(context: context, reason: .transportError)
+        ]
 
         XCTAssertEqual(try JSONDecoder().decode(AiChatRequest.self, from: JSONEncoder().encode(request)), request)
         XCTAssertEqual(try JSONDecoder().decode(AiChatResponse.self, from: JSONEncoder().encode(response)), response)
-        XCTAssertEqual(try JSONDecoder().decode(AiChatEvent.self, from: JSONEncoder().encode(event)), event)
+        for event in events {
+            XCTAssertEqual(try JSONDecoder().decode(AiChatEvent.self, from: JSONEncoder().encode(event)), event)
+        }
+    }
+
+    func testExecutionFailure_roundTripsAllCases() throws {
+        for failure in AiChatExecutionFailure.allCases {
+            XCTAssertEqual(
+                try JSONDecoder().decode(AiChatExecutionFailure.self, from: JSONEncoder().encode(failure)),
+                failure
+            )
+        }
     }
 
     func testSendableIntent_isExpressibleAtCompileTime() {
@@ -186,7 +203,7 @@ final class AiChatContractTests: XCTestCase {
                             kind: .attachment,
                             identifier: "attachment-2",
                             title: "Design sketch"
-                        ),
+                        )
                     ]
                 )
             ),
