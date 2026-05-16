@@ -37,6 +37,10 @@ struct FileManagerInspectorFeature {
                     return .none
                 }
 
+                guard state.aiChat.sessionID == nil else {
+                    return .none
+                }
+
                 return .concatenate(
                     .send(.aiChat(.setup(setup))),
                     .send(.aiChat(.providerConnectionsUpdated(connectionsFile))),
