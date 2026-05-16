@@ -2,10 +2,9 @@ import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesContentPageNavigation
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
-
-@testable import Voyager
 
 @MainActor
 final class FileManagerFeatureNavigationTests: XCTestCase {

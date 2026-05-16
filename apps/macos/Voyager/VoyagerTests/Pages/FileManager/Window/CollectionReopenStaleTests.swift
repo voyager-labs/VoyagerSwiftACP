@@ -5,10 +5,9 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
-
-@testable import Voyager
 
 @MainActor
 final class CollectionReopenStaleTests: XCTestCase {

@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesEntryArrangements
+import VoyagerPagesFileManager
 import VoyagerShared
 
 struct AppPreferencesState: Equatable, Sendable {
@@ -54,6 +55,22 @@ struct AppPreferencesState: Equatable, Sendable {
             state.sidebarWidth = CGFloat(sidebarWidth)
         }
         return state
+    }
+
+    func toPackageState() -> VoyagerPagesFileManager.AppPreferencesState {
+        var result = VoyagerPagesFileManager.AppPreferencesState()
+        result.showHiddenFiles = showHiddenFiles
+        result.viewLayoutMode = .init(rawValue: viewLayout.rawValue) ?? .list
+        result.sortKey = sortKey
+        result.sortOrder = sortOrder
+        result.groupKey = groupKey
+        result.listIconSize = listIconSize
+        result.gridIconSize = gridIconSize
+        result.listTextSize = listTextSize
+        result.gridTextSize = gridTextSize
+        result.sidebarVisible = sidebarVisible
+        result.sidebarWidth = sidebarWidth
+        return result
     }
 }
 
