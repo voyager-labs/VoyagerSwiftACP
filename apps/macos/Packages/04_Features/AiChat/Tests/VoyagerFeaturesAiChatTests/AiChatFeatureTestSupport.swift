@@ -3,6 +3,10 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+func makeFixedDate(milliseconds: Int64) -> Date {
+    Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000)
+}
+
 func makeUUID(_ rawValue: String, file: StaticString = #filePath, line: UInt = #line) -> UUID {
     guard let uuid = UUID(uuidString: rawValue) else {
         XCTFail("Invalid UUID literal: \(rawValue)", file: file, line: line)
@@ -21,7 +25,7 @@ func makeProviderModels() -> [AiProviderModel] {
             displayName: "GPT-4.1 Mini",
             providerDisplayName: ProviderDescriptor.descriptor(for: .openai)?.displayName ?? "OpenAI",
             thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
-            unavailableReason: nil,
+            unavailableReason: nil
         ),
         AiProviderModel(
             id: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
@@ -30,7 +34,7 @@ func makeProviderModels() -> [AiProviderModel] {
             displayName: "Claude Sonnet 4",
             providerDisplayName: ProviderDescriptor.descriptor(for: .anthropic)?.displayName ?? "Anthropic",
             thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
-            unavailableReason: nil,
+            unavailableReason: nil
         )
     ]
 }
@@ -44,7 +48,7 @@ func makeThinkingCapableProviderModels() -> [AiProviderModel] {
             displayName: "GPT-4.1 Mini",
             providerDisplayName: ProviderDescriptor.descriptor(for: .openai)?.displayName ?? "OpenAI",
             thinkingCapability: .effort(values: [.low, .medium, .high], defaultValue: .medium),
-            unavailableReason: nil,
+            unavailableReason: nil
         ),
         AiProviderModel(
             id: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
@@ -53,7 +57,7 @@ func makeThinkingCapableProviderModels() -> [AiProviderModel] {
             displayName: "Claude Sonnet 4",
             providerDisplayName: ProviderDescriptor.descriptor(for: .anthropic)?.displayName ?? "Anthropic",
             thinkingCapability: .effort(values: [.minimal, .low, .medium], defaultValue: .low),
-            unavailableReason: nil,
+            unavailableReason: nil
         )
     ]
 }
@@ -67,7 +71,7 @@ func makeCatalogRows() -> [AiModelCatalogRow] {
             subtitle: nil,
             sortOrder: 10,
             isDefault: true,
-            isRecommended: true,
+            isRecommended: true
         ),
         AiModelCatalogRow(
             handle: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
@@ -76,7 +80,7 @@ func makeCatalogRows() -> [AiModelCatalogRow] {
             subtitle: "Reasoning-first chat",
             sortOrder: 20,
             isDefault: false,
-            isRecommended: false,
+            isRecommended: false
         )
     ]
 }
@@ -93,7 +97,7 @@ func makeContextSnapshot(
             identifier: "ref-1",
             title: "Readme.md",
             subtitle: "Project readme",
-            metadata: ["path": "docs/Readme.md"],
+            metadata: ["path": "docs/Readme.md"]
         )
     ],
     items: [AiChatContextItem] = [
@@ -102,7 +106,7 @@ func makeContextSnapshot(
             identifier: "file-1",
             title: "VoyagerEntitiesAi.swift",
             subtitle: "Source file",
-            metadata: ["path": "Sources/VoyagerEntitiesAi/VoyagerEntitiesAi.swift"],
+            metadata: ["path": "Sources/VoyagerEntitiesAi/VoyagerEntitiesAi.swift"]
         )
     ],
     attachments: [AiChatContextAttachment] = [
@@ -110,15 +114,15 @@ func makeContextSnapshot(
             identifier: "attachment-1",
             title: "Screenshot",
             subtitle: "Current state",
-            metadata: ["mimeType": "image/png"],
+            metadata: ["mimeType": "image/png"]
         )
-    ],
+    ]
 ) -> AiChatCurrentContextSnapshot {
     AiChatCurrentContextSnapshot(
         summary: summary,
         references: references,
         items: items,
-        attachments: attachments,
+        attachments: attachments
     )
 }
 
@@ -130,7 +134,7 @@ func makeRequestContext(
     selectedRow: AiModelCatalogRow,
     selectedModel: AiProviderModel? = nil,
     selectedThinking: AiThinkingSelection? = nil,
-    promptSummary: String = "Hello",
+    promptSummary: String = "Hello"
 ) -> AiChatRequestContextSnapshot {
     AiChatRequestContextSnapshot(
         sessionID: sessionID,
@@ -144,7 +148,7 @@ func makeRequestContext(
         sessionStatus: .active,
         currentContext: makeContextSnapshot(),
         promptSummary: promptSummary,
-        submittedAtMs: nil,
+        submittedAtMs: nil
     )
 }
 
@@ -153,7 +157,7 @@ func makeRequestLock(
     request: AiChatRequest,
     selectedHandle: AiModelHandle,
     selectedRow: AiModelCatalogRow,
-    assistantReplacementIndex: Int?,
+    assistantReplacementIndex: Int?
 ) -> AiChatRequestLock {
     AiChatRequestLock(
         kind: kind,
@@ -164,6 +168,15 @@ func makeRequestLock(
         selectedModelHandle: selectedHandle,
         selectedModelRow: selectedRow,
         assistantReplacementIndex: assistantReplacementIndex,
+        historyTruncation: AiChatHistoryTruncationMetadata(
+            includedMessageCount: request.messages.count,
+            excludedMessageCount: 0,
+            budget: 24_000,
+            truncationReason: nil
+        ),
+        observabilitySummary: AiChatRequestObservabilitySummary(
+            submittedAtMs: request.context.submittedAtMs ?? 0
+        )
     )
 }
 
@@ -205,7 +218,6 @@ final class AiChatSessionPersistenceSpy: @unchecked Sendable {
         snapshots.append(snapshot)
     }
 }
-
 
 func makeProviderRecord(
     provider: AiProvider,

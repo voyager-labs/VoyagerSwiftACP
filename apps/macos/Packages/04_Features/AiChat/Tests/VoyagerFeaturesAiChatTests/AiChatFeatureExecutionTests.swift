@@ -1,27 +1,52 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
-private let expectedMockAssistantMessage = """
-Voyager AI
-Context checked.
-Plan ready.
-Provider later.
-✓ Context
-✓ Queued
-★ Mock ready
-"""
-
 @MainActor
+// swiftlint:disable:next type_body_length
 final class AiChatFeatureExecutionTests: XCTestCase {
     // swiftlint:disable:next function_body_length
-    func testSubmitWithLiveExecutionClientStartsThenFinalizesWithSingleMockAssistantResponse() async {
+    // swiftlint:disable:next function_body_length
+    func testSubmitWithLiveExecutionClientDelegatesToProviderExecutor() async {
+        actor ProviderDriver {
+            var requests: [(AiChatRequest, StoredCredentialPayload?)] = []
+
+            func append(request: AiChatRequest, credential: StoredCredentialPayload?) {
+                requests.append((request, credential))
+            }
+
+            func snapshot() -> [(AiChatRequest, StoredCredentialPayload?)] {
+                requests
+            }
+        }
+
         let persistence = AiChatSessionPersistenceSpy()
+        let driver = ProviderDriver()
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
+        let credential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-openai"))
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111111"))
+        let fixedMs: Int64 = 1_700_000_000_100
+        let expectedAssistantMessage = "Hello"
+        let providerClient = AiChatProviderExecutionClient(execute: { request, credential in
+            AsyncThrowingStream { continuation in
+                Task {
+                    await driver.append(request: request, credential: credential)
+                    continuation.yield(.started(context: request.context))
+                    continuation.yield(.delta(context: request.context, text: "Hel"))
+                    continuation.yield(.delta(context: request.context, text: "lo"))
+                    continuation.yield(.final(response: AiChatResponse(
+                        context: request.context,
+                        assistantMessage: AiChatMessage(role: .assistant, content: expectedAssistantMessage),
+                        completedAtMs: 0
+                    )))
+                    continuation.finish()
+                }
+            }
+        })
 
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -38,13 +63,23 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             AiChatFeature()
         } withDependencies: {
             $0.uuid = .incrementing
-            $0.aiChatExecutionClient = .liveValue
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = .live(providerExecutionClient: providerClient)
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { snapshot in
                     await persistence.save(snapshot)
                 },
                 deleteSession: { _ in }
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: {
+                    makeConnectionsFile(providers: [
+                        makeProviderRecord(provider: .openai, credential: credential)
+                    ])
+                },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) }
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -55,7 +90,9 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             state.selectedModelHandle = selectedHandle
             state.lockedModelHandle = selectedHandle
             state.lastExecutionFailure = nil
+            state.streamingAssistantDraft = nil
             XCTAssertEqual(state.sessionID, sessionID)
+            XCTAssertFalse(state.canSubmit)
         }
 
         guard case let .processing(lock) = store.state.executionPhase else {
@@ -63,34 +100,51 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             return
         }
 
-        let expectedResponse = AiChatResponse(
+        let rawResponse = AiChatResponse(
             context: lock.request.context,
-            assistantMessage: AiChatMessage(role: .assistant, content: expectedMockAssistantMessage),
+            assistantMessage: AiChatMessage(role: .assistant, content: expectedAssistantMessage),
             completedAtMs: 0
         )
+        let firstDeltaLock = lock.recordingDelta(at: fixedMs)
+        let secondDeltaLock = firstDeltaLock.recordingDelta(at: fixedMs)
 
         await store.receive(.executionEvent(.started(context: lock.request.context)))
-
-        await store.receive(.executionEvent(.final(response: expectedResponse))) { state in
+        await store.receive(.executionEvent(.delta(context: lock.request.context, text: "Hel"))) { state in
+            state.streamingAssistantDraft = "Hel"
+            state.executionPhase = .processing(firstDeltaLock)
+        }
+        await store.receive(.executionEvent(.delta(context: lock.request.context, text: "lo"))) { state in
+            state.streamingAssistantDraft = "Hello"
+            state.executionPhase = .processing(secondDeltaLock)
+        }
+        await store.receive(.executionEvent(.final(response: rawResponse))) { state in
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: expectedMockAssistantMessage),
+                AiChatMessage(role: .assistant, content: expectedAssistantMessage)
             ]
+            state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
-            state.executionPhase = .completed(lock)
+            // swiftlint:disable:next line_length
+            state.executionPhase = .completed(secondDeltaLock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false))
         }
-
         await store.finish()
 
-        let assistantMessages = store.state.transcriptHistory.filter { $0.role == .assistant }
-        XCTAssertEqual(assistantMessages, [AiChatMessage(role: .assistant, content: expectedMockAssistantMessage)])
+        let recorded = await driver.snapshot()
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.0.context.model, selectedHandle)
+        XCTAssertEqual(recorded.first?.1, credential)
         XCTAssertEqual(persistence.snapshots.count, 1)
         XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, [
             AiChatMessage(role: .user, content: "Hello"),
-            AiChatMessage(role: .assistant, content: expectedMockAssistantMessage),
+            AiChatMessage(role: .assistant, content: expectedAssistantMessage)
         ])
         XCTAssertEqual(persistence.snapshots.first?.lastRequestID, lock.request.context.requestID)
         XCTAssertEqual(persistence.snapshots.first?.lastRunID, lock.request.context.runID)
+        // swiftlint:disable:next line_length
+        XCTAssertEqual(store.state.executionPhase, .completed(secondDeltaLock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)))
+        XCTAssertEqual(store.state.executionPhase.lock?.observabilitySummary.submittedAtMs, fixedMs)
+        XCTAssertEqual(store.state.executionPhase.lock?.observabilitySummary.terminalAtMs, fixedMs)
+        XCTAssertNil(store.state.streamingAssistantDraft)
     }
 
     // swiftlint:disable:next function_body_length
@@ -99,6 +153,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111112"))
+        let fixedMs: Int64 = 1_700_000_000_200
 
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -115,6 +170,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             AiChatFeature()
         } withDependencies: {
             $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
             $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
                 stream.stream(for: request)
             })
@@ -130,6 +186,96 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Cancel me")]
             state.lockedModelHandle = selectedHandle
+            state.streamingAssistantDraft = nil
+        }
+
+        guard let request = stream.requests.first else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        )
+        let streamingLock = lock.recordingDelta(at: fixedMs)
+
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+
+        stream.yield(.delta(context: request.context, text: "Hel"))
+        await store.receive(.executionEvent(.delta(context: request.context, text: "Hel"))) { state in
+            state.streamingAssistantDraft = "Hel"
+            state.executionPhase = .processing(streamingLock)
+        }
+
+        await store.send(.cancelTapped) { state in
+            state.lockedModelHandle = nil
+            state.streamingAssistantDraft = nil
+            // swiftlint:disable:next line_length
+            state.executionPhase = .cancelled(streamingLock.recordingTerminal(at: fixedMs, failure: .cancelled, wasCancelled: true))
+        }
+        await store.send(.executionEvent(.delta(context: request.context, text: "lo")))
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "late final"),
+            completedAtMs: fixedMs
+        ))))
+        await store.send(.executionEvent(.failed(context: request.context, reason: .unknown)))
+
+        let assistantMessages = store.state.transcriptHistory.filter { $0.role == .assistant }
+        XCTAssertTrue(assistantMessages.isEmpty)
+        XCTAssertEqual(store.state.transcriptHistory, [AiChatMessage(role: .user, content: "Cancel me")])
+        XCTAssertNil(store.state.lockedModelHandle)
+        XCTAssertNil(store.state.lastExecutionFailure)
+        XCTAssertNil(store.state.streamingAssistantDraft)
+        // swiftlint:disable:next line_length
+        XCTAssertEqual(store.state.executionPhase, .cancelled(streamingLock.recordingTerminal(at: fixedMs, failure: .cancelled, wasCancelled: true)))
+
+        await store.finish()
+    }
+
+    // swiftlint:disable:next function_body_length
+    func testFailedStreamPreservesPartialDraftAndMarksPartialFailure() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111119"))
+        let fixedMs: Int64 = 1_700_000_000_250
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Partial failure",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Partial failure")]
+            state.lockedModelHandle = selectedHandle
+            state.streamingAssistantDraft = nil
         }
 
         guard let request = stream.requests.first else {
@@ -144,27 +290,161 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             assistantReplacementIndex: nil
         )
 
-        XCTAssertEqual(store.state.executionPhase, .processing(lock))
-
-        await store.send(.cancelTapped) { state in
-            state.lockedModelHandle = nil
-            state.executionPhase = .cancelled(lock)
+        stream.yield(.delta(context: request.context, text: "Hel"))
+        await store.receive(.executionEvent(.delta(context: request.context, text: "Hel"))) { state in
+            state.streamingAssistantDraft = "Hel"
+            state.executionPhase = .processing(lock.recordingDelta(at: fixedMs))
         }
-        await store.send(.executionEvent(.final(response: AiChatResponse(
-            context: request.context,
-            assistantMessage: AiChatMessage(role: .assistant, content: "late final"),
-            completedAtMs: 0
-        ))))
-        await store.send(.executionEvent(.failed(context: request.context, reason: .unknown)))
 
-        let assistantMessages = store.state.transcriptHistory.filter { $0.role == .assistant }
-        XCTAssertTrue(assistantMessages.isEmpty)
-        XCTAssertEqual(store.state.transcriptHistory, [AiChatMessage(role: .user, content: "Cancel me")])
-        XCTAssertNil(store.state.lockedModelHandle)
-        XCTAssertNil(store.state.lastExecutionFailure)
-        XCTAssertEqual(store.state.executionPhase, .cancelled(lock))
+        stream.yield(.failed(context: request.context, reason: .transportError))
+        // swiftlint:disable:next line_length
+        let failedLock = lock.recordingDelta(at: fixedMs).recordingTerminal(at: fixedMs, failure: .transportError, wasCancelled: false)
+        await store.receive(.executionEvent(.failed(context: request.context, reason: .transportError))) { state in
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = .transportError
+            state.executionPhase = .failed(failedLock, .transportError)
+        }
+
+        XCTAssertEqual(store.state.streamingAssistantDraft, "Hel")
+        XCTAssertEqual(store.state.transcriptHistory, [AiChatMessage(role: .user, content: "Partial failure")])
+        XCTAssertEqual(store.state.requestStatusText, "The chat service response could not be read.")
+        XCTAssertEqual(store.state.streamingAssistantDisplayModel?.content, "Hel")
+        XCTAssertEqual(store.state.streamingAssistantDisplayModel?.failure, .transportError)
 
         await store.finish()
+    }
+
+    // swiftlint:disable:next function_body_length
+    func testSecondSubmitIncludesPreviousAssistantTurnInExecutionRequest() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111121"))
+        let fixedMs: Int64 = 1_700_000_000_260
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
+            state.lockedModelHandle = selectedHandle
+            state.streamingAssistantDraft = nil
+        }
+
+        guard let firstRequest = stream.requests.first else {
+            XCTFail("Expected first execution request")
+            return
+        }
+        stream.yield(.final(response: AiChatResponse(
+            context: firstRequest.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "First answer"),
+            completedAtMs: fixedMs
+        )))
+        await store.receive(.executionEvent(.final(response: AiChatResponse(
+            context: firstRequest.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "First answer"),
+            completedAtMs: fixedMs
+        )))) { state in
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "First answer")
+            ]
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+        }
+
+        await store.send(.draftTextChanged("Second question")) { state in
+            state.draftText = "Second question"
+        }
+        await store.send(.submitTapped) { state in
+            state.draftText = ""
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "First answer"),
+                AiChatMessage(role: .user, content: "Second question")
+            ]
+            state.lockedModelHandle = selectedHandle
+            state.streamingAssistantDraft = nil
+        }
+
+        XCTAssertEqual(stream.requests.count, 2)
+        XCTAssertEqual(stream.requests[1].messages, [
+            AiChatMessage(role: .user, content: "Hello"),
+            AiChatMessage(role: .assistant, content: "First answer"),
+            AiChatMessage(role: .user, content: "Second question")
+        ])
+
+        stream.finish()
+        stream.finish(at: 1)
+        await store.finish()
+    }
+
+    func testCompletedRequestHasNoStatusTextAndNextSubmitCanStart() {
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111120"))
+        let requestContext = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000120")),
+            runID: AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000121")),
+            model: selectedHandle,
+            selectedRow: catalogRows[0],
+            selectedModel: models[0]
+        )
+        let request = AiChatRequest(context: requestContext, messages: [AiChatMessage(role: .user, content: "Hello")])
+        let completedLock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        ).recordingTerminal(at: 1_700_000_000_500, failure: nil, wasCancelled: false)
+
+        let state = AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "Hi")
+            ],
+            draftText: "Second message",
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .completed(completedLock)
+        )
+
+        XCTAssertNil(state.requestStatusText)
+        XCTAssertTrue(state.canSubmit)
     }
 
     func testOpenSettingsTappedDelegatesOpenAISettingsForNoProviderCTA() async {
@@ -189,5 +469,4 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             ))
         )
     }
-
 }
