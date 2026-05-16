@@ -7,6 +7,14 @@ public struct EntryGridViewRepresentable: NSViewRepresentable {
     public let store: StoreOf<EntryViewLayoutFeature>
     public let blankSpaceMenuProvider: (() -> NSMenu)?
 
+    public init(
+        store: StoreOf<EntryViewLayoutFeature>,
+        blankSpaceMenuProvider: (() -> NSMenu)?,
+    ) {
+        self.store = store
+        self.blankSpaceMenuProvider = blankSpaceMenuProvider
+    }
+
     public func makeCoordinator() -> EntryGridCoordinator {
         EntryGridCoordinator(store: store)
     }
@@ -110,7 +118,7 @@ public final class EntryGridView: NSView {
         private func applyLassoSelection(
             current: NSPoint,
             modifierFlags: NSEvent.ModifierFlags,
-            isFinal: Bool
+            isFinal: Bool,
         ) {
             guard let start = lassoStartPoint,
                   let layout = collectionViewLayout
@@ -125,7 +133,7 @@ public final class EntryGridView: NSView {
                 x: min(start.x, current.x),
                 y: min(start.y, current.y),
                 width: abs(current.x - start.x),
-                height: abs(current.y - start.y)
+                height: abs(current.y - start.y),
             )
 
             let attributes = layout.layoutAttributesForElements(in: selectionRect)
@@ -203,12 +211,12 @@ public final class EntryGridView: NSView {
         collectionView.backgroundColors = [.clear]
         collectionView.register(
             EntryGridCollectionViewItem.self,
-            forItemWithIdentifier: NSUserInterfaceItemIdentifier("EntryGridCollectionViewItem")
+            forItemWithIdentifier: NSUserInterfaceItemIdentifier("EntryGridCollectionViewItem"),
         )
         collectionView.register(
             EntryGridSectionHeaderView.self,
             forSupplementaryViewOfKind: NSCollectionView.elementKindSectionHeader,
-            withIdentifier: NSUserInterfaceItemIdentifier("EntryGridSectionHeaderView")
+            withIdentifier: NSUserInterfaceItemIdentifier("EntryGridSectionHeaderView"),
         )
         collectionView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         collectionView.setDraggingSourceOperationMask([.copy], forLocal: false)

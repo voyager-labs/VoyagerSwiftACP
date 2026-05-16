@@ -9,9 +9,18 @@ import VoyagerWidgetsEntryViewLayout
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
 
+    @StateObject private var contextMenuCoordinatorHolder: ContentPaneContextMenuCoordinatorHolder
+
     @Environment(\.fileManagerKeyCommandFocusCoordinator)
     private var keyCommandFocusCoordinator
     @FocusState var isKeyCommandFocused: Bool
+
+    init(store: StoreOf<FileManagerContentFeature>) {
+        self.store = store
+        _contextMenuCoordinatorHolder = StateObject(
+            wrappedValue: ContentPaneContextMenuCoordinatorHolder(store: store),
+        )
+    }
 
     private var mainContent: some View {
         ZStack {
@@ -25,7 +34,7 @@ struct ContentPageView: View {
             loadingView
         } else {
             let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-            let menuProvider = makeBlankSpaceMenuProvider(for: store)
+            let menuProvider = makeBlankSpaceMenuProvider()
             switch store.entryViewLayout.mode {
             case .list:
                 EntryListViewRepresentable(store: entryViewLayoutStore, blankSpaceMenuProvider: menuProvider)
@@ -42,7 +51,7 @@ struct ContentPageView: View {
             },
             onKeyDown: { event in
                 handleKeyboardEvent(event)
-            }
+            },
         )
         .focusable()
         .focused($isKeyCommandFocused)
@@ -99,7 +108,7 @@ struct ContentPageView: View {
             keyCode: event.keyCode,
             modifiers: KeyModifiers(event.modifierFlags),
             characters: event.characters,
-            charactersIgnoringModifiers: event.charactersIgnoringModifiers
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
         )
         store.send(.view(.handleKeyCommand(command)))
     }
@@ -109,15 +118,22 @@ struct ContentPageView: View {
         keyCommandFocusCoordinator?.requestFocus()
     }
 
-    private func makeBlankSpaceMenuProvider(
-        for store: StoreOf<FileManagerContentFeature>
-    ) -> (() -> NSMenu)? {
-        let coordinator = ContentPaneContextMenuCoordinator(store: store)
+    private func makeBlankSpaceMenuProvider() -> (() -> NSMenu)? {
+        let coordinator = contextMenuCoordinatorHolder.coordinator
         return { [coordinator] in
             ContentPaneContextMenuBuilder.makeMenu(
                 configuration: coordinator.configuration,
-                target: coordinator
+                target: coordinator,
             )
         }
+    }
+}
+
+@MainActor
+private final class ContentPaneContextMenuCoordinatorHolder: ObservableObject {
+    let coordinator: ContentPaneContextMenuCoordinator
+
+    init(store: StoreOf<FileManagerContentFeature>) {
+        coordinator = ContentPaneContextMenuCoordinator(store: store)
     }
 }

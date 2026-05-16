@@ -7,6 +7,14 @@ public struct EntryListViewRepresentable: NSViewRepresentable {
     public let store: StoreOf<EntryViewLayoutFeature>
     public let blankSpaceMenuProvider: (() -> NSMenu)?
 
+    public init(
+        store: StoreOf<EntryViewLayoutFeature>,
+        blankSpaceMenuProvider: (() -> NSMenu)?,
+    ) {
+        self.store = store
+        self.blankSpaceMenuProvider = blankSpaceMenuProvider
+    }
+
     public func makeCoordinator() -> EntryListCoordinator {
         EntryListCoordinator(store: store)
     }
@@ -150,7 +158,7 @@ public final class EntryListView: NSView {
         }
 
         if let outlineColumn = tableView.tableColumn(
-            withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.name.rawValue)
+            withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.name.rawValue),
         ) {
             tableView.outlineTableColumn = outlineColumn
         }
@@ -176,7 +184,7 @@ public final class EntryListView: NSView {
         if let sortDescriptorKey = column.sortDescriptorKey {
             tableColumn.sortDescriptorPrototype = NSSortDescriptor(
                 key: sortDescriptorKey,
-                ascending: column.defaultSortAscending
+                ascending: column.defaultSortAscending,
             )
         } else {
             tableColumn.sortDescriptorPrototype = nil

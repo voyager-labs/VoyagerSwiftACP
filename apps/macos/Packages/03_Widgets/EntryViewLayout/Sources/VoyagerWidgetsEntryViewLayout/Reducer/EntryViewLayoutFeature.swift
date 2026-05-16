@@ -17,6 +17,8 @@ public struct EntryViewLayoutFeature {
     @Dependency(\.workspaceClient)
     private var workspaceClient
 
+    public init() {}
+
     public var body: some Reducer<State, Action> {
         Scope(state: \.entryOperations, action: \.entryOperations) {
             EntryOperationsFeature()
@@ -198,7 +200,7 @@ public struct EntryViewLayoutFeature {
                     paths,
                     showHidden: showHidden,
                     entryLoadingClient: entryLoadingClient,
-                    workspaceClient: workspaceClient
+                    workspaceClient: workspaceClient,
                 )
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: converted)
                 return Self.updateEntriesAndReapply(&state)
@@ -209,7 +211,7 @@ public struct EntryViewLayoutFeature {
                     paths,
                     showHidden: state.showHiddenFiles,
                     entryLoadingClient: entryLoadingClient,
-                    workspaceClient: workspaceClient
+                    workspaceClient: workspaceClient,
                 )
                 guard !restoredItems.isEmpty else { return .none }
 
@@ -261,7 +263,7 @@ public struct EntryViewLayoutFeature {
                 case .delegate(.requestApply):
                     return .send(.entryArrangements(.apply(
                         items: state.entries,
-                        isCollectionMode: state.isCollectionMode
+                        isCollectionMode: state.isCollectionMode,
                     )))
 
                 case let .delegate(.applied(sortedItems, _)):
