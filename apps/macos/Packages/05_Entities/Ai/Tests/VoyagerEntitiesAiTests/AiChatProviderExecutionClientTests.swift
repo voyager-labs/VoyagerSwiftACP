@@ -17,12 +17,12 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         XCTAssertThrowsError(
             try client.execute(
                 request,
-                .oauth(OAuthCredentialFile(accessToken: "oauth-token"))
-            )
+                .oauth(OAuthCredentialFile(accessToken: "oauth-token")),
+            ),
         ) { error in
             XCTAssertEqual(
                 error as? AiChatProviderExecutionClientError,
-                .invalidCredential(provider: .openai, expected: .apiKey)
+                .invalidCredential(provider: .openai, expected: .apiKey),
             )
         }
         XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 0)
@@ -40,12 +40,12 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 onDelta("Codex ")
                 onDelta("answer")
                 return "Codex answer\n"
-            }
+            },
         )
 
         let events = try collect(client.execute(
             request,
-            .oauth(OAuthCredentialFile(accessToken: "codex-token"))
+            .oauth(OAuthCredentialFile(accessToken: "codex-token")),
         ))
 
         XCTAssertEqual(events, [
@@ -55,10 +55,83 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Codex answer"),
-                completedAtMs: 30001
+                completedAtMs: 30001,
             ))
         ])
         XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 0)
+    }
+
+    func testCodexProcessStateTerminatesProcessSetAfterCancellation() throws {
+        let state = CodexProcessState(cleanupURLs: [])
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["5"]
+        try process.run()
+
+        state.cancel()
+        state.set(process: process)
+        process.waitUntilExit()
+
+        XCTAssertFalse(process.isRunning)
+        XCTAssertNotEqual(process.terminationStatus, 0)
+    }
+
+    func testCodexJSONLineParser_acceptsCurrentAgentMessageDeltaShapes() {
+        XCTAssertEqual(
+            AiChatProviderExecutionClient.codexAgentMessageDelta(
+                fromJSONLine: #"{"method":"item/agentMessage/delta","params":{"delta":"Hel"}}"#,
+            ),
+            "Hel",
+        )
+        XCTAssertEqual(
+            AiChatProviderExecutionClient.codexAgentMessageDelta(
+                fromJSONLine: #"{"type":"item.delta","item":{"type":"agent_message","text":"lo"}}"#,
+            ),
+            "lo",
+        )
+        let updatedLine = #"""
+        {
+          "type": "item.updated",
+          "item": {
+            "type": "message",
+            "role": "assistant",
+            "content": [{ "type": "output_text", "text": " there" }]
+          }
+        }
+        """#
+        XCTAssertEqual(
+            AiChatProviderExecutionClient.codexAgentMessageDelta(fromJSONLine: updatedLine),
+            "there",
+        )
+        XCTAssertEqual(
+            AiChatProviderExecutionClient.codexAgentMessageDelta(
+                fromJSONLine: #"{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Done"}}"#,
+            ),
+            "Done",
+        )
+        XCTAssertEqual(
+            AiChatProviderExecutionClient.codexAgentMessageDelta(
+                fromJSONLine: #"""
+{"method":"item/completed","params":{"item":{"type":"agent_message","text":"Method done"}}}
+"""#,
+            ),
+            "Method done",
+        )
+    }
+
+    func testCodexCLIErrorMapping_classifiesUsageLimitsBeforeInvalidRequest() {
+        XCTAssertEqual(
+            AiChatProviderExecutionClient.codexFailureReason(
+                forCLIErrorOutput: "Usage limit reached for this account",
+            ),
+            .quotaExceeded,
+        )
+        XCTAssertEqual(
+            AiChatProviderExecutionClient.codexFailureReason(
+                forCLIErrorOutput: "rate limit exceeded; too many requests",
+            ),
+            .rateLimited,
+        )
     }
 
     func testExecute_openAIStreamingSSE_emitsStartedDeltaFinalInOrder() throws {
@@ -68,13 +141,13 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             return makeHTTPResponse(
                 statusCode: 200,
                 contentType: "text/event-stream",
-                body: openAIStreamingBody()
+                body: openAIStreamingBody(),
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
         XCTAssertEqual(events, [
@@ -84,7 +157,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hello"),
-                completedAtMs: 9999
+                completedAtMs: 9999,
             ))
         ])
         XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 1)
@@ -97,13 +170,13 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             return makeHTTPResponse(
                 statusCode: 200,
                 contentType: "application/json",
-                body: openAIFinalOnlyBody()
+                body: openAIFinalOnlyBody(),
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
         XCTAssertEqual(events, [
@@ -111,7 +184,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hello"),
-                completedAtMs: 10001
+                completedAtMs: 10001,
             ))
         ])
     }
@@ -122,13 +195,13 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             makeHTTPResponse(
                 statusCode: 401,
                 contentType: "application/json",
-                body: #"{"error":{"message":"invalid api key"}}"#
+                body: #"{"error":{"message":"invalid api key"}}"#,
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
         XCTAssertEqual(events, [
@@ -143,13 +216,13 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             makeHTTPResponse(
                 statusCode: 404,
                 contentType: "application/json",
-                body: #"{"error":{"message":"The model does not exist"}}"#
+                body: #"{"error":{"message":"The model does not exist"}}"#,
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
         XCTAssertEqual(events, [
@@ -166,7 +239,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
         XCTAssertEqual(events, [
@@ -178,25 +251,25 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
     func testExecute_anthropicStreamingSSE_emitsStartedDeltaFinalInOrder() throws {
         let request = makeAnthropicPreparedRequestFixture(
             selectedThinking: .tokenBudget(1024),
-            capability: .tokenBudget(min: 1024, max: 4096, defaultValue: 2048)
+            capability: .tokenBudget(min: 1024, max: 4096, defaultValue: 2048),
         )
         let client = makeLiveClient(now: 20001) { outboundRequest in
             try assertAnthropicRequest(
                 outboundRequest,
                 expectedModel: "claude-sonnet-4-6",
-                expectedThinking: .enabled(1024)
+                expectedThinking: .enabled(1024, display: "omitted"),
             )
             return makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 200,
                 contentType: "text/event-stream",
-                body: anthropicStreamingBody()
+                body: anthropicStreamingBody(),
+                url: "https://api.anthropic.com/v1/messages",
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -206,7 +279,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
-                completedAtMs: 20001
+                completedAtMs: 20001,
             ))
         ])
     }
@@ -214,25 +287,25 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
     func testExecute_anthropicStreamingSSEWithMessageDelta_emitsFinalInsteadOfFailure() throws {
         let request = makeAnthropicPreparedRequestFixture(
             selectedThinking: .effort(.low),
-            capability: .adaptive(effortValues: [.low, .high], defaultValue: .low)
+            capability: .adaptive(effortValues: [.low, .high], defaultValue: .low),
         )
-        let client = makeLiveClient(now: 200011) { outboundRequest in
+        let client = makeLiveClient(now: 200_011) { outboundRequest in
             try assertAnthropicRequest(
                 outboundRequest,
                 expectedModel: "claude-sonnet-4-6",
-                expectedThinking: .adaptive("low")
+                expectedThinking: .adaptive("low", display: "omitted"),
             )
             return makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 200,
                 contentType: "text/event-stream",
-                body: anthropicStreamingBodyWithThinkingAndMessageDelta()
+                body: anthropicStreamingBodyWithThinkingAndMessageDelta(),
+                url: "https://api.anthropic.com/v1/messages",
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -242,33 +315,59 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Final answer"),
-                completedAtMs: 200011
+                completedAtMs: 200_011,
             ))
         ])
+    }
+
+    func testAnthropicSSEByteFrameAccumulator_emitsPayloadBeforeStreamFinish() throws {
+        var accumulator = SSEByteFrameAccumulator()
+        var payloads: [String] = []
+        let firstFrames = """
+        event: content_block_delta
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}
+
+        """
+        for byte in firstFrames.utf8 {
+            try payloads.append(contentsOf: accumulator.consume(byte))
+        }
+
+        XCTAssertEqual(payloads.count, 1)
+        var state = AnthropicStreamConsumptionState()
+        let decoder = JSONDecoder()
+        XCTAssertEqual(
+            try AiChatProviderExecutionClient.consumeAnthropicPayload(
+                XCTUnwrap(payloads.first),
+                decoder: decoder,
+                state: &state,
+            ),
+            "Hi",
+        )
+        XCTAssertEqual(state.response.finalText, "Hi")
     }
 
     func testExecute_anthropicFinalOnlyJSON_emitsStartedFinal() throws {
         let request = makeAnthropicPreparedRequestFixture(
             selectedThinking: AiThinkingSelection.none,
-            capability: .effort(values: [.low, .high], defaultValue: nil)
+            capability: .effort(values: [.low, .high], defaultValue: nil),
         )
         let client = makeLiveClient(now: 20002) { outboundRequest in
             try assertAnthropicRequest(
                 outboundRequest,
                 expectedModel: "claude-sonnet-4-6",
-                expectedThinking: .disabled
+                expectedThinking: .disabled,
             )
             return makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 200,
                 contentType: "application/json",
-                body: anthropicFinalOnlyBody()
+                body: anthropicFinalOnlyBody(),
+                url: "https://api.anthropic.com/v1/messages",
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -276,7 +375,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             .final(response: AiChatResponse(
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
-                completedAtMs: 20002
+                completedAtMs: 20002,
             ))
         ])
     }
@@ -284,57 +383,57 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
     func testExecute_anthropicAdaptiveThinking_usesAdaptivePayloadWithoutBudgetTokens() throws {
         let request = makeAnthropicPreparedRequestFixture(
             selectedThinking: .tokenBudget(1024),
-            capability: .adaptive(effortValues: [.low, .high], defaultValue: .low)
+            capability: .adaptive(effortValues: [.low, .high], defaultValue: .low),
         )
         let client = makeLiveClient { outboundRequest in
             try assertAnthropicRequest(
                 outboundRequest,
                 expectedModel: "claude-sonnet-4-6",
-                expectedThinking: .adaptive("low")
+                expectedThinking: .adaptive("low", display: "omitted"),
             )
             return makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 200,
                 contentType: "application/json",
-                body: anthropicFinalOnlyBody()
+                body: anthropicFinalOnlyBody(),
+                url: "https://api.anthropic.com/v1/messages",
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events.first, .started(context: request.context))
         XCTAssertEqual(events.last, .final(response: AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
-            completedAtMs: 5000
+            completedAtMs: 5000,
         )))
     }
 
     func testExecute_anthropicUnsupportedDisabledThinking_omitsThinkingPayload() throws {
         let request = makeAnthropicPreparedRequestFixture(
             selectedThinking: AiThinkingSelection.none,
-            capability: .adaptive(effortValues: [.low, .high], defaultValue: .low)
+            capability: .adaptive(effortValues: [.low, .high], defaultValue: .low),
         )
         let client = makeLiveClient { outboundRequest in
             try assertAnthropicRequest(
                 outboundRequest,
                 expectedModel: "claude-sonnet-4-6",
-                expectedThinking: .omitted
+                expectedThinking: .omitted,
             )
             return makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 200,
                 contentType: "application/json",
-                body: anthropicFinalOnlyBody()
+                body: anthropicFinalOnlyBody(),
+                url: "https://api.anthropic.com/v1/messages",
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events.count, 2)
@@ -345,16 +444,15 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let request = makeAnthropicPreparedRequestFixture()
         let client = makeLiveClient { _ in
             makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 401,
                 contentType: "application/json",
-                body: #"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#
+                body: #"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#,
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -367,16 +465,15 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let request = makeAnthropicPreparedRequestFixture()
         let client = makeLiveClient { _ in
             makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 404,
                 contentType: "application/json",
-                body: #"{"type":"error","error":{"type":"not_found_error","message":"model not found"}}"#
+                body: #"{"type":"error","error":{"type":"not_found_error","message":"model not found"}}"#,
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -389,16 +486,15 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let request = makeAnthropicPreparedRequestFixture()
         let client = makeLiveClient { _ in
             makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 402,
                 contentType: "application/json",
-                body: #"{"type":"error","error":{"type":"billing_error","message":"credit balance is too low"}}"#
+                body: #"{"type":"error","error":{"type":"billing_error","message":"credit balance is too low"}}"#,
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -411,16 +507,15 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let request = makeAnthropicPreparedRequestFixture()
         let client = makeLiveClient { _ in
             makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 429,
                 contentType: "application/json",
-                body: #"{"type":"error","error":{"type":"rate_limit_error","message":"quota exceeded"}}"#
+                body: #"{"type":"error","error":{"type":"rate_limit_error","message":"quota exceeded"}}"#,
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -433,16 +528,15 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let request = makeAnthropicPreparedRequestFixture()
         let client = makeLiveClient { _ in
             makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 200,
                 contentType: "text/event-stream",
-                body: anthropicStreamErrorBody(type: "invalid_request_error")
+                body: anthropicStreamErrorBody(type: "invalid_request_error"),
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -455,16 +549,16 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let request = makeAnthropicPreparedRequestFixture()
         let client = makeLiveClient { _ in
             makeHTTPResponse(
-                url: "https://api.anthropic.com/v1/messages",
                 statusCode: 200,
                 contentType: "text/event-stream",
-                body: "event: content_block_delta\ndata: {not-json}\n\n"
+                body: "event: content_block_delta\ndata: {not-json}\n\n",
+                url: "https://api.anthropic.com/v1/messages",
             )
         }
 
         let events = try collect(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
         XCTAssertEqual(events, [
@@ -477,13 +571,13 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let request = makeRequest(
             provider: .openai,
             rawModelID: "claude-sonnet",
-            modelProvider: .anthropic
+            modelProvider: .anthropic,
         )
 
         XCTAssertThrowsError(try AiChatProviderRequestPayload.lower(request)) { error in
             XCTAssertEqual(
                 error as? AiChatProviderRequestLoweringError,
-                .modelProviderMismatch(requestProvider: .openai, modelProvider: .anthropic)
+                .modelProviderMismatch(requestProvider: .openai, modelProvider: .anthropic),
             )
         }
     }
@@ -492,7 +586,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 private extension AiChatProviderExecutionClientTests {
     func makeLiveClient(
         now: Int64 = 5000,
-        handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+        handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data),
     ) -> AiChatProviderExecutionClient {
         OpenAIExecutionURLProtocol.reset()
         OpenAIExecutionURLProtocol.handler = handler
@@ -511,7 +605,7 @@ private extension AiChatProviderExecutionClientTests {
     func makeRequest(
         provider: AiProvider,
         rawModelID: String,
-        modelProvider: AiProvider? = nil
+        modelProvider: AiProvider? = nil,
     ) -> AiChatRequest {
         AiChatRequest(
             context: AiChatRequestContextSnapshot(
@@ -523,9 +617,9 @@ private extension AiChatProviderExecutionClientTests {
                 sessionStatus: .idle,
                 currentContext: .init(summary: "workspace context"),
                 promptSummary: nil,
-                submittedAtMs: 1
+                submittedAtMs: 1,
             ),
-            messages: [AiChatMessage(role: .user, content: "Ping")]
+            messages: [AiChatMessage(role: .user, content: "Ping")],
         )
     }
 
@@ -537,7 +631,7 @@ private extension AiChatProviderExecutionClientTests {
             displayName: "Pretty Name",
             providerDisplayName: "OpenAI",
             thinkingCapability: .effort(values: [.high], defaultValue: nil),
-            unavailableReason: nil
+            unavailableReason: nil,
         )
 
         return AiChatRequest(
@@ -551,26 +645,33 @@ private extension AiChatProviderExecutionClientTests {
                 sessionStatus: .idle,
                 currentContext: AiChatCurrentContextSnapshot(
                     summary: "workspace context",
-                    // swiftlint:disable:next line_length
-                    references: [AiChatContextReference(kind: .file, identifier: "/tmp/workspace/File.swift", title: "File.swift")],
-                    // swiftlint:disable:next line_length
-                    items: [AiChatContextItem(kind: .file, identifier: "item-1", title: "Notes.md", subtitle: "/tmp/workspace/Notes.md")],
-                    attachments: [AiChatContextAttachment(identifier: "attachment-1", title: "Screenshot")]
+                    references: [AiChatContextReference(
+                        kind: .file,
+                        identifier: "/tmp/workspace/File.swift",
+                        title: "File.swift",
+                    )],
+                    items: [AiChatContextItem(
+                        kind: .file,
+                        identifier: "item-1",
+                        title: "Notes.md",
+                        subtitle: "/tmp/workspace/Notes.md",
+                    )],
+                    attachments: [AiChatContextAttachment(identifier: "attachment-1", title: "Screenshot")],
                 ),
                 promptSummary: "summarized prompt",
-                submittedAtMs: 1234
+                submittedAtMs: 1234,
             ),
             messages: [
                 AiChatMessage(role: .system, content: "System rule"),
                 AiChatMessage(role: .user, content: "Hello"),
                 AiChatMessage(role: .assistant, content: "Previous answer")
-            ]
+            ],
         )
     }
 
     func makeAnthropicPreparedRequestFixture(
         selectedThinking: AiThinkingSelection? = .effort(.high),
-        capability: AiModelThinkingCapability = .adaptive(effortValues: [.low, .high], defaultValue: .low)
+        capability: AiModelThinkingCapability = .adaptive(effortValues: [.low, .high], defaultValue: .low),
     ) -> AiChatRequest {
         let selectedModel = AiProviderModel(
             id: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-6"),
@@ -579,7 +680,7 @@ private extension AiChatProviderExecutionClientTests {
             displayName: "Claude Sonnet 4.6",
             providerDisplayName: "Anthropic",
             thinkingCapability: capability,
-            unavailableReason: nil
+            unavailableReason: nil,
         )
 
         return AiChatRequest(
@@ -593,17 +694,20 @@ private extension AiChatProviderExecutionClientTests {
                 sessionStatus: .idle,
                 currentContext: AiChatCurrentContextSnapshot(
                     summary: "workspace context",
-                    // swiftlint:disable:next line_length
-                    references: [AiChatContextReference(kind: .file, identifier: "/tmp/workspace/File.swift", title: "File.swift")]
+                    references: [AiChatContextReference(
+                        kind: .file,
+                        identifier: "/tmp/workspace/File.swift",
+                        title: "File.swift",
+                    )],
                 ),
                 promptSummary: "anthropic prompt summary",
-                submittedAtMs: 2345
+                submittedAtMs: 2345,
             ),
             messages: [
                 AiChatMessage(role: .system, content: "Answer briefly"),
                 AiChatMessage(role: .user, content: "Say hi"),
                 AiChatMessage(role: .assistant, content: "Previous reply")
-            ]
+            ],
         )
     }
 }
@@ -662,17 +766,19 @@ private struct CapturedAnthropicMessage: Decodable {
 private struct CapturedAnthropicThinking: Decodable {
     let type: String
     let budgetTokens: Int?
+    let display: String?
 
     enum CodingKeys: String, CodingKey {
         case type
         case budgetTokens = "budget_tokens"
+        case display
     }
 }
 
 private enum ExpectedAnthropicThinking: Equatable {
     case disabled
-    case enabled(Int)
-    case adaptive(String)
+    case enabled(Int, display: String?)
+    case adaptive(String, display: String?)
     case omitted
 }
 
@@ -725,6 +831,7 @@ private func assertOpenAIRequest(_ request: URLRequest, expectedModel: String) t
     XCTAssertEqual(request.httpMethod, "POST")
     XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sk-openai")
     XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
 
     let body = try XCTUnwrap(requestBodyData(for: request))
     let decoded = try JSONDecoder().decode(CapturedOpenAIRequestBody.self, from: body)
@@ -742,13 +849,14 @@ private func assertOpenAIRequest(_ request: URLRequest, expectedModel: String) t
 private func assertAnthropicRequest(
     _ request: URLRequest,
     expectedModel: String,
-    expectedThinking: ExpectedAnthropicThinking
+    expectedThinking: ExpectedAnthropicThinking,
 ) throws {
     XCTAssertEqual(request.url?.absoluteString, "https://api.anthropic.com/v1/messages")
     XCTAssertEqual(request.httpMethod, "POST")
     XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "sk-ant")
     XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
     XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
 
     let body = try XCTUnwrap(requestBodyData(for: request))
     let decoded = try JSONDecoder().decode(CapturedAnthropicRequestBody.self, from: body)
@@ -765,14 +873,17 @@ private func assertAnthropicRequest(
     case .disabled:
         XCTAssertEqual(decoded.thinking?.type, "disabled")
         XCTAssertNil(decoded.thinking?.budgetTokens)
+        XCTAssertNil(decoded.thinking?.display)
         XCTAssertNil(decoded.outputConfig)
-    case let .enabled(budget):
+    case let .enabled(budget, display):
         XCTAssertEqual(decoded.thinking?.type, "enabled")
         XCTAssertEqual(decoded.thinking?.budgetTokens, budget)
+        XCTAssertEqual(decoded.thinking?.display, display)
         XCTAssertNil(decoded.outputConfig)
-    case let .adaptive(effort):
+    case let .adaptive(effort, display):
         XCTAssertEqual(decoded.thinking?.type, "adaptive")
         XCTAssertNil(decoded.thinking?.budgetTokens)
+        XCTAssertEqual(decoded.thinking?.display, display)
         XCTAssertEqual(decoded.outputConfig?.effort, effort)
     case .omitted:
         XCTAssertNil(decoded.thinking)
@@ -898,14 +1009,14 @@ private func makeHTTPResponse(
     statusCode: Int,
     contentType: String,
     body: String,
-    url: String = "https://api.openai.com/v1/responses"
+    url: String = "https://api.openai.com/v1/responses",
 ) -> (HTTPURLResponse, Data) {
     let resolvedURL = URL(string: url) ?? URL(fileURLWithPath: "/invalid-url")
     let response = HTTPURLResponse(
         url: resolvedURL,
         statusCode: statusCode,
         httpVersion: nil,
-        headerFields: ["Content-Type": contentType]
+        headerFields: ["Content-Type": contentType],
     ) ?? HTTPURLResponse()
     return (response, Data(body.utf8))
 }
@@ -915,7 +1026,7 @@ private func makeUUID(_ rawValue: String) -> UUID {
 }
 
 private func collect(
-    _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>
+    _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
 ) throws -> [AiChatProviderExecutionEvent] {
     let expectation = XCTestExpectation(description: "Collect provider execution events")
     nonisolated(unsafe) var result: Result<[AiChatProviderExecutionEvent], Error>?
