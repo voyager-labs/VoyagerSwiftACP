@@ -54,7 +54,7 @@ final class AiChatContractTests: XCTestCase {
                         subtitle: "Project readme",
                         metadata: ["path": "docs/Readme.md"]
                     )
-                ]
+                ],
                 items: [
                     AiChatContextItem(
                         kind: .file,
@@ -68,10 +68,10 @@ final class AiChatContractTests: XCTestCase {
                                 identifier: "selection-1",
                                 title: "Selection",
                                 metadata: ["line": "12"]
-                            ),
+                            )
                         ]
                     )
-                ]
+                ],
                 attachments: [
                     AiChatContextAttachment(
                         identifier: "attachment-1",

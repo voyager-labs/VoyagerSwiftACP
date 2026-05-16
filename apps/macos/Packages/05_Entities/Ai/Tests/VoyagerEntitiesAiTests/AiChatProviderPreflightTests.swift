@@ -211,6 +211,20 @@ final class AiChatProviderPreflightTests: XCTestCase {
             AiChatProviderExecutionFailureMapper.map(.cancelled),
             .cancelled
         )
+        XCTAssertEqual(
+            AiChatProviderExecutionFailureMapper.map(.httpError(
+                statusCode: 429,
+                body: "usage limit reached"
+            )),
+            .quotaExceeded
+        )
+        XCTAssertEqual(
+            AiChatProviderExecutionFailureMapper.map(.httpError(
+                statusCode: 400,
+                body: "monthly limit reached for this plan"
+            )),
+            .quotaExceeded
+        )
     }
 }
 

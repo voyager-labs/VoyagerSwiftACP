@@ -1,4 +1,3 @@
-// swiftlint:disable line_length cyclomatic_complexity
 import Foundation
 
 public enum AiChatProviderPreflightError: Error, Equatable, Sendable {
@@ -24,7 +23,7 @@ public struct AiChatProviderPreflightResult: Equatable, Sendable {
     public init(
         payload: AiChatProviderRequestPayload,
         credential: AiChatProviderValidatedCredential,
-        warnings: [AiChatProviderPreflightWarning] = []
+        warnings: [AiChatProviderPreflightWarning] = [],
     ) {
         self.payload = payload
         self.credential = credential
@@ -35,13 +34,13 @@ public struct AiChatProviderPreflightResult: Equatable, Sendable {
 public enum AiChatProviderPreflight {
     public static func prepare(
         _ request: AiChatRequest,
-        credential: StoredCredentialPayload?
+        credential: StoredCredentialPayload?,
     ) throws -> AiChatProviderPreflightResult {
         try prepare(
             context: request.context,
             messages: request.messages,
             credential: credential,
-            thinkingCapability: request.context.selectedModel?.thinkingCapability
+            thinkingCapability: request.context.selectedModel?.thinkingCapability,
         )
     }
 
@@ -49,13 +48,13 @@ public enum AiChatProviderPreflight {
         context: AiChatRequestContextSnapshot,
         messages: [AiChatMessage],
         credential: StoredCredentialPayload?,
-        thinkingCapability: AiModelThinkingCapability?
+        thinkingCapability: AiModelThinkingCapability?,
     ) throws -> AiChatProviderPreflightResult {
         let validatedCredential = try validateCredential(for: context.provider, credential: credential)
         let (loweredThinking, warnings) = lowerThinking(
             selection: context.selectedThinking,
             provider: context.provider,
-            capability: thinkingCapability
+            capability: thinkingCapability,
         )
         let request = AiChatRequest(context: context, messages: messages)
         let payload: AiChatProviderRequestPayload
@@ -68,13 +67,13 @@ public enum AiChatProviderPreflight {
         return AiChatProviderPreflightResult(
             payload: payload,
             credential: validatedCredential,
-            warnings: warnings
+            warnings: warnings,
         )
     }
 
     public static func validateCredential(
         for provider: AiProvider,
-        credential: StoredCredentialPayload?
+        credential: StoredCredentialPayload?,
     ) throws -> AiChatProviderValidatedCredential {
         guard let credential else {
             throw AiChatProviderPreflightError.missingCredential(provider)
@@ -106,7 +105,7 @@ public enum AiChatProviderPreflight {
     public static func lowerThinking(
         selection: AiThinkingSelection?,
         provider: AiProvider,
-        capability: AiModelThinkingCapability?
+        capability: AiModelThinkingCapability?,
     ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
         guard let selection else {
             return (nil, [])
@@ -128,7 +127,8 @@ public enum AiChatProviderExecutionFailureMapper {
             return mapHTTPStatus(statusCode, body: body)
         case let .networkError(description):
             let normalized = description.lowercased()
-            if normalized.contains("offline") || normalized.contains("not connected") || normalized.contains("network") {
+            if normalized.contains("offline") || normalized.contains("not connected") || normalized
+                .contains("network") {
                 return .network
             }
             return .transportError
@@ -146,7 +146,7 @@ private extension AiChatProviderPreflight {
     static func lowerOpenAIStyleThinking(
         selection: AiThinkingSelection,
         provider: AiProvider,
-        capability: AiModelThinkingCapability?
+        capability: AiModelThinkingCapability?,
     ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
         switch selection {
         case .none:
@@ -156,91 +156,183 @@ private extension AiChatProviderPreflight {
             switch capability {
             case let .effort(values, _), let .adaptive(values, _):
                 guard values.contains(value) else {
-                    return omittedThinking(provider: provider, selection: selection, reason: "Selected effort is not supported by the model capability.")
+                    return omittedThinking(
+                        provider: provider,
+                        selection: selection,
+                        reason: "Selected effort is not supported by the model capability.",
+                    )
                 }
                 return (.effort(value), [])
             case .unknown, .unsupported, .tokenBudget, nil:
-                return omittedThinking(provider: provider, selection: selection, reason: "The model capability does not advertise support for effort-based thinking.")
+                return omittedThinking(
+                    provider: provider,
+                    selection: selection,
+                    reason: "The model capability does not advertise support for effort-based thinking.",
+                )
             }
 
         case let .tokenBudget(value):
             switch capability {
             case let .tokenBudget(min, max, _):
                 guard (min ... max).contains(value) else {
-                    return omittedThinking(provider: provider, selection: selection, reason: "Selected token budget is outside the supported range.")
+                    return omittedThinking(
+                        provider: provider,
+                        selection: selection,
+                        reason: "Selected token budget is outside the supported range.",
+                    )
                 }
                 return (.tokenBudget(value), [])
             case .effort, .adaptive, .unknown, .unsupported, nil:
-                return omittedThinking(provider: provider, selection: selection, reason: "The model capability does not advertise token-budget thinking.")
+                return omittedThinking(
+                    provider: provider,
+                    selection: selection,
+                    reason: "The model capability does not advertise token-budget thinking.",
+                )
             }
         }
     }
 
     static func lowerAnthropicThinking(
         selection: AiThinkingSelection,
-        capability: AiModelThinkingCapability?
+        capability: AiModelThinkingCapability?,
     ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
         switch selection {
         case .none:
-            switch capability {
-            case .effort, .tokenBudget:
-                return (.disabled, [])
-            case .adaptive, .unknown, .unsupported, nil:
-                return omittedThinking(provider: .anthropic, selection: selection, reason: "This model capability does not confirm disabled thinking support.")
-            }
-
+            lowerAnthropicNoneThinking(selection: selection, capability: capability)
         case let .effort(value):
-            switch capability {
-            case let .effort(values, _):
-                guard values.contains(value) else {
-                    return omittedThinking(provider: .anthropic, selection: selection, reason: "Selected effort is not supported by the model capability.")
-                }
-                return (.effort(value), [])
-            case let .adaptive(values, defaultValue):
-                let effectiveEffort = values.contains(value) ? value : defaultValue
-                guard effectiveEffort != nil else {
-                    return omittedThinking(provider: .anthropic, selection: selection, reason: "Adaptive-only thinking could not honor the selected effort.")
-                }
-                return (.adaptive(defaultEffort: effectiveEffort), [
-                    .omittedThinkingSelection(
-                        provider: .anthropic,
-                        selection: selection,
-                        reason: "Adaptive-only capability lowered to adaptive/default instead of a direct effort payload."
-                    )
-                ])
-            case .tokenBudget, .unknown, .unsupported, nil:
-                return omittedThinking(provider: .anthropic, selection: selection, reason: "The model capability does not advertise effort-based thinking.")
-            }
-
+            lowerAnthropicEffortThinking(value: value, selection: selection, capability: capability)
         case let .tokenBudget(value):
-            switch capability {
-            case let .tokenBudget(min, max, _):
-                guard (min ... max).contains(value) else {
-                    return omittedThinking(provider: .anthropic, selection: selection, reason: "Selected token budget is outside the supported range.")
-                }
-                return (.tokenBudget(value), [])
-            case let .adaptive(_, defaultValue):
-                return (.adaptive(defaultEffort: defaultValue), [
-                    .omittedThinkingSelection(
-                        provider: .anthropic,
-                        selection: selection,
-                        reason: "Adaptive-only capability omitted manual token budget and fell back to adaptive/default."
-                    )
-                ])
-            case .effort, .unknown, .unsupported, nil:
-                return omittedThinking(provider: .anthropic, selection: selection, reason: "The model capability does not advertise manual token-budget thinking.")
-            }
+            lowerAnthropicTokenBudgetThinking(value: value, selection: selection, capability: capability)
         }
+    }
+
+    static func lowerAnthropicNoneThinking(
+        selection: AiThinkingSelection,
+        capability: AiModelThinkingCapability?,
+    ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
+        switch capability {
+        case .effort, .tokenBudget:
+            (.disabled, [])
+        case .adaptive, .unknown, .unsupported, nil:
+            omittedThinking(
+                provider: .anthropic,
+                selection: selection,
+                reason: "This model capability does not confirm disabled thinking support.",
+            )
+        }
+    }
+
+    static func lowerAnthropicEffortThinking(
+        value: AiThinkingEffort,
+        selection: AiThinkingSelection,
+        capability: AiModelThinkingCapability?,
+    ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
+        switch capability {
+        case let .effort(values, _):
+            lowerAnthropicDirectEffort(value: value, values: values, selection: selection)
+        case let .adaptive(values, defaultValue):
+            lowerAnthropicAdaptiveEffort(
+                value: value,
+                values: values,
+                defaultValue: defaultValue,
+                selection: selection,
+            )
+        case .tokenBudget, .unknown, .unsupported, nil:
+            omittedThinking(
+                provider: .anthropic,
+                selection: selection,
+                reason: "The model capability does not advertise effort-based thinking.",
+            )
+        }
+    }
+
+    static func lowerAnthropicDirectEffort(
+        value: AiThinkingEffort,
+        values: [AiThinkingEffort],
+        selection: AiThinkingSelection,
+    ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
+        guard values.contains(value) else {
+            return omittedThinking(
+                provider: .anthropic,
+                selection: selection,
+                reason: "Selected effort is not supported by the model capability.",
+            )
+        }
+        return (.effort(value), [])
+    }
+
+    static func lowerAnthropicAdaptiveEffort(
+        value: AiThinkingEffort,
+        values: [AiThinkingEffort],
+        defaultValue: AiThinkingEffort?,
+        selection: AiThinkingSelection,
+    ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
+        let effectiveEffort = values.contains(value) ? value : defaultValue
+        guard effectiveEffort != nil else {
+            return omittedThinking(
+                provider: .anthropic,
+                selection: selection,
+                reason: "Adaptive-only thinking could not honor the selected effort.",
+            )
+        }
+        return (.adaptive(defaultEffort: effectiveEffort), [
+            .omittedThinkingSelection(
+                provider: .anthropic,
+                selection: selection,
+                reason: "Adaptive capability lowered effort selection to adaptive/default.",
+            )
+        ])
+    }
+
+    static func lowerAnthropicTokenBudgetThinking(
+        value: Int,
+        selection: AiThinkingSelection,
+        capability: AiModelThinkingCapability?,
+    ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
+        switch capability {
+        case let .tokenBudget(min, max, _):
+            lowerAnthropicManualBudget(value: value, min: min, max: max, selection: selection)
+        case let .adaptive(_, defaultValue):
+            (.adaptive(defaultEffort: defaultValue), [
+                .omittedThinkingSelection(
+                    provider: .anthropic,
+                    selection: selection,
+                    reason: "Adaptive capability omitted manual token budget.",
+                )
+            ])
+        case .effort, .unknown, .unsupported, nil:
+            omittedThinking(
+                provider: .anthropic,
+                selection: selection,
+                reason: "The model capability does not advertise manual token-budget thinking.",
+            )
+        }
+    }
+
+    static func lowerAnthropicManualBudget(
+        value: Int,
+        min: Int,
+        max: Int,
+        selection: AiThinkingSelection,
+    ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
+        guard (min ... max).contains(value) else {
+            return omittedThinking(
+                provider: .anthropic,
+                selection: selection,
+                reason: "Selected token budget is outside the supported range.",
+            )
+        }
+        return (.tokenBudget(value), [])
     }
 
     static func omittedThinking(
         provider: AiProvider,
         selection: AiThinkingSelection,
-        reason: String
+        reason: String,
     ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
         (
             nil,
-            [.omittedThinkingSelection(provider: provider, selection: selection, reason: reason)]
+            [.omittedThinkingSelection(provider: provider, selection: selection, reason: reason)],
         )
     }
 }
@@ -287,7 +379,11 @@ private extension AiChatProviderExecutionFailureMapper {
             || normalized.contains("balance")
             || normalized.contains("insufficient_quota")
             || normalized.contains("payment")
+            || normalized.contains("usage limit")
+            || normalized.contains("limit reached")
+            || normalized.contains("monthly limit")
+            || normalized.contains("daily limit")
+            || normalized.contains("spending limit")
+            || normalized.contains("plan limit")
     }
 }
-
-// swiftlint:enable line_length cyclomatic_complexity
