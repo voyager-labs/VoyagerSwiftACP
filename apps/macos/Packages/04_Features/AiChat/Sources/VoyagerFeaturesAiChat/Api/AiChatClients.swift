@@ -30,7 +30,7 @@ extension AiChatExecutionClient: DependencyKey {
 
 public extension AiChatExecutionClient {
     nonisolated static func live(
-        providerExecutionClient: VoyagerEntitiesAi.AiChatProviderExecutionClient = .liveValue
+        providerExecutionClient: VoyagerEntitiesAi.AiChatProviderExecutionClient = .liveValue,
     ) -> AiChatExecutionClient {
         AiChatExecutionClient(execute: { request, credential in
             let providerStream: AsyncThrowingStream<VoyagerEntitiesAi.AiChatProviderExecutionEvent, Error>
@@ -54,7 +54,11 @@ public extension AiChatExecutionClient {
                             case let .started(context):
                                 continuation.yield(.started(context: context))
                             case let .delta(context, text):
-                                continuation.yield(.delta(context: context, text: text))
+                                await emitDisplayDelta(
+                                    context: context,
+                                    text: text,
+                                    continuation: continuation,
+                                )
                             case let .final(response):
                                 continuation.yield(.final(response: response))
                             case let .failed(context, reason):
@@ -80,7 +84,7 @@ public extension AiChatExecutionClient {
 private extension AiChatExecutionClient {
     static func immediateFailureStream(
         context: AiChatRequestContextSnapshot,
-        error: Error
+        error: Error,
     ) -> AsyncStream<AiChatEvent> {
         AsyncStream { continuation in
             continuation.yield(.failed(context: context, reason: mapExecutionError(error)))
@@ -88,8 +92,39 @@ private extension AiChatExecutionClient {
         }
     }
 
+    static func emitDisplayDelta(
+        context: AiChatRequestContextSnapshot,
+        text: String,
+        continuation: AsyncStream<AiChatEvent>.Continuation,
+    ) async {
+        guard context.provider == .anthropic else {
+            continuation.yield(.delta(context: context, text: text))
+            return
+        }
+
+        for chunk in anthropicDisplayChunks(from: text) {
+            if Task.isCancelled { return }
+            continuation.yield(.delta(context: context, text: chunk))
+            try? await Task.sleep(nanoseconds: 8_000_000)
+        }
+    }
+
+    static func anthropicDisplayChunks(from text: String) -> [String] {
+        let chunkSize = 24
+        guard text.count > chunkSize else { return text.isEmpty ? [] : [text] }
+
+        var chunks: [String] = []
+        var start = text.startIndex
+        while start < text.endIndex {
+            let end = text.index(start, offsetBy: chunkSize, limitedBy: text.endIndex) ?? text.endIndex
+            chunks.append(String(text[start ..< end]))
+            start = end
+        }
+        return chunks
+    }
+
     static func mapExecutionError(_ error: Error) -> AiChatExecutionFailure {
-                if error is CancellationError {
+        if error is CancellationError {
             return .cancelled
         }
         if let error = error as? VoyagerEntitiesAi.AiChatProviderExecutionClientError {
@@ -121,7 +156,7 @@ public struct AiChatSessionPersistenceClient: Sendable {
     public init(
         loadSession: @escaping @Sendable (AiChatSessionID) async throws -> AiChatSessionSnapshot?,
         saveSession: @escaping @Sendable (AiChatSessionSnapshot) async throws -> Void,
-        deleteSession: @escaping @Sendable (AiChatSessionID) async throws -> Void
+        deleteSession: @escaping @Sendable (AiChatSessionID) async throws -> Void,
     ) {
         self.loadSession = loadSession
         self.saveSession = saveSession
@@ -134,7 +169,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },
-            deleteSession: { _ in }
+            deleteSession: { _ in },
         )
     }
 
@@ -142,7 +177,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },
-            deleteSession: { _ in }
+            deleteSession: { _ in },
         )
     }
 
@@ -150,7 +185,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },
-            deleteSession: { _ in }
+            deleteSession: { _ in },
         )
     }
 }
