@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 import VoyagerEntitiesAi
 
@@ -172,6 +173,16 @@ public struct AiChatProcessingState: Equatable, Sendable {
     }
 }
 
+public struct AiChatStreamingAssistantDisplayModel: Equatable, Sendable {
+    public var content: String
+    public var failure: AiChatExecutionFailure?
+
+    public init(content: String, failure: AiChatExecutionFailure? = nil) {
+        self.content = content
+        self.failure = failure
+    }
+}
+
 public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendable {
     public var id: AiModelHandle { handle }
 
@@ -306,7 +317,7 @@ func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot
     let detailParts = [
         referenceCount > 0 ? "\(referenceCount) \(referenceCount == 1 ? "reference" : "references")" : nil,
         itemCount > 0 ? "\(itemCount) \(itemCount == 1 ? "item" : "items")" : nil,
-        attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil,
+        attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil
     ].compactMap(\.self)
     return AiChatContextSummaryDisplayModel(
         title: title,
@@ -353,56 +364,31 @@ func aiChatExecutionFailureMetadata(for failure: AiChatExecutionFailure) -> AiCh
     )
 }
 
-func aiChatSessionStatusErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
-    switch state.sessionStatus {
-    case .failed:
-        AiChatConnectionMetadata(
-            title: "Session failed",
-            detail: "The current chat session could not be loaded.",
-            fixLabel: "Retry"
-        )
-    case .rebindRequired:
-        AiChatConnectionMetadata(
-            title: "Session needs rebind",
-            detail: "Reconnect the session before continuing.",
-            fixLabel: "Reconnect"
-        )
-    default:
-        nil
-    }
+func aiChatSessionStatusErrorMetadata(for _: AiChatState) -> AiChatConnectionMetadata? {
+    nil
 }
-
-func aiChatMockAssistantBodyLines(from content: String) -> [String]? {
-    let lines = content
-        .split(whereSeparator: \.isNewline)
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
-
-    guard lines.count == 7,
-          lines.first == kAiChatMockAssistantHeaderTitle,
-          Array(lines.suffix(kAiChatMockAssistantProgressRows.count)) == kAiChatMockAssistantProgressRows
-    else {
-        return nil
-    }
-
-    let bodyLines = Array(lines.dropFirst().dropLast(kAiChatMockAssistantProgressRows.count))
-    return bodyLines.count == 3 ? bodyLines : nil
-}
-
-private let kAiChatMockAssistantHeaderTitle = "Voyager AI"
-private let kAiChatMockAssistantProgressRows = [
-    "✓ Context",
-    "✓ Queued",
-    "★ Mock ready",
-]
 
 extension AiChatExecutionFailure {
     var displayMessage: String {
         switch self {
         case .cancelled:
             "The request was cancelled."
+        case .authentication:
+            "Authentication with the chat provider failed."
+        case .modelUnavailable:
+            "The selected model is unavailable."
+        case .network:
+            "The network connection to the chat provider failed."
+        case .rateLimited:
+            "The chat provider rate limit was reached. Please wait and try again."
+        case .quotaExceeded:
+            "The chat provider rejected the request because the account quota, credits, or billing limit was exceeded."
+        case .invalidRequest:
+            "The chat request could not be sent."
         case .transportError:
-            "The chat service is temporarily unavailable."
+            "The chat service response could not be read."
+        case .cliUnavailable:
+            "The Codex CLI could not be launched. Make sure the codex command is installed and available to Voyager."
         case .unsupportedProvider:
             "This provider is not supported for chat."
         case .sessionMismatch:
@@ -410,5 +396,11 @@ extension AiChatExecutionFailure {
         case .unknown:
             "An unknown chat error occurred."
         }
+    }
+}
+
+extension AiProvider {
+    var supportsAiChatExecution: Bool {
+        true
     }
 }
