@@ -1,5 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
 import XCTest
 
@@ -39,6 +41,17 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         await store.send(.menuCommands(.delegate(.updater(.checkForUpdates))))
         await store.receive(\.updater.checkForUpdates)
+    }
+
+    func testWindowManagerOpenAISettingsDelegateSelectsAISettings() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.windowManager(.delegate(.openAISettings)))
+        await store.receive(.openAISettings)
+        await store.receive(.settings(.selectSection(.ai)))
     }
 
     func testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow() async {

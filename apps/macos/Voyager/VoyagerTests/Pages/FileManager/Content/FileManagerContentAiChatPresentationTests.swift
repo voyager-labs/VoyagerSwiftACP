@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
-import VoyagerEntitiesAi
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryOperations
@@ -43,29 +42,17 @@ final class ContentAiChatPresentationTests: XCTestCase {
         XCTAssertEqual(snapshot.items.first?.references.first?.identifier, "/tmp/voyager")
     }
 
-    func testAiChatSetupUsesPersistedProviderAvailability() {
+    func testAiChatSetupCarriesOnlyContextAndSessionWithoutModelCatalogRows() {
         let state = makeState()
-        let noProviderSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
+
+        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: state,
             sessionID: makeSessionID("00000000-0000-0000-0000-000000000001"),
-            connectionsFile: .empty(),
         )
 
-        XCTAssertEqual(noProviderSetup.catalogRows, [])
-        XCTAssertNil(noProviderSetup.selectedModelHandle)
-
-        let configuredSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
-            content: state,
-            sessionID: makeSessionID("00000000-0000-0000-0000-000000000002"),
-            connectionsFile: .testFixture(lastUsedProviderId: .anthropic, providers: [
-                .testFixture(provider: .openai, authMethod: .apiKey, state: .connected),
-                .testFixture(provider: .anthropic, authMethod: .apiKey, state: .connected),
-                .testFixture(provider: .chatgptCodex, authMethod: .oauth, state: .connectionFailed),
-            ]),
-        )
-
-        XCTAssertEqual(configuredSetup.catalogRows.map(\.handle.provider), [.openai, .anthropic])
-        XCTAssertEqual(configuredSetup.selectedModelHandle?.provider, .anthropic)
+        XCTAssertEqual(setup.catalogRows, [])
+        XCTAssertNil(setup.selectedModelHandle)
+        XCTAssertEqual(setup.currentContext, FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state))
     }
 
     func testOpenContextualAiChatTapDelegatesToWindowCommandPath() async {

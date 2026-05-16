@@ -9,6 +9,12 @@ struct AiChatPreparedRequest {
 }
 
 extension AiChatFeature {
+    func applyMissingSelectedModel(_ missingHandle: AiModelHandle, to state: inout State) {
+        state.selectedModelHandle = nil
+        state.selectedThinking = nil
+        state.unavailableSelectedModelHandle = missingHandle
+    }
+
     func clearRetryBlockingFailureIfNeeded(_ state: inout State) {
         state.lastExecutionFailure = nil
 
@@ -23,17 +29,19 @@ extension AiChatFeature {
     func startRequest(kind: AiChatRequestKind, state: inout State) -> Effect<Action> {
         guard !state.isProcessing,
               let sessionID = state.sessionID,
-              let selectedRow = resolvedSelectedModelRow(in: state),
+              case let .loaded(models) = state.modelListState,
+              let selectedModel = state.resolvedModel(for: state.selectedModelHandle, in: models),
               let preparedRequest = prepareRequest(kind: kind, state: state)
         else { return .none }
 
-        let selectedHandle = selectedRow.handle
+        let selectedHandle = selectedModel.id
         let lock = makeRequestLock(
             kind: kind,
             sessionID: sessionID,
-            selectedRow: selectedRow,
+            selectedModel: selectedModel,
+            selectedRow: resolvedSelectedModelRow(in: state),
             preparedRequest: preparedRequest,
-            state: state
+            state: state,
         )
 
         applyRequestStart(
@@ -41,7 +49,7 @@ extension AiChatFeature {
             prompt: preparedRequest.prompt,
             selectedHandle: selectedHandle,
             lock: lock,
-            state: &state
+            state: &state,
         )
         return execute(request: lock.request)
     }
@@ -49,9 +57,9 @@ extension AiChatFeature {
     private func prepareRequest(kind: AiChatRequestKind, state: State) -> AiChatPreparedRequest? {
         switch kind {
         case .submit:
-            return prepareSubmitRequest(state: state)
+            prepareSubmitRequest(state: state)
         case .regenerate:
-            return prepareRegenerateRequest(state: state)
+            prepareRegenerateRequest(state: state)
         }
     }
 
@@ -62,7 +70,7 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: trimmed,
             messages: state.transcriptHistory + [AiChatMessage(role: .user, content: trimmed)],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
     }
 
@@ -73,38 +81,41 @@ extension AiChatFeature {
             return AiChatPreparedRequest(
                 prompt: lastUserPrompt,
                 messages: Array(state.transcriptHistory.dropLast()),
-                assistantReplacementIndex: state.transcriptHistory.count - 1
+                assistantReplacementIndex: state.transcriptHistory.count - 1,
             )
         }
 
         return AiChatPreparedRequest(
             prompt: lastUserPrompt,
             messages: state.transcriptHistory,
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
     }
 
     private func makeRequestLock(
         kind: AiChatRequestKind,
         sessionID: AiChatSessionID,
-        selectedRow: AiModelCatalogRow,
+        selectedModel: AiProviderModel,
+        selectedRow: AiModelCatalogRow?,
         preparedRequest: AiChatPreparedRequest,
-        state: State
+        state: State,
     ) -> AiChatRequestLock {
         let requestID = AiChatRequestID(rawValue: uuid())
         let runID = AiChatRunID(rawValue: uuid())
-        let selectedHandle = selectedRow.handle
+        let selectedHandle = selectedModel.id
         let context = AiChatRequestContextSnapshot(
             sessionID: sessionID,
             requestID: requestID,
             runID: runID,
             provider: selectedHandle.provider,
             model: selectedHandle,
+            selectedModel: selectedModel,
             selectedModelRow: selectedRow,
+            selectedThinking: state.selectedThinking,
             sessionStatus: .active,
             currentContext: state.currentContext,
             promptSummary: preparedRequest.prompt,
-            submittedAtMs: nil
+            submittedAtMs: nil,
         )
         let request = AiChatRequest(context: context, messages: preparedRequest.messages)
 
@@ -116,7 +127,7 @@ extension AiChatFeature {
             request: request,
             selectedModelHandle: selectedHandle,
             selectedModelRow: selectedRow,
-            assistantReplacementIndex: preparedRequest.assistantReplacementIndex
+            assistantReplacementIndex: preparedRequest.assistantReplacementIndex,
         )
     }
 
@@ -125,7 +136,7 @@ extension AiChatFeature {
         prompt: String,
         selectedHandle: AiModelHandle,
         lock: AiChatRequestLock,
-        state: inout State
+        state: inout State,
     ) {
         state.selectedModelHandle = selectedHandle
         state.lockedModelHandle = selectedHandle
@@ -171,7 +182,7 @@ extension AiChatFeature {
                         await send(.persistenceFailed(lock, .unknown))
                     }
                 },
-                .cancel(id: CancelID.request)
+                .cancel(id: CancelID.request),
             )
 
         case let .failed(context, reason):
@@ -191,7 +202,8 @@ extension AiChatFeature {
     func applyFinal(response: AiChatResponse, lock: AiChatRequestLock, state: inout State) {
         if let index = lock.assistantReplacementIndex,
            state.transcriptHistory.indices.contains(index),
-           state.transcriptHistory[index].role == .assistant {
+           state.transcriptHistory[index].role == .assistant
+        {
             state.transcriptHistory[index] = response.assistantMessage
         } else {
             state.transcriptHistory.append(response.assistantMessage)
@@ -210,13 +222,14 @@ extension AiChatFeature {
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: state.sessionStatus,
-            provider: lock.selectedModelHandle.provider,
-            model: lock.selectedModelHandle,
+            provider: lock.context.provider,
+            model: lock.context.model,
             selectedModelRow: lock.selectedModelRow,
+            selectedThinking: lock.context.selectedThinking,
             transcriptHistory: state.transcriptHistory,
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
     }
 
@@ -229,33 +242,34 @@ extension AiChatFeature {
     }
 
     func normalizeSelectionIfNeeded(_ state: inout State) {
-        guard !state.catalogRows.isEmpty else {
-            state.selectedModelHandle = nil
-            return
-        }
+        switch state.modelListState {
+        case let .loaded(models):
+            let previousSelection = state.selectedModelHandle
+            state.selectedModelHandle = state.normalizedSelectionHandle(state.selectedModelHandle, in: models)
+            if let previousSelection, state.selectedModelHandle == nil {
+                applyMissingSelectedModel(previousSelection, to: &state)
+            } else if state.selectedModelHandle != nil {
+                state.unavailableSelectedModelHandle = nil
+            }
+            state.selectedThinking = State.normalizeSelectedThinking(state.selectedThinking, for: state.resolvedSelectedModel)
 
-        if let selectedHandle = state.selectedModelHandle,
-           state.catalogRows.contains(where: { $0.handle == selectedHandle }) {
-            return
-        }
+        case .empty:
+            if let previousSelection = state.selectedModelHandle {
+                applyMissingSelectedModel(previousSelection, to: &state)
+            }
 
-        state.selectedModelHandle = state.catalogRows.first?.handle
+        case .idle, .loading, .failed:
+            if state.selectedModelHandle != nil {
+                state.selectedThinking = State.normalizeSelectedThinking(state.selectedThinking, for: state.resolvedSelectedModel)
+            }
+        }
     }
 
-    func resolvedSelectionHandle(_ handle: AiModelHandle?, in rows: [AiModelCatalogRow]) -> AiModelHandle? {
-        guard !rows.isEmpty else { return nil }
-        if let handle, rows.contains(where: { $0.handle == handle }) {
-            return handle
-        }
-        return rows.first?.handle
+    func resolvedSelectionHandle(_ handle: AiModelHandle?, in models: [AiProviderModel]) -> AiModelHandle? {
+        State.normalizedSelectionHandle(handle, in: models)
     }
 
     func resolvedSelectedModelRow(in state: State) -> AiModelCatalogRow? {
-        if let handle = state.selectedModelHandle,
-           let row = state.catalogRows.first(where: { $0.handle == handle }) {
-            return row
-        }
-
-        return state.catalogRows.first
+        state.resolvedModelRow(for: state.selectedModelHandle)
     }
 }

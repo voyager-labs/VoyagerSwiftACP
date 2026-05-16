@@ -2,12 +2,15 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
     let sortKey: SortKey
-    let sortOrder: SortOrder
+    let sortOrder: VoyagerShared.SortOrder
 }
 
 struct EntryListCoordinatorSortSignature: Hashable {
@@ -49,17 +52,18 @@ enum EntryListCoordinatorSortDescriptorMapper {
         guard let key = first.key else { return nil }
         guard let column = EntryListColumn(rawValue: key) else { return nil }
         guard let sortKey = column.sortKey else { return nil }
-        let sortOrder: SortOrder = first.ascending ? .ascending : .descending
+        let sortOrder: VoyagerShared.SortOrder = first.ascending ? .ascending : .descending
         return EntryListCoordinatorSortDescriptorChange(sortKey: sortKey, sortOrder: sortOrder)
     }
 
     static func actionsNeeded(
         currentSortKey: SortKey,
-        currentSortOrder: SortOrder,
+        currentSortOrder: VoyagerShared.SortOrder,
         change: EntryListCoordinatorSortDescriptorChange,
-    ) -> (sortKey: SortKey?, sortOrder: SortOrder?) {
+    ) -> (sortKey: SortKey?, sortOrder: VoyagerShared.SortOrder?) {
         let setKey: SortKey? = currentSortKey == change.sortKey ? nil : change.sortKey
-        let setOrder: SortOrder? = currentSortOrder == change.sortOrder ? nil : change.sortOrder
+        let setOrder: VoyagerShared.SortOrder? = currentSortOrder == change.sortOrder ? nil : change
+            .sortOrder
         return (setKey, setOrder)
     }
 }

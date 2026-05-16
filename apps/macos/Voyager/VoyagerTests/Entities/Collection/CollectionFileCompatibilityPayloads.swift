@@ -1,5 +1,6 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 
 struct LegacyDefinitionOnlyPayload: Codable {
@@ -10,7 +11,7 @@ struct LegacyDefinitionOnlyPayload: Codable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
-    let conditions: [CollectionCondition]
+    let conditions: [VoyagerEntitiesCollection.CollectionCondition]
     let appVersion: String?
 }
 
@@ -21,7 +22,7 @@ struct LegacyNoSchemaPayload: Codable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
-    let conditions: [CollectionCondition]
+    let conditions: [VoyagerEntitiesCollection.CollectionCondition]
     let appVersion: String?
 }
 
@@ -33,7 +34,7 @@ struct InvalidSnapshotPayload: Codable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
-    let conditions: [CollectionCondition]
+    let conditions: [VoyagerEntitiesCollection.CollectionCondition]
     let snapshot: [String: [VoyagerShared.JSONValue]]
     let snapshotMeta: CollectionSnapshotMeta
     let appVersion: String?
@@ -47,7 +48,7 @@ struct SnapshotOnlyPayload: Codable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
-    let conditions: [CollectionCondition]
+    let conditions: [VoyagerEntitiesCollection.CollectionCondition]
     let snapshot: CollectionPersistedSnapshot
     let appVersion: String?
 }
@@ -60,7 +61,7 @@ struct SnapshotMetaOnlyPayload: Codable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
-    let conditions: [CollectionCondition]
+    let conditions: [VoyagerEntitiesCollection.CollectionCondition]
     let snapshotMeta: CollectionSnapshotMeta
     let appVersion: String?
 }
@@ -73,7 +74,7 @@ struct FutureVersionPayload: Codable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
-    let conditions: [CollectionCondition]
+    let conditions: [VoyagerEntitiesCollection.CollectionCondition]
     let snapshot: CollectionPersistedSnapshot?
     let snapshotMeta: CollectionSnapshotMeta?
     let appVersion: String?
@@ -87,6 +88,6 @@ struct UnrecoverableCorruptionPayload: Codable {
     let updatedAt: String
     let query: String
     let scopes: [String]
-    let conditions: [CollectionCondition]
+    let conditions: [VoyagerEntitiesCollection.CollectionCondition]
     let appVersion: String?
 }

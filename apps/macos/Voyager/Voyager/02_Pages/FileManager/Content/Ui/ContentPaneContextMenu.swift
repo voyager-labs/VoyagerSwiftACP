@@ -2,7 +2,11 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
@@ -93,7 +97,7 @@ struct ContentPaneContextMenu: View {
         )
     }
 
-    private func sortOrderToggle(_ title: String, order: SortOrder) -> some View {
+    private func sortOrderToggle(_ title: String, order: VoyagerShared.SortOrder) -> some View {
         Toggle(
             title,
             isOn: Binding(

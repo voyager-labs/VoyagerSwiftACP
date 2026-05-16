@@ -4,6 +4,7 @@ import Foundation
 @preconcurrency import UniformTypeIdentifiers
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 
 @CasePathable

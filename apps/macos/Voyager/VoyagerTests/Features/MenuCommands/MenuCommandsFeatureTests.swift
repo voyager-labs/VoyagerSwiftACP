@@ -1,5 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesUpdateVersion
 import XCTest
 
 @MainActor

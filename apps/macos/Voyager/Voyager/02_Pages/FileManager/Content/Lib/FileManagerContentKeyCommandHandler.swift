@@ -1,9 +1,12 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 enum FileManagerContentKeyCommandHandler {
     private static let undoSelector = Selector(("undo:"))

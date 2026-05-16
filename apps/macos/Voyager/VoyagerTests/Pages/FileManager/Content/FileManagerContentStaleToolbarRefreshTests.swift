@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 import XCTest
 
 @MainActor
@@ -13,9 +15,17 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        XCTAssertNil(store.state.refreshBlockingReason)
+        XCTAssertNil(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ))
         await store.send(.view(.refreshStaleCollection)) {
-            $0.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .refreshingHydratedSnapshot)
+            $0.collection.collectionSession.phase = .opened(
+                kind: .definition,
+                base: .stale,
+                inflight: .refreshingHydratedSnapshot,
+            )
         }
         await store.receive { action in
             guard case .composer(.view(.setText("report"))) = action else {
@@ -39,9 +49,17 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        XCTAssertNil(store.state.refreshBlockingReason)
+        XCTAssertNil(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ))
         await store.send(.view(.refreshStaleCollection)) {
-            $0.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .refreshingHydratedSnapshot)
+            $0.collection.collectionSession.phase = .opened(
+                kind: .definition,
+                base: .stale,
+                inflight: .refreshingHydratedSnapshot,
+            )
         }
         await store.receive { action in
             guard case .composer(.view(.applyFilters)) = action else {
@@ -61,10 +79,13 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
 
         await store.send(.view(.refreshStaleCollection))
 
-        XCTAssertEqual(store.state.refreshBlockingReason, .dirtyCollection)
-        let inflightStatus = store.state.collectionSession.phase.inflightStatus
-        XCTAssertNotEqual(inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .dirtyCollection)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
     func testRefreshStaleCollectionDoesNothingWithoutSavedCollectionPrerequisites() async {
@@ -81,10 +102,13 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
 
         await store.send(.view(.refreshStaleCollection))
 
-        XCTAssertEqual(store.state.refreshBlockingReason, .missingOpenedURL)
-        let inflightStatus = store.state.collectionSession.phase.inflightStatus
-        XCTAssertNotEqual(inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .missingOpenedURL)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 }
 
@@ -96,21 +120,22 @@ private func makeState(
 ) -> FileManagerContentState {
     var state = FileManagerContentState()
     state.entryViewLayout.isCollectionMode = true
-    state.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
+    state.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
     let baseline = CollectionContext(query: query, scopes: ["/tmp"], conditions: [])
-    state.collectionSession.metadata.baseline = hasCollectionPrerequisites ? .init(context: baseline) : nil
-    state.collectionSession.document = hasCollectionPrerequisites ? .init(
-        url: URL(fileURLWithPath: "/tmp/demo.voycoll"),
-        name: "demo",
-        compatibility: nil,
-    ) : nil
-    state.collectionContext = hasCollectionPrerequisites
+    state.collection.collectionSession.metadata.baseline = hasCollectionPrerequisites ? .init(context: baseline) : nil
+    if hasCollectionPrerequisites {
+        state.collection.collectionSession.document = .init(
+            url: URL(fileURLWithPath: "/tmp/demo.voycoll"),
+            name: "demo",
+            compatibility: nil,
+        )
+    }
+    state.collection.collectionContext = hasCollectionPrerequisites
         ? (isDirty
             ? CollectionContext(query: query + "-dirty", scopes: ["/tmp"], conditions: [])
             : baseline)
         : nil
-    state.composer.collectionContext = state.collectionContext
-    state.composer.isCollectionMode = true
+    state.syncComposerCollectionState()
     state.composer.pendingSearchQuery = query.isEmpty ? nil : query
     return state
 }

@@ -1,7 +1,10 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import XCTest
+
+@testable import Voyager
 
 @MainActor
 final class WindowDependencyInvariantTests: XCTestCase {

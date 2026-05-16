@@ -29,7 +29,7 @@ struct FileManagerInspectorFeature {
                 state.inspectorVisible = false
                 return .none
 
-            case let .openChat(setup):
+            case let .openChat(setup, connectionsFile):
                 state.inspectorVisible = true
                 state.activeMode = .chat
 
@@ -37,9 +37,15 @@ struct FileManagerInspectorFeature {
                     return .none
                 }
 
-                return .send(.aiChat(.setup(setup)))
+                return .concatenate(
+                    .send(.aiChat(.setup(setup))),
+                    .send(.aiChat(.providerConnectionsUpdated(connectionsFile))),
+                )
 
-            case .aiChat:
+            case .aiChat(.delegate(.openAISettings)):
+                return .send(.delegate(.openAISettings))
+
+            case .delegate, .aiChat:
                 return .none
             }
         }

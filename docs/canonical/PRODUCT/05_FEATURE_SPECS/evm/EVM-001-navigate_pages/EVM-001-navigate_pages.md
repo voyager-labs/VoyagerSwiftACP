@@ -15,53 +15,61 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- 현재 Content Tab의 Page 이동과 history 표시를 안정적으로 제어한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- file_manager_window.content_pane 영역에서 관련 컨트롤 또는 명령을 실행한 경우
 
 ## Preconditions
 
-- 페이지 전환 대상이 유효한 상태
-- 해당 대상을 표시할 권한 또는 접근성이 확보된 상태
+- 대상 Page이 현재 File Manager Window에서 접근 가능한 상태다.
 
 ## Expected Outcome
 
-- TBD
+- Content Pane에서 Entry 클릭하거나 선택해 현재 Content Tab Page를 새 Page로 전환.
+- 사용자에게 보이는 결과는 `navigate_pages_applied` 상태로 정리된다.
 
 ## State Changes
 
-- TBD
+- Page의 표시 또는 실행 상태를 갱신한다.
+- 이 인터랙션은 [evm_contract.toml](../contracts/evm_contract.toml)의 `navigate_pages_applied` 상태 어휘를 따른다.
 
 ## User-visible Feedback
 
-- TBD
+- 성공 시 현재 화면의 표시, 선택, 정렬, 실행 결과가 즉시 갱신된다.
+- 실패 시 기존 상태를 보존하고 실패 사유를 사용자에게 표시한다.
 
 ## Edge Cases / Failure Handling
 
-- 전환 대상이 삭제되었거나, 접근 권한이 사라진 경우
-- 네트워크/외장 볼륨 내 전환 시 연결이 끊긴 경우
-- 이미 같은 페이지로 이동하려는 경우
+- 대상 Page이 사라졌거나 권한이 없으면 작업을 중단한다.
+- 동일 요청이 반복되면 마지막으로 확정된 상태를 기준으로 중복 반영을 피한다.
 
 ## Acceptance Criteria
 
-- [ ] Content Pane에 네비게이션 가능 대상이 있을 때, 사용자가 해당 대상을 선택하여 인터랙션을
-      호출하면 해당 타깃을 표시하는 페이지로 전환되고 히스토리에 새 점이 추가됨
+- [ ] 대상 Page이 현재 File Manager Window에서 접근 가능한 상태다. 사용자가 Navigate Pages을 실행하면, Content Pane에서 Entry 클릭하거나 선택해 현재 Content Tab Page를 새 Page로 전환 결과가 `navigate_pages_applied` 상태로 반영되어야 한다.
+- [ ] 작업을 완료할 수 없는 조건이면, 앱은 기존 상태를 보존하고 실패 피드백을 표시해야 한다.
+- [ ] 같은 interaction이 반복 호출되어도 중복되거나 모순된 상태가 남지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- 현재 Page, selection, 파일 시스템 접근 권한, File Manager Window layout 상태에 의존한다.
 
 ## Observability / Analytics
 
-- TBD
+- `evm.navigate_pages` 이벤트에 성공 여부와 대상 수, 실패 사유를 기록한다.
 
 ## Related Interactions
 
-- TBD
+- [EVM-001-forward_page_history](EVM-001-forward_page_history.md)
+- [EVM-001-go_page_history_back](EVM-001-go_page_history_back.md)
+- [EVM-001-go_to_enclosing_directory](EVM-001-go_to_enclosing_directory.md)
+- [EVM-001-reload_directory_page_on_external_change](EVM-001-reload_directory_page_on_external_change.md)
+- [EVM-001-show_page_history](EVM-001-show_page_history.md)
+- [EVM-001-view_current_page_title](EVM-001-view_current_page_title.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `17`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:17`
+- Flows: [evm_flow.md](../flows/evm_flow.md)
+- Contract: [evm_contract.toml](../contracts/evm_contract.toml)

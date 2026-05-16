@@ -2,15 +2,6 @@ import ComposableArchitecture
 import VoyagerEntitiesAi
 
 extension AiChatFeature {
-    func openSettingsWindow() -> Effect<Action> {
-        let openSettingsWindow = aiChatSettingsClient.openSettingsWindow
-        return .run { _ in
-            await MainActor.run {
-                _ = openSettingsWindow()
-            }
-        }
-    }
-
     func recoverFromError(state: inout State) -> Effect<Action> {
         switch state.executionPhase {
         case let .persistenceRecovery(lock, _):
@@ -27,7 +18,7 @@ extension AiChatFeature {
         }
 
         if state.sessionStatus == .rebindRequired {
-            return openSettingsWindow()
+            return .send(.delegate(.openAISettings))
         }
 
         if state.lastExecutionFailure != nil {

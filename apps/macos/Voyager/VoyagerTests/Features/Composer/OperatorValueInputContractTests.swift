@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+@testable import VoyagerFeaturesComposer
 import XCTest
 
 @MainActor
@@ -20,6 +22,25 @@ final class OperatorValueInputContractTests: XCTestCase {
             $0.conditions[0].operatorValueUIKind = "none"
             $0.conditions[0].valueType = "string"
             $0.conditions[0].values = []
+            $0.history = [
+                FilterSnapshot(
+                    scopes: ["/tmp"],
+                    conditions: [
+                        .init(
+                            propertyKey: "name_stem",
+                            propertyLabel: "Name",
+                            propertyType: "date",
+                            operatorCode: nil,
+                            operatorLabel: nil,
+                            operatorValueArity: nil,
+                            operatorValueUIKind: nil,
+                            valueType: "date",
+                            values: nil,
+                        ),
+                    ],
+                    conditionDisplayByKey: [:],
+                ),
+            ]
         }
     }
 
@@ -37,21 +58,39 @@ final class OperatorValueInputContractTests: XCTestCase {
             $0.conditions[0].operatorValueUIKind = "rangeDate"
             $0.conditions[0].valueType = "date"
             $0.conditions[0].values = nil
+            $0.history = [
+                FilterSnapshot(
+                    scopes: ["/tmp"],
+                    conditions: [
+                        .init(
+                            propertyKey: "name_stem",
+                            propertyLabel: "Name",
+                            propertyType: "date",
+                            operatorCode: nil,
+                            operatorLabel: nil,
+                            operatorValueArity: nil,
+                            operatorValueUIKind: nil,
+                            valueType: "date",
+                            values: nil,
+                        ),
+                    ],
+                    conditionDisplayByKey: [:],
+                ),
+            ]
         }
     }
 
     func testSetOperatorResetsValuePickerPayloadForSameProperty() async {
         var initial = makeState()
-        initial.valuePicker = .init(
-            propertyKey: "name_stem",
-            operatorCode: "eq",
-            isPresented: true,
-            valueType: "string",
-            valueUIKind: "singleText",
-            valueArity: 1,
-            values: ["report"],
-            errorMessage: "x",
-        )
+        initial.valuePicker = .init()
+        initial.valuePicker.propertyKey = "name_stem"
+        initial.valuePicker.operatorCode = "eq"
+        initial.valuePicker.isPresented = true
+        initial.valuePicker.valueType = "string"
+        initial.valuePicker.valueUIKind = "singleText"
+        initial.valuePicker.valueArity = 1
+        initial.valuePicker.values = ["report"]
+        initial.valuePicker.errorMessage = "x"
 
         let store = TestStore(initialState: initial) {
             ComposerFeature()
@@ -74,26 +113,45 @@ final class OperatorValueInputContractTests: XCTestCase {
             $0.valuePicker.valueType = "string"
             $0.valuePicker.values = ["", ""]
             $0.valuePicker.errorMessage = nil
+            $0.history = [
+                FilterSnapshot(
+                    scopes: ["/tmp"],
+                    conditions: [
+                        .init(
+                            propertyKey: "name_stem",
+                            propertyLabel: "Name",
+                            propertyType: "date",
+                            operatorCode: nil,
+                            operatorLabel: nil,
+                            operatorValueArity: nil,
+                            operatorValueUIKind: nil,
+                            valueType: "date",
+                            values: nil,
+                        ),
+                    ],
+                    conditionDisplayByKey: [:],
+                ),
+            ]
         }
     }
 
     private func makeState() -> ComposerState {
-        .init(
-            scopes: ["/tmp"],
-            conditions: [
-                .init(
-                    propertyKey: "name_stem",
-                    propertyLabel: "Name",
-                    propertyType: "date",
-                    operatorCode: nil,
-                    operatorLabel: nil,
-                    operatorValueArity: nil,
-                    operatorValueUIKind: nil,
-                    valueType: "date",
-                    values: nil,
-                ),
-            ],
-        )
+        var state = ComposerState()
+        state.scopes = ["/tmp"]
+        state.conditions = [
+            .init(
+                propertyKey: "name_stem",
+                propertyLabel: "Name",
+                propertyType: "date",
+                operatorCode: nil,
+                operatorLabel: nil,
+                operatorValueArity: nil,
+                operatorValueUIKind: nil,
+                valueType: "date",
+                values: nil,
+            ),
+        ]
+        return state
     }
 
     private func makeRegistryClient() -> RegistryClient {
@@ -109,7 +167,7 @@ final class OperatorValueInputContractTests: XCTestCase {
                     .init(
                         uiLabel: "Exists",
                         mdqueryOperator: nil,
-                        valueShape: .none,
+                        valueShape: ValueShape.none,
                         valueCount: .fixed(0),
                         allowedTypes: ["date"],
                         inverseOf: nil,

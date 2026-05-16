@@ -2,8 +2,11 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import SwiftUI
-
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 private struct InspectorMountViewState: Equatable {
     let inspectorVisible: Bool

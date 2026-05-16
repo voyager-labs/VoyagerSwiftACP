@@ -1,13 +1,14 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
 @MainActor
 final class CollectionStalenessCompatTests: XCTestCase {
     func testLegacyPropertyListStorageMigratesAndPreservesInvalidatedState() throws {
-        let userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+        let userDefaultsClient = UserDefaultsClient.testValue
         let client = CollectionStalenessClient.live(userDefaultsClient: userDefaultsClient)
         let path = "/tmp/legacy/sample.voycoll"
 
@@ -30,7 +31,7 @@ final class CollectionStalenessCompatTests: XCTestCase {
     }
 
     func testMissingFieldCurrentRecordDecodesWithDefaults() throws {
-        let userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+        let userDefaultsClient = UserDefaultsClient.testValue
         let client = CollectionStalenessClient.live(userDefaultsClient: userDefaultsClient)
         let path = "/tmp/missing-fields/sample.voycoll"
 
@@ -49,7 +50,7 @@ final class CollectionStalenessCompatTests: XCTestCase {
     }
 
     func testMixedShapePayloadKeepsValidRecordAndDropsMalformedEntry() throws {
-        let userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+        let userDefaultsClient = UserDefaultsClient.testValue
         let client = CollectionStalenessClient.live(userDefaultsClient: userDefaultsClient)
 
         let validPath = "/tmp/valid/sample.voycoll"

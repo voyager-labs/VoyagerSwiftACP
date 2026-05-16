@@ -1,6 +1,9 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerShared
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 
 func prepareLoadedCollectionOpenState(
     restorationPayload: CollectionOpenRestorationPayload,
@@ -29,7 +32,7 @@ func makeWindowCollectionNavigation(
         context: payload.context,
         sortKey: state.content.entryViewLayout.entryArrangements.sortKey,
         sortOrder: state.content.entryViewLayout.entryArrangements.sortOrder,
-        viewLayout: state.content.entryViewLayout.mode,
+        viewLayout: contentPageNavigationViewLayout(from: state.content.entryViewLayout.mode),
         compatibility: payload.compatibility,
     )
 }
@@ -39,20 +42,29 @@ func hydrateOpenedCollectionSnapshot(
     navigation: ContentPageCollectionNavigation,
     state: inout FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>]? {
-    state.content.composer.applyHydratedCollectionOpenComposerPayload(payload, navigation: navigation)
+    state.content.composer.applyHydratedCollectionOpenComposerPayload(
+        payload,
+        isNavigationQueryEmpty: navigation.context.query.isEmpty,
+    )
 
     let showHidden = state.content.entryViewLayout.showHiddenFiles
+    let collectionURL: URL? = if case let .file(url, _) = navigation.kind { url } else { nil }
 
     return [
         .run { send in
             await send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation)))))))
             await send(.content(.internal(.applyNavigationState(.collection(navigation)))))
             await send(.content(.entryViewLayout(.internal(.setCollectionMode(true)))))
+            await send(.content(.composer(.syncCollectionState(
+                context: navigation.context,
+                url: collectionURL,
+                compatibility: navigation.compatibility,
+                isCollectionMode: true,
+            ))))
             await send(.content(.entryViewLayout(.internal(.applyCollectionSearchPaths(
                 paths: payload.snapshotPaths,
                 showHidden: showHidden,
             )))))
-            await send(.content(.internal(.syncComposerCollectionState)))
             await send(.content(.composer(.searchListApplied)))
         },
     ]
@@ -99,6 +111,12 @@ func makeCollectionOpenFollowupEffects(
             .send(.content(.internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))))),
             .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
             .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
+            .send(.content(.composer(.syncCollectionState(
+                context: navigation.context,
+                url: collectionURL(from: navigation),
+                compatibility: navigation.compatibility,
+                isCollectionMode: true,
+            )))),
         ])
     }
 
@@ -120,6 +138,13 @@ func makeCollectionOpenFollowupEffects(
     }
 
     return effects
+}
+
+private func collectionURL(from navigation: ContentPageCollectionNavigation) -> URL? {
+    if case let .file(url, _) = navigation.kind {
+        return url
+    }
+    return nil
 }
 
 func unsupportedFilterWarningEffects(

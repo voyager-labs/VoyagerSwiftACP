@@ -1,5 +1,10 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
+import VoyagerEntitiesTag
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerShared
 
 @Reducer
 struct FileManagerWindowNavigationReducer {
@@ -55,7 +60,7 @@ private struct FileManagerNavigationBridgeReducer {
                 return .send(.navigation(.internal(.performNavigation(pending))))
 
             case .content(.delegate(.composerCollectionSearchSucceeded)),
-                 .content(.delegate(.discardCollectionChanges)):
+                 .content(.delegate(.collectionChangesDiscarded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                     ?? state.content.navigation.currentPath
                 syncSidebarSelection(state: &state, computerName: computerName)
@@ -80,10 +85,10 @@ func syncSidebarSelection(
 ) {
     switch state.content.navigation.navigationState {
     case .collection:
-        if let url = state.content.collectionSession.document?.url {
+        if let url = state.content.collection.collectionSession.document?.url {
             state.sidebar.selectedSidebarItem = state.sidebar.favorites
                 .first(where: { $0.url.path == url.path })
-                .map(\.displayName) ?? state.content.collectionSession.document?.name
+                .map(\.displayName) ?? state.content.collection.collectionSession.document?.name
         } else {
             state.sidebar.selectedSidebarItem = nil
         }

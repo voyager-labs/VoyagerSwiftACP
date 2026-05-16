@@ -45,7 +45,10 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.transcriptHistory = staleTranscript
             state.draftText = "Draft"
             state.catalogRows = catalogRows
+            state.modelListState = .loaded(makeProviderModels())
             state.selectedModelHandle = catalogRows[1].handle
+            state.selectedThinking = nil
+            state.unavailableSelectedModelHandle = nil
             state.lockedModelHandle = catalogRows[1].handle
             state.lastExecutionFailure = nil
             state.executionPhase = .idle
@@ -73,8 +76,9 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.sessionStatus = .idle
             state.transcriptHistory = []
             state.draftText = "Draft"
-            state.catalogRows = catalogRows
             state.selectedModelHandle = catalogRows[1].handle
+            state.selectedThinking = nil
+            state.unavailableSelectedModelHandle = nil
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
             state.executionPhase = .idle
@@ -122,7 +126,10 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.transcriptHistory = []
             state.draftText = "Draft"
             state.catalogRows = []
+            state.modelListState = .empty
             state.selectedModelHandle = nil
+            state.selectedThinking = nil
+            state.unavailableSelectedModelHandle = nil
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
             state.executionPhase = .idle
@@ -146,7 +153,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
     }
 
     // swiftlint:disable:next function_body_length
-    func testRestoreContextMismatchFallsBackToNewSession() async {
+    func testRestoreContextMismatchFailsWithoutFallbackModelSelection() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
         let targetSessionID = AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444"))
@@ -192,42 +199,29 @@ final class AiChatFeatureRestoreTests: XCTestCase {
             state.transcriptHistory = [AiChatMessage(role: .assistant, content: "stale")]
             state.draftText = "Draft"
             state.catalogRows = catalogRows
-            state.selectedModelHandle = catalogRows.first?.handle
+            state.modelListState = .loaded(makeProviderModels())
+            state.selectedModelHandle = nil
+            state.selectedThinking = nil
+            state.unavailableSelectedModelHandle = rebindSnapshot.model
             state.lockedModelHandle = rebindSnapshot.model
             state.lastExecutionFailure = nil
             state.executionPhase = .idle
         }
 
-        let fallbackSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
-        let fallbackSnapshot = AiChatSessionSnapshot(
-            sessionID: fallbackSessionID,
-            status: .idle,
-            provider: catalogRows.first?.handle.provider ?? .openai,
-            model: catalogRows.first?.handle ?? AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
-            selectedModelRow: catalogRows.first,
-            transcriptHistory: [],
-            updatedAtMs: 0
-        )
-
         await store.receive(.restoreOutcome(
             requestedSessionID: targetSessionID,
-            .newSession(snapshot: fallbackSnapshot),
+            .failed(reason: .contextMismatch),
             restoreFailure: .contextMismatch
         )) { state in
-            state.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
+            state.sessionStatus = .failed
             state.restoreFailure = .contextMismatch
-            state.sessionID = fallbackSessionID
-            state.sessionStatus = .idle
-            state.transcriptHistory = []
-            state.draftText = "Draft"
-            state.catalogRows = catalogRows
-            state.selectedModelHandle = catalogRows.first?.handle
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.executionPhase = .idle
+            state.restoreOutcome = nil
+            state.unavailableSelectedModelHandle = rebindSnapshot.model
         }
 
         XCTAssertEqual(store.state.restoreFailure, .contextMismatch)
-        XCTAssertEqual(store.state.transcriptHistory, [])
+        XCTAssertEqual(store.state.transcriptHistory, [AiChatMessage(role: .assistant, content: "stale")])
+        XCTAssertNil(store.state.selectedModelHandle)
+        XCTAssertEqual(store.state.unavailableSelectedModelHandle, rebindSnapshot.model)
     }
 }

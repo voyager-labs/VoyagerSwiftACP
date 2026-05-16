@@ -15,55 +15,59 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- Content Pane을 분할해 여러 Page 맥락을 동시에 비교하거나 탐색한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- file_manager_window.content_pane 영역에서 관련 컨트롤 또는 명령을 실행한 경우
 
 ## Preconditions
 
-- <<AI>> Content Pane이 이미 분할 상태.
-- <<AI>> 레이아웃 변경을 위한 최소 폭/높이가 확보된 상태.
+- 대상 Page이 현재 File Manager Window에서 접근 가능한 상태다.
 
 ## Expected Outcome
 
-- TBD
+- 기존 분할된 Content Pane의 방향을 수직↔수평으로 전환합니다..
+- 사용자에게 보이는 결과는 `convert_split_pane_orientation_applied` 상태로 정리된다.
 
 ## State Changes
 
-- TBD
+- Page의 표시 또는 실행 상태를 갱신한다.
+- 이 인터랙션은 [evm_contract.toml](../contracts/evm_contract.toml)의 `convert_split_pane_orientation_applied` 상태 어휘를 따른다.
 
 ## User-visible Feedback
 
-- TBD
+- 성공 시 현재 화면의 표시, 선택, 정렬, 실행 결과가 즉시 갱신된다.
+- 실패 시 기존 상태를 보존하고 실패 사유를 사용자에게 표시한다.
 
 ## Edge Cases / Failure Handling
 
-- <<AI>> 새 방향에서 각 Pane 최소 크기를 충족하지 못하는 경우 비율 재조정 또는 전환 불가 안내가
-  필요.
-- <<AI>> 고정된 UI(예: 최소 폭을 가진 Sidebar/Inspector)로 인해 균등 분할 불가한 경우.
+- 대상 Page이 사라졌거나 권한이 없으면 작업을 중단한다.
+- 동일 요청이 반복되면 마지막으로 확정된 상태를 기준으로 중복 반영을 피한다.
 
 ## Acceptance Criteria
 
-- [ ] <<AI>> 사용자가 인터랙션을 호출하면 분할 방향이 수직↔수평으로 전환됨.
-- [ ] <<AI>> 기존 두 Pane의 콘텐츠/스크롤/선택 상태는 유지되며, 디바이더 위치는 가능한 범위에서 기존
-      비율을 반영해 재배치됨.
-- [ ] <<AI>> 제약으로 균등 분할이 불가하면 합리적 비율로 자동 조정하거나 안내를 표시함.
+- [ ] 대상 Page이 현재 File Manager Window에서 접근 가능한 상태다. 사용자가 Convert Split Pane Orientation을 실행하면, 기존 분할된 Content Pane의 방향을 수직↔수평으로 전환합니다. 결과가 `convert_split_pane_orientation_applied` 상태로 반영되어야 한다.
+- [ ] 작업을 완료할 수 없는 조건이면, 앱은 기존 상태를 보존하고 실패 피드백을 표시해야 한다.
+- [ ] 같은 interaction이 반복 호출되어도 중복되거나 모순된 상태가 남지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- 현재 Page, selection, 파일 시스템 접근 권한, File Manager Window layout 상태에 의존한다.
 
 ## Observability / Analytics
 
-- TBD
+- `evm.convert_split_pane_orientation` 이벤트에 성공 여부와 대상 수, 실패 사유를 기록한다.
 
 ## Related Interactions
 
-- TBD
+- [EVM-003-adjust_splited_content_pane_size](EVM-003-adjust_splited_content_pane_size.md)
+- [EVM-003-seprated_splited_content_pane](EVM-003-seprated_splited_content_pane.md)
+- [EVM-003-split_content_pane_vertically_horizontally](EVM-003-split_content_pane_vertically_horizontally.md)
+- [EVM-003-switch_focus_between_split_panes](EVM-003-switch_focus_between_split_panes.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `35`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:36`
+- Flows: [evm_flow.md](../flows/evm_flow.md)
+- Contract: [evm_contract.toml](../contracts/evm_contract.toml)

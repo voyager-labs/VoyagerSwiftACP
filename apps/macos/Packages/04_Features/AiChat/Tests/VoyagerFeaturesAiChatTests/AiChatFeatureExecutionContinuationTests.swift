@@ -173,4 +173,94 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
 
         await store.finish()
     }
+
+    func testRegenerateIsBlockedWhenSelectedModelIsNotInCurrentLoadedList() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let models = [makeThinkingCapableProviderModels()[1]]
+        let missingHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111115"))
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "Old answer")
+            ],
+            draftText: "",
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: missingHandle,
+            selectedThinking: .effort(.medium),
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.regenerateTapped)
+
+        XCTAssertTrue(stream.requests.isEmpty)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lockedModelHandle)
+    }
+
+    func testMakeSessionSnapshotUsesLockedModelAndThinkingInsteadOfNextRequestSelection() {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111116"))
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let feature = withDependencies {
+            $0.uuid = .incrementing
+        } operation: {
+            AiChatFeature()
+        }
+        var state = AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium),
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle
+        )
+
+        _ = withDependencies {
+            $0.uuid = .incrementing
+        } operation: {
+            feature.startRequest(kind: .submit, state: &state)
+        }
+
+        guard case let .processing(lock) = state.executionPhase else {
+            return XCTFail("Expected processing lock")
+        }
+
+        state.selectedModelHandle = catalogRows[1].handle
+        state.selectedThinking = .effort(.minimal)
+
+        let snapshot = feature.makeSessionSnapshot(state: state, lock: lock)
+
+        XCTAssertEqual(lock.context.model, catalogRows[0].handle)
+        XCTAssertEqual(lock.context.selectedModel, models[0])
+        XCTAssertEqual(lock.context.selectedThinking, .effort(.medium))
+        XCTAssertEqual(state.selectedModelHandle, catalogRows[1].handle)
+        XCTAssertEqual(state.selectedThinking, .effort(.minimal))
+        XCTAssertEqual(snapshot.model, catalogRows[0].handle)
+        XCTAssertEqual(snapshot.selectedThinking, .effort(.medium))
+        XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
+    }
+
 }

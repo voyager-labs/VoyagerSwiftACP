@@ -3,6 +3,10 @@ import Foundation
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiChat
 
+import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
 @Reducer
@@ -14,10 +18,11 @@ struct FileManagerFeature {
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
 
-    @Dependency(\.aiConnectionsFileClient)
-    private var aiConnectionsFileClient
     @Dependency(\.uuid)
     private var uuid
+
+    @Dependency(\.aiConnectionsFileClient)
+    private var aiConnectionsFileClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.content, action: \.content) {
@@ -59,8 +64,11 @@ struct FileManagerFeature {
             case .inspector(.closeChat):
                 .cancel(id: CancelID.contextualAiChatOpen)
 
+            case .inspector(.delegate(.openAISettings)):
+                .send(.delegate(.openAISettings))
+
             case let .aiConnectionsFileUpdated(file):
-                updateOpenAiChatModels(connectionsFile: file, state: state)
+                forwardProviderConnectionsToOpenAiChat(file: file, state: state)
 
             default:
                 .none
@@ -254,8 +262,8 @@ struct FileManagerFeature {
         }
     }
 
-    private func updateOpenAiChatModels(
-        connectionsFile: AIConnectionsFile,
+    private func forwardProviderConnectionsToOpenAiChat(
+        file: AIConnectionsFile,
         state: State,
     ) -> Effect<Action> {
         guard state.inspector.inspectorVisible,
@@ -263,29 +271,24 @@ struct FileManagerFeature {
               state.inspector.activeMode == .chat
         else { return .none }
 
-        let modelSelection = FileManagerAiChatContextAdapter.makeAiChatModelSelection(
-            connectionsFile: connectionsFile,
-        )
-
-        return .send(.inspector(.aiChat(.availableModelsUpdated(
-            catalogRows: modelSelection.catalogRows,
-            selectedModelHandle: modelSelection.selectedModelHandle,
-        ))))
+        return .send(.inspector(.aiChat(.providerConnectionsUpdated(file))))
     }
 
     private func openContextualAiChatEffect(state: State) -> Effect<Action> {
         let content = state.content
         let sessionID = AiChatSessionID(rawValue: uuid())
-        return .run { [aiConnectionsFileClient, content, sessionID] send in
-            let connectionsFile = await (try? aiConnectionsFileClient.load()) ?? .empty()
-            let setup = await MainActor.run {
-                FileManagerAiChatContextAdapter.makeAiChatSetupState(
-                    content: content,
-                    sessionID: sessionID,
-                    connectionsFile: connectionsFile,
-                )
+        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: content,
+            sessionID: sessionID,
+        )
+        return .run { [aiConnectionsFileClient, setup] send in
+            let connectionsFile: AIConnectionsFile
+            do {
+                connectionsFile = try await aiConnectionsFileClient.load()
+            } catch {
+                connectionsFile = .empty()
             }
-            await send(.inspector(.openChat(setup)))
+            await send(.inspector(.openChat(setup, connectionsFile)))
         }
         .cancellable(id: CancelID.contextualAiChatOpen, cancelInFlight: true)
     }

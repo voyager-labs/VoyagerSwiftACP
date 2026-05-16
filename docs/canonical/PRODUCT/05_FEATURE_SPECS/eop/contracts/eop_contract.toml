@@ -1,0 +1,376 @@
+[contract]
+id = "eop.entry"
+category = "EOP"
+primary_object_key = "entry"
+secondary_object_keys = [
+  "directory",
+  "property",
+  "selection",
+  "entry_action",
+  "execution",
+  "history",
+]
+display_region = "file_manager_window.content_pane.page_container.page_mode_directory"
+
+[policy]
+entry_actions_apply_to_current_selection = true
+destructive_actions_require_explicit_user_intent = true
+clipboard_actions_preserve_source_until_paste = true
+undo_redo_scoped_to_recent_entry_action = true
+reference_copy_does_not_modify_entries = true
+
+[user_visible_status]
+allowed = [
+  "open_entry_with_default_app_applied",
+  "open_entry_with_selected_app_applied",
+  "set_default_app_for_entry_applied",
+  "quick_look_entry_applied",
+  "create_new_folder_applied",
+  "copy_entry_ies_applied",
+  "cut_entry_ies_applied",
+  "paste_entry_ies_applied",
+  "duplicate_entry_ies_applied",
+  "move_entry_ies_applied",
+  "create_entry_alias_applied",
+  "compress_entry_ies_applied",
+  "extract_compressed_file_s_applied",
+  "move_entry_ies_to_trash_applied",
+  "delete_entry_ies_immediately_applied",
+  "put_deleted_entry_ies_back_applied",
+  "empty_trash_applied",
+  "undo_entry_action_applied",
+  "redo_entry_action_applied",
+  "rename_entry_applied",
+  "edit_entry_ies_tags_applied",
+  "get_entry_info_applied",
+  "change_entry_permission_s_applied",
+  "batch_rename_entries_applied",
+  "copy_absolute_path_s_of_entry_ies_applied",
+  "copy_releative_path_s_of_entry_ies_applied",
+  "copy_urls_of_entry_ies_applied",
+]
+forbidden = []
+
+[status.open_entry_with_default_app_applied]
+description = "Open Entry with Default App 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-001-open_entry_with_default_app"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.open_entry_with_selected_app_applied]
+description = "Open Entry with Selected App 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-001-open_entry_with_selected_app"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.set_default_app_for_entry_applied]
+description = "Set Default App for Entry 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-001-set_default_app_for_entry"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.quick_look_entry_applied]
+description = "Quick Look Entry 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-001-quick_look_entry"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.create_new_folder_applied]
+description = "Create New Folder 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-create_new_folder"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.copy_entry_ies_applied]
+description = "Copy Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-copy_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.cut_entry_ies_applied]
+description = "Cut Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-cut_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.paste_entry_ies_applied]
+description = "Paste Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-paste_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.duplicate_entry_ies_applied]
+description = "Duplicate Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-duplicate_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.move_entry_ies_applied]
+description = "Move Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-move_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.create_entry_alias_applied]
+description = "Create Entry Alias 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-create_entry_alias"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.compress_entry_ies_applied]
+description = "Compress Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-compress_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.extract_compressed_file_s_applied]
+description = "Extract Compressed File(s) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-002-extract_compressed_file_s"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.move_entry_ies_to_trash_applied]
+description = "Move Entry(ies) to Trash 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-003-move_entry_ies_to_trash"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.delete_entry_ies_immediately_applied]
+description = "Delete Entry(ies) Immediately 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-003-delete_entry_ies_immediately"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.put_deleted_entry_ies_back_applied]
+description = "Put Deleted Entry(ies) Back 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-003-put_deleted_entry_ies_back"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.empty_trash_applied]
+description = "Empty Trash 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-003-empty_trash"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.undo_entry_action_applied]
+description = "Undo Entry Action 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-003-undo_entry_action"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.redo_entry_action_applied]
+description = "Redo Entry Action 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-003-redo_entry_action"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.rename_entry_applied]
+description = "Rename Entry 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-004-rename_entry"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.edit_entry_ies_tags_applied]
+description = "Edit Entry(ies) Tags 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-004-edit_entry_ies_tags"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.get_entry_info_applied]
+description = "Get Entry Info 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-004-get_entry_info"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.change_entry_permission_s_applied]
+description = "Change Entry Permission(s) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-004-change_entry_permission_s"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.batch_rename_entries_applied]
+description = "Batch Rename Entries 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-004-batch_rename_entries"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.copy_absolute_path_s_of_entry_ies_applied]
+description = "Copy Absolute Path(s) of Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-006-copy_absolute_path_s_of_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.copy_releative_path_s_of_entry_ies_applied]
+description = "Copy Releative Path(s) of Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-006-copy_releative_path_s_of_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[status.copy_urls_of_entry_ies_applied]
+description = "Copy URL(s) of Entry(ies) 결과가 사용자에게 반영된 상태"
+entered_by = ["EOP-006-copy_urls_of_entry_ies"]
+exits_to = []
+terminal = true
+user_visible = true
+
+[ownership."EOP-001-open_entry_with_default_app"]
+reads = []
+writes = ["open_entry_with_default_app_applied"]
+target_object = "entry"
+
+[ownership."EOP-001-open_entry_with_selected_app"]
+reads = []
+writes = ["open_entry_with_selected_app_applied"]
+target_object = "entry"
+
+[ownership."EOP-001-set_default_app_for_entry"]
+reads = []
+writes = ["set_default_app_for_entry_applied"]
+target_object = "entry"
+
+[ownership."EOP-001-quick_look_entry"]
+reads = []
+writes = ["quick_look_entry_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-create_new_folder"]
+reads = []
+writes = ["create_new_folder_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-copy_entry_ies"]
+reads = []
+writes = ["copy_entry_ies_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-cut_entry_ies"]
+reads = []
+writes = ["cut_entry_ies_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-paste_entry_ies"]
+reads = []
+writes = ["paste_entry_ies_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-duplicate_entry_ies"]
+reads = []
+writes = ["duplicate_entry_ies_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-move_entry_ies"]
+reads = []
+writes = ["move_entry_ies_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-create_entry_alias"]
+reads = []
+writes = ["create_entry_alias_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-compress_entry_ies"]
+reads = []
+writes = ["compress_entry_ies_applied"]
+target_object = "entry"
+
+[ownership."EOP-002-extract_compressed_file_s"]
+reads = []
+writes = ["extract_compressed_file_s_applied"]
+target_object = "entry"
+
+[ownership."EOP-003-move_entry_ies_to_trash"]
+reads = []
+writes = ["move_entry_ies_to_trash_applied"]
+target_object = "entry"
+
+[ownership."EOP-003-delete_entry_ies_immediately"]
+reads = []
+writes = ["delete_entry_ies_immediately_applied"]
+target_object = "entry"
+
+[ownership."EOP-003-put_deleted_entry_ies_back"]
+reads = []
+writes = ["put_deleted_entry_ies_back_applied"]
+target_object = "entry"
+
+[ownership."EOP-003-empty_trash"]
+reads = []
+writes = ["empty_trash_applied"]
+target_object = "entry"
+
+[ownership."EOP-003-undo_entry_action"]
+reads = []
+writes = ["undo_entry_action_applied"]
+target_object = "history"
+
+[ownership."EOP-003-redo_entry_action"]
+reads = []
+writes = ["redo_entry_action_applied"]
+target_object = "history"
+
+[ownership."EOP-004-rename_entry"]
+reads = []
+writes = ["rename_entry_applied"]
+target_object = "entry"
+
+[ownership."EOP-004-edit_entry_ies_tags"]
+reads = []
+writes = ["edit_entry_ies_tags_applied"]
+target_object = "property"
+
+[ownership."EOP-004-get_entry_info"]
+reads = []
+writes = ["get_entry_info_applied"]
+target_object = "property"
+
+[ownership."EOP-004-change_entry_permission_s"]
+reads = []
+writes = ["change_entry_permission_s_applied"]
+target_object = "property"
+
+[ownership."EOP-004-batch_rename_entries"]
+reads = []
+writes = ["batch_rename_entries_applied"]
+target_object = "entry"
+
+[ownership."EOP-006-copy_absolute_path_s_of_entry_ies"]
+reads = []
+writes = ["copy_absolute_path_s_of_entry_ies_applied"]
+target_object = "entry"
+
+[ownership."EOP-006-copy_releative_path_s_of_entry_ies"]
+reads = []
+writes = ["copy_releative_path_s_of_entry_ies_applied"]
+target_object = "entry"
+
+[ownership."EOP-006-copy_urls_of_entry_ies"]
+reads = []
+writes = ["copy_urls_of_entry_ies_applied"]
+target_object = "entry"

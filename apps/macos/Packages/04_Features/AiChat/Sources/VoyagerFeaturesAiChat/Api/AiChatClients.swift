@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesAi
 
@@ -7,45 +6,6 @@ public struct AiChatExecutionClient: Sendable {
 
     public init(execute: @escaping @Sendable (AiChatRequest) -> AsyncStream<AiChatEvent>) {
         self.execute = execute
-    }
-}
-
-public struct AiChatSettingsClient: Sendable {
-    public var openSettingsWindow: @MainActor @Sendable () -> Bool
-
-    public init(openSettingsWindow: @escaping @MainActor @Sendable () -> Bool) {
-        self.openSettingsWindow = openSettingsWindow
-    }
-}
-
-extension AiChatSettingsClient: DependencyKey {
-    public nonisolated static var liveValue: AiChatSettingsClient {
-        AiChatSettingsClient(openSettingsWindow: { @MainActor in
-            NSApp.activate(ignoringOtherApps: true)
-
-            let settingsSelector = Selector(("showSettingsWindow:"))
-            if NSApp.sendAction(settingsSelector, to: nil, from: nil) {
-                return true
-            }
-
-            let preferencesSelector = Selector(("showPreferencesWindow:"))
-            return NSApp.sendAction(preferencesSelector, to: nil, from: nil)
-        })
-    }
-
-    public nonisolated static var testValue: AiChatSettingsClient {
-        AiChatSettingsClient(openSettingsWindow: { false })
-    }
-
-    public nonisolated static var previewValue: AiChatSettingsClient {
-        AiChatSettingsClient(openSettingsWindow: { false })
-    }
-}
-
-public extension DependencyValues {
-    nonisolated var aiChatSettingsClient: AiChatSettingsClient {
-        get { self[AiChatSettingsClient.self] }
-        set { self[AiChatSettingsClient.self] = newValue }
     }
 }
 

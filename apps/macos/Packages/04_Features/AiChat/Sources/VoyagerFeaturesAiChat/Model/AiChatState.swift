@@ -2,6 +2,34 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 
+public struct AiModelListFailure: Equatable, Sendable {
+    public var message: String
+    public var reason: AiModelListFailureReason
+
+    public init(message: String, reason: AiModelListFailureReason = .generic) {
+        self.message = message
+        self.reason = reason
+    }
+}
+
+public enum AiModelListFailureReason: Equatable, Sendable {
+    case generic
+    case unsupportedProvider
+}
+
+public enum AiChatProviderConnectionSnapshot: Equatable, Sendable {
+    case unknown
+    case known([AiProvider])
+}
+
+public enum AiChatModelListState: Equatable, Sendable {
+    case idle
+    case loading
+    case loaded([AiProviderModel])
+    case empty
+    case failed(AiModelListFailure)
+}
+
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     public var restoreSessionID: AiChatSessionID?
@@ -13,10 +41,22 @@ public struct AiChatState: Equatable, Sendable {
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
     public var catalogRows: [AiModelCatalogRow]
+    public var modelListState: AiChatModelListState
+    public var isModelSelectorPresented: Bool
     public var selectedModelHandle: AiModelHandle?
+    public var selectedThinking: AiThinkingSelection?
+    public var unavailableSelectedModelHandle: AiModelHandle?
     public var lockedModelHandle: AiModelHandle?
     public var lastExecutionFailure: AiChatExecutionFailure?
     public var executionPhase: AiChatExecutionPhase
+    public var modelListRequestID: UUID?
+    public var modelListProvider: AiProvider?
+    public var modelListProviderOrder: [AiProvider]
+    public var modelListPendingProviders: Set<AiProvider>
+    public var modelListLoadedModelsByProvider: [AiProvider: [AiProviderModel]]
+    public var modelListFailedProviders: [AiProvider: AiModelListFailure]
+    public var providerConnectionSnapshot: AiChatProviderConnectionSnapshot
+    public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
 
     public init(
         restoreSessionID: AiChatSessionID? = nil,
@@ -28,10 +68,22 @@ public struct AiChatState: Equatable, Sendable {
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
         catalogRows: [AiModelCatalogRow] = [],
+        modelListState: AiChatModelListState? = nil,
+        isModelSelectorPresented: Bool = false,
         selectedModelHandle: AiModelHandle? = nil,
+        selectedThinking: AiThinkingSelection? = nil,
+        unavailableSelectedModelHandle: AiModelHandle? = nil,
         lockedModelHandle: AiModelHandle? = nil,
         lastExecutionFailure: AiChatExecutionFailure? = nil,
-        executionPhase: AiChatExecutionPhase = .idle
+        executionPhase: AiChatExecutionPhase = .idle,
+        modelListRequestID: UUID? = nil,
+        modelListProvider: AiProvider? = nil,
+        modelListProviderOrder: [AiProvider] = [],
+        modelListPendingProviders: Set<AiProvider> = [],
+        modelListLoadedModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
+        modelListFailedProviders: [AiProvider: AiModelListFailure] = [:],
+        providerConnectionSnapshot: AiChatProviderConnectionSnapshot = .unknown,
+        availableModelsByProvider: [AiProvider: [AiProviderModel]] = [:]
     ) {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
@@ -41,259 +93,140 @@ public struct AiChatState: Equatable, Sendable {
         self.currentContext = currentContext
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
-        self.catalogRows = catalogRows
+        let resolvedModelListState = modelListState ?? Self.modelListState(from: catalogRows)
+        self.catalogRows = catalogRows.isEmpty ? Self.makeCatalogRows(for: resolvedModelListState) : catalogRows
+        self.modelListState = resolvedModelListState
+        self.isModelSelectorPresented = isModelSelectorPresented
         self.selectedModelHandle = selectedModelHandle
+        self.selectedThinking = selectedThinking
+        self.unavailableSelectedModelHandle = unavailableSelectedModelHandle
         self.lockedModelHandle = lockedModelHandle
         self.lastExecutionFailure = lastExecutionFailure
         self.executionPhase = executionPhase
+        self.modelListRequestID = modelListRequestID
+        self.modelListProvider = modelListProvider
+        self.modelListProviderOrder = modelListProviderOrder
+        self.modelListPendingProviders = modelListPendingProviders
+        self.modelListLoadedModelsByProvider = modelListLoadedModelsByProvider
+        self.modelListFailedProviders = modelListFailedProviders
+        self.providerConnectionSnapshot = providerConnectionSnapshot
+        self.availableModelsByProvider = availableModelsByProvider
     }
 
+    public var availableModels: [AiProviderModel] { displayModelBuilder.availableModels }
     public var currentContextSummaryDisplayModel: AiChatContextSummaryDisplayModel {
-        aiChatContextSummaryDisplayModel(for: currentContext)
+        displayModelBuilder.currentContextSummaryDisplayModel
     }
-
-    public var connectionState: AiChatConnectionState {
-        if let metadata = aiChatUnconnectedMetadata(for: self) {
-            return .unconnected(metadata)
-        }
-        if let metadata = aiChatErrorMetadata(for: self) {
-            return .error(metadata)
-        }
-        return .connected
-    }
-
-    public var emptyStateDisplayModel: AiChatEmptyStateDisplayModel {
-        AiChatEmptyStateDisplayModel(
-            title: "Ask about this context",
-            detail: "Send a message to start a contextual chat."
-        )
-    }
-
-    public var chatInputDisplayModel: AiChatInputDisplayModel {
-        let stopEnabled = isProcessing && (cancelAffordance?.isEnabled ?? false)
-        return AiChatInputDisplayModel(
-            placeholder: "Ask anything…",
-            contextAffordanceLabel: "+",
-            modelLabel: chatInputModelLabel,
-            effortLabel: "xhigh",
-            submitAccessibilityLabel: "Send",
-            stopAccessibilityLabel: "Stop",
-            isSubmitVisible: !isProcessing,
-            isStopVisible: isProcessing,
-            canSubmit: canSubmit,
-            canStop: stopEnabled
-        )
-    }
-
-    public var skeletonDisplayModel: AiChatSkeletonDisplayModel {
-        AiChatSkeletonDisplayModel(
-            headerTitle: "Chat",
-            currentContext: currentContextSummaryDisplayModel,
-            surface: skeletonSurfaceDisplayModel,
-            chatInput: chatInputDisplayModel
-        )
-    }
-
+    public var connectionState: AiChatConnectionState { displayModelBuilder.connectionState }
+    public var emptyStateDisplayModel: AiChatEmptyStateDisplayModel { displayModelBuilder.emptyStateDisplayModel }
+    public var chatInputDisplayModel: AiChatInputDisplayModel { displayModelBuilder.chatInputDisplayModel }
+    public var skeletonDisplayModel: AiChatSkeletonDisplayModel { displayModelBuilder.skeletonDisplayModel }
     public var skeletonSurfaceDisplayModel: AiChatSkeletonSurfaceDisplayModel {
-        switch surfaceState {
-        case let .unconnected(connection, _):
-            .unconnected(connection)
-        case let .error(connection, _):
-            .error(connection)
-        case .empty:
-            .empty(emptyStateDisplayModel)
-        case .ready:
-            .ready
-        case let .processing(processing, _, _):
-            .processing(processing)
-        }
+        displayModelBuilder.skeletonSurfaceDisplayModel
     }
-
-    public var modelCatalogState: AiChatModelCatalogState {
-        let selectedModel = selectedModelDisplayModel
-        let lockedModel = lockedModelDisplayModel
-        let selectedHandle = selectedModel?.handle
-        let lockedHandle = lockedModel?.handle
-
-        return AiChatModelCatalogState(
-            fieldLabel: "Model",
-            rows: catalogRows.map { row in
-                AiChatModelCatalogRowDisplayModel(
-                    handle: row.handle,
-                    label: aiChatModelLabel(for: row),
-                    isSelected: row.handle == selectedHandle,
-                    isLocked: row.handle == lockedHandle,
-                    isDefault: row.isDefault,
-                    isRecommended: row.isRecommended
-                )
-            },
-            selectedModel: selectedModel,
-            lockedModel: lockedModel
-        )
+    public var modelCatalogState: AiChatModelCatalogState { displayModelBuilder.modelCatalogState }
+    public var modelSelectorContentState: AiChatModelSelectorContentState {
+        displayModelBuilder.modelSelectorContentState
     }
-
+    public var modelSelectorHasPresentableContent: Bool {
+        displayModelBuilder.modelSelectorHasPresentableContent
+    }
+    public var modelSelectorIsDisabled: Bool { displayModelBuilder.modelSelectorIsDisabled }
     public var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? {
-        guard let row = resolvedSelectedModelRow else { return nil }
-        return AiChatSelectedModelDisplayModel(handle: row.handle, label: aiChatModelLabel(for: row))
+        displayModelBuilder.selectedModelDisplayModel
+    }
+    public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { displayModelBuilder.lockedModelDisplayModel }
+    public var canSubmit: Bool { displayModelBuilder.canSubmit }
+    public var canRegenerate: Bool { displayModelBuilder.canRegenerate }
+    public var requestStatusText: String? { displayModelBuilder.requestStatusText }
+    public var sessionStatusText: String? { displayModelBuilder.sessionStatusText }
+    public var cancelAffordance: AiChatCancelAffordance? { displayModelBuilder.cancelAffordance }
+    public var surfaceState: AiChatSurfaceState { displayModelBuilder.surfaceState }
+    public var modelFieldLabel: String { displayModelBuilder.modelFieldLabel }
+    public var isProcessing: Bool { displayModelBuilder.isProcessing }
+    public var resolvedSelectedModelHandle: AiModelHandle? { displayModelBuilder.resolvedSelectedModelHandle }
+    public var resolvedSelectedModel: AiProviderModel? { displayModelBuilder.resolvedSelectedModel }
+
+    private var displayModelBuilder: AiChatStateDisplayModelBuilder {
+        AiChatStateDisplayModelBuilder(state: self)
     }
 
-    public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
-        if case let .processing(lock) = executionPhase {
-            return lockedModelDisplayModel(for: lock)
+    func normalizedSelectionHandle(
+        _ preferredHandle: AiModelHandle?,
+        in models: [AiProviderModel]? = nil
+    ) -> AiModelHandle? {
+        resolvedModel(for: preferredHandle, in: models)?.id
+    }
+
+    func normalizedSelectionHandlePreservingCurrentSelection(
+        in models: [AiProviderModel],
+        preferredHandle: AiModelHandle?
+    ) -> AiModelHandle? {
+        if let currentHandle = resolvedSelectedModelHandle,
+           Self.containsModelHandle(currentHandle, in: models) {
+            return currentHandle
         }
-
-        guard let handle = lockedModelHandle,
-              let row = catalogRows.first(where: { $0.handle == handle })
-        else { return nil }
-        return AiChatLockedModelDisplayModel(handle: row.handle, label: aiChatModelLabel(for: row))
+        return normalizedSelectionHandle(preferredHandle, in: models)
     }
 
-    public var canSubmit: Bool {
-        guard !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        guard !isProcessing else { return false }
-        guard resolvedSelectedModelRow != nil else { return false }
-        guard connectionState == .connected else { return false }
-
-        switch surfaceState {
-        case .empty, .ready:
-            return true
-        case .unconnected, .error, .processing:
-            return false
-        }
+    func resolvedModel(for handle: AiModelHandle?, in models: [AiProviderModel]? = nil) -> AiProviderModel? {
+        Self.resolvedModel(for: handle, in: models ?? availableModels)
     }
 
-    public var canRegenerate: Bool {
-        !isProcessing && transcriptHistory.contains(where: { $0.role == .assistant })
+    func resolvedModelRow(for handle: AiModelHandle?, in rows: [AiModelCatalogRow]? = nil) -> AiModelCatalogRow? {
+        Self.resolvedModelRow(for: handle, in: rows ?? catalogRows)
     }
 
-    public var requestStatusText: String? {
-        switch executionPhase {
-        case .idle:
-            if sessionStatus == .restoring {
-                return "Restoring session"
-            }
-            return nil
-        case let .processing(lock):
-            return "Processing \(lock.selectedModelRow?.displayName ?? lock.selectedModelHandle.rawValue)"
-        case .completed:
-            return "Request complete"
-        case let .failed(_, failure):
-            return failure.displayMessage
-        case .cancelled:
-            return "Request cancelled"
-        case let .persistenceRecovery(_, failure):
-            return "Finalized locally; \(failure.displayMessage)"
-        }
+    static func normalizedSelectionHandle(
+        _ preferredHandle: AiModelHandle?,
+        in models: [AiProviderModel]
+    ) -> AiModelHandle? {
+        AiChatStateSelection.normalizedSelectionHandle(preferredHandle, in: models)
     }
 
-    public var sessionStatusText: String? {
-        if sessionStatus == .restoring {
-            return "Restoring session"
-        }
-
-        switch restoreOutcome {
-        case .restored:
-            return "Restored session"
-        case .newSession:
-            return "Started new session"
-        case .rebindRequired:
-            return "Session needs rebind"
-        case .failed:
-            return nil
-        case nil:
-            return nil
-        }
+    static func resolvedModel(for handle: AiModelHandle?, in models: [AiProviderModel]) -> AiProviderModel? {
+        AiChatStateSelection.resolvedModel(for: handle, in: models)
     }
 
-    public var cancelAffordance: AiChatCancelAffordance? {
-        guard executionPhase.isProcessing else { return nil }
-        return AiChatCancelAffordance(title: "Cancel request", isEnabled: true)
+    static func resolvedModelRow(for handle: AiModelHandle?, in rows: [AiModelCatalogRow]) -> AiModelCatalogRow? {
+        AiChatStateSelection.resolvedModelRow(for: handle, in: rows)
     }
 
-    public var surfaceState: AiChatSurfaceState {
-        switch executionPhase {
-        case let .processing(lock):
-            return .processing(
-                processing: AiChatProcessingState(
-                    lockedModel: lockedModelDisplayModel(for: lock),
-                    cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true)
-                ),
-                summary: currentContextSummaryDisplayModel,
-                selectedModel: selectedModelDisplayModel
-            )
-        case .completed, .failed, .cancelled, .persistenceRecovery:
-            if let metadata = aiChatUnconnectedMetadata(for: self) {
-                return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
-            }
-            if let metadata = aiChatTerminalErrorMetadata(for: self) {
-                return .error(connection: metadata, summary: currentContextSummaryDisplayModel)
-            }
-            return .ready(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
-        case .idle:
-            break
-        }
-
-        switch connectionState {
-        case let .unconnected(metadata):
-            return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
-        case let .error(metadata):
-            return .error(connection: metadata, summary: currentContextSummaryDisplayModel)
-        case .connected:
-            if isInitialChatSurface {
-                return .empty(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
-            }
-
-            return .ready(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
-        }
+    static func containsModelHandle(_ handle: AiModelHandle, in models: [AiProviderModel]) -> Bool {
+        AiChatStateSelection.containsModelHandle(handle, in: models)
     }
 
-    public var modelFieldLabel: String { "Model" }
-
-    public var isProcessing: Bool { executionPhase.isProcessing }
-
-    private var chatInputModelLabel: String? {
-        selectedModelDisplayModel?.label.title
-            ?? lockedModelDisplayModel?.label.title
+    static func containsModelHandle(_ handle: AiModelHandle, in rows: [AiModelCatalogRow]) -> Bool {
+        AiChatStateSelection.containsModelHandle(handle, in: rows)
     }
 
-    private func lockedModelDisplayModel(for lock: AiChatRequestLock) -> AiChatLockedModelDisplayModel {
-        if let row = lock.selectedModelRow ?? catalogRows.first(where: { $0.handle == lock.selectedModelHandle }) {
-            return AiChatLockedModelDisplayModel(handle: row.handle, label: aiChatModelLabel(for: row))
-        }
-
-        return AiChatLockedModelDisplayModel(
-            handle: lock.selectedModelHandle,
-            label: AiChatModelLabel(title: lock.selectedModelHandle.rawValue)
-        )
+    static func normalizeSelectedThinking(
+        _ selectedThinking: AiThinkingSelection?,
+        for model: AiProviderModel?
+    ) -> AiThinkingSelection? {
+        AiChatStateSelection.normalizeSelectedThinking(selectedThinking, for: model)
     }
 
-    private var isInitialChatSurface: Bool {
-        transcriptHistory.isEmpty
+    static func modelListState(from catalogRows: [AiModelCatalogRow]) -> AiChatModelListState {
+        AiChatStateSelection.modelListState(from: catalogRows)
     }
 
-    private var resolvedSelectedModelRow: AiModelCatalogRow? {
-        if let handle = selectedModelHandle,
-           let row = catalogRows.first(where: { $0.handle == handle }) {
-            return row
-        }
-
-        guard !catalogRows.isEmpty else { return nil }
-        return catalogRows.first
+    static func makeCatalogRows(
+        for models: [AiProviderModel],
+        preserving existingRows: [AiModelCatalogRow] = []
+    ) -> [AiModelCatalogRow] {
+        AiChatStateSelection.makeCatalogRows(for: models, preserving: existingRows)
     }
-}
 
-func aiChatTerminalErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {
-    switch state.executionPhase {
-    case .persistenceRecovery:
-        if let failure = state.lastExecutionFailure {
-            return aiChatExecutionFailureMetadata(for: failure)
-        }
-        return aiChatSessionStatusErrorMetadata(for: state)
-    case .completed, .cancelled:
-        return aiChatSessionStatusErrorMetadata(for: state)
-    case .failed:
-        return nil
-    case .idle, .processing:
-        return nil
+    static func makeCatalogRows(for modelListState: AiChatModelListState) -> [AiModelCatalogRow] {
+        AiChatStateSelection.makeCatalogRows(for: modelListState)
+    }
+
+    static func defaultThinkingLabel(for capability: AiModelThinkingCapability) -> String {
+        AiChatStateSelection.defaultThinkingLabel(for: capability)
+    }
+
+    static func thinkingLabel(for selection: AiThinkingSelection) -> String {
+        AiChatStateSelection.thinkingLabel(for: selection)
     }
 }

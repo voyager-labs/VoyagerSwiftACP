@@ -1,5 +1,6 @@
 import Foundation
 @testable import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 import XCTest
 
@@ -7,7 +8,8 @@ import XCTest
 final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
     func testRecentAdapterMapsHelperPayloadIntoEntryModel() async {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let recentSearchClient = RecentSearchClient(
+        let items = await EntryLoadingLive.loadRecentItemsViaSearch(
+            showHidden: false,
             search: { request in
                 XCTAssertEqual(request.scopeMode, .allIndexed)
                 XCTAssertEqual(request.resultCap, 100)
@@ -28,16 +30,11 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
                             kind: "Text",
                             creatorApplication: "TextEdit",
                             tags: [VoyagerShared.SearchTagPayload(name: "Work", colorCode: 4)],
-                            supplementaryMetadata: .compressedFileSize(12),
+                            supplementaryMetadata: .compressedFileSize(12)
                         ),
-                    ],
+                    ]
                 )
-            },
-        )
-
-        let items = await EntryLoadingLive.loadRecentItemsViaSearch(
-            showHidden: false,
-            recentSearchClient: recentSearchClient,
+            }
         )
 
         XCTAssertEqual(items.map(\.fullPath), ["/tmp/Recent.txt"])
@@ -49,12 +46,10 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
     func testTagAdapterReturnsEmptyArrayOnHelperFailure() async {
         struct StubError: Error {}
 
-        let tagSearchClient = TagSearchClient(search: { _ in throw StubError() })
-
         let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
             tag: "Work",
             showHidden: false,
-            tagSearchClient: tagSearchClient,
+            search: { _ in throw StubError() }
         )
 
         XCTAssertEqual(items, [])
@@ -62,7 +57,9 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
 
     func testTagAdapterMapsHelperPayloadIntoEntryModel() async {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let tagSearchClient = TagSearchClient(
+        let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
+            tag: "Green",
+            showHidden: false,
             search: { request in
                 XCTAssertEqual(request.requestedTag, "Green")
                 XCTAssertTrue(request.exactTagVerification)
@@ -83,17 +80,11 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
                             kind: "Text",
                             creatorApplication: "TextEdit",
                             tags: [VoyagerShared.SearchTagPayload(name: "Green", colorCode: 2)],
-                            supplementaryMetadata: nil,
+                            supplementaryMetadata: nil
                         ),
-                    ],
+                    ]
                 )
-            },
-        )
-
-        let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
-            tag: "Green",
-            showHidden: false,
-            tagSearchClient: tagSearchClient,
+            }
         )
 
         XCTAssertEqual(items.map(\.fullPath), ["/tmp/Tagged.txt"])

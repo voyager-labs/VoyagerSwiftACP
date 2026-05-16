@@ -1,4 +1,5 @@
 import SwiftUI
+import VoyagerShared
 
 private struct ToolbarButtonLabel: View {
     let systemName: String

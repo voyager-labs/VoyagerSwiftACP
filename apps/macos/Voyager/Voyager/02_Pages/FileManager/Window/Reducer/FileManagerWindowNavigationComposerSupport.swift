@@ -1,5 +1,7 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 
 func handleNavigationDelegate(
     _ delegateAction: ContentPageNavigationAction.Delegate,
@@ -12,15 +14,18 @@ func handleNavigationDelegate(
         return handleNavigateToState(navigationState, state: &state)
 
     case let .logDAUNavigation(previous, next):
-        logContentPageNavigationDAUIfNeeded(previous: previous, next: next)
+        guard previous != next else { return .none }
+        if next.isCollection {
+            VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
+        } else {
+            VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
+        }
         return .none
 
     case .resetComposer:
-        let exitEffect = exitCollectionMode(
-            state: &state.content,
-            computerName: computerName,
+        return .concatenate(
+            .send(.content(.internal(.resetComposer))),
+            .send(.content(.internal(.exitCollectionMode))),
         )
-        state.content.resetComposer()
-        return exitEffect.map(FileManagerWindowAction.content)
     }
 }

@@ -2,7 +2,9 @@ import ComposableArchitecture
 import Foundation
 @testable import Voyager
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import XCTest
 
 /// Tests for key command focus restoration policy in list and grid modes.
@@ -25,6 +27,7 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
                 initialState.entryViewLayout.mode = layout
                 initialState.navigation.seedInitialFolderPath("/tmp/voyager")
                 initialState.entryViewLayout.entries = [selected]
+                initialState.entryViewLayout.entryOperations.items = [selected]
                 initialState.entryViewLayout.selectedIds = [selected.id]
                 // Simulate an active rename session
                 initialState.entryViewLayout.entryOperations.renamingItemId = selected.id
@@ -51,12 +54,13 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
     /// This test confirms that the reducer-level handling works for list layout.
     func testListModeReturnAndKeypadEnterReachRenamePath() async {
         for keyCode in [36, 76] { // Return and Keypad Enter
-            let selected = makeEntry(name: "document.txt", fullPath: "/tmp/voyager/document.txt")
+            let selected = makeEntry(name: "document", fullPath: "/tmp/voyager/document.txt", fileExtension: "txt")
 
             var initialState = FileManagerContentState()
             initialState.entryViewLayout.mode = .list
             initialState.navigation.seedInitialFolderPath("/tmp/voyager")
             initialState.entryViewLayout.entries = [selected]
+            initialState.entryViewLayout.entryOperations.items = [selected]
             initialState.entryViewLayout.selectedIds = [selected.id]
 
             let store = TestStore(initialState: initialState) {
@@ -81,12 +85,17 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
     /// This test confirms the grid layout continues to work as before.
     func testGridModeReturnAndKeypadEnterReachRenamePath() async {
         for keyCode in [36, 76] { // Return and Keypad Enter
-            let selected = makeEntry(name: "spreadsheet.xlsx", fullPath: "/tmp/voyager/spreadsheet.xlsx")
+            let selected = makeEntry(
+                name: "spreadsheet",
+                fullPath: "/tmp/voyager/spreadsheet.xlsx",
+                fileExtension: "xlsx",
+            )
 
             var initialState = FileManagerContentState()
             initialState.entryViewLayout.mode = .grid
             initialState.navigation.seedInitialFolderPath("/tmp/voyager")
             initialState.entryViewLayout.entries = [selected]
+            initialState.entryViewLayout.entryOperations.items = [selected]
             initialState.entryViewLayout.selectedIds = [selected.id]
 
             let store = TestStore(initialState: initialState) {
@@ -116,6 +125,7 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
         initialState.entryViewLayout.mode = .list
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
         initialState.entryViewLayout.entries = [selected]
+        initialState.entryViewLayout.entryOperations.items = [selected]
         initialState.entryViewLayout.selectedIds = [selected.id]
         initialState.entryViewLayout.entryOperations.renamingItemId = selected.id
 

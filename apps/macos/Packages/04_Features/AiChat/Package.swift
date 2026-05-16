@@ -10,7 +10,7 @@ let package = Package(
         .library(name: "VoyagerFeaturesAiChat", targets: ["VoyagerFeaturesAiChat"]),
     ],
     dependencies: [
-        .package(name: "VoyagerEntitiesAi", path: "../../05_Entities/Ai"),
+        .package(path: "../../05_Entities/Ai"),
         .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.7.2"),
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.22.3"),
         .package(url: "https://github.com/pointfreeco/swift-dependencies", exact: "1.10.0"),
@@ -21,7 +21,7 @@ let package = Package(
         .target(
             name: "VoyagerFeaturesAiChat",
             dependencies: [
-                .product(name: "VoyagerEntitiesAi", package: "VoyagerEntitiesAi"),
+                .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),

@@ -9,6 +9,7 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 // swiftlint:disable type_name
+// swiftlint:disable type_body_length
 @MainActor
 final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
     func testOpenContextualAiChatRoutesCurrentContextSetupToInspector() async {
@@ -17,13 +18,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.content.entryViewLayout.entryOperations.items = [selectedEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id]
 
-        let connectionsFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
-            .testFixture(provider: .openai, authMethod: .apiKey),
-        ])
+        let connectionsFile = AIConnectionsFile.empty()
         let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: initialState.content,
             sessionID: makeSessionID("00000000-0000-0000-0000-000000000000"),
-            connectionsFile: connectionsFile,
         )
 
         let store = makeStore(
@@ -33,15 +31,19 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         )
 
         await store.send(.request(.openContextualAiChat))
-        await assertOpenChat(on: store, expectedSetup: expectedSetup)
+        await assertOpenChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: connectionsFile)
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
+        await assertProviderConnectionsUpdated(on: store, expectedFile: connectionsFile)
 
         XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents · 1 selected")
-        assertConnectedCurrentContextSkeletonContract(
+        assertUnconnectedCurrentContextContract(
             store.state.inspector.aiChat,
             expectedSummaryTitle: "Documents · 1 selected",
-            expectedModelTitle: "GPT-4.1 Mini",
-            expectedCanSubmit: false,
+            expectedBanner: .init(
+                title: "Connect an AI provider",
+                detail: "Set up a provider in Settings to chat with this context.",
+                fixLabel: "Open Settings",
+            ),
         )
     }
 
@@ -52,13 +54,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.content.entryViewLayout.entryOperations.items = [selectedEntry, anotherEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id, anotherEntry.id]
 
-        let connectionsFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
-            .testFixture(provider: .openai, authMethod: .apiKey),
-        ])
+        let connectionsFile = AIConnectionsFile.empty()
         let currentContextSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: initialState.content,
             sessionID: makeSessionID("00000000-0000-0000-0000-000000000000"),
-            connectionsFile: connectionsFile,
         )
 
         let store = TestStore(initialState: initialState) {
@@ -70,8 +69,13 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.request(.openContextualAiChat))
-        await assertOpenChatRouting(on: store, expectedSetup: currentContextSetup)
+        await assertOpenChatRouting(
+            on: store,
+            expectedSetup: currentContextSetup,
+            expectedConnectionsFile: connectionsFile,
+        )
         await assertAiChatSetupIgnoringSession(on: store, expectedSetup: currentContextSetup)
+        await assertProviderConnectionsUpdated(on: store, expectedFile: connectionsFile)
 
         let firstSessionID = store.state.inspector.aiChat.sessionID
         XCTAssertTrue(store.state.inspector.inspectorVisible)
@@ -96,7 +100,6 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: initialState.content,
             sessionID: AiChatSessionID(rawValue: fixedUUID),
-            connectionsFile: .empty(),
         )
 
         let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: .empty())
@@ -104,8 +107,9 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.send(.content(.view(.openContextualAiChatTapped)))
         await store.receive(\.content.delegate.openContextualAiChat)
         await store.receive(\.request.openContextualAiChat)
-        await assertOpenChat(on: store, expectedSetup: expectedSetup)
+        await assertOpenChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: .empty())
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
+        await assertProviderConnectionsUpdated(on: store, expectedFile: .empty())
 
         assertUnconnectedCurrentContextContract(
             store.state.inspector.aiChat,
@@ -126,6 +130,16 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         )))
     }
 
+    func testAiChatOpenSettingsDelegateRoutesToWindowDelegate() async {
+        let store = TestStore(initialState: FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")) {
+            FileManagerFeature()
+        }
+
+        await store.send(.inspector(.aiChat(.delegate(.openAISettings))))
+        await store.receive(.inspector(.delegate(.openAISettings)))
+        await store.receive(.delegate(.openAISettings))
+    }
+
     func testAiConnectionUpdateRefreshesOpenInspectorChatWithoutReopening() async {
         let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000031")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
@@ -137,13 +151,12 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await assertOpenChat(on: store, expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: initialState.content,
             sessionID: AiChatSessionID(rawValue: fixedUUID),
-            connectionsFile: .empty(),
-        ))
+        ), expectedConnectionsFile: .empty())
         await assertAiChatSetup(on: store, expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: initialState.content,
             sessionID: AiChatSessionID(rawValue: fixedUUID),
-            connectionsFile: .empty(),
         ))
+        await assertProviderConnectionsUpdated(on: store, expectedFile: .empty())
         await store.send(.inspector(.setInspectorPaneExists(true))) {
             $0.inspector.inspectorPaneExists = true
         }
@@ -153,18 +166,159 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         ])
 
         await store.send(.aiConnectionsFileUpdated(connectedFile))
-        await store.receive(\.inspector.aiChat.availableModelsUpdated) {
-            let expectedSelection = FileManagerAiChatContextAdapter.makeAiChatModelSelection(
-                connectionsFile: connectedFile,
-            )
-            $0.inspector.aiChat.catalogRows = expectedSelection.catalogRows
-            $0.inspector.aiChat.selectedModelHandle = expectedSelection.selectedModelHandle
-        }
+        await store.receive(\.inspector.aiChat.providerConnectionsUpdated)
 
         XCTAssertEqual(store.state.inspector.aiChat.sessionID, AiChatSessionID(rawValue: fixedUUID))
         XCTAssertEqual(store.state.inspector.aiChat.currentContext.summary, "Documents")
+    }
+
+    func testAiConnectionUpdateKeepsSelectorOpenAndFallsBackWhenSelectedProviderDisappears() async {
+        let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000032")
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.content.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        let initialFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
+            .testFixture(provider: .openai, authMethod: .apiKey),
+            .testFixture(provider: .anthropic, authMethod: .apiKey),
+        ])
+        let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: initialFile)
+
+        await store.send(.request(.openContextualAiChat))
+        await assertOpenChat(on: store, expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: initialState.content,
+            sessionID: AiChatSessionID(rawValue: fixedUUID),
+        ), expectedConnectionsFile: initialFile)
+        await assertAiChatSetup(on: store, expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: initialState.content,
+            sessionID: AiChatSessionID(rawValue: fixedUUID),
+        ))
+        await assertProviderConnectionsUpdated(on: store, expectedFile: initialFile)
+        await store.send(.inspector(.setInspectorPaneExists(true))) {
+            $0.inspector.inspectorPaneExists = true
+        }
+        await store.send(.inspector(.aiChat(.modelSelectorTapped))) {
+            $0.inspector.aiChat.isModelSelectorPresented = true
+        }
+
+        let fallbackFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
+            .testFixture(provider: .anthropic, authMethod: .apiKey, state: .connected),
+            .testFixture(provider: .openai, authMethod: .apiKey, state: .connectionFailed),
+        ])
+
+        await store.send(.aiConnectionsFileUpdated(fallbackFile))
+        await store.receive(\.inspector.aiChat.providerConnectionsUpdated)
+
+        XCTAssertTrue(store.state.inspector.aiChat.isModelSelectorPresented)
+    }
+
+    func testAiConnectionUpdateToEmptyCatalogShowsSettingsGateWithoutReopening() async {
+        let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000033")
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.content.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        let initialFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
+            .testFixture(provider: .openai, authMethod: .apiKey),
+        ])
+        let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: initialFile)
+
+        await store.send(.request(.openContextualAiChat))
+        await assertOpenChat(on: store, expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: initialState.content,
+            sessionID: AiChatSessionID(rawValue: fixedUUID),
+        ), expectedConnectionsFile: initialFile)
+        await assertAiChatSetup(on: store, expectedSetup: FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: initialState.content,
+            sessionID: AiChatSessionID(rawValue: fixedUUID),
+        ))
+        await assertProviderConnectionsUpdated(on: store, expectedFile: initialFile)
+        await store.send(.inspector(.setInspectorPaneExists(true))) {
+            $0.inspector.inspectorPaneExists = true
+        }
+
+        await store.send(.aiConnectionsFileUpdated(.empty()))
+        await store.receive(\.inspector.aiChat.providerConnectionsUpdated)
+
+        XCTAssertEqual(store.state.inspector.aiChat.sessionID, AiChatSessionID(rawValue: fixedUUID))
+    }
+
+    func testOpenContextualAiChatLoadsCurrentConnectionsSnapshotAtOpenTime() async {
+        let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000040")
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.content.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        let currentConnectionsFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .anthropic, providers: [
+            .testFixture(provider: .anthropic, authMethod: .apiKey),
+        ])
+        let anthropicModel = AiProviderModel(
+            id: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
+            provider: .anthropic,
+            rawModelID: "claude-sonnet-4-20250514",
+            displayName: "Claude Sonnet 4",
+            providerDisplayName: ProviderDescriptor.descriptor(for: .anthropic)?.displayName ?? "Anthropic",
+            thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
+            unavailableReason: nil,
+        )
+        let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: initialState.content,
+            sessionID: AiChatSessionID(rawValue: fixedUUID),
+        )
+        let store = makeStore(
+            initialState: initialState,
+            uuid: fixedUUID,
+            connectionsFile: currentConnectionsFile,
+            aiProviderModels: [anthropicModel],
+        )
+
+        await store.send(.request(.openContextualAiChat))
+        await assertOpenChat(
+            on: store,
+            expectedSetup: expectedSetup,
+            expectedConnectionsFile: currentConnectionsFile,
+        )
+        await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
+        await assertProviderConnectionsUpdated(on: store, expectedFile: currentConnectionsFile)
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.modelListLoading(_, provider, _))) = action else { return false }
+            return provider == .anthropic
+        }
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.modelListLoaded(_, provider, models))) = action else { return false }
+            return provider == .anthropic && models == [anthropicModel]
+        }
+
+        XCTAssertEqual(store.state.inspector.aiChat.modelListProvider, .anthropic)
+        XCTAssertEqual(store.state.inspector.aiChat.catalogRows.map(\.handle), [anthropicModel.id])
+        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, anthropicModel.id)
         XCTAssertEqual(store.state.inspector.aiChat.connectionState, .connected)
-        XCTAssertEqual(store.state.inspector.aiChat.chatInputDisplayModel.modelLabel, "GPT-4.1 Mini")
+    }
+
+    func testOpenContextualAiChatFallsBackToEmptySnapshotWhenLoadFails() async {
+        let fixedUUID = makeUUID("00000000-0000-0000-0000-000000000041")
+        var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        initialState.content.navigation.seedInitialFolderPath("/Users/test/Documents")
+
+        let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
+            content: initialState.content,
+            sessionID: AiChatSessionID(rawValue: fixedUUID),
+        )
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(fixedUUID)
+            $0.aiConnectionsFileClient.load = { throw NSError(domain: "test", code: -1) }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.openContextualAiChat))
+        await assertOpenChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: .empty())
+        await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
+        await assertProviderConnectionsUpdated(on: store, expectedFile: .empty())
+
+        XCTAssertTrue(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.activeMode, .chat)
+        XCTAssertTrue(store.state.inspector.aiChat.catalogRows.isEmpty)
+        XCTAssertNil(store.state.inspector.aiChat.selectedModelHandle)
     }
 
     func testInspectorCloseChatActionHidesPaneFromWindow() async {
@@ -191,13 +345,10 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         initialState.content.entryViewLayout.entryOperations.items = [selectedEntry]
         initialState.content.entryViewLayout.selectedIds = [selectedEntry.id]
 
-        let connectionsFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
-            .testFixture(provider: .openai, authMethod: .apiKey),
-        ])
+        let connectionsFile = AIConnectionsFile.empty()
         let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: initialState.content,
             sessionID: AiChatSessionID(rawValue: fixedUUID),
-            connectionsFile: connectionsFile,
         )
 
         let store = makeStore(initialState: initialState, uuid: fixedUUID, connectionsFile: connectionsFile)
@@ -205,14 +356,18 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.send(.content(.view(.openContextualAiChatTapped)))
         await store.receive(\.content.delegate.openContextualAiChat)
         await store.receive(\.request.openContextualAiChat)
-        await assertOpenChat(on: store, expectedSetup: expectedSetup)
+        await assertOpenChat(on: store, expectedSetup: expectedSetup, expectedConnectionsFile: connectionsFile)
         await assertAiChatSetup(on: store, expectedSetup: expectedSetup)
+        await assertProviderConnectionsUpdated(on: store, expectedFile: connectionsFile)
 
-        assertConnectedCurrentContextSkeletonContract(
+        assertUnconnectedCurrentContextContract(
             store.state.inspector.aiChat,
             expectedSummaryTitle: "Documents · 1 selected",
-            expectedModelTitle: "GPT-4.1 Mini",
-            expectedCanSubmit: false,
+            expectedBanner: .init(
+                title: "Connect an AI provider",
+                detail: "Set up a provider in Settings to chat with this context.",
+                fixLabel: "Open Settings",
+            ),
         )
 
         await store.send(.inspector(.setInspectorPaneExists(true))) {
@@ -313,12 +468,15 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         fixture: FocusedWindowFixture,
     ) async {
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.inspector(.openChat(setup))))) = action else {
+            guard case let .windows(.element(id: id, action: .window(.inspector(.openChat(setup, connectionsFile))))) =
+                action
+            else {
                 return false
             }
             return id == fixture.focusedUUID
                 && setup.sessionID == fixture.expectedSetup.sessionID
                 && setup.currentContext == fixture.expectedSetup.currentContext
+                && connectionsFile == fixture.connectionsFile
         }
     }
 
@@ -335,7 +493,6 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.transcriptHistory = fixture.expectedSetup
                 .transcriptHistory
             $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.draftText = fixture.expectedSetup.draftText
-            $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.streamDraftText = ""
             $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.catalogRows = fixture.expectedSetup.catalogRows
             $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.selectedModelHandle = fixture.expectedSetup
                 .selectedModelHandle
@@ -346,16 +503,29 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             $0.windows[id: fixture.focusedUUID]?.window.inspector.aiChat.executionPhase = .idle
         }
 
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.inspector(.aiChat(.providerConnectionsUpdated(file)))),
+            )) = action else {
+                return false
+            }
+            return id == fixture.focusedUUID && file == fixture.connectionsFile
+        }
+
         guard let aiChat = store.state.windows[id: fixture.focusedUUID]?.window.inspector.aiChat else {
             XCTFail("Missing focused window AI chat state")
             return
         }
 
-        assertConnectedCurrentContextSkeletonContract(
+        assertUnconnectedCurrentContextContract(
             aiChat,
             expectedSummaryTitle: "Documents · 1 selected",
-            expectedModelTitle: "GPT-4.1 Mini",
-            expectedCanSubmit: false,
+            expectedBanner: .init(
+                title: "Connect an AI provider",
+                detail: "Set up a provider in Settings to chat with this context.",
+                fixLabel: "Open Settings",
+            ),
         )
     }
 }
@@ -387,7 +557,6 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         XCTAssertEqual(state.canSubmit, expectedCanSubmit)
         XCTAssertTrue(state.transcriptHistory.isEmpty)
         XCTAssertTrue(state.draftText.isEmpty)
-        XCTAssertTrue(state.streamDraftText.isEmpty)
 
         guard case let .empty(emptyDisplay) = state.skeletonDisplayModel.surface else {
             XCTFail("Expected connected current-context skeleton empty surface")
@@ -431,12 +600,16 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         initialState: FileManagerFeature.State,
         uuid: UUID,
         connectionsFile: AIConnectionsFile,
+        aiProviderModels: [AiProviderModel] = [],
     ) -> TestStore<FileManagerFeature.State, FileManagerFeature.Action> {
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         } withDependencies: {
             $0.uuid = .constant(uuid)
             $0.aiConnectionsFileClient.load = { connectionsFile }
+            $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { provider, _ in
+                aiProviderModels.filter { $0.provider == provider }
+            })
         }
         store.exhaustivity = .off
         return store
@@ -445,15 +618,17 @@ private extension FileManagerWindowInspectorChatRoutingTests {
     private func assertOpenChat(
         on store: TestStore<FileManagerFeature.State, FileManagerFeature.Action>,
         expectedSetup: AiChatSetupState,
+        expectedConnectionsFile: AIConnectionsFile,
     ) async {
         await store.receive { action in
-            guard case let .inspector(.openChat(setup)) = action else { return false }
+            guard case let .inspector(.openChat(setup, connectionsFile)) = action else { return false }
             return setup.sessionID == expectedSetup.sessionID
                 && setup.currentContext == expectedSetup.currentContext
                 && setup.catalogRows == expectedSetup.catalogRows
                 && setup.selectedModelHandle == expectedSetup.selectedModelHandle
                 && setup.lockedModelHandle == expectedSetup.lockedModelHandle
                 && setup.lastExecutionFailure == expectedSetup.lastExecutionFailure
+                && connectionsFile == expectedConnectionsFile
         }
 
         XCTAssertTrue(store.state.inspector.inspectorVisible)
@@ -471,7 +646,6 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         XCTAssertEqual(store.state.inspector.aiChat.currentContext, expectedSetup.currentContext)
         XCTAssertEqual(store.state.inspector.aiChat.transcriptHistory, expectedSetup.transcriptHistory)
         XCTAssertEqual(store.state.inspector.aiChat.draftText, expectedSetup.draftText)
-        XCTAssertEqual(store.state.inspector.aiChat.streamDraftText, "")
         XCTAssertEqual(store.state.inspector.aiChat.catalogRows, expectedSetup.catalogRows)
         XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, expectedSetup.selectedModelHandle)
         XCTAssertEqual(store.state.inspector.aiChat.lockedModelHandle, expectedSetup.lockedModelHandle)
@@ -488,14 +662,16 @@ private extension FileManagerWindowInspectorChatRoutingTests {
     private func assertOpenChatRouting(
         on store: TestStore<FileManagerFeature.State, FileManagerFeature.Action>,
         expectedSetup: AiChatSetupState,
+        expectedConnectionsFile: AIConnectionsFile,
     ) async {
         await store.receive { action in
-            guard case let .inspector(.openChat(setup)) = action else { return false }
+            guard case let .inspector(.openChat(setup, connectionsFile)) = action else { return false }
             return setup.currentContext == expectedSetup.currentContext
                 && setup.catalogRows == expectedSetup.catalogRows
                 && setup.selectedModelHandle == expectedSetup.selectedModelHandle
                 && setup.lockedModelHandle == expectedSetup.lockedModelHandle
                 && setup.lastExecutionFailure == expectedSetup.lastExecutionFailure
+                && connectionsFile == expectedConnectionsFile
         }
 
         XCTAssertTrue(store.state.inspector.inspectorVisible)
@@ -512,12 +688,21 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         XCTAssertEqual(store.state.inspector.aiChat.currentContext, expectedSetup.currentContext)
         XCTAssertEqual(store.state.inspector.aiChat.transcriptHistory, expectedSetup.transcriptHistory)
         XCTAssertEqual(store.state.inspector.aiChat.draftText, expectedSetup.draftText)
-        XCTAssertEqual(store.state.inspector.aiChat.streamDraftText, "")
         XCTAssertEqual(store.state.inspector.aiChat.catalogRows, expectedSetup.catalogRows)
         XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, expectedSetup.selectedModelHandle)
         XCTAssertEqual(store.state.inspector.aiChat.lockedModelHandle, expectedSetup.lockedModelHandle)
         XCTAssertEqual(store.state.inspector.aiChat.lastExecutionFailure, expectedSetup.lastExecutionFailure)
         XCTAssertEqual(store.state.inspector.aiChat.executionPhase, .idle)
+    }
+
+    private func assertProviderConnectionsUpdated(
+        on store: TestStore<FileManagerFeature.State, FileManagerFeature.Action>,
+        expectedFile: AIConnectionsFile,
+    ) async {
+        await store.receive { action in
+            guard case let .inspector(.aiChat(.providerConnectionsUpdated(file))) = action else { return false }
+            return file == expectedFile
+        }
     }
 
     private func makeSessionID(_ rawValue: String) -> AiChatSessionID {
@@ -584,7 +769,6 @@ private extension FileManagerWindowInspectorChatRoutingTests {
             let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
                 content: windowState.content,
                 sessionID: AiChatSessionID(rawValue: sessionUUID),
-                connectionsFile: .empty(),
             )
             return FocusedWindowFixture(
                 initialState: initialState,
@@ -598,14 +782,11 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         focusedWindow.content.entryViewLayout.selectedIds = [selectedEntry.id]
         initialState.windows[id: focusedUUID]?.window = focusedWindow
 
-        let connectionsFile: AIConnectionsFile = .testFixture(lastUsedProviderId: .openai, providers: [
-            .testFixture(provider: .openai, authMethod: .apiKey),
-        ])
+        let connectionsFile = AIConnectionsFile.empty()
 
         let expectedSetup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
             content: focusedWindow.content,
             sessionID: AiChatSessionID(rawValue: sessionUUID),
-            connectionsFile: connectionsFile,
         )
 
         return FocusedWindowFixture(
@@ -617,3 +798,5 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         )
     }
 }
+
+// swiftlint:enable type_body_length

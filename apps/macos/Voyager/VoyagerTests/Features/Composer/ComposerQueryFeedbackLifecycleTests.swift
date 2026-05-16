@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
@@ -121,14 +122,13 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         let activeRequestID = UUID()
         let staleRequestID = UUID()
         let initialFeedback = ComposerTransientFeedback(id: UUID(), kind: .info, message: "existing")
-        let initialState = ComposerState(
-            scopes: ["/tmp"],
-            isLoadingFilters: true,
-            isFilteringInFlight: true,
-            queryRenderPhase: .chipsAppliedPendingList,
-            transientFeedback: initialFeedback,
-            activeFiltersRequestID: activeRequestID,
-        )
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.isLoadingFilters = true
+        initialState.isFilteringInFlight = true
+        initialState.queryRenderPhase = .chipsAppliedPendingList
+        initialState.transientFeedback = initialFeedback
+        initialState.activeFiltersRequestID = activeRequestID
 
         let store = TestStore(initialState: initialState) {
             ComposerFeature()
@@ -140,7 +140,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
             .failure(MockLocalizedError("HELPER_UNAVAILABLE: xpc disconnected")),
         ))
 
-        XCTAssertEqual(store.state.queryRenderPhase, .chipsAppliedPendingList)
+        XCTAssertEqual(store.state.queryRenderPhase, ComposerQueryRenderPhase.chipsAppliedPendingList)
         XCTAssertEqual(store.state.transientFeedback, initialFeedback)
         XCTAssertEqual(store.state.activeFiltersRequestID, activeRequestID)
     }

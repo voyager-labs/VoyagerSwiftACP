@@ -1,3 +1,4 @@
+import VoyagerEntitiesTag
 import VoyagerShared
 
 enum EntryModelPayloadAdapter {
@@ -17,13 +18,13 @@ enum EntryModelPayloadAdapter {
                 kind: payload.kind,
                 creatorApplication: payload.creatorApplication,
                 tags: payload.tags?.map { Tag(name: $0.name, colorCode: $0.colorCode) },
-                supplementaryMetadata: makeSupplementaryMetadata(payload.supplementaryMetadata),
-            ),
+                supplementaryMetadata: makeSupplementaryMetadata(payload.supplementaryMetadata)
+            )
         )
     }
 
     private nonisolated static func makeSupplementaryMetadata(
-        _ payload: SearchEntrySupplementaryMetadataPayload?,
+        _ payload: SearchEntrySupplementaryMetadataPayload?
     ) -> EntrySupplementaryMetadata? {
         guard let payload else {
             return nil

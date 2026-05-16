@@ -4,6 +4,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 
 struct OpenWithPanelSelection: Equatable, Sendable {

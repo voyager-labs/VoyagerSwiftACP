@@ -1,5 +1,7 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
@@ -8,7 +10,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     private let fileManager = FileManager.default
 
     func testMissingSchemaVersionFailsDecode() throws {
-        let data = try makeFailurePolicyBinaryPlist(MissingSchemaVersionPayload())
+        let data = try makeBinaryPlist(MissingSchemaVersionPayload())
 
         XCTAssertThrowsError(
             try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package),
@@ -18,7 +20,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testInvalidSchemaVersionTypeFailsDecode() throws {
-        let data = try makeFailurePolicyBinaryPlist(InvalidSchemaVersionTypePayload())
+        let data = try makeBinaryPlist(InvalidSchemaVersionTypePayload())
 
         XCTAssertThrowsError(
             try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package),
@@ -33,9 +35,10 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
 
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
-        await XCTAssertThrowsErrorAsync({
-            try await CollectionFileClient.liveValue.load(url)
-        }) { error in
+        do {
+            _ = try await CollectionFileClient.liveValue.load(url)
+            XCTFail("Expected error to be thrown")
+        } catch {
             XCTAssertEqual(error as? CollectionFileCompatibilityError, .missingPackagePayload)
         }
         XCTAssertFalse(fileManager.fileExists(atPath: url.appendingPathComponent("collection.plist").path))
@@ -48,7 +51,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
         let payloadURL = url.appendingPathComponent("collection.plist")
-        let data = try makeFailurePolicyBinaryPlist(
+        let data = try makeBinaryPlist(
             FutureVersionPayload(
                 schemaVersion: 999,
                 id: "future",
@@ -67,9 +70,10 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
 
         let beforeData = try Data(contentsOf: payloadURL)
 
-        await XCTAssertThrowsErrorAsync({
-            try await CollectionFileClient.liveValue.load(url)
-        }) { error in
+        do {
+            _ = try await CollectionFileClient.liveValue.load(url)
+            XCTFail("Expected error to be thrown")
+        } catch {
             guard case let CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(found, current) = error
             else {
                 return XCTFail("Unexpected error: \(error)")
@@ -83,7 +87,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testCompatibilityOwnerExposesTypedSchemaFailures() throws {
-        let missingSchemaData = try makeFailurePolicyBinaryPlist(MissingSchemaVersionPayload())
+        let missingSchemaData = try makeBinaryPlist(MissingSchemaVersionPayload())
         let legacyMissingSchema = try VoyagerCollectionFileCompatibilityOwner.decode(
             missingSchemaData,
             containerFormat: .legacySingleFile,
@@ -96,7 +100,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         XCTAssertEqual(legacyMissingSchema.file.schemaVersion, .init(major: 1, minor: 0))
         XCTAssertEqual(legacyMissingSchema.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
 
-        let invalidSchemaData = try makeFailurePolicyBinaryPlist(InvalidSchemaVersionTypePayload())
+        let invalidSchemaData = try makeBinaryPlist(InvalidSchemaVersionTypePayload())
         XCTAssertThrowsError(
             try VoyagerCollectionFileCompatibilityOwner.decode(invalidSchemaData, containerFormat: .legacySingleFile),
         ) { error in
@@ -105,7 +109,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testInvalidDefinitionPayloadThrowsOwnerError() throws {
-        let data = try makeFailurePolicyBinaryPlist(InvalidDefinitionPayload(
+        let data = try makeBinaryPlist(InvalidDefinitionPayload(
             schemaVersion: 1,
             id: "",
             name: "Broken",
@@ -135,7 +139,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testUnrecoverableDocumentCorruptionErrorShapeExists() {
-        let data = try? makeFailurePolicyBinaryPlist(UnrecoverableCorruptionPayload(
+        let data = try? makeBinaryPlist(UnrecoverableCorruptionPayload(
             schemaVersion: 1,
             id: "broken",
             name: "Broken",
@@ -158,7 +162,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     func testMalformedSnapshotFallsBackInsteadOfBecomingUnrecoverableCorruption() throws {
-        let data = try makeFailurePolicyBinaryPlist(InvalidSnapshotPayload(
+        let data = try makeBinaryPlist(InvalidSnapshotPayload(
             schemaVersion: 2,
             id: "corrupt-snapshot",
             name: "Corrupt Snapshot",
@@ -201,7 +205,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
         XCTAssertEqual(result.compatibility.writeBackReason, .blockedFutureMinorVersion)
     }
 
-    private func makeFailurePolicyBinaryPlist(_ value: some Encodable) throws -> Data {
+    private func makeBinaryPlist(_ value: some Encodable) throws -> Data {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         return try encoder.encode(value)
@@ -214,7 +218,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 
     private func XCTAssertThrowsErrorAsync(
-        _ expression: @escaping () async throws -> some Any,
+        _ expression: @autoclosure () async throws -> some Any,
         file: StaticString = #filePath,
         line: UInt = #line,
         _ errorHandler: (Error) -> Void = { _ in },
@@ -228,7 +232,7 @@ final class CollectionFileFailurePolicyTests: XCTestCase {
     }
 }
 
-private func makeStructuredSchemaPropertyList(
+func makeStructuredSchemaPropertyList(
     schema: [String: Int],
     includeSnapshot: Bool,
     includeSnapshotMeta: Bool,

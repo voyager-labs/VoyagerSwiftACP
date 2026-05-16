@@ -1,8 +1,22 @@
 # Voyager PR Review Rules
 
+This file is the source of truth for Voyager AI-powered PR review policy. `AGENTS.md` files should point here instead of duplicating review language, severity, noise, architecture, or reuse rules.
+
 You are reviewing Voyager as a repository-aware senior engineer.
 
 The purpose of this review is not to act as a linter, formatter, or CI substitute. The primary goal is to determine whether the PR fits Voyager's existing architecture, ownership model, module boundaries, and reuse patterns.
+
+## PR auto-review exclusions
+
+Greptile should not automatically review PRs that are operationally known to add review noise rather than new implementation risk.
+
+Configured skip paths in `.greptile/config.json`:
+
+- Branch filters: exclude revert branches such as `revert-*`, `*revert-*`, `revert/**`, `**/revert-*`, `**/*revert-*`, and `**/revert/**`.
+- Labels: skip PRs labeled `skip-greptile`, `no-greptile`, `duplicate-diff`, or `duplicate-pr`.
+- Keywords: skip PRs whose title/description/last commit message contains the narrow automatic-revert marker `This reverts commit`, or explicit operational markers `skip-greptile`, `no-greptile`, `duplicate-diff`, or `duplicate-pr`. Do not use broad standalone words such as `Revert` as skip keywords.
+
+Duplicate-diff PRs are not automatically detectable from Greptile configuration alone. Mark intentionally re-uploaded equivalent diffs with one of the configured labels or keywords so Greptile skips automatic review.
 
 ## Output language
 
@@ -25,6 +39,7 @@ Do not comment on:
 - Minor style preferences
 - Obvious type errors
 - Build failures that CI would immediately catch
+- Test failures that CI would immediately surface
 - Low-confidence speculation
 - Generic “consider refactoring” suggestions without concrete evidence
 

@@ -12,6 +12,52 @@ func makeUUID(_ rawValue: String, file: StaticString = #filePath, line: UInt = #
     return uuid
 }
 
+func makeProviderModels() -> [AiProviderModel] {
+    [
+        AiProviderModel(
+            id: AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
+            provider: .openai,
+            rawModelID: "gpt-4.1-mini",
+            displayName: "GPT-4.1 Mini",
+            providerDisplayName: ProviderDescriptor.descriptor(for: .openai)?.displayName ?? "OpenAI",
+            thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
+            unavailableReason: nil,
+        ),
+        AiProviderModel(
+            id: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
+            provider: .anthropic,
+            rawModelID: "claude-sonnet-4-20250514",
+            displayName: "Claude Sonnet 4",
+            providerDisplayName: ProviderDescriptor.descriptor(for: .anthropic)?.displayName ?? "Anthropic",
+            thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
+            unavailableReason: nil,
+        )
+    ]
+}
+
+func makeThinkingCapableProviderModels() -> [AiProviderModel] {
+    [
+        AiProviderModel(
+            id: AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
+            provider: .openai,
+            rawModelID: "gpt-4.1-mini",
+            displayName: "GPT-4.1 Mini",
+            providerDisplayName: ProviderDescriptor.descriptor(for: .openai)?.displayName ?? "OpenAI",
+            thinkingCapability: .effort(values: [.low, .medium, .high], defaultValue: .medium),
+            unavailableReason: nil,
+        ),
+        AiProviderModel(
+            id: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
+            provider: .anthropic,
+            rawModelID: "claude-sonnet-4-20250514",
+            displayName: "Claude Sonnet 4",
+            providerDisplayName: ProviderDescriptor.descriptor(for: .anthropic)?.displayName ?? "Anthropic",
+            thinkingCapability: .effort(values: [.minimal, .low, .medium], defaultValue: .low),
+            unavailableReason: nil,
+        )
+    ]
+}
+
 func makeCatalogRows() -> [AiModelCatalogRow] {
     [
         AiModelCatalogRow(
@@ -82,6 +128,8 @@ func makeRequestContext(
     runID: AiChatRunID,
     model: AiModelHandle,
     selectedRow: AiModelCatalogRow,
+    selectedModel: AiProviderModel? = nil,
+    selectedThinking: AiThinkingSelection? = nil,
     promptSummary: String = "Hello",
 ) -> AiChatRequestContextSnapshot {
     AiChatRequestContextSnapshot(
@@ -90,7 +138,9 @@ func makeRequestContext(
         runID: runID,
         provider: model.provider,
         model: model,
+        selectedModel: selectedModel,
         selectedModelRow: selectedRow,
+        selectedThinking: selectedThinking,
         sessionStatus: .active,
         currentContext: makeContextSnapshot(),
         promptSummary: promptSummary,
@@ -154,4 +204,32 @@ final class AiChatSessionPersistenceSpy: @unchecked Sendable {
     func save(_ snapshot: AiChatSessionSnapshot) async {
         snapshots.append(snapshot)
     }
+}
+
+
+func makeProviderRecord(
+    provider: AiProvider,
+    authMethod: ProviderAuthMethod = .apiKey,
+    state: ProviderConnectionState = .connected,
+    credential: StoredCredentialPayload? = nil
+) -> ProviderRecordFile {
+    let resolvedCredential = credential ?? .apiKey(APIKeyCredentialFile(secret: "sk-test-valid"))
+    return ProviderRecordFile(
+        providerId: provider,
+        authMethod: authMethod,
+        credential: resolvedCredential,
+        snapshot: ProviderSnapshotFile(lastKnownStatus: state)
+    )
+}
+
+func makeConnectionsFile(
+    updatedAtMs: Int64 = 1,
+    lastUsedProviderId: AiProvider? = nil,
+    providers: [ProviderRecordFile]
+) -> AIConnectionsFile {
+    AIConnectionsFile(
+        updatedAtMs: updatedAtMs,
+        lastUsedProviderId: lastUsedProviderId,
+        providers: Dictionary(uniqueKeysWithValues: providers.map { ($0.providerId.rawValue, $0) })
+    )
 }

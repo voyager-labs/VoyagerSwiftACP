@@ -2,6 +2,8 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 

@@ -15,58 +15,65 @@ shortcut: "-"
 
 ## Intent
 
-- 사용자가 List View에서 보고 싶은 컬럼만 남기고, 필요한 순서로 재배치해 빠르게 스캔할 수 있어야 한다.
-- List View 컬럼의 순서·표시 여부는 리스트 열 구성 설정을 기준으로 관리되어야 한다.
+- 현재 Page의 Entries View 표시 방식, 정렬, 그룹, selection 정보를 조정한다.
 
 ## Trigger / Entry Points
 
-- List View의 컬럼 편집 UI에서 진입(예: 컬럼 헤더 영역의 편집 메뉴)
+- file_manager_window.content_pane 영역에서 관련 컨트롤 또는 명령을 실행한 경우
 
 ## Preconditions
 
-- Entries View가 List View로 설정된 상태
+- 대상 Entries View이 현재 File Manager Window에서 접근 가능한 상태다.
 
 ## Expected Outcome
 
-- 사용자가 List View 컬럼의 표시 여부와 순서를 편집하면, 즉시 리스트에 반영된다.
+- List View에서 리스트 열 구성의 표시 여부와 순서를 설정.
+- 사용자에게 보이는 결과는 `customize_list_view_column_applied` 상태로 정리된다.
 
 ## State Changes
 
-- 리스트 열 구성 설정이 사용자의 편집 결과로 갱신된다.
-- 리스트 열 구성 설정은 List View 컬럼 순서·표시의 기준이며, 현재 열려 있는 List View는 해당 값에 맞게 즉시 다시 렌더링된다.
+- Entries View의 표시 또는 실행 상태를 갱신한다.
+- 이 인터랙션은 [evm_contract.toml](../contracts/evm_contract.toml)의 `customize_list_view_column_applied` 상태 어휘를 따른다.
 
 ## User-visible Feedback
 
-- 컬럼 헤더와 행의 컬럼 구성이 즉시 변경된다.
+- 성공 시 현재 화면의 표시, 선택, 정렬, 실행 결과가 즉시 갱신된다.
+- 실패 시 기존 상태를 보존하고 실패 사유를 사용자에게 표시한다.
 
 ## Edge Cases / Failure Handling
 
-- 필수 컬럼 정책에 어긋나는 편집 요청이 들어오면, 시스템이 허용 가능한 범위로 보정해 반영한다.
-- 지원하지 않는 컬럼을 포함한 편집 요청이 들어오면, 시스템이 해당 항목을 무시하고 가능한 설정만 반영한다.
+- 대상 Entries View이 사라졌거나 권한이 없으면 작업을 중단한다.
+- 동일 요청이 반복되면 마지막으로 확정된 상태를 기준으로 중복 반영을 피한다.
 
 ## Acceptance Criteria
 
-- [ ] Entries View가 List View로 설정된 상태일 때, 사용자가 컬럼 종류·표시 여부·순서를 편집하면,
-       리스트가 해당 설정대로 즉시 갱신됨
-- [ ] List View 상태에서, 사용자가 컬럼 설정을 변경하면, 리스트 열 구성 설정이 갱신되어 동일한 List View 렌더링 기준으로 적용되어야 한다.
-- [ ] 컬럼 편집 요청이 현재 정책에 맞지 않는 상황에서, 시스템은 허용 가능한 범위의 컬럼 구성만 반영해야 한다.
+- [ ] 대상 Entries View이 현재 File Manager Window에서 접근 가능한 상태다. 사용자가 Customize List View Column을 실행하면, List View에서 리스트 열 구성의 표시 여부와 순서를 설정 결과가 `customize_list_view_column_applied` 상태로 반영되어야 한다.
+- [ ] 작업을 완료할 수 없는 조건이면, 앱은 기존 상태를 보존하고 실패 피드백을 표시해야 한다.
+- [ ] 같은 interaction이 반복 호출되어도 중복되거나 모순된 상태가 남지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- List View가 활성화되어 있어야 한다.
-- 리스트 열 구성 설정을 저장하고 불러올 수 있어야 한다.
+- 현재 Page, selection, 파일 시스템 접근 권한, File Manager Window layout 상태에 의존한다.
 
 ## Observability / Analytics
 
-- List View 컬럼 편집 진입
-- 리스트 열 구성 변경(컬럼 순서, 표시 여부)
+- `evm.customize_list_view_column` 이벤트에 성공 여부와 대상 수, 실패 사유를 기록한다.
 
 ## Related Interactions
 
-- `EVM-002-set_entries_view_as_list_table`
-- `EVM-002-set_entries_view_as_icon_grid`
+- [EVM-002-group_entries_by_property](EVM-002-group_entries_by_property.md)
+- [EVM-002-set_entries_view_as_column](EVM-002-set_entries_view_as_column.md)
+- [EVM-002-set_entries_view_as_graph](EVM-002-set_entries_view_as_graph.md)
+- [EVM-002-set_entries_view_as_icon_grid](EVM-002-set_entries_view_as_icon_grid.md)
+- [EVM-002-set_entries_view_as_list_table](EVM-002-set_entries_view_as_list_table.md)
+- [EVM-002-show_hide_hidden_entry](EVM-002-show_hide_hidden_entry.md)
+- [EVM-002-show_selected_entry_counts](EVM-002-show_selected_entry_counts.md)
+- [EVM-002-sort_entrires_by_property](EVM-002-sort_entrires_by_property.md)
+- [EVM-002-update_entry_selection](EVM-002-update_entry_selection.md)
+- [EVM-002-view_entry_counts_in_current_page](EVM-002-view_entry_counts_in_current_page.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `31`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:31`
+- Flows: [evm_flow.md](../flows/evm_flow.md)
+- Contract: [evm_contract.toml](../contracts/evm_contract.toml)

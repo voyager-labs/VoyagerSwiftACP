@@ -1,6 +1,7 @@
 import Foundation
 
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
 
 enum BreadcrumbBuilder {
     static func buildBreadcrumbPaths(from root: String, to target: String) -> [String] {

@@ -22,7 +22,7 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
             tokenType: "Bearer",
             scopes: ["read", "write"],
             expiresAtMs: 1_700_000_000_000,
-            chatGPTAccountId: "account-123"
+            chatGPTAccountId: "account-123",
         )
         let record = ProviderRecordFile(
             providerId: .chatgptCodex,
@@ -31,14 +31,14 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
             snapshot: ProviderSnapshotFile(
                 lastKnownStatus: .connected,
                 lastVerifiedAtMs: 1_700_000_000_000,
-                lastErrorCode: .none
-            )
+                lastErrorCode: .none,
+            ),
         )
         let original = AIConnectionsFile(
             updatedAtMs: 1_700_000_000_000,
             lastUsedProviderId: .chatgptCodex,
             lastUsedAtMs: 1_700_000_000_000,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
 
         let data = try encoder.encode(original)
@@ -54,12 +54,12 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
             credential: .apiKey(apiKey),
             snapshot: ProviderSnapshotFile(
                 lastKnownStatus: .connected,
-                lastVerifiedAtMs: 1_700_000_000_000
-            )
+                lastVerifiedAtMs: 1_700_000_000_000,
+            ),
         )
         let original = AIConnectionsFile(
             updatedAtMs: 1_700_000_000_000,
-            providers: ["openai": record]
+            providers: ["openai": record],
         )
 
         let data = try encoder.encode(original)
@@ -76,19 +76,19 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
                 providerId: .chatgptCodex,
                 authMethod: .oauth,
                 credential: .oauth(oauthCred),
-                snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+                snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
             ),
             "openai": ProviderRecordFile(
                 providerId: .openai,
                 authMethod: .apiKey,
                 credential: .apiKey(apiCred),
-                snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+                snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
             ),
             "anthropic": ProviderRecordFile(
                 providerId: .anthropic,
                 authMethod: .apiKey,
                 credential: nil,
-                snapshot: ProviderSnapshotFile(lastKnownStatus: .notVerified)
+                snapshot: ProviderSnapshotFile(lastKnownStatus: .notVerified),
             ),
         ]
 
@@ -96,7 +96,7 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
             updatedAtMs: 1_700_000_000_000,
             lastUsedProviderId: .openai,
             lastUsedAtMs: 1_700_000_000_000,
-            providers: providers
+            providers: providers,
         )
 
         let data = try encoder.encode(original)
@@ -105,10 +105,62 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
         XCTAssertEqual(decoded.providers.count, 3)
     }
 
+    func testMixedSnapshotRoundTripPreservesLastUsedAndSnapshotMetadata() throws {
+        let original = AIConnectionsFile(
+            updatedAtMs: 1_700_000_123_456,
+            lastUsedProviderId: .anthropic,
+            lastUsedAtMs: 1_700_000_223_456,
+            providers: [
+                "openai": ProviderRecordFile(
+                    providerId: .openai,
+                    authMethod: .apiKey,
+                    credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+                    snapshot: ProviderSnapshotFile(
+                        lastKnownStatus: .connected,
+                        lastVerifiedAtMs: 1_700_000_111_000,
+                        lastErrorCode: .none,
+                    ),
+                ),
+                "anthropic": ProviderRecordFile(
+                    providerId: .anthropic,
+                    authMethod: .apiKey,
+                    credential: .apiKey(APIKeyCredentialFile(secret: "sk-anthropic")),
+                    snapshot: ProviderSnapshotFile(
+                        lastKnownStatus: .unavailable,
+                        lastVerifiedAtMs: nil,
+                        lastErrorCode: .providerUnsupportedInBuild,
+                    ),
+                ),
+                "chatgptCodex": ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(OAuthCredentialFile(accessToken: "at", refreshToken: "rt")),
+                    snapshot: ProviderSnapshotFile(
+                        lastKnownStatus: .connectionFailed,
+                        lastVerifiedAtMs: 1_700_000_222_000,
+                        lastErrorCode: .expired,
+                    ),
+                ),
+            ],
+        )
+
+        let data = try encoder.encode(original)
+        let decoded = try decoder.decode(AIConnectionsFile.self, from: data)
+
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.lastUsedProviderId, .anthropic)
+        XCTAssertEqual(decoded.lastUsedAtMs, 1_700_000_223_456)
+        XCTAssertEqual(decoded.providers["anthropic"]?.snapshot.lastKnownStatus, .unavailable)
+        XCTAssertEqual(decoded.providers["anthropic"]?.snapshot.lastErrorCode, .providerUnsupportedInBuild)
+        XCTAssertEqual(decoded.providers["chatgptCodex"]?.snapshot.lastErrorCode, .expired)
+    }
+
     func testStoredCredentialPayloadDecodingOauth() throws {
-        let json = """
-        {"kind":"oauth","accessToken":"at","refreshToken":"rt","scopes":[],"expiresAtMs":null}
-        """.data(using: .utf8)!
+        let json = Data(
+            """
+            {"kind":"oauth","accessToken":"at","refreshToken":"rt","scopes":[],"expiresAtMs":null}
+            """.utf8,
+        )
 
         let decoded = try decoder.decode(StoredCredentialPayload.self, from: json)
         if case let .oauth(oauth) = decoded {
@@ -122,9 +174,11 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
     }
 
     func testStoredCredentialPayloadDecodingApiKey() throws {
-        let json = """
-        {"kind":"apiKey","secret":"sk-abc"}
-        """.data(using: .utf8)!
+        let json = Data(
+            """
+            {"kind":"apiKey","secret":"sk-abc"}
+            """.utf8,
+        )
 
         let decoded = try decoder.decode(StoredCredentialPayload.self, from: json)
         if case let .apiKey(apiKey) = decoded {
@@ -135,9 +189,11 @@ final class AIConnectionsFileRoundTripTests: XCTestCase {
     }
 
     func testStoredCredentialPayloadUnknownKindThrows() {
-        let json = """
-        {"kind":"unknown","secret":"x"}
-        """.data(using: .utf8)!
+        let json = Data(
+            """
+            {"kind":"unknown","secret":"x"}
+            """.utf8,
+        )
 
         XCTAssertThrowsError(try decoder.decode(StoredCredentialPayload.self, from: json))
     }

@@ -31,6 +31,9 @@ For those, use:
 
 This skill is `Gate 2. FS local check` in the feature-spec authoring lifecycle.
 Use it after `contract -> flow -> interaction spec` authoring and before claiming `AI Draft Complete`.
+Every FEATURE_SPEC category that contains interaction spec markdown must have at least one category contract
+under `contracts/*.toml` and at least one category flow under `flows/*.md`. Missing contracts or flows are
+structural `FAIL` findings, not optional review notes.
 
 ## Required References
 
@@ -47,7 +50,7 @@ Read these before reviewing:
 - Prefer one category key such as `CBW`.
 - Accept a specific contract TOML path when the user is reviewing one contract.
 
-2. Run deterministic contract/spec checks
+1. Run deterministic contract/spec checks
 
 ```bash
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py CBW
@@ -59,10 +62,16 @@ Use `--json` when structured output helps:
 python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py CBW --json
 ```
 
-This pass should also catch missing category flow docs and flow docs that fail to reference the current contract/spec set.
+When auditing the full FEATURE_SPEC tree, run:
+
+```bash
+python3 .agents/skills/voyager-product-owner/checker/bundle-consistency/scripts/check_contract_consistency.py --all
+```
+
+This pass should also catch missing category contract docs, missing category flow docs, and flow docs that fail to reference the current contract/spec set.
 It also enforces OBJECTS-first contract checks such as unknown object keys, legacy object-key fields, unused or `OBJECTS`-redefining vocabulary entries, and state/transition ownership mismatches.
 
-3. Lint the affected interaction specs
+1. Lint the affected interaction specs
 
 Run strict lint only on interaction spec markdown, not `flows/*.md`:
 
@@ -70,14 +79,15 @@ Run strict lint only on interaction spec markdown, not `flows/*.md`:
 find PRODUCT/05_FEATURE_SPECS/cbw -name '*.md' ! -path '*/flows/*' | xargs python3 .agents/skills/voyager-product-owner/author/feature-spec/scripts/lint_feature_spec.py --strict
 ```
 
-4. Review flow alignment
+1. Review flow alignment
 
 - Compare `flows/*.md` against the linked interaction specs.
 - Check that step ordering, state names, object names, and branch semantics match the current contracts and specs.
+- If the category has no contract doc, treat that as a structural failure, not a style preference.
 - If the category has no flow doc, treat that as a structural failure, not a style preference.
 - Treat this as semantic review even when deterministic scripts pass.
 
-5. Report findings or re-validate after edits
+1. Report findings or re-validate after edits
 
 - If the user asked only for review, report findings before editing.
 - If the user asked for fixes, rerun the same checks after editing.
