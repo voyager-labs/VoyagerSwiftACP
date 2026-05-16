@@ -40,6 +40,7 @@ public struct AiChatState: Equatable, Sendable {
     public var currentContext: AiChatCurrentContextSnapshot
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
+    public var streamingAssistantDraft: String?
     public var catalogRows: [AiModelCatalogRow]
     public var modelListState: AiChatModelListState
     public var isModelSelectorPresented: Bool
@@ -67,6 +68,7 @@ public struct AiChatState: Equatable, Sendable {
         currentContext: AiChatCurrentContextSnapshot = .init(),
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
+        streamingAssistantDraft: String? = nil,
         catalogRows: [AiModelCatalogRow] = [],
         modelListState: AiChatModelListState? = nil,
         isModelSelectorPresented: Bool = false,
@@ -93,6 +95,7 @@ public struct AiChatState: Equatable, Sendable {
         self.currentContext = currentContext
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
+        self.streamingAssistantDraft = streamingAssistantDraft
         let resolvedModelListState = modelListState ?? Self.modelListState(from: catalogRows)
         self.catalogRows = catalogRows.isEmpty ? Self.makeCatalogRows(for: resolvedModelListState) : catalogRows
         self.modelListState = resolvedModelListState
@@ -117,6 +120,7 @@ public struct AiChatState: Equatable, Sendable {
     public var currentContextSummaryDisplayModel: AiChatContextSummaryDisplayModel {
         displayModelBuilder.currentContextSummaryDisplayModel
     }
+
     public var connectionState: AiChatConnectionState { displayModelBuilder.connectionState }
     public var emptyStateDisplayModel: AiChatEmptyStateDisplayModel { displayModelBuilder.emptyStateDisplayModel }
     public var chatInputDisplayModel: AiChatInputDisplayModel { displayModelBuilder.chatInputDisplayModel }
@@ -124,17 +128,25 @@ public struct AiChatState: Equatable, Sendable {
     public var skeletonSurfaceDisplayModel: AiChatSkeletonSurfaceDisplayModel {
         displayModelBuilder.skeletonSurfaceDisplayModel
     }
+
+    public var streamingAssistantDisplayModel: AiChatStreamingAssistantDisplayModel? {
+        displayModelBuilder.streamingAssistantDisplayModel
+    }
+
     public var modelCatalogState: AiChatModelCatalogState { displayModelBuilder.modelCatalogState }
     public var modelSelectorContentState: AiChatModelSelectorContentState {
         displayModelBuilder.modelSelectorContentState
     }
+
     public var modelSelectorHasPresentableContent: Bool {
         displayModelBuilder.modelSelectorHasPresentableContent
     }
+
     public var modelSelectorIsDisabled: Bool { displayModelBuilder.modelSelectorIsDisabled }
     public var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? {
         displayModelBuilder.selectedModelDisplayModel
     }
+
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { displayModelBuilder.lockedModelDisplayModel }
     public var canSubmit: Bool { displayModelBuilder.canSubmit }
     public var canRegenerate: Bool { displayModelBuilder.canRegenerate }

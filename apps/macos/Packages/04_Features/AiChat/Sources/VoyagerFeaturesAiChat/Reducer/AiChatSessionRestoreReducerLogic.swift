@@ -108,6 +108,7 @@ extension AiChatFeature {
         state.currentContext = setup.currentContext
         state.transcriptHistory = setup.transcriptHistory
         state.draftText = setup.draftText
+        state.streamingAssistantDraft = nil
         state.catalogRows = setup.catalogRows
         state.modelListState = State.modelListState(from: setup.catalogRows)
         state.selectedModelHandle = setup.selectedModelHandle
@@ -158,6 +159,7 @@ extension AiChatFeature {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
         state.transcriptHistory = snapshot.transcriptHistory
+        state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.executionPhase = .idle
@@ -169,6 +171,7 @@ extension AiChatFeature {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
         state.transcriptHistory = []
+        state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.executionPhase = .idle
