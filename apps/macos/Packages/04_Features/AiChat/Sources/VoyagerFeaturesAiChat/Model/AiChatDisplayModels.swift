@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import Foundation
 import VoyagerEntitiesAi
 
@@ -34,7 +33,7 @@ public struct AiChatContextSummaryDisplayModel: Equatable, Sendable {
         referenceCount: Int,
         itemCount: Int,
         attachmentCount: Int,
-        isEmpty: Bool
+        isEmpty: Bool,
     ) {
         self.title = title
         self.detail = detail
@@ -77,7 +76,7 @@ public struct AiChatInputDisplayModel: Equatable, Sendable {
         isSubmitVisible: Bool,
         isStopVisible: Bool,
         canSubmit: Bool,
-        canStop: Bool
+        canStop: Bool,
     ) {
         self.placeholder = placeholder
         self.contextAffordanceLabel = contextAffordanceLabel
@@ -110,7 +109,7 @@ public struct AiChatSkeletonDisplayModel: Equatable, Sendable {
         headerTitle: String,
         currentContext: AiChatContextSummaryDisplayModel,
         surface: AiChatSkeletonSurfaceDisplayModel,
-        chatInput: AiChatInputDisplayModel
+        chatInput: AiChatInputDisplayModel,
     ) {
         self.headerTitle = headerTitle
         self.currentContext = currentContext
@@ -203,7 +202,7 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
         isSelected: Bool,
         isLocked: Bool,
         isDefault: Bool,
-        isRecommended: Bool
+        isRecommended: Bool,
     ) {
         self.handle = handle
         self.label = label
@@ -225,7 +224,7 @@ public struct AiChatModelCatalogSectionDisplayModel: Identifiable, Equatable, Se
     public init(
         provider: AiProvider,
         title: String,
-        rows: [AiChatModelCatalogRowDisplayModel]
+        rows: [AiChatModelCatalogRowDisplayModel],
     ) {
         self.provider = provider
         self.title = title
@@ -245,7 +244,7 @@ public struct AiChatModelCatalogState: Equatable, Sendable {
         rows: [AiChatModelCatalogRowDisplayModel],
         sections: [AiChatModelCatalogSectionDisplayModel] = [],
         selectedModel: AiChatSelectedModelDisplayModel?,
-        lockedModel: AiChatLockedModelDisplayModel?
+        lockedModel: AiChatLockedModelDisplayModel?,
     ) {
         self.fieldLabel = fieldLabel
         self.rows = rows
@@ -275,9 +274,9 @@ public enum AiChatModelSelectorContentState: Equatable, Sendable {
     public var hasPresentableContent: Bool {
         switch self {
         case .loading, .empty, .failed, .unsupported:
-            return true
+            true
         case let .loaded(sections):
-            return !sections.isEmpty
+            !sections.isEmpty
         }
     }
 }
@@ -290,7 +289,7 @@ public enum AiChatSurfaceState: Equatable, Sendable {
     case processing(
         processing: AiChatProcessingState,
         summary: AiChatContextSummaryDisplayModel,
-        selectedModel: AiChatSelectedModelDisplayModel?
+        selectedModel: AiChatSelectedModelDisplayModel?,
     )
 }
 
@@ -325,7 +324,7 @@ func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot
         referenceCount: referenceCount,
         itemCount: itemCount,
         attachmentCount: attachmentCount,
-        isEmpty: !hasContent && (trimmedSummary?.isEmpty ?? true)
+        isEmpty: !hasContent && (trimmedSummary?.isEmpty ?? true),
     )
 }
 
@@ -344,7 +343,7 @@ func aiChatUnconnectedMetadata(for state: AiChatState) -> AiChatConnectionMetada
     return AiChatConnectionMetadata(
         title: "Connect an AI provider",
         detail: "Set up a provider in Settings to chat with this context.",
-        fixLabel: "Open Settings"
+        fixLabel: "Open Settings",
     )
 }
 
@@ -360,47 +359,10 @@ func aiChatExecutionFailureMetadata(for failure: AiChatExecutionFailure) -> AiCh
     AiChatConnectionMetadata(
         title: "Chat unavailable",
         detail: failure.displayMessage,
-        fixLabel: "Retry"
+        fixLabel: "Retry",
     )
 }
 
 func aiChatSessionStatusErrorMetadata(for _: AiChatState) -> AiChatConnectionMetadata? {
     nil
-}
-
-extension AiChatExecutionFailure {
-    var displayMessage: String {
-        switch self {
-        case .cancelled:
-            "The request was cancelled."
-        case .authentication:
-            "Authentication with the chat provider failed."
-        case .modelUnavailable:
-            "The selected model is unavailable."
-        case .network:
-            "The network connection to the chat provider failed."
-        case .rateLimited:
-            "The chat provider rate limit was reached. Please wait and try again."
-        case .quotaExceeded:
-            "The chat provider rejected the request because the account quota, credits, or billing limit was exceeded."
-        case .invalidRequest:
-            "The chat request could not be sent."
-        case .transportError:
-            "The chat service response could not be read."
-        case .cliUnavailable:
-            "The Codex CLI could not be launched. Make sure the codex command is installed and available to Voyager."
-        case .unsupportedProvider:
-            "This provider is not supported for chat."
-        case .sessionMismatch:
-            "The current session no longer matches the active request."
-        case .unknown:
-            "An unknown chat error occurred."
-        }
-    }
-}
-
-extension AiProvider {
-    var supportsAiChatExecution: Bool {
-        true
-    }
 }
