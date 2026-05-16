@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import SwiftUI
 import VoyagerEntitiesAi
 
@@ -16,14 +15,14 @@ struct AiChatConversationSurface: View {
                     title: connection.title,
                     detail: connection.detail,
                     actionLabel: connection.fixLabel,
-                    action: onOpenSettings
+                    action: onOpenSettings,
                 )
             case let .error(connection):
                 AiChatStatusBanner(
                     title: connection.title,
                     detail: connection.detail,
                     actionLabel: connection.fixLabel,
-                    action: onErrorRecovery
+                    action: onErrorRecovery,
                 )
             case .empty:
                 EmptyView()
@@ -32,13 +31,13 @@ struct AiChatConversationSurface: View {
                     messages: state.transcriptHistory,
                     isProcessing: false,
                     statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
-                    streamingAssistant: state.streamingAssistantDisplayModel
+                    streamingAssistant: state.streamingAssistantDisplayModel,
                 )
             case .processing:
                 AiChatTranscriptSection(
                     messages: state.transcriptHistory,
                     isProcessing: true,
-                    streamingAssistant: state.streamingAssistantDisplayModel
+                    streamingAssistant: state.streamingAssistantDisplayModel,
                 )
             }
         }
@@ -81,11 +80,11 @@ private struct AiChatStatusBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(Color(nsColor: .controlBackgroundColor)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
         )
     }
 
@@ -97,11 +96,11 @@ private struct AiChatStatusBanner: View {
             .padding(.vertical, 8)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor))
+                    .fill(Color(nsColor: .windowBackgroundColor)),
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
             )
     }
 }
@@ -122,7 +121,7 @@ private struct AiChatTranscriptSection: View {
                 AiChatAssistantCard(
                     content: streamingAssistant.content,
                     isProcessing: isProcessing,
-                    failure: streamingAssistant.failure
+                    failure: streamingAssistant.failure,
                 )
             } else if isProcessing {
                 AiChatAssistantCard(content: nil, isProcessing: true)
@@ -169,11 +168,11 @@ private struct AiChatMessageRow: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .fill(Color(nsColor: .controlBackgroundColor)),
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
                 )
         }
     }
@@ -327,123 +326,11 @@ private struct AiChatAssistantMarkdownText: View {
         if let markdown = try? AttributedString(
             markdown: text,
             options: AttributedString.MarkdownParsingOptions(
-                interpretedSyntax: .inlineOnlyPreservingWhitespace
-            )
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+            ),
         ) {
             return markdown
         }
         return AttributedString(text)
-    }
-}
-
-private enum AssistantMarkdownBlock: Equatable {
-    case heading(level: Int, text: String)
-    case paragraph(String)
-    case bullet(String)
-    case numbered(number: Int, text: String)
-    case code(String)
-
-    // swiftlint:disable:next function_body_length
-    static func parse(_ markdown: String) -> [AssistantMarkdownBlock] {
-        var blocks: [AssistantMarkdownBlock] = []
-        var paragraphLines: [String] = []
-        var codeLines: [String] = []
-        var isInCodeBlock = false
-
-        func flushParagraph() {
-            let paragraph = paragraphLines
-                .joined(separator: "\n")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !paragraph.isEmpty {
-                blocks.append(.paragraph(paragraph))
-            }
-            paragraphLines.removeAll()
-        }
-
-        func flushCode() {
-            blocks.append(.code(codeLines.joined(separator: "\n")))
-            codeLines.removeAll()
-        }
-
-        for rawLine in markdown.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
-            let trimmedLine = rawLine.trimmingCharacters(in: .whitespaces)
-
-            if trimmedLine.hasPrefix("```") {
-                flushParagraph()
-                if isInCodeBlock {
-                    flushCode()
-                }
-                isInCodeBlock.toggle()
-                continue
-            }
-
-            if isInCodeBlock {
-                codeLines.append(rawLine)
-                continue
-            }
-
-            if trimmedLine.isEmpty {
-                flushParagraph()
-                continue
-            }
-
-            if let heading = parseHeading(trimmedLine) {
-                flushParagraph()
-                blocks.append(heading)
-                continue
-            }
-
-            if let bullet = parseBullet(trimmedLine) {
-                flushParagraph()
-                blocks.append(.bullet(bullet))
-                continue
-            }
-
-            if let numbered = parseNumbered(trimmedLine) {
-                flushParagraph()
-                blocks.append(numbered)
-                continue
-            }
-
-            paragraphLines.append(rawLine)
-        }
-
-        if isInCodeBlock {
-            paragraphLines.append("```")
-            paragraphLines.append(contentsOf: codeLines)
-        } else if !codeLines.isEmpty {
-            flushCode()
-        }
-        flushParagraph()
-
-        return blocks.isEmpty ? [.paragraph(markdown)] : blocks
-    }
-
-    private static func parseHeading(_ line: String) -> AssistantMarkdownBlock? {
-        let markerCount = line.prefix { $0 == "#" }.count
-        guard (1 ... 6).contains(markerCount), line.dropFirst(markerCount).first == " " else {
-            return nil
-        }
-        let text = line.dropFirst(markerCount + 1).trimmingCharacters(in: .whitespaces)
-        return text.isEmpty ? nil : .heading(level: markerCount, text: text)
-    }
-
-    private static func parseBullet(_ line: String) -> String? {
-        guard line.count > 2 else { return nil }
-        let prefix = line.prefix(2)
-        guard prefix == "- " || prefix == "* " else { return nil }
-        let text = line.dropFirst(2).trimmingCharacters(in: .whitespaces)
-        return text.isEmpty ? nil : text
-    }
-
-    private static func parseNumbered(_ line: String) -> AssistantMarkdownBlock? {
-        guard let dotIndex = line.firstIndex(of: ".") else { return nil }
-        let digits = line[..<dotIndex]
-        guard !digits.isEmpty, digits.allSatisfy(\.isNumber) else { return nil }
-        let textStart = line.index(after: dotIndex)
-        guard textStart < line.endIndex, line[textStart] == " " else { return nil }
-        let text = line[line.index(after: textStart)...].trimmingCharacters(in: .whitespaces)
-        guard let number = Int(digits), !text.isEmpty else { return nil }
-        return .numbered(number: number, text: text)
     }
 }
