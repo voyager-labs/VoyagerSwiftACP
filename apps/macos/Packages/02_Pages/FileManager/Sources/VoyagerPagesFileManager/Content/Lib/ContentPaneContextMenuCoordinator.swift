@@ -1,12 +1,12 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @MainActor
 final class ContentPaneContextMenuCoordinator: NSObject {
@@ -22,7 +22,7 @@ final class ContentPaneContextMenuCoordinator: NSObject {
             viewLayout: store.state.entryViewLayout.mode,
             sortKey: store.state.entryViewLayout.entryArrangements.sortKey,
             sortOrder: store.state.entryViewLayout.entryArrangements.sortOrder,
-            groupKey: store.state.entryViewLayout.entryArrangements.groupKey,
+            groupKey: store.state.entryViewLayout.entryArrangements.groupKey
         )
     }
 
@@ -42,10 +42,10 @@ final class ContentPaneContextMenuCoordinator: NSObject {
                 .entryOperations(
                     .edit(.createNewFolder(
                         parentPath: store.state.navigation.currentPath,
-                        siblingNames: store.state.entryViewLayout.entries.map(\.name),
-                    )),
-                ),
-            ),
+                        siblingNames: store.state.entryViewLayout.entries.map(\.name)
+                    ))
+                )
+            )
         )
     }
 
@@ -86,9 +86,9 @@ final class ContentPaneContextMenuCoordinator: NSObject {
         store.send(
             .entryViewLayout(
                 .entryOperations(
-                    .trash(.emptyTrash(paths: store.state.entryViewLayout.entries.map(\.fullPath))),
-                ),
-            ),
+                    .trash(.emptyTrash(paths: store.state.entryViewLayout.entries.map(\.fullPath)))
+                )
+            )
         )
     }
 }

@@ -4,6 +4,7 @@ import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesEntryArrangements
 import VoyagerPagesFileManager
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 struct AppPreferencesState: Equatable, Sendable {
     var showHiddenFiles: Bool = false

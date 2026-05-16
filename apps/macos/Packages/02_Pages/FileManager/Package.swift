@@ -19,6 +19,7 @@ let package = Package(
         .package(path: "../../05_Entities/Collection"),
         .package(path: "../../05_Entities/Entry"),
         .package(path: "../../05_Entities/Tag"),
+        .package(path: "../../03_Widgets/EntryViewLayout"),
         .package(path: "../../06_Shared/VoyagerShared"),
         // Remote packages
         .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.7.2"),
@@ -38,6 +39,7 @@ let package = Package(
                 .product(name: "VoyagerEntitiesCollection", package: "Collection"),
                 .product(name: "VoyagerEntitiesEntry", package: "Entry"),
                 .product(name: "VoyagerEntitiesTag", package: "Tag"),
+                .product(name: "VoyagerWidgetsEntryViewLayout", package: "EntryViewLayout"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),

@@ -1,10 +1,10 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
-
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
@@ -24,13 +24,13 @@ struct ContentPageView: View {
         if store.composer.isCollectionSearching {
             loadingView
         } else {
+            let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
+            let menuProvider = makeBlankSpaceMenuProvider(for: store)
             switch store.entryViewLayout.mode {
             case .list:
-                let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-                EntryListViewRepresentable(store: entryViewLayoutStore, contentStore: store)
+                EntryListViewRepresentable(store: entryViewLayoutStore, blankSpaceMenuProvider: menuProvider)
             case .grid:
-                let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-                EntryGridViewRepresentable(store: entryViewLayoutStore, contentStore: store)
+                EntryGridViewRepresentable(store: entryViewLayoutStore, blankSpaceMenuProvider: menuProvider)
             }
         }
     }
@@ -42,7 +42,7 @@ struct ContentPageView: View {
             },
             onKeyDown: { event in
                 handleKeyboardEvent(event)
-            },
+            }
         )
         .focusable()
         .focused($isKeyCommandFocused)
@@ -99,7 +99,7 @@ struct ContentPageView: View {
             keyCode: event.keyCode,
             modifiers: KeyModifiers(event.modifierFlags),
             characters: event.characters,
-            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers
         )
         store.send(.view(.handleKeyCommand(command)))
     }
@@ -107,5 +107,17 @@ struct ContentPageView: View {
     private func restoreKeyCommandFocus() {
         isKeyCommandFocused = true
         keyCommandFocusCoordinator?.requestFocus()
+    }
+
+    private func makeBlankSpaceMenuProvider(
+        for store: StoreOf<FileManagerContentFeature>
+    ) -> (() -> NSMenu)? {
+        let coordinator = ContentPaneContextMenuCoordinator(store: store)
+        return { [coordinator] in
+            ContentPaneContextMenuBuilder.makeMenu(
+                configuration: coordinator.configuration,
+                target: coordinator
+            )
+        }
     }
 }

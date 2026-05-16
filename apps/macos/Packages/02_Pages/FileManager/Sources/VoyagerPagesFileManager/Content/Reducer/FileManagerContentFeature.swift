@@ -6,6 +6,7 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @Reducer
 public struct FileManagerContentFeature {

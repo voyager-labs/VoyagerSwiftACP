@@ -4,6 +4,7 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @CasePathable
 public enum FileManagerWindowAction: CasePathable, Sendable {
