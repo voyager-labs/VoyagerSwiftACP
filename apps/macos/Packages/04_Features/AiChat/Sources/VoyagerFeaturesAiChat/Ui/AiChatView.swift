@@ -71,6 +71,8 @@ public struct AiChatView: View {
             String(state.transcriptHistory.count),
             lastMessage?.role.rawValue ?? "none",
             lastMessage?.content ?? "",
+            state.streamingAssistantDisplayModel?.content ?? "",
+            state.streamingAssistantDisplayModel?.failure?.displayMessage ?? "",
             String(state.isProcessing),
             state.requestStatusText ?? ""
         ].joined(separator: "|")
