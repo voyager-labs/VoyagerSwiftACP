@@ -112,8 +112,8 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         XCTAssertEqual(
             AiChatProviderExecutionClient.codexAgentMessageDelta(
                 fromJSONLine: #"""
-{"method":"item/completed","params":{"item":{"type":"agent_message","text":"Method done"}}}
-"""#,
+                {"method":"item/completed","params":{"item":{"type":"agent_message","text":"Method done"}}}
+                """#,
             ),
             "Method done",
         )
@@ -131,6 +131,12 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 forCLIErrorOutput: "rate limit exceeded; too many requests",
             ),
             .rateLimited,
+        )
+        XCTAssertEqual(
+            AiChatProviderExecutionClient.codexFailureReason(
+                forCLIErrorOutput: "You exceeded your current quota. Check your billing details or upgrade your plan.",
+            ),
+            .quotaExceeded,
         )
     }
 
@@ -326,8 +332,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let firstFrames = """
         event: content_block_delta
         data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}
-
-        """
+        """ + "\n\n"
         for byte in firstFrames.utf8 {
             try payloads.append(contentsOf: accumulator.consume(byte))
         }
@@ -645,18 +650,24 @@ private extension AiChatProviderExecutionClientTests {
                 sessionStatus: .idle,
                 currentContext: AiChatCurrentContextSnapshot(
                     summary: "workspace context",
-                    references: [AiChatContextReference(
-                        kind: .file,
-                        identifier: "/tmp/workspace/File.swift",
-                        title: "File.swift",
-                    )],
-                    items: [AiChatContextItem(
-                        kind: .file,
-                        identifier: "item-1",
-                        title: "Notes.md",
-                        subtitle: "/tmp/workspace/Notes.md",
-                    )],
-                    attachments: [AiChatContextAttachment(identifier: "attachment-1", title: "Screenshot")],
+                    references: [
+                        AiChatContextReference(
+                            kind: .file,
+                            identifier: "/tmp/workspace/File.swift",
+                            title: "File.swift",
+                        )
+                    ],
+                    items: [
+                        AiChatContextItem(
+                            kind: .file,
+                            identifier: "item-1",
+                            title: "Notes.md",
+                            subtitle: "/tmp/workspace/Notes.md",
+                        )
+                    ],
+                    attachments: [
+                        AiChatContextAttachment(identifier: "attachment-1", title: "Screenshot")
+                    ],
                 ),
                 promptSummary: "summarized prompt",
                 submittedAtMs: 1234,
@@ -694,11 +705,13 @@ private extension AiChatProviderExecutionClientTests {
                 sessionStatus: .idle,
                 currentContext: AiChatCurrentContextSnapshot(
                     summary: "workspace context",
-                    references: [AiChatContextReference(
-                        kind: .file,
-                        identifier: "/tmp/workspace/File.swift",
-                        title: "File.swift",
-                    )],
+                    references: [
+                        AiChatContextReference(
+                            kind: .file,
+                            identifier: "/tmp/workspace/File.swift",
+                            title: "File.swift",
+                        )
+                    ],
                 ),
                 promptSummary: "anthropic prompt summary",
                 submittedAtMs: 2345,

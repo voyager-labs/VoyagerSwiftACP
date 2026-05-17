@@ -136,7 +136,17 @@ extension AiChatProviderExecutionClient {
             || lowered.contains("monthly limit")
             || lowered.contains("daily limit")
             || lowered.contains("spending limit")
-            || lowered.contains("plan limit") {
+            || lowered.contains("plan limit")
+            || lowered.contains("current quota")
+            || lowered.contains("billing details")
+            || lowered.contains("maximum monthly spend")
+            || lowered.contains("monthly budget")
+            || lowered.contains("hard limit")
+            || lowered.contains("soft limit")
+            || lowered.contains("usage cap")
+            || lowered.contains("insufficient funds")
+            || lowered.contains("upgrade")
+            || lowered.contains("subscription") {
             return .quotaExceeded
         }
         if lowered.contains("model"), lowered.contains("not found") || lowered.contains("unknown") {
