@@ -71,6 +71,25 @@ final class CodexProcessState: @unchecked Sendable {
     }
 }
 
+final class CodexPipeDataAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ chunk: Data) {
+        guard !chunk.isEmpty else { return }
+        lock.lock()
+        data.append(chunk)
+        lock.unlock()
+    }
+
+    func stringValue() -> String {
+        lock.lock()
+        let snapshot = data
+        lock.unlock()
+        return String(data: snapshot, encoding: .utf8) ?? ""
+    }
+}
+
 final class CodexJSONLineParser: @unchecked Sendable {
     private let lock = NSLock()
     private var buffer = ""

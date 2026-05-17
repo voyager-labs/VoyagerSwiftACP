@@ -1,6 +1,8 @@
 import Foundation
 
 extension AiChatProviderExecutionClient {
+    static let streamingExecutionRequestTimeout: TimeInterval = 300
+
     static func makeOpenAIRequest(
         payload: AiChatProviderRequestPayload,
         credential: AiChatProviderValidatedCredential,
@@ -14,7 +16,7 @@ extension AiChatProviderExecutionClient {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 30
+        request.timeoutInterval = streamingExecutionRequestTimeout
         request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -35,7 +37,7 @@ extension AiChatProviderExecutionClient {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 30
+        request.timeoutInterval = streamingExecutionRequestTimeout
         request.setValue(secret, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -112,8 +114,6 @@ extension AiChatProviderExecutionClient {
             let process = Process()
             do {
                 let processIO = try configureCodexProcess(process, request: request)
-                try process.run()
-                request.processState.set(process: process)
                 waitForCodexProcess(
                     process,
                     outputURL: request.outputURL,
@@ -121,6 +121,8 @@ extension AiChatProviderExecutionClient {
                     processIO: processIO,
                     continuation: continuation,
                 )
+                try process.run()
+                request.processState.set(process: process)
             } catch let error as CodexCLIExecutionError {
                 outputPipeCleanup(process.standardOutput)
                 resumeCodexLaunchFailure(error, processState: request.processState, continuation: continuation)
@@ -144,6 +146,7 @@ extension AiChatProviderExecutionClient {
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         let jsonLineParser = CodexJSONLineParser(onDelta: request.onDelta)
+        let errorAccumulator = CodexPipeDataAccumulator()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         outputPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -151,7 +154,17 @@ extension AiChatProviderExecutionClient {
             guard !data.isEmpty else { return }
             jsonLineParser.append(data)
         }
-        return CodexProcessIO(outputPipe: outputPipe, errorPipe: errorPipe, jsonLineParser: jsonLineParser)
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            errorAccumulator.append(data)
+        }
+        return CodexProcessIO(
+            outputPipe: outputPipe,
+            errorPipe: errorPipe,
+            jsonLineParser: jsonLineParser,
+            errorAccumulator: errorAccumulator,
+        )
     }
 
     static func codexArguments(model: String, outputURL: URL, prompt: String) -> [String] {
@@ -173,16 +186,16 @@ extension AiChatProviderExecutionClient {
         processIO: CodexProcessIO,
         continuation: CheckedContinuation<String, Error>,
     ) {
-        Task.detached {
-            process.waitUntilExit()
+        process.terminationHandler = { terminatedProcess in
+            terminatedProcess.terminationHandler = nil
             processIO.outputPipe.fileHandleForReading.readabilityHandler = nil
+            processIO.errorPipe.fileHandleForReading.readabilityHandler = nil
             processIO.jsonLineParser.finish()
-            let errorData = processIO.errorPipe.fileHandleForReading.readDataToEndOfFile()
-            let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+            let errorOutput = processIO.errorAccumulator.stringValue()
 
             guard processState.markCompleted() else { return }
             resumeCodexProcessResult(
-                process,
+                terminatedProcess,
                 outputURL: outputURL,
                 errorOutput: errorOutput,
                 continuation: continuation,
@@ -288,5 +301,6 @@ extension AiChatProviderExecutionClient {
         var outputPipe: Pipe
         var errorPipe: Pipe
         var jsonLineParser: CodexJSONLineParser
+        var errorAccumulator: CodexPipeDataAccumulator
     }
 }
