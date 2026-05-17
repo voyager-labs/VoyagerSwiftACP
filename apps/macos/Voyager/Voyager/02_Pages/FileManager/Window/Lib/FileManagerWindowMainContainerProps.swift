@@ -29,7 +29,6 @@ func makeContentChromeProps(
         ),
         specialDirectoryIconNames: specialDirectoryIconNames,
         isContextualAiChatPresented: state.inspector.inspectorVisible
-            && state.inspector.inspectorPaneExists
             && state.inspector.activeMode == .chat,
     )
 }

@@ -160,7 +160,7 @@ private struct AiChatMessageRow: View {
 
     private var userMessage: some View {
         HStack {
-            Spacer(minLength: 40)
+            Spacer(minLength: 16)
             Text(message.content)
                 .font(.system(size: 13))
                 .foregroundStyle(.primary)
@@ -177,7 +177,6 @@ private struct AiChatMessageRow: View {
         }
     }
 
-    @ViewBuilder
     private var assistantMessage: some View {
         AiChatAssistantMarkdownText(content: message.content)
             .padding(.vertical, 4)
@@ -223,8 +222,7 @@ private struct AiChatAssistantCard: View {
         }
     }
 
-    @ViewBuilder
-    private var bodyContentView: some View {
+    @ViewBuilder private var bodyContentView: some View {
         if let content = normalizedContent {
             AiChatAssistantMarkdownText(content: content)
         }

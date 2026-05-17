@@ -22,7 +22,6 @@ struct AiChatHoverTextAffordance: View {
         }
         .foregroundStyle(isHovered ? hoverColor : .secondary)
         .contentShape(Rectangle())
-        .fixedSize(horizontal: true, vertical: false)
         .onHover { hovering in
             isHovered = hovering
         }
