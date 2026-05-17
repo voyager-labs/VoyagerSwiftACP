@@ -62,12 +62,24 @@ final class AiChatProviderPreflightTests: XCTestCase {
         XCTAssertNil(omitted.payload.thinking)
         XCTAssertTrue(omitted.warnings.isEmpty)
 
-        let none = try AiChatProviderPreflight.prepare(
+        let unsupportedNone = try AiChatProviderPreflight.prepare(
             makeRequest(provider: .openai, selectedThinking: AiThinkingSelection.none, capability: capability),
             credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         )
-        XCTAssertNil(none.payload.thinking)
-        XCTAssertEqual(none.warnings.count, 1)
+        XCTAssertNil(unsupportedNone.payload.thinking)
+        XCTAssertEqual(unsupportedNone.warnings.count, 1)
+
+        let supportedNone = try AiChatProviderPreflight.prepare(
+            makeRequest(
+                provider: .openai,
+                selectedThinking: AiThinkingSelection.none,
+                capability: capability,
+                supportsThinkingNone: true,
+            ),
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+        )
+        XCTAssertEqual(supportedNone.payload.thinking, AiChatProviderThinkingPayload.none)
+        XCTAssertTrue(supportedNone.warnings.isEmpty)
 
         let effort = try AiChatProviderPreflight.prepare(
             makeRequest(provider: .openai, selectedThinking: AiThinkingSelection.effort(.high), capability: capability),
@@ -99,12 +111,24 @@ final class AiChatProviderPreflightTests: XCTestCase {
     func testPrepare_codexThinkingLoweringMatrix() throws {
         let capability = AiModelThinkingCapability.effort(values: [.low, .high], defaultValue: .low)
 
-        let none = try AiChatProviderPreflight.prepare(
+        let unsupportedNone = try AiChatProviderPreflight.prepare(
             makeRequest(provider: .chatgptCodex, selectedThinking: AiThinkingSelection.none, capability: capability),
             credential: .oauth(OAuthCredentialFile(accessToken: "codex-token")),
         )
-        XCTAssertNil(none.payload.thinking)
-        XCTAssertEqual(none.warnings.count, 1)
+        XCTAssertNil(unsupportedNone.payload.thinking)
+        XCTAssertEqual(unsupportedNone.warnings.count, 1)
+
+        let supportedNone = try AiChatProviderPreflight.prepare(
+            makeRequest(
+                provider: .chatgptCodex,
+                selectedThinking: AiThinkingSelection.none,
+                capability: capability,
+                supportsThinkingNone: true,
+            ),
+            credential: .oauth(OAuthCredentialFile(accessToken: "codex-token")),
+        )
+        XCTAssertEqual(supportedNone.payload.thinking, AiChatProviderThinkingPayload.none)
+        XCTAssertTrue(supportedNone.warnings.isEmpty)
 
         let effort = try AiChatProviderPreflight.prepare(
             makeRequest(
@@ -131,7 +155,12 @@ final class AiChatProviderPreflightTests: XCTestCase {
     func testPrepare_anthropicThinkingLoweringMatrix_respectsCapabilityKinds() throws {
         let effortCapability = AiModelThinkingCapability.effort(values: [.low, .high], defaultValue: nil)
         let none = try AiChatProviderPreflight.prepare(
-            makeRequest(provider: .anthropic, selectedThinking: AiThinkingSelection.none, capability: effortCapability),
+            makeRequest(
+                provider: .anthropic,
+                selectedThinking: AiThinkingSelection.none,
+                capability: effortCapability,
+                supportsThinkingNone: true,
+            ),
             credential: .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         )
         XCTAssertEqual(none.payload.thinking, .disabled)
@@ -240,6 +269,7 @@ private extension AiChatProviderPreflightTests {
         selectedModel: AiProviderModel? = nil,
         selectedThinking: AiThinkingSelection? = AiThinkingSelection.none,
         capability: AiModelThinkingCapability? = nil,
+        supportsThinkingNone: Bool = false,
     ) -> AiChatRequest {
         let resolvedModel = selectedModel ?? AiProviderModel(
             id: AiModelHandle(provider: provider, rawValue: modelHandle?.rawValue ?? "test-model"),
@@ -248,6 +278,7 @@ private extension AiChatProviderPreflightTests {
             displayName: "Test Model",
             providerDisplayName: "Provider",
             thinkingCapability: capability ?? .unknown(reason: AiThinkingUnavailableReason(message: "unknown")),
+            supportsThinkingNone: supportsThinkingNone,
             unavailableReason: nil,
         )
         let handle = modelHandle ?? AiModelHandle(provider: provider, rawValue: "handle-model")
