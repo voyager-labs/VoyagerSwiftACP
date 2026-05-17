@@ -1,20 +1,16 @@
 import Foundation
-
 public enum AiChatProviderPreflightError: Error, Equatable, Sendable {
     case missingCredential(AiProvider)
     case invalidCredential(provider: AiProvider, expected: ProviderAuthMethod)
     case loweringFailed(AiChatProviderRequestLoweringError)
 }
-
 public enum AiChatProviderValidatedCredential: Equatable, Sendable {
     case apiKey(String)
     case oauth(OAuthCredentialFile)
 }
-
 public enum AiChatProviderPreflightWarning: Equatable, Sendable {
     case omittedThinkingSelection(provider: AiProvider, selection: AiThinkingSelection, reason: String)
 }
-
 public struct AiChatProviderPreflightResult: Equatable, Sendable {
     public let payload: AiChatProviderRequestPayload
     public let credential: AiChatProviderValidatedCredential
@@ -150,7 +146,11 @@ private extension AiChatProviderPreflight {
     ) -> (payload: AiChatProviderThinkingPayload?, warnings: [AiChatProviderPreflightWarning]) {
         switch selection {
         case .none:
-            return (AiChatProviderThinkingPayload.none, [])
+            return omittedThinking(
+                provider: provider,
+                selection: selection,
+                reason: "This model capability does not confirm support for reasoning none.",
+            )
 
         case let .effort(value):
             switch capability {

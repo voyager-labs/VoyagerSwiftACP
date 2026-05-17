@@ -66,7 +66,8 @@ final class AiChatProviderPreflightTests: XCTestCase {
             makeRequest(provider: .openai, selectedThinking: AiThinkingSelection.none, capability: capability),
             credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         )
-        XCTAssertEqual(none.payload.thinking, AiChatProviderThinkingPayload.none)
+        XCTAssertNil(none.payload.thinking)
+        XCTAssertEqual(none.warnings.count, 1)
 
         let effort = try AiChatProviderPreflight.prepare(
             makeRequest(provider: .openai, selectedThinking: AiThinkingSelection.effort(.high), capability: capability),
@@ -102,7 +103,8 @@ final class AiChatProviderPreflightTests: XCTestCase {
             makeRequest(provider: .chatgptCodex, selectedThinking: AiThinkingSelection.none, capability: capability),
             credential: .oauth(OAuthCredentialFile(accessToken: "codex-token")),
         )
-        XCTAssertEqual(none.payload.thinking, AiChatProviderThinkingPayload.none)
+        XCTAssertNil(none.payload.thinking)
+        XCTAssertEqual(none.warnings.count, 1)
 
         let effort = try AiChatProviderPreflight.prepare(
             makeRequest(

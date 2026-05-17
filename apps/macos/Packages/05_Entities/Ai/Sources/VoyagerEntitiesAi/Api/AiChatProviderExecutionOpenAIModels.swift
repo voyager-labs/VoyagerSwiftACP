@@ -74,8 +74,7 @@ struct OpenAIResponsesReasoning: Encodable, Sendable {
 
         switch payload {
         case .none:
-            effort = "none"
-            budgetTokens = nil
+            return nil
         case let .effort(value):
             effort = value.rawValue
             budgetTokens = nil
