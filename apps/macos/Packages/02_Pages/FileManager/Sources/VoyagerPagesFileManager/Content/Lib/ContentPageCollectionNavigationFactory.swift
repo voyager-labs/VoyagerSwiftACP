@@ -2,13 +2,14 @@ import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 enum ContentPageCollectionNavigationFactory {
     static func makeCollectionNavigation(
         _ payload: CollectionNavigationPresentationPayload,
         sortKey: VoyagerShared.SortKey,
         sortOrder: VoyagerShared.SortOrder,
-        viewLayout: EntryViewLayoutState.Mode,
+        viewLayout: EntryViewLayoutState.Mode
     ) -> ContentPageCollectionNavigation {
         let kind: ContentPageCollectionKind = switch payload.kind {
         case .temporary:
@@ -23,13 +24,13 @@ enum ContentPageCollectionNavigationFactory {
             sortKey: sortKey,
             sortOrder: sortOrder,
             viewLayout: contentPageNavigationViewLayout(from: viewLayout),
-            compatibility: payload.compatibility,
+            compatibility: payload.compatibility
         )
     }
 }
 
 func contentPageNavigationViewLayout(
-    from mode: EntryViewLayoutState.Mode,
+    from mode: EntryViewLayoutState.Mode
 ) -> ContentPageNavigationViewLayout {
     switch mode {
     case .list:

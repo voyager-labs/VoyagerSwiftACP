@@ -1,12 +1,12 @@
 import ComposableArchitecture
 import Foundation
 import SwiftUI
-
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 struct ContentPaneContextMenu: View {
     let store: StoreOf<FileManagerContentFeature>
@@ -34,7 +34,7 @@ struct ContentPaneContextMenu: View {
             Button("New Folder") {
                 store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
                     parentPath: store.navigation.currentPath,
-                    siblingNames: store.entryViewLayout.entries.map(\.name),
+                    siblingNames: store.entryViewLayout.entries.map(\.name)
                 )))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -78,8 +78,8 @@ struct ContentPaneContextMenu: View {
                     if isOn {
                         store.send(.view(.changeLayout(layout)))
                     }
-                },
-            ),
+                }
+            )
         )
     }
 
@@ -92,8 +92,8 @@ struct ContentPaneContextMenu: View {
                     if isOn {
                         store.send(.entryViewLayout(.entryArrangements(.setSortKey(key))))
                     }
-                },
-            ),
+                }
+            )
         )
     }
 
@@ -106,8 +106,8 @@ struct ContentPaneContextMenu: View {
                     if isOn {
                         store.send(.entryViewLayout(.entryArrangements(.setSortOrder(order))))
                     }
-                },
-            ),
+                }
+            )
         )
     }
 
@@ -120,8 +120,8 @@ struct ContentPaneContextMenu: View {
                     if isOn {
                         store.send(.entryViewLayout(.entryArrangements(.setGroupKey(key))))
                     }
-                },
-            ),
+                }
+            )
         )
     }
 }

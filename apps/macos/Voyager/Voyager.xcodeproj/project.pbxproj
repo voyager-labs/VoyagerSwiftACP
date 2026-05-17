@@ -378,6 +378,7 @@
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
 				F2000000000000000000001E /* VoyagerPagesFileManager */,
+				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
@@ -599,6 +600,7 @@
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
 				F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */,
+				F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -1523,6 +1525,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/02_Pages/FileManager;
 		};
+		F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/03_Widgets/EntryViewLayout;
+		};
 		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1795,6 +1801,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */;
 			productName = VoyagerPagesFileManager;
+		};
+		F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */;
+			productName = VoyagerWidgetsEntryViewLayout;
 		};
 		/* End XCSwiftPackageProductDependency section */
 	};

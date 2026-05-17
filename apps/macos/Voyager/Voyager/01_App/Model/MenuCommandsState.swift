@@ -4,6 +4,7 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 struct MenuCommandsState: Equatable {
     var hasFocusedWindow: Bool

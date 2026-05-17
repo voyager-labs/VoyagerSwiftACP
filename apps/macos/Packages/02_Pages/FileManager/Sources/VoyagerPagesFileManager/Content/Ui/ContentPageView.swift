@@ -1,17 +1,26 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
-
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
 
+    @StateObject private var contextMenuCoordinatorHolder: ContentPaneContextMenuCoordinatorHolder
+
     @Environment(\.fileManagerKeyCommandFocusCoordinator)
     private var keyCommandFocusCoordinator
     @FocusState var isKeyCommandFocused: Bool
+
+    init(store: StoreOf<FileManagerContentFeature>) {
+        self.store = store
+        _contextMenuCoordinatorHolder = StateObject(
+            wrappedValue: ContentPaneContextMenuCoordinatorHolder(store: store),
+        )
+    }
 
     private var mainContent: some View {
         ZStack {
@@ -24,13 +33,13 @@ struct ContentPageView: View {
         if store.composer.isCollectionSearching {
             loadingView
         } else {
+            let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
+            let menuProvider = makeBlankSpaceMenuProvider()
             switch store.entryViewLayout.mode {
             case .list:
-                let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-                EntryListViewRepresentable(store: entryViewLayoutStore, contentStore: store)
+                EntryListViewRepresentable(store: entryViewLayoutStore, blankSpaceMenuProvider: menuProvider)
             case .grid:
-                let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
-                EntryGridViewRepresentable(store: entryViewLayoutStore, contentStore: store)
+                EntryGridViewRepresentable(store: entryViewLayoutStore, blankSpaceMenuProvider: menuProvider)
             }
         }
     }
@@ -107,5 +116,24 @@ struct ContentPageView: View {
     private func restoreKeyCommandFocus() {
         isKeyCommandFocused = true
         keyCommandFocusCoordinator?.requestFocus()
+    }
+
+    private func makeBlankSpaceMenuProvider() -> (() -> NSMenu)? {
+        let coordinator = contextMenuCoordinatorHolder.coordinator
+        return { [coordinator] in
+            ContentPaneContextMenuBuilder.makeMenu(
+                configuration: coordinator.configuration,
+                target: coordinator,
+            )
+        }
+    }
+}
+
+@MainActor
+private final class ContentPaneContextMenuCoordinatorHolder: ObservableObject {
+    let coordinator: ContentPaneContextMenuCoordinator
+
+    init(store: StoreOf<FileManagerContentFeature>) {
+        coordinator = ContentPaneContextMenuCoordinator(store: store)
     }
 }

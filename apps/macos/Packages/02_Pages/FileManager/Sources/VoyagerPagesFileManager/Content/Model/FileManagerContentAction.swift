@@ -6,6 +6,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @CasePathable
 public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {

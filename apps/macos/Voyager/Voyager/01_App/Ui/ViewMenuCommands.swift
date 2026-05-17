@@ -3,6 +3,7 @@ import ComposableArchitecture
 import SwiftUI
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @ViewAction(for: MenuCommandsFeature.self)
 struct ViewMenuCommands: Commands {
