@@ -351,6 +351,38 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         XCTAssertEqual(state.response.finalText, "Hi")
     }
 
+    func testExecute_anthropicDirectEffort_encodesOutputConfigEffort() throws {
+        let request = makeAnthropicPreparedRequestFixture(
+            selectedThinking: .effort(.high),
+            capability: .effort(values: [.low, .high], defaultValue: nil),
+        )
+        let client = makeLiveClient(now: 20002) { outboundRequest in
+            try assertAnthropicRequest(
+                outboundRequest,
+                expectedModel: "claude-sonnet-4-6",
+                expectedThinking: .outputConfigEffort("high"),
+            )
+            return makeHTTPResponse(
+                statusCode: 200,
+                contentType: "application/json",
+                body: anthropicFinalOnlyBody(),
+                url: "https://api.anthropic.com/v1/messages",
+            )
+        }
+
+        let events = try collect(client.execute(
+            request,
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
+        ))
+
+        XCTAssertEqual(events.first, .started(context: request.context))
+        XCTAssertEqual(events.last, .final(response: AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
+            completedAtMs: 20002,
+        )))
+    }
+
     func testExecute_anthropicFinalOnlyJSON_emitsStartedFinal() throws {
         let request = makeAnthropicPreparedRequestFixture(
             selectedThinking: AiThinkingSelection.none,
@@ -791,6 +823,7 @@ private struct CapturedAnthropicThinking: Decodable {
 private enum ExpectedAnthropicThinking: Equatable {
     case disabled
     case enabled(Int, display: String?)
+    case outputConfigEffort(String)
     case adaptive(String, display: String?)
     case omitted
 }
@@ -893,6 +926,9 @@ private func assertAnthropicRequest(
         XCTAssertEqual(decoded.thinking?.budgetTokens, budget)
         XCTAssertEqual(decoded.thinking?.display, display)
         XCTAssertNil(decoded.outputConfig)
+    case let .outputConfigEffort(effort):
+        XCTAssertNil(decoded.thinking)
+        XCTAssertEqual(decoded.outputConfig?.effort, effort)
     case let .adaptive(effort, display):
         XCTAssertEqual(decoded.thinking?.type, "adaptive")
         XCTAssertNil(decoded.thinking?.budgetTokens)

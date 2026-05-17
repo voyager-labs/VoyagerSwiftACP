@@ -52,10 +52,15 @@ struct AnthropicOutputConfig: Encodable, Sendable {
     let effort: String
 
     init?(payload: AiChatProviderThinkingPayload?) {
-        guard case let .adaptive(defaultEffort) = payload,
-              let defaultEffort
-        else { return nil }
-        effort = defaultEffort.rawValue
+        switch payload {
+        case let .some(.effort(value)):
+            effort = value.rawValue
+        case let .some(.adaptive(defaultEffort)):
+            guard let defaultEffort else { return nil }
+            effort = defaultEffort.rawValue
+        case .some(.disabled), .some(.tokenBudget), .some(.none), nil:
+            return nil
+        }
     }
 }
 
