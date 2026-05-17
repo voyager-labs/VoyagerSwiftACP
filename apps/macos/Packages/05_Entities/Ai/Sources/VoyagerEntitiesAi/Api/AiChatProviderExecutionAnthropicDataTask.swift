@@ -85,15 +85,16 @@ final class AnthropicStreamingDataTask: NSObject, URLSessionDataDelegate, @unche
         yield(.init(kind: .data(data)))
     }
 
-    func urlSession(_: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
+    func urlSession(_ session: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
         if let error {
             finish(throwing: error)
         } else {
             finish(throwing: nil)
         }
+        session.finishTasksAndInvalidate()
         lock.withLock {
-            session = nil
-            task = nil
+            self.session = nil
+            self.task = nil
         }
     }
 
