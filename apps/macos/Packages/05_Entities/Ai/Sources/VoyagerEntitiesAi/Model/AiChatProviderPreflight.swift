@@ -385,5 +385,15 @@ private extension AiChatProviderExecutionFailureMapper {
             || normalized.contains("daily limit")
             || normalized.contains("spending limit")
             || normalized.contains("plan limit")
+            || normalized.contains("current quota")
+            || normalized.contains("billing details")
+            || normalized.contains("maximum monthly spend")
+            || normalized.contains("monthly budget")
+            || normalized.contains("hard limit")
+            || normalized.contains("soft limit")
+            || normalized.contains("usage cap")
+            || normalized.contains("insufficient funds")
+            || normalized.contains("upgrade")
+            || normalized.contains("subscription")
     }
 }
