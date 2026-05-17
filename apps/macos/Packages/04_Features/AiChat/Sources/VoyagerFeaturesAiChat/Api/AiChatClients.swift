@@ -54,11 +54,7 @@ public extension AiChatExecutionClient {
                             case let .started(context):
                                 continuation.yield(.started(context: context))
                             case let .delta(context, text):
-                                await emitDisplayDelta(
-                                    context: context,
-                                    text: text,
-                                    continuation: continuation,
-                                )
+                                continuation.yield(.delta(context: context, text: text))
                             case let .final(response):
                                 continuation.yield(.final(response: response))
                             case let .failed(context, reason):
@@ -90,37 +86,6 @@ private extension AiChatExecutionClient {
             continuation.yield(.failed(context: context, reason: mapExecutionError(error)))
             continuation.finish()
         }
-    }
-
-    static func emitDisplayDelta(
-        context: AiChatRequestContextSnapshot,
-        text: String,
-        continuation: AsyncStream<AiChatEvent>.Continuation,
-    ) async {
-        guard context.provider == .anthropic else {
-            continuation.yield(.delta(context: context, text: text))
-            return
-        }
-
-        for chunk in anthropicDisplayChunks(from: text) {
-            if Task.isCancelled { return }
-            continuation.yield(.delta(context: context, text: chunk))
-            try? await Task.sleep(nanoseconds: 8_000_000)
-        }
-    }
-
-    static func anthropicDisplayChunks(from text: String) -> [String] {
-        let chunkSize = 24
-        guard text.count > chunkSize else { return text.isEmpty ? [] : [text] }
-
-        var chunks: [String] = []
-        var start = text.startIndex
-        while start < text.endIndex {
-            let end = text.index(start, offsetBy: chunkSize, limitedBy: text.endIndex) ?? text.endIndex
-            chunks.append(String(text[start ..< end]))
-            start = end
-        }
-        return chunks
     }
 
     static func mapExecutionError(_ error: Error) -> AiChatExecutionFailure {

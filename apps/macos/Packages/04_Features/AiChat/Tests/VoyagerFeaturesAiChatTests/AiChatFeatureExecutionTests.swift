@@ -5,8 +5,8 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// swiftlint:disable type_body_length
 @MainActor
-// swiftlint:disable:next type_body_length
 final class AiChatFeatureExecutionTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     // swiftlint:disable:next function_body_length
@@ -124,7 +124,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             ]
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
-                        state.executionPhase = .completed(secondDeltaLock.recordingTerminal(
+            state.executionPhase = .completed(secondDeltaLock.recordingTerminal(
                 at: fixedMs,
                 failure: nil,
                 wasCancelled: false,
@@ -143,7 +143,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         ])
         XCTAssertEqual(persistence.snapshots.first?.lastRequestID, lock.request.context.requestID)
         XCTAssertEqual(persistence.snapshots.first?.lastRunID, lock.request.context.runID)
-                XCTAssertEqual(
+        XCTAssertEqual(
             store.state.executionPhase,
             .completed(secondDeltaLock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)),
         )
@@ -218,7 +218,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.send(.cancelTapped) { state in
             state.lockedModelHandle = nil
             state.streamingAssistantDraft = nil
-                        state.executionPhase = .cancelled(streamingLock.recordingTerminal(
+            state.executionPhase = .cancelled(streamingLock.recordingTerminal(
                 at: fixedMs,
                 failure: .cancelled,
                 wasCancelled: true,
@@ -238,7 +238,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertNil(store.state.lockedModelHandle)
         XCTAssertNil(store.state.lastExecutionFailure)
         XCTAssertNil(store.state.streamingAssistantDraft)
-                XCTAssertEqual(
+        XCTAssertEqual(
             store.state.executionPhase,
             .cancelled(streamingLock.recordingTerminal(at: fixedMs, failure: .cancelled, wasCancelled: true)),
         )
@@ -307,7 +307,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         }
 
         stream.yield(.failed(context: request.context, reason: .transportError))
-                let failedLock = lock.recordingDelta(at: fixedMs).recordingTerminal(
+        let failedLock = lock.recordingDelta(at: fixedMs).recordingTerminal(
             at: fixedMs,
             failure: .transportError,
             wasCancelled: false,
@@ -417,7 +417,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.finish()
     }
 
-    func testLiveExecutionClientChunksLargeAnthropicDeltaBeforeFinal() async {
+    func testLiveExecutionClientEmitsRawAnthropicDeltaBeforeFinal() async {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[1].handle
         let requestContext = makeRequestContext(
@@ -452,9 +452,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             if case let .delta(_, text) = event { return text }
             return nil
         }
-        XCTAssertGreaterThan(deltaTexts.count, 1)
-        XCTAssertEqual(deltaTexts.joined(), largeDelta)
-        XCTAssertTrue(events.last?.isFinalResponse == true)
+        XCTAssertEqual(deltaTexts, [largeDelta])
+        XCTAssertEqual(events.last?.isFinalResponse, true)
     }
 
     func testCompletedRequestHasNoStatusTextAndNextSubmitCanStart() {
@@ -523,6 +522,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         )
     }
 }
+
+// swiftlint:enable type_body_length
 
 private extension AiChatEvent {
     var isFinalResponse: Bool {
