@@ -95,7 +95,7 @@ extension AiChatFeature {
 
         for chunk in chunks.reversed() {
             let chunkCharacters = chunk.reduce(0) { $0 + $1.content.count }
-            guard usedCharacters + chunkCharacters <= budget else { continue }
+            guard usedCharacters + chunkCharacters <= budget else { break }
             includedMessages.insert(contentsOf: chunk, at: 0)
             usedCharacters += chunkCharacters
         }
