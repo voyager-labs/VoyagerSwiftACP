@@ -23,7 +23,7 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertGreaterThan(request.timeoutInterval, 30)
     }
 
-    func testMakeOpenAIRequest_omitsReasoningWhenThinkingNone() throws {
+    func testMakeOpenAIRequest_encodesReasoningWhenThinkingNoneIsSupported() throws {
         let payload = try makePayload(
             provider: .openai,
             rawModelID: "gpt-5",
@@ -37,7 +37,8 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         let body = try XCTUnwrap(request.httpBody)
         let decoded = try JSONDecoder().decode(CapturedOpenAIRequestBody.self, from: body)
 
-        XCTAssertNil(decoded.reasoning)
+        XCTAssertEqual(decoded.reasoning?.effort, "none")
+        XCTAssertNil(decoded.reasoning?.budgetTokens)
     }
 
     func testCodexArguments_includeReasoningEffortWhenSelected() throws {
@@ -63,17 +64,42 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         ])
     }
 
-    func testCodexArguments_omitReasoningEffortWhenNoneOrUnsupported() {
+    func testCodexArguments_includeReasoningNoneWhenSupported() throws {
         let outputURL = URL(fileURLWithPath: "/tmp/codex-output.txt")
 
         let arguments = AiChatProviderExecutionClient.codexArguments(
             model: "gpt-5-codex",
             outputURL: outputURL,
             prompt: "Explain the change",
-            thinking: nil,
+            thinking: AiChatProviderThinkingPayload.none,
         )
 
-        XCTAssertFalse(arguments.contains { $0.contains("model_reasoning_effort") })
+        XCTAssertEqual(arguments, [
+            "exec",
+            "--json",
+            "--model",
+            "gpt-5-codex",
+            "--output-last-message",
+            outputURL.path,
+            "-c",
+            "model_reasoning_effort=\"none\"",
+            "Explain the change"
+        ])
+    }
+
+    func testCodexArguments_omitReasoningEffortWhenUnsupported() {
+        let outputURL = URL(fileURLWithPath: "/tmp/codex-output.txt")
+
+        for thinking in [nil, .disabled, .tokenBudget(1024)] as [AiChatProviderThinkingPayload?] {
+            let arguments = AiChatProviderExecutionClient.codexArguments(
+                model: "gpt-5-codex",
+                outputURL: outputURL,
+                prompt: "Explain the change",
+                thinking: thinking,
+            )
+
+            XCTAssertFalse(arguments.contains { $0.contains("model_reasoning_effort") })
+        }
     }
 
     func testCodexPipeDataAccumulator_collectsConcurrentStderrChunks() {

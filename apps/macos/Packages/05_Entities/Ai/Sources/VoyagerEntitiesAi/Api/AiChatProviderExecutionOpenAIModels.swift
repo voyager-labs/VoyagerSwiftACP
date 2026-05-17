@@ -74,7 +74,8 @@ struct OpenAIResponsesReasoning: Encodable, Sendable {
 
         switch payload {
         case .none:
-            return nil
+            effort = "none"
+            budgetTokens = nil
         case let .effort(value):
             effort = value.rawValue
             budgetTokens = nil
@@ -142,6 +143,7 @@ struct OpenAIResponsesStreamEvent: Decodable, Sendable {
     let outputText: String?
     let output: [OpenAIResponsesOutputItem]?
     let response: OpenAIResponsesFinalResponse?
+    let error: OpenAIResponsesStreamError?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -150,6 +152,7 @@ struct OpenAIResponsesStreamEvent: Decodable, Sendable {
         case outputText = "output_text"
         case output
         case response
+        case error
     }
 
     var resolvedText: String? {
@@ -167,4 +170,10 @@ struct OpenAIResponsesStreamEvent: Decodable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return text?.isEmpty == false ? text : nil
     }
+}
+
+struct OpenAIResponsesStreamError: Decodable, Sendable {
+    let message: String?
+    let type: String?
+    let code: String?
 }
