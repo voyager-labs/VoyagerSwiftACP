@@ -85,6 +85,7 @@ extension AiChatProviderExecutionClient {
     static func executeCodexCLI(
         model: String,
         prompt: String,
+        thinking: AiChatProviderThinkingPayload?,
         credential: OAuthCredentialFile,
         onDelta: @escaping @Sendable (String) -> Void,
     ) async throws -> String {
@@ -99,6 +100,7 @@ extension AiChatProviderExecutionClient {
             try await runCodexProcess(CodexProcessRequest(
                 model: model,
                 prompt: prompt,
+                thinking: thinking,
                 outputURL: outputURL,
                 codexHomeURL: codexHomeURL,
                 processState: processState,
@@ -139,7 +141,12 @@ extension AiChatProviderExecutionClient {
     ) throws -> CodexProcessIO {
         let resolvedCommand = try resolveCodexCommand()
         process.executableURL = resolvedCommand.executableURL
-        process.arguments = codexArguments(model: request.model, outputURL: request.outputURL, prompt: request.prompt)
+        process.arguments = codexArguments(
+            model: request.model,
+            outputURL: request.outputURL,
+            prompt: request.prompt,
+            thinking: request.thinking,
+        )
         process.environment = codexProcessEnvironment(codexHomeURL: request.codexHomeURL)
         process.currentDirectoryURL = codexWorkingDirectory()
 
@@ -167,16 +174,36 @@ extension AiChatProviderExecutionClient {
         )
     }
 
-    static func codexArguments(model: String, outputURL: URL, prompt: String) -> [String] {
-        [
+    static func codexArguments(
+        model: String,
+        outputURL: URL,
+        prompt: String,
+        thinking: AiChatProviderThinkingPayload?,
+    ) -> [String] {
+        var arguments = [
             "exec",
             "--json",
             "--model",
             model,
             "--output-last-message",
-            outputURL.path,
-            prompt
+            outputURL.path
         ]
+
+        if let reasoningEffort = codexReasoningEffort(from: thinking) {
+            arguments.append(contentsOf: ["-c", "model_reasoning_effort=\"\(reasoningEffort)\""])
+        }
+
+        arguments.append(prompt)
+        return arguments
+    }
+
+    static func codexReasoningEffort(from thinking: AiChatProviderThinkingPayload?) -> String? {
+        switch thinking {
+        case let .some(.effort(value)), let .some(.adaptive(.some(value))):
+            value.rawValue
+        case nil, .some(.none), .some(.disabled), .some(.tokenBudget), .some(.adaptive(.none)):
+            nil
+        }
     }
 
     static func waitForCodexProcess(
@@ -291,6 +318,7 @@ extension AiChatProviderExecutionClient {
     struct CodexProcessRequest {
         var model: String
         var prompt: String
+        var thinking: AiChatProviderThinkingPayload?
         var outputURL: URL
         var codexHomeURL: URL
         var processState: CodexProcessState

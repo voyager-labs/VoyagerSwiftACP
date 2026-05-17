@@ -271,6 +271,7 @@ extension AiChatProviderExecutionClient {
         executor: @escaping @Sendable (
             _ model: String,
             _ prompt: String,
+            _ thinking: AiChatProviderThinkingPayload?,
             _ credential: OAuthCredentialFile,
             _ onDelta: @escaping @Sendable (String) -> Void,
         ) async throws -> String,
@@ -282,7 +283,12 @@ extension AiChatProviderExecutionClient {
                 do {
                     let prompt = makeCodexPrompt(payload: preflight.payload)
                     let credential = try codexCredential(from: preflight.credential)
-                    let finalText = try await executor(preflight.payload.rawModelID, prompt, credential) { delta in
+                    let finalText = try await executor(
+                        preflight.payload.rawModelID,
+                        prompt,
+                        preflight.payload.thinking,
+                        credential,
+                    ) { delta in
                         guard !delta.isEmpty else { return }
                         continuation.yield(.delta(context: context, text: delta))
                     }

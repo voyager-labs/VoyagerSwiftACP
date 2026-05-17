@@ -23,6 +23,59 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertGreaterThan(request.timeoutInterval, 30)
     }
 
+    func testMakeOpenAIRequest_omitsReasoningWhenThinkingNone() throws {
+        let payload = try makePayload(
+            provider: .openai,
+            rawModelID: "gpt-5",
+            thinking: AiChatProviderThinkingPayload.none,
+        )
+
+        let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
+            payload: payload,
+            credential: .apiKey("openai-key"),
+        )
+        let body = try XCTUnwrap(request.httpBody)
+        let decoded = try JSONDecoder().decode(CapturedOpenAIRequestBody.self, from: body)
+
+        XCTAssertNil(decoded.reasoning)
+    }
+
+    func testCodexArguments_includeReasoningEffortWhenSelected() throws {
+        let outputURL = URL(fileURLWithPath: "/tmp/codex-output.txt")
+
+        let arguments = AiChatProviderExecutionClient.codexArguments(
+            model: "gpt-5-codex",
+            outputURL: outputURL,
+            prompt: "Explain the change",
+            thinking: .effort(.high),
+        )
+
+        XCTAssertEqual(arguments, [
+            "exec",
+            "--json",
+            "--model",
+            "gpt-5-codex",
+            "--output-last-message",
+            outputURL.path,
+            "-c",
+            "model_reasoning_effort=\"high\"",
+            "Explain the change"
+        ])
+    }
+
+    func testCodexArguments_omitReasoningEffortWhenNoneOrUnsupported() {
+        let outputURL = URL(fileURLWithPath: "/tmp/codex-output.txt")
+
+        let arguments = AiChatProviderExecutionClient.codexArguments(
+            model: "gpt-5-codex",
+            outputURL: outputURL,
+            prompt: "Explain the change",
+            thinking: nil,
+        )
+
+        XCTAssertFalse(arguments.contains { $0.contains("model_reasoning_effort") })
+    }
+
     func testCodexPipeDataAccumulator_collectsConcurrentStderrChunks() {
         let accumulator = CodexPipeDataAccumulator()
 
@@ -32,7 +85,11 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertEqual(accumulator.stringValue(), "first stderr chunk\nsecond stderr chunk")
     }
 
-    private func makePayload(provider: AiProvider, rawModelID: String) throws -> AiChatProviderRequestPayload {
+    private func makePayload(
+        provider: AiProvider,
+        rawModelID: String,
+        thinking: AiChatProviderThinkingPayload? = nil,
+    ) throws -> AiChatProviderRequestPayload {
         let requestUUID = try XCTUnwrap(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
         let runUUID = try XCTUnwrap(UUID(uuidString: "66666666-7777-8888-9999-AAAAAAAAAAAA"))
         let requestID = AiChatRequestID(rawValue: requestUUID)
@@ -51,7 +108,21 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
                 promptSummary: "Hello",
                 submittedAtMs: 1_700_000_000_000,
             ),
-            thinking: nil,
+            thinking: thinking,
         )
+    }
+}
+
+private struct CapturedOpenAIRequestBody: Decodable {
+    let reasoning: CapturedOpenAIReasoning?
+}
+
+private struct CapturedOpenAIReasoning: Decodable {
+    let effort: String?
+    let budgetTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case effort
+        case budgetTokens = "budget_tokens"
     }
 }

@@ -68,6 +68,7 @@ public extension AiChatProviderExecutionClient {
         codexExecutor: @escaping @Sendable (
             _ model: String,
             _ prompt: String,
+            _ thinking: AiChatProviderThinkingPayload?,
             _ credential: OAuthCredentialFile,
             _ onDelta: @escaping @Sendable (String) -> Void,
         ) async throws -> String,

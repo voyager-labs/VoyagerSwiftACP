@@ -29,11 +29,17 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
     }
 
     func testExecute_chatgptCodexWithOAuthCredential_runsCodexExecAndEmitsFinal() throws {
-        let request = makeRequest(provider: .chatgptCodex, rawModelID: "gpt-5-codex")
+        let request = makeRequest(
+            provider: .chatgptCodex,
+            rawModelID: "gpt-5-codex",
+            selectedThinking: .effort(.high),
+            thinkingCapability: .effort(values: [.low, .high], defaultValue: .low),
+        )
         let client = AiChatProviderExecutionClient.live(
             now: { 30001 },
-            codexExecutor: { model, prompt, credential, onDelta in
+            codexExecutor: { model, prompt, thinking, credential, onDelta in
                 XCTAssertEqual(model, "gpt-5-codex")
+                XCTAssertEqual(thinking, .effort(.high))
                 XCTAssertEqual(credential.accessToken, "codex-token")
                 XCTAssertTrue(prompt.contains("Current context summary: workspace context"))
                 XCTAssertTrue(prompt.contains("User:\nPing"))
@@ -643,14 +649,29 @@ private extension AiChatProviderExecutionClientTests {
         provider: AiProvider,
         rawModelID: String,
         modelProvider: AiProvider? = nil,
+        selectedThinking: AiThinkingSelection? = AiThinkingSelection.none,
+        thinkingCapability: AiModelThinkingCapability? = nil,
     ) -> AiChatRequest {
-        AiChatRequest(
+        let resolvedProvider = modelProvider ?? provider
+        let selectedModel = thinkingCapability.map { capability in
+            AiProviderModel(
+                id: AiModelHandle(provider: resolvedProvider, rawValue: rawModelID),
+                provider: resolvedProvider,
+                rawModelID: rawModelID,
+                displayName: rawModelID,
+                providerDisplayName: resolvedProvider.rawValue,
+                thinkingCapability: capability,
+                unavailableReason: nil,
+            )
+        }
+        return AiChatRequest(
             context: AiChatRequestContextSnapshot(
                 requestID: AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000010")),
                 runID: AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000011")),
                 provider: provider,
-                model: AiModelHandle(provider: modelProvider ?? provider, rawValue: rawModelID),
-                selectedThinking: AiThinkingSelection.none,
+                model: AiModelHandle(provider: resolvedProvider, rawValue: rawModelID),
+                selectedModel: selectedModel,
+                selectedThinking: selectedThinking,
                 sessionStatus: .idle,
                 currentContext: .init(summary: "workspace context"),
                 promptSummary: nil,
