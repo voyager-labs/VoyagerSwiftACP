@@ -247,6 +247,95 @@ final class AiChatFeatureExecutionTests: XCTestCase {
     }
 
     // swiftlint:disable:next function_body_length
+    func testSubmitConnectionsFileLoadFailureEmitsUnknownFailureWithoutProviderExecution() async {
+        actor ProviderDriver {
+            var requestCount = 0
+
+            func increment() {
+                requestCount += 1
+            }
+
+            func snapshot() -> Int {
+                requestCount
+            }
+        }
+
+        enum LoadFailure: Error {
+            case unreadable
+        }
+
+        let driver = ProviderDriver()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111122"))
+        let fixedMs: Int64 = 1_700_000_000_700
+        let providerClient = AiChatProviderExecutionClient(execute: { request, _ in
+            AsyncThrowingStream { continuation in
+                Task {
+                    await driver.increment()
+                    continuation.yield(.started(context: request.context))
+                    continuation.finish()
+                }
+            }
+        })
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = .live(providerExecutionClient: providerClient)
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { throw LoadFailure.unreadable },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) },
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
+            state.selectedModelHandle = selectedHandle
+            state.lockedModelHandle = selectedHandle
+            state.lastExecutionFailure = nil
+            state.streamingAssistantDraft = nil
+        }
+
+        guard case let .processing(lock) = store.state.executionPhase else {
+            XCTFail("Expected processing state after submit")
+            return
+        }
+
+        let failedLock = lock.recordingTerminal(at: fixedMs, failure: .unknown, wasCancelled: false)
+        await store.receive(.executionEvent(.failed(context: lock.request.context, reason: .unknown))) { state in
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = .unknown
+            state.executionPhase = .failed(failedLock, .unknown)
+        }
+
+        let requestCount = await driver.snapshot()
+        XCTAssertEqual(requestCount, 0)
+        XCTAssertEqual(store.state.requestStatusText, "An unknown chat error occurred.")
+    }
+
+    // swiftlint:disable:next function_body_length
     func testFailedStreamPreservesPartialDraftAndMarksPartialFailure() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()

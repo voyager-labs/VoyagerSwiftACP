@@ -176,7 +176,8 @@ extension AiChatFeature {
                 let connectionsFile = try await aiConnectionsFileClient.load()
                 credential = Self.executionCredential(for: request.context.provider, in: connectionsFile)
             } catch {
-                credential = nil
+                await send(.executionEvent(.failed(context: request.context, reason: .unknown)))
+                return
             }
 
             for await event in aiChatExecutionClient.execute(request, credential) {
