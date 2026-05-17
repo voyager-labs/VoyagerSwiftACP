@@ -8,23 +8,10 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
-private struct InspectorMountViewState: Equatable {
-    let inspectorVisible: Bool
-    let inspectorPaneExists: Bool
-    let activeMode: FileManagerInspectorMode
-
-    init(state: FileManagerWindowState) {
-        inspectorVisible = state.inspector.inspectorVisible
-        inspectorPaneExists = state.inspector.inspectorPaneExists
-        activeMode = state.inspector.activeMode
-    }
-}
-
 @MainActor
 final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {
     private enum Constants {
-        static let defaultInspectorWidth: CGFloat = 300
-        static let inspectorMinWidth: CGFloat = 200
+        static let inspectorMinWidth = FileManagerInspectorLayoutMetrics.minWidth
         static let contentMinWidth: CGFloat = 400
     }
 
@@ -37,23 +24,14 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     private var cancellables: Set<AnyCancellable> = []
     private var hasStarted = false
     private var hasTornDown = false
-
     private var currentInspectorVisible: Bool?
-    private var inspectorWidth: CGFloat = Constants.defaultInspectorWidth
     private var currentIsDark: Bool
-    // TODO(VOY-202 후속): ContentPane/Toolbar/Breadcrumb/Composer 책임선을
-    // 더 좁은 장기 구조로 다시 정리하면, 이 임시 chrome/overlay props는
-    // 삭제한다. 현재는 의존성/결합 정리를 위한 과도기 seam이다.
     private var currentContentChromeProps: FileManagerContentChromeProps?
     private var currentContentOverlayProps: FileManagerContentOverlayProps?
-    private var needsInspectorWidthApply = false
-    private var pendingInspectorWidthApply = false
     private var pendingInspectorMountRetry = false
     private var isApplyingInspectorWidth = false
-
     private var inspectorHosting: NSHostingController<InspectorPaneView>?
     private var contentHosting: NSHostingController<AnyView>?
-    private var inspectorWidthConstraint: NSLayoutConstraint?
     private weak var mainSplitView: NSSplitView?
     private weak var containerView: NSView?
 
@@ -97,7 +75,6 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
             isDark: currentIsDark,
         )
         self.inspectorHosting = inspectorHosting
-        setInspectorWidthConstraint(to: 0)
         components.splitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
         addChild(inspectorHosting)
         view = components.containerView
@@ -139,7 +116,6 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         contentHosting?.removeFromParent()
         inspectorHosting = nil
         contentHosting = nil
-        inspectorWidthConstraint = nil
     }
 
     private func startIfNeeded() {
@@ -165,7 +141,10 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
 
     private func render(state: FileManagerWindowState) {
         updateContentRootViewIfNeeded(state: state)
-        applyInspectorState(inspectorVisible: state.inspector.inspectorVisible)
+        applyInspectorVisibilityIfNeeded(
+            inspectorVisible: state.inspector.inspectorVisible,
+            inspectorWidth: state.inspector.inspectorWidth,
+        )
         updateAppearance(isDark: currentIsDark)
     }
 }
@@ -205,73 +184,63 @@ private extension MainContainerSplitCoordinator {
         )
     }
 
-    private func applyInspectorState(inspectorVisible: Bool) {
+    private func applyInspectorVisibilityIfNeeded(inspectorVisible: Bool, inspectorWidth: CGFloat) {
         let needsMountRetry = inspectorVisible && !isInspectorPaneMounted
         if currentInspectorVisible != inspectorVisible || needsMountRetry {
-            updateInspectorPane(visible: inspectorVisible)
+            updateInspectorPane(visible: inspectorVisible, inspectorWidth: inspectorWidth)
         }
         currentInspectorVisible = inspectorVisible
     }
 
-    private func updateInspectorPane(visible: Bool) {
+    private func updateInspectorPane(visible: Bool, inspectorWidth: CGFloat) {
         guard let splitView = mainSplitView else { return }
-
         if visible {
-            guard let hosting = inspectorHosting else { return }
+            mountInspectorPane(in: splitView, inspectorWidth: inspectorWidth)
+            return
+        }
+        unmountInspectorPane(from: splitView)
+    }
 
-            guard canMountInspectorPane(in: splitView) else {
-                needsInspectorWidthApply = true
-                scheduleInspectorWidthApplyIfNeeded()
-                return
-            }
-
-            if !splitView.arrangedSubviews.contains(hosting.view) {
-                if hosting.view.superview != nil {
-                    hosting.view.removeFromSuperview()
-                }
-                splitView.addArrangedSubview(hosting.view)
-                splitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
-                splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 1)
-            }
-            setInspectorWidthConstraint(to: inspectorWidth)
-
-            needsInspectorWidthApply = true
-            applyInspectorWidthIfNeeded()
-            splitView.layoutSubtreeIfNeeded()
-            guard isInspectorPaneEffectivelyVisible else {
-                needsInspectorWidthApply = true
-                scheduleInspectorMountRetry()
-                return
-            }
-            if needsInspectorWidthApply {
-                scheduleInspectorWidthApplyIfNeeded()
-            }
-
-            store.send(.inspector(.setInspectorPaneExists(true)))
+    private func mountInspectorPane(in splitView: NSSplitView, inspectorWidth: CGFloat) {
+        guard let hosting = inspectorHosting else { return }
+        guard canMountInspectorPane(in: splitView) else {
+            scheduleInspectorMountRetry()
             return
         }
 
+        if !splitView.arrangedSubviews.contains(hosting.view) {
+            if hosting.view.superview != nil {
+                hosting.view.removeFromSuperview()
+            }
+            splitView.addArrangedSubview(hosting.view)
+            splitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
+            splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 1)
+        }
+
+        applyStoredInspectorWidth(inspectorWidth, in: splitView)
+        splitView.layoutSubtreeIfNeeded()
+        guard isInspectorPaneEffectivelyVisible else {
+            scheduleInspectorMountRetry()
+            return
+        }
+        store.send(.inspector(.setInspectorPaneExists(true)))
+    }
+
+    private func unmountInspectorPane(from splitView: NSSplitView) {
         guard let hosting = inspectorHosting else { return }
         updateInspectorWidthFromSplitView()
-        setInspectorWidthConstraint(to: 0)
-        needsInspectorWidthApply = false
-        pendingInspectorWidthApply = false
         pendingInspectorMountRetry = false
+
         if hosting.view.superview === splitView {
             splitView.removeArrangedSubview(hosting.view)
             hosting.view.removeFromSuperview()
         }
         splitView.adjustSubviews()
         splitView.layoutSubtreeIfNeeded()
-
         store.send(.inspector(.setInspectorPaneExists(false)))
     }
 
-    private func applyInspectorWidthIfNeeded() {
-        guard let splitView = mainSplitView,
-              let inspectorView = inspectorHosting?.view
-        else { return }
-
+    private func applyStoredInspectorWidth(_ width: CGFloat, in splitView: NSSplitView) {
         guard !isApplyingInspectorWidth else { return }
         isApplyingInspectorWidth = true
         defer { isApplyingInspectorWidth = false }
@@ -279,87 +248,35 @@ private extension MainContainerSplitCoordinator {
         let totalWidth = splitView.bounds.width
         guard totalWidth > 0 else { return }
 
-        let contentMinWidth = min(
-            Constants.contentMinWidth,
-            max(0, totalWidth - Constants.inspectorMinWidth),
-        )
-        let maxDividerPosition = max(0, totalWidth - Constants.inspectorMinWidth)
-        let targetInspectorWidth = min(
-            max(inspectorWidth, Constants.defaultInspectorWidth, Constants.inspectorMinWidth),
-            max(Constants.inspectorMinWidth, totalWidth - contentMinWidth),
-        )
-        let dividerPosition = min(
-            max(contentMinWidth, totalWidth - targetInspectorWidth),
-            maxDividerPosition,
-        )
-        setInspectorWidthConstraint(to: targetInspectorWidth)
+        let targetWidth = targetInspectorWidth(width, totalWidth: totalWidth)
+        let contentMinWidth = min(Constants.contentMinWidth, max(0, totalWidth - Constants.inspectorMinWidth))
+        let dividerPosition = max(contentMinWidth, totalWidth - targetWidth)
         splitView.setPosition(dividerPosition, ofDividerAt: 0)
         splitView.adjustSubviews()
-        inspectorWidth = max(targetInspectorWidth, inspectorView.frame.width)
-        needsInspectorWidthApply = false
-        pendingInspectorWidthApply = false
     }
 
-    private func setInspectorWidthConstraint(to width: CGFloat) {
-        guard let inspectorView = inspectorHosting?.view else { return }
-        let resolvedWidth = max(0, width)
-
-        if let inspectorWidthConstraint {
-            inspectorWidthConstraint.constant = resolvedWidth
-            return
-        }
-
-        let constraint = inspectorView.widthAnchor.constraint(equalToConstant: resolvedWidth)
-        constraint.priority = .defaultHigh
-        constraint.isActive = true
-        inspectorWidthConstraint = constraint
-    }
-
-    private func scheduleInspectorWidthApplyIfNeeded() {
-        guard mainSplitView != nil else { return }
-
-        guard !pendingInspectorWidthApply else { return }
-        pendingInspectorWidthApply = true
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard pendingInspectorWidthApply,
-                  currentInspectorVisible == true,
-                  inspectorHosting != nil,
-                  mainSplitView != nil
-            else {
-                pendingInspectorWidthApply = false
-                return
-            }
-
-            guard let splitView = mainSplitView,
-                  canMountInspectorPane(in: splitView)
-            else {
-                pendingInspectorWidthApply = false
-                needsInspectorWidthApply = true
-                scheduleInspectorMountRetry()
-                return
-            }
-
-            pendingInspectorWidthApply = false
-            if let inspectorView = inspectorHosting?.view,
-               !splitView.arrangedSubviews.contains(inspectorView)
-            {
-                updateInspectorPane(visible: true)
-            } else {
-                applyInspectorWidthIfNeeded()
-                splitView.layoutSubtreeIfNeeded()
-                markInspectorPaneExistsIfEffectivelyVisible()
-            }
-        }
+    private func targetInspectorWidth(_ width: CGFloat, totalWidth: CGFloat) -> CGFloat {
+        let contentWidth = min(Constants.contentMinWidth, max(0, totalWidth - Constants.inspectorMinWidth))
+        let maxWidth = max(Constants.inspectorMinWidth, totalWidth - contentWidth)
+        return min(max(Constants.inspectorMinWidth, width), maxWidth)
     }
 
     private func updateInspectorWidthFromSplitView() {
-        guard let inspectorView = inspectorHosting?.view else { return }
+        guard currentInspectorVisible == true,
+              let splitView = mainSplitView,
+              let inspectorView = inspectorHosting?.view,
+              splitView.arrangedSubviews.contains(inspectorView)
+        else { return }
+
         let width = inspectorView.frame.width
         guard width > 0 else { return }
-        inspectorWidth = width
-        inspectorWidthConstraint?.constant = width
+        syncInspectorWidthToStore(width)
+    }
+
+    private func syncInspectorWidthToStore(_ width: CGFloat) {
+        let clampedWidth = max(Constants.inspectorMinWidth, width)
+        guard abs(store.inspector.inspectorWidth - clampedWidth) > 0.5 else { return }
+        store.send(.inspector(.setInspectorWidth(clampedWidth)))
     }
 
     private var isInspectorPaneMounted: Bool {
@@ -376,34 +293,27 @@ private extension MainContainerSplitCoordinator {
         return inspectorView.frame.width >= Constants.inspectorMinWidth
     }
 
-    private func markInspectorPaneExistsIfEffectivelyVisible() {
-        guard isInspectorPaneEffectivelyVisible,
-              store.state.inspector.inspectorPaneExists == false
-        else { return }
-        store.send(.inspector(.setInspectorPaneExists(true)))
-    }
-
     private func retryPendingInspectorMountIfNeeded() {
         guard currentInspectorVisible == true else { return }
-
-        if isInspectorPaneMounted {
-            if needsInspectorWidthApply {
-                scheduleInspectorWidthApplyIfNeeded()
-                return
-            }
-            markInspectorPaneExistsIfEffectivelyVisible()
-            return
-        }
-
         guard let splitView = mainSplitView,
               canMountInspectorPane(in: splitView)
         else {
-            needsInspectorWidthApply = true
             scheduleInspectorMountRetry()
             return
         }
 
-        updateInspectorPane(visible: true)
+        if isInspectorPaneMounted {
+            applyStoredInspectorWidth(store.inspector.inspectorWidth, in: splitView)
+            splitView.layoutSubtreeIfNeeded()
+            guard isInspectorPaneEffectivelyVisible else {
+                scheduleInspectorMountRetry()
+                return
+            }
+            store.send(.inspector(.setInspectorPaneExists(true)))
+            return
+        }
+
+        mountInspectorPane(in: splitView, inspectorWidth: store.inspector.inspectorWidth)
     }
 
     private func scheduleInspectorMountRetry() {
@@ -463,30 +373,13 @@ extension MainContainerSplitCoordinator {
         return index == 0
     }
 
-    func splitView(
-        _ splitView: NSSplitView,
-        shouldCollapseSubview subview: NSView,
-        forDoubleClickOnDividerAt dividerIndex: Int,
-    ) -> Bool {
-        guard splitView === mainSplitView,
-              dividerIndex == 0,
-              subview === inspectorHosting?.view
-        else { return false }
-        return false
-    }
-
-    func splitView(_ splitView: NSSplitView, canCollapseSubview _: NSView) -> Bool {
-        guard splitView === mainSplitView else { return false }
-        return false
-    }
+    func splitView(_: NSSplitView, canCollapseSubview _: NSView) -> Bool { false }
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard let splitView = notification.object as? NSSplitView,
               splitView === mainSplitView
         else { return }
-        if needsInspectorWidthApply || pendingInspectorWidthApply {
-            scheduleInspectorWidthApplyIfNeeded()
-        }
+        guard !isApplyingInspectorWidth else { return }
         updateInspectorWidthFromSplitView()
     }
 }
