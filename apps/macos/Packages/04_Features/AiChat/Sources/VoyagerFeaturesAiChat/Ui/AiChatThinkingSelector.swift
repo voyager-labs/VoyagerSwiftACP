@@ -15,9 +15,8 @@ struct AiChatThinkingSelectorButton: View {
         } label: {
             AiChatHoverTextAffordance(
                 title: AiChatSelectorLabels.thinkingSelectorLabel(for: state, input: input),
-                systemName: "chevron.down"
+                systemName: "chevron.down",
             )
-            .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
@@ -28,7 +27,7 @@ struct AiChatThinkingSelectorButton: View {
                             store: store,
                             option: option,
                             isSelected: state.selectedThinking == option.selection,
-                            isPresented: $isPresented
+                            isPresented: $isPresented,
                         )
                     }
                 }
@@ -74,7 +73,7 @@ private struct AiChatThinkingSelectorRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
+                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear),
             )
         }
         .buttonStyle(.plain)
@@ -83,41 +82,41 @@ private struct AiChatThinkingSelectorRow: View {
 }
 
 private enum AiChatThinkingSelectorOptions {
-    static func options(for capability: AiModelThinkingCapability?) -> [ThinkingSelectorOption] {
-        switch capability {
-        case let .effort(values, _):
-            return defaultOptions + values.map { effortOption($0) }
-        case let .adaptive(effortValues, _):
-            return defaultOptions + effortValues.map { effortOption($0) }
-        case let .tokenBudget(min, max, defaultValue):
-            return defaultOptions + budgetValues(min: min, max: max, defaultValue: defaultValue)
-                .map { tokenBudgetOption($0) }
-        case .unsupported, .unknown, nil:
-            return []
-        }
-    }
-
     private static var defaultOptions: [ThinkingSelectorOption] {
         [
             ThinkingSelectorOption(selection: nil, title: "default"),
             ThinkingSelectorOption(
                 selection: AiThinkingSelection.none,
-                title: AiChatState.thinkingLabel(for: .none)
+                title: AiChatState.thinkingLabel(for: .none),
             )
         ]
+    }
+
+    static func options(for capability: AiModelThinkingCapability?) -> [ThinkingSelectorOption] {
+        switch capability {
+        case let .effort(values, _):
+            defaultOptions + values.map { effortOption($0) }
+        case let .adaptive(effortValues, _):
+            defaultOptions + effortValues.map { effortOption($0) }
+        case let .tokenBudget(min, max, defaultValue):
+            defaultOptions + budgetValues(min: min, max: max, defaultValue: defaultValue)
+                .map { tokenBudgetOption($0) }
+        case .unsupported, .unknown, nil:
+            []
+        }
     }
 
     private static func effortOption(_ effort: AiThinkingEffort) -> ThinkingSelectorOption {
         ThinkingSelectorOption(
             selection: .effort(effort),
-            title: AiChatState.thinkingLabel(for: .effort(effort))
+            title: AiChatState.thinkingLabel(for: .effort(effort)),
         )
     }
 
     private static func tokenBudgetOption(_ value: Int) -> ThinkingSelectorOption {
         ThinkingSelectorOption(
             selection: .tokenBudget(value),
-            title: AiChatState.thinkingLabel(for: .tokenBudget(value))
+            title: AiChatState.thinkingLabel(for: .tokenBudget(value)),
         )
     }
 

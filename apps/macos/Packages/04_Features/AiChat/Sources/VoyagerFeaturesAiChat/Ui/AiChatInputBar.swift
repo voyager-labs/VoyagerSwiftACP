@@ -22,21 +22,24 @@ struct AiChatInputBar: View {
                     systemName: nil,
                     titleFontSize: 14,
                     titleWeight: .semibold,
-                    hoverColor: .primary
+                    hoverColor: .primary,
                 )
                 .fixedSize(horizontal: true, vertical: false)
-                AiChatModelSelectorButton(
-                    store: store,
-                    state: state,
-                    isPresented: $isModelSelectorPopoverPresented
-                )
-                AiChatThinkingSelectorButton(
-                    store: store,
-                    state: state,
-                    input: input,
-                    isPresented: $isThinkingSelectorPresented
-                )
-                Spacer(minLength: 2)
+                HStack(alignment: .bottom, spacing: 8) {
+                    AiChatModelSelectorButton(
+                        store: store,
+                        state: state,
+                        isPresented: $isModelSelectorPopoverPresented,
+                    )
+                    AiChatThinkingSelectorButton(
+                        store: store,
+                        state: state,
+                        input: input,
+                        isPresented: $isThinkingSelectorPresented,
+                    )
+                }
+                .layoutPriority(1)
+                Spacer(minLength: 0)
                 chatInputActionButton
             }
         }
@@ -48,11 +51,11 @@ struct AiChatInputBar: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(chatInputBackground)
+                .fill(chatInputBackground),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(chatInputBorder, lineWidth: 1)
+                .strokeBorder(chatInputBorder, lineWidth: 1),
         )
     }
 
@@ -61,13 +64,13 @@ struct AiChatInputBar: View {
             AiChatInputTextView(
                 text: Binding(
                     get: { state.draftText },
-                    set: { store.send(.draftTextChanged($0)) }
+                    set: { store.send(.draftTextChanged($0)) },
                 ),
                 isFocused: $isChatInputFocused,
                 measuredHeight: $chatInputTextHeight,
                 isDisabled: state.isProcessing,
                 maxVisibleHeight: AiChatView.chatInputMaxTextHeight,
-                onSubmit: { submitAndRestoreInputFocus() }
+                onSubmit: { submitAndRestoreInputFocus() },
             )
             .frame(height: boundedChatInputTextHeight)
 
@@ -75,6 +78,8 @@ struct AiChatInputBar: View {
                 Text(input.placeholder)
                     .font(.system(size: 13))
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .padding(.top, AiChatInputTextView.textVerticalInset)
                     .padding(.leading, AiChatInputTextView.textHorizontalInset)
                     .allowsHitTesting(false)
@@ -88,7 +93,7 @@ struct AiChatInputBar: View {
     private var boundedChatInputTextHeight: CGFloat {
         min(
             max(chatInputTextHeight, AiChatView.chatInputMinTextHeight),
-            AiChatView.chatInputMaxTextHeight
+            AiChatView.chatInputMaxTextHeight,
         )
     }
 
@@ -146,7 +151,7 @@ struct AiChatInputBar: View {
             .frame(width: 24, height: 24)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary)
+                    .fill(Color.primary),
             )
             .opacity(1)
     }
