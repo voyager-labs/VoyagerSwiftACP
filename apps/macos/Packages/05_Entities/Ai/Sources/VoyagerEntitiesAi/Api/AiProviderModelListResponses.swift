@@ -7,12 +7,19 @@ struct OpenAIModelPayload: Decodable, Sendable {
     let supportedReasoningEfforts: [OpenAIReasoningEffortPayload]
     let defaultReasoningEffort: AiThinkingEffort?
 
+    var supportsThinkingNone: Bool {
+        if !supportedReasoningEfforts.isEmpty {
+            return supportedReasoningEfforts.contains(where: \.supportsNone)
+        }
+        return OpenAIReasoningCapability.inferredSupportsNone(for: id)
+    }
+
     var thinkingCapability: AiModelThinkingCapability? {
         let decodedEfforts = supportedReasoningEfforts.compactMap(\.effortValue).uniquePreservingOrder()
         if !decodedEfforts.isEmpty {
             return .effort(
                 values: decodedEfforts,
-                defaultValue: defaultReasoningEffort.flatMap { decodedEfforts.contains($0) ? $0 : nil }
+                defaultValue: defaultReasoningEffort.flatMap { decodedEfforts.contains($0) ? $0 : nil },
             )
         }
 
@@ -40,7 +47,7 @@ struct OpenAIModelPayload: Decodable, Sendable {
                 .supportedReasoningEffortsCamel,
                 .reasoningEfforts,
                 .reasoningEffortsCamel
-            ]
+            ],
         )
         defaultReasoningEffort = try container.decodeFirstPresentOpenAIEffort(
             forKeys: [
@@ -48,13 +55,14 @@ struct OpenAIModelPayload: Decodable, Sendable {
                 .defaultReasoningEffortCamel,
                 .reasoningEffort,
                 .reasoningEffortCamel
-            ]
+            ],
         )
     }
 }
 
 struct OpenAIReasoningEffortPayload: Decodable, Sendable {
     let effortValue: AiThinkingEffort?
+    let supportsNone: Bool
 
     enum CodingKeys: String, CodingKey {
         case effort
@@ -65,6 +73,7 @@ struct OpenAIReasoningEffortPayload: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         if let singleValue = try? decoder.singleValueContainer(),
            let rawEffort = try? singleValue.decode(String.self) {
+            supportsNone = rawEffort.lowercased() == "none"
             effortValue = AiThinkingEffort(rawValue: rawEffort)
             return
         }
@@ -72,15 +81,22 @@ struct OpenAIReasoningEffortPayload: Decodable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         for key in [CodingKeys.effort, .reasoningEffort, .reasoningEffortCamel] {
             if let rawEffort = try container.decodeIfPresent(String.self, forKey: key) {
+                supportsNone = rawEffort.lowercased() == "none"
                 effortValue = AiThinkingEffort(rawValue: rawEffort)
                 return
             }
         }
+        supportsNone = false
         effortValue = nil
     }
 }
 
 enum OpenAIReasoningCapability {
+    static func inferredSupportsNone(for modelID: String) -> Bool {
+        let normalizedID = modelID.lowercased()
+        return normalizedID.hasPrefix("gpt-5.1") || normalizedID.hasPrefix("gpt-5.5")
+    }
+
     static func inferred(for modelID: String) -> AiModelThinkingCapability? {
         let normalizedID = modelID.lowercased()
 
@@ -115,6 +131,10 @@ struct AnthropicModelPayload: Decodable, Sendable {
     let displayName: String?
     let capabilities: AnthropicModelCapabilities?
 
+    var supportsThinkingNone: Bool {
+        capabilities?.supportsThinkingNone ?? false
+    }
+
     var thinkingCapability: AiModelThinkingCapability? {
         capabilities?.thinkingCapability
     }
@@ -129,6 +149,10 @@ struct AnthropicModelPayload: Decodable, Sendable {
 struct AnthropicModelCapabilities: Decodable, Sendable {
     let thinking: Thinking?
     let effort: Effort?
+
+    var supportsThinkingNone: Bool {
+        thinking?.supported == true && thinking?.types?.enabled?.supported == true
+    }
 
     var thinkingCapability: AiModelThinkingCapability? {
         guard thinking?.supported == true else { return nil }
@@ -205,6 +229,11 @@ struct CodexModelPayload: Decodable, Sendable {
         !hidden && visibility?.lowercased() != "none"
     }
 
+    var supportsThinkingNone: Bool {
+        supportedReasoningLevels.contains(where: \.supportsNone)
+            || OpenAIReasoningCapability.inferredSupportsNone(for: modelID)
+    }
+
     var thinkingCapability: AiModelThinkingCapability? {
         let efforts = supportedReasoningLevels.compactMap(\.effortValue).uniquePreservingOrder()
         guard !efforts.isEmpty else { return nil }
@@ -241,7 +270,7 @@ struct CodexModelPayload: Decodable, Sendable {
                 .supportedReasoningLevels,
                 .supportedReasoningEfforts,
                 .supportedReasoningEffortsCamel
-            ]
+            ],
         )
         supportedReasoningLevels = decodedEfforts
 
@@ -250,13 +279,14 @@ struct CodexModelPayload: Decodable, Sendable {
                 .defaultReasoningLevel,
                 .defaultReasoningEffort,
                 .defaultReasoningEffortCamel
-            ]
+            ],
         )
     }
 }
 
 struct CodexReasoningEffortPayload: Decodable, Sendable {
     let effortValue: AiThinkingEffort?
+    let supportsNone: Bool
 
     enum CodingKeys: String, CodingKey {
         case effort
@@ -266,15 +296,22 @@ struct CodexReasoningEffortPayload: Decodable, Sendable {
 
     init(from decoder: Decoder) throws {
         if let singleValue = try? decoder.singleValueContainer(),
-           let rawEffort = try? singleValue.decode(AiThinkingEffort.self) {
-            effortValue = rawEffort
+           let rawEffort = try? singleValue.decode(String.self) {
+            supportsNone = rawEffort.lowercased() == "none"
+            effortValue = AiThinkingEffort(rawValue: rawEffort)
             return
         }
 
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        effortValue = try container.decodeIfPresent(AiThinkingEffort.self, forKey: .effort)
-            ?? container.decodeIfPresent(AiThinkingEffort.self, forKey: .reasoningEffort)
-            ?? container.decodeIfPresent(AiThinkingEffort.self, forKey: .reasoningEffortCamel)
+        for key in [CodingKeys.effort, .reasoningEffort, .reasoningEffortCamel] {
+            if let rawEffort = try container.decodeIfPresent(String.self, forKey: key) {
+                supportsNone = rawEffort.lowercased() == "none"
+                effortValue = AiThinkingEffort(rawValue: rawEffort)
+                return
+            }
+        }
+        supportsNone = false
+        effortValue = nil
     }
 }
 
@@ -309,8 +346,8 @@ extension KeyedDecodingContainer where Key == CodexModelPayload.CodingKeys {
             keys[0],
             DecodingError.Context(
                 codingPath: codingPath,
-                debugDescription: "Codex model payload is missing a model identifier."
-            )
+                debugDescription: "Codex model payload is missing a model identifier.",
+            ),
         )
     }
 
