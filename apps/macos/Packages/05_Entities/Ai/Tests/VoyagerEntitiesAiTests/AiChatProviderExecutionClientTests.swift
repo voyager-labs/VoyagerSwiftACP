@@ -175,6 +175,28 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 1)
     }
 
+    func testExecute_openAIStreamingFailureEvent_emitsFailureInsteadOfFinal() throws {
+        let request = makePreparedRequestFixture()
+        let client = makeLiveClient { outboundRequest in
+            try assertOpenAIRequest(outboundRequest, expectedModel: "selected-model-id")
+            return makeHTTPResponse(
+                statusCode: 200,
+                contentType: "text/event-stream",
+                body: openAIStreamFailureBody(),
+            )
+        }
+
+        let events = try collect(client.execute(
+            request,
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+        ))
+
+        XCTAssertEqual(events, [
+            .started(context: request.context),
+            .failed(context: request.context, reason: .invalidRequest)
+        ])
+    }
+
     func testExecute_openAIFinalOnlyJSON_emitsStartedFinal() throws {
         let request = makePreparedRequestFixture()
         let client = makeLiveClient(now: 10001) { outboundRequest in
@@ -393,6 +415,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         let request = makeAnthropicPreparedRequestFixture(
             selectedThinking: AiThinkingSelection.none,
             capability: .effort(values: [.low, .high], defaultValue: nil),
+            supportsThinkingNone: true,
         )
         let client = makeLiveClient(now: 20002) { outboundRequest in
             try assertAnthropicRequest(
@@ -736,6 +759,7 @@ private extension AiChatProviderExecutionClientTests {
     func makeAnthropicPreparedRequestFixture(
         selectedThinking: AiThinkingSelection? = .effort(.high),
         capability: AiModelThinkingCapability = .adaptive(effortValues: [.low, .high], defaultValue: .low),
+        supportsThinkingNone: Bool = false,
     ) -> AiChatRequest {
         let selectedModel = AiProviderModel(
             id: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-6"),
@@ -744,6 +768,7 @@ private extension AiChatProviderExecutionClientTests {
             displayName: "Claude Sonnet 4.6",
             providerDisplayName: "Anthropic",
             thinkingCapability: capability,
+            supportsThinkingNone: supportsThinkingNone,
             unavailableReason: nil,
         )
 
@@ -1000,6 +1025,17 @@ private func openAIStreamingBody() -> String {
     data: {"type":"response.completed","response":{"output_text":"Hello"}}
 
     data: [DONE]
+
+    """
+}
+
+private func openAIStreamFailureBody() -> String {
+    """
+    event: response.output_text.delta
+    data: {"type":"response.output_text.delta","delta":"partial"}
+
+    event: response.failed
+    data: {"type":"response.failed","error":{"message":"OpenAI stream failed"}}
 
     """
 }

@@ -39,25 +39,7 @@ extension AiChatProviderExecutionClient {
         var finalText: String?
 
         for payload in ssePayloads(from: text) {
-            guard payload != "[DONE]" else { continue }
-
-            let event = try JSONDecoder().decode(OpenAIResponsesStreamEvent.self, from: Data(payload.utf8))
-            switch event.type {
-            case "response.output_text.delta":
-                if let delta = event.delta, !delta.isEmpty {
-                    deltas.append(delta)
-                }
-            case "response.output_text.done":
-                if let text = event.text, !text.isEmpty {
-                    finalText = text
-                }
-            case "response.completed":
-                if let completedText = event.resolvedText, !completedText.isEmpty {
-                    finalText = completedText
-                }
-            default:
-                continue
-            }
+            _ = try consumeOpenAIPayload(payload, deltas: &deltas, finalText: &finalText)
         }
 
         return ParsedOpenAIResponse(
@@ -227,10 +209,19 @@ extension AiChatProviderExecutionClient {
             if let completedText = event.resolvedText, !completedText.isEmpty {
                 finalText = completedText
             }
+        case "response.failed", "error":
+            throw openAIStreamFailure(event)
         default:
             break
         }
         return nil
+    }
+
+    static func openAIStreamFailure(_ event: OpenAIResponsesStreamEvent) -> AiHTTPError {
+        let message = event.error?.message
+            ?? event.response?.resolvedText
+            ?? "OpenAI stream emitted failure event: \(event.type)"
+        return .httpError(statusCode: 400, body: message)
     }
 
     static func consumeAnthropicSSEBytes<Bytes: AsyncSequence>(
