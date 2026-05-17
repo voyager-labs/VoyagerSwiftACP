@@ -36,6 +36,28 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
+    func testInspectorWidthUpdateKeepsWindowManagerPreferencesInSync() async {
+        let windowID = UUID()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: windowID, window: .makeInitial(path: "/tmp")),
+        ]
+        initialState.appPreferences.inspectorWidth = FileManagerInspectorLayoutMetrics.defaultWidth
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.inspector(.setInspectorWidth(412))),
+        ))) {
+            $0.appPreferences.inspectorWidth = 412
+            $0.windows[id: windowID]?.window.inspector.inspectorWidth = 412
+        }
+    }
+
     func testQuickLookRoutesToFocusedWindowCommandBus() async {
         let focusedID = UUID()
 

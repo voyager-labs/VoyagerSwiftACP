@@ -1,10 +1,16 @@
 import ComposableArchitecture
+import CoreGraphics
+import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAiChat
+import VoyagerShared
 
 @Reducer
 struct FileManagerInspectorFeature {
     typealias State = FileManagerInspectorState
     typealias Action = FileManagerInspectorAction
+
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.aiChat, action: \.aiChat) {
@@ -23,6 +29,15 @@ struct FileManagerInspectorFeature {
 
             case let .setInspectorPaneExists(exists):
                 state.inspectorPaneExists = exists
+                return .none
+
+            case let .setInspectorWidth(width):
+                let clampedWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
+                if abs(state.inspectorWidth - clampedWidth) < 0.5 {
+                    return .none
+                }
+                state.inspectorWidth = clampedWidth
+                userDefaultsClient.setDouble(clampedWidth, SettingsKeys.inspectorWidth)
                 return .none
 
             case .closeChat:
