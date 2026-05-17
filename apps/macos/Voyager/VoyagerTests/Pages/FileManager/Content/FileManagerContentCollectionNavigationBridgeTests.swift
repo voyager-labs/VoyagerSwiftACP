@@ -303,4 +303,5 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         return state
     }
 }
+
 // swiftlint:enable type_name nesting

@@ -386,4 +386,5 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         )
     }
 }
+
 // swiftlint:enable type_body_length

@@ -30,4 +30,5 @@ final class FileManagerContentThumbnailOwnershipTests: XCTestCase {
         XCTAssertEqual(store.state.entryViewLayout.entryThumbnail.readyPaths, ["/tmp/file1.txt"])
     }
 }
+
 // swiftlint:enable type_name

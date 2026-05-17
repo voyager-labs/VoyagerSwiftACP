@@ -162,4 +162,5 @@ final class FileManagerSidebarActionNormalizationTests: XCTestCase {
         await store.finish()
     }
 }
+
 // swiftlint:enable type_name
