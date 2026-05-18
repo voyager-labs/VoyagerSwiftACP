@@ -15,8 +15,8 @@ pre-commit:
   parallel: true
   commands:
     swiftformat:
-      glob: "*.swift"
-      run: swiftformat --lint {staged_files}
+      glob: "apps/macos/**/*.swift"
+      run: swiftformat --config apps/macos/.swiftformat --lint {staged_files}
     swiftlint:
-      glob: "*.swift"
-      run: swiftlint lint --strict {staged_files}
+      glob: "apps/macos/**/*.swift"
+      run: swiftlint lint --config apps/macos/.swiftlint.yml --strict {staged_files}

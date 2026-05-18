@@ -1,20 +1,17 @@
-# SwiftLint 설정 파일
-# Voyager macOS 앱용 SwiftLint 규칙
+# SwiftLint settings for Voyager macOS Swift sources.
+# Run from apps/macos or pass explicit apps/macos/**/*.swift paths from the repo root.
 
-# 포함할 파일/디렉토리
-included:
-  - Voyager
-  - VoyagerTests
-  - VoyagerUITests
-  - VoyagerHelper
-
-# 제외할 파일/디렉토리
+# Exclude build artifacts and generated files.
 excluded:
   - .build
-  - Packages
-  - Voyager.xcodeproj
-  - Voyager.xcodeproj/xcuserdata
-  - Voyager.xcodeproj/project.xcworkspace/xcuserdata
+  - DerivedData
+  - Pods
+  - Voyager/.build
+  - Voyager/Voyager.xcodeproj
+  - Voyager/Voyager.xcodeproj/xcuserdata
+  - Voyager/Voyager.xcodeproj/project.xcworkspace/xcuserdata
+  - Hosts/**/.build
+  - Packages/**/.build
 
 # 활성화할 규칙들
 opt_in_rules:

@@ -14,7 +14,7 @@
     "editor.defaultFormatter": "vknabel.vscode-swiftformat"
   },
   "swiftformat.configSearchPaths": [
-    "${workspaceFolder}/apps/macos/Voyager/.swiftformat"
+    "${workspaceFolder}/apps/macos/.swiftformat"
   ],
   "swiftformat.path": "/opt/homebrew/bin/swiftformat",
   "swiftlint.path": "/opt/homebrew/bin/swiftlint",
