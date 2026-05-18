@@ -1,3 +1,0 @@
-window_id	parent_region_id	region_id	region_label	region_label_ko	level	slot_type	structure_key	description	objects	release_phase
-test_window	root	inspector_pane	Inspector Pane	인스펙터 패인	1	pane	test_window.inspector_pane	테스트 인스펙터 패인	-	MVP
-test_window	inspector_pane	status_area	Status Area	상태 영역	2	section	test_window.inspector_pane.status_area	테스트 상태 영역	-	MVP

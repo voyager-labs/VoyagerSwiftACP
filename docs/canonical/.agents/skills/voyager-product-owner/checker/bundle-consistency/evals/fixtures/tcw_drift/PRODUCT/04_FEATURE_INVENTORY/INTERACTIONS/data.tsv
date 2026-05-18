@@ -1,3 +1,0 @@
-interaction_title	interaction_id	interaction_type	feature	category_key	feature_id	status	summary	related_region	menu	shortcut
-Submit Test Request	TCW-001-submit_request	command	Manage Test Requests	TCW	TCW-001	드래프트	테스트 request를 생성하고 processing 상태로 전환한다.	test_window.chat_panel.chat_field	-	⌘↩
-Show Test Request State	TCW-001-show_request_state	display	Manage Test Requests	TCW	TCW-001	드래프트	테스트 request의 processing, completed, failed, cancelled 상태를 표시한다.	test_window.chat_panel.message_area	-	-
