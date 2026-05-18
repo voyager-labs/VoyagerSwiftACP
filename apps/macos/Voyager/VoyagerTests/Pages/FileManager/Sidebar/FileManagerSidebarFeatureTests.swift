@@ -28,7 +28,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
             $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
@@ -54,7 +54,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
             $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
@@ -80,7 +80,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
             $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
@@ -104,7 +104,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
             $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
@@ -132,7 +132,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
             $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
@@ -158,7 +158,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
             $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
@@ -183,7 +183,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
             $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
@@ -216,7 +216,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient(
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient(
                 favoriteTagNames: { expectedTagNames },
                 favoriteTags: { expectedTags },
             )
@@ -244,7 +244,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient(
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient(
                 favoriteTagNames: { [] },
                 favoriteTags: { [] },
             )
@@ -283,7 +283,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient(
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient(
                 favoriteTagNames: { expectedTagNames },
                 favoriteTags: { expectedTags },
             )
@@ -318,7 +318,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.entryLoadingClient = VoyagerEntitiesEntry.EntryLoadingClient.testValue
             $0.fileManagerFavoritesClient = Voyager.FileManagerFavoritesClient.testValue
             $0.fileManagerLocationsClient = Voyager.FileManagerLocationsClient.testValue
-            $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient.testValue
+            $0[VoyagerEntitiesTag.FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
             $0.fileManagerIconClient = Voyager.FileManagerIconClient.testValue
         }
