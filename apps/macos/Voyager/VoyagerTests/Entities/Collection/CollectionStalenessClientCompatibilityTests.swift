@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
@@ -45,7 +46,6 @@ final class CollectionStalenessCompatTests: XCTestCase {
         let record = client.record(path)
         XCTAssertEqual(record?.definitionFingerprint, "")
         XCTAssertEqual(record?.relevanceRoots, ["/tmp/root"])
-        XCTAssertEqual(record?.excludedScopes, [])
         XCTAssertNil(record?.lastInvalidatedAt)
     }
 

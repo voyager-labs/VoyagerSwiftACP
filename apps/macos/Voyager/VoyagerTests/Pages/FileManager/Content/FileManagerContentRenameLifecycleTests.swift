@@ -1,7 +1,9 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerPagesFileManager
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import XCTest
 

@@ -1,9 +1,9 @@
 ---
-interaction_id: "RCL-001-coalesce_repeated_query_failure_feedback"
+interaction_id: "RCL-004-coalesce_repeated_query_failure_feedback"
 interaction_type: "background"
-feature: "Define Collection Filter"
+feature: "Compose Collection Filter"
 category_key: "RCL"
-feature_id: "RCL-001"
+feature_id: "RCL-004"
 status: "기획 완료"
 summary: "동일한 실패 상태가 짧은 시간 안에 반복될 때 실패 피드백을 중복 누적하지 않고 노출 정책에 따라 합치거나 갱신함"
 related_region: "-"
@@ -15,85 +15,79 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- 동일한 실패 상태가 짧은 시간 안에 반복될 때 실패 피드백을 중복 누적하지 않고 노출 정책에 따라 합치거나 갱신함.
+- `RCL-004`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- 사용자가 filter query 필드에 입력하거나 Enter로 제출할 때 호출된다.
+- query 변환 결과가 돌아오거나 변환/실행 실패가 발생했을 때 호출된다.
 
 ## Preconditions
 
-- Show Query Conversion Failure Feedback 또는 Show Query Execution Failure Feedback이 표시 대상이 된
-  상태
-- 현재 실패 피드백이 표시 중인 상태
-- 짧은 시간 내 동일 유형의 실패가 반복 발생한 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
 
 ## Expected Outcome
 
-- TBD
+- 짧은 시간 안에 반복되는 같은 conversion/execution failure를 새 toast로 계속 누적하지 않는다.
+- 기존 `conversion_failure_feedback_visible` 또는 `execution_failure_feedback_visible` 상태를 최신 reason 중심으로 갱신한다.
+- 실패 종류가 바뀌면 두 상태 간 전환을 명확히 남긴다.
 
 ## State Changes
 
-- `failure_feedback_visible` -> `repeated_same_failure_detected`
-    - 동일한 실패 문구가 짧은 시간 내 반복 감지되면, 시스템이 새 실패를 중복 표시 후보로 식별함
-- `repeated_same_failure_detected` -> `failure_feedback_coalesced`
-    - 시스템이 동일 메시지 반복에 대해 새 feedback을 만들지 않고, 기존 토스트와 기존 자동 해제 시점을
-      그대로 유지함
-- `failure_feedback_visible` -> `different_failure_detected`
-    - 기존 feedback 표시 중 의미가 다른 실패 문구가 새로 감지되면, 시스템이 새 실패를 별도 의미의
-      상태로 분기함
-- `different_failure_detected` -> `latest_failure_feedback_visible`
-    - 시스템이 마지막 실패 유형에 맞는 feedback으로 교체하거나 갱신해 사용자가 최신 실패 원인을 식별할
-      수 있게 함
-- `failure_feedback_visible` -> `feedback_auto_dismissed`
-    - 일정 시간이 지나면 현재 feedback이 자동으로 사라짐
-- `failure_feedback_visible` -> `feedback_cleared`
-    - 사용자가 typing / cancel / composer dismiss를 수행하면 현재 feedback이 즉시 정리됨
+- `conversion_failure_feedback_visible`과 `execution_failure_feedback_visible`을 읽고 같은 두 상태 중 하나를 다시 쓴다.
+- conversion→execution 또는 execution→conversion 전환은 contract transition에 맞게 기록한다.
+- coalesce는 포괄 실패 상태 같은 새 공통 상태를 만들지 않는다.
 
 ## User-visible Feedback
 
-- TBD
+- 같은 실패는 같은 영역에서 최신 reason/시각/재시도 안내로 갱신한다.
+- 다른 실패 종류로 바뀌면 사용자가 원인을 구분할 수 있게 메시지를 교체한다.
 
 ## Edge Cases / Failure Handling
 
-- 오래된 요청 응답이 새 feedback 이후 늦게 도착하는 경우
-- 동일한 실패가 매우 짧은 간격으로 연속 제출되는 경우
-- 서로 다른 실패 유형이 교차 발생하는 경우
-- 이전 실패 피드백의 자동 해제가 새 feedback 표시 이후 늦게 도착하는 경우
-- 동일 메시지 반복 때문에 자동 해제 시점이 다시 시작되거나 연장되는 것처럼 보이면 안 되는 경우
-- 실질적 필터 변경이 없는 경우가 사용자 feedback으로 과도하게 노출되면 안 되는 경우
+- failure feedback 누적 때문에 Composer 편집 가능성이 가려지지 않아야 한다.
+- 사용자가 query를 수정하면 다음 submit을 방해하지 않는다.
+- 금지 상태인 포괄 실패 상태을 사용하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 동일한 변환 실패 또는 동일한 실행 실패가 짧은 시간 내 반복되면, 시스템이 새 feedback을 만들지
-      않고 기존 토스트를 그대로 유지함
-- [ ] 시스템이 dedupe 기준을 실패 문구 단위로 적용하고, 동일 메시지 반복에 대해서만 spam을 억제함
-- [ ] 변환 실패와 실행 실패처럼 의미가 다른 실패 문구가 연속 발생하면, 시스템이 이를 하나로 뭉개지
-      않고 마지막 실패 문구 기준의 피드백으로 갱신함
-- [ ] 오래된 요청 응답은 현재 feedback 상태를 바꾸지 않음
-- [ ] 사용자가 typing / cancel / composer dismiss를 수행하면 현재 feedback이 즉시 정리됨
-- [ ] 시스템이 표시 중인 feedback을 잠시 후 자동으로 정리하되, 동일 메시지 반복이 발생해도 기존 자동
-      해제 시점을 다시 시작하거나 연장하지 않음
-- [ ] 시스템이 새로운 feedback이 이미 표시된 뒤에 도착한 이전 자동 해제로 인해 더 새로운 feedback을
-      잘못 제거하지 않음
-- [ ] 실질적 필터 변경이 없는 경우는 내부 판단에만 사용되고, 사용자 피드백 대상으로 직접 확대되지
-      않음
-- [ ] 사용자가 실패 후 입력을 수정해 재시도하는 동안에도, 시스템이 과도한 중복 노출 없이 현재 실패
-      상태만 이해할 수 있도록 피드백 수를 제어함
+- [ ] 같은 failure가 반복되면 실패 메시지는 중복 누적되지 않아야 한다.
+- [ ] conversion failure와 execution failure는 서로 다른 상태로 구분되어야 한다.
+- [ ] coalesce 후에도 사용자는 query를 수정하거나 다시 제출할 수 있어야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 scope, query, condition draft를 읽고 갱신할 수 있어야 한다.
+- 이 interaction은 특정 UI region 없이 background/domain state를 갱신한다.
 
 ## Observability / Analytics
 
-- TBD
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- TBD
+- [RCL-004-apply_all_generated_filter_suggestions](RCL-004-apply_all_generated_filter_suggestions.md)
+- [RCL-004-apply_generated_filter_changes](RCL-004-apply_generated_filter_changes.md)
+- [RCL-004-apply_generated_filter_suggestion](RCL-004-apply_generated_filter_suggestion.md)
+- [RCL-004-generate_filter_changes_from_query](RCL-004-generate_filter_changes_from_query.md)
+- [RCL-004-generate_filter_suggestions_from_query](RCL-004-generate_filter_suggestions_from_query.md)
+- [RCL-004-reject_all_generated_filter_suggestions](RCL-004-reject_all_generated_filter_suggestions.md)
+- [RCL-004-reject_generated_filter_suggestion](RCL-004-reject_generated_filter_suggestion.md)
+- [RCL-004-show_generated_filter_suggestions](RCL-004-show_generated_filter_suggestions.md)
+- [RCL-004-show_query_conversion_failure_feedback](RCL-004-show_query_conversion_failure_feedback.md)
+- [RCL-004-show_query_execution_failure_feedback](RCL-004-show_query_execution_failure_feedback.md)
+- [RCL-004-submit_collection_filter_query](RCL-004-submit_collection_filter_query.md)
+- [RCL-004-type_collection_filter_query](RCL-004-type_collection_filter_query.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `112`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:112`
+- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
+- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md), [collection_query_composition_flow.md](../flows/collection_query_composition_flow.md)

@@ -5,72 +5,86 @@ feature: "Retrieve Entries with Filters"
 category_key: "RCL"
 feature_id: "RCL-003"
 status: "기획 완료"
-summary: "열려 있는 콜렉션에서 외부 변경이 발생하면 자동 refresh 없이 현재 결과를 유지한 채 stale 상태만 남겨 후속 refresh 정책을 유지"
+summary: "열려 있는 콜렉션에서 외부 변경이 발생하면 즉시 재검색하지 않고 현재 결과를 stale 상태로 표시해 후속 refresh 정책을 유지"
 related_region: "file_manager_window.content_pane.page_container.page_mode_collection"
 menu: "-"
 shortcut: "-"
 ---
 
-# Mark Open Collection as Stale on External Change
+# Mark Open Collection As Stale On External Change
 
 ## Intent
 
-- TBD
+- 열려 있는 콜렉션에서 외부 변경이 발생하면 즉시 재검색하지 않고 현재 결과를 stale 상태로 표시해 후속 refresh 정책을 유지.
+- `RCL-003`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- query submit, condition 변경, scope 변경, 수동 refresh 입력이 검색 결과 재계산을 요구할 때 호출된다.
+- 열린 collection 또는 다시 열린 collection이 stale 상태일 때 refresh 정책을 실행한다.
 
 ## Preconditions
 
-- 현재 Content Pane이 열린 콜렉션 페이지를 표시 중인 상태
-- 외부 파일시스템 변경 신호가 현재 열린 콜렉션의 scope 아래 경로와 관련된 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 검색 API에 전달할 `SearchFiltersPayload`를 만들 수 있어야 한다.
 
 ## Expected Outcome
 
-- TBD
+- 열려 있는 콜렉션에서 외부 변경이 발생하면 즉시 재검색하지 않고 현재 결과를 stale 상태로 표시해 후속 refresh 정책을 유지.
+- `SearchFiltersPayload`에 포함 가능한 active condition만 전송되어야 한다.
+- 서버가 반환한 `appliedFilters`는 UI state의 정규화 기준으로 다시 반영되어야 한다.
+- 진행 중인 search/applyFilters 요청은 cancellation id로 마지막 요청만 유효하게 관리되어야 한다.
 
 ## State Changes
 
-- TBD
+- isLoadingSearch, isLoadingFilters, isFilteringInFlight, active request id, lastFiltersResponse를 갱신한다.
+- registry 기반 key resolution으로 canonical, legacy, unknown condition 상태를 정리한다.
+- stale 상태는 즉시 결과를 폐기하는 대신 refresh 필요 상태로 기록한다.
 
 ## User-visible Feedback
 
-- TBD
+- 검색/필터 적용 중에는 loading 상태를 표시하고 중복 실행을 막는다.
+- unknown property key는 제거하지 않고 비활성 condition으로 남겨 사용자가 원인을 볼 수 있게 한다.
+- stale 결과는 최신성이 보장되지 않음을 표시하고 refresh 진입점을 제공한다.
+- background interaction은 별도 화면을 만들기보다 연결된 display/command interaction이 읽을 상태를 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 외부 변경이 짧은 시간 안에 반복 발생해 stale mark 요청이 연속으로 들어오는 경우
-- 현재 열린 콜렉션 scope와 무관한 경로 변경이 도착하는 경우
-- 열린 콜렉션에서 stale mark 직후 사용자가 수동 refresh를 호출하는 경우
-- 외부 변경이 발생했지만 현재 페이지가 이미 다른 콜렉션 또는 일반 디렉토리로 전환된 경우
-- 열린 콜렉션이 이미 stale 상태인데 동일 범위 변경이 다시 도착하는 경우
+- 조건이 비어 있거나 값 인코딩에 실패한 condition은 payload에서 제외한다.
+- submit은 진행 중인 filter 요청을 취소하고, filter apply는 진행 중인 search 요청을 취소한다.
+- 서버 응답에 적용 불가능한 조건이 있으면 appliedFilters 기준으로 UI를 보정한다.
 
 ## Acceptance Criteria
 
-- [ ] 현재 열린 콜렉션의 scope 아래 관련 경로에서 외부 파일시스템 변경이 발생하면, 시스템은 자동
-      refresh나 자동 search를 실행하지 않고 현재 결과를 stale 상태로 전환함
-- [ ] 시스템이 열린 콜렉션을 stale 상태로 표시하더라도, 현재 결과 목록은 유지되고 현재 collection
-      session은 stale 상태로 남아 사용자가 즉시 문맥을 잃지 않음
-- [ ] 동일 범위의 외부 변경이 짧은 시간 안에 반복되더라도, 시스템은 열린 콜렉션을 다시 stale 상태로
-      유지하며 결과 목록을 그대로 둠
-- [ ] 현재 열린 콜렉션 scope와 무관한 경로 변경은 stale mark 대상으로 취급하지 않음
-- [ ] 사용자가 stale 상태 이후 수동 refresh를 호출하면, 시스템은 stale-only 정책과 별개로 명시적
-      refresh 경로를 계속 허용함
+- [ ] active condition과 scope가 있는 상황에서 refresh를 실행하면 검색 API가 호출되고 결과 state가 갱신되어야 한다.
+- [ ] legacy property key가 appliedFilters로 돌아오면 canonical key로 보정되어야 한다.
+- [ ] 모든 condition이 제거되면 filter apply 요청은 스킵되고 in-flight filter 요청은 취소되어야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 검색 API에 전달할 `SearchFiltersPayload`를 만들 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.page_container.page_mode_collection`
 
 ## Observability / Analytics
 
-- TBD
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- TBD
+- [RCL-003-execute_filtered_collection_retrieval](RCL-003-execute_filtered_collection_retrieval.md)
+- [RCL-003-update_collection_results_on_filter_change](RCL-003-update_collection_results_on_filter_change.md)
+- [RCL-003-apply_deterministic_filters](RCL-003-apply_deterministic_filters.md)
+- [RCL-003-refresh_collection_results](RCL-003-refresh_collection_results.md)
+- [RCL-003-mark_collection_results_as_stale](RCL-003-mark_collection_results_as_stale.md)
+- [RCL-003-refresh_stale_collection_results_on_reopen](RCL-003-refresh_stale_collection_results_on_reopen.md)
+- [RCL-003-invalidate_closed_collection_staleness_on_external_change](RCL-003-invalidate_closed_collection_staleness_on_external_change.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `149`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:157`
+- Flows: [collection_retrieval_flow.md](../flows/collection_retrieval_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

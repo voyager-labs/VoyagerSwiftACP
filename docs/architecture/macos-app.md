@@ -71,7 +71,7 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 | --------- | ----------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | App       | `apps/macos/Voyager/Voyager/01_App/`      | `Config/`, `Ui/`, `Lib/`, `Reducer/`, `Api/`                   | `apps/macos/Voyager/Voyager/01_App/Ui/VoyagerApp.swift`, `apps/macos/Voyager/Voyager/01_App/Reducer/AppLifecycleFeature.swift`                                                                                                                            |
 | Pages     | `apps/macos/Voyager/Voyager/02_Pages/`    | 페이지별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`           | `apps/macos/Voyager/Voyager/02_Pages/FileManager/Reducer/FileManagerFeature.swift`, `apps/macos/Voyager/Voyager/02_Pages/Onboarding/Reducer/OnboardingFeature.swift`, `apps/macos/Voyager/Voyager/02_Pages/Settings/Reducer/SettingsFeature.swift`        |
-| Widgets   | `apps/macos/Voyager/Voyager/03_Widgets/`  | 위젯별 `Api?`, `Lib/`, `Model/`, `Reducer/`, `Ui/`              | `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout/Reducer/EntryViewLayoutFeature.swift`, `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout/Ui/EntryListView.swift`                                                                              |
+| Widgets   | `apps/macos/Voyager/Voyager/03_Widgets/`  | 위젯별 `Api?`, `Lib/`, `Model/`, `Reducer/`, `Ui/`             | `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout/Reducer/EntryViewLayoutFeature.swift`, `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout/Ui/EntryListView.swift` (소스는 `Packages/03_Widgets/EntryViewLayout` SwiftPM 패키지에서 제공)       |
 | Features  | `apps/macos/Voyager/Voyager/04_Features/` | 기능별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`             | `apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `apps/macos/Voyager/Voyager/04_Features/UpdateVersion/Reducer/UpdaterFeature.swift`, `apps/macos/Voyager/Voyager/04_Features/BetaAccess/Reducer/BetaAccessFeature.swift` |
 | Entities  | `apps/macos/Voyager/Voyager/05_Entities/` | 엔티티별 `Api/`, `Lib/`, `Model/`, `Reducer/`, `Ui/`/`Config/` | `apps/macos/Voyager/Voyager/05_Entities/Entry/Reducer/EntriesFeature.swift`, `apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`                                                                                          |
 | Shared    | `apps/macos/Voyager/Voyager/06_Shared/`   | `Api/`, `Config/`, `Lib/`, `Model/`, `Assets/`                 | `apps/macos/Voyager/Voyager/06_Shared/Api/UserDefaultsClient.swift`, `apps/macos/Voyager/Voyager/06_Shared/Config/VoyagerDS.swift`                                                                                                                        |
@@ -98,7 +98,7 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 추가 규칙(강권)
 
 - 같은 레이어의 서로 다른 slice 간 참조는 피합니다.
-  - 예: `02_Pages/A` -> `02_Pages/B` 직접 참조 대신, 공통 로직/타입을 `06_Shared` 또는 더 하위 레이어로 내리기
+    - 예: `02_Pages/A` -> `02_Pages/B` 직접 참조 대신, 공통 로직/타입을 `06_Shared` 또는 더 하위 레이어로 내리기
 - `01_App`/`06_Shared`는 예외적으로 slice 없이 세그먼트로 구성되는 레이어로 취급하며, 내부 세그먼트 간 의존은 허용합니다.
 
 참고
@@ -146,7 +146,7 @@ Swift는 폴더가 "모듈 경계"를 강제하진 않지만, 코드 리뷰/리�
 현재 코드베이스에서 발견된 예외(정리 필요)
 
 - `apps/macos/Voyager/Voyager/05_Entities/Entry/Lib/EntryDropDelegate.swift`의 `init(store: StoreOf<FileManagerFeature>, ...)`는 Entities 레이어가 Pages 타입(`FileManagerFeature`)을 직접 참조합니다.
-  - 문서/규칙과의 정합성을 위해, 이 convenience initializer를 Pages 레이어로 옮기거나(Page에서 onDrop/isDropTarget 등을 조립), Entities 쪽에서는 `init(item:onDrop:isDropTarget:draggingPaths:)` 형태만 사용하도록 정리하는 것을 권장합니다.
+    - 문서/규칙과의 정합성을 위해, 이 convenience initializer를 Pages 레이어로 옮기거나(Page에서 onDrop/isDropTarget 등을 조립), Entities 쪽에서는 `init(item:onDrop:isDropTarget:draggingPaths:)` 형태만 사용하도록 정리하는 것을 권장합니다.
 
 ## Widgets 레이어 가이드
 
@@ -164,8 +164,8 @@ Swift는 폴더가 "모듈 경계"를 강제하진 않지만, 코드 리뷰/리�
 
 현재 상태
 
-- `apps/macos/Voyager/Voyager/03_Widgets/`는 현재 `.gitkeep`만 존재합니다.
-- Widget을 추가할 때는 “해당 Widget이 어느 Page/Feature의 반복 패턴을 줄이는지”를 먼저 정의하고 파일을 만듭니다.
+- `apps/macos/Voyager/Voyager/03_Widgets/EntryViewLayout`에 첫 Widget이 추가되었습니다. 소스 코드는 `apps/macos/Packages/03_Widgets/EntryViewLayout` SwiftPM 패키지(`VoyagerWidgetsEntryViewLayout` 모듈)에서 제공합니다.
+- Widget을 추가할 때는 "해당 Widget이 어느 Page/Feature의 반복 패턴을 줄이는지"를 먼저 정의하고 파일을 만듭니다.
 
 ## Reducer 설계 패턴 (향후 컨벤션)
 
@@ -337,9 +337,9 @@ Voyager는 macOS 특성상 "화면 전환"이 단일 NavigationStack만으로 �
 실전 예시
 
 - Helper 모니터링: `.cancellable(id: CancelID.helperMonitor, cancelInFlight: true)` + 종료 시 `.cancel(id:)`
-  - `apps/macos/Voyager/Voyager/01_App/Reducer/AppLifecycleFeature.swift`
+    - `apps/macos/Voyager/Voyager/01_App/Reducer/AppLifecycleFeature.swift`
 - 콜렉션 파일 열기: `.cancellable(id: CancelID.openCollectionFile, cancelInFlight: true)`
-  - `apps/macos/Voyager/Voyager/02_Pages/FileManager/Reducer/FileManagerFeature.swift`
+    - `apps/macos/Voyager/Voyager/02_Pages/FileManager/Reducer/FileManagerFeature.swift`
 
 ### CancelID 네이밍
 
@@ -398,13 +398,13 @@ Voyager는 TCA Dependencies 패턴으로 "외부 세계"를 캡슐화합니다.
 
 ## 권장 패턴 vs 금지 패턴
 
-| 주제              | 권장                                                             | 금지                                                                |
-| ----------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 주제              | 권장                                                                                                | 금지                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | 액션 설계         | `view/delegate/internal` 3계층(`Action.view`, `Action.delegate`, `Action`의 internal 계층)으로 분리 | View가 내부 세부 리듀서(서비스/헬퍼) 액션을 직접 발화하거나 `internal` 액션을 직접 발화 |
-| 대형 Feature 분해 | 부모(오케스트레이터)에서 `Scope`/서브리듀서 주입으로 관심사 분리 | `Feature+Something.swift` 확장이 무제한으로 늘어나 로직 위치가 분산 |
-| 외부 의존성       | `Api/*Client.swift` + `@Dependency`로 캡슐화                     | 전역 싱글톤/정적 함수로 외부 호출을 흩뿌리기                        |
-| Effect 수명       | `.cancellable(id:)`로 취소 가능한 구조                           | 장기 실행 Task/Notification 스트림을 방치                           |
-| 레이어 의존성     | `App/Pages`는 조립, `Features/Entities`에 로직 집중              | `Entities`가 `Pages`에 의존하거나 `Shared`가 상위 레이어를 참조     |
+| 대형 Feature 분해 | 부모(오케스트레이터)에서 `Scope`/서브리듀서 주입으로 관심사 분리                                    | `Feature+Something.swift` 확장이 무제한으로 늘어나 로직 위치가 분산                     |
+| 외부 의존성       | `Api/*Client.swift` + `@Dependency`로 캡슐화                                                        | 전역 싱글톤/정적 함수로 외부 호출을 흩뿌리기                                            |
+| Effect 수명       | `.cancellable(id:)`로 취소 가능한 구조                                                              | 장기 실행 Task/Notification 스트림을 방치                                               |
+| 레이어 의존성     | `App/Pages`는 조립, `Features/Entities`에 로직 집중                                                 | `Entities`가 `Pages`에 의존하거나 `Shared`가 상위 레이어를 참조                         |
 
 ### View 액션 경계 통일 계획 (`WithViewStore` -> `@ViewAction`)
 

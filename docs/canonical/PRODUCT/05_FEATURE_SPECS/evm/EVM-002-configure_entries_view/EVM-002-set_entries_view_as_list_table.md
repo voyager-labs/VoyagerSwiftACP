@@ -7,7 +7,7 @@ feature_id: "EVM-002"
 status: "배포 완료"
 summary: "Entries View를 리스트 레이아웃으로 전환하고, 리스트 열 구성 설정에 따라 컬럼 순서와 표시를 반영"
 related_region: "file_manager_window.content_pane"
-menu: "View"
+menu: "view_menu"
 shortcut: "-"
 ---
 
@@ -15,69 +15,66 @@ shortcut: "-"
 
 ## Intent
 
-- 사용자가 동일한 Entry 데이터를 행과 컬럼 기반으로 빠르게 스캔하고 비교할 수 있어야 한다.
-- 사용자가 설정한 List View 컬럼 구성이 전환 시에도 유지되어야 한다.
+- 현재 Page의 Entries View 표시 방식, 정렬, 그룹, selection 정보를 조정한다.
 
 ## Trigger / Entry Points
 
-- 메뉴 `View`에서 `List`를 선택
+- `view_menu` 메뉴의 Set Entries View as List 항목
+- file_manager_window.content_pane 영역에서 관련 컨트롤 또는 명령을 실행한 경우
 
 ## Preconditions
 
-- 현재 Page가 Entries 목록을 표시하고 있는 상태
+- 대상 Entries View이 현재 File Manager Window에서 접근 가능한 상태다.
 
 ## Expected Outcome
 
-- Entries가 한 행 단위로 표시되고, 현재 List View 컬럼 구성이 반영된다.
-- List View의 컬럼 순서와 표시 여부는 리스트 열 구성 설정을 그대로 반영한다.
-- 그룹핑이 적용된 상태라면, List View에서도 동일한 그룹 데이터가 그룹 헤더로 표현된다.
+- Entries View를 리스트 레이아웃으로 전환하고, 리스트 열 구성 설정에 따라 컬럼 순서와 표시를 반영.
+- 사용자에게 보이는 결과는 `set_entries_view_as_list_table_applied` 상태로 정리된다.
 
 ## State Changes
 
-- Entries View의 레이아웃이 List로 설정된다.
-- 리스트 열 구성 설정은 List View 컬럼 순서·표시의 기준이며, 이 인터랙션으로 임의로 초기화하거나 재정렬하지 않는다.
-- 리스트 열 구성 설정이 아직 준비되지 않은 상황에서는, 기본값을 1회 구성한 뒤 이후에는 사용자 편집값을 유지한다.
-- List View의 간격은 리스트 표시 규칙을 따른다.
-    - contentInsets의 좌우 값은 0
-    - intercellSpacing과 컬럼 간 간격은 보수적으로 줄어든 값
+- Entries View의 표시 또는 실행 상태를 갱신한다.
+- 이 인터랙션은 [evm_contract.toml](../contracts/evm_contract.toml)의 `set_entries_view_as_list_table_applied` 상태 어휘를 따른다.
 
 ## User-visible Feedback
 
-- Entries 표시가 즉시 리스트(테이블) 형태로 전환된다.
-- 컬럼 헤더와 각 행의 셀 콘텐츠가 리스트 열 구성 설정에 맞게 다시 렌더링된다.
+- 성공 시 현재 화면의 표시, 선택, 정렬, 실행 결과가 즉시 갱신된다.
+- 실패 시 기존 상태를 보존하고 실패 사유를 사용자에게 표시한다.
 
 ## Edge Cases / Failure Handling
 
-- 리스트 열 구성 설정에 지원하지 않는 컬럼이 포함된 경우, 해당 컬럼은 무시하고 나머지를 표시한다.
+- 대상 Entries View이 사라졌거나 권한이 없으면 작업을 중단한다.
+- 동일 요청이 반복되면 마지막으로 확정된 상태를 기준으로 중복 반영을 피한다.
 
 ## Acceptance Criteria
 
-- [ ] 현재 페이지가 Entries를 정상적으로 표시하고 있을 때, 사용자가 해당 인터랙션을 호출하면, Entry
-       구성이 리스트 레이아웃으로 전환되며 표시 속성은 기존 설정을 따름
-- [ ] List View가 렌더링되는 상황에서, 컬럼 순서·표시 여부는 리스트 열 구성 설정을 따라야 한다.
-- [ ] 그룹핑이 적용된 상황에서, List View로 전환해도 동일한 그룹 데이터가 그룹 헤더로 유지되어야 한다.
-- [ ] List View가 렌더링되는 상황에서, 좌우 contentInsets가 0으로 적용되어 리스트 콘텐츠가 좌우 여백 없이 정렬되어야 한다.
+- [ ] 대상 Entries View이 현재 File Manager Window에서 접근 가능한 상태다. 사용자가 Set Entries View as List을 실행하면, Entries View를 리스트 레이아웃으로 전환하고, 리스트 열 구성 설정에 따라 컬럼 순서와 표시를 반영 결과가 `set_entries_view_as_list_table_applied` 상태로 반영되어야 한다.
+- [ ] 작업을 완료할 수 없는 조건이면, 앱은 기존 상태를 보존하고 실패 피드백을 표시해야 한다.
+- [ ] 같은 interaction이 반복 호출되어도 중복되거나 모순된 상태가 남지 않아야 한다.
 
 ## Permissions / Dependencies
 
-- Entries 목록 데이터가 로드되어 있어야 한다.
-- 리스트 열 구성 설정을 조회할 수 있어야 한다.
-- 그룹 헤더 표현에 필요한 그룹 규칙 정보를 참조할 수 있어야 한다.
+- 현재 Page, selection, 파일 시스템 접근 권한, File Manager Window layout 상태에 의존한다.
 
 ## Observability / Analytics
 
-- Entries View 레이아웃 전환(리스트)
-- List View 컬럼 설정 적용 여부
+- `evm.set_entries_view_as_list_table` 이벤트에 성공 여부와 대상 수, 실패 사유를 기록한다.
 
 ## Related Interactions
 
-- `EVM-002-set_entries_view_as_icon_grid`
-- `EVM-002-customize_list_view_column`
-- `EVM-002-group_entries_by_property`
-- `SET-003-adjust_text_size`
-- `SET-003-adjust_icon_size`
+- [EVM-002-customize_list_view_column](EVM-002-customize_list_view_column.md)
+- [EVM-002-group_entries_by_property](EVM-002-group_entries_by_property.md)
+- [EVM-002-set_entries_view_as_column](EVM-002-set_entries_view_as_column.md)
+- [EVM-002-set_entries_view_as_graph](EVM-002-set_entries_view_as_graph.md)
+- [EVM-002-set_entries_view_as_icon_grid](EVM-002-set_entries_view_as_icon_grid.md)
+- [EVM-002-show_hide_hidden_entry](EVM-002-show_hide_hidden_entry.md)
+- [EVM-002-show_selected_entry_counts](EVM-002-show_selected_entry_counts.md)
+- [EVM-002-sort_entrires_by_property](EVM-002-sort_entrires_by_property.md)
+- [EVM-002-update_entry_selection](EVM-002-update_entry_selection.md)
+- [EVM-002-view_entry_counts_in_current_page](EVM-002-view_entry_counts_in_current_page.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `24`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:24`
+- Flows: [evm_flow.md](../flows/evm_flow.md)
+- Contract: [evm_contract.toml](../contracts/evm_contract.toml)

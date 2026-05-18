@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
@@ -253,7 +254,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
             .failure(MockLocalizedError("HELPER_UNAVAILABLE: xpc disconnected")),
         ))
 
-        XCTAssertEqual(store.state.queryRenderPhase, .chipsAppliedPendingList)
+        XCTAssertEqual(store.state.queryRenderPhase, ComposerQueryRenderPhase.chipsAppliedPendingList)
         XCTAssertEqual(store.state.transientFeedback, initialFeedback)
         XCTAssertEqual(store.state.activeFiltersRequestID, activeRequestID)
     }

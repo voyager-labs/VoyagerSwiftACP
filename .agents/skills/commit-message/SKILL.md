@@ -37,13 +37,13 @@ Generate 3 commit-message candidates from staged changes, ask the user to pick o
     - Run the script to gather the latest index state:
 
     ```bash
-    python3 .claude/skills/commit-message/scripts/collect_staged_context.py
+    python3 .agents/skills/commit-message/scripts/collect_staged_context.py
     ```
 
     - If the patch is too long, reduce lines to avoid token overflow:
 
     ```bash
-    python3 .claude/skills/commit-message/scripts/collect_staged_context.py --head-lines 600 --tail-lines 600
+    python3 .agents/skills/commit-message/scripts/collect_staged_context.py --head-lines 600 --tail-lines 600
     ```
 
 2. **Draft Message Candidates**

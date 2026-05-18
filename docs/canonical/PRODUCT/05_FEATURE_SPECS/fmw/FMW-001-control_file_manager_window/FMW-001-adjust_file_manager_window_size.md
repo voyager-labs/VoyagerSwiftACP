@@ -15,55 +15,63 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- File Manager Window의 너비와 높이를 사용 가능한 범위 안에서 조정한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- 사용자가 창 가장자리 또는 모서리를 드래그한 경우
+- OS가 창 프레임 조정 이벤트를 전달한 경우
 
 ## Preconditions
 
--   -
+- 대상 File Manager Window가 열려 있고 크기 조정 가능한 표시 상태다.
 
 ## Expected Outcome
 
-- TBD
+- 창 프레임은 최소·최대 크기 제약 안에서 갱신되고 `window_resized` 상태가 된다.
 
 ## State Changes
 
-- TBD
+- 창 크기 값을 갱신하고, 필요한 경우 Sidebar와 Inspector Pane의 표시 가능 영역을 재계산한다.
+- 허용 범위를 벗어난 값은 저장하지 않고 가장 가까운 허용값으로 보정한다.
+- 이 인터랙션은 [file_manager_window_contract.toml](../contracts/file_manager_window_contract.toml)의 `window_resized` 상태 어휘를 따른다.
 
 ## User-visible Feedback
 
-- TBD
+- 드래그 중 창 크기가 실시간으로 변경된다.
+- 최소 또는 최대 한계에 도달하면 더 이상 같은 방향으로 늘어나거나 줄어들지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- 사용자가 창 크기를 최소 허용 크기보다 더 작게 드래그하려는 경우
-- 사용자가 창 크기를 최대 허용 크기보다 더 크게 드래그하려는 경우
+- 사용자가 최소 너비보다 작게 줄이려 하면 최소 너비로 clamp한다.
+- 표시 중인 패인 너비 합이 창 최소 너비보다 크면 패인 우선순위에 따라 표시 영역을 보정한다.
 
 ## Acceptance Criteria
 
-- [ ] 사용자가 해당 File Manager Window의 Size를 줄이려고 할 때, 최소 너비와 높이 이하로 줄이려고
-      하는 경우, 창 크기는 최소값에서 멈추고 더 작게 줄어들지 않음
-- [ ] 사용자가 해당 File Manager Window의 Size를 늘리려고 할 때, 현재 위치한 데크스탑의 너비와 높이
-      이상 늘이려고 하는 경우, 창 크기는 데스크탑의 가장자리에서 멈추고 더 이상 늘지 않음
-- [ ] Sidebar가 표시 상태일 때, Content Pane의 너비가 Sidebar의 너비에 도달하는 경우, Hide Sidebar
-      인터랙션을 호출함
+- [ ] 사용자가 창 크기를 조정하면, File Manager Window는 허용 범위 안에서만 `window_resized` 상태로 갱신되어야 한다.
+- [ ] 허용 최소값보다 작게 줄이려 하면, 앱은 최소 창 크기를 유지해야 한다.
+- [ ] 크기 조정 중에도 현재 페이지와 선택 상태는 보존되어야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- macOS window frame constraints와 FMW layout minimum size 정책에 의존한다.
 
 ## Observability / Analytics
 
-- TBD
+- `fmw.window_resized` 이벤트에 최종 width, height, clamp 여부를 기록한다.
 
 ## Related Interactions
 
-- TBD
+- [FMW-001-close_file_manager_window](FMW-001-close_file_manager_window.md)
+- [FMW-001-enter_full_screen_for_file_manager_window](FMW-001-enter_full_screen_for_file_manager_window.md)
+- [FMW-001-exit_full_screen_for_file_manager_window](FMW-001-exit_full_screen_for_file_manager_window.md)
+- [FMW-001-keep_file_manager_window_on_top](FMW-001-keep_file_manager_window_on_top.md)
+- [FMW-001-minimize_file_manager_window](FMW-001-minimize_file_manager_window.md)
+- [FMW-001-open_new_file_manager_window](FMW-001-open_new_file_manager_window.md)
+- [FMW-001-quit_voyager](FMW-001-quit_voyager.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `9`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:9`
+- Flows: [file_manager_window_control_flow.md](../flows/file_manager_window_control_flow.md)
+- Contract: [file_manager_window_contract.toml](../contracts/file_manager_window_contract.toml)

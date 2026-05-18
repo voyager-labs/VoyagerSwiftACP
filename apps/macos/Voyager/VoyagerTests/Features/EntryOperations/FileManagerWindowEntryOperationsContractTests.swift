@@ -1,5 +1,8 @@
 import ComposableArchitecture
 @testable import Voyager
+@testable import VoyagerPagesFileManager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import XCTest
 
@@ -23,7 +26,7 @@ final class FileManagerWindowEntryOpsContractTests: XCTestCase {
 
         XCTAssertFalse(state.content.canSaveCollection)
 
-        state.content.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
+        state.content.collection.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
         state.content.entryViewLayout.isCollectionMode = true
 
         XCTAssertTrue(state.content.canSaveCollection)

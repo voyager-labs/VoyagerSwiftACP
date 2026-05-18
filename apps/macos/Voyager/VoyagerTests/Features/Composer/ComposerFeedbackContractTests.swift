@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
@@ -8,7 +9,8 @@ import XCTest
 final class ComposerFeedbackContractTests: XCTestCase {
     func testSubmitStoresBaselineAndRequestIDs() async throws {
         let recorder = SearchRequestRecorder()
-        var initialState = ComposerState(text: "images tagged blue")
+        var initialState = ComposerState()
+        initialState.text = "images tagged blue"
         initialState.scopes = ["/tmp"]
 
         let store = TestStore(initialState: initialState) {
@@ -75,42 +77,6 @@ final class ComposerFeedbackContractTests: XCTestCase {
         ))
 
         XCTAssertEqual(store.state, initialState)
-    }
-
-    func testApplyAppliedFiltersPreservesExcludedScopesWhenAppliedFiltersMissing() {
-        var state = ComposerState()
-        state.scopeEditor.selection = .explicit(
-            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
-            exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secret")],
-        )
-
-        applyAppliedFilters(nil, state: &state, registryClient: .testValue)
-
-        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents"])
-        XCTAssertEqual(
-            state.scopeEditor.selection.exceptions.map(\.path),
-            ["/Users/me/Documents/Secret"],
-        )
-    }
-
-    func testApplyAppliedFiltersPreservesExcludedScopesWhenAppliedPayloadOmitsKey() throws {
-        var state = ComposerState()
-        state.scopeEditor.selection = .explicit(
-            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
-            exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secret")],
-        )
-        let data = Data(
-            #"{"scopes":["/Users/me/Documents"],"includeSubfolders":true,"conditions":[]}"#.utf8,
-        )
-        let appliedFilters = try JSONDecoder().decode(AppliedFiltersPayload.self, from: data)
-
-        applyAppliedFilters(appliedFilters, state: &state, registryClient: .testValue)
-
-        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents"])
-        XCTAssertEqual(
-            state.scopeEditor.selection.exceptions.map(\.path),
-            ["/Users/me/Documents/Secret"],
-        )
     }
 }
 

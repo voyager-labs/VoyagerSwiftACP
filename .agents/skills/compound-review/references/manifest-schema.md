@@ -52,6 +52,7 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
         "source_facets": ["f1-plan-compliance.md", "f2-code-quality.md", "f3-manual-qa.md", "f4-scope-fidelity.md"],
         "source_notepads": ["grid-drop-folder-thumbnail-ux-naturalization"]
     },
+    "schema_valid": true,
     "confidence_reduced": false,
     "facets_missing": [],
     "missing_sources": []
@@ -73,6 +74,7 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
 | `inputs`             | object   | yes      | Enumeration of all input artifacts actually found. Present even if degraded.         |
 | `outputs`            | object   | yes      | Enumeration of all output artifacts written by this run.                             |
 | `lineage`            | object   | yes      | Flat lists of source artifacts that contributed to this run.                         |
+| `schema_valid`       | boolean  | yes      | `true` only after manifest and findings schemas pass validation.                     |
 | `confidence_reduced` | boolean  | no       | `true` if any optional input was missing or degraded. Emitted by degrade-gracefully. |
 | `facets_missing`     | string[] | no       | List of facet IDs (`f1`, `f2`, etc.) that were not found.                            |
 | `missing_sources`    | string[] | no       | List of artifact paths that were expected but not found (degrade case).              |
@@ -162,6 +164,7 @@ If any `inputs.*.path` file has a last-modified timestamp after `run_at`, the ma
         "source_facets": [],
         "source_notepads": []
     },
+    "schema_valid": true,
     "confidence_reduced": true,
     "facets_missing": ["f1", "f2", "f3", "f4"],
     "missing_sources": []
@@ -170,6 +173,7 @@ If any `inputs.*.path` file has a last-modified timestamp after `run_at`, the ma
 
 **Degraded fields noted:**
 
+- `schema_valid`: schema validation passed even though optional inputs were absent.
 - `facets_missing`: all four facets absent — confidence reduced.
 - `facets` and `notepads` empty objects — degrade-gracefully applied.
 

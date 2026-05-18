@@ -1,5 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
 import XCTest
 
@@ -134,7 +136,7 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         XCTAssertFalse(store.state.menuCommands.hasFocusedWindow)
 
-        await store.send(.windowManager(.event(.windowBecameKey(id: windowID)))) {
+        await store.send(.windowManager(.event(.windowBecameKey(windowID)))) {
             $0.windowManager.focusedWindowID = windowID
             $0.menuCommands.hasFocusedWindow = true
         }

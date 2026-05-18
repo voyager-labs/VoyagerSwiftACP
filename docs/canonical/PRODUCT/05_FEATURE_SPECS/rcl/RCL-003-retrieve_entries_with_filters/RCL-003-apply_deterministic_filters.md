@@ -15,62 +15,76 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- 콜렉션 스코프와 시스템·커스텀 프로퍼티 조건을 결정론적으로 평가해 후보 entry 집합을 산출하고, 조건 불일치 entry를 제외.
+- `RCL-003`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- query submit, condition 변경, scope 변경, 수동 refresh 입력이 검색 결과 재계산을 요구할 때 호출된다.
+- 열린 collection 또는 다시 열린 collection이 stale 상태일 때 refresh 정책을 실행한다.
 
 ## Preconditions
 
-- 실행할 필터 스냅샷이 확정된 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 검색 API에 전달할 `SearchFiltersPayload`를 만들 수 있어야 한다.
 
 ## Expected Outcome
 
-- TBD
+- 콜렉션 스코프와 시스템·커스텀 프로퍼티 조건을 결정론적으로 평가해 후보 entry 집합을 산출하고, 조건 불일치 entry를 제외.
+- `SearchFiltersPayload`에 포함 가능한 active condition만 전송되어야 한다.
+- 서버가 반환한 `appliedFilters`는 UI state의 정규화 기준으로 다시 반영되어야 한다.
+- 진행 중인 search/applyFilters 요청은 cancellation id로 마지막 요청만 유효하게 관리되어야 한다.
 
 ## State Changes
 
-- TBD
+- isLoadingSearch, isLoadingFilters, isFilteringInFlight, active request id, lastFiltersResponse를 갱신한다.
+- registry 기반 key resolution으로 canonical, legacy, unknown condition 상태를 정리한다.
+- stale 상태는 즉시 결과를 폐기하는 대신 refresh 필요 상태로 기록한다.
 
 ## User-visible Feedback
 
-- TBD
+- 검색/필터 적용 중에는 loading 상태를 표시하고 중복 실행을 막는다.
+- unknown property key는 제거하지 않고 비활성 condition으로 남겨 사용자가 원인을 볼 수 있게 한다.
+- stale 결과는 최신성이 보장되지 않음을 표시하고 refresh 진입점을 제공한다.
+- background interaction은 별도 화면을 만들기보다 연결된 display/command interaction이 읽을 상태를 갱신한다.
 
 ## Edge Cases / Failure Handling
 
-- 인덱스가 최신 상태가 아니어서 일부 엔트리가 인덱스에는 존재하지만 실제 파일 시스템에서는
-  이동되었거나 삭제된 상태인 경우
-- 인덱싱이 아직 완료되지 않아 일부 엔트리 또는 일부 메타데이터 필드가 인덱스에 누락된 상태인 경우
-- OS 인덱싱 기반 검색으로 보강을 시도했지만 실패하는 경우
+- 조건이 비어 있거나 값 인코딩에 실패한 condition은 payload에서 제외한다.
+- submit은 진행 중인 filter 요청을 취소하고, filter apply는 진행 중인 search 요청을 취소한다.
+- 서버 응답에 적용 불가능한 조건이 있으면 appliedFilters 기준으로 UI를 보정한다.
 
 ## Acceptance Criteria
 
-- [ ] 검색 파이프라인이 시작될 때, 실행할 필터 스냅샷이 확정이 되어있다면, 해당 필터 정의를 기준으로
-      후보 엔트리 집합을 산출함
-- [ ] 검색 파이프라인이 시작될 때, 미완성 컨디션이 포함되어 있다면, 해당 컨디션은 필터에서 제외한
-      스냅샷으로 검색을 진행함
-- [ ] 필터 정의를 기준으로 후보를 산출할 때, 인덱스 상 엔트리가 실제 파일 시스템에서 이동되었거나
-      삭제된 것이 확인되면, 해당 엔트리를 후보 집합에서 제외함
-- [ ] 필터 정의를 기준으로 후보를 산출할 때, 인덱싱 누락으로 일부 엔트리 또는 일부 메타데이터 필드가
-      인덱스에 없다면, OS 인덱싱 기반 검색으로 보강을 시도하고 보강 결과를 기준으로 후보 산출을
-      계속함
-- [ ] 필터 정의를 기준으로 후보를 산출할 때, OS 인덱싱 기반 검색으로 보강을 시도했지만 실패했다면,
-      해당 엔트리는 후보 집합에서 제외함
+- [ ] active condition과 scope가 있는 상황에서 refresh를 실행하면 검색 API가 호출되고 결과 state가 갱신되어야 한다.
+- [ ] legacy property key가 appliedFilters로 돌아오면 canonical key로 보정되어야 한다.
+- [ ] 모든 condition이 제거되면 filter apply 요청은 스킵되고 in-flight filter 요청은 취소되어야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 검색 API에 전달할 `SearchFiltersPayload`를 만들 수 있어야 한다.
+- 이 interaction은 특정 UI region 없이 background/domain state를 갱신한다.
 
 ## Observability / Analytics
 
-- TBD
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- TBD
+- [RCL-003-execute_filtered_collection_retrieval](RCL-003-execute_filtered_collection_retrieval.md)
+- [RCL-003-update_collection_results_on_filter_change](RCL-003-update_collection_results_on_filter_change.md)
+- [RCL-003-refresh_collection_results](RCL-003-refresh_collection_results.md)
+- [RCL-003-mark_collection_results_as_stale](RCL-003-mark_collection_results_as_stale.md)
+- [RCL-003-refresh_stale_collection_results_on_reopen](RCL-003-refresh_stale_collection_results_on_reopen.md)
+- [RCL-003-invalidate_closed_collection_staleness_on_external_change](RCL-003-invalidate_closed_collection_staleness_on_external_change.md)
+- [RCL-003-mark_open_collection_as_stale_on_external_change](RCL-003-mark_open_collection_as_stale_on_external_change.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `133`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:150`
+- Flows: [collection_retrieval_flow.md](../flows/collection_retrieval_flow.md)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`

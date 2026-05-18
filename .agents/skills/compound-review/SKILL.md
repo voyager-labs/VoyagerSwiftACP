@@ -11,7 +11,7 @@ Read completed `.sisyphus` artifacts from a finished Work cycle, synthesize stru
 
 ## What This Skill Is Not
 
-This skill does not replace `pr-review`, `test-runner`, or `verify-implementation`. Those run during Work. This runs after Work, reading what they (and the operator) produced. It also does not replace `skill-creator`. Draft proposals from this skill are inputs for `skill-creator`, not auto-applied.
+This skill does not replace Work-phase verification skills (`pr-review`, `voyager-dev`, etc.). Those run during Work. This runs after Work, reading what they (and the operator) produced. It also does not replace `skill-creator`. Draft proposals from this skill are inputs for `skill-creator`, not auto-applied.
 
 ---
 
@@ -71,7 +71,7 @@ Read `references/target-selection.md` for the full target resolution algorithm. 
     - `f3-manual-qa.md`
     - `f4-scope-fidelity.md`
 
-    Facets are slug-independent. Detect by exact filename match, not by slug interpolation.
+    Facets are slug-independent. Detect by exact filename match, not by slug interpolation. Each facet file MUST follow the format defined in `references/artifact-contract.md` §Facet File Requirements (Reviewer, Session, Verdict, Findings, Evidence fields).
 
 4. **Collect notepad files.** Look in `.sisyphus/notepads/{plan_slug}/` for `learnings.md`, `decisions.md`, `issues.md`, `problems.md`.
 
@@ -195,13 +195,12 @@ No silent inference. Every degradation is explicitly noted.
 
 ## Relationship to Other Skills
 
-| Skill                   | Relationship                                                                                                    |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `pr-review`             | Runs during Work. Produces review comments. Compound-review reads those outputs post-Work.                      |
-| `test-runner`           | Runs during Work. Produces test evidence. Compound-review reads that evidence post-Work.                        |
-| `verify-implementation` | Runs during Work. Produces verification evidence. Compound-review reads that evidence post-Work.                |
-| `skill-creator`         | Consumes compound-review draft proposals. Compound-review drafts are input for skill-creator, not auto-applied. |
-| `manage-skills`         | Maintains skill registry. Compound-review does not modify the registry.                                         |
+| Skill                          | Relationship                                                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `pr-review`                    | Runs during Work. Produces review comments. Compound-review reads those outputs post-Work.                              |
+| `voyager-dev`                  | Runs during Work for Voyager/macOS implementation and test verification. Compound-review reads its evidence post-Work.  |
+| Work-phase verification skills | Run during Work (`pr-review`, `voyager-dev`, etc.). Produce verification evidence that compound-review reads post-Work. |
+| `skill-creator`                | Consumes compound-review draft proposals. Compound-review drafts are input for skill-creator, not auto-applied.         |
 
 ---
 
@@ -216,8 +215,8 @@ Trigger this skill when:
 
 Do NOT trigger this skill when:
 
-- Work is still in progress (use `pr-review`, `test-runner`, `verify-implementation` instead)
+- Work is still in progress (use Work-phase verification skills instead)
 - You want to create a PR (use `pr-execution`)
-- You want to run tests (use `test-runner`)
+- You want to run Voyager/macOS tests (use `voyager-dev`)
 - You want to create or modify a skill (use `skill-creator`)
 - You want to commit code or modify product files

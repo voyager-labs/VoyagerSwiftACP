@@ -1,5 +1,6 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
@@ -13,13 +14,13 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
             query: " report ",
             scopes: ["/tmp"],
             conditions: conditions,
-            snapshotItems: [.string("/tmp/report.txt")],
+            snapshotItems: [VoyagerShared.JSONValue.string("/tmp/report.txt")],
         )
 
         let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
 
         XCTAssertEqual(response?.itemCount, 1)
-        XCTAssertEqual(response?.items, [.string("/tmp/report.txt")])
+        XCTAssertEqual(response?.items, [VoyagerShared.JSONValue.string("/tmp/report.txt")])
         XCTAssertEqual(response?.appliedFilters?.scopes, ["/tmp"])
         XCTAssertEqual(response?.appliedFilters?.excludedScopes, [])
         XCTAssertEqual(response?.appliedFilters?.includeSubfolders, true)
@@ -61,7 +62,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
             query: "report",
             scopes: ["/tmp"],
             conditions: [.init(propertyKey: "name_full", operatorCode: "eq", value: .string("report"))],
-            snapshotItems: [.string("/tmp/report.txt")],
+            snapshotItems: [VoyagerShared.JSONValue.string("/tmp/report.txt")],
             fingerprint: "different",
         )
 
@@ -130,6 +131,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
     }
 }
 
+@MainActor
 private func makeUIConditions() -> [Condition] {
     [
         makeCondition(
@@ -156,6 +158,7 @@ private func makeUIConditions() -> [Condition] {
     ]
 }
 
+@MainActor
 private func makeCondition(
     propertyKey: String,
     propertyLabel: String,
@@ -177,13 +180,14 @@ private func makeCondition(
     )
 }
 
+@MainActor
 private func makeSnapshotFile(
     query: String,
     scopes: [String],
     excludedScopes: [String] = [],
     includeSubfolders: Bool = true,
     conditions: [CollectionCondition],
-    snapshotItems: [JSONValue],
+    snapshotItems: [VoyagerShared.JSONValue],
     fingerprint: String? = nil,
 ) -> VoyagerCollectionFile {
     let resolvedFingerprint = fingerprint

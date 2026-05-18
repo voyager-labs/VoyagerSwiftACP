@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 #if canImport(Voyager)
 @testable import Voyager
@@ -16,8 +17,8 @@ enum RegistryTestSupport {
     private static let registryOperatorDefinition = OperatorDefinition(
         uiLabel: "Equals",
         mdqueryOperator: nil as String?,
-        valueShape: nil as ValueShape?,
-        valueCount: nil as ValueCount?,
+        valueShape: nil as VoyagerEntitiesCollection.ValueShape?,
+        valueCount: nil as VoyagerEntitiesCollection.ValueCount?,
         allowedTypes: nil as [String]?,
         inverseOf: nil as String?,
         aliases: nil as [String]?,
@@ -63,7 +64,7 @@ enum RegistryTestSupport {
         }
     }
 
-    private nonisolated static func registryUnitSpecs() -> [String: SystemPropertyUnitSpec] {
+    private nonisolated static func registryUnitSpecs() -> [String: VoyagerEntitiesCollection.SystemPropertyUnitSpec] {
         MainActor.assumeIsolated {
             registrySnapshot().propertyKeyToUnitSpec
         }

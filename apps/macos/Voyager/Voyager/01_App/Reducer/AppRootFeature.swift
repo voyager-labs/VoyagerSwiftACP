@@ -2,6 +2,9 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesCollection
+import VoyagerFeaturesUpdateVersion
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared

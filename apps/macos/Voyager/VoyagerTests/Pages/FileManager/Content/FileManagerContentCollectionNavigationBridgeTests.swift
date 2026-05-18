@@ -1,43 +1,46 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerPagesFileManager
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import XCTest
 
 @MainActor
-private struct EntryOperationsBridgeHarness: Reducer {
+final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
+    private let reducer = FileManagerContentFeature()
+
     @MainActor
-    struct State: Equatable {
-        var content: FileManagerContentState
-
-        static func == (_: Self, _: Self) -> Bool {
-            true
+    struct EntryOperationsBridgeHarness: Reducer {
+        @MainActor
+        struct State: Equatable {
+            var content: FileManagerContentState
         }
-    }
 
-    enum Action: Sendable {
-        case bridge(EntryOperationsAction)
-        case forwarded(FileManagerContentAction)
-    }
+        enum Action: Sendable {
+            case bridge(EntryOperationsAction)
+            case forwarded(FileManagerContentAction)
+        }
 
-    var body: some Reducer<State, Action> {
-        Reduce { state, action in
-            switch action {
-            case let .bridge(entryAction):
-                FileManagerContentEntryOpsCoordinator
-                    .handleEntryOperationsAction(entryAction, state: &state.content)
+        var body: some Reducer<State, Action> {
+            Reduce { state, action in
+                switch action {
+                case let .bridge(entryAction):
+                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                        entryAction,
+                        state: &state.content,
+                    )
                     .map(Action.forwarded)
-            case .forwarded:
-                .none
+                case .forwarded:
+                    .none
+                }
             }
         }
     }
-}
-
-@MainActor
-final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase { // swiftlint:disable:this type_name
-    private let reducer = FileManagerContentFeature()
 
     // MARK: - Non-Collection Navigation: clearCollectionPresentation + Load
 
@@ -143,7 +146,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase { // s
 
         let collectionNavigation = ContentPageCollectionNavigation(
             kind: .temporary,
-            context: CollectionContext(query: "test", scopes: [], includeSubfolders: true, conditions: []),
+            context: CollectionContext(query: "test", scopes: [], conditions: []),
             sortKey: .name,
             sortOrder: .ascending,
             viewLayout: .list,

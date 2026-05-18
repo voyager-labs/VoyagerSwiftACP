@@ -1,4 +1,7 @@
 import ComposableArchitecture
+import VoyagerFeaturesEntryArrangements
+import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @CasePathable
 enum WindowManagerAction: CasePathable, Sendable {
@@ -44,7 +47,7 @@ enum WindowManagerAction: CasePathable, Sendable {
         case setViewLayout(EntryViewLayoutState.Mode)
         case setGroupKey(GroupKey)
         case setSortKey(SortKey)
-        case setSortOrder(SortOrder)
+        case setSortOrder(VoyagerShared.SortOrder)
     }
 
     @CasePathable

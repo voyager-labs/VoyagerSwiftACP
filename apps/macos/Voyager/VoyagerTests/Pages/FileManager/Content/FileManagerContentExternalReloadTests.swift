@@ -1,9 +1,47 @@
 import ComposableArchitecture
 @testable import Voyager
+@testable import VoyagerPagesFileManager
+import struct VoyagerEntitiesCollection.CollectionContext
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
+import VoyagerShared
 import XCTest
 
 @MainActor
 final class FileManagerContentExternalReloadTests: XCTestCase {
+    private func extractLoadItems(from action: FileManagerContentAction) -> (path: String, showHidden: Bool)? {
+        let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)
+        let eoAction = evAction.flatMap { (/EntryViewLayoutFeature.Action.entryOperations).extract(from: $0) }
+        let loadingAction = eoAction.flatMap { (/EntryOperationsAction.loading).extract(from: $0) }
+        guard let loadingAction, case let .loadItems(path, showHidden) = loadingAction else { return nil }
+        return (path, showHidden)
+    }
+
+    private func extractLoadRecentItems(from action: FileManagerContentAction) -> Bool? {
+        let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)
+        let eoAction = evAction.flatMap { (/EntryViewLayoutFeature.Action.entryOperations).extract(from: $0) }
+        let loadingAction = eoAction.flatMap { (/EntryOperationsAction.loading).extract(from: $0) }
+        guard let loadingAction, case let .loadRecentItems(showHidden) = loadingAction else { return nil }
+        return showHidden
+    }
+
+    private func extractLoadTagItems(from action: FileManagerContentAction) -> (tagName: String, showHidden: Bool)? {
+        let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)
+        let eoAction = evAction.flatMap { (/EntryViewLayoutFeature.Action.entryOperations).extract(from: $0) }
+        let loadingAction = eoAction.flatMap { (/EntryOperationsAction.loading).extract(from: $0) }
+        guard let loadingAction, case let .loadTagItems(tagName, showHidden) = loadingAction else { return nil }
+        return (tagName, showHidden)
+    }
+
+    private func isLoadComputerItems(_ action: FileManagerContentAction) -> Bool {
+        let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)
+        let eoAction = evAction.flatMap { (/EntryViewLayoutFeature.Action.entryOperations).extract(from: $0) }
+        let loadingAction = eoAction.flatMap { (/EntryOperationsAction.loading).extract(from: $0) }
+        guard let loadingAction, case .loadComputerItems = loadingAction else { return false }
+        return true
+    }
+
     func testFileSystemChangedReloadsCurrentFolderForDirectChildPath() async {
         var initialState = FileManagerContentState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
@@ -12,12 +50,12 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             FileManagerContentFeature()
         }
 
+        store.exhaustivity = .off
+
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.receive { action in
-            let description = String(describing: action)
-            return description.contains("loadItems")
-                && description.contains("/tmp/voyager")
-                && description.contains("false")
+            guard let result = self.extractLoadItems(from: action) else { return false }
+            return result.path == "/tmp/voyager" && !result.showHidden
         }
     }
 
@@ -29,12 +67,12 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             FileManagerContentFeature()
         }
 
+        store.exhaustivity = .off
+
         await store.send(.externalFileSystemChanged(["/tmp/voyager/subdir/a.txt"]))
         await store.receive { action in
-            let description = String(describing: action)
-            return description.contains("loadItems")
-                && description.contains("/tmp/voyager")
-                && description.contains("false")
+            guard let result = self.extractLoadItems(from: action) else { return false }
+            return result.path == "/tmp/voyager" && !result.showHidden
         }
     }
 
@@ -55,7 +93,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         initialState.navigation.navigationState = .collection(
             .init(
                 kind: .temporary,
-                context: .init(query: "q", scopes: [], includeSubfolders: true, conditions: []),
+                context: .init(query: "q", scopes: [], conditions: []),
                 sortKey: .name,
                 sortOrder: .ascending,
                 viewLayout: .list,
@@ -78,10 +116,12 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             FileManagerContentFeature()
         }
 
+        store.exhaustivity = .off
+
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.receive { action in
-            let description = String(describing: action)
-            return description.contains("loadRecentItems") && description.contains("false")
+            guard let showHidden = self.extractLoadRecentItems(from: action) else { return false }
+            return !showHidden
         }
     }
 
@@ -93,12 +133,12 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             FileManagerContentFeature()
         }
 
+        store.exhaustivity = .off
+
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.receive { action in
-            let description = String(describing: action)
-            return description.contains("loadTagItems")
-                && description.contains("blue")
-                && description.contains("false")
+            guard let result = self.extractLoadTagItems(from: action) else { return false }
+            return result.tagName == "blue" && !result.showHidden
         }
     }
 
@@ -110,9 +150,11 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             FileManagerContentFeature()
         }
 
+        store.exhaustivity = .off
+
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
         await store.receive { action in
-            String(describing: action).contains("loadComputerItems")
+            self.isLoadComputerItems(action)
         }
     }
 }

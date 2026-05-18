@@ -15,14 +15,14 @@ enum DAUNavigationKind: String {
     case collection
 }
 
-enum DAUEntryKind: String {
+enum DAUEntryKind: String, Sendable {
     case file
     case directory
     case collection
     case mixed
 }
 
-enum DAUEntryActionKind: String {
+enum DAUEntryActionKind: String, Sendable {
     case openDefault = "open_default"
     case openWithApp = "open_with_app"
     case quickLook = "quick_look"

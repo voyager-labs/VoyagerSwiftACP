@@ -5,15 +5,15 @@ Content Tab Management	CTM	Handle Content Tab	CTM-001	CBT-NEXT	Content Tab의 �
 Content Tab Management	CTM	Set Current Content Tab	CTM-002	CBT-NEXT	현재 활성화할 Content Tab을 지정하고 포커스를 전환하는 등 현재 작업 탭을 설정하는 것과 관련된 기능	file_manager_window.sidebar.sidebar_body.content_tabs_area
 Content Tab Management	CTM	Manage Pinned Content Tabs	CTM-003	CBT-NEXT	자주 사용하는 Content Tab을 고정·해제하는 등 고정 탭의 구성 관리와 관련된 기능	file_manager_window.sidebar.sidebar_body.content_tabs_area
 Content Tab Management	CTM	Switch Content Tab with Used Content Tabs Switcher	CTM-004	OBT	최근 사용한 Content Tab 목록을 Switcher로 불러와 키보드 중심으로 탐색·선택해 Content Tab을 전환하는 관련 기능	file_manager_window.content_tabs_switcher
-Entry View Management	EVM	Navigate Pages	EVM-001	CBT-W1	현재 Content Tab의 페이지의 탐색 흐름 제어와 관련된 기능	file_manager_window.content_pane.content_header
-Entry View Management	EVM	Configure Entries View	EVM-002	CBT-W1	Entry 리스트의 정렬·그룹핑·필터·레이아웃을 조정해, 현재 뷰에 어떤 엔트리가 어떻게 표시될지 제어하는 관련 기능	file_manager_window.content_pane.page_container
+Entry View Management	EVM	Navigate Pages	EVM-001	CBT-W1	현재 Content Tab의 페이지의 탐색 흐름 제어와 관련된 기능	file_manager_window.content_pane
+Entry View Management	EVM	Configure Entries View	EVM-002	CBT-W1	Entry 리스트의 정렬·그룹핑·필터·레이아웃을 조정해, 현재 뷰에 어떤 엔트리가 어떻게 표시될지 제어하는 관련 기능	file_manager_window.content_pane
 Entry View Management	EVM	Split Content Pane	EVM-003	CBT-NEXT	Content Pane 영역을 여러 Pane으로 분할해 동시에 여러 위치를 탐색하거나 비교하는 기능	file_manager_window.content_pane
-Entry Actions	EAC	Execute Entry	EAC-001	CBT-W1	선택한 Entry를 열기·실행하거나 연결된 앱/위치로 연동하는 등 Entry에 대한 직접 실행 액션과 관련된 기능	file_manager_window.content_pane.page_container
-Entry Actions	EAC	Organize Entries	EAC-002	CBT-W1	Entry를 이동·분류·태깅하는 등 워크스페이스 내 Entry를 원하는 구조로 정리·재배치하는 관련 기능	file_manager_window.content_pane.page_container
-Entry Actions	EAC	Manage Entry Lifecycle	EAC-003	CBT-W1	Entry 생성·삭제·복구 등 엔트리의 전체 생명주기 단계를 관리하는 관련 기능	file_manager_window.content_pane.page_container
-Entry Actions	EAC	Edit System Property	EAC-004	CBT-W1	이름, 플래그 등 시스템 수준 메타데이터를 수정하는 등 Entry의 시스템 프로퍼티 편집과 관련된 기능	file_manager_window.content_pane.page_container
-Entry Actions	EAC	Package Entries	EAC-005	CBT-W1	여러 Entry를 하나의 단위로 패키징해 공유·아카이브·이동하는 등 묶음/번들 단위로 다루는 것과 관련된 기능	file_manager_window.content_pane.page_container
-Entry Actions	EAC	Copy Entry References	EAC-006	CBT-W1	Entry의 링크·경로 등 참조 정보를 복사해 다른 화면이나 도구에서 붙여넣기·재사용하는 것과 관련된 기능	file_manager_window.content_pane.page_container
+Entry Operations	EOP	Execute Entry	EOP-001	CBT-W1	선택한 Entry를 열기·실행하거나 연결된 앱/위치로 연동하는 등 Entry에 대한 직접 실행 작업과 관련된 기능	file_manager_window.content_pane.page_container
+Entry Operations	EOP	Arrange Entries	EOP-002	CBT-W1	Entry를 복사·이동·압축·별칭 생성 등 현재 워크스페이스 안에서 필요한 형태로 배치·재배치하는 것과 관련된 기능	file_manager_window.content_pane.page_container
+Entry Operations	EOP	Manage Entry Lifecycle	EOP-003	CBT-W1	Entry 생성·삭제·복구 등 엔트리의 전체 생명주기 단계를 관리하는 것과 관련된 기능	file_manager_window.content_pane.page_container
+Entry Operations	EOP	Edit Entry Metadata	EOP-004	CBT-W1	Entry 이름, 태그, 권한, 정보 등 파일 시스템 메타데이터를 확인·수정하는 것과 관련된 기능	file_manager_window.content_pane.page_container
+Entry Operations	EOP	Package Entries	EOP-005	CBT-W1	여러 Entry를 하나의 단위로 패키징해 공유·아카이브·이동하는 등 묶음/번들 단위로 다루는 것과 관련된 기능	file_manager_window.content_pane.page_container
+Entry Operations	EOP	Copy Entry References	EOP-006	CBT-W1	Entry의 링크·경로 등 참조 정보를 복사해 다른 화면이나 도구에서 붙여넣기·재사용하는 것과 관련된 기능	file_manager_window.content_pane.page_container
 Entry Indexing	EIX	Index Entries	EIX-001	CBT-W1	워크스페이스 내 Entry에 대해 시스템·콘텐츠·임베딩 인덱스를 생성·갱신하는 등 엔트리 인덱싱 실행과 관련된 기능	-
 Entry Indexing	EIX	Monitor Indexing Status	EIX-002	CBT-W1	인덱싱 큐 상태와 진행률, 실패/누락 엔트리를 요약해 보여주고 인덱싱 실행을 제어하는 등 인덱싱 상태 모니터링과 관련된 기능	settings_window.settings_body.tab_indexing
 Entry Indexing	EIX	Configure Indexed Entries	EIX-003	CBT-W1	경로·엔트리 단위로 인덱싱 포함/제외 규칙을 설정하고 제외 대상을 관리하는 등 인덱싱 대상 엔트리 범위 구성과 관련된 기능	settings_window.settings_body.tab_indexing

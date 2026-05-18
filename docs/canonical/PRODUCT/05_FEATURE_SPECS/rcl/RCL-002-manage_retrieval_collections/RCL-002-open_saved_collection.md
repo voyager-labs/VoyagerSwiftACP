@@ -5,7 +5,7 @@ feature: "Manage Retrieval Collections"
 category_key: "RCL"
 feature_id: "RCL-002"
 status: "기획 완료"
-summary: "저장된 콜렉션을 열고, usable snapshot이 있으면 snapshot-first 복원을 시작하고 그렇지 않으면 definition-first search fallback으로 전환"
+summary: "저장된 콜렉션을 선택해 해당 콜렉션 페이지를 열고 복원 흐름을 시작"
 related_region: "file_manager_window.content_pane.page_container.page_mode_collection"
 menu: "-"
 shortcut: "-"
@@ -15,61 +15,78 @@ shortcut: "-"
 
 ## Intent
 
-- TBD
+- 저장된 콜렉션을 선택해 해당 콜렉션 페이지를 열고 복원 흐름을 시작.
+- `RCL-002`의 구현 surface에서 이 동작의 입력, 상태 변경, 사용자 피드백 경계를 명확히 한다.
 
 ## Trigger / Entry Points
 
-- TBD
+- 사용자가 현재 filter를 새 collection으로 저장하거나 기존 collection 변경분을 저장/폐기할 때 호출된다.
+- 저장된 `.voycoll` 파일을 열거나 이름 변경, 삭제, 닫기 전 경고가 필요한 때 호출된다.
 
 ## Preconditions
 
-- 저장된 콜렉션 파일 또는 목록 항목이 존재하는 상태
-- 사용자가 해당 콜렉션을 다시 열 수 있는 경로와 권한이 확보된 상태
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 collection context 또는 저장된 `.voycoll` 파일 경로를 확인할 수 있어야 한다.
 
 ## Expected Outcome
 
-- TBD
+- 저장된 `.voycoll` collection을 열 때 definition과 persisted snapshot/meta를 읽어 `snapshot_restore_pending` 상태를 시작한다.
+- `usable_snapshot`이 있으면 restore 흐름이 즉시 표시 가능한 snapshot으로 이어질 수 있어야 한다.
+- snapshot이 없거나 사용할 수 없으면 definition-first fallback을 준비한다.
+- collection open은 저장된 query/scopes/conditions/display state를 함께 복원해야 한다.
 
 ## State Changes
 
-- TBD
+- `snapshot_restore_pending`을 쓴다.
+- openedCollectionURL, collectionContext, persisted snapshot/meta를 reopen 기준으로 갱신한다.
+- 이후 `RCL-002-restore_saved_collection_snapshot`이 `snapshot_restored` 또는 `snapshot_fallback_required`를 결정한다.
 
 ## User-visible Feedback
 
-- TBD
+- collection page는 복원 판단 중임을 즉시 표시하고, 사용 가능한 snapshot이 있으면 빠르게 표시될 수 있어야 한다.
+- snapshot fallback이 필요한 경우에도 파일 열기 자체를 실패처럼 표시하지 않는다.
 
 ## Edge Cases / Failure Handling
 
-- snapshot은 존재하지만 usable하지 않은 경우
-- unsupported filter가 포함되어 있지만 나머지 정의로 open 가능한 경우
-- 파일 decode 자체가 실패하거나 정의가 비어 있어 open을 계속할 수 없는 경우
-- 동일 콜렉션이 다른 탭 또는 윈도우에 열려 있어도 현재 open 요청은 별도로 처리되는 경우
+- `.voycoll` 파일이 legacy single-file 형식이면 읽기는 허용하되 저장 시 현재 package format으로 정규화될 수 있다.
+- snapshot/meta가 손상되어도 저장된 definition을 우선 복원하는 fallback 경로를 남긴다.
+- open 실패와 query execution failure를 같은 피드백으로 합치지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 사용자가 저장된 콜렉션을 열면, 시스템은 해당 콜렉션 페이지를 열고 snapshot-first 복원 흐름을
-      시작함
-- [ ] usable snapshot이 있으면, 시스템은 다시 열 때마다 즉시 재검색하지 않고 저장된 결과를 먼저
-      보여주는 흐름을 우선 적용함
-- [ ] usable snapshot이 없다면, 시스템은 정의 기반 검색 fallback으로 전환해 콜렉션을 열 수 있게 함
-- [ ] snapshot 또는 snapshot metadata가 없거나 usable하지 않은 경우만으로 open을 실패로 처리하지
-      않으며, 가능한 경우 definition-first fallback으로 계속 진행함
-- [ ] 콜렉션 파일 자체가 손상되었거나 정의를 복원할 수 없으면, 시스템은 실패를 안내하고 화면 상태를
-      일관되게 유지함
+- [ ] 저장된 collection을 열면 `snapshot_restore_pending` 상태가 시작되어야 한다.
+- [ ] usable snapshot이 없으면 definition-first fallback 경로가 준비되어야 한다.
+- [ ] open 실패는 query execution failure feedback과 구분되어야 한다.
 
 ## Permissions / Dependencies
 
-- TBD
+- Collection Filter Composer 또는 Collection page state가 초기화되어 있어야 한다.
+- 현재 collection context 또는 저장된 `.voycoll` 파일 경로를 확인할 수 있어야 한다.
+- 관련 UI region: `file_manager_window.content_pane.page_container.page_mode_collection`
 
 ## Observability / Analytics
 
-- TBD
+- interaction 실행 여부
+- 요청/적용 성공 여부
+- 실패 reason과 recovery action
+- 마지막으로 적용된 filter snapshot
 
 ## Related Interactions
 
-- TBD
+- [RCL-002-alert_unsaved_collection_filter_changes](RCL-002-alert_unsaved_collection_filter_changes.md)
+- [RCL-002-delete_collection](RCL-002-delete_collection.md)
+- [RCL-002-discard_collection_filter_changes](RCL-002-discard_collection_filter_changes.md)
+- [RCL-002-import_smart_folder_as_collection](RCL-002-import_smart_folder_as_collection.md)
+- [RCL-002-indicate_unsaved_collection_filter_changes](RCL-002-indicate_unsaved_collection_filter_changes.md)
+- [RCL-002-rename_collection](RCL-002-rename_collection.md)
+- [RCL-002-restore_saved_collection_snapshot](RCL-002-restore_saved_collection_snapshot.md)
+- [RCL-002-save_collection_filter_changes](RCL-002-save_collection_filter_changes.md)
+- [RCL-002-save_current_filter_as_new_collection](RCL-002-save_current_filter_as_new_collection.md)
+- [RCL-002-show_restored_collection_snapshot](RCL-002-show_restored_collection_snapshot.md)
 
 ## Source
 
-- Inventory: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv`
-- Source line: `129`
+- Inventory row: `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv:137`
+- Contracts: [collection_filter_editing_contract.toml](../contracts/collection_filter_editing_contract.toml)
+- Implementation references: `../voyager-app/docs/features/composer.md`, `../voyager-app/docs/features/entries-collections.md`, `../voyager-app/apps/macos/Voyager/Voyager/04_Features/Composer/Reducer/ComposerFeature.swift`, `../voyager-app/apps/macos/Voyager/Voyager/05_Entities/Collection/Reducer/CollectionFeature.swift`
+- Flows: [collection_filter_editing_flow.md](../flows/collection_filter_editing_flow.md), [collection_management_flow.md](../flows/collection_management_flow.md)

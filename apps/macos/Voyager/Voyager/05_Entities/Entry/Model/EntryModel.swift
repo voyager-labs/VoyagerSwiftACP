@@ -1,5 +1,0 @@
-import VoyagerEntitiesEntry
-
-public typealias EntrySupplementaryMetadata = VoyagerEntitiesEntry.EntrySupplementaryMetadata
-public typealias EntryFacets = VoyagerEntitiesEntry.EntryFacets
-public typealias EntryModel = VoyagerEntitiesEntry.EntryModel

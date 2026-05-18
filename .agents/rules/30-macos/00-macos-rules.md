@@ -23,10 +23,13 @@ description: "macOS SwiftUI + TCA structure and dependency rules."
 - Keep shared visual metadata such as icons or labels behind a single helper or registry.
 - Route cross-feature or window-level commands through actions, delegate events, or dedicated handlers.
 - Follow `.agents/rules/30-macos/02-tca-observation-lifecycle.md` when moving external/system observation out of SwiftUI views.
-- Follow `.agents/rules/30-macos/03-voyager-app-workflow.md` for `apps/macos/Voyager/Voyager/**` work.
+- Follow `.agents/rules/30-macos/03-voyager-app-workflow.md` for non-trivial Voyager app, package, host, helper, XPC, or macOS test work.
+- Follow `.agents/rules/30-macos/04-xcode-test-plan-visibility.md` when verification depends on SPM package test targets or Xcode schemes.
+- Follow `.agents/rules/30-macos/05-swift-testing-gotchas.md` when writing or fixing Swift tests.
+- Follow `.agents/rules/30-macos/06-file-backed-storage-invariants.md` when changing credential, OAuth, provider snapshot, settings, or other file-backed storage.
 - In multi-stage UI callback flows, keep state cleanup, resolved context, and visual ownership with one canonical owner instead of splitting them across success handlers, session-end hooks, and reload paths.
-- For scaffold/orchestrator-style TCA work, load:
-    - `.agents/skills/voyager-dev/SKILL.md`
+- For scaffold/orchestrator-style TCA work, load the `voyager-dev` orchestrator entry:
+    - `.agents/skills/voyager-dev/orchestrator/SKILL.md`
 
 ## Must not
 
@@ -43,7 +46,8 @@ description: "macOS SwiftUI + TCA structure and dependency rules."
 1. Identify the owning layer before editing state, copy, shared visual metadata, or command routing.
 2. Reuse existing dependency clients, reducers, and shared helpers instead of introducing parallel abstractions.
 3. Keep views focused on rendering and action sending; move ownership and orchestration decisions into reducers or model-owned helpers.
-4. Apply the path-specific Voyager workflow when the change is inside `apps/macos/Voyager/Voyager/**`.
+4. Apply the path-specific Voyager workflow when the change is inside Voyager app/package/host/helper/XPC/test paths.
+5. Add the test-plan, Swift-testing, or storage invariant rules when the change touches those concerns.
 
 ## Verification
 

@@ -1,5 +1,7 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+@testable import VoyagerFeaturesComposer
 import XCTest
 
 @MainActor
