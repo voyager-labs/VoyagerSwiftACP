@@ -113,6 +113,160 @@ public extension DependencyValues {
     }
 }
 
+
+public struct AiChatAttachmentResolverClient: Sendable {
+    public var resolve: @Sendable ([AiChatAttachmentDraft]) -> [AiChatAttachmentSnapshot]
+
+    public init(resolve: @escaping @Sendable ([AiChatAttachmentDraft]) -> [AiChatAttachmentSnapshot]) {
+        self.resolve = resolve
+    }
+}
+
+extension AiChatAttachmentResolverClient: DependencyKey {
+    public nonisolated static var liveValue: AiChatAttachmentResolverClient {
+        .live()
+    }
+
+    public nonisolated static var testValue: AiChatAttachmentResolverClient {
+        .live()
+    }
+
+    public nonisolated static var previewValue: AiChatAttachmentResolverClient {
+        .live()
+    }
+}
+
+public extension AiChatAttachmentResolverClient {
+    nonisolated static func live() -> AiChatAttachmentResolverClient {
+        AiChatAttachmentResolverClient { attachments in
+            var remainingTotalBudget = 128 * 1024
+            return attachments.map { attachment in
+                let result = resolveAttachment(attachment, remainingTotalBudget: &remainingTotalBudget)
+                return AiChatAttachmentSnapshot(
+                    id: attachment.id,
+                    source: attachment.source,
+                    displayTitle: attachment.displayTitle,
+                    subtitle: attachment.subtitle,
+                    kind: attachment.kind,
+                    sourceLocation: attachment.sourceLocation,
+                    metadata: attachment.metadata,
+                    resolutionResult: result
+                )
+            }
+        }
+    }
+}
+
+private extension AiChatAttachmentResolverClient {
+    static func resolveAttachment(
+        _ attachment: AiChatAttachmentDraft,
+        remainingTotalBudget: inout Int
+    ) -> AiChatAttachmentResolutionResult {
+        guard remainingTotalBudget > 0 else {
+            return .failure(reason: .tooLarge, metadata: attachmentResolutionMetadata(for: attachment))
+        }
+
+        if attachment.source == .folder || attachment.source == .collectionDocument || attachment.source == .collectionFile {
+            return .resolvedReference(metadata: attachmentResolutionMetadata(for: attachment))
+        }
+
+        guard let fileURL = attachmentResolutionURL(for: attachment) else {
+            return .failure(reason: .brokenReference, metadata: attachmentResolutionMetadata(for: attachment))
+        }
+
+        let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+        if resourceValues?.isDirectory == true {
+            return .resolvedReference(metadata: attachmentResolutionMetadata(for: attachment))
+        }
+
+        guard resourceValues?.isRegularFile != false else {
+            return .failure(reason: .unsupportedType, metadata: attachmentResolutionMetadata(for: attachment))
+        }
+
+        return resolveFileAttachment(
+            attachment,
+            fileURL: fileURL,
+            relativePath: fileURL.lastPathComponent,
+            remainingTotalBudget: &remainingTotalBudget
+        )
+    }
+
+    static func resolveFileAttachment(
+        _ attachment: AiChatAttachmentDraft,
+        fileURL: URL,
+        relativePath: String,
+        remainingTotalBudget: inout Int
+    ) -> AiChatAttachmentResolutionResult {
+        var metadata = attachmentResolutionMetadata(for: attachment)
+        metadata["relativePath"] = relativePath
+
+        switch resolveFileText(fileURL: fileURL, remainingTotalBudget: &remainingTotalBudget) {
+        case let .success(text, truncated):
+            return truncated
+                ? .resolvedPartial(text: text, truncated: true, metadata: metadata)
+                : .resolvedText(text: text, metadata: metadata)
+        case let .failure(reason):
+            return .failure(reason: reason, metadata: metadata)
+        }
+    }
+
+    enum ResolvedAttachmentText {
+        case success(text: String, truncated: Bool)
+        case failure(AiChatAttachmentResolutionFailure)
+    }
+
+    static func resolveFileText(
+        fileURL: URL,
+        remainingTotalBudget: inout Int
+    ) -> ResolvedAttachmentText {
+        do {
+            let data = try Data(contentsOf: fileURL)
+            guard !data.isEmpty else { return .failure(.emptyContent) }
+            let perAttachmentBudget = 64 * 1024
+            let allowedBytes = min(perAttachmentBudget, remainingTotalBudget)
+            let truncated = data.count > allowedBytes
+            let selectedData = truncated ? data.prefix(allowedBytes) : data[...]
+            guard let text = String(data: Data(selectedData), encoding: .utf8) else {
+                return .failure(.unsupportedType)
+            }
+            let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedText.isEmpty else { return .failure(.emptyContent) }
+            remainingTotalBudget -= selectedData.count
+            return .success(text: normalizedText, truncated: truncated)
+        } catch CocoaError.fileReadNoPermission {
+            return .failure(.permissionDenied)
+        } catch {
+            return .failure(.readFailed)
+        }
+    }
+
+    static func attachmentResolutionURL(for attachment: AiChatAttachmentDraft) -> URL? {
+        if let fileURL = attachment.sourceLocation.fileURL {
+            return fileURL.standardizedFileURL
+        }
+        if let filePath = attachment.sourceLocation.filePath, !filePath.isEmpty {
+            return URL(fileURLWithPath: filePath).standardizedFileURL
+        }
+        return nil
+    }
+
+    static func attachmentResolutionMetadata(for attachment: AiChatAttachmentDraft) -> [String: String] {
+        var metadata = attachment.metadata
+        metadata["source"] = attachment.source.rawValue
+        if let filePath = attachment.sourceLocation.filePath, !filePath.isEmpty {
+            metadata["filePath"] = filePath
+        }
+        return metadata
+    }
+}
+
+public extension DependencyValues {
+    nonisolated var aiChatAttachmentResolverClient: AiChatAttachmentResolverClient {
+        get { self[AiChatAttachmentResolverClient.self] }
+        set { self[AiChatAttachmentResolverClient.self] = newValue }
+    }
+}
+
 public struct AiChatSessionPersistenceClient: Sendable {
     public var loadSession: @Sendable (AiChatSessionID) async throws -> AiChatSessionSnapshot?
     public var saveSession: @Sendable (AiChatSessionSnapshot) async throws -> Void
