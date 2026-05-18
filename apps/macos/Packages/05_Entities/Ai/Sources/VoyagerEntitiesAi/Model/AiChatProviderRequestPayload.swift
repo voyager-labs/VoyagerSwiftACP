@@ -19,7 +19,7 @@ public struct AiChatProviderContextBundle: Equatable, Sendable, Codable {
     public let sessionID: AiChatSessionID?
     public let requestID: AiChatRequestID
     public let runID: AiChatRunID
-    public let currentContext: AiChatCurrentContextSnapshot
+    public let requestContext: AiChatLockedRequestContextSnapshot
     public let promptSummary: String?
     public let submittedAtMs: Int64?
 
@@ -27,16 +27,20 @@ public struct AiChatProviderContextBundle: Equatable, Sendable, Codable {
         sessionID: AiChatSessionID?,
         requestID: AiChatRequestID,
         runID: AiChatRunID,
-        currentContext: AiChatCurrentContextSnapshot,
+        requestContext: AiChatLockedRequestContextSnapshot,
         promptSummary: String?,
-        submittedAtMs: Int64?
+        submittedAtMs: Int64?,
     ) {
         self.sessionID = sessionID
         self.requestID = requestID
         self.runID = runID
-        self.currentContext = currentContext
+        self.requestContext = requestContext
         self.promptSummary = promptSummary
         self.submittedAtMs = submittedAtMs
+    }
+
+    public var currentContext: AiChatCurrentContextSnapshot {
+        requestContext.currentContext
     }
 }
 
@@ -60,7 +64,7 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
         rawModelID: String,
         messages: [AiChatProviderMessage],
         context: AiChatProviderContextBundle,
-        thinking: AiChatProviderThinkingPayload?
+        thinking: AiChatProviderThinkingPayload?,
     ) {
         self.provider = provider
         self.rawModelID = rawModelID
@@ -73,15 +77,19 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
         try lower(request, thinking: lowerThinking(request.context.selectedThinking))
     }
 
+    public var currentContext: AiChatCurrentContextSnapshot {
+        context.requestContext.currentContext
+    }
+
     public static func lower(
         _ request: AiChatRequest,
-        thinking: AiChatProviderThinkingPayload?
+        thinking: AiChatProviderThinkingPayload?,
     ) throws -> AiChatProviderRequestPayload {
         let resolvedModelProvider = request.context.selectedModel?.provider ?? request.context.model.provider
         guard request.context.provider == resolvedModelProvider else {
             throw AiChatProviderRequestLoweringError.modelProviderMismatch(
                 requestProvider: request.context.provider,
-                modelProvider: resolvedModelProvider
+                modelProvider: resolvedModelProvider,
             )
         }
 
@@ -101,24 +109,24 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
                 sessionID: request.context.sessionID,
                 requestID: request.context.requestID,
                 runID: request.context.runID,
-                currentContext: request.context.currentContext,
+                requestContext: request.context.requestContext,
                 promptSummary: request.context.promptSummary,
-                submittedAtMs: request.context.submittedAtMs
+                submittedAtMs: request.context.submittedAtMs,
             ),
-            thinking: thinking
+            thinking: thinking,
         )
     }
 
     private static func lowerThinking(_ selection: AiThinkingSelection?) -> AiChatProviderThinkingPayload? {
         switch selection {
         case nil:
-            return nil
+            nil
         case .some(.none):
-            return AiChatProviderThinkingPayload.none
+            AiChatProviderThinkingPayload.none
         case let .some(.effort(value)):
-            return .effort(value)
+            .effort(value)
         case let .some(.tokenBudget(value)):
-            return .tokenBudget(value)
+            .tokenBudget(value)
         }
     }
 }
