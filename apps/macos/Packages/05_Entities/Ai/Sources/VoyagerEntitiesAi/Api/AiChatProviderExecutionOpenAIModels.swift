@@ -26,8 +26,9 @@ struct OpenAIResponsesCreateRequest: Encodable, Sendable {
     private static func makeInput(from payload: AiChatProviderRequestPayload) -> [OpenAIResponsesInputItem] {
         var items: [OpenAIResponsesInputItem] = []
 
-        if let contextText = OpenAIContextPromptBuilder.makePrompt(from: payload.context.currentContext),
-           !contextText.isEmpty {
+        if let contextText = OpenAIContextPromptBuilder.makePrompt(from: payload),
+           !contextText.isEmpty
+        {
             items.append(.init(role: .developer, text: contextText))
         }
 

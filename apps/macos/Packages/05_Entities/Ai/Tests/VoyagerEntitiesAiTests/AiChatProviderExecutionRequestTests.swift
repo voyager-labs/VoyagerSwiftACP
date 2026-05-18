@@ -41,6 +41,84 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertNil(decoded.reasoning?.budgetTokens)
     }
 
+    func testMakeOpenAIRequest_usesLockedCurrentContextWhenNoAttachmentsExist() throws {
+        let payload = try makePayload(
+            provider: .openai,
+            rawModelID: "gpt-4.1-mini",
+            requestContext: AiChatLockedRequestContextSnapshot(
+                currentContext: AiChatCurrentContextSnapshot(
+                    summary: "Locked editor selection",
+                    items: [
+                        AiChatContextItem(
+                            kind: .selection,
+                            identifier: "selection-1",
+                            title: "Lines 10-20",
+                            metadata: ["path": "/tmp/Selection.swift"],
+                        ),
+                    ],
+                ),
+                addedAttachments: [],
+            ),
+        )
+
+        let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
+            payload: payload,
+            credential: .apiKey("openai-key"),
+        )
+        let decoded = try decodeOpenAIRequestBody(request)
+        let prompt = try XCTUnwrap(decoded.input.first?.content)
+
+        XCTAssertEqual(decoded.input.map(\.role), ["developer", "user"])
+        XCTAssertTrue(prompt.contains("current_context:"))
+        XCTAssertTrue(prompt.contains("summary: Locked editor selection"))
+        XCTAssertTrue(prompt.contains("[selection] Lines 10-20"))
+        XCTAssertTrue(prompt.contains("added_attachments:\n  - none"))
+        XCTAssertFalse(prompt.contains("live draft should not leak"))
+    }
+
+    func testMakeOpenAIRequest_includesLockedAttachmentResolutionVariantsOnly() throws {
+        let payload = try makePayload(
+            provider: .openai,
+            rawModelID: "gpt-4.1-mini",
+            requestContext: AiChatLockedRequestContextSnapshot(
+                currentContext: AiChatCurrentContextSnapshot(summary: "Locked request context"),
+                addedAttachments: makeLockedAttachmentResolutionFixtures(),
+            ),
+        )
+
+        let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
+            payload: payload,
+            credential: .apiKey("openai-key"),
+        )
+        let decoded = try decodeOpenAIRequestBody(request)
+        let prompt = try XCTUnwrap(decoded.input.first?.content)
+
+        XCTAssertTrue(prompt.contains("Notes.txt [resolvedText]"))
+        XCTAssertTrue(prompt.contains("Resolved note body"))
+        XCTAssertTrue(prompt.contains("Workspace [resolvedReference]"))
+        XCTAssertTrue(prompt.contains("reference included; content not expanded."))
+        XCTAssertTrue(prompt.contains("Broken.txt [readFailed]"))
+        XCTAssertTrue(prompt.contains("not included: readFailed"))
+        XCTAssertFalse(prompt.contains("live attachment should not leak"))
+    }
+
+    func testMakeOpenAIRequest_allowsEmptyLockedContextWithoutContextPrompt() throws {
+        let payload = try makePayload(
+            provider: .openai,
+            rawModelID: "gpt-4.1-mini",
+            requestContext: AiChatLockedRequestContextSnapshot(currentContext: .init(), addedAttachments: []),
+        )
+
+        let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
+            payload: payload,
+            credential: .apiKey("openai-key"),
+        )
+        let decoded = try decodeOpenAIRequestBody(request)
+
+        XCTAssertEqual(decoded.input.map(\.role), ["user"])
+        XCTAssertEqual(decoded.input.first?.content, "Hello")
+    }
+
     func testCodexArguments_includeReasoningEffortWhenSelected() throws {
         let outputURL = URL(fileURLWithPath: "/tmp/codex-output.txt")
 
@@ -60,7 +138,7 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
             outputURL.path,
             "-c",
             "model_reasoning_effort=\"high\"",
-            "Explain the change"
+            "Explain the change",
         ])
     }
 
@@ -83,7 +161,7 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
             outputURL.path,
             "-c",
             "model_reasoning_effort=\"none\"",
-            "Explain the change"
+            "Explain the change",
         ])
     }
 
@@ -111,10 +189,53 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertEqual(accumulator.stringValue(), "first stderr chunk\nsecond stderr chunk")
     }
 
+    private func makeLockedAttachmentResolutionFixtures() -> [AiChatAttachmentSnapshot] {
+        [
+            AiChatAttachmentSnapshot(
+                id: AiChatAttachmentID(rawValue: "text"),
+                source: .file,
+                displayTitle: "Notes.txt",
+                kind: .file,
+                sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Notes.txt"),
+                resolutionResult: .resolvedText(
+                    text: "Resolved note body",
+                    metadata: ["encoding": "utf-8"],
+                ),
+            ),
+            AiChatAttachmentSnapshot(
+                id: AiChatAttachmentID(rawValue: "reference"),
+                source: .folder,
+                displayTitle: "Workspace",
+                kind: .folder,
+                sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Workspace"),
+                resolutionResult: .resolvedReference(
+                    metadata: ["resolution": "reference_only"],
+                ),
+            ),
+            AiChatAttachmentSnapshot(
+                id: AiChatAttachmentID(rawValue: "failure"),
+                source: .file,
+                displayTitle: "Broken.txt",
+                kind: .file,
+                sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Broken.txt"),
+                resolutionResult: .failure(
+                    reason: .readFailed,
+                    metadata: ["path": "/tmp/Broken.txt"],
+                ),
+            ),
+        ]
+    }
+
     private func makePayload(
         provider: AiProvider,
         rawModelID: String,
         thinking: AiChatProviderThinkingPayload? = nil,
+        messages: [AiChatProviderMessage] = [
+            AiChatProviderMessage(role: .user, content: "Hello"),
+        ],
+        requestContext: AiChatLockedRequestContextSnapshot = AiChatLockedRequestContextSnapshot(
+            currentContext: AiChatCurrentContextSnapshot(summary: "Request context"),
+        ),
     ) throws -> AiChatProviderRequestPayload {
         let requestUUID = try XCTUnwrap(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
         let runUUID = try XCTUnwrap(UUID(uuidString: "66666666-7777-8888-9999-AAAAAAAAAAAA"))
@@ -123,24 +244,33 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         return AiChatProviderRequestPayload(
             provider: provider,
             rawModelID: rawModelID,
-            messages: [
-                AiChatProviderMessage(role: .user, content: "Hello")
-            ],
+            messages: messages,
             context: AiChatProviderContextBundle(
                 sessionID: nil,
                 requestID: requestID,
                 runID: runID,
-                currentContext: AiChatCurrentContextSnapshot(summary: "Request context"),
-                promptSummary: "Hello",
+                requestContext: requestContext,
+                promptSummary: messages.last?.content,
                 submittedAtMs: 1_700_000_000_000,
             ),
             thinking: thinking,
         )
     }
+
+    private func decodeOpenAIRequestBody(_ request: URLRequest) throws -> CapturedOpenAIRequestBody {
+        let body = try XCTUnwrap(request.httpBody)
+        return try JSONDecoder().decode(CapturedOpenAIRequestBody.self, from: body)
+    }
 }
 
 private struct CapturedOpenAIRequestBody: Decodable {
+    let input: [CapturedOpenAIInputItem]
     let reasoning: CapturedOpenAIReasoning?
+}
+
+private struct CapturedOpenAIInputItem: Decodable {
+    let role: String
+    let content: String
 }
 
 private struct CapturedOpenAIReasoning: Decodable {

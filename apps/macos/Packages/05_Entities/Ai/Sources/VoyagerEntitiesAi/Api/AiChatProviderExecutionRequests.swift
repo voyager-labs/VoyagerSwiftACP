@@ -49,13 +49,15 @@ extension AiChatProviderExecutionClient {
     static func makeCodexPrompt(payload: AiChatProviderRequestPayload) -> String {
         var sections: [String] = []
 
-        if let contextText = OpenAIContextPromptBuilder.makePrompt(from: payload.context.currentContext),
-           !contextText.isEmpty {
+        if let contextText = OpenAIContextPromptBuilder.makePrompt(from: payload),
+           !contextText.isEmpty
+        {
             sections.append(contextText)
         }
 
         if let promptSummary = payload.context.promptSummary?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !promptSummary.isEmpty {
+           !promptSummary.isEmpty
+        {
             sections.append("Prompt summary:\n\(promptSummary)")
         }
 
@@ -186,7 +188,7 @@ extension AiChatProviderExecutionClient {
             "--model",
             model,
             "--output-last-message",
-            outputURL.path
+            outputURL.path,
         ]
 
         if let reasoningEffort = codexReasoningEffort(from: thinking) {
@@ -268,7 +270,8 @@ extension AiChatProviderExecutionClient {
     static func resolveCodexCommand() throws -> (executableURL: URL, argumentsPrefix: [String]) {
         let fileManager = FileManager.default
         for path in ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
-            where fileManager.isExecutableFile(atPath: path) {
+            where fileManager.isExecutableFile(atPath: path)
+        {
             return (URL(fileURLWithPath: path), [])
         }
         throw CodexCLIExecutionError.launchFailed
