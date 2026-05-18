@@ -22,6 +22,7 @@ public struct AiChatView: View {
         WithPerceptionTracking {
             let state = store.state
             let skeleton = state.skeletonDisplayModel
+            let requestContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
 
             ScrollViewReader { scrollProxy in
                 VStack(spacing: 0) {
@@ -50,6 +51,7 @@ public struct AiChatView: View {
                         store: store,
                         state: state,
                         input: skeleton.chatInput,
+                        requestContext: requestContext,
                         colorScheme: colorScheme,
                         isChatInputFocused: $isChatInputFocused,
                         chatInputTextHeight: $chatInputTextHeight,
