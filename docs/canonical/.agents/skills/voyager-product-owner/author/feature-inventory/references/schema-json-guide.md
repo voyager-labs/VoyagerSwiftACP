@@ -58,6 +58,7 @@ Supported column metadata:
 - `required`: optional boolean
 - `description`: optional string
 - `enum`: optional string array
+- `enum_descriptions`: optional object for value-by-value enum notes when a single `description` would become too long
 - `ref`: optional object describing a table reference
 
 ## Required semantics
@@ -71,6 +72,9 @@ Supported column metadata:
 
 Use `enum` only when the allowed values are stable and reviewable.
 
+Keep `description` focused on the column's purpose. If enum values need value-by-value explanation, use
+`enum_descriptions` instead of packing every value meaning into one long sentence.
+
 Example:
 
 ```json
@@ -79,11 +83,24 @@ Example:
     "type": "string",
     "required": true,
     "enum": ["command", "input", "display", "background"],
-    "description": "Interaction type."
+    "description": "Interaction type.",
+    "enum_descriptions": {
+        "command": "User-triggered command.",
+        "input": "User or system input that changes a value or state.",
+        "display": "Information shown to the user.",
+        "background": "Background work without direct user invocation."
+    }
 }
 ```
 
 Do not add `-` to `enum`; treat `-` through `null_values`.
+
+When using `enum_descriptions`:
+
+- use exactly the enum values as keys
+- keep each value description short and reviewable
+- do not add lifecycle policy or pricing claims that belong in BUSINESS or feature-spec documents
+- update `enum_descriptions` in the same patch when adding, renaming, or removing enum values
 
 ## Ref semantics
 
@@ -142,5 +159,6 @@ Before finishing a schema-aware edit, verify:
 - primary key columns are stable and not `TBD`
 - `required` flags still match placeholder usage
 - new `enum` values match actual TSV usage
+- `enum_descriptions` keys match `enum` values when present
 - new `ref` metadata points at real table/column names
 - no unrelated schema churn was introduced

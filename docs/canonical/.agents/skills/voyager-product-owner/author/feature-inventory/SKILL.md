@@ -48,6 +48,7 @@ Read these before editing rows:
 - In `FEATURES.description` and `INTERACTIONS.summary`, prefer product labels or natural Korean concept names over raw object keys.
 - For example, prefer `현재 요청 컨텍스트`, `요청 메시지`, `이전 대화 이력`, `첨부 대상` over raw keys such as `request_context`, `request_message`, `turn_history`, `attachment`.
 - Do not carry interaction-spec body-prose English label preferences back into FI long-text cells.
+- When changing an `INTERACTIONS.interaction_id`, treat it as a cross-layer rename: update the matching FEATURE_SPEC filename, frontmatter `interaction_id`, related markdown links, flow coverage, and contract ownership/transition trigger references in the same pass.
 - Review `FEATURES.description` and `INTERACTIONS.summary` manually when they read like English label prose or copied internal terminology; do not treat that judgment as deterministic script output.
 
 1. Update schema when needed

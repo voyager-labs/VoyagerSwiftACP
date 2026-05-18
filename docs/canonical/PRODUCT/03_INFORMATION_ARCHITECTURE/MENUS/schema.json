@@ -20,7 +20,14 @@
       "type": "string",
       "required": false,
       "enum": ["menu_bar", "main_menu", "context_menu", "submenu", "section"],
-      "description": "메뉴 타입."
+      "description": "메뉴 타입.",
+      "enum_descriptions": {
+        "menu_bar": "앱 상단 메뉴 바.",
+        "main_menu": "메뉴 바 아래의 최상위 메뉴.",
+        "context_menu": "선택 항목이나 영역에 연결되는 컨텍스트 메뉴.",
+        "submenu": "상위 메뉴 항목 아래에 중첩되는 하위 메뉴.",
+        "section": "관련 메뉴 항목을 묶는 구분 영역."
+      }
     },
     {
       "name": "parent_menu_node",

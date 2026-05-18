@@ -40,12 +40,12 @@ This document explains how to write or refactor `PRODUCT/05_FEATURE_SPECS` docum
 - If the user explicitly asks to mark one named interaction spec as reviewed or `검토 완료`, treat that as a human-review handoff for that one file only.
 - If a named target interaction spec already shows a one-file human-review signal relative to FI, treat that as the same handoff even without a fresh explicit command.
     - accepted signal: the target FEATURE_SPEC no longer carries `<<AI>>` markers while the matching FI `summary` still does
-    - accepted signal: the target FEATURE_SPEC frontmatter `status` is no longer `아이디어` / `드래프트` while the matching FI row still is
+    - accepted signal: the target FEATURE_SPEC frontmatter `status` is no longer `planned` while the matching FI row still is
 - During that handoff, remove `<<AI>>` markers from the target interaction spec's human-readable frontmatter values and body prose in the same file.
-- During that handoff, if the target interaction spec frontmatter `status` is `아이디어` or `드래프트`, promote it to `기획 완료`.
+- During that handoff, if the target interaction spec frontmatter `status` is `planned`, promote it to `implementing`.
 - During that handoff, update the matching `PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv` row in the same pass:
     - remove `<<AI>>` from the matching long-text cell such as `summary`
-    - if the row `status` is `아이디어` or `드래프트`, promote it to `기획 완료`
+    - if the row `status` is `planned`, promote it to `implementing`
 - Do not auto-promote sibling interaction specs, the parent `FEATURES` row, category `flows/*.md`, or category `contracts/*.toml` during a one-file human-review handoff.
 - Do not assume that prose-level object/state consistency can be proved from text alone.
     - Use exact object names and exact state names.
@@ -66,7 +66,7 @@ When style rules and sync rules pull in different directions, use this precedenc
 
 Apply that order as follows:
 
-- Treat the matching FI `INTERACTIONS` row as the SSOT for interaction-spec frontmatter values that the bundle checker compares directly, especially `feature`, `category_key`, `feature_id`, `status`, `summary`, and `related_region`.
+- Treat the matching FI `INTERACTIONS` row as the SSOT for interaction-spec frontmatter values that the bundle checker compares directly, especially `feature`, `category_key`, `feature_id`, `status`, `phase`, `summary`, and `related_region`.
 - If an interaction spec frontmatter `summary` needs to change, update the matching FI `INTERACTIONS` row in the same pass or keep the existing frontmatter value unchanged.
 - Do not let body-prose wording preferences rewrite frontmatter `summary` away from the matching FI row.
 - The rule "prefer product labels or natural Korean concept names in frontmatter `summary`" applies after FI/frontmatter sync, not before it.
@@ -83,6 +83,7 @@ Keep the following keys in YAML frontmatter:
 - `category_key`
 - `feature_id`
 - `status`
+- `phase`
 - `summary`
 - `related_region`
 - `menu`
@@ -98,7 +99,7 @@ Use this when either:
 Required behavior:
 
 1. Remove `<<AI>>` markers from the target interaction spec's human-readable frontmatter values and body prose.
-2. If the target spec `status` is `아이디어` or `드래프트`, change it to `기획 완료`.
+2. If the target spec `status` is `planned`, change it to `implementing`.
 3. Sync the matching FI `INTERACTIONS` row in the same pass.
 4. Re-run local checks on the touched spec and FI row before finishing.
 
@@ -134,6 +135,47 @@ The document body must keep these fixed sections:
 Optional addition:
 
 - `Boundary Notes`
+
+## Phase Markers
+
+Phase markers distinguish spec content by implementation timeline **within a single interaction spec document**. They are only needed when a file contains content with **different implementation phases**. The frontmatter `phase` field represents the file-level default; markers are for in-file exceptions only.
+
+### Marker syntax
+
+- No marker — already implemented or aligned with frontmatter `phase` (the default)
+- `[now]` — not yet implemented, schedule for current cycle
+- `[next]` — not yet implemented, schedule for next cycle
+- `[later]` — not yet implemented, deferred with no fixed timeline
+
+### Placement rules
+
+- Phase markers appear at the **start of a sentence or list item**, before the prose content.
+- After bullet markers and checklist syntax: write `- [now] ...` or `- [ ] [now] ...`, not `- [now] [ ] ...`.
+- Do not place markers mid-sentence or after prose content.
+
+### Redundancy rule
+
+**Do not annotate every bullet with the same marker.** If all marked items in a section share the same phase, that phase is already captured by the frontmatter `phase` field — remove the markers and leave plain bullets.
+
+Only use markers when a file mixes content from different phases:
+
+| Frontmatter `phase` | In-file content | Action |
+|---|---|---|
+| `now` | All bullets are `[now]` | Remove all markers → plain bullets |
+| `now` | Mix of `[now]` and `[next]` | Remove `[now]` markers, keep `[next]` |
+| `later` | All bullets are `[next]` | Remove all markers → plain bullets |
+| `later` | Mix of `[next]` and `[later]` | Keep only the minority marker |
+| `-` (shipped) | Mix of `[now]` and `[next]` | Keep both — neither matches shipped state |
+| `-` (shipped) | No markers | Already aligned — no action needed |
+
+### Transition workflow
+
+1. New feature: FI `status=planned`, `phase=later`. Spec uses `[later]` markers.
+2. Cycle assigned: FI `status=planned`, `phase=next`. Markers change from `[later]` to `[next]`.
+3. Implementation starts: FI `status=implementing`, `phase=now`. Markers stay `[next]`.
+4. Implementation done + QA passed: FI `status=shipped`, `phase=-`. All markers removed.
+5. Shipped feature needs spec change: FI `status=shipped`, `phase=now`. New content gets `[next]`, existing content stays unmarked.
+6. Re-implementation done: FI `status=shipped`, `phase=-`. All markers removed.
 
 ## Interaction Spec Scope
 
@@ -228,6 +270,8 @@ It only defines how an interaction spec must stay consistent with an existing co
 
 - Describe events worth tracking, such as entry, success, failure, and retry.
 - Prefer observable checkpoints over implementation plumbing.
+- Do not invent analytics for trivial shell, display, or navigation interactions when the product does not need a distinct event.
+- When no observability or analytics requirement is intentionally defined, keep the fixed section and write `-   -` to mark deliberate not-applicable status.
 
 ### Related Interactions
 
@@ -235,11 +279,13 @@ It only defines how an interaction spec must stay consistent with an existing co
 
 ### Source
 
+- Treat `Source` as a whitelist: only `Inventory row:`, `Contracts:`, and `Flows:` reference lines are allowed.
 - Keep the inventory row reference accurate in the form `Inventory row: <path>:<line>`.
 - When the interaction spec depends on category-level contracts, include a `Contracts:` line with links to the relevant `contracts/*.toml` files.
 - `Contracts:` is optional only when no contract-backed reference is relevant to that interaction spec.
 - When category-level flow docs directly sequence the interaction, include a `Flows:` line with links to the relevant `flows/*.md` files.
 - `Flows:` is optional only when no category flow directly sequences that interaction.
+- Do not add implementation, design-note, code-path, or extra source-key lines to this section; put non-source context in the relevant body section instead.
 
 ## Optional additions
 

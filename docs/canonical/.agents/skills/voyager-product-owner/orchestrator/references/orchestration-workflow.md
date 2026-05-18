@@ -140,6 +140,21 @@ Do not claim `AI Draft Complete` until the lifecycle gates in that reference pas
 1. `scope_reviewer`
 2. `linear_issue_author`
 
+### Category spec audit
+
+Use this lane when the user asks to audit, validate, or improve an entire category of specs — especially triggers like "ONB 스펙 점검", "카테고리 전체 검수", "audit this category", or "full spec review for <CATEGORY>".
+
+1. `category-audit` skill (under `checker/category-audit/`)
+
+This skill runs a multi-gate audit loop (Gate 0 through Gate 6) with deterministic checks, implementation status verification, blind clarity review, semantic review, and bundle parity validation.
+
+When the user requests persistence ("돌려줘", "keep going until done"), run this lane inside a ralph-loop with the OKR defined in the skill's ralph integration section.
+
+Do not use this lane for:
+- Single feature review → use `bundle_reviewer` or `feature_spec_reviewer`
+- FI-only checks → use `feature_inventory_checker`
+- FS authoring → use the FS drafting lane above
+
 ## Delegation Pattern
 
 ### Step 1. Brief locally

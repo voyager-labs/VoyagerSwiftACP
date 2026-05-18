@@ -8,7 +8,14 @@
       "type": "string",
       "required": true,
       "enum": ["Domain", "Conversation", "State", "Operation", "Rule"],
-      "description": "오브젝트 상위 분류(그룹). Domain은 제품 전반의 기본 개체, Conversation은 대화/세션/요청/응답 계열, State는 UI나 실행 중 유지되는 상태성 개체, Operation은 실행 가능한 동작 단위, Rule은 판정/적용 규칙을 뜻한다."
+      "description": "오브젝트 상위 분류(그룹).",
+      "enum_descriptions": {
+        "Domain": "제품 전반의 기본 개체.",
+        "Conversation": "대화, 세션, 요청, 응답 계열 개체.",
+        "State": "UI나 실행 중 유지되는 상태성 개체.",
+        "Operation": "실행 가능한 동작 단위.",
+        "Rule": "판정 또는 적용 규칙."
+      }
     },
     {
       "name": "key",

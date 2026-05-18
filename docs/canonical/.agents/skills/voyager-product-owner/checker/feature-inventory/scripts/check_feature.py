@@ -36,7 +36,7 @@ def find_repo_root(start: Path) -> Path:
     start = start.resolve()
     candidates = [start] + list(start.parents)
     for p in candidates:
-        if (p / ".git").is_dir():
+        if (p / ".git").exists():
             return p
     return start
 
@@ -122,6 +122,23 @@ def schema_required_columns(schema: dict[str, object]) -> set[str]:
         if isinstance(c, dict) and c.get("required") is True:
             required.add(str(c.get("name")))
     return required
+
+
+def schema_enum_columns(schema: dict[str, object]) -> dict[str, set[str]]:
+    enum_columns: dict[str, set[str]] = {}
+    cols = schema.get("columns")
+    if not isinstance(cols, list):
+        return enum_columns
+
+    for c in cols:
+        if not isinstance(c, dict):
+            continue
+        name = c.get("name")
+        values = c.get("enum")
+        if not isinstance(name, str) or not isinstance(values, list):
+            continue
+        enum_columns[name] = {str(v) for v in values}
+    return enum_columns
 
 
 def is_empty_value(value: str) -> bool:
@@ -222,7 +239,10 @@ def find_features(
             if title.strip().lower() == q.lower():
                 matches.append((line_no, row))
         elif match == "contains":
-            hay = f"{fid}\n{title}\n{row.get('description', '')}".lower()
+            hay = (
+                f"{fid}\n{title}\n{row.get('description', '')}\n"
+                f"{row.get('entitlement_key', '')}"
+            ).lower()
             if q.lower() in hay:
                 matches.append((line_no, row))
         else:
@@ -268,7 +288,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo_root = Path(args.repo_root).expanduser().resolve()
     else:
         repo_root = find_repo_root(Path(__file__))
-        if not (repo_root / ".git").is_dir():
+        if not (repo_root / ".git").exists():
             repo_root = find_repo_root(Path.cwd())
 
     features_schema_path = repo_root / FEATURES_SCHEMA
@@ -291,10 +311,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     schema_cols: list[str] = []
     required_cols: set[str] = set()
+    enum_cols: dict[str, set[str]] = {}
     if schema:
         try:
             schema_cols = load_schema_columns(schema)
             required_cols = schema_required_columns(schema)
+            enum_cols = schema_enum_columns(schema)
         except Exception as e:
             print(f"WARN: Bad schema format: {FEATURES_SCHEMA}: {e}")
 
@@ -322,7 +344,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             fid = row.get("feature_id", "").strip()
             title = row.get("feature_title", "").strip()
             status = row.get("status", "").strip()
-            print(f"- line {line_no}: {fid} | {title} | {status}")
+            suffix = f" | {status}" if "status" in row else ""
+            print(f"- line {line_no}: {fid} | {title}{suffix}")
         if len(matches) > 25:
             print(f"(truncated; total candidates: {len(matches)})")
         print("Hint: use --match id with an exact feature_id")
@@ -339,8 +362,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if "category_key" in feature:
         print_kv("category_key", feature.get("category_key", "").strip())
     print_kv("release_phase", feature.get("release_phase", "").strip())
-    print_kv("status", feature.get("status", "").strip())
+    if "status" in feature:
+        print_kv("status", feature.get("status", "").strip())
     print_kv("related_ui", feature.get("related_ui", "").strip())
+    if "entitlement_key" in feature:
+        print_kv("entitlement_key", feature.get("entitlement_key", "").strip())
     print_kv("description", feature.get("description", "").strip())
     if "objects" in feature:
         print_kv("objects", feature.get("objects", "").strip())
@@ -383,6 +409,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         problems.append(
             f"WARN: empty cells (prefer '-' sentinel): {', '.join(sorted(empty_cells))}"
         )
+
+    # Enum fields.
+    for col, allowed in sorted(enum_cols.items()):
+        value = feature.get(col, "").strip()
+        if value in ("", "-") or is_tbd_value(value):
+            continue
+        if value not in allowed:
+            problems.append(
+                f"WARN: column '{col}' value '{value}' is not in schema enum: {summarize_values(sorted(allowed))}"
+            )
 
     # AI drafts.
     ai_cols = [k for k, v in feature.items() if is_ai_draft_value(v)]

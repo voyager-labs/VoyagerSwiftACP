@@ -21,7 +21,7 @@ from pathlib import Path
 def find_repo_root(start: Path) -> Path:
     start = start.resolve()
     for p in [start] + list(start.parents):
-        if (p / ".git").is_dir():
+        if (p / ".git").exists():
             return p
     return start
 
@@ -81,10 +81,15 @@ def main(argv: list[str]) -> int:
         default="-",
         help="objects cell (default: -)",
     )
+    ap.add_argument(
+        "--entitlement-key",
+        default="TBD",
+        help="entitlement_key value (default: TBD)",
+    )
     args = ap.parse_args(argv)
 
     repo_root = find_repo_root(Path(__file__))
-    if not (repo_root / ".git").is_dir():
+    if not (repo_root / ".git").exists():
         repo_root = find_repo_root(Path.cwd())
 
     features_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv"
@@ -106,9 +111,7 @@ def main(argv: list[str]) -> int:
     if not description.startswith("<<AI>> "):
         description = "<<AI>> " + description
 
-    # Build row matching known v2 header.
-    # Current header in this repo: feature_category, category_key, feature_title, feature_id,
-    # release_phase, status, description, related_ui, objects
+    # Build row against the current TSV header while keeping legacy optional columns.
     col_map = {
         "feature_category": args.feature_category.strip(),
         "category_key": args.category_key.strip(),
@@ -119,6 +122,7 @@ def main(argv: list[str]) -> int:
         "description": description,
         "related_ui": args.related_ui.strip() or "-",
         "objects": args.objects.strip() or "-",
+        "entitlement_key": args.entitlement_key.strip() or "TBD",
     }
 
     out = [col_map.get(col, "-") for col in header]

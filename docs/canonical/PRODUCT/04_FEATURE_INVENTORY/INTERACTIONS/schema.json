@@ -20,7 +20,13 @@
       "type": "string",
       "required": false,
       "enum": ["command", "input", "display", "background"],
-      "description": "인터랙션 타입. command=사용자 호출/실행, input=값/상태 변경 입력, display=정보 표시, background=백그라운드 작업."
+      "description": "인터랙션 타입.",
+      "enum_descriptions": {
+        "command": "사용자 호출 또는 실행.",
+        "input": "값이나 상태를 변경하는 입력.",
+        "display": "사용자에게 정보 표시.",
+        "background": "직접 호출 없이 수행되는 백그라운드 작업."
+      }
     },
     {
       "name": "feature",
@@ -56,8 +62,29 @@
       "name": "status",
       "type": "string",
       "required": false,
-      "enum": ["아이디어", "드래프트", "기획 완료", "준비 완료", "배포 완료", "취소"],
-      "description": "상태. 아이디어=후보, 드래프트=초안, 기획 완료=스펙 확정, 준비 완료=구현/출시 준비, 배포 완료=사용 가능, 취소=더 이상 진행하지 않음."
+      "enum": ["idea", "drafted", "planned", "implementing", "shipped", "deprecated"],
+      "description": "인터랙션 기획 성숙도 및 구현 상태.",
+      "enum_descriptions": {
+        "idea": "백로그 후보. 스펙 작성 전.",
+        "drafted": "스펙 초안 작성됨. 아직 리뷰/확정 전.",
+        "planned": "스펙 확정. 구현 착수 가능.",
+        "implementing": "구현 중.",
+        "shipped": "구현 완료, 현재 빌드에 포함.",
+        "deprecated": "제거됨 또는 대체됨."
+      }
+    },
+    {
+      "name": "phase",
+      "type": "string",
+      "required": false,
+      "enum": ["-", "now", "next", "later"],
+      "description": "작업 스케줄링. `-`는 안정(작업 불필요), `now`는 이번 cycle, `next`는 다음 cycle, `later`는 타임라인 미확정.",
+      "enum_descriptions": {
+        "-": "안정. 작업 필요 없음.",
+        "now": "이번 cycle 작업 대상.",
+        "next": "다음 cycle 작업 예정.",
+        "later": "계획됨, 타임라인 미확정."
+      }
     },
     {
       "name": "summary",

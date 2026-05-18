@@ -10,10 +10,11 @@ Voyager의 기능/인터랙션 인벤토리를 표 형태(TSV)로 관리합니�
     - 파일: `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/data.tsv`,
       `PRODUCT/04_FEATURE_INVENTORY/FEATURE_CATEGORIES/schema.json`
 - FEATURES
-    - 목적: 기능 단위 인벤토리(릴리즈 단계/한 줄 설명)
+    - 목적: 기능 단위 인벤토리(릴리즈 단계/한 줄 설명/권한 메타데이터)
     - PK: `feature_id`
     - 주요 참조:
         - `category_key` -> FEATURE_CATEGORIES.category_key
+        - `entitlement_key` -> 기능 사용을 unlock하는 제품 권한 키
     - 파일: `PRODUCT/04_FEATURE_INVENTORY/FEATURES/data.tsv`,
       `PRODUCT/04_FEATURE_INVENTORY/FEATURES/schema.json`
 - INTERACTIONS
@@ -36,6 +37,11 @@ Voyager의 기능/인터랙션 인벤토리를 표 형태(TSV)로 관리합니�
   참조합니다.
     - FEATURES.related_ui
     - INTERACTIONS.related_region
+
+## 권한 메타데이터
+
+- 기능별 사용 권한은 `FEATURES.entitlement_key`에 기록합니다.
+- 가격/패키징 정책의 기준 claim은 `BUSINESS/05_business_model_and_pricing.md`가 유지합니다.
 
 ## 작성/변경 규칙
 

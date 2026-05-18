@@ -15,6 +15,7 @@ The goal is to keep `product-owner` as an orchestration entrypoint inside the `v
 - `.agents/skills/voyager-product-owner/author/feature-spec-issue/`
 - `.agents/skills/voyager-product-owner/author/feature-inventory/`
 - `.agents/skills/voyager-product-owner/checker/feature-inventory/`
+- `.agents/skills/voyager-product-owner/checker/category-audit/`
 
 These remain separate skills with their own references, scripts, and eval assets.
 

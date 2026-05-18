@@ -50,6 +50,7 @@ This repo treats TSV as a human-readable and machine-checked SSOT.
     - do not let interaction-spec body-prose preferences leak here
     - whether a long-text cell is using an inappropriate English label form is a human review judgment, not a deterministic script rule
 - `related_ui`: `WINDOW_STRUCTURE.structure_key` when known, else `-`
+- `entitlement_key`: feature unlock entitlement enum; allowed values follow the adjacent `schema.json`
 - `objects`: `-` unless specific stable object keys are known
 
 ### INTERACTIONS
@@ -57,6 +58,8 @@ This repo treats TSV as a human-readable and machine-checked SSOT.
 - `interaction_title`: imperative verb phrase
 - `interaction_id`: stable `<feature_id>-<snake_slug>` form
 - `interaction_type`: use the table's settled enum vocabulary
+- `status`: implementation state; allowed values: `idea`, `drafted`, `planned`, `implementing`, `shipped`, `deprecated`
+- `phase`: work scheduling; allowed values: `-` (stable), `now` (this cycle), `next` (next cycle), `later` (no timeline)
 - `summary`: Korean one-liner; use `<<AI>>` plus one trailing space when AI-drafted or AI-edited
     - prefer product labels or natural Korean concept names over raw object keys
     - use raw object keys only when the key itself is the settled literal label or contract comparison requires it

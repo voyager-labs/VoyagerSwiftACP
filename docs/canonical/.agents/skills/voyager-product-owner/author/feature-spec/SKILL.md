@@ -174,8 +174,11 @@ Do not expand this handoff automatically to:
 - Every contract-driven category should keep at least one `flows/*.md` doc that references the current `contracts/*.toml` and the interaction specs it covers.
 - Keep generated prose Korean by default, but preserve literal product-facing UI copy in English when that is the settled label shown to users.
 - Use strict lint as a review aid for unresolved `TBD` values and draft completeness.
+- Treat `Source` as a whitelist, not a blacklist: only `Inventory row:`, `Contracts:`, and `Flows:` reference lines belong there.
+- Do not force `Observability / Analytics` bullets for interactions that do not need distinct tracking; use `-   -` in that fixed section to mark intentional not-applicable status.
 - Do not rewrite frontmatter `summary` independently from the matching `INTERACTIONS` row.
 - If you change a frontmatter `summary`, change the matching FI `INTERACTIONS` row in the same pass unless the user explicitly says not to sync FI.
+- If an interaction title or concept rename changes the stable action noun, check whether `interaction_id` and the FEATURE_SPEC filename should be renamed too; when renaming, update FI, frontmatter, filename, sibling spec links, flow coverage, and contract ownership/transition trigger references together.
 - During explicit human-review handoff, edit only the named interaction spec and its matching FI interaction row unless the user asks for a wider sweep.
 - Do not mass-edit unrelated spec files unless explicitly requested.
 

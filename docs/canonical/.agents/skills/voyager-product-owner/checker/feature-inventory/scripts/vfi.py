@@ -23,7 +23,7 @@ from pathlib import Path
 def _find_repo_root(start: Path) -> Path:
     start = start.resolve()
     for p in [start] + list(start.parents):
-        if (p / ".git").is_dir():
+        if (p / ".git").exists():
             return p
     return start
 
@@ -128,6 +128,13 @@ def _fill(v: str | None) -> str:
     return s if s else "-"
 
 
+def _with_optional_columns(pl, df, columns: list[str]):
+    missing = [c for c in columns if c not in df.columns]
+    if not missing:
+        return df
+    return df.with_columns([pl.lit(None).cast(pl.Utf8).alias(c) for c in missing])
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     try:
         _ensure_venv(recreate=args.recreate)
@@ -148,6 +155,7 @@ def cmd_show(args: argparse.Namespace) -> int:
     interactions_path = repo_root / "PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv"
 
     features = _read_tsv(pl, features_path)
+    features = _with_optional_columns(pl, features, ["status", "entitlement_key"])
     feature_id = args.feature_id.strip()
     feature = features.filter(pl.col("feature_id") == feature_id)
 
@@ -164,10 +172,12 @@ def cmd_show(args: argparse.Namespace) -> int:
         print(f"category_key: {_fill(row.get('category_key'))}")
     print(f"release_phase: {_fill(row.get('release_phase'))}")
     print(f"status: {_fill(row.get('status'))}")
+    print(f"entitlement_key: {_fill(row.get('entitlement_key'))}")
     print(f"related_ui: {_fill(row.get('related_ui'))}")
     print(f"description: {_fill(row.get('description'))}")
 
     interactions = _read_tsv(pl, interactions_path)
+    interactions = _with_optional_columns(pl, interactions, ["status"])
     related = (
         interactions.filter(pl.col("feature_id") == feature_id)
         .sort(["interaction_title"])
@@ -224,6 +234,8 @@ def cmd_search(args: argparse.Namespace) -> int:
     features = _read_tsv(pl, features_path)
     interactions = _read_tsv(pl, interactions_path)
     window = _read_tsv(pl, window_path)
+    features = _with_optional_columns(pl, features, ["status", "entitlement_key"])
+    interactions = _with_optional_columns(pl, interactions, ["status"])
 
     # Enrich features with UI labels.
     features_ui = features.join(
@@ -276,6 +288,7 @@ def cmd_search(args: argparse.Namespace) -> int:
             | _contains_expr(pl, "feature_category", q_lower)
             | _contains_expr(pl, "description", q_lower)
             | _contains_expr(pl, "related_ui", q_lower)
+            | _contains_expr(pl, "entitlement_key", q_lower)
         )
 
         feature_matches = (
@@ -288,6 +301,7 @@ def cmd_search(args: argparse.Namespace) -> int:
                     "feature_category",
                     "release_phase",
                     "status",
+                    "entitlement_key",
                     "related_ui",
                     "related_ui_label",
                     "related_ui_label_ko",
@@ -304,10 +318,11 @@ def cmd_search(args: argparse.Namespace) -> int:
             title = _fill(r.get("feature_title"))
             status = _fill(r.get("status"))
             phase = _fill(r.get("release_phase"))
+            entitlement_key = _fill(r.get("entitlement_key"))
             ui = _fill(r.get("related_ui"))
             ui_label = _fill(r.get("related_ui_label_ko"))
             print(
-                f"- {fid} | {ckey} | {title} | {status} | {phase} | ui={ui} ({ui_label})"
+                f"- {fid} | {ckey} | {title} | {status} | {phase} | entitlement={entitlement_key} | ui={ui} ({ui_label})"
             )
         if feature_matches.height > args.limit:
             print(f"(truncated; use --limit to increase)")

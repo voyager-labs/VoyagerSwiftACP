@@ -1,0 +1,15 @@
+# Lefthook configuration for voyager-app
+# Install: lefthook install
+
+post-checkout:
+  commands:
+    submodules:
+      run: git submodule update --init --recursive
+
+pre-commit:
+  parallel: true
+  commands:
+    swiftformat:
+      run: swiftformat {staged_files}
+    swiftlint:
+      run: swiftlint lint --strict {staged_files}

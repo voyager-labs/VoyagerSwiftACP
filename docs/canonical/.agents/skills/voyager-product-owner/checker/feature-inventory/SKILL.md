@@ -77,7 +77,6 @@ Use when the user asks "관련 기능 찾아줘" or "어떤 feature 변경 필�
 Important: this is not true vector semantic search. It is high-recall discovery via bilingual keyword expansion + deterministic ID validation.
 
 1. Build bilingual keyword packs from the request.
-   <<<<<<< HEAD
     - Prefer inventory language, not implementation buzzwords.
     - Example packs:
         - `결정론`, `deterministic`, `후보`, `candidate`
@@ -92,20 +91,7 @@ Important: this is not true vector semantic search. It is high-recall discovery 
 5. Classify output as:
     - `must-update`: directly conflicts with requested change
     - `consider-update`: adjacent behavior/wording likely affected
-    - # `no-change`: related domain but no required row changes
-    - Prefer inventory language, not implementation buzzwords.
-    - Example packs:
-        - `결정론`, `deterministic`, `후보`, `candidate`
-        - `시스템 프로퍼티`, `system property`, `메타데이터`, `metadata`
-        - `인덱싱`, `indexing`, `필터`, `filter`
-6. Run broad searches with `vfi.py search` for each keyword.
-    - Use `--scope all` and larger `--limit` (50-100) for recall.
-7. Run `check_feature.py "<keyword>" --match contains` for ambiguous terms.
-    - This searches `feature_id`, `feature_title`, `description`.
-    - If ambiguous, it prints candidate IDs; use those IDs next.
-8. Validate each candidate ID with exact `check_feature.py <id>`.
-9. Classify output as: - `must-update`: directly conflicts with requested change - `consider-update`: adjacent behavior/wording likely affected - `no-change`: related domain but no required row changes
-    > > > > > > > develop
+    - `no-change`: related domain but no required row changes
 
 Recommended command pattern:
 
@@ -122,17 +108,13 @@ python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/c
 `scripts/vfi.py` focuses on loading/joining/searching. Use `scripts/check_feature.py` when you want explicit consistency warnings.
 
 - Finds the matching row(s) in FEATURES and prints a compact report
+- Shows `entitlement_key` when present so feature gating metadata is visible during lookup
+- Warns when an enum-backed FEATURES value such as `entitlement_key` is not in `schema.json`
 - Matching modes:
-  <<<<<<< HEAD
     - `id`: exact feature_id
     - `title`: exact title
-    - `contains`: substring search over `feature_id`, `feature_title`, `description`
-    - # `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
-            - `id`: exact feature_id
-            - `title`: exact title
-            - `contains`: substring search over `feature_id`, `feature_title`, `description`
-            - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
-        > > > > > > > develop
+    - `contains`: substring search over `feature_id`, `feature_title`, `description`, `entitlement_key`
+    - `auto`: picks `id` for `ABC-123` patterns, otherwise `contains`
 - Validates required fields (ex: `feature_category`, `category_key`, `feature_title`, `feature_id`)
 - Checks category consistency:
     - FEATURES.category_key exists in FEATURE_CATEGORIES.category_key
@@ -163,11 +145,12 @@ python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/c
     - no multi-line cells
     - tabs only as field separators
 - Use `-` for intentionally empty values and `TBD` for unresolved required content.
-- `<<AI>> ` is valid only as a long-text cell prefix and should not appear in key, ID, or enum-like columns.
+- `<<AI>>` plus one trailing space is valid only as a long-text cell prefix and should not appear in key, ID, or enum-like columns.
 - `TBD` is never valid for a primary-key field.
 - When checking schema-aligned changes, assume:
     - `columns[].name` order matches TSV header order
     - `required` is the repo's constraint flag
+    - `enum_descriptions` keys should match `enum` values when present
     - `-` is the null sentinel
     - `ref` metadata is the preferred way to describe table relationships
 
@@ -184,9 +167,11 @@ This adds:
 - FEATURES.category_key
 - INTERACTIONS.interaction_id
 
+`FEATURES.entitlement_key` is a later feature-level gating column. If it is missing in a legacy branch, add it at the end of `FEATURES/data.tsv` and `FEATURES/schema.json`, then initialize unresolved rows as `TBD`.
+
 ## TSV Whitespace Normalization
 
-If you see noisy diffs caused by accidental spaces (ex: `- `, NBSP, padding in key columns), run:
+If you see noisy diffs caused by accidental spaces (ex: `-` plus a trailing space, NBSP, padding in key columns), run:
 
 ```bash
 python3 .agents/skills/voyager-product-owner/checker/feature-inventory/scripts/format_tsv_whitespace.py PRODUCT/04_FEATURE_INVENTORY/INTERACTIONS/data.tsv

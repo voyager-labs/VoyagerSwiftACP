@@ -17,6 +17,7 @@
 ## CONVENTIONS
 
 - `FEATURES.category_key`는 `FEATURE_CATEGORIES.category_key`를 참조합니다.
+- `FEATURES.entitlement_key`는 기능 사용을 unlock하는 제품 권한 키입니다.
 - `INTERACTIONS.feature_id`는 `FEATURES.feature_id`를 참조합니다.
 - `INTERACTIONS.category_key`는 `FEATURE_CATEGORIES.category_key`를 참조합니다.
 - `INTERACTIONS.interaction_id`는 stable key이며, 다른 문서에서 참조할 때 사용합니다.

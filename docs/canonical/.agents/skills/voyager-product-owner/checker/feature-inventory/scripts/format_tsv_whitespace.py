@@ -38,6 +38,7 @@ KEY_LIKE_COLUMNS = {
     "status",
     "release_phase",
     "interaction_type",
+    "entitlement_key",
     # refs
     "related_ui",
     "related_region",
