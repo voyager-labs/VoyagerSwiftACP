@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
@@ -11,11 +12,25 @@ struct WindowManagerFeature {
     typealias State = WindowManagerState
     typealias Action = WindowManagerAction
 
+    let pickAttachments: @Sendable () async -> [URL]
+
+    init(
+        pickAttachments: @escaping @Sendable () async -> [URL] = {
+            await MainActor.run {
+                AttachmentPickerPresenter.pickAttachments()
+            }
+        },
+    ) {
+        self.pickAttachments = pickAttachments
+    }
+
     @Dependency(\.onboardingWindowClient)
     private var onboardingWindowClient
 
     @Dependency(\.fileManagerWindowClient)
     private var fileManagerWindowClient
+    @Dependency(\.attachmentPickerClient)
+    private var attachmentPickerClient
 
     @Dependency(\.uuid)
     private var uuid
@@ -175,6 +190,9 @@ struct WindowManagerFeature {
                 state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
                 return .none
 
+            case let .windows(.element(id: id, action: .window(.delegate(.requestAttachmentPicker)))):
+                return requestAttachmentPicker(for: id)
+
             case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
                 return .send(.delegate(.openAISettings))
 
@@ -306,3 +324,19 @@ struct WindowSessionFeature {
 }
 
 typealias WindowSessionState = WindowSessionFeature.State
+
+private extension WindowManagerFeature {
+    func requestAttachmentPicker(for windowID: WindowManagerState.WindowID) -> Effect<Action> {
+        .run { [attachmentPickerClient] send in
+            let urls = await attachmentPickerClient.pickAttachments()
+            guard !urls.isEmpty else { return }
+            let action = await MainActor.run {
+                Action.windows(.element(
+                    id: windowID,
+                    action: .window(.inspector(.aiChat(.attachmentPickerSelection(urls)))),
+                ))
+            }
+            await send(action)
+        }
+    }
+}
