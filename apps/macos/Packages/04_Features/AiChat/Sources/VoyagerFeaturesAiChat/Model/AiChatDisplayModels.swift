@@ -33,7 +33,7 @@ public struct AiChatContextSummaryDisplayModel: Equatable, Sendable {
         referenceCount: Int,
         itemCount: Int,
         attachmentCount: Int,
-        isEmpty: Bool,
+        isEmpty: Bool
     ) {
         self.title = title
         self.detail = detail
@@ -76,7 +76,7 @@ public struct AiChatInputDisplayModel: Equatable, Sendable {
         isSubmitVisible: Bool,
         isStopVisible: Bool,
         canSubmit: Bool,
-        canStop: Bool,
+        canStop: Bool
     ) {
         self.placeholder = placeholder
         self.contextAffordanceLabel = contextAffordanceLabel
@@ -109,7 +109,7 @@ public struct AiChatSkeletonDisplayModel: Equatable, Sendable {
         headerTitle: String,
         currentContext: AiChatContextSummaryDisplayModel,
         surface: AiChatSkeletonSurfaceDisplayModel,
-        chatInput: AiChatInputDisplayModel,
+        chatInput: AiChatInputDisplayModel
     ) {
         self.headerTitle = headerTitle
         self.currentContext = currentContext
@@ -202,7 +202,7 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
         isSelected: Bool,
         isLocked: Bool,
         isDefault: Bool,
-        isRecommended: Bool,
+        isRecommended: Bool
     ) {
         self.handle = handle
         self.label = label
@@ -224,7 +224,7 @@ public struct AiChatModelCatalogSectionDisplayModel: Identifiable, Equatable, Se
     public init(
         provider: AiProvider,
         title: String,
-        rows: [AiChatModelCatalogRowDisplayModel],
+        rows: [AiChatModelCatalogRowDisplayModel]
     ) {
         self.provider = provider
         self.title = title
@@ -242,15 +242,30 @@ public struct AiChatModelCatalogState: Equatable, Sendable {
     public init(
         fieldLabel: String,
         rows: [AiChatModelCatalogRowDisplayModel],
-        sections: [AiChatModelCatalogSectionDisplayModel] = [],
+        sections: [AiChatModelCatalogSectionDisplayModel],
         selectedModel: AiChatSelectedModelDisplayModel?,
-        lockedModel: AiChatLockedModelDisplayModel?,
+        lockedModel: AiChatLockedModelDisplayModel?
     ) {
         self.fieldLabel = fieldLabel
         self.rows = rows
         self.sections = sections
         self.selectedModel = selectedModel
         self.lockedModel = lockedModel
+    }
+
+    public init(
+        fieldLabel: String,
+        rows: [AiChatModelCatalogRowDisplayModel],
+        selectedModel: AiChatSelectedModelDisplayModel?,
+        lockedModel: AiChatLockedModelDisplayModel?
+    ) {
+        self.init(
+            fieldLabel: fieldLabel,
+            rows: rows,
+            sections: [],
+            selectedModel: selectedModel,
+            lockedModel: lockedModel
+        )
     }
 }
 
@@ -289,7 +304,7 @@ public enum AiChatSurfaceState: Equatable, Sendable {
     case processing(
         processing: AiChatProcessingState,
         summary: AiChatContextSummaryDisplayModel,
-        selectedModel: AiChatSelectedModelDisplayModel?,
+        selectedModel: AiChatSelectedModelDisplayModel?
     )
 }
 
@@ -316,7 +331,7 @@ func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot
     let detailParts = [
         referenceCount > 0 ? "\(referenceCount) \(referenceCount == 1 ? "reference" : "references")" : nil,
         itemCount > 0 ? "\(itemCount) \(itemCount == 1 ? "item" : "items")" : nil,
-        attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil
+        attachmentCount > 0 ? "\(attachmentCount) \(attachmentCount == 1 ? "attachment" : "attachments")" : nil,
     ].compactMap(\.self)
     return AiChatContextSummaryDisplayModel(
         title: title,
@@ -324,7 +339,7 @@ func aiChatContextSummaryDisplayModel(for snapshot: AiChatCurrentContextSnapshot
         referenceCount: referenceCount,
         itemCount: itemCount,
         attachmentCount: attachmentCount,
-        isEmpty: !hasContent && (trimmedSummary?.isEmpty ?? true),
+        isEmpty: !hasContent && (trimmedSummary?.isEmpty ?? true)
     )
 }
 
@@ -343,7 +358,7 @@ func aiChatUnconnectedMetadata(for state: AiChatState) -> AiChatConnectionMetada
     return AiChatConnectionMetadata(
         title: "Connect an AI provider",
         detail: "Set up a provider in Settings to chat with this context.",
-        fixLabel: "Open Settings",
+        fixLabel: "Open Settings"
     )
 }
 
@@ -359,10 +374,250 @@ func aiChatExecutionFailureMetadata(for failure: AiChatExecutionFailure) -> AiCh
     AiChatConnectionMetadata(
         title: "Chat unavailable",
         detail: failure.displayMessage,
-        fixLabel: "Retry",
+        fixLabel: "Retry"
     )
 }
 
 func aiChatSessionStatusErrorMetadata(for _: AiChatState) -> AiChatConnectionMetadata? {
     nil
+}
+
+func aiChatRequestContextDisplayModel(
+    currentContext: AiChatCurrentContextSnapshot,
+    addedAttachments: [AiChatAttachmentDraft],
+    lockedRequestContext: AiChatLockedRequestContextSnapshot?
+) -> AiChatRequestContextDisplayModel {
+    if let lockedRequestContext {
+        return AiChatRequestContextDisplayModel(
+            source: .locked,
+            currentContext: aiChatCurrentContextChipDisplayModel(for: lockedRequestContext.currentContext),
+            addedAttachments: lockedRequestContext.addedAttachments.map(aiChatAddedAttachmentChipDisplayModel(for:))
+        )
+    }
+
+    return AiChatRequestContextDisplayModel(
+        source: .draft,
+        currentContext: aiChatCurrentContextChipDisplayModel(for: currentContext),
+        addedAttachments: addedAttachments.map(aiChatAddedAttachmentChipDisplayModel(for:))
+    )
+}
+
+private func aiChatCurrentContextChipDisplayModel(
+    for snapshot: AiChatCurrentContextSnapshot
+) -> AiChatCurrentContextChipDisplayModel? {
+    let summary = aiChatContextSummaryDisplayModel(for: snapshot)
+    guard !summary.isEmpty else { return nil }
+
+    let title: String = if snapshot.items.count == 1 {
+        snapshot.items[0].title ?? summary.title
+    } else if snapshot.items.count > 1 {
+        "\(snapshot.items.count) Selected"
+    } else {
+        summary.title
+    }
+    let iconSystemName = aiChatCurrentContextIconSystemName(for: snapshot)
+    let iconAssetName = aiChatCurrentContextIconAssetName(for: snapshot)
+    let iconFilePath = aiChatCurrentContextIconFilePath(for: snapshot)
+
+    return AiChatCurrentContextChipDisplayModel(
+        title: title,
+        detail: summary.detail,
+        iconSystemName: iconSystemName,
+        iconAssetName: iconAssetName,
+        iconFilePath: iconFilePath
+    )
+}
+
+private func aiChatAddedAttachmentChipDisplayModel(
+    for attachment: AiChatAttachmentDraft
+) -> AiChatAddedAttachmentChipDisplayModel {
+    AiChatAddedAttachmentChipDisplayModel(
+        attachmentID: attachment.id,
+        title: aiChatAttachmentDisplayTitle(
+            id: attachment.id,
+            displayTitle: attachment.displayTitle,
+            sourceLocation: attachment.sourceLocation
+        ),
+        statusLabel: aiChatAttachmentStatusLabel(for: attachment.currentStatus),
+        isRemovable: true,
+        iconSystemName: aiChatAttachmentIconSystemName(for: attachment.source),
+        iconAssetName: aiChatAttachmentIconAssetName(for: attachment.source),
+        iconFilePath: aiChatAttachmentIconFilePath(for: attachment)
+    )
+}
+
+private func aiChatAddedAttachmentChipDisplayModel(
+    for attachment: AiChatAttachmentSnapshot
+) -> AiChatAddedAttachmentChipDisplayModel {
+    AiChatAddedAttachmentChipDisplayModel(
+        attachmentID: attachment.id,
+        title: aiChatAttachmentDisplayTitle(
+            id: attachment.id,
+            displayTitle: attachment.displayTitle,
+            sourceLocation: attachment.sourceLocation
+        ),
+        statusLabel: aiChatAttachmentStatusLabel(for: attachment.resolutionResult),
+        isRemovable: false,
+        iconSystemName: aiChatAttachmentIconSystemName(for: attachment.source),
+        iconAssetName: aiChatAttachmentIconAssetName(for: attachment.source),
+        iconFilePath: aiChatAttachmentIconFilePath(
+            source: attachment.source,
+            sourceLocation: attachment.sourceLocation
+        )
+    )
+}
+
+private func aiChatCurrentContextIconSystemName(for snapshot: AiChatCurrentContextSnapshot) -> String? {
+    if snapshot.items.count == 1 {
+        return aiChatContextIconSystemName(for: snapshot.items[0].kind)
+    }
+    if snapshot.items.count > 1 {
+        return "checklist"
+    }
+    guard let route = snapshot.references.first?.metadata["route"] else { return nil }
+    switch route {
+    case "folder", "computer":
+        return "folder"
+    case "collection":
+        return nil
+    default:
+        return nil
+    }
+}
+
+private func aiChatCurrentContextIconFilePath(for snapshot: AiChatCurrentContextSnapshot) -> String? {
+    if snapshot.items.count == 1 {
+        let item = snapshot.items[0]
+        guard item.kind == .folder else { return nil }
+        return aiChatNormalizedDisplayValue(item.metadata["path"])
+    }
+
+    guard snapshot.items.isEmpty,
+          let reference = snapshot.references.first,
+          reference.metadata["route"] == "folder"
+    else { return nil }
+    return aiChatNormalizedDisplayValue(reference.metadata["path"])
+}
+
+private func aiChatCurrentContextIconAssetName(for snapshot: AiChatCurrentContextSnapshot) -> String? {
+    if snapshot.items.count == 1 {
+        return aiChatContextIconAssetName(for: snapshot.items[0])
+    }
+    guard snapshot.items.isEmpty,
+          snapshot.references.first?.metadata["route"] == "collection"
+    else { return nil }
+    return aiChatCollectionIconAssetName
+}
+
+private func aiChatContextIconAssetName(for item: AiChatContextItem) -> String? {
+    guard item.kind == .file,
+          let path = item.metadata["path"],
+          URL(fileURLWithPath: path).pathExtension.lowercased() == "voycoll"
+    else { return nil }
+    return aiChatCollectionIconAssetName
+}
+
+private func aiChatContextIconSystemName(for kind: AiChatContextItemKind) -> String? {
+    switch kind {
+    case .file:
+        return "doc"
+    case .folder:
+        return nil
+    case .attachment:
+        return "paperclip"
+    case .reference:
+        return "doc.text"
+    case .selection:
+        return "checklist"
+    case .note, .prompt:
+        return "text.alignleft"
+    case .other:
+        return nil
+    }
+}
+
+private func aiChatAttachmentIconSystemName(for source: AiChatAttachmentSource) -> String? {
+    switch source {
+    case .folder:
+        return nil
+    case .collectionDocument, .collectionFile:
+        return nil
+    case .file:
+        return "doc"
+    case .inlineAttachment:
+        return "paperclip"
+    case .otherReference:
+        return nil
+    }
+}
+
+private func aiChatAttachmentIconFilePath(for attachment: AiChatAttachmentDraft) -> String? {
+    aiChatAttachmentIconFilePath(source: attachment.source, sourceLocation: attachment.sourceLocation)
+}
+
+private func aiChatAttachmentIconFilePath(
+    source: AiChatAttachmentSource,
+    sourceLocation: AiChatAttachmentSourceLocation
+) -> String? {
+    guard source == .folder else { return nil }
+    return aiChatNormalizedDisplayValue(sourceLocation.filePath)
+}
+
+private func aiChatAttachmentIconAssetName(for source: AiChatAttachmentSource) -> String? {
+    switch source {
+    case .collectionDocument, .collectionFile:
+        return aiChatCollectionIconAssetName
+    case .file, .folder, .inlineAttachment, .otherReference:
+        return nil
+    }
+}
+
+private let aiChatCollectionIconAssetName = "voycollFileIcon"
+
+private func aiChatAttachmentDisplayTitle(
+    id: AiChatAttachmentID,
+    displayTitle: String?,
+    sourceLocation: AiChatAttachmentSourceLocation
+) -> String {
+    if let displayTitle = aiChatNormalizedDisplayValue(displayTitle) {
+        return displayTitle
+    }
+    if let filePath = aiChatNormalizedDisplayValue(sourceLocation.filePath) {
+        return URL(fileURLWithPath: filePath).lastPathComponent
+    }
+    if let fileURL = sourceLocation.fileURL?.lastPathComponent,
+       let normalized = aiChatNormalizedDisplayValue(fileURL)
+    {
+        return normalized
+    }
+    return id.rawValue
+}
+
+private func aiChatAttachmentStatusLabel(for status: AiChatAttachmentDraftStatus) -> String {
+    switch status {
+    case .pending:
+        "resolving"
+    case let .resolved(result):
+        aiChatAttachmentStatusLabel(for: result)
+    }
+}
+
+private func aiChatAttachmentStatusLabel(for result: AiChatAttachmentResolutionResult) -> String {
+    switch result {
+    case .resolvedText:
+        "normal"
+    case .resolvedReference:
+        "참조만 포함 · 내용 미확장"
+    case let .resolvedPartial(_, truncated, _):
+        truncated ? "truncated" : "partial"
+    case let .failure(reason, _):
+        "failed · \(reason.rawValue)"
+    }
+}
+
+private func aiChatNormalizedDisplayValue(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+        return nil
+    }
+    return value
 }
