@@ -10,6 +10,8 @@ pre-commit:
   parallel: true
   commands:
     swiftformat:
+      glob: "*.swift"
       run: swiftformat --lint {staged_files}
     swiftlint:
+      glob: "*.swift"
       run: swiftlint lint --strict {staged_files}
