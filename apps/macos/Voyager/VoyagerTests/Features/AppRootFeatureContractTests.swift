@@ -3,6 +3,7 @@ import ComposableArchitecture
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
+import VoyagerPagesSettings
 import XCTest
 
 @MainActor
@@ -50,8 +51,8 @@ final class AppRootFeatureContractTests: XCTestCase {
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.windowManager(.delegate(.openAISettings)))
-        await store.receive(.openAISettings)
-        await store.receive(.settings(.selectSection(.ai)))
+        await store.receive(\.openAISettings)
+        await store.receive(\.settings.selectSection, .ai)
     }
 
     func testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow() async {

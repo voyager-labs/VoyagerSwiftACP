@@ -1,5 +1,8 @@
 import ComposableArchitecture
+import Foundation
 @testable import Voyager
+import VoyagerEntitiesAi
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
