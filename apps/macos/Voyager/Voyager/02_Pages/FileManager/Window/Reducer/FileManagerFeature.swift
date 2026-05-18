@@ -58,6 +58,9 @@ struct FileManagerFeature {
             case let .content(.delegate(.openPathInNewTab(path))):
                 .send(.delegate(.openPathInNewTab(path)))
 
+            case let .content(.delegate(.currentContextChanged(snapshot))):
+                .send(.inspector(.aiChat(.currentContextChanged(snapshot))))
+
             case .content(.delegate(.openContextualAiChat)):
                 .send(.request(.openContextualAiChat))
 
@@ -66,6 +69,9 @@ struct FileManagerFeature {
 
             case .inspector(.delegate(.openAISettings)):
                 .send(.delegate(.openAISettings))
+
+            case .inspector(.delegate(.requestAttachmentPicker)):
+                .send(.delegate(.requestAttachmentPicker))
 
             case let .aiConnectionsFileUpdated(file):
                 forwardProviderConnectionsToOpenAiChat(file: file, state: state)
