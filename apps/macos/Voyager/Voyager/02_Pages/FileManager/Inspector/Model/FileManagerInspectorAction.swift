@@ -18,5 +18,6 @@ enum FileManagerInspectorAction: CasePathable, Sendable {
     @CasePathable
     enum Delegate: Sendable {
         case openAISettings
+        case requestAttachmentPicker
     }
 }

@@ -58,5 +58,6 @@ enum FileManagerWindowAction: CasePathable, Sendable {
         case openPathInNewWindow(String)
         case openPathInNewTab(String)
         case openAISettings
+        case requestAttachmentPicker
     }
 }

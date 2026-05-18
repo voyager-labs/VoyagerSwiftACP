@@ -64,6 +64,9 @@ struct FileManagerInspectorFeature {
             case .aiChat(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
 
+            case .aiChat(.delegate(.requestAttachmentPicker)):
+                return .send(.delegate(.requestAttachmentPicker))
+
             case .delegate, .aiChat:
                 return .none
             }
