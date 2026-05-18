@@ -1,8 +1,11 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import XCTest
@@ -68,7 +71,7 @@ final class ContentAiChatPresentationTests: XCTestCase {
             $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
             $0.collectionAlertClient = CollectionAlertClient.testValue
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = VoyagerEntitiesEntry.ThumbnailGeneratorClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = VoyagerEntitiesEntry.EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
@@ -78,6 +81,50 @@ final class ContentAiChatPresentationTests: XCTestCase {
         await store.receive { action in
             guard case .delegate(.openContextualAiChat) = action else { return false }
             return true
+        }
+    }
+
+    func testEntryViewLayoutSelectionChangedEmitsCurrentContextDelegate() async {
+        let firstEntry = makeEntry(name: "Draft.md", fullPath: "/tmp/voyager/Draft.md")
+        let secondEntry = makeEntry(name: "Notes.md", fullPath: "/tmp/voyager/Notes.md")
+        var initialState = makeState()
+        initialState.navigation.seedInitialFolderPath("/tmp/voyager")
+        initialState.entryViewLayout.entryOperations.items = [firstEntry, secondEntry]
+        initialState.entryViewLayout.selectedIds = [firstEntry.id]
+
+        var updatedState = initialState
+        updatedState.entryViewLayout.selectedIds = [secondEntry.id]
+        updatedState.entryViewLayout.lastSelectedId = secondEntry.id
+        updatedState.entryViewLayout.rangeAnchorId = secondEntry.id
+        updatedState.entryViewLayout.shouldScrollToSelection = false
+        let expectedSnapshot = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: updatedState)
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = VoyagerEntitiesEntry.EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+        }
+
+        await store.send(.entryViewLayout(.internal(.setSelectionState(
+            ids: [secondEntry.id],
+            lastSelectedId: secondEntry.id,
+            rangeAnchorId: secondEntry.id,
+            shouldScrollToSelection: false,
+        )))) {
+            $0.entryViewLayout.selectedIds = [secondEntry.id]
+            $0.entryViewLayout.lastSelectedId = secondEntry.id
+            $0.entryViewLayout.rangeAnchorId = secondEntry.id
+            $0.entryViewLayout.shouldScrollToSelection = false
+        }
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+        await store.receive { action in
+            guard case let .delegate(.currentContextChanged(snapshot)) = action else { return false }
+            return snapshot == expectedSnapshot
         }
     }
 
