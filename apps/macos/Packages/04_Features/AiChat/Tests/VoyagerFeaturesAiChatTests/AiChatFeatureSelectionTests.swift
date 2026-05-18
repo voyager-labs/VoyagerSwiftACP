@@ -5,8 +5,8 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// swiftlint:disable type_body_length
 @MainActor
-// swiftlint:disable:next type_body_length
 final class AiChatFeatureSelectionTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     func testModelSelectionIsNextRequestOnlyAndSameModelIsNoOp() async {
@@ -37,7 +37,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             selectedThinking: .effort(.medium),
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -66,14 +66,14 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 sessionStatus: .active,
                 currentContext: summary,
                 promptSummary: "Draft",
-                submittedAtMs: firstSubmitMs
+                submittedAtMs: firstSubmitMs,
             )
             let request = AiChatRequest(
                 context: context,
                 messages: [
                     AiChatMessage(role: .user, content: "Hello"),
-                    AiChatMessage(role: .user, content: "Draft")
-                ]
+                    AiChatMessage(role: .user, content: "Draft"),
+                ],
             )
             state.transcriptHistory = request.messages
             state.draftText = ""
@@ -87,9 +87,13 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 selectedModelHandle: catalogRows[0].handle,
                 selectedModelRow: catalogRows[0],
                 assistantReplacementIndex: nil,
-                // swiftlint:disable:next line_length
-                historyTruncation: AiChatHistoryTruncationMetadata(includedMessageCount: 2, excludedMessageCount: 0, budget: 24_000, truncationReason: nil),
-                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: firstSubmitMs)
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: 2,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: firstSubmitMs),
             ))
         }
 
@@ -156,11 +160,11 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 sessionStatus: .active,
                 currentContext: summary,
                 promptSummary: "Second request",
-                submittedAtMs: secondSubmitMs
+                submittedAtMs: secondSubmitMs,
             )
             let request = AiChatRequest(
                 context: context,
-                messages: [AiChatMessage(role: .user, content: "Second request")]
+                messages: [AiChatMessage(role: .user, content: "Second request")],
             )
             state.transcriptHistory = request.messages
             state.draftText = ""
@@ -174,9 +178,13 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 selectedModelHandle: catalogRows[1].handle,
                 selectedModelRow: catalogRows[1],
                 assistantReplacementIndex: nil,
-                // swiftlint:disable:next line_length
-                historyTruncation: AiChatHistoryTruncationMetadata(includedMessageCount: 1, excludedMessageCount: 0, budget: 24_000, truncationReason: nil),
-                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: secondSubmitMs)
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: 1,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: secondSubmitMs),
             ))
         }
 
@@ -196,7 +204,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             subtitle: "Codex CLI",
             sortOrder: 10,
             isDefault: true,
-            isRecommended: true
+            isRecommended: true,
         )
         let model = AiProviderModel(
             id: handle,
@@ -205,7 +213,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             displayName: "GPT-5 Codex",
             providerDisplayName: "ChatGPT Codex",
             thinkingCapability: .effort(values: [.medium], defaultValue: .medium),
-            unavailableReason: nil
+            unavailableReason: nil,
         )
         let state = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111121")),
@@ -216,7 +224,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             modelListState: .loaded([model]),
             selectedModelHandle: handle,
             executionPhase: .idle,
-            providerConnectionSnapshot: .known([.chatgptCodex])
+            providerConnectionSnapshot: .known([.chatgptCodex]),
         )
 
         XCTAssertTrue(state.canSubmit)
@@ -232,7 +240,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             subtitle: "Existing subtitle",
             sortOrder: 42,
             isDefault: true,
-            isRecommended: true
+            isRecommended: true,
         )
         let refreshedModel = AiProviderModel(
             id: handle,
@@ -241,7 +249,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             displayName: "GPT-5.4 Mini",
             providerDisplayName: "OpenAI",
             thinkingCapability: .unknown(reason: .init(message: "Metadata pending")),
-            unavailableReason: nil
+            unavailableReason: nil,
         )
 
         let rows = AiChatFeature.State.makeCatalogRows(for: [refreshedModel], preserving: [staleRow])
@@ -282,7 +290,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             selectedThinking: nil,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -319,14 +327,14 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 sessionStatus: .active,
                 currentContext: summary,
                 promptSummary: "Use high thinking",
-                submittedAtMs: firstSubmitMs
+                submittedAtMs: firstSubmitMs,
             )
             let request = AiChatRequest(
                 context: context,
                 messages: [
                     AiChatMessage(role: .user, content: "Hello"),
-                    AiChatMessage(role: .user, content: "Use high thinking")
-                ]
+                    AiChatMessage(role: .user, content: "Use high thinking"),
+                ],
             )
             state.transcriptHistory = request.messages
             state.draftText = ""
@@ -340,9 +348,13 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 selectedModelHandle: catalogRows[0].handle,
                 selectedModelRow: catalogRows[0],
                 assistantReplacementIndex: nil,
-                // swiftlint:disable:next line_length
-                historyTruncation: AiChatHistoryTruncationMetadata(includedMessageCount: 2, excludedMessageCount: 0, budget: 24_000, truncationReason: nil),
-                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: firstSubmitMs)
+                historyTruncation: AiChatHistoryTruncationMetadata(
+                    includedMessageCount: 2,
+                    excludedMessageCount: 0,
+                    budget: 24000,
+                    truncationReason: nil,
+                ),
+                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: firstSubmitMs),
             ))
         }
 
@@ -352,14 +364,27 @@ final class AiChatFeatureSelectionTests: XCTestCase {
 
     func testSelectedThinkingChangedDistinguishesProviderDefaultFromNoThinking() async {
         let catalogRows = makeCatalogRows()
-        let models = makeThinkingCapableProviderModels()
+        let baseModels = makeThinkingCapableProviderModels()
+        let models = [
+            AiProviderModel(
+                id: baseModels[0].id,
+                provider: baseModels[0].provider,
+                rawModelID: baseModels[0].rawModelID,
+                displayName: baseModels[0].displayName,
+                providerDisplayName: baseModels[0].providerDisplayName,
+                thinkingCapability: baseModels[0].thinkingCapability,
+                supportsThinkingNone: true,
+                unavailableReason: baseModels[0].unavailableReason,
+            ),
+            baseModels[1],
+        ]
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
             sessionStatus: .active,
             catalogRows: catalogRows,
             modelListState: .loaded(models),
             selectedModelHandle: catalogRows[0].handle,
-            selectedThinking: .effort(.medium)
+            selectedThinking: .effort(.medium),
         )) {
             AiChatFeature()
         }
@@ -383,7 +408,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             sessionID: AiChatSessionID(rawValue: UUID()),
             sessionStatus: .active,
             catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[0].handle
+            selectedModelHandle: catalogRows[0].handle,
         )) {
             AiChatFeature()
         }
@@ -410,13 +435,13 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
             lastUsedProviderId: .anthropic,
-            providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)]
+            providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
         )
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
             sessionStatus: .active,
             catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[1].handle
+            selectedModelHandle: catalogRows[1].handle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -441,12 +466,12 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         await store.receive(.modelListLoading(
             requestID: makeUUID("00000000-0000-0000-0000-000000000000"),
             provider: .anthropic,
-            credential: anthropicCredential
+            credential: anthropicCredential,
         ))
         await store.receive(.modelListLoaded(
             requestID: makeUUID("00000000-0000-0000-0000-000000000000"),
             provider: .anthropic,
-            models: [makeProviderModels()[1]]
+            models: [makeProviderModels()[1]],
         )) { state in
             state.catalogRows = [catalogRows[1]]
             state.modelListState = .loaded([makeProviderModels()[1]])
@@ -472,14 +497,14 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
             lastUsedProviderId: .anthropic,
-            providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)]
+            providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
         )
         let remainingModel = makeProviderModels()[1]
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
             sessionStatus: .active,
             catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[0].handle
+            selectedModelHandle: catalogRows[0].handle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -503,12 +528,12 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         await store.receive(.modelListLoading(
             requestID: makeUUID("00000000-0000-0000-0000-000000000000"),
             provider: .anthropic,
-            credential: anthropicCredential
+            credential: anthropicCredential,
         ))
         await store.receive(.modelListLoaded(
             requestID: makeUUID("00000000-0000-0000-0000-000000000000"),
             provider: .anthropic,
-            models: [remainingModel]
+            models: [remainingModel],
         )) { state in
             state.catalogRows = [catalogRows[1]]
             state.modelListState = .loaded([remainingModel])
@@ -549,7 +574,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: nil,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.sessionID = sessionID
             state.sessionStatus = .active
@@ -572,3 +597,5 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 }
+
+// swiftlint:enable type_body_length
