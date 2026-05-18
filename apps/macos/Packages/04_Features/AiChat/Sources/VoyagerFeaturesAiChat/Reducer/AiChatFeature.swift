@@ -18,6 +18,8 @@ public struct AiChatFeature {
     var aiChatExecutionClient
     @Dependency(\.aiChatSessionPersistenceClient)
     var aiChatSessionPersistenceClient
+    @Dependency(\.aiChatAttachmentResolverClient)
+    var aiChatAttachmentResolverClient
     @Dependency(\.aiProviderModelListClient)
     var aiProviderModelListClient
     @Dependency(\.aiConnectionsFileClient)
@@ -70,9 +72,9 @@ public struct AiChatFeature {
                         .send(.modelListLoading(
                             requestID: loadRequest.requestID,
                             provider: loadRequest.provider,
-                            credential: loadRequest.credential,
+                            credential: loadRequest.credential
                         ))
-                    }),
+                    })
                 )
 
             case let .modelListLoading(requestID, provider, credential):
@@ -130,9 +132,24 @@ public struct AiChatFeature {
                 clearRetryBlockingFailureIfNeeded(&state)
                 return .none
 
+            case let .currentContextChanged(snapshot):
+                state.currentContext = snapshot
+                return .none
+
             case let .draftTextChanged(text):
                 state.draftText = text
                 clearRetryBlockingFailureIfNeeded(&state)
+                return .none
+
+            case .attachmentPickerTapped:
+                return .send(.delegate(.requestAttachmentPicker))
+
+            case let .attachmentPickerSelection(urls):
+                addAttachmentDrafts(from: urls, state: &state)
+                return .none
+
+            case let .removeAddedAttachment(id):
+                removeAddedAttachment(id, state: &state)
                 return .none
 
             case .openSettingsTapped:
@@ -158,7 +175,7 @@ public struct AiChatFeature {
                 state.executionPhase = .cancelled(lock.recordingTerminal(
                     at: currentTimestampMs(),
                     failure: .cancelled,
-                    wasCancelled: true,
+                    wasCancelled: true
                 ))
                 return .cancel(id: CancelID.request)
 
@@ -174,7 +191,7 @@ public struct AiChatFeature {
                 state.executionPhase = .idle
                 return .merge(
                     .cancel(id: CancelID.request),
-                    .cancel(id: CancelID.restore),
+                    .cancel(id: CancelID.restore)
                 )
 
             case let .restoreOutcome(requestedSessionID, result, restoreFailure):
@@ -237,7 +254,7 @@ private extension AiChatFeature {
             state.unavailableSelectedModelHandle?.provider,
             state.lockedModelHandle?.provider,
             state.modelListProvider,
-            file.lastUsedProviderId
+            file.lastUsedProviderId,
         ].compactMap(\.self)
 
         let connectedRecords = file.providers.values.filter { $0.snapshot.lastKnownStatus == .connected }
@@ -247,12 +264,14 @@ private extension AiChatFeature {
         var orderedProviders: [AiProvider] = []
 
         for provider in preferredProviders
-            where connectedRecordsByProvider[provider] != nil && !orderedProviders.contains(provider) {
+            where connectedRecordsByProvider[provider] != nil && !orderedProviders.contains(provider)
+        {
             orderedProviders.append(provider)
         }
 
         for provider in connectedRecordsByProvider.keys.sorted(by: { $0.rawValue < $1.rawValue })
-            where !orderedProviders.contains(provider) {
+            where !orderedProviders.contains(provider)
+        {
             orderedProviders.append(provider)
         }
 
@@ -266,16 +285,16 @@ private extension AiChatFeature {
                 return AiChatModelListLoadRequest(
                     requestID: requestID,
                     provider: provider,
-                    credential: record.credential,
+                    credential: record.credential
                 )
-            },
+            }
         )
     }
 
     func loadModelList(
         requestID: UUID,
         provider: AiProvider,
-        credential: StoredCredentialPayload?,
+        credential: StoredCredentialPayload?
     ) -> Effect<Action> {
         .run { [aiProviderModelListClient] send in
             do {
@@ -288,7 +307,7 @@ private extension AiChatFeature {
                 await send(.modelListLoadFailed(
                     requestID: requestID,
                     provider: provider,
-                    failure: Self.makeModelListFailure(provider: provider, error: error),
+                    failure: Self.makeModelListFailure(provider: provider, error: error)
                 ))
             }
         }
@@ -302,7 +321,8 @@ private extension AiChatFeature {
         case let .loaded(models):
             state.catalogRows = State.makeCatalogRows(for: models, preserving: state.catalogRows)
             if let currentSelection = state.selectedModelHandle,
-               let resolvedSelection = state.normalizedSelectionHandle(currentSelection, in: models) {
+               let resolvedSelection = state.normalizedSelectionHandle(currentSelection, in: models)
+            {
                 state.selectedModelHandle = resolvedSelection
                 state.unavailableSelectedModelHandle = nil
             } else if let currentSelection = state.selectedModelHandle {
@@ -338,11 +358,13 @@ private extension AiChatFeature {
         let mergedModels = state.modelListProviderOrder.flatMap { provider in
             loadedModelsByProvider[provider] ?? []
         }
-        let firstFailure = state.modelListProviderOrder.first { provider in
-            state.modelListFailedProviders[provider] != nil
-        }.flatMap { provider in
-            state.modelListFailedProviders[provider]
-        }
+        let firstFailure = state.modelListProviderOrder
+            .first { provider in
+                state.modelListFailedProviders[provider] != nil
+            }
+            .flatMap { provider in
+                state.modelListFailedProviders[provider]
+            }
 
         let nextModelListState: AiChatModelListState = if !mergedModels.isEmpty {
             .loaded(mergedModels)
@@ -395,5 +417,65 @@ private extension AiChatFeature {
         }
 
         return AiModelListFailure(message: "Unable to load models for \(providerDisplayName).")
+    }
+}
+
+private extension AiChatFeature {
+    func addAttachmentDrafts(from urls: [URL], state: inout State) {
+        var knownPaths = Set(state.addedAttachments.compactMap(normalizedAttachmentPath(for:)))
+
+        for url in urls {
+            guard let draft = makeAttachmentDraft(from: url) else { continue }
+            let normalizedPath = normalizedAttachmentPath(for: draft) ?? draft.id.rawValue
+            guard knownPaths.insert(normalizedPath).inserted else { continue }
+            state.addedAttachments.append(draft)
+        }
+    }
+
+    func removeAddedAttachment(_ id: AiChatAttachmentID, state: inout State) {
+        state.addedAttachments.removeAll { $0.id == id }
+    }
+
+    func makeAttachmentDraft(from url: URL) -> AiChatAttachmentDraft? {
+        guard let normalizedURL = normalizedFileURL(from: url) else { return nil }
+        let normalizedPath = normalizedURL.path(percentEncoded: false)
+        guard !normalizedPath.isEmpty else { return nil }
+
+        return AiChatAttachmentDraft(
+            id: AiChatAttachmentID(rawValue: normalizedPath),
+            source: attachmentSource(for: normalizedURL),
+            displayTitle: normalizedURL.lastPathComponent.isEmpty ? nil : normalizedURL.lastPathComponent,
+            sourceLocation: AiChatAttachmentSourceLocation(fileURL: normalizedURL, filePath: normalizedPath)
+        )
+    }
+
+    func normalizedAttachmentPath(for draft: AiChatAttachmentDraft) -> String? {
+        if let fileURL = draft.sourceLocation.fileURL, let normalizedURL = normalizedFileURL(from: fileURL) {
+            let path = normalizedURL.path(percentEncoded: false)
+            if !path.isEmpty { return path }
+        }
+        if let filePath = draft.sourceLocation.filePath,
+           let normalizedURL = normalizedFileURL(from: URL(fileURLWithPath: filePath))
+        {
+            let path = normalizedURL.path(percentEncoded: false)
+            if !path.isEmpty { return path }
+        }
+        return nil
+    }
+
+    func normalizedFileURL(from url: URL) -> URL? {
+        guard url.isFileURL else { return nil }
+        return url.standardizedFileURL
+    }
+
+    func attachmentSource(for url: URL) -> AiChatAttachmentSource {
+        let pathExtension = url.pathExtension.lowercased()
+        if pathExtension == "voycoll" {
+            return .collectionDocument
+        }
+        if url.hasDirectoryPath {
+            return .folder
+        }
+        return .file
     }
 }

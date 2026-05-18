@@ -120,6 +120,7 @@ extension AiChatFeature {
         state.sessionID = setup.sessionID
         state.sessionStatus = setup.sessionStatus
         state.currentContext = setup.currentContext
+        state.lastRequestContext = nil
         state.transcriptHistory = setup.transcriptHistory
         state.draftText = setup.draftText
         state.streamingAssistantDraft = nil
@@ -182,6 +183,7 @@ extension AiChatFeature {
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
+        state.lastRequestContext = snapshot.lastRequestContext
         state.executionPhase = .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
@@ -194,6 +196,7 @@ extension AiChatFeature {
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
+        state.lastRequestContext = nil
         state.executionPhase = .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
@@ -214,6 +217,7 @@ extension AiChatFeature {
             transcriptHistory: snapshot.transcriptHistory,
             lastRequestID: snapshot.lastRequestID,
             lastRunID: snapshot.lastRunID,
+            lastRequestContext: snapshot.lastRequestContext,
             updatedAtMs: snapshot.updatedAtMs,
         )
     }

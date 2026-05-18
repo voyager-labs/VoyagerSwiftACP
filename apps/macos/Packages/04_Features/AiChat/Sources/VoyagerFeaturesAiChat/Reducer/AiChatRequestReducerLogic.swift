@@ -9,6 +9,7 @@ struct AiChatPreparedRequest {
     var messages: [AiChatMessage]
     var assistantReplacementIndex: Int?
     var historyTruncation: AiChatHistoryTruncationMetadata
+    var requestContextOverride: AiChatLockedRequestContextSnapshot? = nil
 }
 
 struct AiChatRequestLockInput {
@@ -111,6 +112,7 @@ extension AiChatFeature {
             messages: truncatedHistory.messages,
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: truncatedHistory.metadata,
+            requestContextOverride: lastSubmittedRequestContext(in: state)
         )
     }
 
@@ -119,6 +121,8 @@ extension AiChatFeature {
         let runID = AiChatRunID(rawValue: uuid())
         let submittedAtMs = currentTimestampMs()
         let selectedHandle = input.selectedModel.id
+        let lockedRequestContext = input.preparedRequest.requestContextOverride ??
+            makeLockedRequestContextSnapshot(state: state)
         let context = AiChatRequestContextSnapshot(
             sessionID: input.sessionID,
             requestID: requestID,
@@ -129,7 +133,8 @@ extension AiChatFeature {
             selectedModelRow: input.selectedRow,
             selectedThinking: state.selectedThinking,
             sessionStatus: .active,
-            currentContext: state.currentContext,
+            currentContext: lockedRequestContext.currentContext,
+            requestContext: lockedRequestContext,
             promptSummary: input.preparedRequest.prompt,
             submittedAtMs: submittedAtMs,
         )
@@ -221,6 +226,7 @@ extension AiChatFeature {
             transcriptHistory: state.transcriptHistory,
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
             updatedAtMs: updatedAtMs ?? lock.observabilitySummary.terminalAtMs ?? lock.context.submittedAtMs ?? 0,
         )
     }
@@ -241,6 +247,17 @@ extension AiChatFeature {
 
     private func lastUserPrompt(in transcriptHistory: [AiChatMessage]) -> String? {
         transcriptHistory.reversed().first(where: { $0.role == .user })?.content
+    }
+
+    private func lastSubmittedRequestContext(in state: State) -> AiChatLockedRequestContextSnapshot? {
+        state.executionPhase.lock?.context.requestContext ?? state.lastRequestContext
+    }
+
+    private func makeLockedRequestContextSnapshot(state: State) -> AiChatLockedRequestContextSnapshot {
+        AiChatLockedRequestContextSnapshot(
+            currentContext: state.currentContext,
+            addedAttachments: aiChatAttachmentResolverClient.resolve(state.addedAttachments)
+        )
     }
 
     func currentTimestampMs() -> Int64 {
