@@ -6,6 +6,11 @@ post-checkout:
     submodules:
       run: git submodule update --init --recursive
 
+post-merge:
+  commands:
+    submodules:
+      run: git submodule update --init --recursive
+
 pre-commit:
   parallel: true
   commands:
