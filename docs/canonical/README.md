@@ -18,6 +18,18 @@
 
 - 브랜딩 인덱스: `BRANDING/index.md`
 
+### BUSINESS (회사/사업계획)
+
+- 회사/팀: `BUSINESS/01_company_and_team.md`
+- 문제/고객 검증: `BUSINESS/02_problem_and_customer_validation.md`
+- 제품/솔루션: `BUSINESS/03_product_and_solution.md`
+- 시장/경쟁: `BUSINESS/04_market_and_competition.md`
+- BM/가격: `BUSINESS/05_business_model_and_pricing.md`
+- traction/GTM: `BUSINESS/06_traction_and_gtm.md`
+- 마일스톤/재무: `BUSINESS/07_milestones_and_financials.md`
+- 투자유치/자금 사용: `BUSINESS/08_fundraising_and_use_of_funds.md`
+- 법인/정관/등기: `BUSINESS/10_corporate_legal.md`
+
 ### GROWTH (채널/실험/운영)
 
 - 그로스 인덱스: `GROWTH/index.md`
@@ -26,6 +38,7 @@
 
 - `PRODUCT/` — 제품 기획/스펙/유즈케이스
 - `BRANDING/` — 포지셔닝, 보이스/톤, 메시징, 네이밍, 프레스킷 등
+- `BUSINESS/` — 회사, 사업계획, 투자유치, 법인/정관 메타데이터 등
 - `GROWTH/` — 그로스 헌법, 채널 플레이북, 실험 로그, 지표 정의 등
 - `.agents/` — 로컬 검증/조회 스크립트(스킬)
 

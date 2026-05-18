@@ -20,6 +20,7 @@ Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdow
 │   ├── 05_FEATURE_SPECS/          # 인터랙션 기반 기능 스펙 문서
 │   └── 06_USE_CASES/              # 유즈케이스(테이블 기반)
 ├── BRANDING/                      # 브랜딩/메시징(추가 예정)
+├── BUSINESS/                      # 회사/사업계획 정본
 ├── GROWTH/                        # 그로스/채널/실험(추가 예정)
 └── .agents/                       # 로컬 검증/조회 스크립트(스킬)
 ```
@@ -33,6 +34,7 @@ Voyager 문서를 GitHub SSOT로 운영하는 레포입니다. 문서는 Markdow
 | schema.json 포맷       | `.agents/skills/voyager-product-owner/author/feature-inventory/references/schema-json-guide.md` | `required` 중심, `ref`로 참조              |
 | FEATURE_SPEC 작성 규칙 | `.agents/skills/voyager-product-owner/author/feature-spec/references/feature-spec-guide.md`     | frontmatter/섹션/contract alignment        |
 | 제품 기획 진입점       | `PRODUCT/01_PRODUCT_THESIS/00_index.md`                                                         | TL;DR/Problem/Target/Pillar/Core flow      |
+| 사업 정본 확인         | `BUSINESS/01_company_and_team.md` ~ `BUSINESS/10_corporate_legal.md`                            | 목적에 맞는 주제별 파일 직접 확인          |
 | 페르소나 확인          | `PRODUCT/02_USER_PERSONA/00_index.md`                                                           | Alex/Eric/Mia                              |
 | IA(UI 구조/메뉴) 편집  | `PRODUCT/03_INFORMATION_ARCHITECTURE/index.md`                                                  | `WINDOW_STRUCTURE.structure_key`는 참조 키 |
 | 기능/인터랙션 편집     | `PRODUCT/04_FEATURE_INVENTORY/index.md`                                                         | FEATURES/INTERACTIONS 테이블               |
@@ -88,5 +90,6 @@ git subtree pull --prefix=docs/voyager voyager-docs main --squash
 
 ## NOTES
 
-- `BRANDING/`, `GROWTH/`는 도메인 분리를 위해 추가된 상위 폴더입니다(내용은 점진적으로 채웁니다).
+- `BRANDING/`, `BUSINESS/`, `GROWTH/`는 도메인 분리를 위해 추가된 상위 폴더입니다(내용은 점진적으로 채웁니다).
+- `BUSINESS/`는 피치덱, 사업계획서, 투자 제안, 회사 소개의 기준 claim을 주제별 파일로 관리합니다.
 - `.agents/`는 스킬/스크립트 묶음이라 파일 수가 많음. 목적 없이 대규모 변경하지 않기.
