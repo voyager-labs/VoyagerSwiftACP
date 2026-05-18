@@ -91,7 +91,7 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
                 )),
             ),
         )
-        initialState.aiChat.modelListState = .loaded(existingSetup.catalogRows)
+        initialState.aiChat.modelListState = .loaded([])
 
         let store = TestStore(initialState: initialState) {
             FileManagerInspectorFeature()
@@ -116,7 +116,37 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
         }
 
         await store.send(.aiChat(.delegate(.openAISettings)))
-        await store.receive(.delegate(.openAISettings))
+        await store.receive(\.delegate.openAISettings)
+    }
+
+    func testAiChatCurrentContextChangedUpdatesLiveContext() async {
+        let setup = makeSetup(
+            sessionID: makeSessionID("00000000-0000-0000-0000-000000000050"),
+            summary: "Documents · 1 selected",
+        )
+        let store = TestStore(initialState: FileManagerInspectorFeature.State(
+            inspectorVisible: true,
+            inspectorPaneExists: true,
+            activeMode: .chat,
+            aiChat: AiChatFeature.State(
+                sessionID: setup.sessionID,
+                sessionStatus: .active,
+                currentContext: setup.currentContext,
+                transcriptHistory: [],
+                draftText: "",
+                catalogRows: setup.catalogRows,
+                selectedModelHandle: setup.selectedModelHandle,
+                executionPhase: .idle,
+            ),
+        )) {
+            FileManagerInspectorFeature()
+        }
+
+        let updatedContext = AiChatCurrentContextSnapshot(summary: "Documents · 2 selected")
+
+        await store.send(.aiChat(.currentContextChanged(updatedContext))) {
+            $0.aiChat.currentContext = updatedContext
+        }
     }
 
     func testOpenChatWhileProcessingPreservesInFlightState() async {
