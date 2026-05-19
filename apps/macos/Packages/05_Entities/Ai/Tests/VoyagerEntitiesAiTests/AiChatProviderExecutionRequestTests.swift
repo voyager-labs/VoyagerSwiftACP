@@ -97,6 +97,13 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Resolved note body"))
         XCTAssertTrue(prompt.contains("Workspace [resolvedReference]"))
         XCTAssertTrue(prompt.contains("reference included; content not expanded."))
+        XCTAssertTrue(prompt.contains("Workspace.voycoll [resolvedReference]"))
+        XCTAssertTrue(prompt.contains("collection_items:"))
+        XCTAssertTrue(prompt.contains("- /tmp/project/README.md"))
+        XCTAssertTrue(prompt.contains("- /tmp/project/design.pdf"))
+        XCTAssertTrue(prompt.contains("collection_items_included: 2"))
+        XCTAssertTrue(prompt.contains("collection_item_count: 2"))
+        XCTAssertTrue(prompt.contains("collection references included; content not expanded."))
         XCTAssertTrue(prompt.contains("Broken.txt [readFailed]"))
         XCTAssertTrue(prompt.contains("not included: readFailed"))
         XCTAssertFalse(prompt.contains("live attachment should not leak"))
@@ -210,6 +217,22 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
                 sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Workspace"),
                 resolutionResult: .resolvedReference(
                     metadata: ["resolution": "reference_only"],
+                ),
+            ),
+            AiChatAttachmentSnapshot(
+                id: AiChatAttachmentID(rawValue: "collection"),
+                source: .collectionDocument,
+                displayTitle: "Workspace.voycoll",
+                kind: .attachment,
+                sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Workspace.voycoll"),
+                resolutionResult: .resolvedReference(
+                    metadata: [
+                        "collectionItemCount": "2",
+                        "collectionItemPaths": "/tmp/project/README.md\n/tmp/project/design.pdf",
+                        "collectionItemsIncluded": "2",
+                        "collectionItemsTruncated": "false",
+                        "collectionSnapshotStatus": "usable",
+                    ],
                 ),
             ),
             AiChatAttachmentSnapshot(

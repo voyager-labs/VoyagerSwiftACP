@@ -138,8 +138,12 @@ private enum SharedContextPromptBuilder {
             lines.append(contentsOf: codeBlockLines(text, indent: "    "))
             lines.append("    ```")
         case let .resolvedReference(metadata):
-            lines.append(contentsOf: metadataLines(mergedMetadata(attachment.metadata, metadata), indent: "    "))
-            lines.append("    note: reference included; content not expanded.")
+            let mergedMetadata = mergedMetadata(attachment.metadata, metadata)
+            lines.append(contentsOf: metadataLines(mergedMetadata, indent: "    "))
+            lines.append(contentsOf: collectionItemLines(from: mergedMetadata, indent: "    "))
+            lines.append(collectionItemPaths(from: mergedMetadata).isEmpty
+                ? "    note: reference included; content not expanded."
+                : "    note: collection references included; content not expanded.")
         case let .resolvedPartial(text, truncated, metadata):
             lines.append(contentsOf: metadataLines(mergedMetadata(attachment.metadata, metadata), indent: "    "))
             lines.append(truncated ? "    truncated: true" : "    truncated: false")
@@ -181,6 +185,7 @@ private enum SharedContextPromptBuilder {
 
     private static func metadataLines(_ metadata: [String: String], indent: String) -> [String] {
         let filtered = metadata
+            .filter { $0.key != "collectionItemPaths" }
             .mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.key.isEmpty && !$0.value.isEmpty }
             .sorted { lhs, rhs in lhs.key < rhs.key }
@@ -188,6 +193,33 @@ private enum SharedContextPromptBuilder {
         var lines = ["\(indent)metadata:"]
         lines.append(contentsOf: filtered.map { "\(indent)  \($0.key): \($0.value)" })
         return lines
+    }
+
+
+    private static func collectionItemLines(from metadata: [String: String], indent: String) -> [String] {
+        let paths = collectionItemPaths(from: metadata)
+        guard !paths.isEmpty else { return [] }
+
+        var lines = ["\(indent)collection_items:"]
+        lines.append(contentsOf: paths.map { "\(indent)  - \($0)" })
+        if metadata["collectionItemsTruncated"]?.lowercased() == "true" {
+            lines.append("\(indent)collection_items_truncated: true")
+        }
+        if let included = normalized(metadata["collectionItemsIncluded"]) {
+            lines.append("\(indent)collection_items_included: \(included)")
+        }
+        if let count = normalized(metadata["collectionItemCount"]) {
+            lines.append("\(indent)collection_item_count: \(count)")
+        }
+        return lines
+    }
+
+    private static func collectionItemPaths(from metadata: [String: String]) -> [String] {
+        guard let rawPaths = metadata["collectionItemPaths"] else { return [] }
+        return rawPaths
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     private static func mergedMetadata(_ lhs: [String: String], _ rhs: [String: String]) -> [String: String] {
