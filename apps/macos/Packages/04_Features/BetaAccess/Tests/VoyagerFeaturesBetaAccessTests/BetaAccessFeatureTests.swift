@@ -4,6 +4,8 @@ import XCTest
 
 @MainActor
 final class BetaAccessFeatureTests: XCTestCase {
+    // MARK: - ONB-002-show_access_unlock_status
+
     func testMissingInputDoesNotVerify() async {
         let store = TestStore(initialState: BetaAccessFeature.State()) {
             BetaAccessFeature()
@@ -18,6 +20,10 @@ final class BetaAccessFeatureTests: XCTestCase {
 
         await store.finish()
     }
+
+    // ONB-002-show_access_unlock_status
+    // ONB-002-apply_access_unlock_result
+    // MARK: - ONB-002-apply_access_unlock_result
 
     func testVerificationSuccess() async {
         let store = TestStore(initialState: BetaAccessFeature.State()) {

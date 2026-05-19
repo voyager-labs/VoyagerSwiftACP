@@ -4,7 +4,45 @@ import VoyagerFeaturesBetaAccess
 import XCTest
 
 @MainActor
-final class OnboardingFeatureTests: XCTestCase {
+final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
+    // MARK: - ONB-001-start_onboarding_session
+
+    /// Covers session reset when persisted version mismatches app version.
+    /// Secondary coverage: ONB-001-show_onboarding_step (onAppear triggers initial step display).
+    func testResetOnVersionMismatch() async {
+        let store = TestStore(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = OnboardingProgressClient(
+                load: { .resetRequired },
+                save: { _ in },
+                reset: {},
+            )
+        }
+
+        await store.send(.onAppear)
+
+        XCTAssertEqual(store.state.currentStep, .welcome)
+        XCTAssertTrue(store.state.welcome.isComplete)
+        XCTAssertFalse(store.state.betaAccess.isComplete)
+        XCTAssertFalse(store.state.permissions.isComplete)
+        XCTAssertFalse(store.state.complete.isComplete)
+
+        await store.finish()
+    }
+
+    // MARK: - ONB-001-show_onboarding_step
+
+    // (Tests to be added in future task)
+
+    // MARK: - ONB-001-update_onboarding_step_state
+
+    // (Tests to be added in future task)
+
+    // MARK: - ONB-001-advance_onboarding_step
+
+    /// Covers forward navigation through onboarding steps via nextTapped.
+    /// Also covers ONB-001-go_back_onboarding_step (backward navigation via backTapped).
     func testNextBackNavigation() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -12,7 +50,7 @@ final class OnboardingFeatureTests: XCTestCase {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .empty },
                 save: { _ in },
-                reset: {}
+                reset: {},
             )
         }
 
@@ -41,6 +79,12 @@ final class OnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - ONB-001-go_back_onboarding_step
+
+    // (Covered by testNextBackNavigation above — backTapped at end of test)
+
+    // MARK: - ONB-001-resume_onboarding_session
+
     func testResumeFromPersistedState() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .permissions,
@@ -48,8 +92,8 @@ final class OnboardingFeatureTests: XCTestCase {
                 welcomeComplete: true,
                 betaAccessComplete: true,
                 permissionsComplete: false,
-                completeComplete: false
-            )
+                completeComplete: false,
+            ),
         )
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
@@ -58,7 +102,7 @@ final class OnboardingFeatureTests: XCTestCase {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .success(snapshot) },
                 save: { _ in },
-                reset: {}
+                reset: {},
             )
         }
 
@@ -75,27 +119,7 @@ final class OnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    func testResetOnVersionMismatch() async {
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .resetRequired },
-                save: { _ in },
-                reset: {}
-            )
-        }
-
-        await store.send(.onAppear)
-
-        XCTAssertEqual(store.state.currentStep, .welcome)
-        XCTAssertTrue(store.state.welcome.isComplete)
-        XCTAssertFalse(store.state.betaAccess.isComplete)
-        XCTAssertFalse(store.state.permissions.isComplete)
-        XCTAssertFalse(store.state.complete.isComplete)
-
-        await store.finish()
-    }
+    // MARK: - ONB-001-complete_onboarding_session
 
     func testCompleteOpensWindowAndSavesProgress() async {
         let snapshotRecorder = SnapshotRecorder()
@@ -114,7 +138,7 @@ final class OnboardingFeatureTests: XCTestCase {
                         await snapshotRecorder.set(snapshot)
                     }
                 },
-                reset: {}
+                reset: {},
             )
             $0.onboardingWindowClient = OnboardingWindowClient(
                 isRequired: { false },
@@ -124,7 +148,7 @@ final class OnboardingFeatureTests: XCTestCase {
                 openMainWindow: { request in
                     await pathRecorder.append(request)
                     return true
-                }
+                },
             )
         }
 
@@ -146,6 +170,7 @@ final class OnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// Covers re-entry after session completion — resumed session skips to completed state.
     func testResumeSkipsBannerWhenCompleted() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .complete,
@@ -153,8 +178,8 @@ final class OnboardingFeatureTests: XCTestCase {
                 welcomeComplete: true,
                 betaAccessComplete: true,
                 permissionsComplete: true,
-                completeComplete: true
-            )
+                completeComplete: true,
+            ),
         )
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
@@ -163,7 +188,7 @@ final class OnboardingFeatureTests: XCTestCase {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .success(snapshot) },
                 save: { _ in },
-                reset: {}
+                reset: {},
             )
         }
 
@@ -178,25 +203,5 @@ final class OnboardingFeatureTests: XCTestCase {
         }
 
         await store.finish()
-    }
-}
-
-private actor SnapshotRecorder {
-    var value: OnboardingProgressSnapshot?
-
-    func set(_ snapshot: OnboardingProgressSnapshot) {
-        value = snapshot
-    }
-}
-
-private actor PathRecorder {
-    private var paths: [OnboardingOpenMainWindowRequest] = []
-
-    func append(_ request: OnboardingOpenMainWindowRequest) {
-        paths.append(request)
-    }
-
-    func snapshot() -> [OnboardingOpenMainWindowRequest] {
-        paths
     }
 }

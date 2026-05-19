@@ -5,30 +5,34 @@ import VoyagerEntitiesAppPreferences
 @testable import VoyagerPagesOnboarding
 import XCTest
 
-private let grantedHelperAccess = FolderAccessResult(
-    desktop: .granted,
-    documents: .granted,
-    downloads: .granted
-)
-
+// swiftlint:disable type_name
 @MainActor
-final class PermissionsFeatureTests: XCTestCase {
-    func testOnDisappearCancelsAppActiveObservation() async {
+final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
+    // swiftlint:enable type_name
+    // MARK: - ONB-003-show_onboarding_permission_status
+
+    /// Covers initial permission status display on appear.
+    func testOnAppearLoadsHelperFolderAccessStatus() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .unknown })
+            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
             $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { grantedHelperAccess },
-                requestAccess: { grantedHelperAccess }
+                checkAccess: { kGrantedHelperAccess },
+                requestAccess: { kGrantedHelperAccess },
             )
             $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
         }
 
         await store.send(.onAppear)
-        await store.receive(\.fullDiskAccessStatusResponse)
+        await store.receive(\.fullDiskAccessStatusResponse) { state in
+            state.fullDiskAccessStatus = .granted
+            state.isComplete = false
+        }
         await store.receive(\.helperFolderAccessStatusLoaded) { state in
-            state.helperFolderAccess = grantedHelperAccess
+            state.helperFolderAccess = kGrantedHelperAccess
+            state.helperFolderAccessError = nil
+            state.isComplete = true
         }
         await store.receive(\.launchAtLoginStateLoaded)
 
@@ -36,13 +40,67 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - ONB-003-refresh_onboarding_permission_status
+
+    /// Covers observation lifecycle cleanup on disappear.
+    func testOnDisappearCancelsAppActiveObservation() async {
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .unknown })
+            $0.helperFolderAccessClient = HelperFolderAccessClient(
+                checkAccess: { kGrantedHelperAccess },
+                requestAccess: { kGrantedHelperAccess },
+            )
+            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+        }
+
+        await store.send(.onAppear)
+        await store.receive(\.fullDiskAccessStatusResponse)
+        await store.receive(\.helperFolderAccessStatusLoaded) { state in
+            state.helperFolderAccess = kGrantedHelperAccess
+        }
+        await store.receive(\.launchAtLoginStateLoaded)
+
+        await store.send(.onDisappear)
+        await store.finish()
+    }
+
+    /// Covers status refresh on app activation.
+    func testAppDidBecomeActiveRefreshesHelperFolderAccessStatus() async {
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
+            $0.helperFolderAccessClient = HelperFolderAccessClient(
+                checkAccess: { kGrantedHelperAccess },
+                requestAccess: { kGrantedHelperAccess },
+            )
+        }
+
+        await store.send(.appDidBecomeActive)
+        await store.receive(\.fullDiskAccessStatusResponse) { state in
+            state.fullDiskAccessStatus = .granted
+            state.isComplete = false
+        }
+        await store.receive(\.helperFolderAccessStatusLoaded) { state in
+            state.helperFolderAccess = kGrantedHelperAccess
+            state.helperFolderAccessError = nil
+            state.isComplete = true
+        }
+        await store.finish()
+    }
+
+    // MARK: - ONB-003-request_onboarding_permission_access
+
+    /// Covers FDA gating behavior for Next button.
     func testFullDiskAccessGatesNext() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         }
 
-        await store.send(.helperFolderAccessStatusLoaded(grantedHelperAccess)) { state in
-            state.helperFolderAccess = grantedHelperAccess
+        await store.send(.helperFolderAccessStatusLoaded(kGrantedHelperAccess)) { state in
+            state.helperFolderAccess = kGrantedHelperAccess
             state.helperFolderAccessError = nil
             state.isComplete = false
         }
@@ -63,6 +121,7 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// Covers FDA denied state after user attempts to enable.
     func testFullDiskAccessDeniedAfterAttempt() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -82,6 +141,7 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// Covers error display when System Settings fails to open.
     func testOpenSystemSettingsFailureShowsError() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -95,6 +155,7 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// Covers Launch at Login toggle success (non-gating permission).
     func testLaunchAtLoginToggleSuccess() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -113,6 +174,7 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// Covers Launch at Login toggle failure (non-gating permission).
     func testLaunchAtLoginToggleFailure() async {
         struct TestError: Error {}
 
@@ -138,6 +200,7 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// Covers that Launch at Login toggle does not gate isComplete.
     func testLaunchAtLoginDoesNotGateCompletion() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -145,8 +208,8 @@ final class PermissionsFeatureTests: XCTestCase {
             $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
         }
 
-        await store.send(.helperFolderAccessStatusLoaded(grantedHelperAccess)) { state in
-            state.helperFolderAccess = grantedHelperAccess
+        await store.send(.helperFolderAccessStatusLoaded(kGrantedHelperAccess)) { state in
+            state.helperFolderAccess = kGrantedHelperAccess
             state.helperFolderAccessError = nil
             state.isComplete = false
         }
@@ -169,58 +232,6 @@ final class PermissionsFeatureTests: XCTestCase {
         await store.receive(\.launchAtLoginUpdateSucceeded)
         XCTAssertTrue(store.state.isComplete)
 
-        await store.finish()
-    }
-
-    func testOnAppearLoadsHelperFolderAccessStatus() async {
-        let store = TestStore(initialState: PermissionsFeature.State()) {
-            PermissionsFeature()
-        } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { grantedHelperAccess },
-                requestAccess: { grantedHelperAccess }
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
-        }
-
-        await store.send(.onAppear)
-        await store.receive(\.fullDiskAccessStatusResponse) { state in
-            state.fullDiskAccessStatus = .granted
-            state.isComplete = false
-        }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
-            state.helperFolderAccess = grantedHelperAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = true
-        }
-        await store.receive(\.launchAtLoginStateLoaded)
-
-        await store.send(.onDisappear)
-        await store.finish()
-    }
-
-    func testAppDidBecomeActiveRefreshesHelperFolderAccessStatus() async {
-        let store = TestStore(initialState: PermissionsFeature.State()) {
-            PermissionsFeature()
-        } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { grantedHelperAccess },
-                requestAccess: { grantedHelperAccess }
-            )
-        }
-
-        await store.send(.appDidBecomeActive)
-        await store.receive(\.fullDiskAccessStatusResponse) { state in
-            state.fullDiskAccessStatus = .granted
-            state.isComplete = false
-        }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
-            state.helperFolderAccess = grantedHelperAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = true
-        }
         await store.finish()
     }
 }

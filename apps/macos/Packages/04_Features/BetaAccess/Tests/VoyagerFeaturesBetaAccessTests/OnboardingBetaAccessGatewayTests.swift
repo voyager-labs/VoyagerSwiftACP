@@ -4,6 +4,8 @@ import XCTest
 
 @MainActor
 final class OnboardingBetaAccessFeatureTests: XCTestCase {
+    // MARK: - ONB-002-start_access_unlock_recovery
+
     func testInvalidGatewayURLMapsToInvalidGatewayReason() async {
         let store = TestStore(initialState: BetaAccessFeature.State()) {
             BetaAccessFeature()
