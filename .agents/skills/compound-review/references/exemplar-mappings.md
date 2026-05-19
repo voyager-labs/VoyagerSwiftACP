@@ -22,12 +22,12 @@ Every compound-review output maps to exactly one of these governance states:
 
 ### Source artifacts
 
-| Artifact                                                                          | Role                   |
-| --------------------------------------------------------------------------------- | ---------------------- |
-| `.sisyphus/compound/voy-225-window-shell-split/2026-04-16-133347/learning.md`     | Learning entry (run 1) |
-| `.sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md` | Learning entry (run 2) |
-| `.sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-133347/learning.md` | Learning entry (run 3) |
-| `.sisyphus/drafts/voy-225-window-shell-split/2026-04-16-133347/skill-draft.md`    | Draft proposal         |
+| Artifact                                                                         | Role                   |
+| -------------------------------------------------------------------------------- | ---------------------- |
+| `.sisyphus/reviews/voy-225-window-shell-split/2026-04-16-133347/learning.md`     | Learning entry (run 1) |
+| `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md` | Learning entry (run 2) |
+| `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-133347/learning.md` | Learning entry (run 3) |
+| `.sisyphus/reviews/voy-225-window-shell-split/2026-04-16-133347/skill-draft.md`  | Draft proposal         |
 
 ### Learning entry identity
 
@@ -80,10 +80,10 @@ Threshold ≥5: **PASS**
 
 ### Resulting governance state: **Adopted**
 
-- **Adopted artifact:** `.agents/rules/00-core/05-scope-diff-isolation.md`
-- **Placement rationale:** `00-core/` because scope-diff isolation applies across all domains, not just macOS or backend.
+- **Adopted artifact:** `.agents/rules/99-agent/04-scope-diff-isolation.md`
+- **Placement rationale:** Originally `00-core/`, later reclassified to `99-agent/` as harness-specific infrastructure. Scope-diff isolation supports harness artifact validation across all domains.
 - **Status:** Committed to `.agents/`. Enforced as project governance.
-- **Source evidence pointer:** `Source: .sisyphus/compound/voy-225-window-shell-split/2026-04-16-133347/learning.md`, `Source: .sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`
+- **Source evidence pointer:** `Source: .sisyphus/reviews/voy-225-window-shell-split/2026-04-16-133347/learning.md`, `Source: .sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`
 
 ---
 
@@ -91,11 +91,11 @@ Threshold ≥5: **PASS**
 
 ### Source artifacts
 
-| Artifact                                                                           | Role                   |
-| ---------------------------------------------------------------------------------- | ---------------------- |
-| `.sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`  | Learning entry (run 1) |
-| `.sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-133347/learning.md`  | Learning entry (run 2) |
-| `.sisyphus/drafts/voy-226-top-orchestrator-split/2026-04-16-133347/skill-draft.md` | Draft proposal         |
+| Artifact                                                                            | Role                   |
+| ----------------------------------------------------------------------------------- | ---------------------- |
+| `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`    | Learning entry (run 1) |
+| `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-133347/learning.md`    | Learning entry (run 2) |
+| `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-133347/skill-draft.md` | Draft proposal         |
 
 ### Learning entry identity
 
@@ -148,7 +148,7 @@ Threshold ≥5: **PASS**
 - **Adopted artifact:** `.agents/rules/30-macos/04-xcode-test-plan-visibility.md`
 - **Placement rationale:** `30-macos/` because this is an Xcode/SPM-specific behavior scoped to macOS development. The rule's Must not section explicitly forbids generalizing to `00-core`.
 - **Status:** Committed to `.agents/`. Enforced as project governance.
-- **Source evidence pointer:** `Source: .sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`
+- **Source evidence pointer:** `Source: .sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`
 
 ---
 
@@ -198,13 +198,13 @@ Per `evidence-trust-taxonomy.md`:
 
 ### Source artifacts
 
-| Artifact                                                                           | Role                                                |
-| ---------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `.sisyphus/compound/voy-225-window-shell-split/2026-04-16-133347/learning.md`      | Learning (window-shell decomposition, test-pattern) |
-| `.sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-133347/learning.md`  | Learning (reducer-pattern)                          |
-| `.sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`  | Learning (reducer-pattern, earlier run)             |
-| `.sisyphus/drafts/voy-225-window-shell-split/2026-04-16-133347/skill-draft.md`     | Draft (scope-diff only)                             |
-| `.sisyphus/drafts/voy-226-top-orchestrator-split/2026-04-16-133347/skill-draft.md` | Draft (test-plan only)                              |
+| Artifact                                                                            | Role                                                |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `.sisyphus/reviews/voy-225-window-shell-split/2026-04-16-133347/learning.md`        | Learning (window-shell decomposition, test-pattern) |
+| `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-133347/learning.md`    | Learning (reducer-pattern)                          |
+| `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`    | Learning (reducer-pattern, earlier run)             |
+| `.sisyphus/reviews/voy-225-window-shell-split/2026-04-16-133347/skill-draft.md`     | Draft (scope-diff only)                             |
+| `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-133347/skill-draft.md` | Draft (test-plan only)                              |
 
 ### Learning entries under consideration
 
@@ -277,11 +277,11 @@ This entry meets the numerical threshold. However:
 ### Resulting governance state: **Local-only — stays in `.sisyphus/`**
 
 - **Artifact locations:**
-    - `.sisyphus/compound/voy-225-window-shell-split/2026-04-16-133347/learning.md`
-    - `.sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-133347/learning.md`
-    - `.sisyphus/compound/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`
-    - `.sisyphus/drafts/voy-225-window-shell-split/2026-04-16-133347/skill-draft.md`
-    - `.sisyphus/drafts/voy-226-top-orchestrator-split/2026-04-16-133347/skill-draft.md`
+    - `.sisyphus/reviews/voy-225-window-shell-split/2026-04-16-133347/learning.md`
+    - `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-133347/learning.md`
+    - `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-052652/learning.md`
+    - `.sisyphus/reviews/voy-225-window-shell-split/2026-04-16-133347/skill-draft.md`
+    - `.sisyphus/reviews/voy-226-top-orchestrator-split/2026-04-16-133347/skill-draft.md`
 - **Governance action:** None. These artifacts remain available as contextual reference in `.sisyphus/` but are not promoted to `.agents/`.
 - **Rationale:** Insufficient cross-plan recurrence (entries 1, 3) or context-specific pattern that should await broader confirmation (entry 2).
 - **Not a governance failure:** Local-only is the correct classification for single-run or narrow-scope patterns. Premature promotion would create brittle rules.
@@ -292,12 +292,12 @@ This entry meets the numerical threshold. However:
 
 | Exemplar                                | Trust class      | Recurrence | Score | Promotion state  | Governance location                                       |
 | --------------------------------------- | ---------------- | ---------- | ----- | ---------------- | --------------------------------------------------------- |
-| Scope-Diff Isolation                    | auth(2) + ref(1) | 3          | 7     | **Adopted**      | `.agents/rules/00-core/05-scope-diff-isolation.md`        |
+| Scope-Diff Isolation                    | auth(2) + ref(1) | 3          | 7     | **Adopted**      | `.agents/rules/99-agent/04-scope-diff-isolation.md`       |
 | Xcode Test-Plan Visibility              | authoritative    | 2          | 6     | **Adopted**      | `.agents/rules/30-macos/04-xcode-test-plan-visibility.md` |
 | Stale-Lineage Failure (voy-223)         | invalid          | N/A        | N/A   | **Blocked**      | `.sisyphus/reviews/voy-223-*/FAILURE.md`                  |
-| Window-Shell Decomposition              | authoritative    | 1          | 3     | **Local-only**   | `.sisyphus/compound/voy-225-*/learning.md`                |
-| Reducer-Pattern (Composition Root)      | authoritative    | 2          | 5     | **Local-only\*** | `.sisyphus/compound/voy-226-*/learning.md`                |
-| Test-Pattern (Expected-Failure Markers) | authoritative    | 1          | 3     | **Local-only**   | `.sisyphus/compound/voy-225-*/learning.md`                |
+| Window-Shell Decomposition              | authoritative    | 1          | 3     | **Local-only**   | `.sisyphus/reviews/voy-225-*/learning.md`                 |
+| Reducer-Pattern (Composition Root)      | authoritative    | 2          | 5     | **Local-only\*** | `.sisyphus/reviews/voy-226-*/learning.md`                 |
+| Test-Pattern (Expected-Failure Markers) | authoritative    | 1          | 3     | **Local-only**   | `.sisyphus/reviews/voy-225-*/learning.md`                 |
 
 \* Reducer-pattern meets threshold but is same-plan only. Operator discretion applies.
 

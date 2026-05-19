@@ -35,7 +35,7 @@ Findings are **immutable per run**: once written, they are not modified. A new r
             "category": "regression-risk",
             "title": "acceptDrop success branches preserve drop highlight",
             "description": "All return-true branches in acceptDrop now defer highlight clearing. Verified in f3 manual QA.",
-            "source_artifacts": [".sisyphus/evidence/f3-manual-qa.md", ".sisyphus/evidence/f1-plan-compliance.md"],
+            "source_artifacts": [".sisyphus/evidence/{plan_slug}/f3-manual-qa.md", ".sisyphus/evidence/{plan_slug}/f1-plan-compliance.md"],
             "dedupe_key": "grid-drop-highlight-lifecycle-deferred-copy",
             "verdict": "APPROVE"
         },
@@ -47,7 +47,7 @@ Findings are **immutable per run**: once written, they are not modified. A new r
             "category": "maintainability",
             "title": "Redundant saveDragWithOption read-write in reducer",
             "description": "saveDragPaths handler reads and writes back the same value. Harmless but unnecessary.",
-            "source_artifacts": [".sisyphus/evidence/f2-code-quality.md"],
+            "source_artifacts": [".sisyphus/evidence/{plan_slug}/f2-code-quality.md"],
             "dedupe_key": "reducer-redundant-drag-option-persist",
             "verdict": "APPROVE"
         },
@@ -59,7 +59,7 @@ Findings are **immutable per run**: once written, they are not modified. A new r
             "category": "drag-option-lifecycle",
             "title": "Option flag not reset for deferred copy operations",
             "description": "When endedAt returns early for .copy, saveDragWithOption(false) is never called. Harmless but worth noting.",
-            "source_artifacts": [".sisyphus/evidence/f2-code-quality.md"],
+            "source_artifacts": [".sisyphus/evidence/{plan_slug}/f2-code-quality.md"],
             "dedupe_key": "drag-option-flag-stale-after-copy",
             "verdict": "APPROVE"
         }
@@ -163,7 +163,7 @@ Two findings with the same `dedupe_key` are considered duplicates.
     "category": "regression-risk",
     "title": "acceptDrop success branches preserve drop highlight",
     "description": "All return-true branches in acceptDrop now defer highlight clearing. Verified in f3 manual QA.",
-    "source_artifacts": [".sisyphus/evidence/f3-manual-qa.md", ".sisyphus/evidence/f1-plan-compliance.md"],
+    "source_artifacts": [".sisyphus/evidence/{plan_slug}/f3-manual-qa.md", ".sisyphus/evidence/{plan_slug}/f1-plan-compliance.md"],
     "dedupe_key": "grid-drop-highlight-lifecycle-deferred-copy",
     "verdict": "APPROVE",
     "collapsed_from": ["FIND-007", "FIND-012"]
@@ -188,7 +188,7 @@ When the workflow degrades gracefully due to missing optional inputs, each findi
     "source_artifacts": [],
     "dedupe_key": "example-dedupe-key",
     "verdict": "CONDITIONAL",
-    "missing_sources": [".sisyphus/evidence/f2-code-quality.md"]
+    "missing_sources": [".sisyphus/evidence/{plan_slug}/f2-code-quality.md"]
 }
 ```
 
@@ -216,10 +216,10 @@ The `missing_sources` field is **optional**. It is only present when the finding
             "category": "state-leak",
             "title": "Drop highlight persists after failed copy operation",
             "description": "When a copy operation fails silently, the drop highlight is not cleared. Found in f2 analysis.",
-            "source_artifacts": [".sisyphus/evidence/f2-code-quality.md"],
+            "source_artifacts": [".sisyphus/evidence/{plan_slug}/f2-code-quality.md"],
             "dedupe_key": "drop-highlight-persists-after-failed-copy",
             "verdict": "REJECT",
-            "missing_sources": [".sisyphus/evidence/f3-manual-qa.md"]
+            "missing_sources": [".sisyphus/evidence/{plan_slug}/f3-manual-qa.md"]
         },
         {
             "id": "FIND-002",
@@ -229,7 +229,7 @@ The `missing_sources` field is **optional**. It is only present when the finding
             "category": "drag-option-lifecycle",
             "title": "Option drag flag not reset on cancelled session",
             "description": "Harmless: flag is reset on next willBeginAt. Informational only.",
-            "source_artifacts": [".sisyphus/evidence/f2-code-quality.md"],
+            "source_artifacts": [".sisyphus/evidence/{plan_slug}/f2-code-quality.md"],
             "dedupe_key": "drag-option-flag-stale-after-cancel",
             "verdict": "APPROVE"
         }

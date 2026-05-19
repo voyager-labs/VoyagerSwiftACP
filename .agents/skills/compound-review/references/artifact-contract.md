@@ -1,14 +1,14 @@
 # Artifact Contract — Review → Compound Workflow
 
-**Version:** 1.0  
-**Scope:** Local-repo-only, manual-trigger, post-Work Review → Compound synthesis  
+**Version:** 2.0
+**Scope:** Local-repo-only, manual-trigger, post-Work Review → Compound synthesis
 **Location:** `.agents/skills/compound-review/references/artifact-contract.md`
 
 ---
 
 ## Overview
 
-This contract defines the authoritative input set, output set, path structure, lineage fields, and failure rules for the Review → Compound workflow. It is the source of truth for all artifact families consumed or emitted by this workflow. No cross-repo abstractions, databases, or undocumented external state apply in v1.
+This contract defines the authoritative input set, output set, path structure, lineage fields, and failure rules for the Review → Compound workflow. It is the source of truth for all artifact families consumed or emitted by this workflow. No cross-repo abstractions, databases, or undocumented external state apply in v2.
 
 The workflow is **post-Work only** and **manual-trigger only**. It reads completed `.sisyphus` artifacts, emits structured findings, compound learnings, and skill/harness draft proposals. It never re-plans, mutates product code, or triggers automatic Work loops.
 
@@ -18,24 +18,24 @@ The workflow is **post-Work only** and **manual-trigger only**. It reads complet
 
 ### Required Inputs
 
-| Family             | Path Pattern                           | Description                                                                                                                                                      |
-| ------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Completed Plan** | `.sisyphus/plans/{plan-name}.md`       | A single plan that has reached completion (all TODOs checked or explicitly closed). The plan slug is the case identifier.                                        |
-| **Task Evidence**  | `.sisyphus/evidence/task-{N}-{slug}.*` | Per-task evidence logs (`.md`, `.txt`, `.log`, `.json`) produced during plan execution. Naming: `task-{N}-{slug}.{ext}`. At least one evidence file is required. |
+| Family             | Path Pattern                                  | Description                                                                                                                                                                                                            |
+| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Completed Plan** | `.sisyphus/plans/{plan-name}.md`              | A single plan that has reached completion (all TODOs checked or explicitly closed). The plan slug is the case identifier.                                                                                              |
+| **Task Evidence**  | `.sisyphus/evidence/{plan_slug}/task-{N}-*.*` | Per-task evidence logs (`.md`, `.txt`, `.log`, `.json`) produced during plan execution. Evidence is scoped by plan directory; task filenames only need to identify task/order. At least one evidence file is required. |
 
 ### Optional Inputs
 
-| Family                  | Path Pattern                                                                                                                                                         | Condition                                                                                                                                                                                                                                                                 |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Final Review Facets** | `.sisyphus/evidence/f1-plan-compliance.md`, `.sisyphus/evidence/f2-code-quality.md`, `.sisyphus/evidence/f3-manual-qa.md`, `.sisyphus/evidence/f4-scope-fidelity.md` | `f1`..`f4` are the final review bundle. They are optional in v1. The filenames are stable and slug-independent: `f1-plan-compliance.md`, `f2-code-quality.md`, `f3-manual-qa.md`, `f4-scope-fidelity.md`. Presence is detected by exact filename match, not by plan slug. |
-| **Notepad Files**       | `.sisyphus/notepads/{plan-name}/learnings.md`                                                                                                                        | Optional but strongly recommended. If present, the entire notepad family is consumed: `learnings.md`, `decisions.md`, `issues.md`, `problems.md`.                                                                                                                         |
-| **Notepad Files**       | `.sisyphus/notepads/{plan-name}/decisions.md`                                                                                                                        | Optional. Consumed as part of the notepad family.                                                                                                                                                                                                                         |
-| **Notepad Files**       | `.sisyphus/notepads/{plan-name}/issues.md`                                                                                                                           | Optional. Consumed as part of the notepad family.                                                                                                                                                                                                                         |
-| **Notepad Files**       | `.sisyphus/notepads/{plan-name}/problems.md`                                                                                                                         | Optional. Consumed as part of the notepad family. Records unresolved issues and technical debt.                                                                                                                                                                           |
+| Family                  | Path Pattern                                                                                                                                                                                                         | Condition                                                                                                                                                                                                                                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Final Review Facets** | `.sisyphus/evidence/{plan_slug}/f1-plan-compliance.md`, `.sisyphus/evidence/{plan_slug}/f2-code-quality.md`, `.sisyphus/evidence/{plan_slug}/f3-manual-qa.md`, `.sisyphus/evidence/{plan_slug}/f4-scope-fidelity.md` | `f1`..`f4` are the final review bundle. They are optional in v2. The filenames are stable within each plan evidence directory: `f1-plan-compliance.md`, `f2-code-quality.md`, `f3-manual-qa.md`, `f4-scope-fidelity.md`. Presence is detected by exact filename match inside `.sisyphus/evidence/{plan_slug}/`. |
+| **Notepad Files**       | `.sisyphus/notepads/{plan-name}/learnings.md`                                                                                                                                                                        | Optional but strongly recommended. If present, the entire notepad family is consumed: `learnings.md`, `decisions.md`, `issues.md`, `problems.md`.                                                                                                                                                               |
+| **Notepad Files**       | `.sisyphus/notepads/{plan-name}/decisions.md`                                                                                                                                                                        | Optional. Consumed as part of the notepad family.                                                                                                                                                                                                                                                               |
+| **Notepad Files**       | `.sisyphus/notepads/{plan-name}/issues.md`                                                                                                                                                                           | Optional. Consumed as part of the notepad family.                                                                                                                                                                                                                                                               |
+| **Notepad Files**       | `.sisyphus/notepads/{plan-name}/problems.md`                                                                                                                                                                         | Optional. Consumed as part of the notepad family. Records unresolved issues and technical debt.                                                                                                                                                                                                                 |
 
 ### Facet File Requirements
 
-Final-wave reviewers (F1–F4) MUST persist their outputs as stable facet files in `.sisyphus/evidence/`. The filenames are fixed and slug-independent:
+Final-wave reviewers (F1–F4) MUST persist their outputs as stable facet files in `.sisyphus/evidence/{plan_slug}/`. The filenames are fixed and slug-independent:
 
 | Facet | Filename                | Purpose               |
 | ----- | ----------------------- | --------------------- |
@@ -73,7 +73,7 @@ Each facet file MUST contain at minimum:
 
 ## Evidence
 
-- `.sisyphus/evidence/{file}`
+- `.sisyphus/evidence/{plan_slug}/{file}`
 
 ## Notes
 
@@ -90,7 +90,7 @@ F4 reviewers MUST reference a baseline commit captured before the plan execution
 | Diff scope           | `baseline..end` (task-bounded). NOT full branch diff.                                         |
 | Pre-existing changes | Not in scope for rejection. Note in findings, but do not flag as scope violation.             |
 | Missing baseline     | If no baseline was captured, F4 MUST document this gap and set scope confidence to `limited`. |
-| Reference rule       | `.agents/rules/00-core/05-scope-diff-isolation.md`                                            |
+| Reference rule       | `.agents/rules/99-agent/04-scope-diff-isolation.md`                                           |
 
 **Degradation rule:** Without stable facet files, compound-review must degrade gracefully (set `facets_missing` in findings). Facet files enable compound-review to parse review results without inferring from scattered evidence.
 
@@ -99,7 +99,7 @@ F4 reviewers MUST reference a baseline commit captured before the plan execution
 | Field                   | Type     | Description                                                                               |
 | ----------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | `plan_slug`             | string   | Identifies the case. Extracted from the plan filename (`{plan-name}` without `.md`).      |
-| `run_id`                | string   | A unique run identifier. In v1, use the execution timestamp string (`YYYY-MM-DD-HHMMSS`). |
+| `run_id`                | string   | A unique run identifier. In v2, use the execution timestamp string (`YYYY-MM-DD-HHMMSS`). |
 | `evidence_files`        | string[] | List of evidence file paths actually found, sorted alphabetically.                        |
 | `facets_present`        | string[] | List of f1-f4 facets actually present (`f1`, `f2`, etc.).                                 |
 | `notepad_dir`           | string   | Path to the matching notepad directory (`.sisyphus/notepads/{plan_slug}/`).               |
@@ -117,10 +117,10 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
 .sisyphus/reviews/{plan_slug}/{run_id}/       ← run root
 .sisyphus/reviews/{plan_slug}/{run_id}/manifest.json
 .sisyphus/reviews/{plan_slug}/{run_id}/findings.json
-.sisyphus/compound/{plan_slug}/{run_id}/     ← compound outputs root
-.sisyphus/compound/{plan_slug}/{run_id}/learning.md
-.sisyphus/drafts/{plan_slug}/{run_id}/       ← skill/harness draft root
-.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md
+.sisyphus/reviews/{plan_slug}/{run_id}/learning.md
+.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md
+.sisyphus/reviews/{plan_slug}/{run_id}/run-summary.md
+.sisyphus/reviews/{plan_slug}/{run_id}/FAILURE.md       ← failed runs only
 ```
 
 ### Output 1: Run Manifest
@@ -131,7 +131,7 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
 
 ```json
 {
-    "schema_version": "1.0",
+    "schema_version": "2.0",
     "run_id": "2026-04-10-181500",
     "plan_slug": "voy-208-grid-drop-interaction-stabilization",
     "run_at": "2026-04-10T18:15:00Z",
@@ -140,12 +140,12 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
             "path": ".sisyphus/plans/voy-208-grid-drop-interaction-stabilization.md",
             "plan_slug": "voy-208-grid-drop-interaction-stabilization"
         },
-        "evidence_files": [".sisyphus/evidence/task-1-grid-drop-contract.txt", ".sisyphus/evidence/task-5-grid-drop-evidence-index.txt"],
+        "evidence_files": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/task-1-grid-drop-contract.txt", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/task-5-grid-drop-evidence-index.txt"],
         "facets": {
-            "f1": ".sisyphus/evidence/f1-plan-compliance.md",
-            "f2": ".sisyphus/evidence/f2-code-quality.md",
-            "f3": ".sisyphus/evidence/f3-manual-qa.md",
-            "f4": ".sisyphus/evidence/f4-scope-fidelity.md"
+            "f1": ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f1-plan-compliance.md",
+            "f2": ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f2-code-quality.md",
+            "f3": ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f3-manual-qa.md",
+            "f4": ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f4-scope-fidelity.md"
         },
         "notepads": {
             "learnings": ".sisyphus/notepads/grid-drop-folder-thumbnail-ux-naturalization/learnings.md",
@@ -155,14 +155,20 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
     "outputs": {
         "manifest": ".sisyphus/reviews/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/manifest.json",
         "findings": ".sisyphus/reviews/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/findings.json",
-        "learning": ".sisyphus/compound/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/learning.md",
-        "skill_draft": ".sisyphus/drafts/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/skill-draft.md"
+        "learning": ".sisyphus/reviews/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/learning.md",
+        "skill_draft": ".sisyphus/reviews/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/skill-draft.md",
+        "run_summary": ".sisyphus/reviews/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/run-summary.md"
     },
     "lineage": {
         "source_plan": ".sisyphus/plans/voy-208-grid-drop-interaction-stabilization.md",
-        "source_evidence": ["task-1-grid-drop-contract.txt", "task-5-grid-drop-evidence-index.txt"],
-        "source_facets": ["f1-plan-compliance.md", "f2-code-quality.md", "f3-manual-qa.md", "f4-scope-fidelity.md"],
+        "source_evidence": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/task-1-grid-drop-contract.txt", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/task-5-grid-drop-evidence-index.txt"],
+        "source_facets": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f1-plan-compliance.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f2-code-quality.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f3-manual-qa.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f4-scope-fidelity.md"],
         "source_notepads": ["grid-drop-folder-thumbnail-ux-naturalization"]
+    },
+    "evidence_sources_consumed": {
+        "for_findings": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f1-plan-compliance.md"],
+        "for_learning": [".sisyphus/reviews/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/findings.json"],
+        "for_draft": [".sisyphus/reviews/voy-208-grid-drop-interaction-stabilization/2026-04-10-181500/findings.json"]
     }
 }
 ```
@@ -191,7 +197,7 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
 
 ```json
 {
-    "schema_version": "1.0",
+    "schema_version": "2.0",
     "run_id": "2026-04-10-181500",
     "plan_slug": "voy-208-grid-drop-interaction-stabilization",
     "generated_at": "2026-04-10T18:15:00Z",
@@ -207,7 +213,7 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
             "category": "regression-risk",
             "title": "acceptDrop success branches preserve drop highlight",
             "description": "All return-true branches in acceptDrop now defer highlight clearing. Verified in f3 manual QA.",
-            "source_artifacts": [".sisyphus/evidence/f3-manual-qa.md", ".sisyphus/evidence/f1-plan-compliance.md"],
+            "source_artifacts": [".sisyphus/evidence/{plan_slug}/f3-manual-qa.md", ".sisyphus/evidence/{plan_slug}/f1-plan-compliance.md"],
             "dedupe_key": "grid-drop-highlight-lifecycle-deferred-copy",
             "verdict": "APPROVE"
         },
@@ -219,7 +225,7 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
             "category": "maintainability",
             "title": "Redundant saveDragWithOption read-write in reducer",
             "description": "saveDragPaths handler reads and writes back the same value. Harmless but unnecessary.",
-            "source_artifacts": [".sisyphus/evidence/f2-code-quality.md"],
+            "source_artifacts": [".sisyphus/evidence/{plan_slug}/f2-code-quality.md"],
             "dedupe_key": "reducer-redundant-drag-option-persist",
             "verdict": "APPROVE"
         },
@@ -231,7 +237,7 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
             "category": "drag-option-lifecycle",
             "title": "Option flag not reset for deferred copy operations",
             "description": "When endedAt returns early for .copy, saveDragWithOption(false) is never called. Harmless but worth noting.",
-            "source_artifacts": [".sisyphus/evidence/f2-code-quality.md"],
+            "source_artifacts": [".sisyphus/evidence/{plan_slug}/f2-code-quality.md"],
             "dedupe_key": "drag-option-flag-stale-after-copy",
             "verdict": "APPROVE"
         }
@@ -260,15 +266,15 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
 
 ### Output 3: Compound Learning Document
 
-**Path:** `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`
+**Path:** `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`
 
 **Purpose:** Reusable operational knowledge extracted from the run. Structured as guidance, not a run diary. Must include applicability, pattern to follow, and lineage to source artifacts.
 
 ```markdown
 # Compound Learning — {plan_slug}
 
-**Run:** {run_id}  
-**Generated:** {generated_at}  
+**Run:** {run_id}
+**Generated:** {generated_at}
 **Lineage:** {lineage.source_plan}
 
 ---
@@ -323,15 +329,15 @@ This learning document was generated from findings that were deduplicated agains
 
 ### Output 4: Skill / Harness Draft Document
 
-**Path:** `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`
+**Path:** `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`
 
 **Purpose:** A concrete proposal for a future `.agents/skills/` or `.agents/rules/` improvement, with exact source findings, target scope, and rationale. Does NOT auto-modify any skill or rule file.
 
 ```markdown
 # Skill / Harness Draft — {plan_slug}
 
-**Run:** {run_id}  
-**Generated:** {generated_at}  
+**Run:** {run_id}
+**Generated:** {generated_at}
 **Proposed Target:** `.agents/skills/{proposed-skill-name}/` (new skill, not yet created)
 
 ---
@@ -367,6 +373,45 @@ Repeated finding across f2 code quality reviews: coordinator drag/drop state cle
 ### Readiness
 
 Draft only. Requires human review before adoption.
+```
+
+---
+
+### Output 5: Run Summary Document
+
+**Path:** `.sisyphus/reviews/{plan_slug}/{run_id}/run-summary.md`
+
+**Purpose:** Human-readable one-page summary of the compound-review run. It gives operators a quick view of the run status, top findings, plan feedback, promotion candidates, and missing inputs for degraded runs.
+
+```markdown
+# Run Summary — {plan_slug}
+
+**Run:** {run_id}
+**Date:** {generated_at}
+**Status:** complete | degraded
+**Findings:** {total} ({critical}C {high}H {medium}M {low}L {informational}I)
+
+## One-line summary
+
+{1-2 sentences}
+
+## Top findings
+
+1. [{severity}] {title}
+2. [{severity}] {title}
+3. [{severity}] {title}
+
+## Next-plan feedback
+
+- {point}
+
+## Promotion candidates
+
+- [{confidence}] {title} → {promote_to}
+
+## Missing inputs
+
+- {only present for degraded runs}
 ```
 
 ---
@@ -419,22 +464,21 @@ Manifest and findings outputs MUST be validated against their respective schemas
 
 ## Path Reference Summary
 
-| Element                   | Path                                                   |
-| ------------------------- | ------------------------------------------------------ |
-| Review outputs root       | `.sisyphus/reviews/{plan_slug}/{run_id}/`              |
-| Compound outputs root     | `.sisyphus/compound/{plan_slug}/{run_id}/`             |
-| Skill/harness drafts root | `.sisyphus/drafts/{plan_slug}/{run_id}/`               |
-| Run manifest              | `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json` |
-| Structured findings       | `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json` |
-| Compound learning         | `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`  |
-| Skill/harness draft       | `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md` |
-| Failure artifact          | `.sisyphus/reviews/{plan_slug}/{run_id}/FAILURE.md`    |
+| Element             | Path                                                    |
+| ------------------- | ------------------------------------------------------- |
+| Review outputs root | `.sisyphus/reviews/{plan_slug}/{run_id}/`               |
+| Run manifest        | `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json`  |
+| Structured findings | `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json`  |
+| Compound learning   | `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`    |
+| Skill/harness draft | `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md` |
+| Run summary         | `.sisyphus/reviews/{plan_slug}/{run_id}/run-summary.md` |
+| Failure artifact    | `.sisyphus/reviews/{plan_slug}/{run_id}/FAILURE.md`     |
 
 ---
 
 ## Schema Versions
 
-| Schema          | Version | Description                                                           |
-| --------------- | ------- | --------------------------------------------------------------------- |
-| `manifest.json` | `1.0`   | Initial. Contains inputs, outputs, lineage.                           |
-| `findings.json` | `1.0`   | Initial. Severity, owner, action_class, source artifacts, dedupe key. |
+| Schema          | Version | Description                                                                                      |
+| --------------- | ------- | ------------------------------------------------------------------------------------------------ |
+| `manifest.json` | `2.0`   | Artifact-family v3 layout: evidence is plan-scoped and all run outputs live in reviews run root. |
+| `findings.json` | `1.0`   | Initial. Severity, owner, action_class, source artifacts, dedupe key.                            |
