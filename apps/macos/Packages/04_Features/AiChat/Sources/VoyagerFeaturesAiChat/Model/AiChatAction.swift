@@ -19,6 +19,7 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case draftTextChanged(String)
     case attachmentPickerTapped
     case attachmentPickerSelection([URL])
+    case attachmentDropSelection([URL])
     case removeAddedAttachment(AiChatAttachmentID)
     case openSettingsTapped
     case errorRecoveryTapped
@@ -40,5 +41,6 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     public enum Delegate: CasePathable, Equatable, Sendable {
         case openAISettings
         case requestAttachmentPicker
+        case clearCurrentContextSelection
     }
 }

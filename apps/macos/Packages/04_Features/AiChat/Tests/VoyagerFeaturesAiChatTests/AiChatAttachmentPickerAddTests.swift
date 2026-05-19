@@ -87,4 +87,28 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
             ]
         }
     }
+
+    func testAttachmentDropSelectionAddsDraftAndRequestsContextSelectionClear() async {
+        let url = URL(fileURLWithPath: "/tmp/Dropped.txt")
+        let normalizedURL = url.standardizedFileURL
+
+        let store = TestStore(initialState: AiChatFeature.State()) {
+            AiChatFeature()
+        }
+
+        await store.send(.attachmentDropSelection([url])) {
+            $0.addedAttachments = [
+                AiChatAttachmentDraft(
+                    id: AiChatAttachmentID(rawValue: normalizedURL.path(percentEncoded: false)),
+                    source: .file,
+                    displayTitle: "Dropped.txt",
+                    sourceLocation: AiChatAttachmentSourceLocation(
+                        fileURL: normalizedURL,
+                        filePath: normalizedURL.path(percentEncoded: false)
+                    )
+                )
+            ]
+        }
+        await store.receive(.delegate(.clearCurrentContextSelection))
+    }
 }

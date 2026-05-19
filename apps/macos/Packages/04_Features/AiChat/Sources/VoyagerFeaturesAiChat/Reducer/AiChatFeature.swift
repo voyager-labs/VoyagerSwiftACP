@@ -148,6 +148,10 @@ public struct AiChatFeature {
                 addAttachmentDrafts(from: urls, state: &state)
                 return .none
 
+            case let .attachmentDropSelection(urls):
+                addAttachmentDrafts(from: urls, state: &state)
+                return .send(.delegate(.clearCurrentContextSelection))
+
             case let .removeAddedAttachment(id):
                 removeAddedAttachment(id, state: &state)
                 return .none
