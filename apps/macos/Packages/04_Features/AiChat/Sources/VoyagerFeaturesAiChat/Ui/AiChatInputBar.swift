@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AiChatInputBar: View {
     let store: StoreOf<AiChatFeature>
@@ -66,6 +67,9 @@ struct AiChatInputBar: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(chatInputBorder, lineWidth: 1)
         )
+        .onDrop(of: attachmentDropTypeIdentifiers, isTargeted: nil) { providers in
+            handleAttachmentDrop(providers)
+        }
     }
 
     private var chatInputTextField: some View {
@@ -79,7 +83,10 @@ struct AiChatInputBar: View {
                 measuredHeight: $chatInputTextHeight,
                 isDisabled: state.isProcessing,
                 maxVisibleHeight: AiChatView.chatInputMaxTextHeight,
-                onSubmit: { submitAndRestoreInputFocus() }
+                onSubmit: { submitAndRestoreInputFocus() },
+                onAttachmentsDropped: { urls in
+                    acceptDroppedAttachments(urls)
+                }
             )
             .frame(height: boundedChatInputTextHeight)
 
@@ -145,6 +152,58 @@ struct AiChatInputBar: View {
     private func submitAndRestoreInputFocus() {
         store.send(.submitTapped)
         restoreChatInputFocus()
+    }
+
+    private var attachmentDropTypeIdentifiers: [String] {
+        [UTType.fileURL.identifier, UTType.url.identifier]
+    }
+
+    private func handleAttachmentDrop(_ providers: [NSItemProvider]) -> Bool {
+        var didScheduleLoad = false
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                didScheduleLoad = true
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    guard let url = Self.droppedFileURL(from: item) else { return }
+                    Task { @MainActor in
+                        acceptDroppedAttachments([url])
+                    }
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                didScheduleLoad = true
+                provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, _ in
+                    guard let url = Self.droppedFileURL(from: item) else { return }
+                    Task { @MainActor in
+                        acceptDroppedAttachments([url])
+                    }
+                }
+            }
+        }
+        return didScheduleLoad
+    }
+
+    private func acceptDroppedAttachments(_ urls: [URL]) {
+        store.send(.attachmentDropSelection(urls))
+        restoreChatInputFocus()
+    }
+
+    nonisolated private static func droppedFileURL(from item: (any NSSecureCoding)?) -> URL? {
+        if let url = item as? URL, url.isFileURL {
+            return url
+        }
+        if let data = item as? Data,
+           let url = URL(dataRepresentation: data, relativeTo: nil),
+           url.isFileURL
+        {
+            return url
+        }
+        if let string = item as? String,
+           let url = URL(string: string),
+           url.isFileURL
+        {
+            return url
+        }
+        return nil
     }
 
     private func restoreChatInputFocus() {
