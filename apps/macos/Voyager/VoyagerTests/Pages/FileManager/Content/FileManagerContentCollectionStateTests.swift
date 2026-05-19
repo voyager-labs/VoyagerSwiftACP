@@ -265,4 +265,5 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
 private func shouldRefreshOnOpen(_ session: CollectionDocumentSessionState) -> Bool {
     session.phase.openKind == .hydratedSnapshot && session.phase.isStale && session.metadata.lastRefreshAt == nil
 }
+
 // swiftlint:enable function_body_length multiline_arguments

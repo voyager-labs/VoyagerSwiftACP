@@ -59,6 +59,57 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
         XCTAssertTrue(store.state.inspectorPaneExists)
     }
 
+    func testOpenChatAfterClosePreservesExistingConversationAndSelection() async {
+        let existingSetup = makeSetup(
+            sessionID: makeSessionID("00000000-0000-0000-0000-000000000030"),
+            summary: "Documents · previous context",
+        )
+        let replacementSetup = makeSetup(
+            sessionID: makeSessionID("00000000-0000-0000-0000-000000000040"),
+            summary: "Desktop · replacement context",
+        )
+        var initialState = FileManagerInspectorFeature.State(
+            inspectorVisible: false,
+            inspectorPaneExists: true,
+            activeMode: .chat,
+            aiChat: AiChatFeature.State(
+                sessionID: existingSetup.sessionID,
+                sessionStatus: .active,
+                currentContext: existingSetup.currentContext,
+                transcriptHistory: [
+                    AiChatMessage(role: .user, content: "Previous question"),
+                    AiChatMessage(role: .assistant, content: "Previous answer"),
+                ],
+                draftText: "draft in progress",
+                catalogRows: existingSetup.catalogRows,
+                selectedModelHandle: existingSetup.selectedModelHandle,
+                selectedThinking: .effort(.high),
+                executionPhase: .completed(makeRequestLock(
+                    sessionID: existingSetup.sessionID ?? makeSessionID("00000000-0000-0000-0000-000000000031"),
+                    selectedRow: existingSetup.catalogRows[0],
+                    promptSummary: "Previous question",
+                )),
+            ),
+        )
+        initialState.aiChat.modelListState = .loaded(existingSetup.catalogRows)
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerInspectorFeature()
+        }
+
+        await store.send(.openChat(replacementSetup, .empty())) {
+            $0.inspectorVisible = true
+            $0.activeMode = .chat
+        }
+
+        XCTAssertEqual(store.state.aiChat.sessionID, existingSetup.sessionID)
+        XCTAssertEqual(store.state.aiChat.currentContext.summary, "Documents · previous context")
+        XCTAssertEqual(store.state.aiChat.transcriptHistory, initialState.aiChat.transcriptHistory)
+        XCTAssertEqual(store.state.aiChat.draftText, "draft in progress")
+        XCTAssertEqual(store.state.aiChat.selectedModelHandle, existingSetup.selectedModelHandle)
+        XCTAssertEqual(store.state.aiChat.selectedThinking, .effort(.high))
+    }
+
     func testAiChatOpenSettingsDelegateRoutesToInspectorDelegate() async {
         let store = TestStore(initialState: FileManagerInspectorFeature.State()) {
             FileManagerInspectorFeature()

@@ -20,8 +20,12 @@ public struct AiChatFeature {
     var aiChatSessionPersistenceClient
     @Dependency(\.aiProviderModelListClient)
     var aiProviderModelListClient
+    @Dependency(\.aiConnectionsFileClient)
+    var aiConnectionsFileClient
     @Dependency(\.uuid)
     var uuid
+    @Dependency(\.date)
+    var date
 
     public init() {}
 
@@ -35,7 +39,7 @@ public struct AiChatFeature {
             case let .setup(setup):
                 apply(setup: setup, to: &state)
                 normalizeSelectionIfNeeded(&state)
-                guard let restoreSessionID = setup.restoreSessionID else { return .cancel(id: CancelID.restore) }
+                guard let restoreSessionID = state.restoreSessionID else { return .none }
                 state.sessionStatus = .restoring
                 return restoreSession(sessionID: restoreSessionID, state: state)
 
@@ -66,9 +70,9 @@ public struct AiChatFeature {
                         .send(.modelListLoading(
                             requestID: loadRequest.requestID,
                             provider: loadRequest.provider,
-                            credential: loadRequest.credential
+                            credential: loadRequest.credential,
                         ))
-                    })
+                    }),
                 )
 
             case let .modelListLoading(requestID, provider, credential):
@@ -150,16 +154,28 @@ public struct AiChatFeature {
             case .cancelTapped:
                 guard let lock = state.executionPhase.lock, state.executionPhase.isProcessing else { return .none }
                 state.lockedModelHandle = nil
-                state.executionPhase = .cancelled(lock)
+                state.streamingAssistantDraft = nil
+                state.executionPhase = .cancelled(lock.recordingTerminal(
+                    at: currentTimestampMs(),
+                    failure: .cancelled,
+                    wasCancelled: true,
+                ))
                 return .cancel(id: CancelID.request)
 
             case .resetTapped:
+                state.restoreSessionID = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
                 state.draftText = ""
                 state.transcriptHistory = []
+                state.streamingAssistantDraft = nil
                 state.lastExecutionFailure = nil
                 state.lockedModelHandle = nil
                 state.executionPhase = .idle
-                return .cancel(id: CancelID.request)
+                return .merge(
+                    .cancel(id: CancelID.request),
+                    .cancel(id: CancelID.restore),
+                )
 
             case let .restoreOutcome(requestedSessionID, result, restoreFailure):
                 guard state.restoreSessionID == requestedSessionID else { return .none }
@@ -221,8 +237,8 @@ private extension AiChatFeature {
             state.unavailableSelectedModelHandle?.provider,
             state.lockedModelHandle?.provider,
             state.modelListProvider,
-            file.lastUsedProviderId,
-        ].compactMap { $0 }
+            file.lastUsedProviderId
+        ].compactMap(\.self)
 
         let connectedRecords = file.providers.values.filter { $0.snapshot.lastKnownStatus == .connected }
         guard !connectedRecords.isEmpty else { return nil }
@@ -230,11 +246,13 @@ private extension AiChatFeature {
         let connectedRecordsByProvider = Dictionary(uniqueKeysWithValues: connectedRecords.map { ($0.providerId, $0) })
         var orderedProviders: [AiProvider] = []
 
-        for provider in preferredProviders where connectedRecordsByProvider[provider] != nil && !orderedProviders.contains(provider) {
+        for provider in preferredProviders
+            where connectedRecordsByProvider[provider] != nil && !orderedProviders.contains(provider) {
             orderedProviders.append(provider)
         }
 
-        for provider in connectedRecordsByProvider.keys.sorted(by: { $0.rawValue < $1.rawValue }) where !orderedProviders.contains(provider) {
+        for provider in connectedRecordsByProvider.keys.sorted(by: { $0.rawValue < $1.rawValue })
+            where !orderedProviders.contains(provider) {
             orderedProviders.append(provider)
         }
 
@@ -248,16 +266,16 @@ private extension AiChatFeature {
                 return AiChatModelListLoadRequest(
                     requestID: requestID,
                     provider: provider,
-                    credential: record.credential
+                    credential: record.credential,
                 )
-            }
+            },
         )
     }
 
     func loadModelList(
         requestID: UUID,
         provider: AiProvider,
-        credential: StoredCredentialPayload?
+        credential: StoredCredentialPayload?,
     ) -> Effect<Action> {
         .run { [aiProviderModelListClient] send in
             do {
@@ -270,7 +288,7 @@ private extension AiChatFeature {
                 await send(.modelListLoadFailed(
                     requestID: requestID,
                     provider: provider,
-                    failure: Self.makeModelListFailure(provider: provider, error: error)
+                    failure: Self.makeModelListFailure(provider: provider, error: error),
                 ))
             }
         }
@@ -284,8 +302,7 @@ private extension AiChatFeature {
         case let .loaded(models):
             state.catalogRows = State.makeCatalogRows(for: models, preserving: state.catalogRows)
             if let currentSelection = state.selectedModelHandle,
-               let resolvedSelection = state.normalizedSelectionHandle(currentSelection, in: models)
-            {
+               let resolvedSelection = state.normalizedSelectionHandle(currentSelection, in: models) {
                 state.selectedModelHandle = resolvedSelection
                 state.unavailableSelectedModelHandle = nil
             } else if let currentSelection = state.selectedModelHandle {
@@ -314,9 +331,10 @@ private extension AiChatFeature {
     func finalizeModelListBatchIfNeeded(_ state: inout State) {
         guard state.modelListPendingProviders.isEmpty else { return }
 
-        let loadedModelsByProvider = state.modelListProviderOrder.reduce(into: [AiProvider: [AiProviderModel]]()) { partialResult, provider in
-            partialResult[provider] = state.modelListLoadedModelsByProvider[provider] ?? []
-        }
+        let loadedModelsByProvider = state.modelListProviderOrder
+            .reduce(into: [AiProvider: [AiProviderModel]]()) { partialResult, provider in
+                partialResult[provider] = state.modelListLoadedModelsByProvider[provider] ?? []
+            }
         let mergedModels = state.modelListProviderOrder.flatMap { provider in
             loadedModelsByProvider[provider] ?? []
         }
@@ -326,13 +344,12 @@ private extension AiChatFeature {
             state.modelListFailedProviders[provider]
         }
 
-        let nextModelListState: AiChatModelListState
-        if !mergedModels.isEmpty {
-            nextModelListState = .loaded(mergedModels)
+        let nextModelListState: AiChatModelListState = if !mergedModels.isEmpty {
+            .loaded(mergedModels)
         } else if let failure = firstFailure {
-            nextModelListState = .failed(failure)
+            .failed(failure)
         } else {
-            nextModelListState = .empty
+            .empty
         }
 
         state.availableModelsByProvider = loadedModelsByProvider

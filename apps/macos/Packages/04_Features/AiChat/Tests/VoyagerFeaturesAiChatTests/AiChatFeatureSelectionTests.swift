@@ -22,6 +22,8 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         let models = makeThinkingCapableProviderModels()
         let summary = makeContextSnapshot()
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111111"))
+        let firstSubmitMs: Int64 = 1_700_000_000_600
+        let secondSubmitMs: Int64 = 1_700_000_000_601
         let requestSpy = ExecutionRequestSpy()
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -40,6 +42,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             AiChatFeature()
         } withDependencies: {
             $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: firstSubmitMs))
             $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
                 requestSpy.append(request)
                 return AsyncStream { continuation in
@@ -63,7 +66,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 sessionStatus: .active,
                 currentContext: summary,
                 promptSummary: "Draft",
-                submittedAtMs: nil
+                submittedAtMs: firstSubmitMs
             )
             let request = AiChatRequest(
                 context: context,
@@ -83,7 +86,10 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 request: request,
                 selectedModelHandle: catalogRows[0].handle,
                 selectedModelRow: catalogRows[0],
-                assistantReplacementIndex: nil
+                assistantReplacementIndex: nil,
+                // swiftlint:disable:next line_length
+                historyTruncation: AiChatHistoryTruncationMetadata(includedMessageCount: 2, excludedMessageCount: 0, budget: 24_000, truncationReason: nil),
+                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: firstSubmitMs)
             ))
         }
 
@@ -133,6 +139,8 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             state.draftText = "Second request"
         }
 
+        store.dependencies.date = .constant(makeFixedDate(milliseconds: secondSubmitMs))
+
         await store.send(.submitTapped) { state in
             let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000002"))
             let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000003"))
@@ -148,7 +156,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 sessionStatus: .active,
                 currentContext: summary,
                 promptSummary: "Second request",
-                submittedAtMs: nil
+                submittedAtMs: secondSubmitMs
             )
             let request = AiChatRequest(
                 context: context,
@@ -165,7 +173,10 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 request: request,
                 selectedModelHandle: catalogRows[1].handle,
                 selectedModelRow: catalogRows[1],
-                assistantReplacementIndex: nil
+                assistantReplacementIndex: nil,
+                // swiftlint:disable:next line_length
+                historyTruncation: AiChatHistoryTruncationMetadata(includedMessageCount: 1, excludedMessageCount: 0, budget: 24_000, truncationReason: nil),
+                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: secondSubmitMs)
             ))
         }
 
@@ -174,6 +185,42 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(requestSpy.requests[1].context.provider, catalogRows[1].handle.provider)
         XCTAssertEqual(requestSpy.requests[1].context.selectedModel, models[1])
         XCTAssertEqual(requestSpy.requests[1].context.selectedThinking, .effort(.medium))
+    }
+
+    func testCodexModelSelectionCanSubmitThroughCLIExecutionPath() {
+        let handle = AiModelHandle(provider: .chatgptCodex, rawValue: "gpt-5-codex")
+        let row = AiModelCatalogRow(
+            handle: handle,
+            displayName: "GPT-5 Codex",
+            authMethod: .oauth,
+            subtitle: "Codex CLI",
+            sortOrder: 10,
+            isDefault: true,
+            isRecommended: true
+        )
+        let model = AiProviderModel(
+            id: handle,
+            provider: .chatgptCodex,
+            rawModelID: "gpt-5-codex",
+            displayName: "GPT-5 Codex",
+            providerDisplayName: "ChatGPT Codex",
+            thinkingCapability: .effort(values: [.medium], defaultValue: .medium),
+            unavailableReason: nil
+        )
+        let state = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111121")),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            draftText: "Run Codex",
+            catalogRows: [row],
+            modelListState: .loaded([model]),
+            selectedModelHandle: handle,
+            executionPhase: .idle,
+            providerConnectionSnapshot: .known([.chatgptCodex])
+        )
+
+        XCTAssertTrue(state.canSubmit)
+        XCTAssertNil(state.requestStatusText)
     }
 
     func testCatalogRowsRefreshDisplayNameWhenExistingHandleIsPreserved() {
@@ -221,6 +268,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         let models = makeThinkingCapableProviderModels()
         let summary = makeContextSnapshot()
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111111"))
+        let firstSubmitMs: Int64 = 1_700_000_000_600
         let requestSpy = ExecutionRequestSpy()
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -239,6 +287,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             AiChatFeature()
         } withDependencies: {
             $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: firstSubmitMs))
             $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
                 requestSpy.append(request)
                 return AsyncStream { continuation in
@@ -270,7 +319,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 sessionStatus: .active,
                 currentContext: summary,
                 promptSummary: "Use high thinking",
-                submittedAtMs: nil
+                submittedAtMs: firstSubmitMs
             )
             let request = AiChatRequest(
                 context: context,
@@ -290,7 +339,10 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 request: request,
                 selectedModelHandle: catalogRows[0].handle,
                 selectedModelRow: catalogRows[0],
-                assistantReplacementIndex: nil
+                assistantReplacementIndex: nil,
+                // swiftlint:disable:next line_length
+                historyTruncation: AiChatHistoryTruncationMetadata(includedMessageCount: 2, excludedMessageCount: 0, budget: 24_000, truncationReason: nil),
+                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: firstSubmitMs)
             ))
         }
 

@@ -18,16 +18,15 @@ struct AiChatModelSelectorButton: View {
         } label: {
             AiChatHoverTextAffordance(
                 title: AiChatSelectorLabels.modelSelectorLabel(for: state),
-                systemName: "chevron.down"
+                systemName: "chevron.down",
             )
-            .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             AiChatModelSelectorDropdown(
                 store: store,
                 state: state,
-                isPresented: $isPresented
+                isPresented: $isPresented,
             )
             .onDisappear {
                 store.send(.modelSelectorDismissed)
@@ -74,7 +73,7 @@ private struct AiChatModelSelectorDropdown: View {
 
     private func modelSection(
         _ section: AiChatModelCatalogSectionDisplayModel,
-        index: Int
+        index: Int,
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if index > 0 {
@@ -92,7 +91,7 @@ private struct AiChatModelSelectorDropdown: View {
                 AiChatModelSelectorRow(
                     store: store,
                     row: row,
-                    isPresented: $isPresented
+                    isPresented: $isPresented,
                 )
             }
         }
@@ -108,11 +107,11 @@ struct AiChatSelectorPopoverContainer<Content: View>: View {
             .frame(width: Self.width, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor))
+                    .fill(Color(nsColor: .windowBackgroundColor)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1),
             )
             .shadow(color: Color.black.opacity(0.16), radius: 12, x: 0, y: 6)
     }
@@ -177,7 +176,7 @@ private struct AiChatModelSelectorRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(row.isSelected ? Color.primary.opacity(0.08) : Color.clear)
+                    .fill(row.isSelected ? Color.primary.opacity(0.08) : Color.clear),
             )
         }
         .buttonStyle(.plain)
@@ -219,15 +218,15 @@ enum AiChatSelectorLabels {
     static func modelSelectorAccessibilityValue(for state: AiChatState) -> String {
         switch state.modelSelectorContentState {
         case .loading:
-            return "Loading"
+            "Loading"
         case .empty:
-            return "No models"
+            "No models"
         case .failed:
-            return "Unavailable"
+            "Unavailable"
         case .unsupported:
-            return "Unsupported"
+            "Unsupported"
         case .loaded:
-            return state.selectedModelDisplayModel?.title ?? "No selection"
+            state.selectedModelDisplayModel?.title ?? "No selection"
         }
     }
 

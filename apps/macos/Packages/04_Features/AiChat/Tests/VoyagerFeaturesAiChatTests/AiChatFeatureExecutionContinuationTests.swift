@@ -5,6 +5,7 @@ import VoyagerEntitiesAi
 import XCTest
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class AiChatFeatureExecutionContinuationTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     func testRegenerateReplacesAssistantWithoutDuplicatingUserTurn() async {
@@ -13,6 +14,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111113"))
+        let fixedMs: Int64 = 1_700_000_000_300
 
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -32,6 +34,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             AiChatFeature()
         } withDependencies: {
             $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
             $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
                 stream.stream(for: request)
             })
@@ -67,7 +70,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "New answer"),
-            completedAtMs: 0
+            completedAtMs: fixedMs
         )
         stream.yield(.final(response: finalResponse))
         stream.finish()
@@ -78,7 +81,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
                 AiChatMessage(role: .assistant, content: "New answer")
             ]
             state.lockedModelHandle = nil
-            state.executionPhase = .completed(lock)
+            state.executionPhase = .completed(lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false))
         }
 
         await store.finish()
@@ -94,6 +97,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111114"))
+        let fixedMs: Int64 = 1_700_000_000_400
 
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -110,6 +114,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             AiChatFeature()
         } withDependencies: {
             $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
             $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
                 stream.stream(for: request)
             })
@@ -146,23 +151,24 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         let finalResponse = AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "Hi"),
-            completedAtMs: 0
+            completedAtMs: fixedMs
         )
         stream.yield(.final(response: finalResponse))
         stream.finish()
 
+        let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
         await store.receive(.executionEvent(.final(response: finalResponse))) { state in
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
                 AiChatMessage(role: .assistant, content: "Hi")
             ]
             state.lockedModelHandle = nil
-            state.executionPhase = .completed(lock)
+            state.executionPhase = .completed(finalizedLock)
         }
 
-        await store.receive(.persistenceFailed(lock, .unknown)) { state in
+        await store.receive(.persistenceFailed(finalizedLock, .unknown)) { state in
             state.lastExecutionFailure = .unknown
-            state.executionPhase = .persistenceRecovery(lock, .unknown)
+            state.executionPhase = .persistenceRecovery(finalizedLock, .unknown)
         }
 
         XCTAssertEqual(store.state.transcriptHistory, [
@@ -220,6 +226,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         let models = makeThinkingCapableProviderModels()
         let feature = withDependencies {
             $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_500))
         } operation: {
             AiChatFeature()
         }
@@ -240,6 +247,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
 
         _ = withDependencies {
             $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_500))
         } operation: {
             feature.startRequest(kind: .submit, state: &state)
         }
@@ -259,8 +267,122 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(state.selectedModelHandle, catalogRows[1].handle)
         XCTAssertEqual(state.selectedThinking, .effort(.minimal))
         XCTAssertEqual(snapshot.model, catalogRows[0].handle)
-        XCTAssertEqual(snapshot.selectedThinking, .effort(.medium))
+        XCTAssertEqual(snapshot.selectedThinking, AiThinkingSelection.effort(.medium))
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
+    }
+
+    // swiftlint:disable:next function_body_length
+    func testSubmitFreezesContextTimingAndDeterministicHistoryTruncation() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let fixedMs: Int64 = 1_700_000_000_800
+        let frozenContext = makeContextSnapshot(summary: "Before submit")
+        let largeUser1 = String(repeating: "u", count: 9_000)
+        let largeAssistant1 = String(repeating: "a", count: 9_000)
+        let largeUser2 = String(repeating: "x", count: 9_000)
+        let largeAssistant2 = String(repeating: "y", count: 9_000)
+        let draft = "Current prompt"
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111117")),
+            sessionStatus: .active,
+            currentContext: frozenContext,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: largeUser1),
+                AiChatMessage(role: .assistant, content: largeAssistant1),
+                AiChatMessage(role: .user, content: largeUser2),
+                AiChatMessage(role: .assistant, content: largeAssistant2)
+            ],
+            draftText: draft,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium),
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped) { state in
+            state.draftText = ""
+            state.lockedModelHandle = catalogRows[0].handle
+        }
+
+        guard let request = stream.requests.first,
+              case let .processing(lock) = store.state.executionPhase else {
+            return XCTFail("Expected frozen request lock")
+        }
+
+        XCTAssertEqual(request.context.currentContext, frozenContext)
+        XCTAssertEqual(request.context.selectedThinking, .effort(.medium))
+        XCTAssertEqual(request.context.submittedAtMs, fixedMs)
+        XCTAssertEqual(request.messages, [
+            AiChatMessage(role: .user, content: largeUser2),
+            AiChatMessage(role: .assistant, content: largeAssistant2),
+            AiChatMessage(role: .user, content: draft)
+        ])
+        XCTAssertEqual(lock.historyTruncation.includedMessageCount, 3)
+        XCTAssertEqual(lock.historyTruncation.excludedMessageCount, 2)
+        XCTAssertEqual(lock.historyTruncation.budget, 24_000)
+        XCTAssertEqual(lock.historyTruncation.truncationReason, .characterBudgetExceeded)
+        XCTAssertEqual(lock.observabilitySummary.submittedAtMs, fixedMs)
+
+        await store.send(.selectedThinkingChanged(.effort(.high))) { state in
+            state.selectedThinking = .effort(.high)
+        }
+        XCTAssertEqual(request.context.currentContext.summary, "Before submit")
+        XCTAssertEqual(request.context.selectedThinking, .effort(.medium))
+    }
+
+    func testEmptyContextStillPreparesRequestWithDeterministicSubmittedTimestamp() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let fixedMs: Int64 = 1_700_000_000_900
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111118")),
+            sessionStatus: .active,
+            currentContext: .init(),
+            transcriptHistory: [],
+            draftText: "Hello empty context",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello empty context")]
+            state.lockedModelHandle = catalogRows[0].handle
+        }
+
+        guard let request = stream.requests.first else {
+            return XCTFail("Expected request for empty context")
+        }
+
+        XCTAssertEqual(request.context.currentContext, .init())
+        XCTAssertEqual(request.context.submittedAtMs, fixedMs)
+        XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello empty context")])
     }
 
 }

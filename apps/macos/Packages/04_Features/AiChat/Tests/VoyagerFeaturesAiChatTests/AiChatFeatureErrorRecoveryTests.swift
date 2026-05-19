@@ -12,6 +12,7 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let sessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333"))
+        let fixedMs: Int64 = 1_700_000_001_000
         let request = AiChatRequest(
             context: makeRequestContext(
                 sessionID: sessionID,
@@ -28,7 +29,7 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
             assistantReplacementIndex: nil
-        )
+        ).recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
         let transcript = [
             AiChatMessage(role: .user, content: "Hello"),
             AiChatMessage(role: .assistant, content: "Hi")
@@ -65,68 +66,6 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
         XCTAssertEqual(persistence.snapshots.count, 1)
         XCTAssertEqual(persistence.snapshots.first?.sessionID, sessionID)
         XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, transcript)
-        await store.finish()
-    }
-
-    // swiftlint:disable:next function_body_length
-    func testErrorRecoveryRetriesFailedSessionRestore() async {
-        let catalogRows = makeCatalogRows()
-        let restoreSessionID = AiChatSessionID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666"))
-        let restoredSnapshot = AiChatSessionSnapshot(
-            sessionID: restoreSessionID,
-            status: .active,
-            provider: catalogRows[0].handle.provider,
-            model: catalogRows[0].handle,
-            selectedModelRow: catalogRows[0],
-            transcriptHistory: [AiChatMessage(role: .user, content: "Restored")],
-            updatedAtMs: 0
-        )
-        let store = TestStore(initialState: AiChatFeature.State(
-            restoreSessionID: restoreSessionID,
-            sessionID: nil,
-            sessionStatus: .failed,
-            currentContext: makeContextSnapshot(),
-            transcriptHistory: [],
-            draftText: "Draft",
-            catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[0].handle,
-            lastExecutionFailure: nil,
-            executionPhase: .idle
-        )) {
-            AiChatFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
-                loadSession: { sessionID in
-                    XCTAssertEqual(sessionID, restoreSessionID)
-                    return restoredSnapshot
-                },
-                saveSession: { _ in },
-                deleteSession: { _ in }
-            )
-        }
-
-        await store.send(.errorRecoveryTapped) { state in
-            state.sessionStatus = .restoring
-        }
-
-        await store.receive(.restoreOutcome(
-            requestedSessionID: restoreSessionID,
-            .restored(snapshot: restoredSnapshot),
-            restoreFailure: nil
-        )) { state in
-            state.restoreOutcome = .restored(snapshot: restoredSnapshot)
-            state.restoreFailure = nil
-            state.sessionID = restoreSessionID
-            state.sessionStatus = .active
-            state.transcriptHistory = restoredSnapshot.transcriptHistory
-            state.draftText = "Draft"
-            state.selectedModelHandle = catalogRows[0].handle
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.executionPhase = .idle
-        }
-
         await store.finish()
     }
 
@@ -177,10 +116,10 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
         await store.finish()
     }
 
-    func testErrorRecoveryDelegatesOpenSettingsForRebindRequiredSession() async {
+    func testErrorRecoveryWithoutRetryableStateIsNoOp() async {
         let catalogRows = makeCatalogRows()
         let store = TestStore(initialState: AiChatFeature.State(
-            sessionStatus: .rebindRequired,
+            sessionStatus: .idle,
             currentContext: makeContextSnapshot(),
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[0].handle,
@@ -190,7 +129,8 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
         }
 
         await store.send(.errorRecoveryTapped)
-        await store.receive(.delegate(.openAISettings))
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lastExecutionFailure)
         await store.finish()
     }
 }

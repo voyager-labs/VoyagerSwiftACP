@@ -14,7 +14,7 @@ public struct AiProviderModelListClient: Sendable {
     public var loadModels: @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel]
 
     public nonisolated init(
-        loadModels: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel]
+        loadModels: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel],
     ) {
         self.loadModels = loadModels
     }
@@ -29,7 +29,7 @@ extension AiProviderModelListClient: DependencyKey {
         AiProviderModelListClient(
             loadModels: { provider, _ in
                 throw AiProviderModelListError.unsupportedProvider(provider)
-            }
+            },
         )
     }
 
@@ -37,7 +37,7 @@ extension AiProviderModelListClient: DependencyKey {
         AiProviderModelListClient(
             loadModels: { provider, _ in
                 throw AiProviderModelListError.unsupportedProvider(provider)
-            }
+            },
         )
     }
 }
@@ -64,9 +64,10 @@ public extension AiProviderModelListClient {
                             displayName: Self.displayName(
                                 provider: provider,
                                 rawModelID: payload.modelID,
-                                providerDisplayName: payload.displayName
+                                providerDisplayName: payload.displayName,
                             ),
-                            thinkingCapability: payload.thinkingCapability ?? Self.unknownThinkingCapability
+                            thinkingCapability: payload.thinkingCapability ?? Self.unknownThinkingCapability,
+                            supportsThinkingNone: payload.supportsThinkingNone,
                         )
                     }
                 case .openai:
@@ -77,7 +78,8 @@ public extension AiProviderModelListClient {
                             provider: provider,
                             rawModelID: payload.id,
                             displayName: Self.displayName(provider: provider, rawModelID: payload.id),
-                            thinkingCapability: payload.thinkingCapability ?? Self.unknownThinkingCapability
+                            thinkingCapability: payload.thinkingCapability ?? Self.unknownThinkingCapability,
+                            supportsThinkingNone: payload.supportsThinkingNone,
                         )
                     }
                 case .anthropic:
@@ -90,13 +92,14 @@ public extension AiProviderModelListClient {
                             displayName: Self.displayName(
                                 provider: provider,
                                 rawModelID: $0.id,
-                                providerDisplayName: $0.displayName
+                                providerDisplayName: $0.displayName,
                             ),
-                            thinkingCapability: $0.thinkingCapability ?? Self.unknownThinkingCapability
+                            thinkingCapability: $0.thinkingCapability ?? Self.unknownThinkingCapability,
+                            supportsThinkingNone: $0.supportsThinkingNone,
                         )
                     }
                 }
-            }
+            },
         )
     }
 }
@@ -104,7 +107,7 @@ public extension AiProviderModelListClient {
 private extension AiProviderModelListClient {
     static func secret(
         for provider: AiProvider,
-        credential: StoredCredentialPayload?
+        credential: StoredCredentialPayload?,
     ) throws -> String {
         guard let credential else {
             throw AiProviderModelListError.missingCredential(provider)
@@ -129,7 +132,7 @@ private extension AiProviderModelListClient {
 
     static func oauthCredential(
         for provider: AiProvider,
-        credential: StoredCredentialPayload?
+        credential: StoredCredentialPayload?,
     ) throws -> OAuthCredentialFile {
         guard let credential else {
             throw AiProviderModelListError.missingCredential(provider)
@@ -153,20 +156,20 @@ private extension AiProviderModelListClient {
     static var unknownThinkingCapability: AiModelThinkingCapability {
         .unknown(
             reason: AiThinkingUnavailableReason(
-                message: "Thinking capability metadata was not provided by the model API."
-            )
+                message: "Thinking capability metadata was not provided by the model API.",
+            ),
         )
     }
 
     static func displayName(
         provider: AiProvider,
         rawModelID: String,
-        providerDisplayName: String? = nil
+        providerDisplayName: String? = nil,
     ) -> String {
         AiModelDisplayNameFormatter.displayName(
             provider: provider,
             rawModelID: rawModelID,
-            providerDisplayName: providerDisplayName
+            providerDisplayName: providerDisplayName,
         )
     }
 
@@ -174,7 +177,8 @@ private extension AiProviderModelListClient {
         provider: AiProvider,
         rawModelID: String,
         displayName: String,
-        thinkingCapability: AiModelThinkingCapability
+        thinkingCapability: AiModelThinkingCapability,
+        supportsThinkingNone: Bool = false,
     ) -> AiProviderModel {
         AiProviderModel(
             id: AiModelHandle(provider: provider, rawValue: rawModelID),
@@ -183,13 +187,14 @@ private extension AiProviderModelListClient {
             displayName: displayName,
             providerDisplayName: providerDisplayName(for: provider),
             thinkingCapability: thinkingCapability,
-            unavailableReason: nil
+            supportsThinkingNone: supportsThinkingNone,
+            unavailableReason: nil,
         )
     }
 
     static func fetchCodexModels(
         credential: OAuthCredentialFile,
-        session: URLSession
+        session: URLSession,
     ) async throws -> CodexModelsResponse {
         let clientVersion = codexClientVersion()
         let request = try makeRequest(
@@ -203,7 +208,7 @@ private extension AiProviderModelListClient {
                 if let accountID = credential.chatGPTAccountId, !accountID.isEmpty {
                     request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-ID")
                 }
-            }
+            },
         )
         let data = try await fetchData(for: .chatgptCodex, request: request, session: session)
 
@@ -232,24 +237,24 @@ private extension AiProviderModelListClient {
 
     static func architectureName() -> String {
         #if arch(arm64)
-            return "arm64"
+        return "arm64"
         #elseif arch(x86_64)
-            return "x86_64"
+        return "x86_64"
         #else
-            return "unknown"
+        return "unknown"
         #endif
     }
 
     static func fetchOpenAIModels(
         secret: String,
-        session: URLSession
+        session: URLSession,
     ) async throws -> OpenAIModelsResponse {
         let request = try makeRequest(
             url: "https://api.openai.com/v1/models",
             provider: .openai,
             configure: { request in
                 request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-            }
+            },
         )
         let data = try await fetchData(for: .openai, request: request, session: session)
 
@@ -262,7 +267,7 @@ private extension AiProviderModelListClient {
 
     static func fetchAnthropicModels(
         secret: String,
-        session: URLSession
+        session: URLSession,
     ) async throws -> AnthropicModelsResponse {
         let request = try makeRequest(
             url: "https://api.anthropic.com/v1/models",
@@ -270,7 +275,7 @@ private extension AiProviderModelListClient {
             configure: { request in
                 request.setValue(secret, forHTTPHeaderField: "x-api-key")
                 request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-            }
+            },
         )
         let data = try await fetchData(for: .anthropic, request: request, session: session)
 
@@ -284,7 +289,7 @@ private extension AiProviderModelListClient {
     static func makeRequest(
         url: String,
         provider: AiProvider,
-        configure: (inout URLRequest) -> Void
+        configure: (inout URLRequest) -> Void,
     ) throws -> URLRequest {
         guard let requestURL = URL(string: url) else {
             throw AiProviderModelListError.invalidResponse(provider)
@@ -300,14 +305,14 @@ private extension AiProviderModelListClient {
     static func fetchData(
         for provider: AiProvider,
         request: URLRequest,
-        session: URLSession
+        session: URLSession,
     ) async throws -> Data {
         do {
             let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw AiProviderModelListError.networkError(
                     provider: provider,
-                    description: "Non-HTTP response"
+                    description: "Non-HTTP response",
                 )
             }
 
@@ -316,7 +321,7 @@ private extension AiProviderModelListClient {
                 throw AiProviderModelListError.httpError(
                     provider: provider,
                     statusCode: httpResponse.statusCode,
-                    body: body
+                    body: body,
                 )
             }
 
@@ -326,12 +331,12 @@ private extension AiProviderModelListClient {
         } catch let error as URLError {
             throw AiProviderModelListError.networkError(
                 provider: provider,
-                description: error.localizedDescription
+                description: error.localizedDescription,
             )
         } catch {
             throw AiProviderModelListError.networkError(
                 provider: provider,
-                description: error.localizedDescription
+                description: error.localizedDescription,
             )
         }
     }

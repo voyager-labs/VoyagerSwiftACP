@@ -74,6 +74,24 @@ struct AiChatStateDisplayModelBuilder {
         }
     }
 
+    var streamingAssistantDisplayModel: AiChatStreamingAssistantDisplayModel? {
+        guard let draft = state.streamingAssistantDraft,
+              !draft.isEmpty
+        else {
+            return nil
+        }
+
+        switch state.executionPhase {
+        case .processing:
+            return AiChatStreamingAssistantDisplayModel(content: draft)
+        case let .failed(lock, failure):
+            guard lock.observabilitySummary.chunkCount > 0 else { return nil }
+            return AiChatStreamingAssistantDisplayModel(content: draft, failure: failure)
+        case .idle, .completed, .cancelled, .persistenceRecovery:
+            return nil
+        }
+    }
+
     var modelCatalogState: AiChatModelCatalogState { modelCatalogBuilder.modelCatalogState }
     var modelSelectorContentState: AiChatModelSelectorContentState { modelCatalogBuilder.modelSelectorContentState }
     var modelSelectorHasPresentableContent: Bool { modelSelectorContentState.hasPresentableContent }
@@ -90,6 +108,7 @@ struct AiChatStateDisplayModelBuilder {
         guard !isProcessing else { return false }
         guard case .loaded = state.modelListState else { return false }
         guard resolvedSelectedModel != nil else { return false }
+        guard selectedModelSupportsChatExecution else { return false }
         guard connectionState == .connected else { return false }
 
         switch surfaceState {
@@ -107,12 +126,11 @@ struct AiChatStateDisplayModelBuilder {
     var requestStatusText: String? {
         switch state.executionPhase {
         case .idle:
-            if state.sessionStatus == .restoring { return "Restoring session" }
-            return nil
+            return selectedModelUnsupportedStatusText
         case let .processing(lock):
             return "Processing \(lock.selectedModelRow?.displayName ?? lock.selectedModelHandle.rawValue)"
         case .completed:
-            return "Request complete"
+            return selectedModelUnsupportedStatusText
         case let .failed(_, failure):
             return failure.displayMessage
         case .cancelled:
@@ -134,6 +152,20 @@ struct AiChatStateDisplayModelBuilder {
         case .failed, nil:
             return nil
         }
+    }
+
+    private var selectedModelSupportsChatExecution: Bool {
+        guard let selectedModel = resolvedSelectedModel else { return false }
+        return selectedModel.provider.supportsAiChatExecution
+    }
+
+    private var selectedModelUnsupportedStatusText: String? {
+        guard let selectedModel = resolvedSelectedModel,
+              !selectedModel.provider.supportsAiChatExecution
+        else {
+            return nil
+        }
+        return AiChatExecutionFailure.unsupportedProvider.displayMessage
     }
 
     var cancelAffordance: AiChatCancelAffordance? {
@@ -211,7 +243,6 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     private var isInitialChatSurface: Bool { state.transcriptHistory.isEmpty }
-
 }
 
 func aiChatTerminalErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {

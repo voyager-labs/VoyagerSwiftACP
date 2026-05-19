@@ -18,7 +18,7 @@ extension AiProviderModelListClientTests {
 
         let models = try await client.loadModels(
             .chatgptCodex,
-            .oauth(OAuthCredentialFile(accessToken: "codex-token", chatGPTAccountId: "account-123"))
+            .oauth(OAuthCredentialFile(accessToken: "codex-token", chatGPTAccountId: "account-123")),
         )
 
         XCTAssertEqual(models.map(\.rawModelID), ["gpt-5.5", "gpt-5.3-codex-spark"])
@@ -28,9 +28,10 @@ extension AiProviderModelListClientTests {
             models.map(\.thinkingCapability),
             [
                 .effort(values: [.low, .medium, .high], defaultValue: .medium),
-                unknownThinkingCapability
-            ]
+                kUnknownThinkingCapability
+            ],
         )
+        XCTAssertEqual(models.map(\.supportsThinkingNone), [true, false])
         XCTAssertEqual(ModelListURLProtocol.requestCount, 1)
     }
 
@@ -41,7 +42,7 @@ extension AiProviderModelListClientTests {
 
         let models = try await client.loadModels(
             .chatgptCodex,
-            .oauth(OAuthCredentialFile(accessToken: "codex-token", chatGPTAccountId: nil))
+            .oauth(OAuthCredentialFile(accessToken: "codex-token", chatGPTAccountId: nil)),
         )
 
         XCTAssertEqual(models.map(\.rawModelID), ["gpt-5.4-mini"])
@@ -50,8 +51,9 @@ extension AiProviderModelListClientTests {
             models.map(\.thinkingCapability),
             [
                 .effort(values: [.low, .medium, .high], defaultValue: .medium)
-            ]
+            ],
         )
+        XCTAssertEqual(models.map(\.supportsThinkingNone), [false])
     }
 
     func testLoadModels_chatgptCodex_usesOnlyEndpointReturnedModelsWithoutCanonicalInjection() async throws {
@@ -61,12 +63,12 @@ extension AiProviderModelListClientTests {
 
         let models = try await client.loadModels(
             .chatgptCodex,
-            .oauth(OAuthCredentialFile(accessToken: "codex-token", chatGPTAccountId: nil))
+            .oauth(OAuthCredentialFile(accessToken: "codex-token", chatGPTAccountId: nil)),
         )
 
         XCTAssertEqual(models.map(\.rawModelID), ["gpt-5.2"])
         XCTAssertEqual(models.map(\.displayName), ["GPT-5.2"])
-        XCTAssertEqual(models.map(\.thinkingCapability), [unknownThinkingCapability])
+        XCTAssertEqual(models.map(\.thinkingCapability), [kUnknownThinkingCapability])
         XCTAssertTrue(models.allSatisfy { $0.provider == .chatgptCodex })
     }
 }
@@ -81,28 +83,29 @@ extension AiProviderModelListClientTests {
 
         let models = try await client.loadModels(
             .openai,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         )
 
         XCTAssertEqual(
             models.map(\.id.rawValue),
-            ["gpt-4.1", "gpt-5.1", "gpt-5-pro", "gpt-5.5", "o4-mini", "custom-openai-model"]
+            ["gpt-4.1", "gpt-5.1", "gpt-5-pro", "gpt-5.5", "o4-mini", "custom-openai-model"],
         )
         XCTAssertEqual(
             models.map(\.displayName),
-            ["GPT-4.1", "GPT-5.1", "GPT-5 Pro", "GPT-5.5", "o4-mini", "custom-openai-model"]
+            ["GPT-4.1", "GPT-5.1", "GPT-5 Pro", "GPT-5.5", "o4-mini", "custom-openai-model"],
         )
         XCTAssertEqual(
             models.map(\.thinkingCapability),
             [
-                unknownThinkingCapability,
+                kUnknownThinkingCapability,
                 .effort(values: [.low, .medium, .high], defaultValue: nil),
                 .effort(values: [.high], defaultValue: .high),
                 .effort(values: [.minimal, .low, .medium, .high, .xhigh], defaultValue: .medium),
                 .effort(values: [.minimal, .low, .medium, .high, .xhigh], defaultValue: .medium),
-                unknownThinkingCapability
-            ]
+                kUnknownThinkingCapability
+            ],
         )
+        XCTAssertEqual(models.map(\.supportsThinkingNone), [false, true, false, true, false, false])
     }
 
     func testLoadModels_openAI_prefersReturnedReasoningMetadataWhenPresent() async throws {
@@ -112,7 +115,7 @@ extension AiProviderModelListClientTests {
 
         let models = try await client.loadModels(
             .openai,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         )
 
         XCTAssertEqual(models.map(\.id.rawValue), ["gpt-5.5", "custom-reasoning-model"])
@@ -121,8 +124,9 @@ extension AiProviderModelListClientTests {
             [
                 .effort(values: [.low, .high], defaultValue: .high),
                 .effort(values: [.minimal, .medium], defaultValue: nil)
-            ]
+            ],
         )
+        XCTAssertEqual(models.map(\.supportsThinkingNone), [true, false])
     }
 
     func testLoadModels_anthropic_usesCapabilitiesFromModelAPIForThinkingMetadata() async throws {
@@ -135,7 +139,7 @@ extension AiProviderModelListClientTests {
 
         let models = try await client.loadModels(
             .anthropic,
-            .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+            .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         )
 
         XCTAssertEqual(models.map(\.providerDisplayName), ["Anthropic", "Anthropic", "Anthropic"])
@@ -145,10 +149,11 @@ extension AiProviderModelListClientTests {
             [
                 .effort(values: [.low, .medium, .high, .max], defaultValue: nil),
                 .adaptive(effortValues: [.low, .high], defaultValue: nil),
-                unknownThinkingCapability
-            ]
+                kUnknownThinkingCapability
+            ],
         )
         XCTAssertEqual(models.map(\.unavailableReason), [nil, nil, nil])
+        XCTAssertEqual(models.map(\.supportsThinkingNone), [true, false, false])
     }
 }
 
@@ -177,22 +182,22 @@ extension AiProviderModelListClientTests {
         XCTAssertEqual(AiThinkingSelection.tokenBudget(2048), .tokenBudget(2048))
         XCTAssertEqual(
             AiModelThinkingCapability.effort(values: [.low, .medium], defaultValue: .medium),
-            .effort(values: [.low, .medium], defaultValue: .medium)
+            .effort(values: [.low, .medium], defaultValue: .medium),
         )
         XCTAssertEqual(
             AiModelThinkingCapability.adaptive(effortValues: [.minimal, .high], defaultValue: .high),
-            .adaptive(effortValues: [.minimal, .high], defaultValue: .high)
+            .adaptive(effortValues: [.minimal, .high], defaultValue: .high),
         )
         XCTAssertEqual(
             AiModelThinkingCapability.tokenBudget(min: 0, max: 4096, defaultValue: 1024),
-            .tokenBudget(min: 0, max: 4096, defaultValue: 1024)
+            .tokenBudget(min: 0, max: 4096, defaultValue: 1024),
         )
     }
 }
 
 private extension AiProviderModelListClientTests {
     func makeLiveClient(
-        handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+        handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data),
     ) -> AiProviderModelListClient {
         ModelListURLProtocol.reset()
         ModelListURLProtocol.handler = handler
@@ -203,10 +208,10 @@ private extension AiProviderModelListClientTests {
     }
 }
 
-private let unknownThinkingCapability = AiModelThinkingCapability.unknown(
+private let kUnknownThinkingCapability = AiModelThinkingCapability.unknown(
     reason: AiThinkingUnavailableReason(
-        message: "Thinking capability metadata was not provided by the model API."
-    )
+        message: "Thinking capability metadata was not provided by the model API.",
+    ),
 )
 
 private func assertCodexRequestMatchesCLIIdentity(_ request: URLRequest) throws {
@@ -271,7 +276,8 @@ private final class ModelListURLProtocol: URLProtocol, @unchecked Sendable {
 }
 
 private func makeHTTPResponse(statusCode: Int, json: String) -> (HTTPURLResponse, Data) {
-    let url = URL(string: "https://example.com")!
-    let response = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil)!
+    let url = URL(fileURLWithPath: "/model-list-response")
+    let response = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil)
+        ?? HTTPURLResponse()
     return (response, Data(json.utf8))
 }

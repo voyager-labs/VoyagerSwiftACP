@@ -322,4 +322,5 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 }
+
 // swiftlint:enable type_name

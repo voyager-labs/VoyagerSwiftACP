@@ -3,103 +3,117 @@ import Foundation
 import VoyagerEntitiesAi
 
 extension AiChatFeature {
-    // swiftlint:disable:next function_body_length
     func restoreSession(sessionID: AiChatSessionID, state: State) -> Effect<Action> {
-        let catalogRows = state.catalogRows
-        let selectedHandle = state.selectedModelHandle
-        let selectedThinking = state.selectedThinking
+        let context = AiChatRestoreContext(
+            sessionID: sessionID,
+            catalogRows: state.catalogRows,
+            selectedHandle: state.selectedModelHandle,
+            selectedThinking: state.selectedThinking,
+        )
 
         return .run { [aiChatSessionPersistenceClient, uuid] send in
             do {
                 if let snapshot = try await aiChatSessionPersistenceClient.loadSession(sessionID) {
-                    if snapshot.status == .rebindRequired {
-                        if let fallbackSnapshot = Self.makeNewSessionSnapshot(
-                            sessionID: AiChatSessionID(rawValue: uuid()),
-                            catalogRows: catalogRows,
-                            selectedHandle: selectedHandle,
-                            selectedThinking: selectedThinking
-                        ) {
-                            await send(.restoreOutcome(
-                                requestedSessionID: sessionID,
-                                .newSession(snapshot: fallbackSnapshot),
-                                restoreFailure: .contextMismatch
-                            ))
-                        } else {
-                            await send(.restoreOutcome(
-                                requestedSessionID: sessionID,
-                                .failed(reason: .contextMismatch),
-                                restoreFailure: .contextMismatch
-                            ))
-                        }
-                    } else {
-                        let normalizedSnapshot = Self.normalizeRestoredSnapshot(snapshot, catalogRows: catalogRows)
-                        let result = AiChatSessionRestoreResult.restored(snapshot: normalizedSnapshot)
-                        await send(.restoreOutcome(
-                            requestedSessionID: sessionID,
-                            result,
-                            restoreFailure: nil
-                        ))
-                    }
-                    return
-                }
-
-                if let snapshot = Self.makeFallbackRestoreSnapshot(
-                    uuid: uuid,
-                    catalogRows: catalogRows,
-                    selectedHandle: selectedHandle,
-                    selectedThinking: selectedThinking
-                ) {
-                    await send(.restoreOutcome(
-                        requestedSessionID: sessionID,
-                        .newSession(snapshot: snapshot),
-                        restoreFailure: .missingRecord
-                    ))
+                    await send(Self.restoreOutcomeAction(for: snapshot, context: context, uuid: uuid))
                 } else {
-                    await send(.restoreOutcome(
-                        requestedSessionID: sessionID,
-                        .failed(reason: .missingRecord),
-                        restoreFailure: .missingRecord
-                    ))
+                    await send(Self.missingRestoreAction(context: context, uuid: uuid))
                 }
             } catch {
-                if let snapshot = Self.makeFallbackRestoreSnapshot(
-                    uuid: uuid,
-                    catalogRows: catalogRows,
-                    selectedHandle: selectedHandle,
-                    selectedThinking: selectedThinking
-                ) {
-                    await send(.restoreOutcome(
-                        requestedSessionID: sessionID,
-                        .newSession(snapshot: snapshot),
-                        restoreFailure: .corruptedRecord
-                    ))
-                } else {
-                    await send(.restoreOutcome(
-                        requestedSessionID: sessionID,
-                        .failed(reason: .corruptedRecord),
-                        restoreFailure: .corruptedRecord
-                    ))
-                }
+                await send(Self.corruptedRestoreAction(context: context, uuid: uuid))
             }
         }
         .cancellable(id: CancelID.restore, cancelInFlight: true)
+    }
+
+    static func restoreOutcomeAction(
+        for snapshot: AiChatSessionSnapshot,
+        context: AiChatRestoreContext,
+        uuid: UUIDGenerator,
+    ) -> Action {
+        if snapshot.status == .rebindRequired {
+            return rebindRequiredRestoreAction(context: context, uuid: uuid)
+        }
+        let normalizedSnapshot = normalizeRestoredSnapshot(snapshot, catalogRows: context.catalogRows)
+        return .restoreOutcome(
+            requestedSessionID: context.sessionID,
+            .restored(snapshot: normalizedSnapshot),
+            restoreFailure: nil,
+        )
+    }
+
+    static func rebindRequiredRestoreAction(context: AiChatRestoreContext, uuid: UUIDGenerator) -> Action {
+        if let fallbackSnapshot = makeNewSessionSnapshot(
+            sessionID: AiChatSessionID(rawValue: uuid()),
+            catalogRows: context.catalogRows,
+            selectedHandle: context.selectedHandle,
+            selectedThinking: context.selectedThinking,
+        ) {
+            return .restoreOutcome(
+                requestedSessionID: context.sessionID,
+                .newSession(snapshot: fallbackSnapshot),
+                restoreFailure: .contextMismatch,
+            )
+        }
+        return .restoreOutcome(
+            requestedSessionID: context.sessionID,
+            .failed(reason: .contextMismatch),
+            restoreFailure: .contextMismatch,
+        )
+    }
+
+    static func missingRestoreAction(context: AiChatRestoreContext, uuid: UUIDGenerator) -> Action {
+        fallbackRestoreAction(context: context, uuid: uuid, failure: .missingRecord)
+    }
+
+    static func corruptedRestoreAction(context: AiChatRestoreContext, uuid: UUIDGenerator) -> Action {
+        fallbackRestoreAction(context: context, uuid: uuid, failure: .corruptedRecord)
+    }
+
+    static func fallbackRestoreAction(
+        context: AiChatRestoreContext,
+        uuid: UUIDGenerator,
+        failure: AiChatSessionRestoreFailure,
+    ) -> Action {
+        if let snapshot = makeFallbackRestoreSnapshot(
+            uuid: uuid,
+            catalogRows: context.catalogRows,
+            selectedHandle: context.selectedHandle,
+            selectedThinking: context.selectedThinking,
+        ) {
+            return .restoreOutcome(
+                requestedSessionID: context.sessionID,
+                .newSession(snapshot: snapshot),
+                restoreFailure: failure,
+            )
+        }
+        return .restoreOutcome(
+            requestedSessionID: context.sessionID,
+            .failed(reason: failure),
+            restoreFailure: failure,
+        )
     }
 
     static func makeFallbackRestoreSnapshot(
         uuid: UUIDGenerator,
         catalogRows: [AiModelCatalogRow],
         selectedHandle: AiModelHandle?,
-        selectedThinking: AiThinkingSelection?
+        selectedThinking: AiThinkingSelection?,
     ) -> AiChatSessionSnapshot? {
         makeNewSessionSnapshot(
             sessionID: AiChatSessionID(rawValue: uuid()),
             catalogRows: catalogRows,
             selectedHandle: selectedHandle,
-            selectedThinking: selectedThinking
+            selectedThinking: selectedThinking,
         )
     }
 
     func apply(setup: AiChatSetupState, to state: inout State) {
+        applySetupSession(setup, to: &state)
+        applySetupModelState(setup, to: &state)
+        clearSetupRuntimeState(&state)
+    }
+
+    private func applySetupSession(_ setup: AiChatSetupState, to state: inout State) {
         state.restoreSessionID = setup.restoreSessionID
         state.restoreOutcome = nil
         state.restoreFailure = nil
@@ -108,6 +122,10 @@ extension AiChatFeature {
         state.currentContext = setup.currentContext
         state.transcriptHistory = setup.transcriptHistory
         state.draftText = setup.draftText
+        state.streamingAssistantDraft = nil
+    }
+
+    private func applySetupModelState(_ setup: AiChatSetupState, to state: inout State) {
         state.catalogRows = setup.catalogRows
         state.modelListState = State.modelListState(from: setup.catalogRows)
         state.selectedModelHandle = setup.selectedModelHandle
@@ -116,6 +134,9 @@ extension AiChatFeature {
         state.lockedModelHandle = setup.lockedModelHandle
         state.lastExecutionFailure = setup.lastExecutionFailure
         state.executionPhase = .idle
+    }
+
+    private func clearSetupRuntimeState(_ state: inout State) {
         state.modelListRequestID = nil
         state.modelListProvider = nil
         state.modelListProviderOrder = []
@@ -127,7 +148,7 @@ extension AiChatFeature {
     func applyRestoreOutcome(
         _ result: AiChatSessionRestoreResult,
         restoreFailure: AiChatSessionRestoreFailure?,
-        state: inout State
+        state: inout State,
     ) {
         switch result {
         case let .restored(snapshot):
@@ -158,6 +179,7 @@ extension AiChatFeature {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
         state.transcriptHistory = snapshot.transcriptHistory
+        state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.executionPhase = .idle
@@ -169,6 +191,7 @@ extension AiChatFeature {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
         state.transcriptHistory = []
+        state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.executionPhase = .idle
@@ -178,7 +201,7 @@ extension AiChatFeature {
 
     static func normalizeRestoredSnapshot(
         _ snapshot: AiChatSessionSnapshot,
-        catalogRows: [AiModelCatalogRow]
+        catalogRows: [AiModelCatalogRow],
     ) -> AiChatSessionSnapshot {
         let selectedRow = catalogRows.first(where: { $0.handle == snapshot.model })
         return AiChatSessionSnapshot(
@@ -191,7 +214,7 @@ extension AiChatFeature {
             transcriptHistory: snapshot.transcriptHistory,
             lastRequestID: snapshot.lastRequestID,
             lastRunID: snapshot.lastRunID,
-            updatedAtMs: snapshot.updatedAtMs
+            updatedAtMs: snapshot.updatedAtMs,
         )
     }
 
@@ -199,7 +222,7 @@ extension AiChatFeature {
         sessionID: AiChatSessionID,
         catalogRows: [AiModelCatalogRow],
         selectedHandle: AiModelHandle?,
-        selectedThinking: AiThinkingSelection?
+        selectedThinking: AiThinkingSelection?,
     ) -> AiChatSessionSnapshot? {
         guard let selectedHandle,
               let selectedRow = catalogRows.first(where: { $0.handle == selectedHandle })
@@ -215,7 +238,14 @@ extension AiChatFeature {
             selectedModelRow: selectedRow,
             selectedThinking: selectedThinking,
             transcriptHistory: [],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
     }
+}
+
+struct AiChatRestoreContext {
+    var sessionID: AiChatSessionID
+    var catalogRows: [AiModelCatalogRow]
+    var selectedHandle: AiModelHandle?
+    var selectedThinking: AiThinkingSelection?
 }

@@ -2,10 +2,21 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 
+let kAiChatHistoryCharacterBudget = 24000
+
 struct AiChatPreparedRequest {
     var prompt: String
     var messages: [AiChatMessage]
     var assistantReplacementIndex: Int?
+    var historyTruncation: AiChatHistoryTruncationMetadata
+}
+
+struct AiChatRequestLockInput {
+    var kind: AiChatRequestKind
+    var sessionID: AiChatSessionID
+    var selectedModel: AiProviderModel
+    var selectedRow: AiModelCatalogRow?
+    var preparedRequest: AiChatPreparedRequest
 }
 
 extension AiChatFeature {
@@ -36,11 +47,13 @@ extension AiChatFeature {
 
         let selectedHandle = selectedModel.id
         let lock = makeRequestLock(
-            kind: kind,
-            sessionID: sessionID,
-            selectedModel: selectedModel,
-            selectedRow: resolvedSelectedModelRow(in: state),
-            preparedRequest: preparedRequest,
+            input: AiChatRequestLockInput(
+                kind: kind,
+                sessionID: sessionID,
+                selectedModel: selectedModel,
+                selectedRow: resolvedSelectedModelRow(in: state),
+                preparedRequest: preparedRequest,
+            ),
             state: state,
         )
 
@@ -67,67 +80,72 @@ extension AiChatFeature {
         let trimmed = state.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
+        let fullMessages = state.transcriptHistory + [AiChatMessage(role: .user, content: trimmed)]
+        let truncatedHistory = truncateHistory(fullMessages, currentUserMessage: trimmed)
+
         return AiChatPreparedRequest(
             prompt: trimmed,
-            messages: state.transcriptHistory + [AiChatMessage(role: .user, content: trimmed)],
+            messages: truncatedHistory.messages,
             assistantReplacementIndex: nil,
+            historyTruncation: truncatedHistory.metadata,
         )
     }
 
     private func prepareRegenerateRequest(state: State) -> AiChatPreparedRequest? {
         guard let lastUserPrompt = lastUserPrompt(in: state.transcriptHistory) else { return nil }
 
+        let messages: [AiChatMessage]
+        let assistantReplacementIndex: Int?
         if state.transcriptHistory.last?.role == .assistant {
-            return AiChatPreparedRequest(
-                prompt: lastUserPrompt,
-                messages: Array(state.transcriptHistory.dropLast()),
-                assistantReplacementIndex: state.transcriptHistory.count - 1,
-            )
+            messages = Array(state.transcriptHistory.dropLast())
+            assistantReplacementIndex = state.transcriptHistory.count - 1
+        } else {
+            messages = state.transcriptHistory
+            assistantReplacementIndex = nil
         }
+
+        let truncatedHistory = truncateHistory(messages, currentUserMessage: lastUserPrompt)
 
         return AiChatPreparedRequest(
             prompt: lastUserPrompt,
-            messages: state.transcriptHistory,
-            assistantReplacementIndex: nil,
+            messages: truncatedHistory.messages,
+            assistantReplacementIndex: assistantReplacementIndex,
+            historyTruncation: truncatedHistory.metadata,
         )
     }
 
-    private func makeRequestLock(
-        kind: AiChatRequestKind,
-        sessionID: AiChatSessionID,
-        selectedModel: AiProviderModel,
-        selectedRow: AiModelCatalogRow?,
-        preparedRequest: AiChatPreparedRequest,
-        state: State,
-    ) -> AiChatRequestLock {
+    private func makeRequestLock(input: AiChatRequestLockInput, state: State) -> AiChatRequestLock {
         let requestID = AiChatRequestID(rawValue: uuid())
         let runID = AiChatRunID(rawValue: uuid())
-        let selectedHandle = selectedModel.id
+        let submittedAtMs = currentTimestampMs()
+        let selectedHandle = input.selectedModel.id
         let context = AiChatRequestContextSnapshot(
-            sessionID: sessionID,
+            sessionID: input.sessionID,
             requestID: requestID,
             runID: runID,
             provider: selectedHandle.provider,
             model: selectedHandle,
-            selectedModel: selectedModel,
-            selectedModelRow: selectedRow,
+            selectedModel: input.selectedModel,
+            selectedModelRow: input.selectedRow,
             selectedThinking: state.selectedThinking,
             sessionStatus: .active,
             currentContext: state.currentContext,
-            promptSummary: preparedRequest.prompt,
-            submittedAtMs: nil,
+            promptSummary: input.preparedRequest.prompt,
+            submittedAtMs: submittedAtMs,
         )
-        let request = AiChatRequest(context: context, messages: preparedRequest.messages)
+        let request = AiChatRequest(context: context, messages: input.preparedRequest.messages)
 
         return AiChatRequestLock(
-            kind: kind,
+            kind: input.kind,
             requestID: requestID,
             runID: runID,
             context: context,
             request: request,
             selectedModelHandle: selectedHandle,
-            selectedModelRow: selectedRow,
-            assistantReplacementIndex: preparedRequest.assistantReplacementIndex,
+            selectedModelRow: input.selectedRow,
+            assistantReplacementIndex: input.preparedRequest.assistantReplacementIndex,
+            historyTruncation: input.preparedRequest.historyTruncation,
+            observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: submittedAtMs),
         )
     }
 
@@ -141,6 +159,7 @@ extension AiChatFeature {
         state.selectedModelHandle = selectedHandle
         state.lockedModelHandle = selectedHandle
         state.lastExecutionFailure = nil
+        state.streamingAssistantDraft = nil
         state.executionPhase = .processing(lock)
         state.sessionStatus = .active
 
@@ -151,59 +170,28 @@ extension AiChatFeature {
     }
 
     private func execute(request: AiChatRequest) -> Effect<Action> {
-        .run { [aiChatExecutionClient] send in
-            for await event in aiChatExecutionClient.execute(request) {
+        .run { [aiChatExecutionClient, aiConnectionsFileClient] send in
+            let credential: StoredCredentialPayload?
+            do {
+                let connectionsFile = try await aiConnectionsFileClient.load()
+                credential = Self.executionCredential(for: request.context.provider, in: connectionsFile)
+            } catch {
+                await send(.executionEvent(.failed(context: request.context, reason: .unknown)))
+                return
+            }
+
+            for await event in aiChatExecutionClient.execute(request, credential) {
                 await send(.executionEvent(event))
             }
         }
         .cancellable(id: CancelID.request, cancelInFlight: true)
     }
 
-    func handleExecutionEvent(_ event: AiChatEvent, state: inout State) -> Effect<Action> {
-        switch event {
-        case .started:
-            return .none
-
-        case let .final(response):
-            guard case let .processing(lock) = state.executionPhase,
-                  matches(lock: lock, context: response.context)
-            else {
-                return .none
-            }
-
-            applyFinal(response: response, lock: lock, state: &state)
-            let snapshot = makeSessionSnapshot(state: state, lock: lock)
-
-            return .merge(
-                .run { [aiChatSessionPersistenceClient] send in
-                    do {
-                        try await aiChatSessionPersistenceClient.saveSession(snapshot)
-                    } catch {
-                        await send(.persistenceFailed(lock, .unknown))
-                    }
-                },
-                .cancel(id: CancelID.request),
-            )
-
-        case let .failed(context, reason):
-            guard case let .processing(lock) = state.executionPhase,
-                  matches(lock: lock, context: context)
-            else {
-                return .none
-            }
-
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = reason
-            state.executionPhase = .failed(lock, reason)
-            return .cancel(id: CancelID.request)
-        }
-    }
-
     func applyFinal(response: AiChatResponse, lock: AiChatRequestLock, state: inout State) {
+        state.streamingAssistantDraft = nil
         if let index = lock.assistantReplacementIndex,
            state.transcriptHistory.indices.contains(index),
-           state.transcriptHistory[index].role == .assistant
-        {
+           state.transcriptHistory[index].role == .assistant {
             state.transcriptHistory[index] = response.assistantMessage
         } else {
             state.transcriptHistory.append(response.assistantMessage)
@@ -214,7 +202,11 @@ extension AiChatFeature {
         state.executionPhase = .completed(lock)
     }
 
-    func makeSessionSnapshot(state: State, lock: AiChatRequestLock) -> AiChatSessionSnapshot {
+    func makeSessionSnapshot(
+        state: State,
+        lock: AiChatRequestLock,
+        updatedAtMs: Int64? = nil,
+    ) -> AiChatSessionSnapshot {
         guard let sessionID = lock.context.sessionID ?? state.sessionID else {
             preconditionFailure("Missing session ID for finalized request")
         }
@@ -229,16 +221,30 @@ extension AiChatFeature {
             transcriptHistory: state.transcriptHistory,
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
-            updatedAtMs: 0,
+            updatedAtMs: updatedAtMs ?? lock.observabilitySummary.terminalAtMs ?? lock.context.submittedAtMs ?? 0,
         )
     }
 
-    private func matches(lock: AiChatRequestLock, context: AiChatRequestContextSnapshot) -> Bool {
+    func matches(lock: AiChatRequestLock, context: AiChatRequestContextSnapshot) -> Bool {
         lock.requestID == context.requestID && lock.runID == context.runID
+    }
+
+    private static func executionCredential(
+        for provider: AiProvider,
+        in file: AIConnectionsFile,
+    ) -> StoredCredentialPayload? {
+        guard let record = file.providers[provider.rawValue],
+              record.snapshot.lastKnownStatus == .connected
+        else { return nil }
+        return record.credential
     }
 
     private func lastUserPrompt(in transcriptHistory: [AiChatMessage]) -> String? {
         transcriptHistory.reversed().first(where: { $0.role == .user })?.content
+    }
+
+    func currentTimestampMs() -> Int64 {
+        Int64(date().timeIntervalSince1970 * 1000)
     }
 
     func normalizeSelectionIfNeeded(_ state: inout State) {
@@ -251,7 +257,10 @@ extension AiChatFeature {
             } else if state.selectedModelHandle != nil {
                 state.unavailableSelectedModelHandle = nil
             }
-            state.selectedThinking = State.normalizeSelectedThinking(state.selectedThinking, for: state.resolvedSelectedModel)
+            state.selectedThinking = State.normalizeSelectedThinking(
+                state.selectedThinking,
+                for: state.resolvedSelectedModel,
+            )
 
         case .empty:
             if let previousSelection = state.selectedModelHandle {
@@ -260,7 +269,10 @@ extension AiChatFeature {
 
         case .idle, .loading, .failed:
             if state.selectedModelHandle != nil {
-                state.selectedThinking = State.normalizeSelectedThinking(state.selectedThinking, for: state.resolvedSelectedModel)
+                state.selectedThinking = State.normalizeSelectedThinking(
+                    state.selectedThinking,
+                    for: state.resolvedSelectedModel,
+                )
             }
         }
     }

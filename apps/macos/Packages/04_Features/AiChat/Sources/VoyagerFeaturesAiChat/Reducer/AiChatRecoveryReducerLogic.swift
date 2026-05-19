@@ -12,15 +12,6 @@ extension AiChatFeature {
             break
         }
 
-        if state.sessionStatus == .failed, let restoreSessionID = state.restoreSessionID {
-            state.sessionStatus = .restoring
-            return restoreSession(sessionID: restoreSessionID, state: state)
-        }
-
-        if state.sessionStatus == .rebindRequired {
-            return .send(.delegate(.openAISettings))
-        }
-
         if state.lastExecutionFailure != nil {
             return startRequest(kind: .regenerate, state: &state)
         }
@@ -29,7 +20,11 @@ extension AiChatFeature {
     }
 
     private func retryPersistenceRecovery(lock: AiChatRequestLock, state: State) -> Effect<Action> {
-        let snapshot = makeSessionSnapshot(state: state, lock: lock)
+        let snapshot = makeSessionSnapshot(
+            state: state,
+            lock: lock,
+            updatedAtMs: lock.observabilitySummary.terminalAtMs ?? currentTimestampMs()
+        )
         return .run { [aiChatSessionPersistenceClient] send in
             do {
                 try await aiChatSessionPersistenceClient.saveSession(snapshot)

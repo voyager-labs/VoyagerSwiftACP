@@ -15,6 +15,7 @@ public struct AiProviderModel: Equatable, Sendable, Hashable, Codable, Identifia
     public let displayName: String
     public let providerDisplayName: String
     public let thinkingCapability: AiModelThinkingCapability
+    public let supportsThinkingNone: Bool
     public let unavailableReason: AiModelUnavailableReason?
 
     public init(
@@ -24,7 +25,8 @@ public struct AiProviderModel: Equatable, Sendable, Hashable, Codable, Identifia
         displayName: String,
         providerDisplayName: String,
         thinkingCapability: AiModelThinkingCapability,
-        unavailableReason: AiModelUnavailableReason? = nil
+        supportsThinkingNone: Bool = false,
+        unavailableReason: AiModelUnavailableReason? = nil,
     ) {
         self.id = id
         self.provider = provider
@@ -32,15 +34,33 @@ public struct AiProviderModel: Equatable, Sendable, Hashable, Codable, Identifia
         self.displayName = displayName
         self.providerDisplayName = providerDisplayName
         self.thinkingCapability = thinkingCapability
+        self.supportsThinkingNone = supportsThinkingNone
         self.unavailableReason = unavailableReason
     }
 }
 
 public enum AiModelDisplayNameFormatter {
+    private enum ClaudeFamily: String {
+        case opus
+        case sonnet
+        case haiku
+
+        var displayName: String {
+            switch self {
+            case .opus:
+                "Opus"
+            case .sonnet:
+                "Sonnet"
+            case .haiku:
+                "Haiku"
+            }
+        }
+    }
+
     public static func displayName(
         provider: AiProvider,
         rawModelID: String,
-        providerDisplayName: String? = nil
+        providerDisplayName: String? = nil,
     ) -> String {
         if let canonicalName = canonicalName(for: rawModelID, provider: provider) {
             return canonicalName
@@ -57,9 +77,9 @@ public enum AiModelDisplayNameFormatter {
     private static func canonicalName(for rawModelID: String, provider: AiProvider) -> String? {
         switch provider {
         case .chatgptCodex, .openai:
-            return openAIModelName(for: rawModelID)
+            openAIModelName(for: rawModelID)
         case .anthropic:
-            return anthropicModelName(for: rawModelID)
+            anthropicModelName(for: rawModelID)
         }
     }
 
@@ -140,22 +160,5 @@ public enum AiModelDisplayNameFormatter {
               let family = ClaudeFamily(rawValue: parts[3]) else { return nil }
 
         return "Claude \(family.displayName) \(parts[1]).\(parts[2])"
-    }
-
-    private enum ClaudeFamily: String {
-        case opus
-        case sonnet
-        case haiku
-
-        var displayName: String {
-            switch self {
-            case .opus:
-                "Opus"
-            case .sonnet:
-                "Sonnet"
-            case .haiku:
-                "Haiku"
-            }
-        }
     }
 }

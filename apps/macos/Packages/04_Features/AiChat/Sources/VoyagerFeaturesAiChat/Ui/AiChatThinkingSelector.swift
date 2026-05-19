@@ -15,20 +15,20 @@ struct AiChatThinkingSelectorButton: View {
         } label: {
             AiChatHoverTextAffordance(
                 title: AiChatSelectorLabels.thinkingSelectorLabel(for: state, input: input),
-                systemName: "chevron.down"
+                systemName: "chevron.down",
             )
-            .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             AiChatSelectorPopoverContainer {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(AiChatThinkingSelectorOptions.options(for: capability), id: \.id) { option in
+                    ForEach(AiChatThinkingSelectorOptions.options(for: state.resolvedSelectedModel),
+                            id: \.id) { option in
                         AiChatThinkingSelectorRow(
                             store: store,
                             option: option,
                             isSelected: state.selectedThinking == option.selection,
-                            isPresented: $isPresented
+                            isPresented: $isPresented,
                         )
                     }
                 }
@@ -37,10 +37,6 @@ struct AiChatThinkingSelectorButton: View {
         .disabled(AiChatSelectorLabels.thinkingSelectorIsDisabled(for: state))
         .accessibilityLabel("Thinking")
         .accessibilityValue(AiChatSelectorLabels.thinkingSelectorAccessibilityValue(for: state))
-    }
-
-    private var capability: AiModelThinkingCapability? {
-        state.resolvedSelectedModel?.thinkingCapability
     }
 }
 
@@ -74,7 +70,7 @@ private struct AiChatThinkingSelectorRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
+                    .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear),
             )
         }
         .buttonStyle(.plain)
@@ -83,41 +79,46 @@ private struct AiChatThinkingSelectorRow: View {
 }
 
 private enum AiChatThinkingSelectorOptions {
-    static func options(for capability: AiModelThinkingCapability?) -> [ThinkingSelectorOption] {
-        switch capability {
+    static func options(for model: AiProviderModel?) -> [ThinkingSelectorOption] {
+        guard let model else { return [] }
+        let defaults = defaultOptions(supportsNone: model.supportsThinkingNone)
+        switch model.thinkingCapability {
         case let .effort(values, _):
-            return defaultOptions + values.map { effortOption($0) }
+            return defaults + values.map { effortOption($0) }
         case let .adaptive(effortValues, _):
-            return defaultOptions + effortValues.map { effortOption($0) }
+            return defaults + effortValues.map { effortOption($0) }
         case let .tokenBudget(min, max, defaultValue):
-            return defaultOptions + budgetValues(min: min, max: max, defaultValue: defaultValue)
+            return defaults + budgetValues(min: min, max: max, defaultValue: defaultValue)
                 .map { tokenBudgetOption($0) }
-        case .unsupported, .unknown, nil:
+        case .unsupported, .unknown:
             return []
         }
     }
 
-    private static var defaultOptions: [ThinkingSelectorOption] {
-        [
-            ThinkingSelectorOption(selection: nil, title: "default"),
-            ThinkingSelectorOption(
-                selection: AiThinkingSelection.none,
-                title: AiChatState.thinkingLabel(for: .none)
+    private static func defaultOptions(supportsNone: Bool) -> [ThinkingSelectorOption] {
+        var options = [ThinkingSelectorOption(selection: nil, title: "default")]
+        if supportsNone {
+            options.append(
+                ThinkingSelectorOption(
+                    selection: AiThinkingSelection.none,
+                    title: AiChatState.thinkingLabel(for: .none),
+                ),
             )
-        ]
+        }
+        return options
     }
 
     private static func effortOption(_ effort: AiThinkingEffort) -> ThinkingSelectorOption {
         ThinkingSelectorOption(
             selection: .effort(effort),
-            title: AiChatState.thinkingLabel(for: .effort(effort))
+            title: AiChatState.thinkingLabel(for: .effort(effort)),
         )
     }
 
     private static func tokenBudgetOption(_ value: Int) -> ThinkingSelectorOption {
         ThinkingSelectorOption(
             selection: .tokenBudget(value),
-            title: AiChatState.thinkingLabel(for: .tokenBudget(value))
+            title: AiChatState.thinkingLabel(for: .tokenBudget(value)),
         )
     }
 

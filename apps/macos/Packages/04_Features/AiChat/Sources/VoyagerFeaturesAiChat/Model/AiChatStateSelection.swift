@@ -4,7 +4,7 @@ import VoyagerEntitiesAi
 enum AiChatStateSelection {
     static func normalizedSelectionHandle(
         _ preferredHandle: AiModelHandle?,
-        in models: [AiProviderModel]
+        in models: [AiProviderModel],
     ) -> AiModelHandle? {
         resolvedModel(for: preferredHandle, in: models)?.id
     }
@@ -29,13 +29,13 @@ enum AiChatStateSelection {
 
     static func normalizeSelectedThinking(
         _ selectedThinking: AiThinkingSelection?,
-        for model: AiProviderModel?
+        for model: AiProviderModel?,
     ) -> AiThinkingSelection? {
         guard let selectedThinking, let model else { return nil }
 
         switch (selectedThinking, model.thinkingCapability) {
         case (.none, .effort), (.none, .adaptive), (.none, .tokenBudget), (.none, .unknown):
-            return selectedThinking
+            return model.supportsThinkingNone ? selectedThinking : nil
         case let (.effort(value), .effort(values, _)):
             return values.contains(value) ? selectedThinking : nil
         case let (.effort(value), .adaptive(values, _)):
@@ -61,7 +61,7 @@ enum AiChatStateSelection {
                 displayName: row.displayName,
                 providerDisplayName: providerDisplayName,
                 thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
-                unavailableReason: nil
+                unavailableReason: nil,
             )
         }
         return models.isEmpty ? .empty : .loaded(models)
@@ -69,7 +69,7 @@ enum AiChatStateSelection {
 
     static func makeCatalogRows(
         for models: [AiProviderModel],
-        preserving existingRows: [AiModelCatalogRow] = []
+        preserving existingRows: [AiModelCatalogRow] = [],
     ) -> [AiModelCatalogRow] {
         models.enumerated().map { index, model in
             if let existingRow = existingRows.first(where: { $0.handle == model.id }) {
@@ -80,7 +80,7 @@ enum AiChatStateSelection {
                     subtitle: existingRow.subtitle,
                     sortOrder: existingRow.sortOrder,
                     isDefault: existingRow.isDefault,
-                    isRecommended: existingRow.isRecommended
+                    isRecommended: existingRow.isRecommended,
                 )
             }
             return AiModelCatalogRow(
@@ -90,7 +90,7 @@ enum AiChatStateSelection {
                 subtitle: nil,
                 sortOrder: index,
                 isDefault: false,
-                isRecommended: false
+                isRecommended: false,
             )
         }
     }
@@ -98,42 +98,42 @@ enum AiChatStateSelection {
     static func makeCatalogRows(for modelListState: AiChatModelListState) -> [AiModelCatalogRow] {
         switch modelListState {
         case let .loaded(models):
-            return makeCatalogRows(for: models)
+            makeCatalogRows(for: models)
         case .idle, .loading, .empty, .failed:
-            return []
+            []
         }
     }
 
     static func defaultThinkingLabel(for capability: AiModelThinkingCapability) -> String {
         switch capability {
         case .unsupported, .unknown:
-            return "Thinking unavailable"
+            "Thinking unavailable"
         case .effort, .adaptive, .tokenBudget:
-            return "default"
+            "default"
         }
     }
 
     static func thinkingLabel(for selection: AiThinkingSelection) -> String {
         switch selection {
         case .none:
-            return "none"
+            "none"
         case let .effort(value):
             switch value {
             case .minimal:
-                return "minimal"
+                "minimal"
             case .low:
-                return "low"
+                "low"
             case .medium:
-                return "medium"
+                "medium"
             case .high:
-                return "high"
+                "high"
             case .xhigh:
-                return "x-high"
+                "x-high"
             case .max:
-                return "max"
+                "max"
             }
         case let .tokenBudget(value):
-            return "\(value) tokens"
+            "\(value) tokens"
         }
     }
 }

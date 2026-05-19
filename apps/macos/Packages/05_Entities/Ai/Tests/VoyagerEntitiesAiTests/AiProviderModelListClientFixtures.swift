@@ -94,7 +94,7 @@ func openAIModelsWithReasoningMetadataJSON() -> String {
       "data": [
         {
           "id": "gpt-5.5",
-          "supported_reasoning_efforts": ["low", "high"],
+          "supported_reasoning_efforts": ["none", "low", "high"],
           "default_reasoning_effort": "high"
         },
         {

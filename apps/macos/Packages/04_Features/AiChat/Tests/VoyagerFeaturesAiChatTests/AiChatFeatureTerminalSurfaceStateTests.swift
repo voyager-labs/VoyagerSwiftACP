@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureTerminalSurfaceStateTests: XCTestCase {
-    func testTerminalSurfaceReflectsSessionStatusError() {
+    func testTerminalSurfaceIgnoresLegacySessionStatusErrorWithoutRestoreFlow() {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let lock = makeRequestLock(
@@ -38,19 +38,18 @@ final class AiChatFeatureTerminalSurfaceStateTests: XCTestCase {
             executionPhase: .completed(lock)
         )
 
-        if case let .error(connection, summary) = failedSessionState.surfaceState {
-            XCTAssertEqual(connection.title, "Session failed")
-            XCTAssertEqual(connection.fixLabel, "Retry")
+        if case let .ready(summary, selectedModel) = failedSessionState.surfaceState {
             XCTAssertFalse(summary.isEmpty)
+            XCTAssertEqual(selectedModel?.handle, selectedHandle)
         } else {
-            XCTFail("Expected terminal session failure to surface error state")
+            XCTFail("Expected terminal surface to remain ready when restore flow is disabled")
         }
-        if case let .error(connection) = failedSessionState.skeletonSurfaceDisplayModel {
-            XCTAssertEqual(connection.title, "Session failed")
+        if case .ready = failedSessionState.skeletonSurfaceDisplayModel {
         } else {
-            XCTFail("Expected skeleton surface to expose terminal session failure")
+            XCTFail("Expected skeleton surface to remain ready when restore flow is disabled")
         }
-        XCTAssertFalse(failedSessionState.canSubmit)
+        XCTAssertTrue(failedSessionState.canSubmit)
+        XCTAssertNil(failedSessionState.sessionStatusText)
     }
 
     func testPersistenceRecoverySurfaceReflectsExecutionFailure() {

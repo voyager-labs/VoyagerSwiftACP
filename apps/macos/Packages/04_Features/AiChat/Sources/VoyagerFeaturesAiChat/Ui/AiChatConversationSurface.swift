@@ -15,14 +15,14 @@ struct AiChatConversationSurface: View {
                     title: connection.title,
                     detail: connection.detail,
                     actionLabel: connection.fixLabel,
-                    action: onOpenSettings
+                    action: onOpenSettings,
                 )
             case let .error(connection):
                 AiChatStatusBanner(
                     title: connection.title,
                     detail: connection.detail,
                     actionLabel: connection.fixLabel,
-                    action: onErrorRecovery
+                    action: onErrorRecovery,
                 )
             case .empty:
                 EmptyView()
@@ -30,10 +30,15 @@ struct AiChatConversationSurface: View {
                 AiChatTranscriptSection(
                     messages: state.transcriptHistory,
                     isProcessing: false,
-                    statusText: state.requestStatusText
+                    statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
+                    streamingAssistant: state.streamingAssistantDisplayModel,
                 )
             case .processing:
-                AiChatTranscriptSection(messages: state.transcriptHistory, isProcessing: true)
+                AiChatTranscriptSection(
+                    messages: state.transcriptHistory,
+                    isProcessing: true,
+                    streamingAssistant: state.streamingAssistantDisplayModel,
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -75,11 +80,11 @@ private struct AiChatStatusBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(Color(nsColor: .controlBackgroundColor)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
         )
     }
 
@@ -91,11 +96,11 @@ private struct AiChatStatusBanner: View {
             .padding(.vertical, 8)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor))
+                    .fill(Color(nsColor: .windowBackgroundColor)),
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
             )
     }
 }
@@ -104,6 +109,7 @@ private struct AiChatTranscriptSection: View {
     let messages: [AiChatMessage]
     let isProcessing: Bool
     var statusText: String?
+    var streamingAssistant: AiChatStreamingAssistantDisplayModel?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -111,7 +117,13 @@ private struct AiChatTranscriptSection: View {
                 AiChatMessageRow(message: message)
             }
 
-            if isProcessing {
+            if let streamingAssistant {
+                AiChatAssistantCard(
+                    content: streamingAssistant.content,
+                    isProcessing: isProcessing,
+                    failure: streamingAssistant.failure,
+                )
+            } else if isProcessing {
                 AiChatAssistantCard(content: nil, isProcessing: true)
             } else if let statusText {
                 requestStatusRow(statusText)
@@ -148,7 +160,7 @@ private struct AiChatMessageRow: View {
 
     private var userMessage: some View {
         HStack {
-            Spacer(minLength: 40)
+            Spacer(minLength: 16)
             Text(message.content)
                 .font(.system(size: 13))
                 .foregroundStyle(.primary)
@@ -156,43 +168,33 @@ private struct AiChatMessageRow: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .fill(Color(nsColor: .controlBackgroundColor)),
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
                 )
         }
     }
 
-    @ViewBuilder
     private var assistantMessage: some View {
-        if aiChatMockAssistantBodyLines(from: message.content) != nil {
-            AiChatAssistantCard(content: message.content, isProcessing: false)
-        } else {
-            Text(message.content)
-                .font(.system(size: 13))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        AiChatAssistantMarkdownText(content: message.content)
+            .padding(.vertical, 4)
     }
 }
 
 private struct AiChatAssistantCard: View {
     let content: String?
     let isProcessing: Bool
+    var failure: AiChatExecutionFailure?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             header
-            bodyLinesView
-            progressRowsView
+            bodyContentView
 
-            if isProcessing {
-                ProgressView()
-                    .controlSize(.small)
+            if let failure {
+                failureView(failure)
             }
         }
         .padding(.vertical, 4)
@@ -212,79 +214,121 @@ private struct AiChatAssistantCard: View {
 
             Text(Self.assistantHeaderTitle)
                 .font(.system(size: 13, weight: .semibold))
-        }
-    }
 
-    private var bodyLinesView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(bodyLines.enumerated()), id: \.offset) { index, line in
-                HStack(alignment: .top, spacing: 8) {
-                    Text("\(index + 1).")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text(line)
-                        .font(.system(size: 13))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            if isProcessing {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
     }
 
-    private var progressRowsView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            progressRow(symbol: "checkmark", title: Self.progressRows[0], tint: .secondary)
-            progressRow(symbol: "checkmark", title: Self.progressRows[1], tint: .secondary)
-            progressRow(
-                symbol: isProcessing ? "ellipsis" : "star.fill",
-                title: Self.progressRows[2],
-                tint: isProcessing ? .secondary : .primary
-            )
+    @ViewBuilder private var bodyContentView: some View {
+        if let content = normalizedContent {
+            AiChatAssistantMarkdownText(content: content)
         }
     }
 
-    private var bodyLines: [String] {
-        guard let content,
-              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-            return Self.mockAssistantBodyLines
-        }
-
-        if let mockBodyLines = aiChatMockAssistantBodyLines(from: content) {
-            return mockBodyLines
-        }
-
-        let lines = content
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        return lines.isEmpty ? Self.mockAssistantBodyLines : lines
-    }
-
-    private func progressRow(symbol: String, title: String, tint: Color) -> some View {
+    private func failureView(_ failure: AiChatExecutionFailure) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: symbol)
+            Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(tint)
+                .foregroundStyle(.red)
                 .frame(width: 12)
 
-            Text(title)
+            Text(failure.displayMessage)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(tint)
+                .foregroundStyle(.red)
         }
     }
 
-    private static let assistantHeaderTitle = "Voyager AI"
+    private var normalizedContent: String? {
+        guard let content else {
+            return nil
+        }
 
-    private static let mockAssistantBodyLines = [
-        "Context checked.",
-        "Plan ready.",
-        "Provider later."
-    ]
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedContent.isEmpty ? nil : content
+    }
 
-    private static let progressRows = [
-        "✓ Context",
-        "✓ Queued",
-        "★ Mock ready"
-    ]
+    private static let assistantHeaderTitle = "Assistant"
+}
+
+private struct AiChatAssistantMarkdownText: View {
+    let content: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var blocks: [AssistantMarkdownBlock] {
+        AssistantMarkdownBlock.parse(content)
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: AssistantMarkdownBlock) -> some View {
+        switch block {
+        case let .heading(level, text):
+            Text(inlineMarkdown(text))
+                .font(.system(size: headingSize(for: level), weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case let .paragraph(text):
+            Text(inlineMarkdown(text))
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case let .bullet(text):
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text("•")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(inlineMarkdown(text))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case let .numbered(number, text):
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text("\(number).")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(inlineMarkdown(text))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case let .code(text):
+            Text(text)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.primary)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    private func headingSize(for level: Int) -> CGFloat {
+        switch level {
+        case 1: 17
+        case 2: 15
+        default: 14
+        }
+    }
+
+    private func inlineMarkdown(_ text: String) -> AttributedString {
+        if let markdown = try? AttributedString(
+            markdown: text,
+            options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+            ),
+        ) {
+            return markdown
+        }
+        return AttributedString(text)
+    }
 }

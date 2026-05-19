@@ -294,7 +294,14 @@ public struct AiChatRequest: Codable, Equatable, Sendable {
 
 public enum AiChatExecutionFailure: String, Codable, Sendable, Equatable, CaseIterable {
     case cancelled
+    case authentication
+    case modelUnavailable
+    case network
+    case rateLimited
+    case quotaExceeded
+    case invalidRequest
     case transportError
+    case cliUnavailable
     case unsupportedProvider
     case sessionMismatch
     case unknown
@@ -316,8 +323,12 @@ public struct AiChatResponse: Codable, Equatable, Sendable {
     }
 }
 
+/// Request execution events must follow this sequence: started once, delta zero or more times,
+/// then exactly one terminal final or failed event. Consumers should ignore terminal or late events
+/// that no longer match the active request/run context.
 public enum AiChatEvent: Codable, Equatable, Sendable {
     case started(context: AiChatRequestContextSnapshot)
+    case delta(context: AiChatRequestContextSnapshot, text: String)
     case final(response: AiChatResponse)
     case failed(context: AiChatRequestContextSnapshot, reason: AiChatExecutionFailure)
 }

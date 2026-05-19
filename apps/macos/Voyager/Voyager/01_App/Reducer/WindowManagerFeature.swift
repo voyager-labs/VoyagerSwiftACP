@@ -171,6 +171,10 @@ struct WindowManagerFeature {
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewTab(path))))):
                 return .send(.file(.newTab(path: path)))
 
+            case let .windows(.element(id: _, action: .window(.inspector(.setInspectorWidth(width))))):
+                state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
+                return .none
+
             case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
                 return .send(.delegate(.openAISettings))
 

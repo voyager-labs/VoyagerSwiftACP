@@ -482,4 +482,5 @@ private func assertCollectionModeNavigation(
         return true
     }
 }
+
 // swiftlint:enable type_body_length
