@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
+import VoyagerShared
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
@@ -24,7 +26,14 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         )
 
         let collectionURL = sandbox.appendingPathComponent("Workspace.voycoll")
-        try "Collection body".write(to: collectionURL, atomically: true, encoding: .utf8)
+        try writeCollectionFile(
+            to: collectionURL,
+            name: "Workspace",
+            snapshotPaths: [
+                sandbox.appendingPathComponent("README.md").path,
+                sandbox.appendingPathComponent("design.pdf").path,
+            ]
+        )
 
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -73,8 +82,99 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
 
         XCTAssertResolvedText(attachments[0].resolutionResult, contains: "File note body")
         XCTAssertResolvedReference(attachments[1].resolutionResult)
-        XCTAssertResolvedReference(attachments[2].resolutionResult)
+        XCTAssertResolvedReference(
+            attachments[2].resolutionResult,
+            collectionPaths: [
+                sandbox.appendingPathComponent("README.md").path,
+                sandbox.appendingPathComponent("design.pdf").path,
+            ],
+            included: 2,
+            truncated: false
+        )
     }
+
+    func testSubmitKeepsUnreadableCollectionReferenceWithoutItemPaths() async throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let collectionURL = sandbox.appendingPathComponent("Broken.voycoll")
+        try "not a collection".write(to: collectionURL, atomically: true, encoding: .utf8)
+
+        let request = await submitRequest(attachments: [makeDraftAttachment(url: collectionURL, source: .collectionDocument)])
+        let attachment = try XCTUnwrap(request.context.requestContext.addedAttachments.first)
+        XCTAssertResolvedReference(attachment.resolutionResult, collectionSnapshotStatus: "unreadable")
+    }
+
+    func testSubmitTruncatesCollectionReferenceItemPathsByUTF8Budget() async throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let paths = (0..<2_000).map { index in
+            let filename = "VeryLongCollectionReferencePath_\(index)_"
+                + String(repeating: "x", count: 80)
+                + ".swift"
+            return sandbox.appendingPathComponent(filename).path
+        }
+        let expectedPaths = collectionPathsWithinUTF8Budget(paths, budget: 64 * 1024)
+        XCTAssertLessThan(expectedPaths.count, paths.count)
+
+        let collectionURL = sandbox.appendingPathComponent("Large.voycoll")
+        try writeCollectionFile(to: collectionURL, name: "Large", snapshotPaths: paths)
+
+        let request = await submitRequest(attachments: [makeDraftAttachment(url: collectionURL, source: .collectionDocument)])
+        let attachment = try XCTUnwrap(request.context.requestContext.addedAttachments.first)
+        XCTAssertResolvedReference(
+            attachment.resolutionResult,
+            collectionPaths: expectedPaths,
+            included: expectedPaths.count,
+            truncated: true,
+            utf8ByteBudget: 64 * 1024,
+            utf8Bytes: expectedPaths.joined(separator: "\n").utf8.count
+        )
+    }
+
+    func testSubmitCountsCollectionReferenceItemPathsAgainstTotalAttachmentBudget() async throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let fileURL = sandbox.appendingPathComponent("LargeNotes.txt")
+        try String(repeating: "a", count: 80 * 1024).write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let paths = (0..<2_000).map { index in
+            let filename = "TotalBudgetCollectionReferencePath_\(index)_"
+                + String(repeating: "x", count: 80)
+                + ".swift"
+            return sandbox.appendingPathComponent(filename).path
+        }
+        let expectedPaths = collectionPathsWithinUTF8Budget(paths, budget: 64 * 1024)
+        XCTAssertLessThan(expectedPaths.count, paths.count)
+
+        let collectionURL = sandbox.appendingPathComponent("Budgeted.voycoll")
+        try writeCollectionFile(to: collectionURL, name: "Budgeted", snapshotPaths: paths)
+
+        let request = await submitRequest(attachments: [
+            makeDraftAttachment(url: fileURL, source: .file),
+            makeDraftAttachment(url: collectionURL, source: .collectionDocument),
+        ])
+        let attachments = request.context.requestContext.addedAttachments
+        XCTAssertEqual(attachments.map(\.displayTitle), ["LargeNotes.txt", "Budgeted.voycoll"])
+        XCTAssertResolvedPartial(attachments[0].resolutionResult)
+        XCTAssertResolvedReference(
+            attachments[1].resolutionResult,
+            collectionPaths: expectedPaths,
+            included: expectedPaths.count,
+            truncated: true,
+            utf8ByteBudget: 64 * 1024,
+            utf8Bytes: expectedPaths.joined(separator: "\n").utf8.count
+        )
+    }
+
 
     func testRegenerateReusesOriginalLockedRequestContextSnapshot() async {
         let stream = AiChatExecutionStreamDriver()
@@ -217,6 +317,94 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
 
 }
 
+
+@MainActor
+private func submitRequest(
+    attachments: [AiChatAttachmentDraft],
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async -> AiChatRequest {
+    let stream = AiChatExecutionStreamDriver()
+    let catalogRows = makeCatalogRows()
+    let selectedHandle = catalogRows[0].handle
+    let store = TestStore(initialState: AiChatFeature.State(
+        sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111154")),
+        sessionStatus: .active,
+        currentContext: makeContextSnapshot(summary: "Current folder"),
+        addedAttachments: attachments,
+        draftText: "Summarize these",
+        catalogRows: catalogRows,
+        selectedModelHandle: selectedHandle,
+        executionPhase: .idle
+    )) {
+        AiChatFeature()
+    } withDependencies: {
+        $0.uuid = .incrementing
+        $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_002_000))
+        $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+            stream.stream(for: request)
+        })
+        $0.aiConnectionsFileClient = AIConnectionsFileClient(
+            load: { .empty() },
+            save: { .success($0) },
+            deleteCredential: { _ in .success(.empty()) }
+        )
+    }
+    store.exhaustivity = .off(showSkippedAssertions: false)
+    await store.send(.submitTapped)
+    guard let request = stream.requests.first else {
+        XCTFail("Expected execution request", file: file, line: line)
+        return AiChatRequest(
+            context: AiChatRequestContextSnapshot(
+                sessionID: nil,
+                requestID: AiChatRequestID(rawValue: UUID()),
+                runID: AiChatRunID(rawValue: UUID()),
+                provider: .openai,
+                model: selectedHandle,
+                selectedModelRow: catalogRows[0],
+                sessionStatus: .active,
+                promptSummary: nil,
+                submittedAtMs: 0
+            ),
+            messages: []
+        )
+    }
+    return request
+}
+
+private func writeCollectionFile(
+    to url: URL,
+    name: String,
+    snapshotPaths: [String],
+    stale: Bool = false
+) throws {
+    let conditions: [CollectionCondition] = []
+    let query = ""
+    let scopes = [url.deletingLastPathComponent().path]
+    let fingerprint = stale
+        ? "stale-fingerprint"
+        : CollectionSnapshotHydration.definitionFingerprint(query: query, scopes: scopes, conditions: conditions)
+    let file = VoyagerCollectionFile(
+        id: UUID().uuidString,
+        name: name,
+        createdAt: Date(timeIntervalSince1970: 0),
+        updatedAt: Date(timeIntervalSince1970: 0),
+        query: query,
+        scopes: scopes,
+        conditions: conditions,
+        snapshot: CollectionPersistedSnapshot(items: snapshotPaths.map(VoyagerShared.JSONValue.string)),
+        snapshotMeta: CollectionSnapshotMeta(
+            definitionFingerprint: fingerprint,
+            capturedAt: Date(timeIntervalSince1970: 0),
+            itemCount: snapshotPaths.count,
+            relevanceRoots: scopes
+        ),
+        appVersion: nil
+    )
+    let data = try VoyagerCollectionFileCompatibilityOwner.encodeCurrent(file)
+    try data.write(to: url, options: [.atomic])
+}
+
 private func makeDraftAttachment(url: URL, source: AiChatAttachmentSource) -> AiChatAttachmentDraft {
     let normalizedURL = url.standardizedFileURL
     return AiChatAttachmentDraft(
@@ -245,15 +433,71 @@ private func XCTAssertResolvedText(
 }
 
 
-private func XCTAssertResolvedReference(
+private func XCTAssertResolvedPartial(
     _ result: AiChatAttachmentResolutionResult,
     file: StaticString = #filePath,
     line: UInt = #line
 ) {
+    guard case .resolvedPartial = result else {
+        XCTFail("Expected resolvedPartial, got \(result)", file: file, line: line)
+        return
+    }
+}
+
+private func XCTAssertResolvedReference(
+    _ result: AiChatAttachmentResolutionResult,
+    collectionPaths expectedPaths: [String]? = nil,
+    included expectedIncluded: Int? = nil,
+    truncated expectedTruncated: Bool? = nil,
+    collectionSnapshotStatus expectedStatus: String? = nil,
+    utf8ByteBudget expectedUTF8ByteBudget: Int? = nil,
+    utf8Bytes expectedUTF8Bytes: Int? = nil,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
     switch result {
-    case .resolvedReference:
-        break
+    case let .resolvedReference(metadata):
+        if let expectedPaths {
+            XCTAssertEqual(
+                metadata["collectionItemPaths"]?.split(separator: "\n").map(String.init),
+                expectedPaths,
+                file: file,
+                line: line
+            )
+        } else {
+            XCTAssertNil(metadata["collectionItemPaths"], file: file, line: line)
+        }
+        if let expectedIncluded {
+            XCTAssertEqual(metadata["collectionItemsIncluded"], "\(expectedIncluded)", file: file, line: line)
+        }
+        if let expectedTruncated {
+            XCTAssertEqual(metadata["collectionItemsTruncated"], expectedTruncated ? "true" : "false", file: file, line: line)
+        }
+        if let expectedStatus {
+            XCTAssertEqual(metadata["collectionSnapshotStatus"], expectedStatus, file: file, line: line)
+        }
+        if let expectedUTF8ByteBudget {
+            XCTAssertEqual(metadata["collectionItemPathUTF8ByteBudget"], "\(expectedUTF8ByteBudget)", file: file, line: line)
+        }
+        if let expectedUTF8Bytes {
+            XCTAssertEqual(metadata["collectionItemPathsUTF8Bytes"], "\(expectedUTF8Bytes)", file: file, line: line)
+        }
     default:
         XCTFail("Expected resolved reference, got \(result)", file: file, line: line)
     }
+}
+
+private func collectionPathsWithinUTF8Budget(_ paths: [String], budget: Int) -> [String] {
+    var includedPaths: [String] = []
+    var usedBytes = 0
+
+    for path in paths {
+        let separatorBytes = includedPaths.isEmpty ? 0 : 1
+        let nextBytes = path.utf8.count
+        guard usedBytes + separatorBytes + nextBytes <= budget else { return includedPaths }
+        includedPaths.append(path)
+        usedBytes += separatorBytes + nextBytes
+    }
+
+    return includedPaths
 }

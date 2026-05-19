@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
 
 public struct AiChatExecutionClient: Sendable {
     public var execute: @Sendable (AiChatRequest, StoredCredentialPayload?) -> AsyncStream<AiChatEvent>
@@ -139,7 +140,7 @@ extension AiChatAttachmentResolverClient: DependencyKey {
 public extension AiChatAttachmentResolverClient {
     nonisolated static func live() -> AiChatAttachmentResolverClient {
         AiChatAttachmentResolverClient { attachments in
-            var remainingTotalBudget = 128 * 1024
+            var remainingTotalBudget = totalAttachmentTextUTF8ByteBudget
             return attachments.map { attachment in
                 let result = resolveAttachment(attachment, remainingTotalBudget: &remainingTotalBudget)
                 return AiChatAttachmentSnapshot(
@@ -166,8 +167,12 @@ private extension AiChatAttachmentResolverClient {
             return .failure(reason: .tooLarge, metadata: attachmentResolutionMetadata(for: attachment))
         }
 
-        if attachment.source == .folder || attachment.source == .collectionDocument || attachment.source == .collectionFile {
+        if attachment.source == .folder {
             return .resolvedReference(metadata: attachmentResolutionMetadata(for: attachment))
+        }
+
+        if attachment.source == .collectionDocument || attachment.source == .collectionFile {
+            return resolveCollectionAttachment(attachment, remainingTotalBudget: &remainingTotalBudget)
         }
 
         guard let fileURL = attachmentResolutionURL(for: attachment) else {
@@ -189,6 +194,64 @@ private extension AiChatAttachmentResolverClient {
             relativePath: fileURL.lastPathComponent,
             remainingTotalBudget: &remainingTotalBudget
         )
+    }
+
+
+    static func resolveCollectionAttachment(
+        _ attachment: AiChatAttachmentDraft,
+        remainingTotalBudget: inout Int
+    ) -> AiChatAttachmentResolutionResult {
+        var metadata = attachmentResolutionMetadata(for: attachment)
+        guard let fileURL = attachmentResolutionURL(for: attachment) else {
+            metadata["collectionSnapshotStatus"] = CollectionFileReferenceSnapshotStatus.missing.rawValue
+            return .resolvedReference(metadata: metadata)
+        }
+
+        let snapshot = CollectionFileReferenceExtractor.referenceSnapshot(at: fileURL)
+        metadata["collectionSnapshotStatus"] = snapshot.status.rawValue
+        if let itemCount = snapshot.itemCount {
+            metadata["collectionItemCount"] = "\(itemCount)"
+        }
+
+        if !snapshot.itemPaths.isEmpty {
+            let resolvedPaths = collectionItemPathsWithinBudget(
+                snapshot.itemPaths,
+                budget: min(collectionItemPathUTF8ByteBudget, remainingTotalBudget)
+            )
+            metadata["collectionItemsIncluded"] = "\(resolvedPaths.paths.count)"
+            metadata["collectionItemsTruncated"] = resolvedPaths.truncated ? "true" : "false"
+            metadata["collectionItemPathUTF8ByteBudget"] = "\(collectionItemPathUTF8ByteBudget)"
+            metadata["collectionItemPathsUTF8Bytes"] = "\(resolvedPaths.utf8Bytes)"
+            remainingTotalBudget -= resolvedPaths.utf8Bytes
+            if !resolvedPaths.paths.isEmpty {
+                metadata["collectionItemPaths"] = resolvedPaths.paths.joined(separator: "\n")
+            }
+        }
+        return .resolvedReference(metadata: metadata)
+    }
+
+    static let perAttachmentUTF8ByteBudget = 64 * 1024
+    static let totalAttachmentTextUTF8ByteBudget = 128 * 1024
+    static let collectionItemPathUTF8ByteBudget = perAttachmentUTF8ByteBudget
+
+    static func collectionItemPathsWithinBudget(
+        _ paths: [String],
+        budget: Int
+    ) -> (paths: [String], utf8Bytes: Int, truncated: Bool) {
+        var includedPaths: [String] = []
+        var usedBytes = 0
+
+        for path in paths {
+            let separatorBytes = includedPaths.isEmpty ? 0 : 1
+            let pathBytes = path.utf8.count
+            guard usedBytes + separatorBytes + pathBytes <= budget else {
+                return (includedPaths, usedBytes, true)
+            }
+            includedPaths.append(path)
+            usedBytes += separatorBytes + pathBytes
+        }
+
+        return (includedPaths, usedBytes, false)
     }
 
     static func resolveFileAttachment(
@@ -222,8 +285,7 @@ private extension AiChatAttachmentResolverClient {
         do {
             let data = try Data(contentsOf: fileURL)
             guard !data.isEmpty else { return .failure(.emptyContent) }
-            let perAttachmentBudget = 64 * 1024
-            let allowedBytes = min(perAttachmentBudget, remainingTotalBudget)
+            let allowedBytes = min(perAttachmentUTF8ByteBudget, remainingTotalBudget)
             let truncated = data.count > allowedBytes
             let selectedData = truncated ? data.prefix(allowedBytes) : data[...]
             guard let text = String(data: Data(selectedData), encoding: .utf8) else {
