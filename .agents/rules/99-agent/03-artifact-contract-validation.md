@@ -1,14 +1,8 @@
 ---
-alwaysApply: true
 description: "Validate structured outputs against their documented schema, contract, or protocol before claiming compliance."
 ---
 
 # Structured Output Compliance
-
-## Applies when
-
-- Creating or updating structured outputs that claim schema, contract, protocol, or format compliance.
-- Reviewing sample outputs, fixture outputs, manifests, findings, reports, config-like documents, or other generated harness artifacts.
 
 ## Must
 

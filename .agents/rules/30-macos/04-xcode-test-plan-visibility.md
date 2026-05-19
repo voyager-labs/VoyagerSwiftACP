@@ -1,15 +1,9 @@
 ---
-globs: apps/macos/**/*.swift
 description: "Xcode/SPM test-plan visibility safeguard: ensure intended test targets are actually executed."
+globs: "apps/macos/**/*.swift"
 ---
 
 # Xcode/SPM Test-Plan Visibility
-
-## Applies when
-
-- Running tests for a scheme that includes SPM package test targets.
-- Acceptance criteria depend on SPM package test results (not just project-level test targets).
-- Working in any Xcode workspace/project that references SPM packages with test targets.
 
 ## Must
 

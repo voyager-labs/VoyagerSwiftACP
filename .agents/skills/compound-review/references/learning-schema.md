@@ -1,9 +1,9 @@
 # Compound Learning Document Schema
 
-**Version:** 1.0  
-**Path:** `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`  
-**Family:** Compound Learning  
-**Output type:** Reusable operational knowledge  
+**Version:** 1.0
+**Path:** `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`
+**Family:** Compound Learning
+**Output type:** Reusable operational knowledge
 **Source of truth:** Artifact Contract §Output 3
 
 ---
@@ -72,6 +72,12 @@ Both types share the same document structure but differ in their `type` tag and 
 | `Applies when`   | yes      | Bulleted list of concrete conditions under which this guidance applies.                     |
 | `Guidance`       | yes      | Bulleted list of do/don't rules or patterns to follow.                                      |
 | `Source`         | yes      | Lineage reference: findings IDs and/or facet filenames.                                     |
+| `Plan Feedback`  | yes      | What the next plan should do differently because of this learning.                          |
+| `Catch Earlier`  | yes      | Which earlier phase could have caught the issue and how.                                    |
+| `Reusability`    | yes      | `reusable` or `one-off`; distinguishes promotion candidates from case-local notes.          |
+| `Promotion`      | yes      | `promote-to-skill: yes/no`, `promote-to-rule: yes/no`.                                      |
+| `Confidence`     | yes      | `low`, `medium`, or `high`.                                                                 |
+| `Blast Radius`   | yes      | `local`, `package`, or `repo-wide`.                                                         |
 
 **Note:** `Tags` is required. Even if only one tag applies, it must be present as an array (minimum one element).
 
@@ -143,6 +149,12 @@ Categories are not formally enforced — they are freeform discovery tags. The a
 - Persist option drag state at `willBeginAt:` and reset at `endedAt:`
 
 **Source:** findings `FIND-001`, `FIND-003`; f1 plan compliance audit
+**Plan Feedback:** Include explicit drag lifecycle branch checks in future plans.
+**Catch Earlier:** Plan review could require distinct copy/move/cancel QA scenarios.
+**Reusability:** reusable
+**Promotion:** promote-to-skill: no, promote-to-rule: yes
+**Confidence:** high
+**Blast Radius:** package
 ```
 
 ---
@@ -180,7 +192,7 @@ The document ends with an optional footer note when prior compound artifacts exi
 
 This learning document was generated from findings that were deduplicated against prior compound artifacts using the `dedupe_key` field. Prior compound artifacts for the same `plan_slug` are stored at:
 
-- `.sisyphus/compound/{plan_slug}/2026-04-09-120000/learning.md`
+- `.sisyphus/reviews/{plan_slug}/2026-04-09-120000/learning.md`
 
 Merge by `category` when consulting multiple runs. Note which `run_id` each guidance entry came from.
 ```
@@ -198,7 +210,7 @@ The compound learning document is primarily human-facing Markdown, but for machi
 run_id: "2026-04-10-181500"
 plan_slug: "grid-drop-folder-thumbnail-ux-naturalization"
 generated_at: "2026-04-10T18:15:00Z"
-schema_version: "1.0"
+schema_version: "1.1"
 total_entries: 4
 ---
 ```
@@ -212,4 +224,5 @@ These fields are optional but recommended for programmatic access.
 | Version | Date       | Change          |
 | ------- | ---------- | --------------- |
 | 1.0     | 2026-04-10 | Initial schema. |
+| 1.1     | 2026-05-17 | Added loop-retrospective fields: Plan Feedback, Catch Earlier, Reusability, Promotion, Confidence, Blast Radius. |
 ````

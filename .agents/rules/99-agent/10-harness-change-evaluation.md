@@ -1,15 +1,9 @@
 ---
-alwaysApply: true
 description: "Evaluate harness changes before adoption so weak rules/skills can be rejected, revised, or rolled back."
+globs: ".agents/**"
 ---
 
 # Harness Change Evaluation
-
-## Applies when
-
-- Creating, updating, or deleting `.agents/rules/**` or `.agents/skills/**`.
-- Adding or changing skill eval fixtures under `.agents/skills/*/evals/**`.
-- Deciding whether a harness change should be adopted, revised, or rolled back.
 
 ## Must
 

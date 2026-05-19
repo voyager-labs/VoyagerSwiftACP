@@ -1,23 +1,18 @@
 ---
-alwaysApply: true
 description: "Deterministic placement strategy for all new harness rules and skills."
+globs: ".agents/**"
 ---
 
 # Harness Placement Governance
-
-## Applies when
-
-- Creating new files under `.agents/rules/**` or `.agents/skills/**`.
-- Deciding where a cross-cutting or platform-specific rule belongs.
 
 ## Placement taxonomy
 
 | Artifact kind                      | Target path                            | Examples                                                                           |
 | ---------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------- |
-| Cross-cutting deterministic rules  | `.agents/rules/00-core/`               | `05-scope-diff-isolation.md`                                                       |
+| Cross-cutting deterministic rules  | `.agents/rules/00-core/`               | `00-execution-contract.md`, `02-verification.md`                                   |
 | Platform-specific execution checks | `.agents/rules/30-macos/`              | `30-macos/03-voyager-app-workflow.md`, `30-macos/04-xcode-test-plan-visibility.md` |
-| All new skills                     | `.agents/skills/<kebab-case>/SKILL.md` | `pr-review`, `skill-creator`                                                       |
-| Agent-harness infrastructure rules | `.agents/rules/99-agent/`              | This file, `01-agent-harness-artifacts.md`                                         |
+| All new skills                     | `.agents/skills/<kebab-case>/SKILL.md` | `pr-review`, `compound-review`                                                     |
+| Agent-harness infrastructure rules | `.agents/rules/99-agent/`              | This file, `01-agent-harness-artifacts.md`, `04-scope-diff-isolation.md`           |
 
 ## Must
 

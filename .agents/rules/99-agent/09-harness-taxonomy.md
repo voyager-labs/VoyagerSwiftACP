@@ -1,15 +1,9 @@
 ---
-alwaysApply: true
 description: "Define shared project harness scope versus local agent artifacts."
+globs: ".agents/**"
 ---
 
 # Harness Taxonomy
-
-## Applies when
-
-- Planning, reviewing, or implementing work described as harness, agent harness, test harness, CI, scripts, hooks, or developer tooling.
-- Deciding whether a local artifact should be promoted into tracked project files.
-- Summarizing compound-review findings as reusable improvements.
 
 ## Must
 
@@ -20,9 +14,9 @@ description: "Define shared project harness scope versus local agent artifacts."
     - local developer checks: pre-commit configs, formatter/linter/typecheck config, bootstrap targets
     - test harnesses: test entrypoints, package inventories, fixtures, validators, and reporting scripts
     - shared configuration templates or defaults that are secret-free and machine-independent
-- Treat `.sisyphus/`, `.omx/`, and similar runtime state as local inputs for learning, not shared harness outputs.
+- Treat local runtime artifacts per `99-agent/01-agent-harness-artifacts.md`.
 - Promote only reusable, deterministic, secret-free changes into tracked files.
-- Evaluate harness changes with `99-agent/06-harness-change-evaluation.md` before treating them as adopted improvements.
+- Evaluate harness changes with `99-agent/10-harness-change-evaluation.md` before treating them as adopted improvements.
 - When compound-review finds a repeated pattern, decide whether the durable promotion target is a skill, rule, script, CI check, hook, test harness, or configuration template.
 - Use documentation to explain harness policy and ownership; do not count docs themselves as agent harness runtime.
 
@@ -37,7 +31,7 @@ description: "Define shared project harness scope versus local agent artifacts."
 ## Execution steps
 
 1. Classify the requested harness change as one or more of: agent, CI, script, hook, test, config, or local artifact.
-2. If the source is local evidence (`.sisyphus/`, `.omx/`, notepads, reviews), extract the reusable lesson and choose a tracked promotion target.
+2. If the source is local evidence (per `99-agent/01-agent-harness-artifacts.md`), extract the reusable lesson and choose a tracked promotion target.
 3. If configuration is involved, separate shared defaults/templates from local overrides.
 4. Check existing harness surfaces before adding a new one, and prefer extending the canonical owner.
 5. Evaluate whether the proposed change improves the target behavior compared with baseline.

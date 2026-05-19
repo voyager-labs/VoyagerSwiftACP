@@ -1,21 +1,9 @@
 ---
-globs: "apps/macos/{Voyager,Packages,Hosts}/**"
 description: "Always load voyager-dev for Voyager macOS app, package, host, helper, and test work."
+globs: "apps/macos/{Voyager,Packages,Hosts}/**"
 ---
 
 # Voyager App Workflow
-
-## Applies when
-
-- Editing non-trivial Voyager macOS implementation, package, host, helper, XPC, or test files under:
-    - `apps/macos/Voyager/Voyager/**`
-    - `apps/macos/Voyager/VoyagerHelper/**`
-    - `apps/macos/Voyager/FilterSearchXPC/**`
-    - `apps/macos/Voyager/VoyagerTests/**`
-    - `apps/macos/Voyager/VoyagerHelperTests/**`
-    - `apps/macos/Voyager/VoyagerUITests/**`
-    - `apps/macos/Packages/**`
-    - `apps/macos/Hosts/**`
 
 ## Must
 

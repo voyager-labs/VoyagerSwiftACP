@@ -1,13 +1,9 @@
 ---
-alwaysApply: true
 description: "Global execution contract for all agent tasks."
+alwaysApply: true
 ---
 
 # Execution Contract
-
-## Applies when
-
-- All tasks in this repository.
 
 ## Must
 

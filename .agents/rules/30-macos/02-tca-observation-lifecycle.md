@@ -1,15 +1,9 @@
 ---
-globs: apps/macos/**/*.swift
 description: "Reducer-owned external observation lifecycle for SwiftUI + TCA views."
+globs: "apps/macos/**/*.swift"
 ---
 
 # TCA Observation Lifecycle
-
-## Applies when
-
-- Moving system/app observation out of SwiftUI views under `apps/macos/**`.
-- Editing code that reacts to `NotificationCenter`, async streams, timers, menu tracking, app lifecycle, pasteboard change counts, or similar external signals.
-- A view starts to accumulate `@State`, `.onReceive`, singleton calls, or observer tokens for non-visual behavior.
 
 ## Must
 

@@ -1,15 +1,8 @@
 ---
-alwaysApply: true
 description: "Require baseline-bound diff evidence when verifying task-local scope fidelity. Reject accumulated whole-branch diffs as scope proof."
 ---
 
 # Scope-Diff Isolation
-
-## Applies when
-
-- Verifying that changes made for a specific task or issue stayed within their intended scope.
-- The working branch or worktree contains changes from prior tasks, issues, or unrelated work.
-- Any scope-fidelity claim appears in evidence, review output, or verification reports.
 
 ## Must
 
@@ -27,12 +20,12 @@ description: "Require baseline-bound diff evidence when verifying task-local sco
 ## Execution steps
 
 1. Before starting a task on a branch with prior commits, capture a baseline:
-   `git rev-parse HEAD > .sisyphus/baseline-<task-id>.txt` or record the SHA in the task evidence file.
+   Record the SHA in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`) or a dedicated baseline file at `.sisyphus/evidence/{plan_slug}/baseline-<task-id>.txt`.
 2. After completing the task, generate the scope diff:
    `git diff <baseline>..HEAD --name-only` for the file list,
    `git diff <baseline>..HEAD --stat` for the summary.
 3. Compare the changed files against the task's allowed and forbidden paths.
-4. Record the baseline SHA, the diff output, and the scope verdict in the task evidence file.
+4. Record the baseline SHA, the diff output, and the scope verdict in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`).
 5. If a baseline was not captured before starting:
     - Attempt to reconstruct it from commit history, issue boundary markers, or branch topology.
     - If reconstruction is ambiguous, document the gap and set scope confidence to `limited`.
@@ -40,7 +33,7 @@ description: "Require baseline-bound diff evidence when verifying task-local sco
 
 ## Verification
 
-- Confirm the evidence file includes a baseline commit SHA or equivalent boundary reference.
+- Confirm the plan-scoped evidence file includes a baseline commit SHA or equivalent boundary reference.
 - Confirm the diff command in evidence uses the baseline, not the branch root or merge base against main.
 - Confirm scope confidence is `limited` or `unverified` when only accumulated diffs are available.
 - Confirm no scope-fidelity claim relies on a diff that includes files from other tasks.

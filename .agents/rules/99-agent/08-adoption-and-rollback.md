@@ -1,15 +1,9 @@
 ---
-alwaysApply: true
-description: "Deterministic adoption bridge from compound-review patch specs to committed `.agents/` changes. Governs the Stage 2 → Stage 3 handoff, human review checkpoint, evidence capture, and rollback protocol."
+description: "Deterministic adoption bridge from compound-review patch specs to committed .agents/ changes. Governs the Stage 2 to Stage 3 handoff, human review checkpoint, evidence capture, and rollback protocol."
+globs: ".agents/**"
 ---
 
 # Adoption Bridge and Rollback Protocol
-
-## Applies when
-
-- Promoting a compound-review patch spec from `.sisyphus/drafts/` to committed `.agents/` files.
-- Rolling back an adopted governance change.
-- Any agent or operator performs Stage 3 actions in the three-stage lifecycle.
 
 ## Context
 
@@ -31,9 +25,9 @@ This rule is the **Stage 3 execution protocol** for the three-stage lifecycle de
 
 ## Must not
 
-- Auto-apply compound-review output. No agent may commit changes from `.sisyphus/` drafts without explicit human confirmation.
+- Auto-COMMIT compound-review output. Working-tree drafts are fine; commits require the full protocol.
 - Treat `.sisyphus/` artifacts as durable policy. Only committed `.agents/` files are governance.
-- Copy run-scoped IDs or plan slugs verbatim into `.agents/` files, except in evidence pointers of the form `Source: .sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`.
+- Copy run-scoped IDs or plan slugs verbatim into `.agents/` files, except in evidence pointers of the form `Source: .sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`.
 - Split a single logical deliverable across multiple commits.
 - Commit a rule or skill without human review.
 - Delete `.sisyphus/` artifacts after adoption (they remain as historical record).
@@ -44,7 +38,7 @@ This rule is the **Stage 3 execution protocol** for the three-stage lifecycle de
 
 Confirm the patch spec exists and is actionable:
 
-1. Locate the patch spec at `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`.
+1. Locate the patch spec at `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`.
 2. Verify the `readiness` field is `Needs human review` or `Ready for adoption`.
 3. Verify the `action` field is one of: `create`, `update`, `remove`.
 4. Verify `target_file(s)` lists exact paths under `.agents/`.
@@ -56,7 +50,7 @@ Check that all conditions in the patch spec's `adoption_prerequisites` field are
 
 1. Read the `adoption_prerequisites` list from the patch spec.
 2. For each prerequisite, confirm the condition holds (e.g., prior patch adopted, finding no longer reproduces, ≥2 authoritative runs exist).
-3. Confirm `99-agent/06-harness-change-evaluation.md` produced an `adopt` verdict, or that the operator explicitly accepted a documented `defer` with rationale.
+3. Confirm `99-agent/10-harness-change-evaluation.md` produced an `adopt` verdict, or that the operator explicitly accepted a documented `defer` with rationale.
 4. If prerequisites are empty, proceed.
 5. If any prerequisite is unmet, report to the operator and stop.
 
@@ -95,7 +89,7 @@ Before committing, the operator confirms the diff:
 After the commit succeeds:
 
 1. Update the patch spec's `readiness` field to `Adopted (commit {hash})`.
-2. Record the commit hash in the task evidence file (e.g., `.sisyphus/evidence/task-{N}-{slug}.md`).
+2. Record the commit hash in the task evidence file (e.g., `.sisyphus/evidence/{plan_slug}/task-{N}-{slug}.md`).
 3. Verify the adopted file is in `.agents/` and the commit is in git history.
 
 ## Rollback protocol
@@ -117,13 +111,21 @@ git revert <adoption-commit-hash>
 
 ### Evidence of rollback
 
-Record the revert commit hash in the task evidence file. Note the reason for rollback.
+Record the revert commit hash in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`). Note the reason for rollback.
+
+## Working-tree proposals (no commit)
+
+- Agents MAY create or edit `.agents/` files in the working tree as draft proposals.
+- Working-tree changes are NOT adopted governance until committed.
+- The full adoption sequence (steps 1–6) applies only when STAGING and COMMITTING changes to `.agents/`.
+- Working-tree proposals require human review before staging, but do not require patch specs, evidence capture, or commit hashes.
+- If the operator approves the working-tree change, proceed with the full adoption sequence at commit time.
 
 ## Rules (explicit)
 
 1. **No auto-apply**: compound-review output is NEVER auto-applied. The human operator drives all Stage 3 actions.
 2. **`.sisyphus` is local-only**: Drafts, evidence, and learning artifacts in `.sisyphus/` are pre-adoption inputs. They are NOT durable policy. Only committed `.agents/` files are governance.
-3. **No plan-slug verbatim in `.agents/`**: Do not copy run-scoped IDs or plan slugs into `.agents/` files verbatim. Exception: evidence pointer comments of the form `Source: .sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`.
+3. **No plan-slug verbatim in `.agents/`**: Do not copy run-scoped IDs or plan slugs into `.agents/` files verbatim. Exception: evidence pointer comments of the form `Source: .sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`.
 4. **Adoption prerequisites must be satisfied**: Before adoption, confirm all conditions in the patch spec's `adoption_prerequisites` field are met.
 
 ## Verification
