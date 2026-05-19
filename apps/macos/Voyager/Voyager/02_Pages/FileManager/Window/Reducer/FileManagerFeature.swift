@@ -73,6 +73,9 @@ struct FileManagerFeature {
             case .inspector(.delegate(.requestAttachmentPicker)):
                 .send(.delegate(.requestAttachmentPicker))
 
+            case .inspector(.delegate(.clearCurrentContextSelection)):
+                .send(.content(.entryViewLayout(.internal(.applyClearSelection))))
+
             case let .aiConnectionsFileUpdated(file):
                 forwardProviderConnectionsToOpenAiChat(file: file, state: state)
 
