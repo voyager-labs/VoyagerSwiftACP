@@ -1,4 +1,4 @@
-// ONB-002: Core License auth/entitlement migration is future scope (project f946b2b9-0e41-4975-a55a-d5aacc11fcbd)
+// ONB-002: Core License auth/entitlement 마이그레이션은 future scope (project f946b2b9-0e41-4975-a55a-d5aacc11fcbd)
 
 import ComposableArchitecture
 @testable import VoyagerFeaturesBetaAccess
@@ -374,7 +374,7 @@ final class OnboardingBetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    // ONB-002 auth/entitlement migration is future scope — project f946b2b9-0e41-4975-a55a-d5aacc11fcbd
+    // ONB-002 auth/entitlement 마이그레이션은 future scope — project f946b2b9-0e41-4975-a55a-d5aacc11fcbd
 
     func testGatewayTimeoutMapsToCheckFailed() async {
         let store = TestStore(initialState: BetaAccessFeature.State(

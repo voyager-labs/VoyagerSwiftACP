@@ -10,8 +10,8 @@ import XCTest
 final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     // MARK: - ONB-001-start_onboarding_session
 
-    /// Covers session reset when persisted version mismatches app version.
-    /// Secondary coverage: ONB-001-show_onboarding_step (onAppear triggers initial step display).
+    /// 저장된 버전이 앱 버전과 불일치할 때 세션 초기화를 검증합니다.
+    /// 부가 검증: ONB-001-show_onboarding_step (onAppear가 초기 단계 표시를 트리거).
     func testResetOnVersionMismatch() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -34,8 +34,8 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers fresh session start when no persisted progress exists.
-    /// Verifies initial state shows welcome step and correct default step states.
+    /// 저장된 진행 상태가 없을 때 새 세션 시작을 검증합니다.
+    /// 초기 상태가 welcome 단계를 표시하고 올바른 기본 단계 상태를 가지는지 확인합니다.
     func testStartFreshSessionOnEmptyProgress() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -49,21 +49,21 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
         await store.send(.onAppear)
 
-        // Fresh session always starts at welcome
+        // 새 세션은 항상 welcome에서 시작
         XCTAssertEqual(store.state.currentStep, .welcome)
         XCTAssertTrue(store.state.welcome.isComplete)
         XCTAssertFalse(store.state.betaAccess.isComplete)
         XCTAssertFalse(store.state.permissions.isComplete)
         XCTAssertFalse(store.state.complete.isComplete)
 
-        // Verify canGoNext is true (welcome is complete by default)
+        // canGoNext가 true인지 확인 (welcome은 기본적으로 완료 상태)
         XCTAssertTrue(store.state.canGoNext)
         XCTAssertFalse(store.state.canGoBack)
 
         await store.finish()
     }
 
-    /// Covers that resetRequired triggers both reset() and save() in the effect.
+    /// resetRequired가 effect에서 reset()과 save()를 모두 트리거하는지 검증합니다.
     func testResetSessionCallsResetAndSave() async {
         let resetRecorder = LockIsolated(false)
 
@@ -84,7 +84,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// load returns .empty → state resets to fresh session and saves snapshot.
+    /// load가 .empty를 반환하면 → 상태가 새 세션으로 초기화되고 스냅샷을 저장합니다.
     func testEmptyProgressStartsFreshSession() async {
         let snapshotRecorder = SnapshotRecorder()
 
@@ -102,14 +102,14 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
         await store.send(.onAppear)
 
-        // Fresh session always starts at welcome
+        // 새 세션은 항상 welcome에서 시작
         XCTAssertEqual(store.state.currentStep, .welcome)
         XCTAssertTrue(store.state.welcome.isComplete)
         XCTAssertFalse(store.state.betaAccess.isComplete)
         XCTAssertFalse(store.state.permissions.isComplete)
         XCTAssertFalse(store.state.complete.isComplete)
 
-        // Verify snapshot was saved with correct initial state
+        // 올바른 초기 상태로 스냅샷이 저장되었는지 확인
         let savedSnapshot = await snapshotRecorder.value
         XCTAssertNotNil(savedSnapshot)
         XCTAssertEqual(savedSnapshot?.currentStep, .welcome)
@@ -117,7 +117,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// onAppear saves a progress snapshot reflecting the initial step states.
+    /// onAppear가 초기 단계 상태를 반영하여 진행 상태 스냅샷을 저장합니다.
     func testStartSessionSavesProgressSnapshot() async {
         let snapshotRecorder = SnapshotRecorder()
 
@@ -147,7 +147,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
     // MARK: - ONB-001-show_onboarding_step
 
-    /// Covers that the welcome step is displayed on initial onAppear with correct properties.
+    /// 초기 onAppear 시 welcome 단계가 올바른 속성과 함께 표시되는지 검증합니다.
     func testShowWelcomeStepOnAppear() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -161,7 +161,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
         await store.send(.onAppear)
 
-        // Welcome step should be shown
+        // welcome 단계가 표시되어야 함
         XCTAssertEqual(store.state.currentStep, .welcome)
         XCTAssertEqual(store.state.currentStep.title, "Welcome")
         XCTAssertEqual(store.state.currentStep.subtitle, "A quick setup before you dive in.")
@@ -171,7 +171,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that betaAccess step is displayed after advancing from welcome.
+    /// welcome에서 이동한 후 betaAccess 단계가 표시되는지 검증합니다.
     func testShowBetaAccessStepAfterWelcome() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -195,7 +195,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that permissions step is displayed after betaAccess is verified and advanced.
+    /// betaAccess가 확인되고 이동한 후 permissions 단계가 표시되는지 검증합니다.
     func testShowPermissionsStepAfterBetaAccess() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -227,7 +227,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that the complete step is displayed when all prior steps are done.
+    /// 모든 이전 단계가 완료되면 complete 단계가 표시되는지 검증합니다.
     func testShowCompleteStepAfterPermissions() async {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .permissions
@@ -259,7 +259,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Initial state shows welcome step with correct navigation flags.
+    /// 초기 상태가 올바른 네비게이션 플래그와 함께 welcome 단계를 표시합니다.
     func testOnAppearDisplaysWelcomeStep() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -280,8 +280,8 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Verify step order: welcome → betaAccess → permissions → complete
-    /// and that nextTapped advances through each step.
+    /// 단계 순서 검증: welcome → betaAccess → permissions → complete
+    /// nextTapped가 각 단계를 올바르게 이동하는지 확인합니다.
     func testCurrentStepAdvancesThroughCanonicalOrder() async {
         XCTAssertEqual(OnboardingStep.allCases, [.welcome, .betaAccess, .permissions, .complete])
 
@@ -302,7 +302,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.currentStep = .betaAccess
         }
 
-        // Complete beta access to enable next navigation
+        // beta access를 완료하여 다음 네비게이션 활성화
         await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
             state.betaAccess.status = .active
             state.betaAccess.reason = .none
@@ -314,7 +314,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.currentStep = .permissions
         }
 
-        // permissions not complete — nextTapped should be no-op
+        // permissions 미완료 — nextTapped는 동작 없음
         await store.send(.nextTapped)
 
         await store.finish()
@@ -322,7 +322,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
     // MARK: - ONB-001-update_onboarding_step_state
 
-    /// Covers that welcome step state update via child action propagates correctly.
+    /// 자식 액션을 통한 welcome 단계 상태 업데이트가 올바르게 전파되는지 검증합니다.
     func testUpdateWelcomeStepStateViaChildAction() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -336,13 +336,13 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
         await store.send(.onAppear)
 
-        // Welcome starts complete; toggle it off then back on
+        // welcome은 완료 상태로 시작; 끄고 다시 켬
         await store.send(.welcome(.setCompleted(false))) { state in
             state.welcome.isComplete = false
         }
 
         XCTAssertFalse(store.state.welcome.isComplete)
-        XCTAssertFalse(store.state.canGoNext) // welcome not complete → can't go next
+        XCTAssertFalse(store.state.canGoNext) // welcome 미완료 → 다음으로 이동 불가
 
         await store.send(.welcome(.setCompleted(true))) { state in
             state.welcome.isComplete = true
@@ -354,7 +354,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that betaAccess step state updates propagate through verification response.
+    /// betaAccess 단계 상태 업데이트가 확인 응답을 통해 전파되는지 검증합니다.
     func testUpdateBetaAccessStepStateOnVerification() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -368,11 +368,11 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
         await store.send(.onAppear)
 
-        // Beta access starts incomplete
+        // beta access는 미완료 상태로 시작
         XCTAssertFalse(store.state.betaAccess.isComplete)
         XCTAssertEqual(store.state.betaAccess.status, .notActive)
 
-        // Successful verification updates state
+        // 성공적인 확인이 상태를 업데이트
         await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
             state.betaAccess.status = .active
             state.betaAccess.reason = .none
@@ -385,7 +385,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that step state update persists via snapshot after child action.
+    /// 자식 액션 후 단계 상태 업데이트가 스냅샷을 통해 저장되는지 검증합니다.
     func testStepStateUpdateTriggersProgressSave() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
@@ -405,7 +405,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.betaAccess.isComplete = true
         }
 
-        // The save should have been called with updated snapshot
+        // 업데이트된 스냅샷으로 save가 호출되어야 함
         let saved = saveRecorder.value
         XCTAssertNotNil(saved)
         // swiftlint:disable:next force_unwrapping
@@ -414,7 +414,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// isStepComplete correctly tracks completion per step.
+    /// isStepComplete가 각 단계별로 완료 상태를 올바르게 추적합니다.
     func testStepStateTracksCompletionPerStep() {
         var state = OnboardingFeature.State()
 
@@ -433,7 +433,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         XCTAssertTrue(state.isStepComplete(.complete))
     }
 
-    /// progressSnapshot captures all 4 step completion flags.
+    /// progressSnapshot이 모든 4개 단계의 완료 플래그를 캡처합니다.
     func testProgressSnapshotCapturesAllStepStates() {
         var state = OnboardingFeature.State()
         state.currentStep = .permissions
@@ -451,8 +451,8 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
     // MARK: - ONB-001-advance_onboarding_step
 
-    /// Covers forward navigation through onboarding steps via nextTapped.
-    /// Also covers ONB-001-go_back_onboarding_step (backward navigation via backTapped).
+    /// nextTapped를 통한 온보딩 단계 앞으로 네비게이션을 검증합니다.
+    /// ONB-001-go_back_onboarding_step (backTapped를 통한 뒤로 네비게이션)도 함께 검증합니다.
     func testNextBackNavigation() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -489,12 +489,12 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that advancing requires the current step to be complete.
-    /// nextTapped on an incomplete step should be a no-op.
+    /// 현재 단계가 완료되어야 다음으로 이동할 수 있음을 검증합니다.
+    /// 미완료 단계에서 nextTapped는 동작 없음(no-op)이어야 합니다.
     func testAdvanceRequiresCurrentStepComplete() async {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .betaAccess
-        // betaAccess is NOT complete
+        // betaAccess가 완료되지 않음
 
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
@@ -508,16 +508,16 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
         XCTAssertFalse(store.state.canGoNext)
 
-        // nextTapped should be a no-op since betaAccess is not complete
+        // betaAccess가 완료되지 않았으므로 nextTapped는 동작 없음
         await store.send(.nextTapped)
 
-        // Still on betaAccess
+        // 여전히 betaAccess에 있음
         XCTAssertEqual(store.state.currentStep, .betaAccess)
 
         await store.finish()
     }
 
-    /// Covers that advancing from the last step (complete) is not possible.
+    /// 마지막 단계(complete)에서는 앞으로 이동할 수 없음을 검증합니다.
     func testCannotAdvanceBeyondCompleteStep() async {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
@@ -542,7 +542,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that advancing persists the new step via progress snapshot save.
+    /// 이동 시 진행 상태 스냅샷 저장을 통해 새 단계가 저장되는지 검증합니다.
     func testAdvanceStepPersistsProgress() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
@@ -570,7 +570,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
     // MARK: - ONB-001-go_back_onboarding_step
 
-    /// Covers that backward navigation from the first step (welcome) is not possible.
+    /// 첫 번째 단계(welcome)에서는 뒤로 이동할 수 없음을 검증합니다.
     func testCannotGoBackFromWelcomeStep() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -586,7 +586,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
         XCTAssertFalse(store.state.canGoBack)
 
-        // backTapped on welcome should be a no-op
+        // welcome에서 backTapped는 동작 없음
         await store.send(.backTapped)
 
         XCTAssertEqual(store.state.currentStep, .welcome)
@@ -594,7 +594,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that backward navigation preserves completed step states.
+    /// 뒤로 이동 시 완료된 단계 상태가 보존됨을 검증합니다.
     func testGoBackPreservesStepCompletionState() async {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .permissions
@@ -613,17 +613,17 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             )
         }
 
-        // Go back from permissions → betaAccess
+        // permissions → betaAccess로 뒤로 이동
         await store.send(.backTapped) { state in
             state.currentStep = .betaAccess
         }
 
-        // Step completion states are preserved
+        // 단계 완료 상태가 보존됨
         XCTAssertTrue(store.state.welcome.isComplete)
         XCTAssertTrue(store.state.betaAccess.isComplete)
         XCTAssertEqual(store.state.betaAccess.status, .active)
 
-        // Go back from betaAccess → welcome
+        // betaAccess → welcome으로 뒤로 이동
         await store.send(.backTapped) { state in
             state.currentStep = .welcome
         }
@@ -634,7 +634,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers that backward navigation saves progress snapshot.
+    /// 뒤로 이동 시 진행 상태 스냅샷이 저장됨을 검증합니다.
     func testGoBackPersistsProgress() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
@@ -699,8 +699,8 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers resume with a snapshot where the persisted currentStep is valid but
-    /// the step itself is not complete — falls back to last valid completed step.
+    /// 저장된 currentStep은 유효하지만 해당 단계가 완료되지 않은 스냅샷으로 이어서 진행 시
+    /// 마지막 유효한 완료 단계로 대체(fallback)됨을 검증합니다.
     func testResumeWithIncompleteCurrentStepFallsBack() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .permissions,
@@ -712,7 +712,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             ),
         )
 
-        // Start with a non-default initial state so the resume mutation is observable
+        // 이어서 진행 mutation을 관찰 가능하도록 비기본 초기 상태로 시작
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
         initialState.complete.isComplete = true
@@ -727,7 +727,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             )
         }
 
-        // permissions is not complete → lastValidStep should walk back to welcome
+        // permissions 미완료 → lastValidStep이 welcome으로 되돌아감
         await store.send(.onAppear) { state in
             state.currentStep = .welcome
             state.complete.isComplete = false
@@ -738,7 +738,8 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers resume with all steps prior to complete finished — should land on the last completed step.
+    /// complete 이전의 모든 단계가 완료된 상태로 이어서 진행 시
+    /// 마지막 완료 단계에 위치해야 함을 검증합니다.
     func testResumeWithCompletedPriorSteps() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .complete,
@@ -760,7 +761,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             )
         }
 
-        // complete is not complete → lastValidStep walks back to permissions (which IS complete)
+        // complete 미완료 → lastValidStep이 permissions(완료됨)로 되돌아감
         await store.send(.onAppear) { state in
             state.currentStep = .permissions
             state.welcome.isComplete = true
@@ -776,7 +777,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers resume when persisted snapshot has only welcome complete — should show welcome.
+    /// 저장된 스냅샷에서 welcome만 완료된 경우 — welcome이 표시되어야 함을 검증합니다.
     func testResumeWithOnlyWelcomeComplete() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .betaAccess,
@@ -788,7 +789,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             ),
         )
 
-        // Start with a non-default initial state so the resume mutation is observable
+        // 이어서 진행 mutation을 관찰 가능하도록 비기본 초기 상태로 시작
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
         initialState.complete.isComplete = true
@@ -803,7 +804,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             )
         }
 
-        // betaAccess not complete → falls back to welcome (which is complete)
+        // betaAccess 미완료 → welcome(완료됨)으로 대체
         await store.send(.onAppear) { state in
             state.currentStep = .welcome
             state.complete.isComplete = false
@@ -814,7 +815,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers resume persists updated snapshot after applying step state.
+    /// 이어서 진행 시 단계 상태 적용 후 업데이트된 스냅샷이 저장됨을 검증합니다.
     func testResumeSavesUpdatedSnapshot() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
         let snapshot = OnboardingProgressSnapshot(
@@ -849,13 +850,13 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
 
         let saved = saveRecorder.value
         XCTAssertNotNil(saved)
-        // The saved snapshot should reflect the corrected step (betaAccess, not permissions)
+        // 저장된 스냅샷은 보정된 단계(betaAccess, permissions 아님)를 반영해야 함
         XCTAssertEqual(saved?.currentStep, .betaAccess)
 
         await store.finish()
     }
 
-    /// load returns .resetRequired → state resets to welcome and saves fresh snapshot.
+    /// load가 .resetRequired를 반환하면 → 상태가 welcome으로 초기화되고 새 스냅샷을 저장합니다.
     func testResumeFromCorruptStepStateFallsBackToWelcome() async {
         let snapshotRecorder = SnapshotRecorder()
 
@@ -886,7 +887,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Snapshot has a valid step (complete) but incomplete prerequisites → falls back to last valid step.
+    /// 스냅샷에 유효한 단계(complete)가 있지만 선행 조건이 미완료 → 마지막 유효 단계로 대체됨을 검증합니다.
     func testResumeFromUnknownStepFallsBackToLastValidStep() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .complete,
@@ -909,7 +910,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         }
 
         // complete ✗ → permissions ✗ → betaAccess ✗ → welcome ✓
-        // Applied state matches defaults so no closure needed
+        // 적용된 상태가 기본값과 동일하므로 클로저 불필요
         await store.send(.onAppear)
 
         XCTAssertEqual(store.state.currentStep, .welcome)
@@ -970,7 +971,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers re-entry after session completion — resumed session skips to completed state.
+    /// 세션 완료 후 재진입 — 이어서 진행 세션이 완료된 상태로 건너뜀을 검증합니다.
     func testResumeSkipsBannerWhenCompleted() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .complete,
@@ -1005,7 +1006,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Completion saves a snapshot with all steps marked complete.
+    /// 완료 시 모든 단계가 완료로 표시된 스냅샷을 저장합니다.
     func testCompletionSavesCompleteStepState() async {
         let snapshotRecorder = SnapshotRecorder()
 
@@ -1049,7 +1050,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Calling startUsingTapped twice opens the window twice (reducer has no idempotency guard).
+    /// startUsingTapped를 두 번 호출하면 창이 두 번 열립니다 (reducer에 멱등성 가드 없음).
     func testCompletionRepeatedTapReopensWindow() async {
         let pathRecorder = PathRecorder()
 
@@ -1076,7 +1077,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             )
         }
 
-        // First completion
+        // 첫 번째 완료
         await store.send(.complete(.startUsingTapped)) { state in
             state.complete.isComplete = true
             state.complete.isOpeningWindow = true
@@ -1086,7 +1087,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        // Second call — reducer repeats the full flow
+        // 두 번째 호출 — reducer가 전체 흐름 반복
         await store.send(.complete(.startUsingTapped)) { state in
             state.complete.isComplete = true
             state.complete.isOpeningWindow = true
@@ -1102,7 +1103,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// openMainWindow returns false → error state is set.
+    /// openMainWindow가 false를 반환하면 → 에러 상태가 설정됩니다.
     func testCompletionOpenWindowFailureShowsError() async {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
@@ -1141,7 +1142,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers completion failure path — openMainWindow returns false, error is set.
+    /// 완료 실패 경로 검증 — openMainWindow가 false를 반환하고 에러가 설정됨.
     func testCompletionFailurePath() async {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
@@ -1179,7 +1180,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers retry after completion failure — retryTapped should re-attempt window open.
+    /// 완료 실패 후 재시도 — retryTapped가 창 열기를 재시도해야 함을 검증합니다.
     func testCompletionRetryAfterFailure() async {
         let pathRecorder = PathRecorder()
         var initialState = OnboardingFeature.State()
@@ -1216,7 +1217,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        // Error should be cleared after successful retry
+        // 성공적인 재시도 후 에러가 초기화되어야 함
         XCTAssertNil(store.state.complete.openWindowError)
         let paths = await pathRecorder.snapshot()
         XCTAssertEqual(paths.count, 1)
@@ -1224,7 +1225,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers idempotent completion — calling startUsingTapped twice sets isComplete consistently.
+    /// 멱등적 완료 — startUsingTapped를 두 번 호출해도 isComplete가 일관되게 설정됨을 검증합니다.
     func testIdempotentCompletion() async {
         let pathRecorder = PathRecorder()
         var initialState = OnboardingFeature.State()
@@ -1250,7 +1251,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             )
         }
 
-        // First completion
+        // 첫 번째 완료
         await store.send(.complete(.startUsingTapped)) { state in
             state.complete.isComplete = true
             state.complete.isOpeningWindow = true
@@ -1260,7 +1261,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        // Second completion attempt (idempotent)
+        // 두 번째 완료 시도 (멱등)
         await store.send(.complete(.startUsingTapped)) { state in
             state.complete.isOpeningWindow = true
             state.complete.openWindowError = nil
@@ -1269,7 +1270,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        // Both attempts should open window
+        // 두 시도 모두 창을 열어야 함
         let paths = await pathRecorder.snapshot()
         XCTAssertEqual(paths.count, 2)
         XCTAssertTrue(store.state.complete.isComplete)
@@ -1277,8 +1278,8 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Covers re-entry: when a user who already completed onboarding relaunches,
-    /// the session loads fully complete and marks sessionComplete.
+    /// 재진입: 이미 온보딩을 완료한 사용자가 다시 실행하면
+    /// 세션이 완전히 완료된 상태로 로드되고 sessionComplete을 표시함을 검증합니다.
     func testCompletedSessionReEntryShowsCompletionState() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .complete,

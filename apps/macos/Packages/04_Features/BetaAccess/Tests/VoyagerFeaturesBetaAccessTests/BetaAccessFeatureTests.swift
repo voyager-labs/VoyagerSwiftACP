@@ -1,5 +1,5 @@
 // swiftlint:disable file_length
-// ONB-002: Core License auth/entitlement migration is future scope (project f946b2b9-0e41-4975-a55a-d5aacc11fcbd)
+// ONB-002: Core License auth/entitlement 마이그레이션은 future scope (project f946b2b9-0e41-4975-a55a-d5aacc11fcbd)
 
 import ComposableArchitecture
 @testable import VoyagerFeaturesBetaAccess
@@ -38,7 +38,7 @@ final class BetaAccessFeatureTests: XCTestCase {
         XCTAssertEqual(state.status, .active)
         XCTAssertEqual(state.statusTitle, "Active")
         XCTAssertNotNil(state.statusMessage)
-        // isComplete is only set via updateStatus(), not the memberwise init
+        // isComplete는 memberwise init이 아닌 updateStatus()를 통해서만 설정됨
         XCTAssertFalse(state.isComplete)
     }
 
@@ -396,7 +396,7 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    // ONB-002 auth/entitlement migration is future scope — project f946b2b9-0e41-4975-a55a-d5aacc11fcbd
+    // ONB-002 auth/entitlement 마이그레이션은 future scope — project f946b2b9-0e41-4975-a55a-d5aacc11fcbd
 
     // MARK: - ONB-002-show_access_unlock_status
 
