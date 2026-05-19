@@ -5,10 +5,17 @@ import ComposableArchitecture
 import XCTest
 
 private final class AttemptCounter: @unchecked Sendable {
-    var value = 0
+    private let lock = NSLock()
+    private var _value = 0
+    var value: Int {
+        lock.withLock { _value }
+    }
+
     func increment() -> Int {
-        value += 1
-        return value
+        lock.withLock {
+            _value += 1
+            return _value
+        }
     }
 }
 
