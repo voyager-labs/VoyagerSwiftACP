@@ -30,13 +30,29 @@ private enum SmokeMode {
         let showIfNeededReturned = liveClient.showIfNeeded()
         print("showIfNeededReturned=\(showIfNeededReturned)")
 
-        // After reset + show, reset again to verify clean-slate isRequired
-        liveClient.resetStoredProgress()
-        let isRequiredAfterReset = liveClient.isRequired()
-        print("isRequiredAfterReset=\(isRequiredAfterReset)")
+        seedCompletedProgress()
+        let isRequiredAfterCompletedSnapshot = liveClient.isRequired()
+        print("isRequiredAfterCompletedSnapshot=\(isRequiredAfterCompletedSnapshot)")
 
         print("exitReason=smoke_complete")
         exit(0)
+    }
+
+    private static func seedCompletedProgress() {
+        let defaults = UserDefaults.standard
+        defaults.set(1.1, forKey: "onboardingProgressVersion")
+        defaults.set("complete", forKey: "onboardingCurrentStep")
+
+        let stepState: [String: Bool] = [
+            "welcomeComplete": true,
+            "betaAccessComplete": true,
+            "permissionsComplete": true,
+            "completeComplete": true,
+        ]
+
+        if let data = try? JSONSerialization.data(withJSONObject: stepState) {
+            defaults.set(data, forKey: "onboardingStepState")
+        }
     }
 }
 
