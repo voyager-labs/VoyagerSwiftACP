@@ -71,9 +71,27 @@ struct VoyagerApp: App {
                     }
                 },
                 logDAUEntryAction: { actionKind, entryKind in
+                    guard
+                        let resolvedActionKind = VoyagerSentryMetricLogger.DAUEntryActionKind(
+                            rawValue: actionKind.rawValue,
+                        )
+                    else {
+                        preconditionFailure(
+                            "Invalid DAUEntryActionKind raw value: \(actionKind.rawValue)",
+                        )
+                    }
+                    guard
+                        let resolvedEntryKind = VoyagerSentryMetricLogger.DAUEntryKind(
+                            rawValue: entryKind.rawValue,
+                        )
+                    else {
+                        preconditionFailure(
+                            "Invalid DAUEntryKind raw value: \(entryKind.rawValue)",
+                        )
+                    }
                     VoyagerSentryMetricLogger.logDAUEntryAction(
-                        actionKind: .init(rawValue: actionKind.rawValue)!,
-                        entryKind: .init(rawValue: entryKind.rawValue)!,
+                        actionKind: resolvedActionKind,
+                        entryKind: resolvedEntryKind,
                     )
                 },
             )
