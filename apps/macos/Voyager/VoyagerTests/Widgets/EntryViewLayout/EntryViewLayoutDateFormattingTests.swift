@@ -15,7 +15,7 @@ final class EntryViewLayoutDateFormattingTests: XCTestCase {
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: 220), "yMMMdjm")
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: 500), "yMMMdjm")
 
-        // width <= 0 -> safe fallback (yMd)
+        // width <= 0 -> 안전한 폴백 (yMd)
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: 0), "yMd")
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: -10), "yMd")
     }

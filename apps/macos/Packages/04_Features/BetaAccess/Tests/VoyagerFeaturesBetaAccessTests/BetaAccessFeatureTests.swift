@@ -1,5 +1,8 @@
 // swiftlint:disable file_length
-// ONB-002: Core License auth/entitlement 마이그레이션은 future scope (project f946b2b9-0e41-4975-a55a-d5aacc11fcbd)
+// ONB-002: Core License 인증/권한 마이그레이션은 후속 범위 (프로젝트 f946b2b9-0e41-4975-a55a-d5aacc11fcbd)
+// 이 파일은 ONB-002 BetaAccess 리듀서의 로컬 상태·검증 흐름·결과 적용을 검증합니다.
+// 범위 내: BetaAccess 리듀서 상태/상태 메시지, 검증 요청·응답, 재시도, 입력 가드.
+// 범위 외(후속): Core License 인증/권한 엔타이틀먼트 마이그레이션.
 
 import ComposableArchitecture
 @testable import VoyagerFeaturesBetaAccess
@@ -10,6 +13,18 @@ import XCTest
 final class BetaAccessFeatureTests: XCTestCase {
     // MARK: - ONB-002-show_access_unlock_status
 
+    // 추적 사양: ONB-002-show_access_unlock_status
+    // 검증 대상: BetaAccess 리듀서가 초기/미활성 상태를 올바르게 표시하는지,
+    //   입력 가드가 네트워크 호출을 차단하는지, 로딩 상태 전환이 정상인지.
+    // 계약 경계: 로컬 BetaAccess 상태·상태 메시지·입력 가드는 범위 내.
+    //   Core License/auth 엔타이틀먼트 마이그레이션은 범위 외(후속).
+
+    /// 입력이 비어 있으면 검증을 시작하지 않는지 확인한다.
+    ///
+    /// - 검증 내용: `checkTapped`가 와도 입력 누락이면 즉시 가드되어야 한다.
+    /// - 사전 조건: email/token이 모두 비어 있는 초기 상태.
+    /// - 기대 결과: `status == .notActive`, `reason == .missingInput`, `isVerifying == false`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 누락 입력은 네트워크 요청보다 먼저 차단된다.
     func testMissingInputDoesNotVerify() async {
         let store = TestStore(initialState: BetaAccessFeature.State()) {
             BetaAccessFeature()
@@ -25,6 +40,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 초기 상태가 미활성 기본값인지 확인한다.
+    ///
+    /// - 검증 내용: 기본 생성 상태가 첫 진입 화면 기준과 일치해야 한다.
+    /// - 사전 조건: `BetaAccessFeature.State()` 사용.
+    /// - 기대 결과: `status == .notActive`, `reason == .missingInput`, `isVerifying == false`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 온보딩 초기 화면의 기준 상태.
     func testInitialStateShowsNotActiveStatus() {
         let state = BetaAccessFeature.State()
         XCTAssertEqual(state.status, .notActive)
@@ -33,15 +54,27 @@ final class BetaAccessFeatureTests: XCTestCase {
         XCTAssertFalse(state.isComplete)
     }
 
+    /// active 상태의 제목과 메시지가 노출되고 완료로 오해되지 않는지 확인한다.
+    ///
+    /// - 검증 내용: `status == .active`일 때 표시 문구는 존재해야 한다.
+    /// - 사전 조건: `State(status: .active)` 생성.
+    /// - 기대 결과: `statusTitle == "Active"`, `statusMessage != nil`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — active 상태만으로 완료가 되지는 않는다.
     func testActiveStatusMessage() {
         let state = BetaAccessFeature.State(status: .active)
         XCTAssertEqual(state.status, .active)
         XCTAssertEqual(state.statusTitle, "Active")
         XCTAssertNotNil(state.statusMessage)
-        // isComplete는 memberwise init이 아닌 updateStatus()를 통해서만 설정됨
+        // isComplete는 멤버와이즈 이니셜라이저가 아닌 updateStatus()를 통해서만 설정됨
         XCTAssertFalse(state.isComplete)
     }
 
+    /// checkFailed 상태의 메시지가 실패 원인과 함께 유지되는지 확인한다.
+    ///
+    /// - 검증 내용: 실패 상태에서 제목과 메시지가 비어 있지 않아야 한다.
+    /// - 사전 조건: `State(status: .checkFailed, reason: .networkError)`.
+    /// - 기대 결과: `statusTitle == "Check failed"`, `statusMessage != nil`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 실패 상태는 재시도 전 안내를 제공한다.
     func testCheckFailedStatusMessage() {
         let state = BetaAccessFeature.State(status: .checkFailed, reason: .networkError)
         XCTAssertEqual(state.status, .checkFailed)
@@ -50,12 +83,24 @@ final class BetaAccessFeatureTests: XCTestCase {
         XCTAssertFalse(state.isComplete)
     }
 
+    /// 미활성 상태에서 입력 누락 메시지가 생성되는지 확인한다.
+    ///
+    /// - 검증 내용: `.notActive`와 `.missingInput` 조합은 사용자 안내를 가져야 한다.
+    /// - 사전 조건: `State(status: .notActive, reason: .missingInput)`.
+    /// - 기대 결과: `statusMessage != nil`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 누락 입력 경고는 화면에 보여야 한다.
     func testNotActiveWithMissingInputMessage() {
         let state = BetaAccessFeature.State(status: .notActive, reason: .missingInput)
         XCTAssertNotNil(state.statusMessage)
         XCTAssertFalse(state.isComplete)
     }
 
+    /// 검증 중 로딩 상태가 켜지고 응답 후 해제되는지 확인한다.
+    ///
+    /// - 검증 내용: `checkTapped` 직후 `isVerifying`가 true가 되고 응답 후 false가 되어야 한다.
+    /// - 사전 조건: email/token이 채워져 있고 검증 클라이언트는 성공 응답.
+    /// - 기대 결과: 응답 후 `status == .active`, `reason == .none`, `isComplete == true`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 요청/응답 동안 진행 상태를 보여준다.
     func testLoadingStateDuringVerification() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "a@b.com",
@@ -85,6 +130,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 화면 진입 시 입력이 있으면 자동 검증이 시작되는지 확인한다.
+    ///
+    /// - 검증 내용: `onAppear`가 검증 effect를 발생시켜야 한다.
+    /// - 사전 조건: 유효한 email/token이 미리 입력됨.
+    /// - 기대 결과: `isVerifying == true` 후 성공 응답으로 `status == .active`, `isComplete == true`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 재진입 시 기존 자격 증명을 검증한다.
     func testOnAppearTriggersVerificationWhenInputsPresent() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "user@test.com",
@@ -113,6 +164,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 이메일이 비어 있으면 화면 진입 시에도 검증을 시작하지 않는지 확인한다.
+    ///
+    /// - 검증 내용: 입력이 완성되지 않은 상태에서는 `onAppear`가 effect를 만들지 않아야 한다.
+    /// - 사전 조건: email만 비어 있고 token은 채워짐.
+    /// - 기대 결과: `status == .notActive`, `reason == .missingInput`, `isVerifying == false`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 누락 입력은 자동 검증보다 우선한다.
     func testOnAppearDoesNotVerifyWhenEmailEmpty() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "",
@@ -132,6 +189,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 검증 중에는 제출이 잠겨 있어야 하는지 확인한다.
+    ///
+    /// - 검증 내용: `isVerifying == true`이면 다시 제출할 수 없어야 한다.
+    /// - 사전 조건: 검증 중 상태를 직접 구성.
+    /// - 기대 결과: `canSubmit == false`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 중복 요청 방지.
     func testCanSubmitIsFalseWhenVerifying() {
         let state = BetaAccessFeature.State(
             email: "a@b.com",
@@ -141,6 +204,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         XCTAssertFalse(state.canSubmit)
     }
 
+    /// 재시도 노출이 실패 상태에만 제한되는지 확인한다.
+    ///
+    /// - 검증 내용: 성공/미활성 상태에서는 `showsRetry`가 false여야 한다.
+    /// - 사전 조건: 실패, 활성, 미활성 상태를 각각 생성.
+    /// - 기대 결과: 실패 상태만 재시도 가능.
+    /// - 관련 사양: ONB-002-start_access_unlock_recovery — 복구는 실패 후에만 열린다.
     func testShowsRetryOnlyWhenCheckFailed() {
         let failed = BetaAccessFeature.State(status: .checkFailed, reason: .networkError)
         XCTAssertTrue(failed.showsRetry)
@@ -154,6 +223,17 @@ final class BetaAccessFeatureTests: XCTestCase {
 
     // MARK: - ONB-002-apply_access_unlock_result
 
+    // 추적 사양: ONB-002-apply_access_unlock_result
+    // 검증 대상: 검증 응답(성공/실패)에 따른 상태 전환, 에러 매핑, 재시도 동작.
+    // 계약 경계: 검증 결과 적용·에러 매핑은 범위 내.
+    //   Core License 인증 토큰 발급/갱신은 범위 외(후속).
+
+    /// 성공 응답이 상태 완료로 이어지는지 확인한다.
+    ///
+    /// - 검증 내용: 유효한 email/token으로 검증 성공 시 `.active`로 전환되어야 한다.
+    /// - 사전 조건: 검증 클라이언트가 `ok: true`를 반환.
+    /// - 기대 결과: `status == .active`, `reason == .none`, `isComplete == true`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 성공 결과 적용 계약.
     func testVerificationSuccess() async {
         let store = TestStore(initialState: BetaAccessFeature.State()) {
             BetaAccessFeature()
@@ -187,6 +267,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 응답 처리 후 active 상태와 완료 플래그가 함께 세워지는지 확인한다.
+    ///
+    /// - 검증 내용: 성공 응답은 `isVerifying`를 내리고 완료 상태를 세팅해야 한다.
+    /// - 사전 조건: 성공 응답(`ok: true`).
+    /// - 기대 결과: `status == .active`, `reason == .none`, `isComplete == true`, `isVerifying == false`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 최종 상태 반영.
     func testVerificationResponseOkSetsActiveAndComplete() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "a@b.com",
@@ -216,6 +302,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 거짓 응답이 실패 상태로 처리되는지 확인한다.
+    ///
+    /// - 검증 내용: `ok: false`는 성공 완료가 아니라 실패 처리여야 한다.
+    /// - 사전 조건: 검증 클라이언트가 `ok: false`를 반환.
+    /// - 기대 결과: `status == .checkFailed`, `reason == .internalError`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 실패 응답은 완료가 아니다.
     func testVerificationResponseNotOkSetsCheckFailed() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "a@b.com",
@@ -244,6 +336,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 네트워크 오류가 실패 사유로 매핑되는지 확인한다.
+    ///
+    /// - 검증 내용: 네트워크 예외는 재시도 가능한 실패로 내려가야 한다.
+    /// - 사전 조건: 검증 클라이언트가 `networkError`를 던짐.
+    /// - 기대 결과: `status == .checkFailed`, `reason == .networkError`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 네트워크 실패는 복구 대상.
     func testVerificationFailureNetworkError() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "a@b.com",
@@ -270,6 +368,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 디코딩 오류가 내부 오류로 수렴하는지 확인한다.
+    ///
+    /// - 검증 내용: 응답 파싱 실패는 내부 실패로 처리되어야 한다.
+    /// - 사전 조건: 검증 클라이언트가 `decodingError`를 던짐.
+    /// - 기대 결과: `status == .checkFailed`, `reason == .internalError`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 파싱 실패는 정상 완료가 아님.
     func testVerificationFailureDecodingError() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "a@b.com",
@@ -296,6 +400,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 디바이스 식별자 부족이 전용 사유로 반영되는지 확인한다.
+    ///
+    /// - 검증 내용: 기기 식별이 불가능하면 별도 상태 사유가 보여야 한다.
+    /// - 사전 조건: 검증 클라이언트가 `deviceIdUnavailable`를 던짐.
+    /// - 기대 결과: `status == .checkFailed`, `reason == .deviceIdUnavailable`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 기기 정보 의존 실패의 명시화.
     func testVerificationFailureDeviceIdUnavailable() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "a@b.com",
@@ -322,6 +432,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 잘못된 요청이 요청 오류로 분류되는지 확인한다.
+    ///
+    /// - 검증 내용: 형식이 잘못된 요청은 활성화가 아니라 실패 상태여야 한다.
+    /// - 사전 조건: 검증 클라이언트가 `invalidRequest`를 던짐.
+    /// - 기대 결과: `status == .checkFailed`, `reason == .invalidRequest`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 요청 검증 실패 계약.
     func testVerificationFailureInvalidRequest() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "a@b.com",
@@ -348,6 +464,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 입력이 모두 채워지면 missingInput 사유가 해제되는지 확인한다.
+    ///
+    /// - 검증 내용: email/token이 모두 입력되면 `reason`이 `.none`이어야 한다.
+    /// - 사전 조건: 초기에는 비어 있고 두 입력을 순차적으로 채움.
+    /// - 기대 결과: `reason == .none`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 입력 충족 시 경고를 제거한다.
     func testInputChangeClearsMissingInputReasonWhenBothFilled() async {
         let store = TestStore(initialState: BetaAccessFeature.State()) {
             BetaAccessFeature()
@@ -368,6 +490,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 재시도 버튼이 검증을 다시 시작하는지 확인한다.
+    ///
+    /// - 검증 내용: 실패 상태에서 `retryTapped`는 새 검증 effect를 발생시켜야 한다.
+    /// - 사전 조건: `.checkFailed`와 `.networkError` 상태.
+    /// - 기대 결과: 재시도 후 `status == .active`, `reason == .none`, `isComplete == true`.
+    /// - 관련 사양: ONB-002-start_access_unlock_recovery — 재시도는 실제 복구 경로여야 한다.
     func testRetryTappedTriggersReverification() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "a@b.com",
@@ -396,10 +524,16 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    // ONB-002 auth/entitlement 마이그레이션은 future scope — project f946b2b9-0e41-4975-a55a-d5aacc11fcbd
-
     // MARK: - ONB-002-show_access_unlock_status
 
+    // 추적 사양(계속): 활성 상태 설정·미활성 사유 표시·검증 중 상태의 세부 동작.
+
+    /// active 상태 전환이 완료 플래그를 함께 세우는지 확인한다.
+    ///
+    /// - 검증 내용: 성공 응답 후 active와 complete가 같이 반영되어야 한다.
+    /// - 사전 조건: 이메일·토큰이 채워진 상태에서 성공 응답.
+    /// - 기대 결과: `status == .active`, `isComplete == true`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 성공 결과는 완료로 이어진다.
     func testActiveStatusSetsIsComplete() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "tester@example.com",
@@ -425,6 +559,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// invalid_token 오류가 미활성 사유로 보이는지 확인한다.
+    ///
+    /// - 검증 내용: `gatewayError(code: "invalid_token")`는 `.notActive`로 내려가야 한다.
+    /// - 사전 조건: 유효한 입력이지만 게이트웨이가 invalid_token을 반환.
+    /// - 기대 결과: `status == .notActive`, `reason == .invalidToken`, `isComplete == false`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 무효 토큰은 활성 권한이 아니다.
     func testNotActiveStatusShowsReason() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "tester@example.com",
@@ -450,6 +590,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 검증 중에는 제출이 잠기고 응답 후 다시 풀리는지 확인한다.
+    ///
+    /// - 검증 내용: `checkTapped` 직후 `canSubmit`이 false가 되어야 한다.
+    /// - 사전 조건: email/token이 채워진 상태와 성공 응답.
+    /// - 기대 결과: 검증 중에는 제출 불가, 응답 후 `status == .active`.
+    /// - 관련 사양: ONB-002-show_access_unlock_status — 진행 중 중복 제출을 막는다.
     func testVerifyingStateDuringCheck() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "tester@example.com",
@@ -480,6 +626,14 @@ final class BetaAccessFeatureTests: XCTestCase {
 
     // MARK: - ONB-002-apply_access_unlock_result
 
+    // 추적 사양(계속): 기존 자격 증명으로 검증 결과 적용·상태 전환.
+
+    /// 검증 결과 적용이 notActive에서 active로 전환되는지 확인한다.
+    ///
+    /// - 검증 내용: 이전 상태와 무관하게 성공 응답은 active로 바뀌어야 한다.
+    /// - 사전 조건: `status == .notActive`, `reason == .missingInput`에서 성공 응답.
+    /// - 기대 결과: `status == .active`, `isComplete == true`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 결과 적용은 최종 성공 상태를 반영한다.
     func testApplyVerificationResultTransitionsToActive() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "tester@example.com",
@@ -510,6 +664,12 @@ final class BetaAccessFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// 기존 자격 증명이 검증 과정에서 보존되는지 확인한다.
+    ///
+    /// - 검증 내용: 검증 전후로 email/token 값이 바뀌면 안 된다.
+    /// - 사전 조건: 이미 채워진 email/token으로 검증 실행.
+    /// - 기대 결과: 입력값 보존, `status == .active`, `isComplete == true`.
+    /// - 관련 사양: ONB-002-apply_access_unlock_result — 결과 적용은 입력을 손상시키지 않는다.
     func testApplyVerificationResultWithExistingCredentials() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "tester@example.com",

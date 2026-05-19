@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class EntryInlineRenameBeginSelectionTests: XCTestCase {
-    // MARK: - initialSelectionRange tests
+    // MARK: - initialSelectionRange 테스트
 
     func testRegularFileSelectsBasenameOnly() {
         let range = EntryInlineRenameEditorRules.initialSelectionRange(for: "report.txt", isFolder: false)
@@ -56,7 +56,7 @@ final class EntryInlineRenameBeginSelectionTests: XCTestCase {
         XCTAssertEqual(range.length, ("📄report" as NSString).length)
     }
 
-    // MARK: - selectedRange application tests
+    // MARK: - selectedRange 적용 테스트
 
     func testBasenameSelectionAppliedToTextField() {
         let textField = NSTextField(string: "report.txt")

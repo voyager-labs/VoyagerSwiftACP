@@ -260,7 +260,7 @@ final class ComposerInternalActionTests: XCTestCase {
         }
     }
 
-    // MARK: - searchListApplied (existing action, verify passthrough)
+    // MARK: - searchListApplied (기존 액션, 통과 확인)
 
     func testSearchListAppliedTransitionsPhase() async {
         var initialState = ComposerState()

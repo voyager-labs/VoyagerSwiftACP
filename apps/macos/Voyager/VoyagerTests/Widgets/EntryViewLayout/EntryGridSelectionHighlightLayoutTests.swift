@@ -60,7 +60,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertLessThan(tagFrame.maxY, iconFrame.minY)
     }
 
-    // MARK: - Finder-like Selection Tests
+    // MARK: - Finder 유사 선택 테스트
 
     func testSelectedShowsHighlightPillAndThumbnailBackground() throws {
         let item = makeEntryGridSelectionTestItem()
@@ -102,7 +102,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertNil(iconBackground.layer?.backgroundColor, "Deselected item should have clear icon background")
     }
 
-    // MARK: - Selection Priority Tests
+    // MARK: - 선택 우선순위 테스트
 
     func testRenamingSuppressesHighlightWithoutTinting() throws {
         let item = makeEntryGridSelectionTestItem(isRenaming: true)
@@ -194,7 +194,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         )
     }
 
-    // MARK: - Finder-like drop border restraint (NEW)
+    // MARK: - Finder 유사 드롭 테두리 억제 (신규)
 
     func testDropTargetHasNoBorderOnAnyView() throws {
         let item = makeEntryGridSelectionTestItem(isDropTargeted: true)
@@ -258,7 +258,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertEqual(nameField.textColor, .white, "Selected+targeted text must remain white (selection wins)")
     }
 
-    // MARK: - Cross-Surface Regression Tests
+    // MARK: - 교차 표면 회귀 테스트
 
     func testTaggedSelectedItemKeepsVisibleTagDots() throws {
         let tags = [Tag(name: "Work", colorCode: 4), Tag(name: "Personal", colorCode: 2)]

@@ -1,12 +1,12 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
@@ -42,7 +42,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         }
     }
 
-    // MARK: - Non-Collection Navigation: clearCollectionPresentation + Load
+    // MARK: - 비컬렉션 내비게이션: clearCollectionPresentation + Load
 
     func testFolderNavigationSendsClearCollectionPresentationThenLoadItems() async {
         let store = TestStore(initialState: makeInitialState()) {
@@ -135,7 +135,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         }
     }
 
-    // MARK: - Collection Navigation: setCollectionMode Only
+    // MARK: - 컬렉션 내비게이션: setCollectionMode만
 
     func testCollectionNavigationSendsSetCollectionModeTrueOnly() async {
         let store = TestStore(initialState: makeInitialState()) {
@@ -163,7 +163,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         }
     }
 
-    // MARK: - handleEntryOperationsAction: Returns None for Loading Actions
+    // MARK: - handleEntryOperationsAction: 로딩 액션에 대해 None 반환
 
     func testItemsLoadedReturnsNoneFromPageLevelHandler() async {
         let store = TestStore(initialState: EntryOperationsBridgeHarness.State(content: .init())) {
@@ -175,7 +175,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - operationFinished: Reload Only, No Reapply
+    // MARK: - operationFinished: 리로드만, 재적용 없음
 
     func testOperationFinishedTriggersReloadWithoutReapply() async {
         var initialState = EntryOperationsBridgeHarness.State(content: .init())
@@ -200,7 +200,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - makeEntryOperationsCommandContext: Uses entryViewLayout.entries
+    // MARK: - makeEntryOperationsCommandContext: entryViewLayout.entries 사용
 
     func testCommandContextUsesEntryViewLayoutEntries() {
         let entry = EntryModel.temporaryFolder(id: "/tmp/file.txt", name: "file.txt")
@@ -218,7 +218,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         XCTAssertEqual(context.selectedIds, [entry.id])
     }
 
-    // MARK: - Helpers
+    // MARK: - 도우미 메서드
 
     private func makeInitialState() -> FileManagerContentState {
         var state = FileManagerContentState()

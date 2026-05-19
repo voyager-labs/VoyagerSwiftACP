@@ -1,12 +1,12 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
@@ -14,7 +14,7 @@ import XCTest
 final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
-    // MARK: - Harness
+    // MARK: - 하네스
 
     @MainActor
     struct LifecycleBridgeHarness: Reducer {
@@ -45,7 +45,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - 도우미
 
     private func makeInitialState() -> LifecycleBridgeHarness.State {
         LifecycleBridgeHarness.State(content: FileManagerContentState())
@@ -58,7 +58,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         return state
     }
 
-    // MARK: - .lifecycle(.operationFinished) triggers content reload
+    // MARK: - .lifecycle(.operationFinished)가 콘텐츠 리로드를 트리거
 
     func testOperationFinishedTriggersContentReload() async {
         let folderPath = "/tmp/voyager"
@@ -155,7 +155,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - .lifecycle(.emptyTrashCompleted) triggers closeWindow delegate
+    // MARK: - .lifecycle(.emptyTrashCompleted)가 closeWindow 델리게이트를 트리거
 
     func testEmptyTrashCompletedTriggersCloseWindow() async {
         let store = TestStore(initialState: makeInitialState()) {
@@ -172,7 +172,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - .lifecycle(.entryActionCompleted) returns none (metric logging only)
+    // MARK: - .lifecycle(.entryActionCompleted)는 none 반환 (메트릭 로깅만)
 
     func testEntryActionCompletedReturnsNoneWithoutReload() async {
         let folderPath = "/tmp/voyager"
@@ -252,7 +252,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - Non-lifecycle entry operations do not trigger bridge side effects
+    // MARK: - 비수명주기 항목 연산은 브릿지 부수효과를 트리거하지 않음
 
     func testLoadingItemsLoadedReturnsNone() async {
         let store = TestStore(initialState: makeInitialState()) {

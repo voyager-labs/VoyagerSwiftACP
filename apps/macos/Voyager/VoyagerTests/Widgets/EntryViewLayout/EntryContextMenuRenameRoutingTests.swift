@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class EntryContextMenuRenameRoutingTests: XCTestCase {
-    // MARK: - Helpers
+    // MARK: - 도우미
 
     private final class ActionRecorder {
         var actions: [EntryViewLayoutAction] = []
@@ -52,7 +52,7 @@ final class EntryContextMenuRenameRoutingTests: XCTestCase {
         )
     }
 
-    // MARK: - contextMenuStartRename Tests
+    // MARK: - contextMenuStartRename 테스트
 
     func testContextMenuStartRenameUsesRowEntryWhenPresent() {
         let rowEntry = makeEntry(name: "rowItem", fullPath: "/tmp/rowItem.txt")
@@ -137,7 +137,7 @@ final class EntryContextMenuRenameRoutingTests: XCTestCase {
         XCTAssertTrue(recorder.actions.isEmpty, "No actions should be sent for multi-selection without rowEntry")
     }
 
-    // MARK: - sendWithSelection Tests
+    // MARK: - sendWithSelection 테스트
 
     func testSendWithSelectionReseatsSelectionBeforeRenameAction() {
         let clickedItem = makeEntry(name: "clickedItem", fullPath: "/tmp/clickedItem.txt")

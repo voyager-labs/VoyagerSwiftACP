@@ -1,14 +1,14 @@
 import AppKit
 import ComposableArchitecture
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import XCTest
 
 @MainActor
 final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
-    // MARK: - 1. openFavorite - collection file branch와 path navigation branch 둘 다 검증
+    // MARK: - 1. openFavorite - 컬렉션 파일 분기와 경로 네비게이션 분기 모두 검증
 
     func testOpenFavoriteRoutesToCollectionFileWhenExtensionMatches() async {
         var initialState = FileManagerFeature.State()
@@ -58,7 +58,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - 2. openLocation - path navigation으로 라우팅
+    // MARK: - 2. openLocation - 경로 네비게이션으로 라우팅
 
     func testOpenLocationRoutesToPathNavigation() async {
         var initialState = FileManagerFeature.State()
@@ -84,7 +84,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - 3. showTag - tag name(String)으로 라우팅
+    // MARK: - 3. showTag - 태그 이름(String)으로 라우팅
 
     func testShowTagRoutesByTagName() async {
         var initialState = FileManagerFeature.State()
@@ -97,7 +97,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        // String payload만 검증
+        // String 페이로드만 검증
         await store.send(.sidebar(.delegate(.showTag(tagName))))
         await store.receive {
             guard case let .navigation(.view(.showTag(receivedTagName))) = $0 else { return false }
@@ -106,7 +106,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - 4. showRecents와 showComputer - navigation으로 라우팅
+    // MARK: - 4. showRecents와 showComputer - 네비게이션으로 라우팅
 
     func testShowRecentsRoutesToNavigation() async {
         var initialState = FileManagerFeature.State()
@@ -144,7 +144,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - 5. dropItems - folder-drop과 tag-drop 둘 다 검증
+    // MARK: - 5. dropItems - 폴더 드롭과 태그 드롭 모두 검증
 
     func testDropItemsToSidebarFolderRoutesToContentDelegate() async {
         var initialState = FileManagerFeature.State()
@@ -158,7 +158,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        // .content(.delegate(.dropItemsToSidebarFolder(...))) handoff를 검증
+        // .content(.delegate(.dropItemsToSidebarFolder(...))) 핸드오프를 검증
         await store.send(.sidebar(.delegate(.dropItemsToSidebarFolder(providers: providers, targetURL: targetURL))))
         await store.receive {
             guard case let .content(.delegate(.dropItemsToSidebarFolder(receivedProviders, receivedURL))) = $0
@@ -180,7 +180,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        // .content(.delegate(.dropItemsToTag(...))) handoff를 검증
+        // .content(.delegate(.dropItemsToTag(...))) 핸드오프를 검증
         await store.send(.sidebar(.delegate(.dropItemsToTag(providers: providers, tagName: tagName))))
         await store.receive {
             guard case let .content(.delegate(.dropItemsToTag(receivedProviders, receivedTagName))) = $0

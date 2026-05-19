@@ -13,7 +13,26 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
     // swiftlint:enable type_name
     // MARK: - ONB-003-show_onboarding_permission_status
 
-    /// onAppear 시 초기 권한 상태 표시를 검증합니다.
+    // 온보딩 권한 구성 화면(ONB-003)의 첫 번째 스펙 인터랙션입니다.
+    // 사용자가 권한 설정 화면에 진입(onAppear)했을 때 리듀서가 세 가지 권한의 현재 상태를
+    // 병렬로 수집하여 State에 반영하는 흐름을 검증합니다.
+    // 대상 권한: Full Disk Access(FDA), 헬퍼 폴더 접근(Desktop/Documents/Downloads),
+    // 로그인 시 실행(LaunchAtLogin).
+
+    /// ONB-003-show_onboarding_permission_status 스펙에서 onAppear 시 권한 상태를 병렬로 수집하는 흐름을 검증합니다.
+    ///
+    /// 리듀서가 onAppear를 받으면 세 개의 이펙트(FDA 상태, 헬퍼 폴더 접근 상태, 로그인 항목 상태)를
+    /// 동시에 시작하고, 각 결과 액션을 순차적으로 수신하여 State를 갱신합니다.
+    ///
+    /// - 사전 조건: FDA는 `.granted`(허용됨), 헬퍼 폴더 접근은 `kGrantedHelperAccess`
+    ///   (Desktop·Documents·Downloads 모두 허용), 로그인 시 실행은 비활성화(`false`).
+    ///   로그인 항목은 비게이팅 권한이므로 FDA와 헬퍼 접근만으로 완료 판정이 납니다.
+    /// - 검증 액션: `onAppear` → FDA 응답 → 헬퍼 응답 → 로그인 항목 응답 순으로 수신.
+    /// - 기대 결과: `fullDiskAccessStatusResponse(.granted)` 수신 후 `isComplete`는 여전히 `false`
+    ///   (헬퍼 접근 결과 미수신). `helperFolderAccessStatusLoaded` 수신 후 `helperFolderAccessError`는
+    ///   `nil`이 되고 `isComplete == true`. `launchAtLoginStateLoaded`는 추가로 수신되지만
+    ///   `isComplete`에는 영향을 주지 않습니다.
+    /// - 관련 사양: ONB-003-show_onboarding_permission_status
     func testOnAppearLoadsHelperFolderAccessStatus() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -42,7 +61,20 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// FDA 상태가 unknown일 때의 초기 상태를 검증합니다.
+    /// ONB-003-show_onboarding_permission_status: FDA가 `.unknown`일 때 온보딩 완료가 차단되는지 검증합니다.
+    ///
+    /// macOS는 FDA 권한을 허용/거부/미확인 세 가지로 보고합니다. `.unknown`은 사용자가 아직
+    /// 시스템 설정에서 권한을 부여하지 않은 초기 상태로, 리듀서는 이를 사실상 거부와 동일하게
+    /// 취급하여 Next 버튼을 비활성화합니다.
+    ///
+    /// - 사전 조건: FDA는 `.unknown`(미확인), 헬퍼 폴더 접근은 `kGrantedHelperAccess`(모두 허용),
+    ///   로그인 시 실행은 비활성화. 헬퍼 접근만으로는 완료 판정이 나지 않습니다.
+    /// - 검증 액션: `onAppear` → 세 응답 순차 수신. FDA 응답은 상태 변경 없이
+    ///   `fullDiskAccessStatus`가 `.unknown`으로 유지됩니다.
+    /// - 기대 결과: `nextDisabledMessage`가 non-nil이 되어 Next 버튼이 비활성화.
+    ///   `fullDiskAccessStatus == .unknown` 유지. `isComplete`는 헬퍼 접근이 허용되었더라도
+    ///   FDA 미확정으로 인해 최종 완료가 아닙니다.
+    /// - 관련 사양: ONB-003-show_onboarding_permission_status
     func testOnAppearWithFDAUnknownShowsNeedsAction() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -69,7 +101,16 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 헬퍼 폴더 접근이 부분적으로 허용된 상태 표시를 검증합니다.
+    /// 헬퍼 폴더 접근이 부분적으로 허용된 상태에서 isComplete가 false임을 검증합니다.
+    ///
+    /// - 검증 내용: Desktop·Documents는 허용, Downloads는 미허용인 부분 접근 상태에서
+    ///   helperFolderAccessStatus가 `.partial`로 분류되고, isComplete가 false가 됩니다.
+    ///   부분 접근은 전체 허용과 동일하게 취급되지 않으며, 사용자에게 추가 조치를 안내해야 합니다.
+    /// - 사전 조건: FDA `.granted`, 헬퍼 폴더 desktop=`.granted`, documents=`.granted`,
+    ///   downloads=`.notGranted`, 로그인 시 실행 비활성화.
+    /// - 기대 결과: helperFolderAccessStatus == `.partial`, showsHelperFolderAccessAction == true,
+    ///   isComplete == false. 세 폴더 모두 허용되어야만 완료 처리됩니다.
+    /// - 관련 사양: ONB-003-show_onboarding_permission_status
     func testOnAppearWithPartialHelperAccessShowsPartial() async {
         let partialAccess = FolderAccessResult(
             desktop: .granted,
@@ -107,7 +148,16 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 모든 권한이 거부되었을 때의 상태 표시를 검증합니다.
+    /// 모든 권한이 거부된 최악의 시나리오에서 올바른 상태 표시를 검증합니다.
+    ///
+    /// - 검증 내용: FDA `.denied` + 헬퍼 폴더 전체 `.notGranted` 조합에서
+    ///   모든 권한이 미충족되었음을 정확히 반영하는지 확인합니다.
+    ///   이 상태는 사용자가 처음 온보딩을 시작하면서 아무런 시스템 권한도 부여하지 않은 경우에 해당합니다.
+    /// - 사전 조건: FDA `.denied`, 헬퍼 폴더 desktop·documents·downloads 모두 `.notGranted`,
+    ///   로그인 시 실행 비활성화.
+    /// - 기대 결과: fullDiskAccessStatus == `.denied`, helperFolderAccessStatus == `.notGranted`,
+    ///   isComplete == false, nextDisabledMessage가 non-nil (Next 버튼 비활성화).
+    /// - 관련 사양: ONB-003-show_onboarding_permission_status
     func testOnAppearWithAllDeniedShowsCorrectStatus() async {
         let deniedAccess = FolderAccessResult(
             desktop: .notGranted,
@@ -141,7 +191,15 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// RED: 초기 상태 → FDA와 헬퍼 접근 모두 허용될 때까지 isComplete가 false로 유지됩니다.
+    /// FDA 미허용 상태에서는 헬퍼 접근이 허용되더라도 isComplete가 false임을 검증합니다.
+    ///
+    /// - 검증 내용: 헬퍼 폴더 접근은 `kGrantedHelperAccess`로 통과하더라도
+    ///   FDA가 `.needsAction`이면 isComplete는 false여야 합니다.
+    ///   FDA는 선행 필수 권한이므로, FDA 없이는 다른 권한 통과가 의미 없습니다.
+    /// - 사전 조건: FDA `.needsAction`, 헬퍼 폴더 `kGrantedHelperAccess`, 로그인 시 실행 비활성화.
+    /// - 기대 결과: fullDiskAccessStatusResponse 수신 후 isComplete == false,
+    ///   helperFolderAccessStatusLoaded 수신 후에도 isComplete == false 유지.
+    /// - 관련 사양: ONB-003-show_onboarding_permission_status
     func testInitialStatusIsNotCompleteUntilAllChecksPass() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -166,14 +224,22 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         }
         await store.receive(\.launchAtLoginStateLoaded)
 
-        // FDA 미허용 → isComplete가 false로 유지됨
+        // FDA가 needsAction이므로 헬퍼가 허용 상태여도 isComplete는 false여야 함
         XCTAssertFalse(store.state.isComplete)
 
         await store.send(.onDisappear)
         await store.finish()
     }
 
-    /// RED: 일부 폴더의 헬퍼 접근이 허용되지 않음 → isComplete가 false로 유지됩니다.
+    /// FDA 허용 상태에서 헬퍼 폴더 접근 거부 시 isComplete가 차단됨을 검증합니다.
+    ///
+    /// - 검증 내용: FDA는 `.granted`이더라도 헬퍼 폴더 접근이 전체 거부되면
+    ///   isComplete는 false이고 nextDisabledMessage가 존재합니다.
+    ///   두 필수 권한(FDA + 헬퍼)이 모두 충족되어야만 완료 처리됩니다.
+    /// - 사전 조건: FDA `.granted`, 헬퍼 폴더 desktop·documents·downloads 모두 `.notGranted`,
+    ///   로그인 시 실행 비활성화.
+    /// - 기대 결과: isComplete == false, nextDisabledMessage가 non-nil.
+    /// - 관련 사양: ONB-003-show_onboarding_permission_status
     func testHelperFolderAccessDeniedBlocksCompletion() async {
         let deniedAccess = FolderAccessResult(
             desktop: .notGranted,
@@ -198,7 +264,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.receive(\.helperFolderAccessStatusLoaded)
         await store.receive(\.launchAtLoginStateLoaded)
 
-        // FDA 허용됨, 헬퍼 거부됨 → isComplete 여전히 false
+        // FDA는 허용되었으나 헬퍼 폴더 접근이 거부되어 isComplete는 여전히 false
         XCTAssertFalse(store.state.isComplete)
         XCTAssertNotNil(store.state.nextDisabledMessage)
 
@@ -208,7 +274,19 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
 
     // MARK: - ONB-003-refresh_onboarding_permission_status
 
-    /// disappear 시 옵저데이션 수명 주기 정리를 검증합니다.
+    // 앱 활성화(appDidBecomeActive) 및 화면 이탈(onDisappear) 시 권한 상태 새로고침과
+    // 옵저데이션 수명 주기 정리 동작을 검증합니다. 앱이 포그라운드로 복귀할 때
+    // 사용자가 시스템 설정에서 변경한 권한을 즉시 반영하는 것이 핵심 목표입니다.
+    // onDisappear는 TCA Effect 취소 및 옵저버 해제를 보장합니다.
+
+    /// onDisappear가 권한 관찰 Effect를 정상적으로 취소하는지 검증합니다.
+    ///
+    /// - 검증 내용: onAppear 후 onDisappear를 보내면 관찰 Effect가 취소되고
+    ///   추가 액션 수신 없이 finish()가 완료되어야 합니다.
+    ///   이는 화면 이탈 시 불필요한 권한 폴링을 중단하여 리소스 누수를 방지합니다.
+    /// - 사전 조건: FDA `.unknown`, 헬퍼 폴더 `kGrantedHelperAccess`, 로그인 시 실행 비활성화.
+    /// - 기대 결과: onDisappear 이후 pending effect 없이 store.finish() 성공.
+    /// - 관련 사양: ONB-003-refresh_onboarding_permission_status
     func testOnDisappearCancelsAppActiveObservation() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -232,7 +310,15 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 앱 활성화 시 상태 새로고침을 검증합니다.
+    /// 앱이 포그라운드로 복귀할 때 권한 상태를 새로고침하는지 검증합니다.
+    ///
+    /// - 검증 내용: appDidBecomeActive 액션이 FDA·헬퍼 폴더 접근 상태를 재조회하고
+    ///   isComplete를 올바르게 갱신합니다. 사용자가 시스템 설정에서 권한을 변경한 후
+    ///   앱으로 복귀하면 즉시 반영되어야 합니다.
+    /// - 사전 조건: FDA `.granted`, 헬퍼 폴더 `kGrantedHelperAccess`.
+    /// - 기대 결과: fullDiskAccessStatusResponse·helperFolderAccessStatusLoaded 수신 후
+    ///   isComplete == true.
+    /// - 관련 사양: ONB-003-refresh_onboarding_permission_status
     func testAppDidBecomeActiveRefreshesHelperFolderAccessStatus() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -257,7 +343,13 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// FDA 허용 후 새로고침 시 isComplete가 올바르게 갱신됨을 검증합니다.
+    /// 새로고침 후 FDA가 허용되면 isComplete가 true로 전환됨을 검증합니다.
+    ///
+    /// - 검증 내용: appDidBecomeActive가 FDA `.granted` + 헬퍼 `kGrantedHelperAccess`를
+    ///   반환할 때 isComplete가 true가 됩니다. 이는 새로고침이 권한 변화를 정확히 반영함을 보장합니다.
+    /// - 사전 조건: FDA `.granted`, 헬퍼 폴더 `kGrantedHelperAccess`.
+    /// - 기대 결과: 새로고침 수신 후 isComplete == true.
+    /// - 관련 사양: ONB-003-refresh_onboarding_permission_status
     func testRefreshAfterFDAGrantMarksComplete() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -284,7 +376,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 헬퍼 폴더 접근 상태가 거부로 변경된 후 새로고침을 검증합니다.
+    /// 새로고침 시 헬퍼 폴더 접근이 거부로 변경되면 상태가 올바르게 갱신됨을 검증합니다.
+    ///
+    /// - 검증 내용: appDidBecomeActive가 헬퍼 폴더 전체 `.notGranted`를 반환할 때
+    ///   isComplete가 false이고 helperFolderAccessStatus가 `.notGranted`가 됩니다.
+    ///   사용자가 시스템 설정에서 권한을 철회한 시나리오를 재현합니다.
+    /// - 사전 조건: FDA `.granted`, 헬퍼 폴더 desktop·documents·downloads 모두 `.notGranted`.
+    /// - 기대 결과: isComplete == false, helperFolderAccessStatus == `.notGranted`.
+    /// - 관련 사양: ONB-003-refresh_onboarding_permission_status
     func testRefreshAfterHelperFolderAccessChangeUpdatesStatus() async {
         let deniedAccess = FolderAccessResult(
             desktop: .notGranted,
@@ -312,7 +411,15 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 새로고침 시 로그인 시 실행 상태가 초기화되지 않음을 검증합니다.
+    /// 새로고침이 로그인 시 실행 상태를 초기화하지 않음을 검증합니다.
+    ///
+    /// - 검증 내용: launchAtLoginEnabled가 true인 초기 상태에서 appDidBecomeActive를
+    ///   보내도 launchAtLoginEnabled가 true로 유지되어야 합니다.
+    ///   새로고침은 FDA·헬퍼 상태만 갱신하고, 로그인 시 실행은 독립적으로 보존됩니다.
+    /// - 사전 조건: initialState.launchAtLoginEnabled = true, FDA `.granted`,
+    ///   헬퍼 폴더 `kGrantedHelperAccess`.
+    /// - 기대 결과: 새로고침 후 launchAtLoginEnabled == true 유지.
+    /// - 관련 사양: ONB-003-refresh_onboarding_permission_status
     func testRefreshDoesNotResetLaunchAtLoginState() async {
         var initialState = PermissionsFeature.State()
         initialState.launchAtLoginEnabled = true
@@ -340,7 +447,16 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// RED: 초기 needsAction → 새로고침 후 .granted 반환 → isComplete가 true로 전환됩니다.
+    /// FDA가 `.needsAction`에서 `.granted`로 전환된 후 새로고침이 isComplete를 true로 만드는지 검증합니다.
+    ///
+    /// - 검증 내용: 시드 단계에서 FDA를 `.needsAction`으로 설정하여 isComplete를 false로 만든 뒤,
+    ///   appDidBecomeActive가 FDA `.granted` + 헬퍼 `kGrantedHelperAccess`를 반환하면
+    ///   isComplete가 true로 전환되고 nextDisabledMessage가 nil이 됩니다.
+    ///   이는 권한 회복 후 온보딩 진행이 차단 해제됨을 보장합니다.
+    /// - 사전 조건: 시드로 FDA `.needsAction` 설정, FDA 클라이언트는 `.granted` 반환,
+    ///   헬퍼 폴더 `kGrantedHelperAccess`.
+    /// - 기대 결과: 새로고침 후 isComplete == true, nextDisabledMessage == nil.
+    /// - 관련 사양: ONB-003-refresh_onboarding_permission_status
     func testRefreshAfterGrantingFDAClearsErrorAndCompletes() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -352,14 +468,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             )
         }
 
-        // 시드: FDA = needsAction, 헬퍼 = granted → 미완료
+        // 시드: FDA를 needsAction으로 설정, 헬퍼는 granted → 아직 온보딩 미완료 상태
         await store.send(.fullDiskAccessStatusResponse(.needsAction)) { state in
             state.fullDiskAccessStatus = .needsAction
             state.isComplete = false
         }
         XCTAssertFalse(store.state.isComplete)
 
-        // 새로고침: FDA 이제 허용됨
+        // 새로고침: FDA 클라이언트가 이제 .granted를 반환함
         await store.send(.appDidBecomeActive)
         await store.receive(\.fullDiskAccessStatusResponse) { state in
             state.fullDiskAccessStatus = .granted
@@ -379,7 +495,19 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
 
     // MARK: - ONB-003-request_onboarding_permission_access
 
-    /// Next 버튼에 대한 FDA 게이팅 동작을 검증합니다.
+    // 사용자의 권한 요청 액션(FDA 활성화, 헬퍼 폴더 접근 요청, 로그인 시 실행 토글,
+    // 시스템 설정 열기)이 올바른 Effect를 트리거하고, 그 결과가 State에
+    // 반영되는지 검증합니다. Next 버튼의 게이팅 로직(FDA + 헬퍼 필수,
+    // 로그인 시 실행 선택)도 이 그룹에서 확인합니다.
+
+    /// FDA 상태에 따라 Next 버튼이 활성화·비활성화되는 게이팅 동작을 검증합니다.
+    ///
+    /// - 검증 내용: 헬퍼 폴더는 `kGrantedHelperAccess`로 통과하더라도
+    ///   FDA가 `.needsAction`이면 nextDisabledMessage가 "Turn on Full Disk Access to continue."이고,
+    ///   FDA가 `.granted`로 전환되면 nextDisabledMessage가 nil이 되고 isComplete == true가 됩니다.
+    /// - 사전 조건: 의존성 기본값(모든 클라이언트 기본 구현).
+    /// - 기대 결과: FDA `.needsAction` 시 Next 비활성화, FDA `.granted` 시 Next 활성화.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testFullDiskAccessGatesNext() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -407,7 +535,15 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 사용자가 활성화를 시도한 후 FDA 거부 상태를 검증합니다.
+    /// 사용자가 시스템 설정 열기를 시도한 후 FDA가 여전히 거부 상태인 경우를 검증합니다.
+    ///
+    /// - 검증 내용: systemSettingsOpenResult(true)로 hasAttemptedFullDiskAccessEnable를 true로
+    ///   설정한 후, fullDiskAccessStatusResponse(.needsAction)이 오면
+    ///   fullDiskAccessStatus가 `.denied`로 처리됩니다.
+    ///   사용자가 시도했으나 권한을 부여하지 않은 경우 `.needsAction` → `.denied` 전환을 보장합니다.
+    /// - 사전 조건: 의존성 기본값.
+    /// - 기대 결과: fullDiskAccessStatus == `.denied`, isComplete == false.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testFullDiskAccessDeniedAfterAttempt() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -427,7 +563,15 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 시스템 설정 열기 실패 시 에러 표시를 검증합니다.
+    /// 시스템 설정 열기 실패 시 에러 메시지가 표시되는지 검증합니다.
+    ///
+    /// - 검증 내용: systemSettingsOpenResult(false)가 반환되면 systemSettingsError에
+    ///   "We couldn't open System Settings. Please open it manually." 메시지가 설정되고,
+    ///   hasAttemptedFullDiskAccessEnable는 false로 유지됩니다.
+    ///   시스템 설정 URL 열기 실패는 사용자 환경에서 발생할 수 있는 예외 상황입니다.
+    /// - 사전 조건: 의존성 기본값.
+    /// - 기대 결과: systemSettingsError != nil, hasAttemptedFullDiskAccessEnable == false.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testOpenSystemSettingsFailureShowsError() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -441,7 +585,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 로그인 시 실행 토글 성공을 검증합니다 (비게이팅 권한).
+    /// 로그인 시 실행 토글이 성공적으로 상태를 갱신하는지 검증합니다 (비게이팅 권한).
+    ///
+    /// - 검증 내용: launchAtLoginToggled(true)가 launchAtLoginEnabled를 true로 설정하고
+    ///   launchAtLoginUpdateSucceeded를 수신합니다. 로그인 시 실행은 필수 권한이 아니므로
+    ///   토글 결과가 isComplete에 영향을 주지 않습니다.
+    /// - 사전 조건: launchAtLoginClient isEnabled = false, setEnabled 성공.
+    /// - 기대 결과: launchAtLoginEnabled == true, launchAtLoginError == nil.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testLaunchAtLoginToggleSuccess() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -460,7 +611,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 로그인 시 실행 토글 실패를 검증합니다 (비게이팅 권한).
+    /// 로그인 시 실행 토글 실패 시 에러 복구 동작을 검증합니다 (비게이팅 권한).
+    ///
+    /// - 검증 내용: setEnabled가 TestError를 throw하면 launchAtLoginUpdateFailed를 수신하고,
+    ///   launchAtLoginEnabled가 false로 롤백되며, launchAtLoginError에 안내 메시지가 설정됩니다.
+    ///   실패 시 상태 롤백은 사용자에게 일관된 UI를 제공하기 위해 중요합니다.
+    /// - 사전 조건: launchAtLoginClient setEnabled가 TestError()를 throw.
+    /// - 기대 결과: launchAtLoginEnabled == false, launchAtLoginError != nil.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testLaunchAtLoginToggleFailure() async {
         struct TestError: Error {}
 
@@ -486,7 +644,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// FDA 요청이 시스템 설정을 여는지 검증합니다.
+    /// openSystemSettingsTapped이 systemSettingsClient를 호출하는지 검증합니다.
+    ///
+    /// - 검증 내용: openSystemSettingsTapped 액션이 systemSettingsClient.openFullDiskAccess를
+    ///   호출하고, 성공 결과로 systemSettingsOpenResult를 수신하며
+    ///   hasAttemptedFullDiskAccessEnable가 true로 설정됩니다.
+    /// - 사전 조건: systemSettingsClient openFullDiskAccess가 true 반환.
+    /// - 기대 결과: hasAttemptedFullDiskAccessEnable == true.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testOpenSystemSettingsTappedCallsSystemSettingsClient() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -501,7 +666,16 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 헬퍼 폴더 접근 요청 흐름을 검증합니다.
+    /// 헬퍼 폴더 접근 요청이 성공하여 isComplete가 true가 되는 흐름을 검증합니다.
+    ///
+    /// - 검증 내용: FDA가 이미 `.granted`인 상태에서 requestHelperFolderAccessTapped이
+    ///   `kGrantedHelperAccess`를 반환하면, isRequestingHelperFolderAccess가 false로 돌아가고
+    ///   isComplete가 true가 됩니다.
+    /// - 사전 조건: initialState.fullDiskAccessStatus = `.granted`,
+    ///   헬퍼 폴더 `kGrantedHelperAccess`.
+    /// - 기대 결과: isRequestingHelperFolderAccess == false, isComplete == true,
+    ///   helperFolderAccessError == nil.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testRequestHelperFolderAccessTappedSucceeds() async {
         var initialState = PermissionsFeature.State()
         initialState.fullDiskAccessStatus = .granted
@@ -527,7 +701,15 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 헬퍼 폴더 접근 요청이 부분 허용 결과를 반환하는 경우를 검증합니다.
+    /// 헬퍼 폴더 접근 요청이 부분 허용 결과를 반환하는 경우 에러 메시지와 isComplete를 검증합니다.
+    ///
+    /// - 검증 내용: desktop만 `.granted`이고 documents·downloads는 `.notGranted`인 부분 접근에서
+    ///   helperFolderAccessError에 "VoyagerHelper still needs Desktop, Documents, and Downloads access."
+    ///   메시지가 설정되고, isComplete는 false입니다.
+    ///   부분 접근은 전체 허용으로 간주되지 않아 사용자에게 추가 조치가 필요합니다.
+    /// - 사전 조건: 헬퍼 폴더 desktop=`.granted`, documents=`.notGranted`, downloads=`.notGranted`.
+    /// - 기대 결과: isComplete == false, helperFolderAccessError != nil.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testRequestHelperFolderAccessTappedReturnsPartial() async {
         let partialAccess = FolderAccessResult(
             desktop: .granted,
@@ -560,7 +742,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// FDA 거부 시 Next 버튼이 비활성화됨을 검증합니다.
+    /// FDA가 명시적으로 `.denied`일 때 Next 버튼이 비활성화됨을 검증합니다.
+    ///
+    /// - 검증 내용: fullDiskAccessStatusResponse(.denied)를 보내면
+    ///   nextDisabledMessage가 "Turn on Full Disk Access to continue."이고
+    ///   isComplete가 false입니다. `.denied`는 사용자가 의도적으로 권한을 거부한 상태입니다.
+    /// - 사전 조건: 의존성 기본값.
+    /// - 기대 결과: nextDisabledMessage != nil, isComplete == false.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testFDABlocksNextWhenDenied() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -579,7 +768,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 헬퍼 접근 미허용 시 Next 버튼이 비활성화됨을 검증합니다.
+    /// 헬퍼 폴더 접근이 미허용일 때 FDA가 허용되더라도 Next가 비활성화됨을 검증합니다.
+    ///
+    /// - 검증 내용: FDA가 `.granted`이더라도 헬퍼 폴더가 전체 `.notGranted`이면
+    ///   nextDisabledMessage가 "Grant VoyagerHelper access to Desktop, Documents, and Downloads to continue."
+    ///   이고 isComplete == false입니다. 헬퍼 접근은 FDA와 별개의 필수 권한입니다.
+    /// - 사전 조건: 의존성 기본값.
+    /// - 기대 결과: nextDisabledMessage에 헬퍼 접근 안내 메시지, isComplete == false.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testHelperAccessBlocksNextWhenNotGranted() async {
         let deniedAccess = FolderAccessResult(
             desktop: .notGranted,
@@ -603,7 +799,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// 로그인 시 실행이 Next를 차단하지 않음을 검증합니다.
+    /// 로그인 시 실행이 비활성화되어도 Next를 차단하지 않음을 검증합니다.
+    ///
+    /// - 검증 내용: FDA `.granted` + 헬퍼 `kGrantedHelperAccess` + 로그인 시 실행 false 조합에서
+    ///   isComplete가 true이고 nextDisabledMessage가 nil입니다.
+    ///   로그인 시 실행은 권장 사항이며 필수 권한이 아닙니다.
+    /// - 사전 조건: 의존성 기본값.
+    /// - 기대 결과: isComplete == true, nextDisabledMessage == nil.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testLaunchAtLoginDoesNotBlockNextWhenDisabled() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -623,7 +826,16 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// FDA 요청이 거부에서 허용으로 전환됨을 검증합니다 (재시도 성공).
+    /// FDA 권한이 거부에서 허용으로 전환되는 재시도 성공 시나리오를 검증합니다.
+    ///
+    /// - 검증 내용: systemSettingsOpenResult(true)로 시도 기록 후
+    ///   fullDiskAccessStatusResponse(.needsAction)에서 `.denied`로 처리되고,
+    ///   이후 fullDiskAccessStatusResponse(.granted)에서 권한이 허용으로 전환됩니다.
+    ///   단, 헬퍼 접근 상태가 아직 로드되지 않았으므로 nextDisabledMessage는 여전히 존재합니다.
+    /// - 사전 조건: 의존성 기본값.
+    /// - 기대 결과: 최종 fullDiskAccessStatus == `.granted`, nextDisabledMessage != nil
+    ///   (헬퍼 상태 미확정으로 인해).
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testFDARetryFromDeniedToGranted() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -649,6 +861,13 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
     }
 
     /// 로그인 시 실행 토글이 isComplete에 영향을 주지 않음을 검증합니다.
+    ///
+    /// - 검증 내용: FDA `.granted` + 헬퍼 `kGrantedHelperAccess`로 isComplete가 true가 된 후,
+    ///   launchAtLoginToggled을 켜고 꺼도 isComplete가 true로 유지됩니다.
+    ///   로그인 시 실행은 필수 권한이 아니므로 온보딩 완료 여부와 무관합니다.
+    /// - 사전 조건: launchAtLoginClient isEnabled = false, setEnabled 성공.
+    /// - 기대 결과: 토글 on/off 후에도 isComplete == true 유지.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testLaunchAtLoginDoesNotGateCompletion() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -667,7 +886,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             state.isComplete = true
         }
 
-        // 로그인 시 실행 토글 → isComplete true 유지
+        // 로그인 시 실행 토글 on/off → isComplete true 유지 (비게이팅 권한이므로 영향 없음)
         await store.send(.launchAtLoginToggled(true)) { state in
             state.launchAtLoginEnabled = true
         }
@@ -683,7 +902,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// RED: FDA = needsAction, 헬퍼 = granted → nextDisabledMessage가 non-nil입니다.
+    /// FDA가 `.needsAction`일 때 헬퍼가 허용되더라도 Next가 차단됨을 검증합니다.
+    ///
+    /// - 검증 내용: 헬퍼 폴더 `kGrantedHelperAccess`가 이미 로드되었더라도
+    ///   FDA가 `.needsAction`이면 nextDisabledMessage가 "Turn on Full Disk Access to continue."
+    ///   이고 isComplete == false입니다. FDA는 선행 필수 권한입니다.
+    /// - 사전 조건: 의존성 기본값.
+    /// - 기대 결과: nextDisabledMessage에 FDA 안내 메시지, isComplete == false.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testFDARequiredGateBlocksNextButton() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -706,7 +932,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// RED: 헬퍼 미허용 → FDA가 허용되어도 차단됩니다.
+    /// 헬퍼 폴더 접근이 미허용이면 FDA가 허용되어도 Next가 차단됨을 검증합니다.
+    ///
+    /// - 검증 내용: FDA `.granted` + 헬퍼 폴더 전체 `.notGranted` 조합에서
+    ///   isComplete == false이고 nextDisabledMessage에 헬퍼 접근 안내 메시지가 표시됩니다.
+    ///   헬퍼 폴더 접근은 FDA와 독립적인 필수 권한입니다.
+    /// - 사전 조건: 의존성 기본값.
+    /// - 기대 결과: isComplete == false, nextDisabledMessage에 헬퍼 안내.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testHelperFolderAccessRequiredGateBlocksNext() async {
         let deniedAccess = FolderAccessResult(
             desktop: .notGranted,
@@ -733,7 +966,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// RED: FDA 허용 + 헬퍼 허용 + 로그인 시 실행 비활성화 → isComplete = true.
+    /// 필수 권한(FDA + 헬퍼) 충족 시 로그인 시 실행이 비활성화되어도 isComplete == true임을 검증합니다.
+    ///
+    /// - 검증 내용: onAppear가 FDA `.granted` + 헬퍼 `kGrantedHelperAccess` + 로그인 시 실행 false를
+    ///   로드하면 isComplete == true, nextDisabledMessage == nil, launchAtLoginEnabled == false입니다.
+    ///   이는 로그인 시 실행이 온보딩 완료를 차단하지 않음을 종단 간(end-to-end)으로 보여줍니다.
+    /// - 사전 조건: FDA `.granted`, 헬퍼 `kGrantedHelperAccess`, 로그인 시 실행 비활성화.
+    /// - 기대 결과: isComplete == true, launchAtLoginEnabled == false, nextDisabledMessage == nil.
+    /// - 관련 사양: ONB-003-request_onboarding_permission_access
     func testLaunchAtLoginNonGateDoesNotBlockCompletion() async {
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
@@ -758,7 +998,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         }
         await store.receive(\.launchAtLoginStateLoaded)
 
-        // 로그인 시 실행 비활성화, 필수 권한 모두 허용 → 완료
+        // 필수 권한(FDA + 헬퍼) 모두 허용, 로그인 시 실행은 비활성화 → 온보딩 완료 가능
         XCTAssertTrue(store.state.isComplete)
         XCTAssertFalse(store.state.launchAtLoginEnabled)
         XCTAssertNil(store.state.nextDisabledMessage)

@@ -41,24 +41,24 @@ final class EntryGridDropHitTargetTests: XCTestCase {
         )
     }
 
-    // MARK: - Full-cell drop hit zone
+    // MARK: - 전체 셀 드롭 히트 영역
 
     func testFullCellAreaIsValidDropTargetIncludingCorners() throws {
-        // CONTRACT: Drop target hit detection resolves against the full grid item,
-        // not just the thumbnail/icon area. The entire cell acts as the drop zone.
+        // 계약: 드롭 대상 히트 감지는 전체 그리드 항목 기준으로 동작하며
+        // 섬네일/아이콘 영역이 아닌 전체 셀이 드롭 영역으로 동작해야 합니다.
         let item = makeConfiguredItem(isFolder: true)
         item.view.layoutSubtreeIfNeeded()
 
         let cellWidth = item.view.bounds.width
         let cellHeight = item.view.bounds.height
 
-        // All four corners of the cell — these should resolve to the item via indexPathForItem
+        // 셀의 네 모서리는 모두 indexPathForItem을 통해 항목으로 판정되어야 합니다.
         let topLeft = CGPoint(x: 2, y: cellHeight - 2)
         let topRight = CGPoint(x: cellWidth - 2, y: cellHeight - 2)
         let bottomLeft = CGPoint(x: 2, y: 2)
         let bottomRight = CGPoint(x: cellWidth - 2, y: 2)
 
-        // Full-cell contract: all corners should be valid hit-test points within the item
+        // 전체 셀 계약: 모든 모서리 점이 항목 내부의 유효한 히트 테스트 지점이어야 합니다.
         for (label, point) in [
             ("topLeft", topLeft),
             ("topRight", topRight),
@@ -77,8 +77,8 @@ final class EntryGridDropHitTargetTests: XCTestCase {
     }
 
     func testIconBackgroundIsVisuallyCenteredWithinCell() throws {
-        // Geometry check: the icon is centered within the cell with significant margins.
-        // This is a layout invariant, not a drop-target restriction.
+        // 기하학적 확인: 아이콘이 큰 여백을 두고 셀 중앙에 배치되어 있습니다.
+        // 이는 레이아웃의 불변 조건이며 드롭 대상 제한은 아닙니다.
         let item = makeConfiguredItem(isFolder: true)
         item.view.layoutSubtreeIfNeeded()
 
@@ -108,8 +108,8 @@ final class EntryGridDropHitTargetTests: XCTestCase {
     }
 
     func testIconCenterAndCellEdgesAreBothValidDropTargets() throws {
-        // CONTRACT: Both icon center and cell edge areas are valid drop targets.
-        // The full cell acts as the drop zone, not just the icon area.
+        // 계약: 아이콘 중심과 셀 가장자리 영역이 모두 유효한 드롭 대상입니다.
+        // 전체 셀이 드롭 영역이며 아이콘 영역만이 아닙니다.
         let item = makeConfiguredItem(isFolder: true)
         item.view.layoutSubtreeIfNeeded()
 
@@ -124,7 +124,7 @@ final class EntryGridDropHitTargetTests: XCTestCase {
             "Icon center should be hit-testable for drops",
         )
 
-        // Points just outside icon zone but inside cell — these ARE valid drop targets
+        // 아이콘 영역 바깥이지만 셀 내부의 점은 모두 유효한 드롭 대상입니다
         let justAboveIcon = CGPoint(x: iconFrame.midX, y: iconFrame.minY - 8)
         let justBelowIcon = CGPoint(x: iconFrame.midX, y: iconFrame.maxY + 8)
         let justLeftOfIcon = CGPoint(x: iconFrame.minX - 8, y: iconFrame.midY)
@@ -147,9 +147,9 @@ final class EntryGridDropHitTargetTests: XCTestCase {
     }
 
     func testNonFolderItemIconCenterIsHitTestableButNotDropTarget() throws {
-        // NEW CONTRACT: Non-folder items should be hit-testable at icon center
-        // but the coordinator must NOT accept them as drop targets.
-        // This test validates the item-level setup; coordinator gating is separate.
+        // 신규 계약: 폴더가 아닌 항목도 아이콘 중심에서 hit-test 가능해야 함
+        // 그러나 코디네이터는 이를 드롭 대상으로 받아들이면 안 됩니다.
+        // 이 테스트는 항목 수준 설정을 검증하며, 코디네이터 게이팅은 별개입니다.
         let item = makeConfiguredItem(isFolder: false)
         item.view.layoutSubtreeIfNeeded()
 

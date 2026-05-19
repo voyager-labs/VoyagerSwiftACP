@@ -3,7 +3,7 @@ import XCTest
 @MainActor
 final class ValuePickerFeatureRangeValueTests: XCTestCase {
     func testValuePickerFeatureNotInProject() {
-        // ValuePickerFeature.swift is not included in the Xcode project.
-        // This test file is disabled until VOY-201 adds it to the project.
+        // ValuePickerFeature.swift가 Xcode 프로젝트에 포함되어 있지 않습니다.
+        // 이 테스트 파일은 VOY-201에서 프로젝트에 추가할 때까지 비활성화됩니다.
     }
 }

@@ -8,7 +8,7 @@ final class AppLifecycleFeatureTests: XCTestCase {
         await VoyagerTerminationCoordinator.shared.end()
         let attemptID = UUID()
 
-        // Use actor-isolated storage class to avoid concurrent mutation issues
+        // 동시 변경 문제를 피하기 위해 actor 격리 저장소 클래스 사용
         let state = TestState()
 
         let store = TestStore(

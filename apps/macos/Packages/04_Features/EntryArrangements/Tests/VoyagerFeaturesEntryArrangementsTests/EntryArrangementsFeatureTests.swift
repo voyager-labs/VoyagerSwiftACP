@@ -6,6 +6,7 @@ import XCTest
 
 @MainActor
 final class EntryArrangementsFeatureTests: XCTestCase {
+    /// 그룹 키가 없을 때 정렬된 항목이 하나의 그룹으로 묶여 delegate까지 전달되는지 검증
     func testApply_sortsAndUpdatesGroupedItems_whenGroupKeyNone() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -19,8 +20,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .none
-            )
+                groupKey: .none,
+            ),
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -34,6 +35,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// kind 그룹이 활성화되면 폴더/이미지/텍스트/기타 순으로 그룹화되는지 검증
     func testApply_groupsByKind_andKeepsGroupOrderingSemantics() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -55,8 +57,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .kind
-            )
+                groupKey: .kind,
+            ),
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -70,6 +72,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// VOY-213: tags 그룹이 태그 색상 코드를 함께 보존하는지 검증
     func testVOY213TagsGroupingCarriesColorCodeFromEntryArrangements() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -84,8 +87,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .tags
-            )
+                groupKey: .tags,
+            ),
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -103,6 +106,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// VOY-213: 동일 태그 이름이 입력 순서와 무관하게 안정적인 색상 선택을 유지하는지 검증
     func testVOY213TagColorSelectionIsStableAcrossInputOrder() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -116,8 +120,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .tags
-            )
+                groupKey: .tags,
+            ),
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -133,6 +137,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// VOY-213: lastOpenedDate가 없으면 더 이른 그룹으로 폴백되는지 검증
     func testVOY213DateLastOpenedFallsBackToEarlierForMissingDates() async {
         let today = Date()
         let missing = makeEntry(
@@ -142,7 +147,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             10,
             ext: "txt",
             kind: "Text",
-            lastOpenedDate: nil
+            lastOpenedDate: nil,
         )
         let opened = makeEntry(
             today,
@@ -151,15 +156,15 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             20,
             ext: "txt",
             kind: "Text",
-            lastOpenedDate: today
+            lastOpenedDate: today,
         )
 
         let store = TestStore(
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .dateLastOpened
-            )
+                groupKey: .dateLastOpened,
+            ),
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -176,6 +181,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// VOY-213: tags 그룹의 표시 이름과 fallback 그룹 이름이 사용자가 읽을 수 있게 유지되는지 검증
     func testVOY213GroupedItemsKeepVisibleTitlesForTagAndFallbackGroups() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -187,7 +193,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             10,
             ext: "txt",
             kind: "Text",
-            tags: [blueTag]
+            tags: [blueTag],
         )
         let noTag = makeEntry(fixedDate, "untagged.txt", "/tmp/untagged.txt", 20, ext: "txt", kind: "Text", tags: nil)
 
@@ -195,8 +201,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
             initialState: EntryArrangementsState(
                 sortKey: .name,
                 sortOrder: .ascending,
-                groupKey: .tags
-            )
+                groupKey: .tags,
+            ),
         ) {
             EntryArrangementsFeature()
         } withDependencies: {
@@ -215,27 +221,29 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - Persistence Contract Regression
+    // MARK: - 지속성 계약 회귀 테스트
 
+    /// persistence key 문자열이 저장소 계약과 정확히 일치하는지 검증
     func testPersistenceKeyLiterals() {
         XCTAssertEqual(EntryArrangementsPersistenceKey.sortKey, "sortKey")
         XCTAssertEqual(EntryArrangementsPersistenceKey.sortOrder, "sortOrder")
         XCTAssertEqual(EntryArrangementsPersistenceKey.groupKey, "groupKey")
     }
 
+    /// enum rawValue가 저장/복원 계약에 필요한 문자열을 유지하는지 검증
     func testSortKeyGroupKeySortOrderRawValues() {
-        // SortKey raw values
+        // SortKey 원시값: 정렬 기준 저장 문자열이 바뀌면 설정 복원이 깨진다.
         XCTAssertEqual(SortKey.application.rawValue, "Application")
         XCTAssertEqual(SortKey.tags.rawValue, "Tags")
         XCTAssertEqual(SortKey.name.rawValue, "name")
         XCTAssertEqual(SortKey.kind.rawValue, "kind")
         XCTAssertEqual(SortKey.size.rawValue, "size")
 
-        // SortOrder raw values
+        // SortOrder 원시값: 오름/내림차순 계약이 그대로 유지되어야 한다.
         XCTAssertEqual(SortOrder.ascending.rawValue, "ascending")
         XCTAssertEqual(SortOrder.descending.rawValue, "descending")
 
-        // GroupKey raw values
+        // GroupKey 원시값: 그룹 복원 시 사용자 표시 이름과 일치해야 한다.
         XCTAssertEqual(GroupKey.none.rawValue, "None")
         XCTAssertEqual(GroupKey.tags.rawValue, "Tags")
         XCTAssertEqual(GroupKey.name.rawValue, "Name")
@@ -252,7 +260,7 @@ final class EntryArrangementsFeatureTests: XCTestCase {
         ext: String = "",
         kind: String = "",
         tags: [Tag]? = nil,
-        lastOpenedDate: Date? = nil
+        lastOpenedDate: Date? = nil,
     ) -> EntryModel {
         EntryModel(
             name: name,
@@ -269,8 +277,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
                 kind: kind,
                 creatorApplication: nil,
                 tags: tags,
-                supplementaryMetadata: nil
-            )
+                supplementaryMetadata: nil,
+            ),
         )
     }
 }

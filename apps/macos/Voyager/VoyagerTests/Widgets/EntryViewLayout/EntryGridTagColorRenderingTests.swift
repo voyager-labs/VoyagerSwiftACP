@@ -4,59 +4,59 @@ import VoyagerEntitiesTag
 import VoyagerShared
 import XCTest
 
-/// Regression tests for tag color rendering in the grid view.
+/// 그리드 뷰에서 태그 색상 렌더링 회귀 테스트입니다.
 ///
-/// These tests verify that:
-/// 1. Tag dots use `tag.tagColor` directly (no remapping)
-/// 2. Selection state doesn't affect tag dot visibility
-/// 3. Multiple tags render with their correct colors
+/// 이 테스트는 다음을 검증합니다:
+/// 1. 태그 도트가 tag.tagColor를 직접 사용함 (재매핑 없음)
+/// 2. 선택 상태가 태그 도트 가시성에 영향을 주지 않음
+/// 3. 여러 태그가 올바른 색상으로 렌더링됨
 ///
-/// Related: Task 3 of VOY-208 visual-data-follow-up
+/// 관련: VOY-208 visual-data-follow-up Task 3
 @MainActor
 final class EntryGridTagColorRenderingTests: XCTestCase {
-    // MARK: - Tag Dot Rendering Tests
+    // MARK: - 태그 도트 렌더링 테스트
 
-    /// Test that tag dots use tag.tagColor for rendering.
-    /// This verifies that the color from Tag model flows through to the UI without remapping.
+    /// 태그 도트가 tag.tagColor로 렌더링되는지 확인합니다.
+    /// Tag 모델의 색상이 재매핑 없이 UI로 그대로 전달되는지 확인합니다.
     func testTagDotUsesTagColor() throws {
-        // Create a tag with a specific color code (6 = red)
+        // 특정 색상 코드로 태그 생성 (6 = 빨간색)
         let tag = Tag(name: "Important", colorCode: 6)
         let item = makeConfiguredItem(tags: [tag])
         item.view.layoutSubtreeIfNeeded()
 
-        // Find the tag stack view
+        // 태그 스택 뷰 찾기
         let tagStack = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.tagStack") as? NSStackView,
             "Tag stack view should exist",
         )
 
-        // Verify tag dots are present
+        // 태그 도트가 있는지 확인
         XCTAssertFalse(tagStack.isHidden, "Tag stack should be visible when tags are present")
         XCTAssertEqual(tagStack.arrangedSubviews.count, 1, "Should have one tag dot")
 
-        // Verify the tag dot uses the correct color
+        // 태그 도트가 올바른 색상을 사용하는지 확인
         let tagDot = tagStack.arrangedSubviews.first
         XCTAssertNotNil(tagDot, "Tag dot should exist")
 
-        // The ColorDotNSView sets its layer background color to tagColor.nsColor.cgColor
-        // For colorCode 6 (red), this should be NSColor.systemRed
+        // ColorDotNSView는 레이어 배경색을 tagColor.nsColor.cgColor로 설정함
+        // colorCode 6(빨간색)의 경우 NSColor.systemRed이어야 함
         let expectedColor = TagColor(colorCode: 6).nsColor
         let dotLayerColor = tagDot?.layer?.backgroundColor
 
         XCTAssertNotNil(dotLayerColor, "Tag dot should have a layer with background color")
 
-        // Compare the colors by converting to NSColor
+        // NSColor로 변환하여 색상 비교
         if let cgColor = dotLayerColor {
             let actualColor = NSColor(cgColor: cgColor)
-            // Allow some tolerance for color space differences
+            // 색상 공간 차이에 대한 약간의 허용 오차
             XCTAssertEqual(actualColor?.redComponent ?? 0, expectedColor.redComponent, accuracy: 0.1)
             XCTAssertEqual(actualColor?.greenComponent ?? 0, expectedColor.greenComponent, accuracy: 0.1)
             XCTAssertEqual(actualColor?.blueComponent ?? 0, expectedColor.blueComponent, accuracy: 0.1)
         }
     }
 
-    /// Test that selected tagged items keep visible tag dots.
-    /// This ensures selection highlight doesn't interfere with tag dot visibility.
+    /// 태그가 있는 선택된 항목이 태그 도트를 보이게 유지하는지 확인합니다.
+    /// 이는 선택 하이라이트가 태그 도트 가시성에 영향을 주지 않음을 확인합니다.
     func testSelectedTaggedItemKeepsVisibleTagDots() throws {
         let tags = [
             Tag(name: "Work", colorCode: 4),
@@ -87,10 +87,10 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         )
     }
 
-    /// Test that multiple tag dots show correct colors.
-    /// This verifies that each tag's colorCode is preserved and rendered independently.
+    /// 여러 태그 도트가 정확한 색상을 표시하는지 확인합니다.
+    /// 각 태그의 colorCode가 보존되어 독립적으로 렌더링되는지 확인합니다.
     func testMultipleTagDotsShowCorrectColors() throws {
-        // Create tags with different color codes
+        // 다른 색상 코드로 태그 생성
         let tags = [
             Tag(name: "Red", colorCode: 6), // red
             Tag(name: "Blue", colorCode: 4), // blue
@@ -99,16 +99,16 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         let item = makeConfiguredItem(tags: tags)
         item.view.layoutSubtreeIfNeeded()
 
-        // Find the tag stack view
+        // 태그 스택 뷰 찾기
         let tagStack = try XCTUnwrap(
             findSubview(in: item.view, identifier: "entryGrid.tagStack") as? NSStackView,
             "Tag stack should exist",
         )
 
-        // Grid shows max 3 tags
+        // 그리드는 최대 3개 태그를 표시
         XCTAssertEqual(tagStack.arrangedSubviews.count, 3, "Should show up to 3 tag dots")
 
-        // Verify each dot has the expected color
+        // 각 도트가 예상 색상인지 확인
         let expectedColorCodes = [
             6,
             4,
@@ -121,10 +121,10 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         }
     }
 
-    /// Test that tag dots with colorCode 0 (neutral/gray) render correctly.
-    /// This verifies the fallback color doesn't cause rendering issues.
+    /// colorCode 0(중립/회색) 태그 도트가 올바르게 렌더링되는지 확인합니다.
+    /// 대체 색상이 렌더링 문제를 일으키지 않음을 확인합니다.
     func testNeutralColorCodeRendersCorrectly() throws {
-        // Create a tag with colorCode 0 (neutral/gray)
+        // colorCode 0(중립/회색)으로 태그 생성
         let tag = Tag(name: "Neutral", colorCode: 0)
         let item = makeConfiguredItem(tags: [tag])
         item.view.layoutSubtreeIfNeeded()
@@ -134,16 +134,16 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
             "Tag stack should exist",
         )
 
-        // Tag dot should still be visible
+        // 태그 도트는 여전히 보여야 함
         XCTAssertFalse(tagStack.isHidden, "Tag stack should be visible even with colorCode 0")
         XCTAssertEqual(tagStack.arrangedSubviews.count, 1, "Should have one tag dot")
 
-        // The dot should use systemGray for colorCode 0
+        // colorCode 0의 경우 systemGray를 사용해야 함
         let tagDot = tagStack.arrangedSubviews.first
         XCTAssertNotNil(tagDot?.layer?.backgroundColor, "Tag dot should have background color")
     }
 
-    /// Test that items without tags don't show tag stack.
+    /// 태그가 없는 항목은 태그 스택을 표시하지 않는지 확인합니다.
     func testNoTagsHidesTagStack() throws {
         let item = makeConfiguredItem(tags: nil)
         item.view.layoutSubtreeIfNeeded()
@@ -157,10 +157,10 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.arrangedSubviews.count, 0, "Should have no tag dots")
     }
 
-    // MARK: - Cross-Regression Tests (Selection + Tag Combinations)
+    // MARK: - 교차 회귀 테스트 (선택 + 태그 조합)
 
-    /// Test that a tagged item acting as drop target still renders tag dots correctly.
-    /// This verifies that drop-target styling doesn't suppress tag dot visibility.
+    /// 드롭 대상인 태그 항목도 태그 도트가 정확히 렌더링되는지 확인합니다.
+    /// 이는 드롭 대상 스타일이 태그 도트 가시성을 억제하지 않음을 확인합니다.
     func testDropTargetedTaggedItem_RendersCorrectly() throws {
         let tags = [
             Tag(name: "Work", colorCode: 4),
@@ -199,8 +199,8 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         )
     }
 
-    /// Test that renaming a tagged item suppresses selection highlight but keeps tag dots visible.
-    /// This verifies the rename → selection suppression doesn't affect tag rendering.
+    /// 태그 항목 이름 변경 시 선택 하이라이트는 억제하고 태그 도트는 유지되는지 확인합니다.
+    /// 이는 이름 변경으로 인한 선택 억제가 태그 렌더링에 영향을 주지 않음을 확인합니다.
     func testRenamingTaggedItem_SuppressesSelectionButKeepsTagDots() throws {
         let tags = [
             Tag(name: "Draft", colorCode: 3), // yellow
@@ -218,12 +218,12 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
             "Tag stack should exist",
         )
 
-        // Renaming suppresses selection highlight
+        // 이름 변경 시 선택 하이라이트 억제
         XCTAssertTrue(
             highlight.isHidden,
             "Selection highlight should be hidden during rename",
         )
-        // Tag dots should remain visible even during rename
+        // 이름 변경 중에도 태그 도트는 계속 보여야 함
         XCTAssertFalse(
             tagStack.isHidden,
             "Tag stack should remain visible during rename",
@@ -231,9 +231,9 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.arrangedSubviews.count, 1, "Tag dot should be visible")
     }
 
-    /// Test that a tagged + selected + drop-targeted item keeps all visuals correct.
-    /// This is the "all states combined" cross-regression test verifying priority:
-    /// drop target border + selection highlight + tag dots all coexist.
+    /// 태그 + 선택 + 드롭 대상 항목에서 모든 시각 요소가 바르게 유지되는지 확인합니다.
+    /// 이는 "모든 상태 결합" 교차 회귀 테스트로 우선순위를 검증합니다.
+    /// 드롭 대상 테두리, 선택 하이라이트, 태그 도트가 모두 공존해야 합니다.
     func testTaggedSelectedAndDropTargeted_TagDotsRemainVisible() throws {
         let tags = [
             Tag(name: "Work", colorCode: 4),
@@ -289,7 +289,7 @@ final class EntryGridTagColorRenderingTests: XCTestCase {
         )
     }
 
-    // MARK: - Helper Methods
+    // MARK: - 도우미 메서드
 
     private func makeConfiguredItem(
         tags: [Tag]?,

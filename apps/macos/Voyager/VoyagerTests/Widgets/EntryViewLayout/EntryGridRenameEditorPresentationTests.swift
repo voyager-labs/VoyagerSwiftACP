@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class EntryGridRenameEditorPresentationTests: XCTestCase {
-    // MARK: - Single-line inline editor during rename
+    // MARK: - 이름 변경 중 단일 행 인라인 편집기
 
     func testRenameStyleUsesSingleLineMode() {
         let field = NSTextField(string: "filename.txt")
@@ -40,7 +40,7 @@ final class EntryGridRenameEditorPresentationTests: XCTestCase {
         XCTAssertEqual(field.focusRingType, .default, "Grid rename field must use default focus ring")
     }
 
-    // MARK: - Display style uses wrapping (non-rename)
+    // MARK: - 디스플레이 스타일은 줄바꿈 사용 (이름 변경 아님)
 
     func testDisplayStyleDoesNotUseSingleLineMode() {
         let field = NSTextField(string: "filename")
@@ -52,7 +52,7 @@ final class EntryGridRenameEditorPresentationTests: XCTestCase {
         XCTAssertEqual(field.lineBreakMode, .byTruncatingMiddle, "Display mode truncates middle")
     }
 
-    // MARK: - InfoField hidden during rename
+    // MARK: - 이름 변경 시 InfoField 숨김
 
     func testInfoFieldHiddenDuringRename() {
         let infoField = NSTextField(labelWithString: "12 KB")
