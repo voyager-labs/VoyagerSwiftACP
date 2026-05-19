@@ -1,10 +1,10 @@
 import ComposableArchitecture
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import struct VoyagerEntitiesCollection.CollectionContext
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 

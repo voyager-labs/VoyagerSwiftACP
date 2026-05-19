@@ -1,9 +1,9 @@
 import ComposableArchitecture
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import XCTest
 
 @MainActor

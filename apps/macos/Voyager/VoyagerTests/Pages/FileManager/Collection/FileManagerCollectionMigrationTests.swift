@@ -1,7 +1,7 @@
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 

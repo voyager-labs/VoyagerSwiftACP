@@ -1,11 +1,11 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
