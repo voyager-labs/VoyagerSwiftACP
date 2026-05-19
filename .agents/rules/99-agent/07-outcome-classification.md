@@ -1,14 +1,9 @@
 ---
-alwaysApply: true
 description: "Canonical taxonomy for task outcomes and exception ledger policy."
+alwaysApply: true
 ---
 
 # Outcome Classification
-
-## Applies when
-
-- Any task or subtask that produces a result.
-- Writing evidence files, status reports, or handoff notes.
 
 ## Canonical taxonomy
 
@@ -43,7 +38,7 @@ description: "Canonical taxonomy for task outcomes and exception ledger policy."
 4. If core intent was achieved but with reduced scope, confidence, or quality, classify as **degraded** and document what is reduced.
 5. If an unexpected condition blocked normal completion, classify as **exception** and create a ledger entry (see Exception ledger policy below).
 6. If work cannot proceed due to an external dependency, classify as **blocked** and identify the dependency.
-7. Record the classification in the task evidence file.
+7. Record the classification in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`).
 
 ## Exception ledger policy
 
@@ -56,11 +51,11 @@ Each exception gets a ledger entry with:
 5. **Resolution status**: open, mitigated, or resolved.
 6. **Resolution detail**: how it was addressed (when resolved or mitigated).
 
-The ledger lives in the task evidence file, in a dedicated `## Exception ledger` section. Unresolved exceptions are carried forward into handoff notes.
+The ledger lives in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`), in a dedicated `## Exception ledger` section. Unresolved exceptions are carried forward into handoff notes.
 
 ## Verification
 
-- Every task evidence file contains an explicit outcome classification.
+- Every plan-scoped task evidence file contains an explicit outcome classification.
 - Classification uses only terms from the canonical taxonomy.
 - Every exception has a complete ledger entry with all six fields.
 - No degraded or exception outcome lacks an explanation of what is reduced or blocked.
