@@ -112,9 +112,13 @@ If prior runs exist for the same plan_slug (different run_ids), the new run proc
 
 The skill associates evidence files with the target plan using these rules:
 
-### Direct Pattern Match
+### Plan-Scoped Directory Match (primary)
 
-Evidence files matching `task-{N}-*.*` are associated with the plan if:
+Evidence files located inside `.sisyphus/evidence/{plan_slug}/` are **unconditionally associated** with that plan. The plan-scoped directory itself is the association boundary — no additional slug matching or filename inspection is required.
+
+### Filename Pattern Match (fallback for flat evidence layouts)
+
+When evidence files are NOT inside a plan-scoped directory (flat `.sisyphus/evidence/` layout), files matching `task-{N}-*.*` are associated with the plan if:
 
 1. The evidence file's slug portion contains or matches a substring of the plan slug, OR
 2. The plan file itself references the evidence file name in its task descriptions.

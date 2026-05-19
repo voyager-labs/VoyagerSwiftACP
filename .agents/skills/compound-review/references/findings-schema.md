@@ -1,6 +1,6 @@
 # Structured Review Findings Schema
 
-**Version:** 1.0  
+**Version:** 2.0  
 **Path:** `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json`  
 **Family:** Structured Findings  
 **Source of truth:** Artifact Contract §Output 2
@@ -19,7 +19,7 @@ Findings are **immutable per run**: once written, they are not modified. A new r
 
 ```json
 {
-    "schema_version": "1.0",
+    "schema_version": "2.0",
     "run_id": "2026-04-10-181500",
     "plan_slug": "voy-208-grid-drop-interaction-stabilization",
     "generated_at": "2026-04-10T18:15:00Z",
@@ -75,7 +75,7 @@ Findings are **immutable per run**: once written, they are not modified. A new r
 
 | Field             | Type     | Required | Description                                                             |
 | ----------------- | -------- | -------- | ----------------------------------------------------------------------- |
-| `schema_version`  | string   | yes      | Fixed string `"1.0"`.                                                   |
+| `schema_version`  | string   | yes      | Fixed string `"2.0"`.                                                   |
 | `run_id`          | string   | yes      | Matches the run manifest's `run_id`.                                    |
 | `plan_slug`       | string   | yes      | Matches the run manifest's `plan_slug`.                                 |
 | `generated_at`    | string   | yes      | ISO-8601 timestamp of findings generation.                              |
@@ -200,7 +200,7 @@ The `missing_sources` field is **optional**. It is only present when the finding
 
 ```json
 {
-    "schema_version": "1.0",
+    "schema_version": "2.0",
     "run_id": "2026-04-10-181500",
     "plan_slug": "grid-drop-folder-thumbnail-ux-naturalization",
     "generated_at": "2026-04-10T18:15:00Z",
@@ -241,6 +241,7 @@ The `missing_sources` field is **optional**. It is only present when the finding
 
 ## Schema Version History
 
-| Version | Date       | Change          |
-| ------- | ---------- | --------------- |
-| 1.0     | 2026-04-10 | Initial schema. |
+| Version | Date       | Change                                                                                 |
+| ------- | ---------- | -------------------------------------------------------------------------------------- |
+| 1.0     | 2026-04-10 | Initial schema.                                                                        |
+| 2.0     | 2026-05-17 | Aligned with manifest v2: evidence paths updated to plan-scoped, artifact-contract v2. |

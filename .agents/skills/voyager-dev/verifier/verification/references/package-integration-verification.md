@@ -75,7 +75,7 @@ Use the narrowest consumer build/test that proves the changed product is linked 
 xcodebuild build \
   -workspace apps/macos/Voyager/Voyager.xcworkspace \
   -scheme Voyager-Dev \
-  -destination 'platform=iOS Simulator,name=<simulator>' \
+  -destination 'platform=macOS' \
   -resultBundlePath /tmp/baseline-build.xcresult \
   | tee /tmp/baseline-build.log
 ```
@@ -88,7 +88,7 @@ Record: pass/fail, and if fail, the list of errors.
 xcodebuild test \
   -workspace apps/macos/Voyager/Voyager.xcworkspace \
   -scheme Voyager-Dev \
-  -destination 'platform=iOS Simulator,name=<simulator>' \
+  -destination 'platform=macOS' \
   -resultBundlePath /tmp/baseline-tests.xcresult \
   | tee /tmp/baseline-tests.log
 ```
@@ -140,7 +140,7 @@ This checks the package's own test suite. If the package has no tests, skip this
 xcodebuild build \
   -workspace apps/macos/Voyager/Voyager.xcworkspace \
   -scheme Voyager-Dev \
-  -destination 'platform=iOS Simulator,name=<simulator>' \
+  -destination 'platform=macOS' \
   | tee /tmp/post-change-build.log
 ```
 
@@ -161,7 +161,7 @@ xcodebuild build \
 xcodebuild test \
   -workspace apps/macos/Voyager/Voyager.xcworkspace \
   -scheme Voyager-Dev \
-  -destination 'platform=iOS Simulator,name=<simulator>' \
+  -destination 'platform=macOS' \
   | tee /tmp/post-change-tests.log
 ```
 
@@ -313,7 +313,7 @@ App targets resolve package dependencies automatically in most cases. Test targe
 xcodebuild build-for-testing \
   -workspace apps/macos/Voyager/Voyager.xcworkspace \
   -scheme Voyager-Dev \
-  -destination 'platform=iOS Simulator,name=<simulator>' \
+  -destination 'platform=macOS' \
   | tee /tmp/test-target-build.log
 ```
 
@@ -363,7 +363,7 @@ For KEEP decisions:
 xcodebuild test \
   -workspace apps/macos/Voyager/Voyager.xcworkspace \
   -scheme Voyager-Dev \
-  -destination 'platform=iOS Simulator,name=<simulator>' \
+  -destination 'platform=macOS' \
   -resultBundlePath /tmp/post-change-tests.xcresult \
   | tee /tmp/post-change-tests.log
 ```
@@ -477,7 +477,7 @@ Fix: Reproduce with a clean build locally:
 rm -rf ~/Library/Developer/Xcode/DerivedData/<project>-*
 xcodebuild clean -workspace apps/macos/Voyager/Voyager.xcworkspace -scheme Voyager-Dev
 xcodebuild test -workspace apps/macos/Voyager/Voyager.xcworkspace -scheme Voyager-Dev \
-  -destination 'platform=iOS Simulator,name=<simulator>'
+  -destination 'platform=macOS'
 ```
 
 ### SourceKit or LSP stale module context

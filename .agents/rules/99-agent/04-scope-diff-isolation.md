@@ -20,7 +20,7 @@ description: "Require baseline-bound diff evidence when verifying task-local sco
 ## Execution steps
 
 1. Before starting a task on a branch with prior commits, capture a baseline:
-   `git rev-parse HEAD > .sisyphus/baseline-<task-id>.txt` or record the SHA in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`).
+   Record the SHA in the plan-scoped task evidence file (`.sisyphus/evidence/{plan_slug}/task-{N}-*.*`) or a dedicated baseline file at `.sisyphus/evidence/{plan_slug}/baseline-<task-id>.txt`.
 2. After completing the task, generate the scope diff:
    `git diff <baseline>..HEAD --name-only` for the file list,
    `git diff <baseline>..HEAD --stat` for the summary.

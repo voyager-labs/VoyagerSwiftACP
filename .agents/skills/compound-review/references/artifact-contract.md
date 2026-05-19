@@ -481,4 +481,4 @@ Manifest and findings outputs MUST be validated against their respective schemas
 | Schema          | Version | Description                                                                                      |
 | --------------- | ------- | ------------------------------------------------------------------------------------------------ |
 | `manifest.json` | `2.0`   | Artifact-family v3 layout: evidence is plan-scoped and all run outputs live in reviews run root. |
-| `findings.json` | `1.0`   | Initial. Severity, owner, action_class, source artifacts, dedupe key.                            |
+| `findings.json` | `2.0`   | Aligned with manifest v2: plan-scoped evidence paths, consistent schema versioning.              |
