@@ -409,11 +409,14 @@ private func aiChatCurrentContextChipDisplayModel(
     guard !summary.isEmpty else { return nil }
 
     let title: String = if snapshot.items.count == 1 {
-        snapshot.items[0].title ?? summary.title
+        aiChatCurrentContextDisplayTitle(
+            snapshot.items[0].title ?? summary.title,
+            snapshot: snapshot
+        )
     } else if snapshot.items.count > 1 {
         "\(snapshot.items.count) Selected"
     } else {
-        summary.title
+        aiChatCurrentContextDisplayTitle(summary.title, snapshot: snapshot)
     }
     let iconSystemName = aiChatCurrentContextIconSystemName(for: snapshot)
     let iconAssetName = aiChatCurrentContextIconAssetName(for: snapshot)
@@ -435,6 +438,7 @@ private func aiChatAddedAttachmentChipDisplayModel(
         attachmentID: attachment.id,
         title: aiChatAttachmentDisplayTitle(
             id: attachment.id,
+            source: attachment.source,
             displayTitle: attachment.displayTitle,
             sourceLocation: attachment.sourceLocation
         ),
@@ -453,6 +457,7 @@ private func aiChatAddedAttachmentChipDisplayModel(
         attachmentID: attachment.id,
         title: aiChatAttachmentDisplayTitle(
             id: attachment.id,
+            source: attachment.source,
             displayTitle: attachment.displayTitle,
             sourceLocation: attachment.sourceLocation
         ),
@@ -517,6 +522,40 @@ private func aiChatContextIconAssetName(for item: AiChatContextItem) -> String? 
     return aiChatCollectionIconAssetName
 }
 
+private func aiChatCurrentContextDisplayTitle(
+    _ title: String,
+    snapshot: AiChatCurrentContextSnapshot
+) -> String {
+    guard aiChatCurrentContextIsCollection(snapshot) else { return title }
+    return aiChatDisplayTitleByRemovingCollectionExtension(title)
+}
+
+private func aiChatCurrentContextIsCollection(_ snapshot: AiChatCurrentContextSnapshot) -> Bool {
+    if snapshot.items.count == 1 {
+        let item = snapshot.items[0]
+        if let path = item.metadata["path"],
+           URL(fileURLWithPath: path).pathExtension.lowercased() == "voycoll"
+        {
+            return true
+        }
+        return item.title?.lowercased().hasSuffix(".voycoll") == true
+    }
+
+    guard snapshot.items.isEmpty,
+          let reference = snapshot.references.first
+    else { return false }
+
+    if reference.metadata["route"] == "collection" {
+        return true
+    }
+    if let path = reference.metadata["path"],
+       URL(fileURLWithPath: path).pathExtension.lowercased() == "voycoll"
+    {
+        return true
+    }
+    return reference.title?.lowercased().hasSuffix(".voycoll") == true
+}
+
 private func aiChatContextIconSystemName(for kind: AiChatContextItemKind) -> String? {
     switch kind {
     case .file:
@@ -559,8 +598,12 @@ private func aiChatAttachmentIconFilePath(
     source: AiChatAttachmentSource,
     sourceLocation: AiChatAttachmentSourceLocation
 ) -> String? {
-    guard source == .folder else { return nil }
-    return aiChatNormalizedDisplayValue(sourceLocation.filePath)
+    switch source {
+    case .folder, .collectionDocument, .collectionFile:
+        return aiChatNormalizedDisplayValue(sourceLocation.filePath)
+    case .file, .inlineAttachment, .otherReference:
+        return nil
+    }
 }
 
 private func aiChatAttachmentIconAssetName(for source: AiChatAttachmentSource) -> String? {
@@ -576,21 +619,38 @@ private let aiChatCollectionIconAssetName = "voycollFileIcon"
 
 private func aiChatAttachmentDisplayTitle(
     id: AiChatAttachmentID,
+    source: AiChatAttachmentSource,
     displayTitle: String?,
     sourceLocation: AiChatAttachmentSourceLocation
 ) -> String {
-    if let displayTitle = aiChatNormalizedDisplayValue(displayTitle) {
-        return displayTitle
-    }
-    if let filePath = aiChatNormalizedDisplayValue(sourceLocation.filePath) {
-        return URL(fileURLWithPath: filePath).lastPathComponent
-    }
-    if let fileURL = sourceLocation.fileURL?.lastPathComponent,
-       let normalized = aiChatNormalizedDisplayValue(fileURL)
+    let title = if let displayTitle = aiChatNormalizedDisplayValue(displayTitle) {
+        displayTitle
+    } else if let filePath = aiChatNormalizedDisplayValue(sourceLocation.filePath) {
+        URL(fileURLWithPath: filePath).lastPathComponent
+    } else if let fileURL = sourceLocation.fileURL?.lastPathComponent,
+              let normalized = aiChatNormalizedDisplayValue(fileURL)
     {
-        return normalized
+        normalized
+    } else {
+        id.rawValue
     }
-    return id.rawValue
+
+    return aiChatDisplayTitleByRemovingCollectionExtension(title, source: source)
+}
+
+private func aiChatDisplayTitleByRemovingCollectionExtension(
+    _ title: String,
+    source: AiChatAttachmentSource
+) -> String {
+    guard source == .collectionDocument || source == .collectionFile else { return title }
+    return aiChatDisplayTitleByRemovingCollectionExtension(title)
+}
+
+private func aiChatDisplayTitleByRemovingCollectionExtension(_ title: String) -> String {
+    let url = URL(fileURLWithPath: title)
+    guard url.pathExtension.lowercased() == "voycoll" else { return title }
+    let strippedTitle = url.deletingPathExtension().lastPathComponent
+    return strippedTitle.isEmpty ? title : strippedTitle
 }
 
 private func aiChatAttachmentStatusLabel(for status: AiChatAttachmentDraftStatus) -> String {
