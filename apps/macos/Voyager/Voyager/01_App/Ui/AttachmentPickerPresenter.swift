@@ -8,7 +8,7 @@ enum AttachmentPickerPresenter {
 
         let panel = NSOpenPanel()
         panel.title = "Add Attachments"
-        panel.message = "Choose files or folders to add to the current chat context."
+        panel.message = "Choose files, folders, or collections to add to the current chat context."
         panel.prompt = "Add"
         panel.allowsMultipleSelection = true
         panel.canChooseFiles = true
