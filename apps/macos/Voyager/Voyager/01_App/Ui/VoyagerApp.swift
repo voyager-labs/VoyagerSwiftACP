@@ -70,30 +70,7 @@ struct VoyagerApp: App {
                     case .collection: VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
                     }
                 },
-                logDAUEntryAction: { actionKind, entryKind in
-                    guard
-                        let resolvedActionKind = VoyagerSentryMetricLogger.DAUEntryActionKind(
-                            rawValue: actionKind.rawValue,
-                        )
-                    else {
-                        preconditionFailure(
-                            "Invalid DAUEntryActionKind raw value: \(actionKind.rawValue)",
-                        )
-                    }
-                    guard
-                        let resolvedEntryKind = VoyagerSentryMetricLogger.DAUEntryKind(
-                            rawValue: entryKind.rawValue,
-                        )
-                    else {
-                        preconditionFailure(
-                            "Invalid DAUEntryKind raw value: \(entryKind.rawValue)",
-                        )
-                    }
-                    VoyagerSentryMetricLogger.logDAUEntryAction(
-                        actionKind: resolvedActionKind,
-                        entryKind: resolvedEntryKind,
-                    )
-                },
+                logDAUEntryAction: resolveAndLogDAUEntryAction,
             )
         }
 
@@ -123,6 +100,34 @@ struct VoyagerApp: App {
         )
         appDelegate.configure(appRootStore: appRootStore)
         configureLogging()
+    }
+
+    private static func resolveAndLogDAUEntryAction(
+        actionKind: MetricsClient.DAUEntryActionKind,
+        entryKind: MetricsClient.DAUEntryKind,
+    ) {
+        guard
+            let resolvedActionKind = VoyagerSentryMetricLogger.DAUEntryActionKind(
+                rawValue: actionKind.rawValue,
+            )
+        else {
+            preconditionFailure(
+                "Invalid DAUEntryActionKind raw value: \(actionKind.rawValue)",
+            )
+        }
+        guard
+            let resolvedEntryKind = VoyagerSentryMetricLogger.DAUEntryKind(
+                rawValue: entryKind.rawValue,
+            )
+        else {
+            preconditionFailure(
+                "Invalid DAUEntryKind raw value: \(entryKind.rawValue)",
+            )
+        }
+        VoyagerSentryMetricLogger.logDAUEntryAction(
+            actionKind: resolvedActionKind,
+            entryKind: resolvedEntryKind,
+        )
     }
 
     private func configureLogging() {
