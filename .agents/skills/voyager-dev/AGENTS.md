@@ -14,6 +14,7 @@ Route through this namespace for:
 
 - Voyager macOS work under `apps/macos/Voyager/**`, `apps/macos/Packages/**`, or `apps/macos/Hosts/**`.
 - TCA/FSD scaffolding, decomposition, implementation, verification, test selection, and architecture review.
+- SwiftPM package creation, segmentation, product/target/dependency graph changes, and consumer wiring verification.
 - View-owned observation moved into reducer-owned TCA lifecycle.
 - Reuse/adapt/new decisions that affect Voyager macOS boundaries.
 

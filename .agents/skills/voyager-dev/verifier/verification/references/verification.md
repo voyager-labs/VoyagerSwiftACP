@@ -14,6 +14,13 @@
     - Verify a semantic internal action receives the routed signal.
 - `reuse-guard`
     - Verify the chosen abstraction reuse decision is recorded and that duplicate structures were avoided.
+- `package-integration`
+    - Load `package-integration-verification.md` when a local SwiftPM package is created, deleted, segmented, or has product/target/dependency/consumer wiring changed.
+    - Treat package-local build/test as a first pass; consumer-boundary verification is required when app, host, test, or other package consumers can observe the change.
+- `swift6-package`
+    - Load `swift6-package-rules.md` when creating packages, adding or moving types into packages, editing Package.swift, or fixing Sendable/concurrency errors.
+    - Every new package uses `swift-tools-version:6.0`. Every type in a package is `Sendable` or explicitly annotated.
+    - Build the package directly (`swift build --package-path`) after type changes — the app target runs in Swift 5 mode and will not catch strict concurrency errors.
 
 ## Preferred execution surface
 
@@ -31,6 +38,8 @@ For callback-heavy or lifecycle-heavy work, prefer focused suites that prove bot
 For multi-step async flows, focused verification must cover cancellation, superseded requests, and stale completions when those outcomes could otherwise write durable state or trigger persistence.
 
 For Swift SPM packages, use: `xcrun swift test --package-path <path> --filter 'Pattern1|Pattern2'`. Split evidence by test class. See `../../../../../rules/30-macos/04-xcode-test-plan-visibility.md` for package test visibility.
+
+For local package graph, product, target, dependency, or consumer wiring changes, also apply `package-integration-verification.md`; standalone `swift build` / `swift test` evidence is not enough when Xcode targets or downstream packages consume the product.
 
 ## Full verification
 
@@ -70,7 +79,7 @@ Prefer running formatting/lint before the final test pass so style-only churn do
 - For decomposition or model splits, search for stale type names, dead extension files, or bypassed reducer routes.
 - For callback-heavy flows, search for duplicate cleanup ownership, weak-context re-derivation, and missing fallback paths where framework callbacks can lose detail.
 - For multi-step async flows, search for durable writes or persistence calls that can execute after cancellation, supersession, or failed verification.
-- When tests reveal spec/implementation mismatches, document gaps in `.sisyphus/evidence/` files with source, spec reference, current behavior, and rationale for deferral. Confirm zero canonical spec changes needed.
+- When tests reveal spec/implementation mismatches, document gaps in `.sisyphus/evidence/{plan_slug}/` files with source, spec reference, current behavior, and rationale for deferral. Confirm zero canonical spec changes needed.
 
 ## Layer checks
 

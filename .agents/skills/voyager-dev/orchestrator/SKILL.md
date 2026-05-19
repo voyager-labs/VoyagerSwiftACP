@@ -1,6 +1,6 @@
 ---
 name: voyager-dev
-description: Unified Voyager(macOS) orchestrator for TCA + FSD implementation and test verification. Use whenever working in `apps/macos/**` to route scaffold, refactor, reducer, observation, reuse, review, build, or test work through Voyager role entry points.
+description: Unified Voyager(macOS) orchestrator for TCA + FSD implementation and test verification. Use whenever working in `apps/macos/**` to route scaffold, refactor, reducer, observation, reuse, package graph changes, review, build, or test work through Voyager role entry points.
 compatibility: opencode
 metadata:
     parent_skill: voyager-dev
@@ -15,6 +15,7 @@ Use this as the main entry point for Voyager macOS TCA/FSD work. The parent `voy
 
 - Any non-trivial Voyager macOS work under `apps/macos/Voyager/**`, `apps/macos/Packages/**`, or `apps/macos/Hosts/**`.
 - Add or refactor Voyager TCA/FSD modules, reducers, package boundaries, observation lifecycle, or tests.
+- Create, delete, segment, or rewire local SwiftPM packages, products, targets, dependencies, or package consumers.
 - Choose, run, or fix Voyager/macOS/SPM tests after code changes.
 - Enforce reuse, architecture-gate, FSD layer, public-boundary, and cancellation ownership rules.
 
