@@ -1,13 +1,9 @@
 ---
-alwaysApply: true
 description: "Routing rules: which domain rules to load by path/task."
+alwaysApply: true
 ---
 
 # Rule Routing
-
-## Applies when
-
-- At task start, before editing.
 
 ## Routing map
 
