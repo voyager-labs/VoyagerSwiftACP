@@ -88,6 +88,128 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
         }
     }
 
+    func testAttachmentPickerSelectionSkipsDuplicateCurrentContextItem() async {
+        let url = URL(fileURLWithPath: "/tmp/Notes.txt")
+        let normalizedURL = url.standardizedFileURL
+        let currentContext = AiChatCurrentContextSnapshot(
+            summary: "Desktop · 1 selected",
+            references: [makeContextReference(title: "Desktop", path: "/tmp")],
+            items: [makeContextItem(title: "Notes.txt", path: normalizedURL.path(percentEncoded: false))],
+            attachments: []
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(currentContext: currentContext)) {
+            AiChatFeature()
+        }
+
+        await store.send(.attachmentPickerSelection([url]))
+        XCTAssertEqual(store.state.currentContext, currentContext)
+        XCTAssertTrue(store.state.addedAttachments.isEmpty)
+    }
+
+    func testAttachmentPickerSelectionSkipsDuplicateCurrentCollectionReference() async {
+        let url = URL(fileURLWithPath: "/tmp/Workspace.voycoll")
+        let normalizedURL = url.standardizedFileURL
+        let currentContext = AiChatCurrentContextSnapshot(
+            summary: "Workspace.voycoll",
+            references: [
+                makeContextReference(
+                    title: "Workspace.voycoll",
+                    path: normalizedURL.path(percentEncoded: false),
+                    metadata: ["route": "collection", "path": normalizedURL.path(percentEncoded: false)]
+                ),
+            ],
+            items: [],
+            attachments: []
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(currentContext: currentContext)) {
+            AiChatFeature()
+        }
+
+        await store.send(.attachmentPickerSelection([url]))
+        XCTAssertEqual(store.state.currentContext, currentContext)
+        XCTAssertTrue(store.state.addedAttachments.isEmpty)
+    }
+
+    func testAttachmentDropSelectionSkipsDuplicateCurrentContextItem() async {
+        let url = URL(fileURLWithPath: "/tmp/Dropped.txt")
+        let normalizedURL = url.standardizedFileURL
+        let currentContext = AiChatCurrentContextSnapshot(
+            summary: "Desktop · 1 selected",
+            references: [makeContextReference(title: "Desktop", path: "/tmp")],
+            items: [makeContextItem(title: "Dropped.txt", path: normalizedURL.path(percentEncoded: false))],
+            attachments: []
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(currentContext: currentContext)) {
+            AiChatFeature()
+        }
+
+        await store.send(.attachmentDropSelection([url]))
+        XCTAssertEqual(store.state.currentContext, currentContext)
+        XCTAssertTrue(store.state.addedAttachments.isEmpty)
+    }
+
+    func testCurrentContextChangedRemovesExistingAttachmentDuplicate() async {
+        let url = URL(fileURLWithPath: "/tmp/Notes.txt")
+        let normalizedURL = url.standardizedFileURL
+        let attachment = AiChatAttachmentDraft(
+            id: AiChatAttachmentID(rawValue: normalizedURL.path(percentEncoded: false)),
+            source: .file,
+            displayTitle: "Notes.txt",
+            sourceLocation: AiChatAttachmentSourceLocation(
+                fileURL: normalizedURL,
+                filePath: normalizedURL.path(percentEncoded: false)
+            )
+        )
+        let currentContext = AiChatCurrentContextSnapshot(
+            summary: "Desktop · 1 selected",
+            references: [makeContextReference(title: "Desktop", path: "/tmp")],
+            items: [makeContextItem(title: "Notes.txt", path: normalizedURL.path(percentEncoded: false))],
+            attachments: []
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(addedAttachments: [attachment])) {
+            AiChatFeature()
+        }
+
+        await store.send(.currentContextChanged(currentContext)) {
+            $0.currentContext = AiChatCurrentContextSnapshot(
+                summary: "Desktop",
+                references: [makeContextReference(title: "Desktop", path: "/tmp")],
+                items: [],
+                attachments: []
+            )
+        }
+    }
+
+    func testCurrentContextChangedRemovesExistingAttachmentCurrentFolderDuplicate() async {
+        let folderURL = URL(filePath: "/tmp/Projects", directoryHint: .isDirectory).standardizedFileURL
+        let attachment = AiChatAttachmentDraft(
+            id: AiChatAttachmentID(rawValue: folderURL.path(percentEncoded: false)),
+            source: .folder,
+            displayTitle: "Projects",
+            sourceLocation: AiChatAttachmentSourceLocation(
+                fileURL: folderURL,
+                filePath: folderURL.path(percentEncoded: false)
+            )
+        )
+        let currentContext = AiChatCurrentContextSnapshot(
+            summary: "Projects",
+            references: [makeContextReference(title: "Projects", path: folderURL.path(percentEncoded: false))],
+            items: [],
+            attachments: []
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(addedAttachments: [attachment])) {
+            AiChatFeature()
+        }
+
+        await store.send(.currentContextChanged(currentContext))
+        XCTAssertEqual(store.state.currentContext, .init())
+    }
+
     func testAttachmentDropSelectionAddsDraftAndRequestsContextSelectionClear() async {
         let url = URL(fileURLWithPath: "/tmp/Dropped.txt")
         let normalizedURL = url.standardizedFileURL
@@ -111,4 +233,29 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
         }
         await store.receive(.delegate(.clearCurrentContextSelection))
     }
+}
+
+
+private func makeContextReference(
+    title: String,
+    path: String,
+    metadata: [String: String]? = nil
+) -> AiChatContextReference {
+    AiChatContextReference(
+        kind: .reference,
+        identifier: path,
+        title: title,
+        subtitle: path,
+        metadata: metadata ?? ["path": path]
+    )
+}
+
+private func makeContextItem(title: String, path: String) -> AiChatContextItem {
+    AiChatContextItem(
+        kind: .file,
+        identifier: path,
+        title: title,
+        subtitle: path,
+        metadata: ["path": path]
+    )
 }

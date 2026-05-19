@@ -133,7 +133,7 @@ public struct AiChatFeature {
                 return .none
 
             case let .currentContextChanged(snapshot):
-                state.currentContext = snapshot
+                state.currentContext = currentContextSnapshot(snapshot, excluding: state.addedAttachments)
                 return .none
 
             case let .draftTextChanged(text):
@@ -145,11 +145,17 @@ public struct AiChatFeature {
                 return .send(.delegate(.requestAttachmentPicker))
 
             case let .attachmentPickerSelection(urls):
-                addAttachmentDrafts(from: urls, state: &state)
+                addAttachmentDrafts(from: urls, skippingCurrentContextDuplicates: true, state: &state)
                 return .none
 
             case let .attachmentDropSelection(urls):
-                addAttachmentDrafts(from: urls, state: &state)
+                let didAddAttachments = addAttachmentDrafts(
+                    from: urls,
+                    skippingCurrentContextDuplicates: true,
+                    state: &state
+                )
+                guard didAddAttachments else { return .none }
+                removeCurrentContextDuplicates(state: &state)
                 return .send(.delegate(.clearCurrentContextSelection))
 
             case let .removeAddedAttachment(id):
@@ -425,14 +431,171 @@ private extension AiChatFeature {
 }
 
 private extension AiChatFeature {
-    func addAttachmentDrafts(from urls: [URL], state: inout State) {
+
+    func removeCurrentContextDuplicates(state: inout State) {
+        state.currentContext = currentContextSnapshot(state.currentContext, excluding: state.addedAttachments)
+    }
+
+    func currentContextSnapshot(
+        _ snapshot: AiChatCurrentContextSnapshot,
+        excluding attachments: [AiChatAttachmentDraft]
+    ) -> AiChatCurrentContextSnapshot {
+        let attachmentPaths = Set(attachments.compactMap(normalizedAttachmentPath(for:)))
+        guard !attachmentPaths.isEmpty else { return snapshot }
+
+        let references = snapshot.references.filter { reference in
+            !currentContextPaths(for: reference).contains(where: { attachmentPaths.contains($0) })
+        }
+        let items = snapshot.items.compactMap { item -> AiChatContextItem? in
+            guard !currentContextPaths(for: item).contains(where: { attachmentPaths.contains($0) }) else {
+                return nil
+            }
+            let itemReferences = item.references.filter { reference in
+                !currentContextPaths(for: reference).contains(where: { attachmentPaths.contains($0) })
+            }
+            return AiChatContextItem(
+                kind: item.kind,
+                identifier: item.identifier,
+                title: item.title,
+                subtitle: item.subtitle,
+                metadata: item.metadata,
+                references: itemReferences
+            )
+        }
+        let contextAttachments = snapshot.attachments.filter { attachment in
+            !currentContextPaths(for: attachment).contains(where: { attachmentPaths.contains($0) })
+        }
+
+        guard references.count != snapshot.references.count
+            || items.count != snapshot.items.count
+            || contextAttachments.count != snapshot.attachments.count
+        else { return snapshot }
+
+        let summary = currentContextSummary(
+            references: references,
+            items: items,
+            attachments: contextAttachments
+        )
+        return AiChatCurrentContextSnapshot(
+            summary: summary,
+            references: references,
+            items: items,
+            attachments: contextAttachments
+        )
+    }
+
+    func currentContextSummary(
+        references: [AiChatContextReference],
+        items: [AiChatContextItem],
+        attachments: [AiChatContextAttachment]
+    ) -> String? {
+        if items.count == 1 {
+            return items[0].title ?? currentContextDisplayName(from: items[0].identifier)
+        }
+        if items.count > 1 {
+            return "\(items.count) selected"
+        }
+        if let reference = references.first {
+            return reference.title ?? currentContextDisplayName(from: reference.identifier)
+        }
+        if let attachment = attachments.first {
+            return attachment.title ?? currentContextDisplayName(from: attachment.identifier)
+        }
+        return nil
+    }
+
+    func currentContextPaths(for reference: AiChatContextReference) -> [String] {
+        normalizedCurrentContextPaths(
+            metadata: reference.metadata,
+            identifier: reference.identifier,
+            subtitle: reference.subtitle
+        )
+    }
+
+    func currentContextPaths(for item: AiChatContextItem) -> [String] {
+        normalizedCurrentContextPaths(
+            metadata: item.metadata,
+            identifier: item.identifier,
+            subtitle: item.subtitle
+        )
+    }
+
+    func currentContextPaths(for attachment: AiChatContextAttachment) -> [String] {
+        normalizedCurrentContextPaths(
+            metadata: attachment.metadata,
+            identifier: attachment.identifier,
+            subtitle: attachment.subtitle
+        )
+    }
+
+    func normalizedCurrentContextPaths(
+        metadata: [String: String],
+        identifier: String,
+        subtitle: String?
+    ) -> [String] {
+        var paths: [String] = []
+        for value in [metadata["path"], metadata["filePath"], subtitle, identifier].compactMap(\.self) {
+            guard let path = normalizedCurrentContextPath(from: value), !paths.contains(path) else { continue }
+            paths.append(path)
+        }
+        return paths
+    }
+
+    func normalizedCurrentContextPath(from value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/") else { return nil }
+        return normalizedFileURL(from: URL(fileURLWithPath: trimmed))?.path(percentEncoded: false)
+    }
+
+    func currentContextDisplayName(from value: String) -> String {
+        guard let path = normalizedCurrentContextPath(from: value) else { return value }
+        let lastPathComponent = URL(fileURLWithPath: path).lastPathComponent
+        return lastPathComponent.isEmpty ? path : lastPathComponent
+    }
+
+    @discardableResult
+    func addAttachmentDrafts(
+        from urls: [URL],
+        skippingCurrentContextDuplicates: Bool,
+        state: inout State
+    ) -> Bool {
+        var didAddAttachments = false
         var knownPaths = Set(state.addedAttachments.compactMap(normalizedAttachmentPath(for:)))
+        let currentContextPaths = skippingCurrentContextDuplicates
+            ? Set(currentContextPaths(for: state.currentContext))
+            : []
 
         for url in urls {
             guard let draft = makeAttachmentDraft(from: url) else { continue }
             let normalizedPath = normalizedAttachmentPath(for: draft) ?? draft.id.rawValue
+            guard !currentContextPaths.contains(normalizedPath) else { continue }
             guard knownPaths.insert(normalizedPath).inserted else { continue }
             state.addedAttachments.append(draft)
+            didAddAttachments = true
+        }
+        return didAddAttachments
+    }
+
+    func currentContextPaths(for snapshot: AiChatCurrentContextSnapshot) -> [String] {
+        var paths: [String] = []
+        for reference in snapshot.references {
+            appendUnique(currentContextPaths(for: reference), to: &paths)
+        }
+        for item in snapshot.items {
+            appendUnique(currentContextPaths(for: item), to: &paths)
+            for reference in item.references {
+                appendUnique(currentContextPaths(for: reference), to: &paths)
+            }
+        }
+        for attachment in snapshot.attachments {
+            appendUnique(currentContextPaths(for: attachment), to: &paths)
+        }
+        return paths
+    }
+
+    func appendUnique(_ newPaths: [String], to paths: inout [String]) {
+        for path in newPaths where !paths.contains(path) {
+            paths.append(path)
         }
     }
 
