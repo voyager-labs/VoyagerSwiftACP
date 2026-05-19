@@ -71,20 +71,20 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
 
 ### Top-Level Fields
 
-| Field                | Type     | Required | Description                                                                          |
-| -------------------- | -------- | -------- | ------------------------------------------------------------------------------------ |
-| `schema_version`     | string   | yes      | Fixed string `"2.0"`. Increment only on breaking changes.                            |
-| `run_id`             | string   | yes      | Unique run identifier. Format: `YYYY-MM-DD-HHMMSS`. Generated at invocation.         |
-| `plan_slug`          | string   | yes      | Case identifier. Extracted from plan filename without `.md`. Groups runs.            |
-| `run_at`             | string   | yes      | ISO-8601 timestamp of run start. Used for stale detection.                           |
-| `inputs`             | object   | yes      | Enumeration of all input artifacts actually found. Present even if degraded.         |
-| `outputs`            | object   | yes      | Enumeration of all output artifacts written by this run.                             |
-| `lineage`            | object   | yes      | Flat lists of source artifacts that contributed to this run.                         |
-| `schema_valid`       | boolean  | yes      | `true` only after manifest and findings schemas pass validation.                     |
-| `confidence_reduced` | boolean  | no       | `true` if any optional input was missing or degraded. Emitted by degrade-gracefully. |
-| `facets_missing`     | string[] | no       | List of facet IDs (`f1`, `f2`, etc.) that were not found.                            |
-| `missing_sources`    | string[] | no       | List of artifact paths that were expected but not found (degrade case).              |
-| `evidence_sources_consumed` | object | yes | Evidence actually used for findings, learning, and draft synthesis. |
+| Field                       | Type     | Required | Description                                                                          |
+| --------------------------- | -------- | -------- | ------------------------------------------------------------------------------------ |
+| `schema_version`            | string   | yes      | Fixed string `"2.0"`. Increment only on breaking changes.                            |
+| `run_id`                    | string   | yes      | Unique run identifier. Format: `YYYY-MM-DD-HHMMSS`. Generated at invocation.         |
+| `plan_slug`                 | string   | yes      | Case identifier. Extracted from plan filename without `.md`. Groups runs.            |
+| `run_at`                    | string   | yes      | ISO-8601 timestamp of run start. Used for stale detection.                           |
+| `inputs`                    | object   | yes      | Enumeration of all input artifacts actually found. Present even if degraded.         |
+| `outputs`                   | object   | yes      | Enumeration of all output artifacts written by this run.                             |
+| `lineage`                   | object   | yes      | Flat lists of source artifacts that contributed to this run.                         |
+| `schema_valid`              | boolean  | yes      | `true` only after manifest and findings schemas pass validation.                     |
+| `confidence_reduced`        | boolean  | no       | `true` if any optional input was missing or degraded. Emitted by degrade-gracefully. |
+| `facets_missing`            | string[] | no       | List of facet IDs (`f1`, `f2`, etc.) that were not found.                            |
+| `missing_sources`           | string[] | no       | List of artifact paths that were expected but not found (degrade case).              |
+| `evidence_sources_consumed` | object   | yes      | Evidence actually used for findings, learning, and draft synthesis.                  |
 
 ---
 
@@ -111,24 +111,24 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
 
 ### Outputs Object
 
-| Field                 | Type   | Required | Description                       |
-| --------------------- | ------ | -------- | --------------------------------- |
-| `outputs.manifest`    | string | yes      | Exact path to this manifest file. |
-| `outputs.findings`    | string | yes      | Exact path to `findings.json`.    |
-| `outputs.learning`    | string | yes      | Exact path to `learning.md`.      |
-| `outputs.skill_draft` | string | yes      | Exact path to `skill-draft.md`.   |
-| `outputs.run_summary` | string | yes      | Exact path to `run-summary.md`.   |
+| Field                 | Type   | Required | Description                                              |
+| --------------------- | ------ | -------- | -------------------------------------------------------- |
+| `outputs.manifest`    | string | yes      | Exact path to this manifest file.                        |
+| `outputs.findings`    | string | yes      | Exact path to `findings.json`.                           |
+| `outputs.learning`    | string | yes      | Exact path to `learning.md`.                             |
+| `outputs.skill_draft` | string | yes      | Exact path to `skill-draft.md`.                          |
+| `outputs.run_summary` | string | no       | Exact path to `run-summary.md`. Omitted on failure runs. |
 
 ---
 
 ### Lineage Object
 
-| Field                     | Type     | Required | Description                                       |
-| ------------------------- | -------- | -------- | ------------------------------------------------- |
-| `lineage.source_plan`     | string   | yes      | Path to the source plan file.                     |
-| `lineage.source_evidence` | string[] | yes      | Full paths to evidence files consumed. |
-| `lineage.source_facets`   | string[] | yes      | Full paths to facet files consumed.               |
-| `lineage.source_notepads` | string[] | yes      | Flat list of notepad directory slugs consumed.    |
+| Field                     | Type     | Required | Description                                    |
+| ------------------------- | -------- | -------- | ---------------------------------------------- |
+| `lineage.source_plan`     | string   | yes      | Path to the source plan file.                  |
+| `lineage.source_evidence` | string[] | yes      | Full paths to evidence files consumed.         |
+| `lineage.source_facets`   | string[] | yes      | Full paths to facet files consumed.            |
+| `lineage.source_notepads` | string[] | yes      | Flat list of notepad directory slugs consumed. |
 
 **Note:** v2 stores full evidence and facet paths in lineage so plan-scoped evidence remains unambiguous.
 
@@ -136,11 +136,11 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
 
 ### Evidence Sources Consumed Object
 
-| Field | Type | Required | Description |
-| ----- | ---- | -------- | ----------- |
-| `evidence_sources_consumed.for_findings` | string[] | yes | Source artifacts actually used to synthesize `findings.json`. |
-| `evidence_sources_consumed.for_learning` | string[] | yes | Source artifacts actually used to synthesize `learning.md`. |
-| `evidence_sources_consumed.for_draft` | string[] | yes | Source artifacts actually used to synthesize `skill-draft.md`. |
+| Field                                    | Type     | Required | Description                                                    |
+| ---------------------------------------- | -------- | -------- | -------------------------------------------------------------- |
+| `evidence_sources_consumed.for_findings` | string[] | yes      | Source artifacts actually used to synthesize `findings.json`.  |
+| `evidence_sources_consumed.for_learning` | string[] | yes      | Source artifacts actually used to synthesize `learning.md`.    |
+| `evidence_sources_consumed.for_draft`    | string[] | yes      | Source artifacts actually used to synthesize `skill-draft.md`. |
 
 This differs from `inputs.*`: inputs enumerate what was found, while `evidence_sources_consumed` records what materially influenced each output.
 
@@ -202,7 +202,7 @@ If any `inputs.*.path` file has a last-modified timestamp after `run_at`, the ma
 
 ## Schema Version History
 
-| Version | Date       | Change          |
-| ------- | ---------- | --------------- |
-| 1.0     | 2026-04-10 | Initial schema. |
+| Version | Date       | Change                                                                                                                   |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1.0     | 2026-04-10 | Initial schema.                                                                                                          |
 | 2.0     | 2026-05-17 | Artifact-family v3 layout: plan-scoped evidence, unified review run outputs, run_summary, and evidence_sources_consumed. |

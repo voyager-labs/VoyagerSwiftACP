@@ -9,11 +9,10 @@ globs: ".agents/rules/**"
 
 - Keep rules in English and imperative voice.
 - Use this section order in each rule file:
-    1. Applies when
-    2. Must
-    3. Must not
-    4. Execution steps
-    5. Verification
+    1. Must
+    2. Must not
+    3. Execution steps
+    4. Verification
 - Keep one topic per file.
 - Prefer links over duplicated policy text.
 - Keep files concise (target <= 150 lines).
@@ -33,7 +32,7 @@ globs: ".agents/rules/**"
 
 ## Mandatory checklist for rule updates
 
-- Every changed rule includes `Applies when`, `Must`, and `Must not`.
+- Every changed rule includes `Must` and `Must not`.
 - Every changed rule includes actionable `Execution steps`.
 - Every changed rule includes at least one verifiable check in `Verification`.
 - No duplicated policy text when a canonical rule already exists.
