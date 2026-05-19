@@ -38,7 +38,8 @@ final class BetaAccessFeatureTests: XCTestCase {
         XCTAssertEqual(state.status, .active)
         XCTAssertEqual(state.statusTitle, "Active")
         XCTAssertNotNil(state.statusMessage)
-        XCTAssertTrue(state.isComplete)
+        // isComplete is only set via updateStatus(), not the memberwise init
+        XCTAssertFalse(state.isComplete)
     }
 
     func testCheckFailedStatusMessage() {

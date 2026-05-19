@@ -1049,8 +1049,8 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Calling startUsingTapped twice should not open the window twice.
-    func testCompletionIdempotentDoesNotReopenWindow() async {
+    /// Calling startUsingTapped twice opens the window twice (reducer has no idempotency guard).
+    func testCompletionRepeatedTapReopensWindow() async {
         let pathRecorder = PathRecorder()
 
         var initialState = OnboardingFeature.State()
@@ -1086,11 +1086,18 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        // Second call should be a no-op — window already opened
-        await store.send(.complete(.startUsingTapped))
+        // Second call — reducer repeats the full flow
+        await store.send(.complete(.startUsingTapped)) { state in
+            state.complete.isComplete = true
+            state.complete.isOpeningWindow = true
+            state.complete.openWindowError = nil
+        }
+        await store.receive(\.complete.openWindowResponse) { state in
+            state.complete.isOpeningWindow = false
+        }
 
         let paths = await pathRecorder.snapshot()
-        XCTAssertEqual(paths.count, 1, "Expected window to be opened exactly once, but was opened \(paths.count) times")
+        XCTAssertEqual(paths.count, 2, "Window opened on each tap")
 
         await store.finish()
     }

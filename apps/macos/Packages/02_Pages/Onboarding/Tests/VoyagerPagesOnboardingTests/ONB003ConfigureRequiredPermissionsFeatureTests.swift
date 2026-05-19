@@ -56,18 +56,12 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         }
 
         await store.send(.onAppear)
-        await store.receive(\.fullDiskAccessStatusResponse) { state in
-            state.fullDiskAccessStatus = .unknown
-            state.isComplete = false
-        }
+        await store.receive(\.fullDiskAccessStatusResponse)
         await store.receive(\.helperFolderAccessStatusLoaded) { state in
             state.helperFolderAccess = kGrantedHelperAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = false
         }
         await store.receive(\.launchAtLoginStateLoaded)
 
-        // FDA unknown => not granted => nextDisabledMessage is non-nil
         XCTAssertNotNil(store.state.nextDisabledMessage)
         XCTAssertEqual(store.state.fullDiskAccessStatus, .unknown)
 
@@ -134,13 +128,8 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.send(.onAppear)
         await store.receive(\.fullDiskAccessStatusResponse) { state in
             state.fullDiskAccessStatus = .denied
-            state.isComplete = false
         }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
-            state.helperFolderAccess = deniedAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = false
-        }
+        await store.receive(\.helperFolderAccessStatusLoaded)
         await store.receive(\.launchAtLoginStateLoaded)
 
         XCTAssertEqual(store.state.fullDiskAccessStatus, .denied)
@@ -205,13 +194,8 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.send(.onAppear)
         await store.receive(\.fullDiskAccessStatusResponse) { state in
             state.fullDiskAccessStatus = .granted
-            state.isComplete = false
         }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
-            state.helperFolderAccess = deniedAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = false
-        }
+        await store.receive(\.helperFolderAccessStatusLoaded)
         await store.receive(\.launchAtLoginStateLoaded)
 
         // FDA granted but helper denied → isComplete still false
@@ -320,13 +304,8 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.send(.appDidBecomeActive)
         await store.receive(\.fullDiskAccessStatusResponse) { state in
             state.fullDiskAccessStatus = .granted
-            state.isComplete = false
         }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
-            state.helperFolderAccess = deniedAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = false
-        }
+        await store.receive(\.helperFolderAccessStatusLoaded)
 
         XCTAssertFalse(store.state.isComplete)
         XCTAssertEqual(store.state.helperFolderAccessStatus, .notGranted)
@@ -351,11 +330,9 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.send(.appDidBecomeActive)
         await store.receive(\.fullDiskAccessStatusResponse) { state in
             state.fullDiskAccessStatus = .granted
-            state.isComplete = true
         }
         await store.receive(\.helperFolderAccessStatusLoaded) { state in
             state.helperFolderAccess = kGrantedHelperAccess
-            state.helperFolderAccessError = nil
             state.isComplete = true
         }
 
@@ -517,9 +494,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             $0.systemSettingsClient = SystemSettingsClient(openFullDiskAccess: { true })
         }
 
-        await store.send(.openSystemSettingsTapped) { state in
-            state.systemSettingsError = nil
-        }
+        await store.send(.openSystemSettingsTapped)
         await store.receive(\.systemSettingsOpenResult) { state in
             state.hasAttemptedFullDiskAccessEnable = true
         }
@@ -528,7 +503,10 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
 
     /// Covers helper folder access request flow.
     func testRequestHelperFolderAccessTappedSucceeds() async {
-        let store = TestStore(initialState: PermissionsFeature.State()) {
+        var initialState = PermissionsFeature.State()
+        initialState.fullDiskAccessStatus = .granted
+
+        let store = TestStore(initialState: initialState) {
             PermissionsFeature()
         } withDependencies: {
             $0.helperFolderAccessClient = HelperFolderAccessClient(
@@ -538,7 +516,6 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         }
 
         await store.send(.requestHelperFolderAccessTapped) { state in
-            state.helperFolderAccessError = nil
             state.isRequestingHelperFolderAccess = true
         }
         await store.receive(\.helperFolderAccessResponse) { state in
@@ -615,13 +592,8 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
 
         await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
             state.fullDiskAccessStatus = .granted
-            state.isComplete = false
         }
-        await store.send(.helperFolderAccessStatusLoaded(deniedAccess)) { state in
-            state.helperFolderAccess = deniedAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = false
-        }
+        await store.send(.helperFolderAccessStatusLoaded(deniedAccess))
 
         XCTAssertEqual(
             store.state.nextDisabledMessage,
@@ -639,16 +611,12 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
 
         await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
             state.fullDiskAccessStatus = .granted
-            state.isComplete = false
         }
         await store.send(.helperFolderAccessStatusLoaded(kGrantedHelperAccess)) { state in
             state.helperFolderAccess = kGrantedHelperAccess
-            state.helperFolderAccessError = nil
             state.isComplete = true
         }
-        await store.send(.launchAtLoginStateLoaded(false)) { state in
-            state.launchAtLoginEnabled = false
-        }
+        await store.send(.launchAtLoginStateLoaded(false))
 
         XCTAssertTrue(store.state.isComplete)
         XCTAssertNil(store.state.nextDisabledMessage)
@@ -676,8 +644,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             state.fullDiskAccessStatus = .granted
         }
 
-        // Helper access still unknown => isComplete depends on helper access too
-        XCTAssertNil(store.state.nextDisabledMessage)
+        XCTAssertNotNil(store.state.nextDisabledMessage)
         await store.finish()
     }
 
@@ -755,11 +722,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             state.isComplete = false
         }
 
-        await store.send(.helperFolderAccessStatusLoaded(deniedAccess)) { state in
-            state.helperFolderAccess = deniedAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = false
-        }
+        await store.send(.helperFolderAccessStatusLoaded(deniedAccess))
 
         XCTAssertFalse(store.state.isComplete)
         XCTAssertEqual(
