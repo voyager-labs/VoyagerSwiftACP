@@ -19,5 +19,6 @@ enum FileManagerInspectorAction: CasePathable, Sendable {
     enum Delegate: Sendable {
         case openAISettings
         case requestAttachmentPicker
+        case clearCurrentContextSelection
     }
 }
