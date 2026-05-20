@@ -149,4 +149,35 @@ final class AppRootFeatureContractTests: XCTestCase {
             $0.menuCommands.hasFocusedWindow = true
         }
     }
+
+    func testSettingsGeneralCheckForUpdatesForwardsToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.settings(.general(.checkForUpdates)))
+        await store.receive(\.updater.checkForUpdates)
+    }
+
+    func testSettingsGeneralToggleAutomaticUpdateForwardsToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.settings(.general(.toggleAutomaticUpdate(true))))
+        await store.receive(\.updater.setAutomaticUpdate(true))
+
+        await store.send(.settings(.general(.toggleAutomaticUpdate(false))))
+        await store.receive(\.updater.setAutomaticUpdate(false))
+    }
+
+    func testSettingsGeneralToggleAlertBeforeQuitDoesNotForwardToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.settings(.general(.toggleAlertBeforeQuit(true))))
+        store.assertNoInboundEffects()
+    }
 }
