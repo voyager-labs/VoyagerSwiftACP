@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAppPreferences
 @testable import VoyagerPagesSettings
 import VoyagerShared
 import XCTest
@@ -41,7 +42,7 @@ final class GeneralSettingsFeatureTests: XCTestCase {
         }
         await store.finish()
 
-        XCTAssertEqual(storage.get(SettingsKeys.automaticUpdate), true)
+        XCTAssertTrue(storage.get(SettingsKeys.automaticUpdate) ?? false)
     }
 }
 
@@ -61,5 +62,3 @@ private final class BoolStorage: @unchecked Sendable {
         return values[key]
     }
 }
-
-// swiftlint:enable xct_specific_matcher
