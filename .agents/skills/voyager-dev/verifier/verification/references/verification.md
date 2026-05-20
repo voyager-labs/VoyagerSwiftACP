@@ -63,11 +63,11 @@ xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodepro
 
 ## Formatting and lint
 
-Run formatting/lint whenever touched files include `apps/macos/Voyager/**/*.swift`.
+Run formatting/lint whenever touched files include `apps/macos/**/*.swift`.
 
 ```bash
-swiftlint --config apps/macos/Voyager/.swiftlint.yml --reporter xcode
-swiftformat --config apps/macos/Voyager/.swiftformat apps/macos/Voyager --verbose
+swiftlint --config apps/macos/.swiftlint.yml --reporter xcode apps/macos
+swiftformat --config apps/macos/.swiftformat apps/macos --verbose
 ```
 
 Prefer running formatting/lint before the final test pass so style-only churn does not hide functional failures.
