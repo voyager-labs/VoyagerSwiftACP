@@ -4,6 +4,7 @@ import XCTest
 
 @MainActor
 final class AppLifecycleFeatureTests: XCTestCase {
+    /// 정상 종료 시 헬퍼가 정리 경로에서 중단되지 않는지 확인.
     func testStartTerminationCleanupDoesNotStopHelperOnNormalQuit() async {
         await VoyagerTerminationCoordinator.shared.end()
         let attemptID = UUID()

@@ -3,7 +3,9 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
+/// 드래그/클립보드 상태 정리 회귀를 검증하는 테스트 모음이다.
 final class EntryOperationsCutClearHeuristicTests: XCTestCase {
+    /// 잘라내기 상태 정리 회귀를 방지한다.
     func testKeepsCutWhenPasteboardChangeCountChangedButCutSessionIdStillMatches() {
         let heuristic = EntryOperationsCutClearHeuristic()
         let now = Date(timeIntervalSinceReferenceDate: 0)
@@ -32,6 +34,7 @@ final class EntryOperationsCutClearHeuristicTests: XCTestCase {
         }
     }
 
+    /// 잘라내기 상태 정리 회귀를 방지한다.
     func testClearsCutWhenPasteboardChangeCountChangedAndCutSessionIdIsDifferentOrMissing() {
         let heuristic = EntryOperationsCutClearHeuristic()
         let now = Date(timeIntervalSinceReferenceDate: 0)
@@ -54,6 +57,7 @@ final class EntryOperationsCutClearHeuristicTests: XCTestCase {
         XCTAssertEqual(decision, .clear)
     }
 
+    /// 잘라내기 상태 정리 회귀를 방지한다.
     func testClearsCutWhenBackoffDueAndAnySourcePathIsMissing() {
         let heuristic = EntryOperationsCutClearHeuristic(backoffSchedule: [0.5, 1, 2])
         let start = Date(timeIntervalSinceReferenceDate: 0)

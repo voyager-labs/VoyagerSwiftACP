@@ -11,7 +11,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// FileManager composer와 collection 상태 소유권 경계를 검증한다.
 final class FileManagerComposerOwnershipTests: XCTestCase {
+    /// testSearchSuccessSendsSetCollectionModeBeforeApplyCollectionSearchPaths 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testSearchSuccessSendsSetCollectionModeBeforeApplyCollectionSearchPaths() async {
         let requestID = UUID()
         let items: [VoyagerShared.JSONValue] = [
@@ -25,6 +27,7 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         await assertSearchSuccessSequence(store: store)
     }
 
+    /// testSearchSuccessAcceptsStringPathItems 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testSearchSuccessAcceptsStringPathItems() async {
         let requestID = UUID()
         let items: [VoyagerShared.JSONValue] = [
@@ -41,6 +44,7 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         )
     }
 
+    /// testClearCollectionModeResetsComposerAfterClearingPresentation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testClearCollectionModeResetsComposerAfterClearingPresentation() async {
         var initialState = makeInitialState()
         initialState.collection.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
@@ -95,6 +99,7 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         XCTAssertFalse(store.state.composer.isCollectionMode)
     }
 
+    /// testCanSaveCollectionReadsFromCanonicalSource 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCanSaveCollectionReadsFromCanonicalSource() {
         var state = makeInitialState()
         state.entryViewLayout.isCollectionMode = true

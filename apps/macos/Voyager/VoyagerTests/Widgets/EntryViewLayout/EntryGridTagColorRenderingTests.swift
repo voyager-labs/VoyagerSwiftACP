@@ -13,6 +13,7 @@ import XCTest
 ///
 /// 관련: VOY-208 visual-data-follow-up Task 3
 @MainActor
+/// 태그 렌더링 회귀를 검증하는 테스트 모듈이다.
 final class EntryGridTagColorRenderingTests: XCTestCase {
     // MARK: - 태그 도트 렌더링 테스트
 

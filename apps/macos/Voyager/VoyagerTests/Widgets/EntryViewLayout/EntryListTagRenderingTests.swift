@@ -6,7 +6,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 태그 렌더링 회귀를 검증하는 테스트 모듈이다.
 final class EntryListTagRenderingTests: XCTestCase {
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216NameCellRendersTagDotsInOriginalOrder() throws {
         let tags = [
             Tag(name: "Work", colorCode: 4),
@@ -22,6 +24,7 @@ final class EntryListTagRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.arrangedSubviews.count, 2)
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216NameCellUsesAllTagNamesForAccessibility() throws {
         let tags = [
             Tag(name: "One", colorCode: 4),
@@ -35,6 +38,7 @@ final class EntryListTagRenderingTests: XCTestCase {
         XCTAssertEqual(textField.accessibilityLabel(), "example.txt, Tags: One, Two, Three, Four")
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216NameCellWithoutTagsKeepsPlainAccessibilityLabel() throws {
         let cell = makeCell(tags: nil)
 
@@ -47,6 +51,7 @@ final class EntryListTagRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.arrangedSubviews.count, 0)
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216NameCellShowsOnlyThreeDotsEvenWithMoreTags() throws {
         let tags = [
             Tag(name: "One", colorCode: 4),
@@ -60,6 +65,7 @@ final class EntryListTagRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.arrangedSubviews.count, 3)
     }
 
+    /// 테스트 시나리오 회귀를 방지하기 위한 동작을 검증한다.
     func testVOY216NameCellKeepsNameTruncatingMiddle() throws {
         let tags = [
             Tag(name: "VeryLongTagNameOne", colorCode: 4),
@@ -73,6 +79,7 @@ final class EntryListTagRenderingTests: XCTestCase {
         XCTAssertTrue(textField.usesSingleLineMode)
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216NameCellUsesTrailingOverlappedTagStack() throws {
         let tags = [Tag(name: "Work", colorCode: 4)]
         let cell = makeCell(tags: tags)
@@ -82,6 +89,7 @@ final class EntryListTagRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.spacing, -3)
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216NameCellDimsTagDotsForHiddenEntries() throws {
         let tags = [Tag(name: "Work", colorCode: 4)]
         let cell = makeCell(tags: tags, isHidden: true)
@@ -90,6 +98,7 @@ final class EntryListTagRenderingTests: XCTestCase {
         XCTAssertEqual(tagStack.alphaValue, 0.5)
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216NameCellDimsTagDotsForCutEntries() throws {
         let tags = [Tag(name: "Work", colorCode: 4)]
         let cell = makeCell(tags: tags, isCut: true)

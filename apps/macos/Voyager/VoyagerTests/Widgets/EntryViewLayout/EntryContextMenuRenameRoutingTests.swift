@@ -6,6 +6,7 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
+/// 이름 변경(리네임) 동작 회귀를 검증하는 테스트 모음이다.
 final class EntryContextMenuRenameRoutingTests: XCTestCase {
     // MARK: - 도우미
 
@@ -83,6 +84,7 @@ final class EntryContextMenuRenameRoutingTests: XCTestCase {
         }
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testContextMenuStartRenameUsesSingleSelectedItemWhenNoRowEntry() {
         let selectedItem = makeEntry(name: "selectedItem", fullPath: "/tmp/selectedItem.txt")
         let unselectedItem = makeEntry(name: "unselectedItem", fullPath: "/tmp/unselectedItem.txt")
@@ -115,6 +117,7 @@ final class EntryContextMenuRenameRoutingTests: XCTestCase {
         }
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testContextMenuStartRenameDoesNothingForMultiSelectionWithoutRowEntry() {
         let item1 = makeEntry(name: "item1", fullPath: "/tmp/item1.txt")
         let item2 = makeEntry(name: "item2", fullPath: "/tmp/item2.txt")
@@ -179,6 +182,7 @@ final class EntryContextMenuRenameRoutingTests: XCTestCase {
         XCTAssertTrue(renameActionCalled, "Rename action should be called after selection reseat")
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testSendWithSelectionDoesNotReseatWhenItemAlreadySelected() {
         let clickedItem = makeEntry(name: "clickedItem", fullPath: "/tmp/clickedItem.txt")
         let otherItem = makeEntry(name: "otherItem", fullPath: "/tmp/otherItem.txt")

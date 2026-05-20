@@ -8,7 +8,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 컬렉션 기능 — 레거시 키, 날짜 범위, 연산자 변경, 비활성 필터 지속성을 검증.
 final class CollectionFeatureTests: XCTestCase {
+    /// testResolveDetailedMapsLegacyKeysAndUnknowns 테스트 동작을 검증한다.
     func testResolveDetailedMapsLegacyKeysAndUnknowns() {
         let registryClient = makeRegistryClient()
         let appliedFilters = AppliedFiltersPayload(
@@ -45,6 +47,7 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertFalse(unknownCondition.isActive)
     }
 
+    /// testResolveDetailedRestoresDateRangePayloadWithoutShapeLoss 테스트 동작을 검증한다.
     func testResolveDetailedRestoresDateRangePayloadWithoutShapeLoss() {
         let registryClient = makeRangeDateRegistryClient()
         let appliedFilters = AppliedFiltersPayload(
@@ -73,6 +76,7 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(resolved.conditions[0].values, ["2026-02-26", "2026-02-27"])
     }
 
+    /// testApplyFiltersSkipsInactiveConditions 테스트 동작을 검증한다.
     func testApplyFiltersSkipsInactiveConditions() async {
         let recorder = FiltersRecorder()
         let conditions = [makeActiveCondition(), makeInactiveCondition()]
@@ -85,6 +89,7 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(payload?.conditions.first?.propertyKey, "name_full")
     }
 
+    /// testSetOperatorUpdatesInputContractArityForSingleRangeAndNone 테스트 동작을 검증한다.
     func testSetOperatorUpdatesInputContractArityForSingleRangeAndNone() async {
         let recorder = FiltersRecorder()
         let conditions = [makeNumberCondition(values: ["10"])]
@@ -135,6 +140,7 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertNil(payload?.conditions.first?.value)
     }
 
+    /// testSetOperatorClearsStaleValuesOnSameConditionSwitchSequence 테스트 동작을 검증한다.
     func testSetOperatorClearsStaleValuesOnSameConditionSwitchSequence() async {
         let recorder = FiltersRecorder()
         let conditions = [makeNumberCondition(values: ["10", "20"])]
@@ -187,6 +193,7 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.conditions[0].operatorValueArity, 0)
     }
 
+    /// testSaveToExistingOmitsInactiveConditions 테스트 동작을 검증한다.
     func testSaveToExistingOmitsInactiveConditions() async {
         let recorder = SavedCollectionsRecorder()
         let payload = makeSavePayload(conditions: [makeActiveCondition(), makeInactiveCondition()])

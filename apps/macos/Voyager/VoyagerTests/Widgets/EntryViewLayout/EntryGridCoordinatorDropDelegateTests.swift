@@ -7,7 +7,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 드래그/드롭 경로와 시각 상태 회귀를 검증하는 테스트 모음이다.
 final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropOnFolderTileUsesFolderDestinationAndEnablesTargetState() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let harness = makeHarness(entries: [folder], currentPath: "/tmp")
@@ -25,6 +27,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertEqual(harness.coordinator.dropTargetEntryId, folder.id)
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropReturnsNoneForSameParentInternalMove() throws {
         let folder = makeFolderEntry(path: "/tmp/parent")
         let harness = makeHarness(
@@ -46,6 +49,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertNil(harness.coordinator.dropTargetEntryId)
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropReturnsNoneForDescendantInternalMove() throws {
         let childFolder = makeFolderEntry(path: "/tmp/folder/child")
         let harness = makeHarness(
@@ -67,6 +71,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertNil(harness.coordinator.dropTargetEntryId)
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropOnValidInternalFolderTargetRoutesHandleDrop() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let recorder = RouteRecorder()
@@ -89,6 +94,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertEqual(recorder.lastRoutingAction, .handleDrop(destinationPath: folder.fullPath))
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropUsesHoveredFolderTargetWhenAppKitReportsBeforeOperation() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let recorder = RouteRecorder()
@@ -113,6 +119,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertEqual(recorder.lastRoutingAction, .handleDrop(destinationPath: folder.fullPath))
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropOnValidExternalFolderTargetRoutesDropItems() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let recorder = RouteRecorder()
@@ -136,6 +143,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropOnPackageDirectoryRejectsDrop() throws {
         let package = makeFolderEntry(path: "/tmp/Test.app")
         let recorder = RouteRecorder()
@@ -238,6 +246,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         }
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDropTargetStabilizesAcrossConsecutiveValidateCalls() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let harness = makeHarness(
@@ -283,6 +292,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDropTargetUpdatesWhenMovingToDifferentEntry() throws {
         let folder1 = makeFolderEntry(path: "/tmp/folder1")
         let folder2 = makeFolderEntry(path: "/tmp/folder2")

@@ -11,7 +11,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// FileManager composer 실패 경로에서 collection 경보/모달 핸들링 경계를 검증한다.
 final class ComposerFeedbackGuardrailTests: XCTestCase {
+    /// testInteractiveComposerFailureDoesNotInvokeCollectionAlert 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testInteractiveComposerFailureDoesNotInvokeCollectionAlert() async {
         let alerts = CollectionAlertRecorder()
         let requestID = UUID()
@@ -56,6 +58,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         )
     }
 
+    /// testCollectionOpenFailureStillShowsModalAlertAndRollsBack 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCollectionOpenFailureStillShowsModalAlertAndRollsBack() async {
         let alerts = CollectionAlertRecorder()
         let requestID = UUID()

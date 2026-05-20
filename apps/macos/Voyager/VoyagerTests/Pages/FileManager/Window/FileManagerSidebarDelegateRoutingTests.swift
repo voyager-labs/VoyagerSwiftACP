@@ -7,9 +7,11 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
+/// FileManager 사이드바에서 라우팅/드롭 핸드오프 경계(사이드바-콘텐츠-내비게이션)의 계약을 검증한다.
 final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
     // MARK: - 1. openFavorite - 컬렉션 파일 분기와 경로 네비게이션 분기 모두 검증
 
+    /// testOpenFavoriteRoutesToCollectionFileWhenExtensionMatches 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenFavoriteRoutesToCollectionFileWhenExtensionMatches() async {
         var initialState = FileManagerFeature.State()
         let collectionURL = URL(fileURLWithPath: "/tmp/test.collection")
@@ -34,6 +36,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         await store.finish()
     }
 
+    /// testOpenFavoriteRoutesToPathNavigationWhenNotCollectionFile 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenFavoriteRoutesToPathNavigationWhenNotCollectionFile() async {
         var initialState = FileManagerFeature.State()
         let folderURL = URL(fileURLWithPath: "/tmp/folder")
@@ -60,6 +63,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
 
     // MARK: - 2. openLocation - 경로 네비게이션으로 라우팅
 
+    /// testOpenLocationRoutesToPathNavigation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenLocationRoutesToPathNavigation() async {
         var initialState = FileManagerFeature.State()
         let locationURL = URL(fileURLWithPath: "/Users/test")
@@ -86,6 +90,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
 
     // MARK: - 3. showTag - 태그 이름(String)으로 라우팅
 
+    /// testShowTagRoutesByTagName 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testShowTagRoutesByTagName() async {
         var initialState = FileManagerFeature.State()
         let tagName = "Important"
@@ -108,6 +113,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
 
     // MARK: - 4. showRecents와 showComputer - 네비게이션으로 라우팅
 
+    /// testShowRecentsRoutesToNavigation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testShowRecentsRoutesToNavigation() async {
         var initialState = FileManagerFeature.State()
 
@@ -126,6 +132,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         await store.finish()
     }
 
+    /// testShowComputerRoutesToNavigation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testShowComputerRoutesToNavigation() async {
         var initialState = FileManagerFeature.State()
 
@@ -146,6 +153,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
 
     // MARK: - 5. dropItems - 폴더 드롭과 태그 드롭 모두 검증
 
+    /// testDropItemsToSidebarFolderRoutesToContentDelegate 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testDropItemsToSidebarFolderRoutesToContentDelegate() async {
         var initialState = FileManagerFeature.State()
         let targetURL = URL(fileURLWithPath: "/tmp/target")
@@ -168,6 +176,7 @@ final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
         await store.finish()
     }
 
+    /// testDropItemsToTagRoutesToContentDelegate 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testDropItemsToTagRoutesToContentDelegate() async {
         var initialState = FileManagerFeature.State()
         let tagName = "Work"

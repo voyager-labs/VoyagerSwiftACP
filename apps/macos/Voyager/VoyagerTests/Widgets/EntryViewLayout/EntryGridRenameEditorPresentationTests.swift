@@ -3,6 +3,7 @@ import AppKit
 import XCTest
 
 @MainActor
+/// 이름 변경(리네임) 동작 회귀를 검증하는 테스트 모음이다.
 final class EntryGridRenameEditorPresentationTests: XCTestCase {
     // MARK: - 이름 변경 중 단일 행 인라인 편집기
 
@@ -20,12 +21,14 @@ final class EntryGridRenameEditorPresentationTests: XCTestCase {
         XCTAssertEqual(field.cell?.isScrollable, true, "Grid rename field must be scrollable")
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testRenameStyleHasBorderedField() {
         let field = NSTextField(string: "filename")
         field.isBordered = true
         XCTAssertTrue(field.isBordered, "Grid rename field must be bordered")
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testRenameStyleHasTextBackground() {
         let field = NSTextField(string: "filename")
         field.drawsBackground = true
@@ -34,6 +37,7 @@ final class EntryGridRenameEditorPresentationTests: XCTestCase {
         XCTAssertEqual(field.backgroundColor, NSColor.textBackgroundColor)
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testRenameStyleHasDefaultFocusRing() {
         let field = NSTextField(string: "filename")
         field.focusRingType = .default
@@ -60,6 +64,7 @@ final class EntryGridRenameEditorPresentationTests: XCTestCase {
         XCTAssertTrue(infoField.isHidden, "infoField must be hidden during active rename")
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testInfoFieldVisibleWhenNotRenamingWithSupplementaryInfo() {
         let infoField = NSTextField(labelWithString: "12 KB")
         infoField.isHidden = false

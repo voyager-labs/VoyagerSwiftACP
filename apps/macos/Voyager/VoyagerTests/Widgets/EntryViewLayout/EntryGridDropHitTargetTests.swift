@@ -5,7 +5,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 드래그/드롭 경로와 시각 상태 회귀를 검증하는 테스트 모음이다.
 final class EntryGridDropHitTargetTests: XCTestCase {
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testFolderTileHitAreaResolvesDropTargetBeyondNameLabel() throws {
         let item = makeConfiguredItem(isFolder: true)
         item.view.layoutSubtreeIfNeeded()
@@ -76,6 +78,7 @@ final class EntryGridDropHitTargetTests: XCTestCase {
         }
     }
 
+    /// 리네임 입력/커밋 경로 회귀를 방지한다.
     func testIconBackgroundIsVisuallyCenteredWithinCell() throws {
         // 기하학적 확인: 아이콘이 큰 여백을 두고 셀 중앙에 배치되어 있습니다.
         // 이는 레이아웃의 불변 조건이며 드롭 대상 제한은 아닙니다.
@@ -107,6 +110,7 @@ final class EntryGridDropHitTargetTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testIconCenterAndCellEdgesAreBothValidDropTargets() throws {
         // 계약: 아이콘 중심과 셀 가장자리 영역이 모두 유효한 드롭 대상입니다.
         // 전체 셀이 드롭 영역이며 아이콘 영역만이 아닙니다.
@@ -146,6 +150,7 @@ final class EntryGridDropHitTargetTests: XCTestCase {
         }
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testNonFolderItemIconCenterIsHitTestableButNotDropTarget() throws {
         // 신규 계약: 폴더가 아닌 항목도 아이콘 중심에서 hit-test 가능해야 함
         // 그러나 코디네이터는 이를 드롭 대상으로 받아들이면 안 됩니다.
@@ -168,6 +173,7 @@ final class EntryGridDropHitTargetTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testNonFolderTargetDoesNotResolveDropTarget() throws {
         let item = makeConfiguredItem(isFolder: false)
         item.view.layoutSubtreeIfNeeded()

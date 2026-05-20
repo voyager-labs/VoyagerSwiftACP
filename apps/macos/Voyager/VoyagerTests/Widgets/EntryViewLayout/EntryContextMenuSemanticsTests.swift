@@ -5,7 +5,9 @@ import VoyagerEntitiesTag
 import XCTest
 
 @MainActor
+/// 정렬/헤더/메뉴 동작 회귀를 검증하는 테스트 모음이다.
 final class EntryContextMenuSemanticsTests: XCTestCase {
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testBlankSpaceWithoutSelectionUsesContainerSelectionCountZero() {
         let selected = Set<EntryModel.ID>()
         let selectedEntries: [EntryModel] = []
@@ -24,6 +26,7 @@ final class EntryContextMenuSemanticsTests: XCTestCase {
         XCTAssertNil(spec.rowEntryPathForOpenInNewTab)
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testUnselectedRowWithoutSelectionUsesRowAsSingleSelection() {
         let rowEntry = makeEntry(name: "Folder", fullPath: "/tmp/folder", isFolder: true)
 
@@ -41,6 +44,7 @@ final class EntryContextMenuSemanticsTests: XCTestCase {
         XCTAssertEqual(spec.rowEntryPathForOpenInNewTab, "/tmp/folder")
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testSelectedSetKeepsActualSelectionCountEvenWithRowEntry() {
         let rowEntry = makeEntry(name: "Folder", fullPath: "/tmp/folder", isFolder: true)
         let another = makeEntry(name: "File", fullPath: "/tmp/file.txt", isFolder: false)
@@ -60,6 +64,7 @@ final class EntryContextMenuSemanticsTests: XCTestCase {
         XCTAssertEqual(spec.rowEntryPathForOpenInNewTab, "/tmp/folder")
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testTagMenuPrefersFavoriteColorWhenSelectedEntryTagColorIsNeutral() {
         let selectedEntry = makeEntry(
             name: "Tagged.txt",

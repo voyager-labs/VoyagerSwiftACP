@@ -2,7 +2,9 @@
 import XCTest
 
 @MainActor
+/// 온보딩 윈도우 클라이언트 — 프레젠테이션 대기 중 멱등성(idempotency)을 검증.
 final class OnboardingWindowClientTests: XCTestCase {
+    /// testShowIfNeededIsIdempotentWhilePresentationIsPending 테스트 동작을 검증한다.
     func testShowIfNeededIsIdempotentWhilePresentationIsPending() async {
         let counter = AsyncCounter()
         let showExpectation = expectation(description: "showWindow called once")

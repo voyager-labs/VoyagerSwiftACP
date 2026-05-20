@@ -5,7 +5,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 컬렉션 스냅샷 하이드레이션 — 사용성/핑거프린트/조건 매핑 결정을 검증.
 final class CollectionSnapshotHydrationTests: XCTestCase {
+    /// testUsableSnapshotBuildsSyntheticSearchResponse 테스트 동작을 검증한다.
     func testUsableSnapshotBuildsSyntheticSearchResponse() {
         let conditions: [CollectionCondition] = [
             .init(propertyKey: "name_full", operatorCode: "eq", value: .string("report")),
@@ -27,6 +29,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         ])
     }
 
+    /// testFingerprintMismatchMarksSnapshotUnusable 테스트 동작을 검증한다.
     func testFingerprintMismatchMarksSnapshotUnusable() {
         let file = makeSnapshotFile(
             query: "report",
@@ -40,6 +43,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertNil(CollectionSnapshotHydration.syntheticSearchResponse(for: file))
     }
 
+    /// testDefinitionFingerprintMatchesConditionAndCollectionConditionForms 테스트 동작을 검증한다.
     func testDefinitionFingerprintMatchesConditionAndCollectionConditionForms() {
         let uiConditions = makeUIConditions()
 

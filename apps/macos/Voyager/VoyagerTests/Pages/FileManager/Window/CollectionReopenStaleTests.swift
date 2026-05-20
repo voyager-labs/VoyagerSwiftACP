@@ -10,7 +10,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// FileManager에서 staleness 복구/재오픈 시 페이지 상태 계약이 유지되는지 검증한다.
 final class CollectionReopenStaleTests: XCTestCase {
+    /// testOpenCollectionFileRestoresStaleStateFromStalenessClient 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenCollectionFileRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -73,6 +75,7 @@ final class CollectionReopenStaleTests: XCTestCase {
         await store.finish()
     }
 
+    /// testCollectionFileLoadedRestoresStaleStateFromStalenessClient 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCollectionFileLoadedRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -143,6 +146,7 @@ final class CollectionReopenStaleTests: XCTestCase {
         await store.finish()
     }
 
+    /// testOpenStaleCollectionDoesNotAutoSearch 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenStaleCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -207,6 +211,7 @@ final class CollectionReopenStaleTests: XCTestCase {
         await store.finish()
     }
 
+    /// testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = makeDefinitionOnlyCollectionFile(query: "needle")
@@ -273,6 +278,7 @@ final class CollectionReopenStaleTests: XCTestCase {
         await store.finish()
     }
 
+    /// testNavigateToCollectionRestoresOpenedCompatibilityFromHistoryNavigation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testNavigateToCollectionRestoresOpenedCompatibilityFromHistoryNavigation() async {
         let compatibility = CollectionFileCompatibilityMetadata(
             sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,

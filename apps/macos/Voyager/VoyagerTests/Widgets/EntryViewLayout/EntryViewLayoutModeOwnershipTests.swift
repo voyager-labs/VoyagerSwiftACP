@@ -4,6 +4,7 @@ import VoyagerFeaturesContentPageNavigation
 import XCTest
 
 @MainActor
+/// 레이아웃 모드 상태 인코딩 회귀를 검증하는 테스트 모음이다.
 final class EntryViewLayoutModeOwnershipTests: XCTestCase {
     // MARK: - 모드 원시값 테스트
 
@@ -12,6 +13,7 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         XCTAssertEqual(EntryViewLayoutState.Mode.grid.rawValue, "grid")
     }
 
+    /// 모드/상태 동작 회귀를 방지한다.
     func testModeFromRawValue() {
         XCTAssertEqual(EntryViewLayoutState.Mode.from("list"), .list)
         XCTAssertEqual(EntryViewLayoutState.Mode.from("grid"), .grid)
@@ -34,6 +36,7 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         XCTAssertFalse(state.mode.isGridLayout)
     }
 
+    /// 모드/상태 동작 회귀를 방지한다.
     func testEntryViewLayoutStateModeCanBeChanged() {
         var state = EntryViewLayoutState()
         state.mode = .grid
@@ -70,6 +73,7 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         }
     }
 
+    /// 모드/상태 동작 회귀를 방지한다.
     func testModeDecodesFromRawValue() throws {
         let listJson = Data("\"list\"".utf8)
         let gridJson = Data("\"grid\"".utf8)

@@ -5,6 +5,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 위젯 동작의 회귀를 빠르게 검출하기 위한 테스트 모음이다.
 final class EntryGridItemDropAppearanceTests: XCTestCase {
     // MARK: - 드롭 하이라이트와 선택 하이라이트 분리
 
@@ -32,6 +33,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         )
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testSelectionHighlightRendersNameHighlightOnly() throws {
         let item = makeConfiguredItem(isDropTargeted: false)
         item.isSelected = true
@@ -132,6 +134,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDropTargetUsesIconBackgroundTintNotBorder() throws {
         let item = makeConfiguredItem(isDropTargeted: true)
         item.view.layoutSubtreeIfNeeded()
@@ -151,6 +154,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         )
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testSelectedPlusTargetedMatchesSelectedOnlyVisuals() throws {
         let selectedOnly = makeConfiguredItem(isDropTargeted: false)
         selectedOnly.isSelected = true

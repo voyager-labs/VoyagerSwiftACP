@@ -10,7 +10,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// FileManager collection stale 전파와 상태 보존 계약을 검증한다.
 final class FileManagerContentCollectionStaleTests: XCTestCase {
+    /// testFileSystemChangedDoesNotMarkOpenCollectionStaleWithoutReload 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedDoesNotMarkOpenCollectionStaleWithoutReload() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .collection(
@@ -40,6 +42,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
     }
 
+    /// testFileSystemChangedDoesNotMarkCollectionStaleForUnrelatedScope 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedDoesNotMarkCollectionStaleForUnrelatedScope() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .collection(
@@ -71,6 +74,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.finish()
     }
 
+    /// testFileSystemChangedDoesNotMarkCollectionStaleForSiblingCollectionDocument 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedDoesNotMarkCollectionStaleForSiblingCollectionDocument() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .collection(
@@ -102,6 +106,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         await store.finish()
     }
 
+    /// testFileSystemChangedDoesNotMarkCollectionStaleForMatchingScope 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedDoesNotMarkCollectionStaleForMatchingScope() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .collection(
@@ -136,6 +141,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
     }
 
+    /// testFileSystemChangedDoesNotReopenRefreshBoundaryForStaleCollection 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedDoesNotReopenRefreshBoundaryForStaleCollection() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .collection(
@@ -171,6 +177,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         XCTAssertEqual(store.state.collection.collectionSession.metadata.lastRefreshAt, .distantFuture)
     }
 
+    /// testFileSystemChangedKeepsDirtyStateWhileInvalidatingCollection 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedKeepsDirtyStateWhileInvalidatingCollection() async {
         var initialState = FileManagerContentState()
         initialState.entryViewLayout.isCollectionMode = true
@@ -219,6 +226,7 @@ final class FileManagerContentCollectionStaleTests: XCTestCase {
         ), .notStale)
     }
 
+    /// testFileSystemChangedPreservesExistingRefreshMarker 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedPreservesExistingRefreshMarker() async {
         var initialState = FileManagerContentState()
         initialState.entryViewLayout.isCollectionMode = true

@@ -6,7 +6,9 @@ import VoyagerPagesOnboarding
 import XCTest
 
 @MainActor
+/// 앱 루트 계약 — 최상위 라우팅과 델리게이트 전달을 검증.
 final class AppRootFeatureContractTests: XCTestCase {
+    /// testAppPreferencesUpdatedForwardsToWindowManagerApplyAppPreferences 테스트 동작을 검증한다.
     func testAppPreferencesUpdatedForwardsToWindowManagerApplyAppPreferences() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -25,6 +27,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
     }
 
+    /// testMenuCommandsDelegateForwardsToWindowManager 테스트 동작을 검증한다.
     func testMenuCommandsDelegateForwardsToWindowManager() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -34,6 +37,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.receive(\.windowManager.file.quickLook)
     }
 
+    /// testMenuCommandsDelegateForwardsToUpdater 테스트 동작을 검증한다.
     func testMenuCommandsDelegateForwardsToUpdater() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -43,6 +47,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.receive(\.updater.checkForUpdates)
     }
 
+    /// testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow 테스트 동작을 검증한다.
     func testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -57,6 +62,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
     }
 
+    /// testHelperExternalFileChangeForwardsToWindowManager 테스트 동작을 검증한다.
     func testHelperExternalFileChangeForwardsToWindowManager() async {
         let windowID = UUID()
         let paths = ["/tmp/demo"]
@@ -82,6 +88,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
     }
 
+    /// testHelperExternalFileChangeFansOutToAllOpenWindows 테스트 동작을 검증한다.
     func testHelperExternalFileChangeFansOutToAllOpenWindows() async {
         let firstID = UUID()
         let secondID = UUID()
@@ -118,6 +125,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
     }
 
+    /// testMenuCommandsStateIsRecomputedAfterWindowManagerChanges 테스트 동작을 검증한다.
     func testMenuCommandsStateIsRecomputedAfterWindowManagerChanges() async {
         var initialState = AppRootFeature.State()
         let windowID = UUID()

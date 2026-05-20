@@ -3,7 +3,9 @@ import AppKit
 import XCTest
 
 @MainActor
+/// 드래그/드롭 경로와 시각 상태 회귀를 검증하는 테스트 모음이다.
 final class EntryGridDropHighlightLifecycleTests: XCTestCase {
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropClearsDropTargetState() {
         let operation: NSDragOperation = .copy
         XCTAssertFalse(
@@ -12,6 +14,7 @@ final class EntryGridDropHighlightLifecycleTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testInvalidDropClearsDropTargetState() {
         let operation: NSDragOperation = []
         XCTAssertTrue(
@@ -20,6 +23,7 @@ final class EntryGridDropHighlightLifecycleTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDragEndClearsDropTargetState() {
         let paths = ["/Users/test/Documents/file.txt"]
         let cleared = EntryViewLayoutDragStateClearRuleSet.clearedDragPaths(
@@ -36,6 +40,7 @@ final class EntryGridDropHighlightLifecycleTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testReloadDoesNotPreserveStaleDropTargetState() {
         let stalePaths = ["/Users/test/stale.txt"]
         let cleared = EntryViewLayoutDragStateClearRuleSet.clearedDragPaths(
@@ -68,6 +73,7 @@ final class EntryGridDropHighlightLifecycleTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testSuccessfulFolderDropClearsHighlightAfterOperationCompletes() {
         // 기대 동작: 작업 완료 후(별도의 생명주기 이벤트로 알림),
         // 규칙 집합이 정리 허용되어야 하며, 이는 즉시 제거가 아닌 지연 제거라는
@@ -95,6 +101,7 @@ final class EntryGridDropHighlightLifecycleTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testCancelledDragClearsHighlightImmediately() {
         // 취소된 드래그(작업이 빈 값)는 즉시 정리되어야 합니다.
         // 현재 동작이 취소 처리에 대해 올바르므로 통과해야 합니다.
@@ -113,6 +120,7 @@ final class EntryGridDropHighlightLifecycleTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testInvalidDropTargetClearsHighlightImmediately() {
         // 잘못된 드롭 대상(검증 결과 .none으로 판정)은
         // 즉시 정리되어야 합니다. 현재 동작이므로 통과해야 합니다.
@@ -136,6 +144,7 @@ final class EntryGridDropHighlightLifecycleTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDropTargetHighlightDoesNotPersistAcrossDragSessions() {
         // 신규 계약: 이전 드래그 세션의 오래된 드롭 대상 상태가
         // 새 세션으로 이어져서는 안 됩니다. 각 세션은 깨끗하게 시작해야 합니다.

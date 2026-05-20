@@ -2,7 +2,9 @@
 import XCTest
 
 @MainActor
+/// 정렬/헤더/메뉴 동작 회귀를 검증하는 테스트 모음이다.
 final class EntryViewLayoutColumnsMenuModelTests: XCTestCase {
+    /// 컬럼 상태 회귀를 방지한다.
     func testToggleItemsCoverAllEntryListColumns() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
 
@@ -10,6 +12,7 @@ final class EntryViewLayoutColumnsMenuModelTests: XCTestCase {
         XCTAssertEqual(Set(model.toggleItems.map(\.column)), Set(EntryListColumn.allCases))
     }
 
+    /// 컬럼 상태 회귀를 방지한다.
     func testRequiredNameColumnIsNotHideable() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.dateModified])
 
@@ -19,6 +22,7 @@ final class EntryViewLayoutColumnsMenuModelTests: XCTestCase {
         XCTAssertEqual(nameItem?.isChecked, true)
     }
 
+    /// 컬럼 상태 회귀를 방지한다.
     func testCheckedStateReflectsVisibilityForNonRequiredColumns() {
         let visibleColumns: [EntryListColumn] = [.name, .size]
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: visibleColumns)
@@ -34,11 +38,13 @@ final class EntryViewLayoutColumnsMenuModelTests: XCTestCase {
         XCTAssertEqual(kindItem?.isEnabled, true)
     }
 
+    /// 테스트 시나리오 회귀를 방지하기 위한 동작을 검증한다.
     func testResetItemExists() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
         XCTAssertEqual(model.resetItem.title, "Reset Columns")
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216MenuStillCoversOnlyMetadataColumnsWithoutSeparateTagsColumn() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
         let columns = model.toggleItems.map(\.column)
@@ -50,6 +56,7 @@ final class EntryViewLayoutColumnsMenuModelTests: XCTestCase {
         XCTAssertFalse(columns.contains(where: { $0.rawValue == "tags" }))
     }
 
+    /// 컬럼 상태 회귀를 방지한다.
     func testVOY216MetadataColumnsRemainOffByDefaultAfterNormalization() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
 

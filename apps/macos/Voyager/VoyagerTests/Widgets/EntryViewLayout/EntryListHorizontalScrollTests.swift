@@ -3,7 +3,9 @@ import AppKit
 import XCTest
 
 @MainActor
+/// 가로 스크롤 동작 회귀를 검증하는 테스트 모음이다.
 final class EntryListHorizontalScrollTests: XCTestCase {
+    /// 가로 스크롤 동작 회귀를 방지한다.
     func testEntryListViewEnablesHorizontalScrollingConfiguration() {
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
 
@@ -12,6 +14,7 @@ final class EntryListHorizontalScrollTests: XCTestCase {
         XCTAssertFalse(view.tableView.autoresizesOutlineColumn)
     }
 
+    /// 컬럼 상태 회귀를 방지한다.
     func testResizingDoesNotAutoFitColumnsToViewportWidth() {
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 1000, height: 320))
         view.layoutSubtreeIfNeeded()

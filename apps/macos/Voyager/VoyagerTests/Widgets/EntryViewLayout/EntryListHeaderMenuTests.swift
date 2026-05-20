@@ -3,7 +3,9 @@ import AppKit
 import XCTest
 
 @MainActor
+/// 정렬/헤더/메뉴 동작 회귀를 검증하는 테스트 모음이다.
 final class EntryListHeaderMenuTests: XCTestCase {
+    /// 메뉴 동작 회귀를 방지한다.
     func testMenuMatchesModelToggleItemsAndResetItem() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name, .size])
         let headerView = EntryListHeaderView()
@@ -27,6 +29,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertEqual(resetItem.isEnabled, model.resetItem.isEnabled)
     }
 
+    /// 메뉴 동작 회귀를 방지한다.
     func testRequiredNameColumnMenuItemIsDisabledAndChecked() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.dateModified])
         let headerView = EntryListHeaderView()
@@ -39,6 +42,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertFalse(nameItem.isEnabled)
     }
 
+    /// 컬럼 상태 회귀를 방지한다.
     func testToggleClickSendsSetListColumnVisibility() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name])
         let headerView = EntryListHeaderView()
@@ -73,6 +77,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertTrue(isVisible)
     }
 
+    /// 컬럼 상태 회귀를 방지한다.
     func testRequiredNameColumnCannotBeHiddenEvenIfHandlerIsInvoked() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.dateModified])
         let headerView = EntryListHeaderView()
@@ -100,6 +105,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertTrue(sentActions.isEmpty)
     }
 
+    /// 컬럼 상태 회귀를 방지한다.
     func testResetClickSendsResetListVisibleColumns() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name])
         let headerView = EntryListHeaderView()
@@ -132,6 +138,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         }
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216MenuDoesNotExposeSeparateTagsColumn() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
         let headerView = EntryListHeaderView()
@@ -140,6 +147,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertNil(menu.items.first(where: { $0.title == "Tags" }))
     }
 
+    /// 컬럼 상태 회귀를 방지한다.
     func testVOY216ColumnsRenderConfiguredFallbacks() {
         XCTAssertEqual(EntryListColumn.application.title, "Application")
         XCTAssertEqual(EntryListColumn.dateAdded.title, "Date Added")

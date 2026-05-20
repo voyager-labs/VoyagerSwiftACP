@@ -9,7 +9,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// FileManager 키 커맨드 처리에서 page/content 경계와 액션 라우팅 계약을 검증한다.
 final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
+    /// testOpenAndQuickLookShortcutsUseSharedCommandContextInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenAndQuickLookShortcutsUseSharedCommandContextInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             await assertShortcutRoutesThroughSharedCommandContext(
@@ -32,6 +34,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testEditShortcutsUseSharedCommandContextInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testEditShortcutsUseSharedCommandContextInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             await assertShortcutRoutesThroughSharedCommandContext(
@@ -72,6 +75,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testToggleHiddenFilesShortcutHasListAndGridParity 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testToggleHiddenFilesShortcutHasListAndGridParity() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             var initialState = FileManagerContentState()
@@ -110,6 +114,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testOpenAndQuickLookShortcutsWithNoSelectionDoNothingInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenAndQuickLookShortcutsWithNoSelectionDoNothingInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             var initialState = FileManagerContentState()
@@ -136,6 +141,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testOpenSelectedItemRoutesVoycollPackageToCollectionNavigation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenSelectedItemRoutesVoycollPackageToCollectionNavigation() async {
         let selected = makeEntry(
             name: "Sample.voycoll",
@@ -247,6 +253,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         await store.finish()
     }
 
+    /// testRenameShortcutStartsRenameForSingleSelectionInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRenameShortcutStartsRenameForSingleSelectionInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             for keyCode in [UInt16(36), UInt16(76)] {
@@ -278,6 +285,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testRenameShortcutDoesNothingWhenRenameAlreadyActive 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRenameShortcutDoesNothingWhenRenameAlreadyActive() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             for keyCode in [UInt16(36), UInt16(76)] {
@@ -303,6 +311,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testRenameShortcutDoesNothingForZeroOrMultipleSelection 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRenameShortcutDoesNothingForZeroOrMultipleSelection() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             for keyCode in [UInt16(36), UInt16(76)] {
