@@ -4,13 +4,13 @@ import SwiftUI
 struct ScopeTreeRowView: View {
     let row: ComposerScopeTreeRow
     let colorScheme: ColorScheme
-    let isHovering: Bool
     let applicationsIcon: NSImage?
     let onBodyTap: () -> Void
     let onAction: (ComposerScopeTreeRowAvailableAction) -> Void
     let actionAccessibilityIdentifier: ((ComposerScopeTreeRowAvailableAction) -> String?)?
 
     private let indentationWidth: CGFloat = 16
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -61,6 +61,9 @@ struct ScopeTreeRowView: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(borderColor, lineWidth: 0.5),
         )
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 
     private var rowIcon: some View {

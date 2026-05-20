@@ -4,51 +4,72 @@ import SwiftUI
 struct ScopePickerView: View {
     let store: StoreOf<ComposerFeature>
 
+    private struct ViewState: Equatable {
+        let scopeEditor: ComposerScopeEditorState
+        let lastScopeChangeFeedbackDisplay: ComposerScopeChangeFeedbackDisplay?
+    }
+
+    private static let cachedApplicationsIcon: NSImage? = {
+        let appIcon = NSImage(
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+        )
+        appIcon?.isTemplate = true
+        return appIcon
+    }()
+
     @FocusState private var isSearchFocused: Bool
-    @State private var hoveredRowPath: String?
     @Environment(\.colorScheme)
     private var colorScheme
 
     var body: some View {
-        WithViewStore(store, observe: { $0 }, content: { viewStore in
-            let queryTextBinding = Binding(
-                get: { viewStore.scopeEditor.queryText },
-                set: { store.send(.scopeEditorSetQueryText($0)) },
-            )
+        WithViewStore(
+            store,
+            observe: { state in
+                ViewState(
+                    scopeEditor: state.scopeEditor,
+                    lastScopeChangeFeedbackDisplay: state.lastScopeChangeFeedbackDisplay,
+                )
+            },
+            content: { viewStore in
+                let queryTextBinding = Binding(
+                    get: { viewStore.scopeEditor.queryText },
+                    set: { store.send(.scopeEditorSetQueryText($0)) },
+                )
 
-            VStack(spacing: 0) {
-                searchField(queryText: queryTextBinding)
-                currentSummaryRow(viewStore: viewStore)
-                if !viewStore.scopeEditor.selection.isRootOnly {
-                    includeSubfoldersRow(viewStore: viewStore)
+                VStack(spacing: 0) {
+                    searchField(queryText: queryTextBinding)
+                    currentSummaryRow(viewStore: viewStore)
+                    if !viewStore.scopeEditor.selection.isRootOnly {
+                        includeSubfoldersRow(viewStore: viewStore)
+                    }
+                    if let display = viewStore.lastScopeChangeFeedbackDisplay {
+                        scopeChangeFeedbackBanner(display)
+                    }
+                    listContent(viewStore: viewStore)
                 }
-                if let display = viewStore.lastScopeChangeFeedbackDisplay {
-                    scopeChangeFeedbackBanner(display)
+                .frame(width: ScopePickerPresentationMetrics.width)
+                .frame(maxHeight: ScopePickerPresentationMetrics.maxHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
+                )
+                .accessibilityIdentifier(ScopePickerAccessibilityID.surface)
+                .onAppear {
+                    isSearchFocused = true
                 }
-                listContent(viewStore: viewStore)
-            }
-            .frame(width: ScopePickerPresentationMetrics.width)
-            .frame(maxHeight: ScopePickerPresentationMetrics.maxHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
-            )
-            .accessibilityIdentifier(ScopePickerAccessibilityID.surface)
-            .onAppear {
-                isSearchFocused = true
-            }
-        })
+            },
+        )
     }
 }
 
 private extension ScopePickerView {
     private func currentSummaryRow(
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) -> some View {
         ScopeEditorSummaryRow(
             summary: viewStore.scopeEditor.summary,
@@ -91,7 +112,7 @@ private extension ScopePickerView {
     }
 
     private func includeSubfoldersRow(
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) -> some View {
         IncludeSubfoldersRow(
             includeSubfolders: viewStore.scopeEditor.includeSubfolders,
@@ -111,13 +132,13 @@ private extension ScopePickerView {
     }
 
     @ViewBuilder
-    private func listContent(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
+    private func listContent(viewStore: ViewStore<ViewState, ComposerFeature.Action>) -> some View {
         let rows = viewStore.scopeEditor.treeRows(
             neighborhoodSeedItems: viewStore.scopeEditor.treeNeighborhoodSeedItems,
         )
 
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 treeSection(rows: rows, viewStore: viewStore)
             }
             .padding(.horizontal, 12)
@@ -127,7 +148,7 @@ private extension ScopePickerView {
 
     private func treeSection(
         rows: [ComposerScopeTreeRow],
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(treeSectionTitle(for: viewStore.scopeEditor.listState))
@@ -139,8 +160,7 @@ private extension ScopePickerView {
                     ScopeTreeRowView(
                         row: row,
                         colorScheme: colorScheme,
-                        isHovering: hoveredRowPath == row.path,
-                        applicationsIcon: applicationsIcon(),
+                        applicationsIcon: Self.cachedApplicationsIcon,
                         onBodyTap: { handleTreeRowBodyTap(row, viewStore: viewStore) },
                         onAction: { action in
                             handleTreeRowAction(row, action: action, viewStore: viewStore)
@@ -149,9 +169,6 @@ private extension ScopePickerView {
                             ScopePickerAccessibilityID.treeAction(action, path: row.path)
                         },
                     )
-                    .onHover { hovering in
-                        hoveredRowPath = hovering ? row.path : nil
-                    }
                     .accessibilityIdentifier(ScopePickerAccessibilityID.treeRow(path: row.path))
                 }
 
@@ -201,17 +218,9 @@ private extension ScopePickerView {
         }
     }
 
-    private func applicationsIcon() -> NSImage? {
-        let appIcon = NSImage(
-            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
-        )
-        appIcon?.isTemplate = true
-        return appIcon
-    }
-
     private func handleTreeRowBodyTap(
         _ row: ComposerScopeTreeRow,
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) {
         switch row.kind {
         case .base:
@@ -235,7 +244,7 @@ private extension ScopePickerView {
     private func handleTreeRowAction(
         _ row: ComposerScopeTreeRow,
         action: ComposerScopeTreeRowAvailableAction,
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
+        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) {
         switch viewStore.scopeEditor.treeActionIntent(rowPath: row.path, action: action) {
         case let .addBase(path):
