@@ -32,20 +32,170 @@ struct OpenAIResponsesCreateRequest: Encodable, Sendable {
             items.append(.init(role: .developer, text: contextText))
         }
 
-        items.append(contentsOf: payload.messages.map {
-            OpenAIResponsesInputItem(role: .init(messageRole: $0.role), text: $0.content)
+        let nativeAttachmentContent = nativeAttachmentContentBlocks(from: payload)
+        let targetUserIndex = payload.messages.indices.reversed().first { payload.messages[$0].role == .user }
+        items.append(contentsOf: payload.messages.enumerated().map { index, message in
+            OpenAIResponsesInputItem(
+                role: .init(messageRole: message.role),
+                text: message.content,
+                appendedContent: index == targetUserIndex ? nativeAttachmentContent : []
+            )
         })
         return items
+    }
+
+    private static func nativeAttachmentContentBlocks(from payload: AiChatProviderRequestPayload) -> [OpenAIResponsesInputContent] {
+        payload.context.requestContext.parts.compactMap { part in
+            nativeAttachmentContentBlock(from: part, payload: payload)
+        }
+    }
+
+    private static func nativeAttachmentContentBlock(
+        from part: AiChatLockedContextPartSnapshot,
+        payload: AiChatProviderRequestPayload,
+    ) -> OpenAIResponsesInputContent? {
+        guard case let .providerNativeFile(kind, declaredMIMEType, metadata) = part.resolution else { return nil }
+
+        let filename = preferredFilename(part: part, metadata: metadata)
+        let capability = AiChatProviderFileCapability.lookup(.init(
+            provider: payload.provider,
+            rawModelID: payload.rawModelID,
+            requestFamily: .openAIResponses,
+            fileExtension: preferredFileExtension(filename: filename, metadata: metadata),
+            detectedMIMEType: declaredMIMEType,
+            detectedContentTypeIdentifier: metadata["contentTypeIdentifier"],
+            sizeBytes: preferredByteCount(part: part, metadata: metadata)
+        ))
+        guard case let .providerNativeUpload(capabilityKind, normalizedMIMEType) = capability.disposition,
+              capabilityKind == kind
+        else {
+            return nil
+        }
+
+        let base64Data = preferredBase64Data(metadata: metadata)
+        guard !base64Data.isEmpty else { return nil }
+
+        switch kind {
+        case .image:
+            return .inputImage(imageURL: "data:\(normalizedMIMEType);base64,\(base64Data)")
+
+        case .pdf, .plainTextDocument, .openAIDocument, .spreadsheet:
+            return .inputFile(
+                fileData: "data:\(normalizedMIMEType);base64,\(base64Data)",
+                filename: filename
+            )
+
+        case .codexPathScope:
+            return nil
+        }
+    }
+
+    private static func preferredFilename(
+        part: AiChatLockedContextPartSnapshot,
+        metadata: [String: String],
+    ) -> String {
+        let candidates = [
+            metadata["filename"],
+            metadata["displayPath"],
+            part.displayPath,
+            part.displayTitle,
+            metadata["path"],
+            metadata["filePath"],
+            part.canonicalPath,
+        ]
+        for candidate in candidates {
+            if let filename = sanitizedFilename(candidate) {
+                return filename
+            }
+        }
+        return "attachment"
+    }
+
+    private static func preferredFileExtension(filename: String, metadata: [String: String]) -> String? {
+        if let fileExtension = normalizedFileExtension(metadata["fileExtension"]) {
+            return fileExtension
+        }
+        return normalizedFileExtension(URL(fileURLWithPath: filename).pathExtension)
+    }
+
+    private static func preferredByteCount(
+        part: AiChatLockedContextPartSnapshot,
+        metadata: [String: String],
+    ) -> Int64 {
+        if let byteCount = part.byteCount {
+            return byteCount
+        }
+        if let metadataByteCount = metadata["byteCount"].flatMap(Int64.init) {
+            return metadataByteCount
+        }
+        if let sizeBytes = metadata["sizeBytes"].flatMap(Int64.init) {
+            return sizeBytes
+        }
+        return 0
+    }
+
+    private static func preferredBase64Data(metadata: [String: String]) -> String {
+        for key in ["base64Data", "nativeBase64Data", "fileDataBase64"] {
+            if let value = metadata[key]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
+            }
+        }
+        return ""
+    }
+
+    private static func sanitizedFilename(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        if value.hasPrefix("/") {
+            let filename = URL(fileURLWithPath: value).lastPathComponent
+            return filename.isEmpty ? nil : filename
+        }
+        return value
+    }
+
+    private static func normalizedFileExtension(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        let normalized = value.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return normalized.isEmpty ? nil : normalized
     }
 }
 
 struct OpenAIResponsesInputItem: Encodable, Sendable {
+    let type = "message"
     let role: Role
-    let content: String
+    let content: Content
 
-    init(role: Role, text: String) {
+    init(role: Role, text: String, appendedContent: [OpenAIResponsesInputContent] = []) {
         self.role = role
-        content = text
+        if appendedContent.isEmpty {
+            content = .text(text)
+        } else {
+            var parts: [OpenAIResponsesInputContent] = []
+            if !text.isEmpty {
+                parts.append(.inputText(text))
+            }
+            parts.append(contentsOf: appendedContent)
+            content = .parts(parts.isEmpty ? [.inputText("")] : parts)
+        }
+    }
+
+    enum Content: Encodable, Sendable {
+        case text(String)
+        case parts([OpenAIResponsesInputContent])
+
+        func encode(to encoder: Encoder) throws {
+            switch self {
+            case let .text(text):
+                var container = encoder.singleValueContainer()
+                try container.encode(text)
+            case let .parts(parts):
+                var container = encoder.singleValueContainer()
+                try container.encode(parts)
+            }
+        }
     }
 
     enum Role: String, Encodable, Sendable {
@@ -63,6 +213,50 @@ struct OpenAIResponsesInputItem: Encodable, Sendable {
                 self = .assistant
             }
         }
+    }
+}
+
+enum OpenAIResponsesInputContent: Encodable, Sendable {
+    case inputText(String)
+    case inputImage(imageURL: String)
+    case inputFile(fileData: String, filename: String)
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .inputText(text):
+            try container.encode("input_text", forKey: .type)
+            try container.encode(text, forKey: .text)
+        case let .inputImage(imageURL):
+            try container.encode("input_image", forKey: .type)
+            try container.encode(OpenAIResponsesImageDetail.auto, forKey: .detail)
+            try container.encode(imageURL, forKey: .imageURL)
+        case let .inputFile(fileData, filename):
+            try container.encode("input_file", forKey: .type)
+            try container.encode(fileData, forKey: .fileData)
+            try container.encode(filename, forKey: .filename)
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case detail
+        case imageURL = "image_url"
+        case fileData = "file_data"
+        case filename
+    }
+
+    enum FileDetail: String, Encodable, Sendable {
+        case low
+        case high
+    }
+
+    enum OpenAIResponsesImageDetail: String, Encodable, Sendable {
+        case low
+        case high
+        case auto
+        case original
     }
 }
 
