@@ -43,7 +43,7 @@ import XCTest
 
 @MainActor
 final class SET002GeneralSettingsFeatureTests: XCTestCase {
-    private var storage: InMemoryStorage!
+    private nonisolated(unsafe) var storage: InMemoryStorage!
 
     override func setUp() {
         super.setUp()
@@ -290,7 +290,7 @@ final class SET002GeneralSettingsFeatureTests: XCTestCase {
         }
 
         XCTAssertEqual(recorder.values, [true])
-        XCTAssertTrue(storage.getBool(SettingsKeys.launchAtStartup))
+        XCTAssertTrue(storage.getBool(SettingsKeys.launchAtStartup) ?? false)
         XCTAssertNil(store.state.launchAtStartupError)
     }
 
@@ -322,7 +322,7 @@ final class SET002GeneralSettingsFeatureTests: XCTestCase {
         await store.send(.loadSettings)
 
         XCTAssertTrue(store.state.launchAtStartup)
-        XCTAssertTrue(storage.getBool(SettingsKeys.launchAtStartup))
+        XCTAssertTrue(storage.getBool(SettingsKeys.launchAtStartup) ?? false)
     }
 
     // MARK: - SET-002:toggle_automatic_update_install
@@ -336,7 +336,7 @@ final class SET002GeneralSettingsFeatureTests: XCTestCase {
             state.automaticUpdateError = nil
         }
 
-        XCTAssertTrue(storage.getBool(SettingsKeys.automaticUpdate))
+        XCTAssertTrue(storage.getBool(SettingsKeys.automaticUpdate) ?? false)
     }
 
     func testToggleAutomaticUpdateDisabled() async {
@@ -349,7 +349,7 @@ final class SET002GeneralSettingsFeatureTests: XCTestCase {
             state.automaticUpdateError = nil
         }
 
-        XCTAssertFalse(storage.getBool(SettingsKeys.automaticUpdate))
+        XCTAssertFalse(storage.getBool(SettingsKeys.automaticUpdate) ?? true)
     }
 
     // MARK: - SET-002:toggle_alert_before_app_quit
@@ -362,7 +362,7 @@ final class SET002GeneralSettingsFeatureTests: XCTestCase {
             state.alertBeforeQuit = true
         }
 
-        XCTAssertTrue(storage.getBool(SettingsKeys.alertBeforeQuit))
+        XCTAssertTrue(storage.getBool(SettingsKeys.alertBeforeQuit) ?? false)
     }
 
     // MARK: - SET-002:check_for_updates (package-level no-op)

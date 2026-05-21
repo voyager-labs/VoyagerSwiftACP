@@ -47,8 +47,8 @@ import XCTest
 
 @MainActor
 final class SET003AppearanceSettingsFeatureTests: XCTestCase {
-    private var storage: InMemoryStorage!
-    private var themeRecorder: ThemeApplyRecorder!
+    private nonisolated(unsafe) var storage: InMemoryStorage!
+    private nonisolated(unsafe) var themeRecorder: ThemeApplyRecorder!
 
     override func setUp() {
         super.setUp()
@@ -290,7 +290,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         }
 
         XCTAssertTrue(store.state.showHiddenFiles)
-        XCTAssertTrue(storage.getBool(SettingsKeys.showHiddenFiles))
+        XCTAssertTrue(storage.getBool(SettingsKeys.showHiddenFiles) ?? false)
     }
 
     func testSetShowHiddenFilesDisabled() async {
@@ -303,7 +303,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         }
 
         XCTAssertFalse(store.state.showHiddenFiles)
-        XCTAssertFalse(storage.getBool(SettingsKeys.showHiddenFiles))
+        XCTAssertFalse(storage.getBool(SettingsKeys.showHiddenFiles) ?? true)
     }
 }
 
