@@ -7,59 +7,56 @@ struct ScopeChangeFeedbackBannerView: View {
     let onRedo: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
             Image(systemName: display.isFailure ? "exclamationmark.triangle.fill" : display
                 .isDelayed ? "clock.arrow.circlepath" : "checkmark.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(display.isFailure ? VoyagerDS.BrandPrimaryColor.c500 : .secondary)
-                .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
                 Text(display.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(VoyagerDS.SystemColor.label)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(display.message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Text(display.phaseLabel)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 8)
-
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 if display.showsUndo {
                     Button("Undo", action: onUndo)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderless)
                         .controlSize(.small)
                         .accessibilityLabel("Undo latest scope change")
                 }
 
                 if display.showsRedo {
                     Button("Redo", action: onRedo)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderless)
                         .controlSize(.small)
                         .accessibilityLabel("Redo latest scope change")
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            Capsule(style: .continuous)
                 .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            Capsule(style: .continuous)
                 .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
         )
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(display.accessibilityLabel ?? "Scope change feedback")
-        .help(display.accessibilityLabel ?? display.title)
+        .help(display.accessibilityLabel ?? "\(display.title). \(display.message)")
     }
 }
