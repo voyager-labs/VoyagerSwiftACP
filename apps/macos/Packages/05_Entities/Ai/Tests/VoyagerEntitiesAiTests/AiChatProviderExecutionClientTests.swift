@@ -923,7 +923,65 @@ private struct CapturedOpenAIRequestBody: Decodable {
 
 private struct CapturedOpenAIInputItem: Decodable {
     let role: String
-    let content: String
+    let content: CapturedOpenAIContent
+}
+
+private enum CapturedOpenAIContent: Decodable, Equatable {
+    case text(String)
+    case parts([CapturedOpenAIContentItem])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let text = try? container.decode(String.self) {
+            self = .text(text)
+            return
+        }
+        self = .parts(try container.decode([CapturedOpenAIContentItem].self))
+    }
+
+    var text: String? {
+        guard case let .text(value) = self else { return nil }
+        return value
+    }
+
+    var parts: [CapturedOpenAIContentItem]? {
+        guard case let .parts(value) = self else { return nil }
+        return value
+    }
+}
+
+private struct CapturedOpenAIContentItem: Decodable, Equatable {
+    let type: String
+    let text: String?
+    let detail: String?
+    let imageURL: String?
+    let fileData: String?
+    let filename: String?
+
+    init(
+        type: String,
+        text: String? = nil,
+        detail: String? = nil,
+        imageURL: String? = nil,
+        fileData: String? = nil,
+        filename: String? = nil,
+    ) {
+        self.type = type
+        self.text = text
+        self.detail = detail
+        self.imageURL = imageURL
+        self.fileData = fileData
+        self.filename = filename
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case detail
+        case imageURL = "image_url"
+        case fileData = "file_data"
+        case filename
+    }
 }
 
 private struct CapturedOpenAIReasoning: Decodable {
@@ -962,7 +1020,37 @@ private struct CapturedAnthropicOutputConfig: Decodable {
 
 private struct CapturedAnthropicMessage: Decodable {
     let role: String
-    let content: String
+    let content: [CapturedAnthropicContentItem]
+}
+
+private struct CapturedAnthropicContentItem: Decodable, Equatable {
+    let type: String
+    let text: String?
+    let source: CapturedAnthropicSource?
+    let title: String?
+
+    static func text(_ value: String) -> Self {
+        .init(type: "text", text: value, source: nil, title: nil)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case source
+        case title
+    }
+}
+
+private struct CapturedAnthropicSource: Decodable, Equatable {
+    let type: String
+    let mediaType: String
+    let data: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case mediaType = "media_type"
+        case data
+    }
 }
 
 private struct CapturedAnthropicThinking: Decodable {
@@ -1042,21 +1130,22 @@ private func assertOpenAIRequest(_ request: URLRequest, expectedModel: String) t
     XCTAssertTrue(decoded.stream)
     XCTAssertEqual(decoded.reasoning?.effort, "high")
     XCTAssertEqual(decoded.input.map(\.role), ["developer", "developer", "user", "assistant"])
-    XCTAssertEqual(decoded.input.first?.content.contains("current_context:"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("summary: locked workspace context"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("Notes.txt [resolvedText]"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("Attachment body from locked snapshot"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("Workspace.voycoll [resolvedReference]"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("reference included; content not expanded."), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("Large.bin [tooLarge]"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("not included: tooLarge"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("Unsupported.bin [unsupportedType]"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("not included: unsupportedType"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("live workspace context"), false)
-    XCTAssertEqual(decoded.input.first?.content.contains("Should not leak live attachment"), false)
-    XCTAssertEqual(decoded.input[1].content, "System rule")
-    XCTAssertEqual(decoded.input[2].content, "Hello")
-    XCTAssertEqual(decoded.input[3].content, "Previous answer")
+    let prompt = decoded.input.first?.content.text
+    XCTAssertEqual(prompt?.contains("current_context:"), true)
+    XCTAssertEqual(prompt?.contains("summary: locked workspace context"), true)
+    XCTAssertEqual(prompt?.contains("Notes.txt [resolvedText]"), true)
+    XCTAssertEqual(prompt?.contains("Attachment body from locked snapshot"), true)
+    XCTAssertEqual(prompt?.contains("Workspace.voycoll [resolvedReference]"), true)
+    XCTAssertEqual(prompt?.contains("reference included; content not expanded."), true)
+    XCTAssertEqual(prompt?.contains("Large.bin [tooLarge]"), true)
+    XCTAssertEqual(prompt?.contains("not included: tooLarge"), true)
+    XCTAssertEqual(prompt?.contains("Unsupported.bin [unsupportedType]"), true)
+    XCTAssertEqual(prompt?.contains("not included: unsupportedType"), true)
+    XCTAssertEqual(prompt?.contains("live workspace context"), false)
+    XCTAssertEqual(prompt?.contains("Should not leak live attachment"), false)
+    XCTAssertEqual(decoded.input[1].content.text, "System rule")
+    XCTAssertEqual(decoded.input[2].content.text, "Hello")
+    XCTAssertEqual(decoded.input[3].content.text, "Previous answer")
 }
 
 private func assertAnthropicRequest(
@@ -1085,8 +1174,8 @@ private func assertAnthropicRequest(
     XCTAssertEqual(decoded.system?.contains("live workspace context"), false)
     XCTAssertEqual(decoded.system?.contains("Answer briefly"), true)
     XCTAssertEqual(decoded.messages.map(\.role), ["user", "assistant"])
-    XCTAssertEqual(decoded.messages.first?.content, "Say hi")
-    XCTAssertEqual(decoded.messages.last?.content, "Previous reply")
+    XCTAssertEqual(decoded.messages.first?.content, [.text("Say hi")])
+    XCTAssertEqual(decoded.messages.last?.content, [.text("Previous reply")])
 
     switch expectedThinking {
     case .disabled:

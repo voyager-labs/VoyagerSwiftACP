@@ -229,13 +229,29 @@ extension AiChatProviderExecutionClient {
         case let error as URLError where error.code == .cancelled:
             return
         case let error as URLError:
+            NSLog(
+                "[AiChatProviderExecution] OpenAI URL error requestID=%@ code=%ld description=%@",
+                context.requestID.rawValue.uuidString,
+                error.errorCode,
+                error.localizedDescription
+            )
             continuation.yield(.failed(
                 context: context,
                 reason: AiChatProviderExecutionFailureMapper.map(mapURLSessionError(error)),
             ))
         case let error as AiHTTPError:
+            NSLog(
+                "[AiChatProviderExecution] OpenAI HTTP failure requestID=%@ reason=%@",
+                context.requestID.rawValue.uuidString,
+                providerHTTPLogReason(error)
+            )
             continuation.yield(.failed(context: context, reason: AiChatProviderExecutionFailureMapper.map(error)))
         default:
+            NSLog(
+                "[AiChatProviderExecution] OpenAI unknown failure requestID=%@ error=%@",
+                context.requestID.rawValue.uuidString,
+                String(describing: error)
+            )
             continuation.yield(.failed(context: context, reason: .unknown))
         }
     }
@@ -314,8 +330,18 @@ extension AiChatProviderExecutionClient {
                     continuation.finish()
                     return
                 } catch let error as CodexCLIExecutionError {
+                    NSLog(
+                        "[AiChatProviderExecution] Codex CLI failure requestID=%@ reason=%@",
+                        context.requestID.rawValue.uuidString,
+                        codexLogReason(error)
+                    )
                     continuation.yield(.failed(context: context, reason: error.failureReason))
                 } catch {
+                    NSLog(
+                        "[AiChatProviderExecution] Codex unknown failure requestID=%@ error=%@",
+                        context.requestID.rawValue.uuidString,
+                        String(describing: error)
+                    )
                     continuation.yield(.failed(context: context, reason: .transportError))
                 }
 
@@ -323,5 +349,39 @@ extension AiChatProviderExecutionClient {
             }
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
+    }
+}
+
+
+private func providerHTTPLogReason(_ error: AiHTTPError) -> String {
+    switch error {
+    case let .httpError(statusCode, body):
+        return "httpError(status: \(statusCode), body: \(redactedProviderErrorBody(body)))"
+    case let .networkError(description):
+        return "networkError(\(description))"
+    case .timeout:
+        return "timeout"
+    case .cancelled:
+        return "cancelled"
+    case let .invalidURL(url):
+        return "invalidURL(\(url))"
+    }
+}
+
+private func redactedProviderErrorBody(_ body: String) -> String {
+    let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return "empty" }
+    let singleLine = trimmed.replacingOccurrences(of: "\n", with: " ")
+    return String(singleLine.prefix(1200))
+}
+
+private func codexLogReason(_ error: CodexCLIExecutionError) -> String {
+    switch error {
+    case .launchFailed:
+        return "launchFailed"
+    case let .outputMissing(message):
+        return "outputMissing(\(redactedProviderErrorBody(message)))"
+    case let .nonZeroExit(message):
+        return "nonZeroExit(\(redactedProviderErrorBody(message)))"
     }
 }

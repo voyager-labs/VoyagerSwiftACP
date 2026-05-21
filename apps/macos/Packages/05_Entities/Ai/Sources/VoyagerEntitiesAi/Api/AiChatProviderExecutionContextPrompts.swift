@@ -31,13 +31,17 @@ enum AnthropicContextPromptBuilder {
 
 private enum SharedContextPromptBuilder {
     static func makePrompt(from requestContext: AiChatLockedRequestContextSnapshot) -> String? {
-        guard !isEmpty(requestContext.currentContext) || !requestContext.addedAttachments.isEmpty else {
+        guard !isEmpty(requestContext.currentContext)
+            || !requestContext.addedAttachments.isEmpty
+            || requestContext.parts.contains(where: { $0.source == .attachment })
+        else {
             return nil
         }
 
         return [
             makeCurrentContextSection(from: requestContext.currentContext),
             makeAddedAttachmentsSection(from: requestContext.addedAttachments),
+            makeAttachmentTransmissionSection(from: requestContext.parts),
         ].joined(separator: "\n\n")
     }
 
@@ -73,6 +77,26 @@ private enum SharedContextPromptBuilder {
         }
         for attachment in attachments {
             lines.append(contentsOf: makeAddedAttachmentLines(attachment))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func makeAttachmentTransmissionSection(
+        from parts: [AiChatLockedContextPartSnapshot]
+    ) -> String {
+        let attachmentParts = parts.filter { part in
+            switch part.resolution {
+            case .providerNativeFile, .inlineText, .partialText, .referenceOnly, .collectionPathList, .failure:
+                return true
+            }
+        }
+        var lines = ["attachment_transmission:"]
+        guard !attachmentParts.isEmpty else {
+            lines.append("  - none")
+            return lines.joined(separator: "\n")
+        }
+        for part in attachmentParts {
+            lines.append(contentsOf: makeAttachmentTransmissionLines(part))
         }
         return lines.joined(separator: "\n")
     }
@@ -113,6 +137,25 @@ private enum SharedContextPromptBuilder {
             lines.append("      subtitle: \(subtitle)")
         }
         lines.append(contentsOf: metadataLines(attachment.metadata, indent: "      "))
+        return lines
+    }
+
+    private static func makeAttachmentTransmissionLines(_ part: AiChatLockedContextPartSnapshot) -> [String] {
+        let transmission = transmissionDescriptor(for: part.resolution)
+        var lines = [
+            "  - \(displayAttachmentTitle(part))",
+            "    state: \(transmission.state)",
+            "    status: \(transmission.status)",
+            "    note: \(transmission.note)",
+            "    kind: \(part.fileKind.rawValue)",
+        ]
+        if let mimeType = normalized(part.mimeType ?? contextPartMetadata(part.resolution)["mimeType"]) {
+            lines.append("    mime_type: \(mimeType)")
+        }
+        if let displayPath = normalized(part.displayPath ?? contextPartMetadata(part.resolution)["displayPath"]) {
+            lines.append("    display_path: \(displayPath)")
+        }
+        lines.append(contentsOf: collectionItemLines(from: contextPartMetadata(part.resolution), indent: "    "))
         return lines
     }
 
@@ -158,6 +201,14 @@ private enum SharedContextPromptBuilder {
         return lines
     }
 
+    private static func displayAttachmentTitle(_ part: AiChatLockedContextPartSnapshot) -> String {
+        if let displayTitle = normalized(part.displayTitle) { return displayTitle }
+        let metadata = contextPartMetadata(part.resolution)
+        if let filename = normalized(metadata["filename"]) { return filename }
+        if let displayPath = normalized(part.displayPath ?? metadata["displayPath"]) { return displayPath }
+        return "attachment"
+    }
+
     private static func displayAttachmentTitle(_ attachment: AiChatAttachmentSnapshot) -> String {
         if let displayTitle = normalized(attachment.displayTitle) { return displayTitle }
         if let filePath = normalized(attachment.sourceLocation.filePath) { return filePath }
@@ -171,6 +222,43 @@ private enum SharedContextPromptBuilder {
         case .resolvedReference: "resolvedReference"
         case .resolvedPartial: "resolvedPartial"
         case let .failure(reason, _): reason.rawValue
+        }
+    }
+
+    private static func contextPartMetadata(_ resolution: AiChatContextPartResolution) -> [String: String] {
+        switch resolution {
+        case let .inlineText(_, metadata),
+             let .partialText(_, _, metadata),
+             let .referenceOnly(metadata),
+             let .collectionPathList(_, metadata),
+             let .providerNativeFile(_, _, metadata),
+             let .failure(_, metadata):
+            metadata
+        }
+    }
+
+    private static func transmissionDescriptor(for resolution: AiChatContextPartResolution) -> (state: String, status: String, note: String) {
+        switch resolution {
+        case .inlineText:
+            return ("included", "Included", "attachment included as text in provider context")
+        case let .partialText(_, truncated, _):
+            return truncated
+                ? ("partial", "Partial", "attachment partially included as text in provider context")
+                : ("included", "Included", "attachment included as text in provider context")
+        case let .referenceOnly(metadata):
+            return collectionItemPaths(from: metadata).isEmpty
+                ? ("reference-only", "Reference only", "attachment referenced only; contents not included")
+                : ("collection-paths", "Collection paths", "attachment represented as collection paths only; contents not included")
+        case .collectionPathList:
+            return ("collection-paths", "Collection paths", "attachment represented as collection paths only; contents not included")
+        case let .providerNativeFile(kind, mimeType, _):
+            return kind == .codexPathScope
+                ? ("codex-path", "Codex path", "attachment exposed as Codex filesystem path; provider-native transfer not used")
+                : ("provider-native", "Uploaded/native", "provider-native attachment included; uploaded natively as \(mimeType)")
+        case let .failure(reason, _):
+            return reason == .unsupportedType
+                ? ("unsupported", "Unsupported", "attachment could not be included: unsupported type")
+                : ("failed", "Failed", "attachment could not be included: \(reason.rawValue)")
         }
     }
 
@@ -194,7 +282,6 @@ private enum SharedContextPromptBuilder {
         lines.append(contentsOf: filtered.map { "\(indent)  \($0.key): \($0.value)" })
         return lines
     }
-
 
     private static func collectionItemLines(from metadata: [String: String], indent: String) -> [String] {
         let paths = collectionItemPaths(from: metadata)
