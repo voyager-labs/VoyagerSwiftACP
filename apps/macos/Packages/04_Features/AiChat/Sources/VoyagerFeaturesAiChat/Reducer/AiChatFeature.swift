@@ -20,6 +20,8 @@ public struct AiChatFeature {
     var aiChatSessionPersistenceClient
     @Dependency(\.aiChatAttachmentResolverClient)
     var aiChatAttachmentResolverClient
+    @Dependency(\.aiChatContextPartResolverClient)
+    var aiChatContextPartResolverClient
     @Dependency(\.aiProviderModelListClient)
     var aiProviderModelListClient
     @Dependency(\.aiConnectionsFileClient)

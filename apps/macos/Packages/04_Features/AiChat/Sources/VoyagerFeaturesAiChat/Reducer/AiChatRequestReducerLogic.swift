@@ -254,10 +254,47 @@ extension AiChatFeature {
     }
 
     private func makeLockedRequestContextSnapshot(state: State) -> AiChatLockedRequestContextSnapshot {
-        AiChatLockedRequestContextSnapshot(
-            currentContext: state.currentContext,
-            addedAttachments: aiChatAttachmentResolverClient.resolve(state.addedAttachments)
+        let selectedModel = state.resolvedSelectedModel
+        let provider = selectedModel?.provider ?? state.selectedModelHandle?.provider ?? .openai
+        let rawModelID = selectedModel?.rawModelID ?? state.selectedModelHandle?.rawValue ?? ""
+        let requestFamily = aiChatRequestFamily(for: provider)
+        let resolvedContext = aiChatContextPartResolverClient.resolve(
+            AiChatContextPartResolverInput(
+                provider: provider,
+                rawModelID: rawModelID,
+                requestFamily: requestFamily,
+                currentContext: state.currentContext,
+                attachments: state.addedAttachments
+            )
         )
+
+        return AiChatLockedRequestContextSnapshot(
+            currentContext: resolvedContext.currentContext,
+            addedAttachments: resolvedContext.addedAttachments,
+            parts: resolvedContext.parts.map { part in
+                AiChatLockedContextPartSnapshot(
+                    source: part.source == .attachment ? .attachment : .currentContext,
+                    resolution: part.resolution,
+                    canonicalPath: part.canonicalPath,
+                    displayPath: part.displayPath,
+                    fileKind: part.fileKind,
+                    displayTitle: part.displayTitle,
+                    byteCount: part.byteCount,
+                    mimeType: part.mimeType
+                )
+            }
+        )
+    }
+
+    private func aiChatRequestFamily(for provider: AiProvider) -> AiChatContextPartResolverRequestFamily {
+        switch provider {
+        case .openai:
+            return .openAIResponses
+        case .anthropic:
+            return .anthropicMessages
+        case .chatgptCodex:
+            return .codexCLI
+        }
     }
 
     func currentTimestampMs() -> Int64 {
