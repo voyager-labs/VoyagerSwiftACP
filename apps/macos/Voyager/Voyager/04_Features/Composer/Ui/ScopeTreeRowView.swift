@@ -27,15 +27,18 @@ struct ScopeTreeRowView: View {
                                 .foregroundColor(titleColor)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
+                                .layoutPriority(1)
+                                .helpIfPresent(sourceBadgeHelp)
 
-                            statusBadge(text: stateBadgeText, tint: stateBadgeTint)
-                            if let sourceBadgeText {
-                                statusBadge(text: sourceBadgeText, tint: .secondary)
-                            }
+                            statusBadge(
+                                text: stateBadgeText,
+                                tint: stateBadgeTint,
+                                background: stateBadgeBackground,
+                            )
                         }
 
-                        Text(row.secondaryText ?? row.path)
-                            .font(.system(size: 10))
+                        Text(row.path)
+                            .font(.system(size: 11, weight: .regular))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -44,6 +47,7 @@ struct ScopeTreeRowView: View {
                 }
             }
             .buttonStyle(.plain)
+            .helpIfPresent(sourceBadgeHelp)
 
             Spacer(minLength: 8)
 
@@ -64,6 +68,7 @@ struct ScopeTreeRowView: View {
         .onHover { hovering in
             isHovering = hovering
         }
+        .helpIfPresent(sourceBadgeHelp)
     }
 
     private var rowIcon: some View {
@@ -93,12 +98,13 @@ struct ScopeTreeRowView: View {
                     Text(actionLabel(for: action))
                         .font(.system(size: 11, weight: .medium))
                 }
-                .foregroundColor(actionUsesDestructiveStyling(action) ? .secondary : .accentColor)
+                .foregroundColor(actionForegroundColor(for: action))
             },
         )
         .buttonStyle(.borderless)
-        .help(actionLabel(for: action))
+        .help(actionHelp(for: action))
         .accessibilityLabel(actionLabel(for: action))
+        .accessibilityHint(actionHelp(for: action))
         .ifLetAccessibilityIdentifier(actionAccessibilityIdentifier?(action))
     }
 
@@ -149,7 +155,9 @@ struct ScopeTreeRowView: View {
         switch row.ruleSource {
         case .direct:
             .semibold
-        case .inherited, .none:
+        case .inherited:
+            .medium
+        case .none:
             .regular
         }
     }
@@ -178,17 +186,30 @@ struct ScopeTreeRowView: View {
         switch row.visualState {
         case .included:
             .accentColor
-        case .excluded, .none:
+        case .excluded:
+            .red
+        case .none:
             .secondary
         }
     }
 
-    private var sourceBadgeText: String? {
+    private var stateBadgeBackground: Color {
+        switch row.visualState {
+        case .included:
+            Color.accentColor.opacity(0.14)
+        case .excluded:
+            Color.red.opacity(0.12)
+        case .none:
+            VoyagerDS.Surface.chipItemBackground(for: colorScheme)
+        }
+    }
+
+    private var sourceBadgeHelp: String? {
         switch row.ruleSource {
         case .direct:
-            "Direct"
-        case .inherited:
-            "Inherited"
+            nil
+        case let .inherited(sourcePath):
+            "Inherited from \(sourcePath)"
         case .none:
             nil
         }
@@ -219,25 +240,55 @@ struct ScopeTreeRowView: View {
         case .clearDirectRule:
             switch row.kind {
             case .base:
-                "Remove direct scope rule"
+                "Remove direct rule"
             case .exception:
-                "Restore excluded scope"
+                "Restore scope"
             case .candidate, .root:
-                "Remove direct scope rule"
+                "Remove direct rule"
             }
         }
     }
 
-    private func actionUsesDestructiveStyling(_ action: ComposerScopeTreeRowAvailableAction) -> Bool {
+    private func actionHelp(for action: ComposerScopeTreeRowAvailableAction) -> String {
         switch action {
-        case .exclude, .clearDirectRule:
-            true
         case .include:
-            false
+            "Include this folder in the scope"
+        case .exclude:
+            "Exclude this folder from the scope"
+        case .clearDirectRule:
+            switch row.kind {
+            case .base:
+                "Remove the direct include rule for this folder"
+            case .exception:
+                "Restore the previously excluded scope"
+            case .candidate, .root:
+                "Remove the direct rule for this folder"
+            }
         }
     }
 
-    private func statusBadge(text: String, tint: Color) -> some View {
+    private func actionForegroundColor(for action: ComposerScopeTreeRowAvailableAction) -> Color {
+        switch action {
+        case .include:
+            .accentColor
+        case .exclude:
+            .red
+        case .clearDirectRule:
+            switch row.kind {
+            case .exception:
+                .accentColor
+            case .base, .candidate, .root:
+                .red
+            }
+        }
+    }
+
+    private func statusBadge(
+        text: String,
+        tint: Color,
+        background: Color,
+        helpText: String? = nil,
+    ) -> some View {
         Text(text)
             .font(.system(size: 9, weight: .medium))
             .foregroundColor(tint)
@@ -245,12 +296,10 @@ struct ScopeTreeRowView: View {
             .padding(.vertical, 2)
             .background(
                 Capsule()
-                    .fill(
-                        tint == .accentColor
-                            ? Color.accentColor.opacity(0.14)
-                            : VoyagerDS.Surface.chipItemBackground(for: colorScheme),
-                    ),
+                    .fill(background),
             )
+            .helpIfPresent(helpText)
+            .accessibilityLabel(helpText ?? text)
             .fixedSize(horizontal: true, vertical: false)
     }
 }
@@ -260,6 +309,15 @@ private extension View {
     func ifLetAccessibilityIdentifier(_ accessibilityIdentifier: String?) -> some View {
         if let accessibilityIdentifier {
             self.accessibilityIdentifier(accessibilityIdentifier)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func helpIfPresent(_ helpText: String?) -> some View {
+        if let helpText {
+            help(helpText)
         } else {
             self
         }
