@@ -39,9 +39,6 @@ struct ScopePickerView: View {
                 VStack(spacing: 0) {
                     searchField(queryText: queryTextBinding)
                     currentSummaryRow(viewStore: viewStore)
-                    if !viewStore.scopeEditor.selection.isRootOnly {
-                        includeSubfoldersRow(viewStore: viewStore)
-                    }
                     if let display = viewStore.lastScopeChangeFeedbackDisplay {
                         scopeChangeFeedbackBanner(display)
                     }
@@ -74,6 +71,9 @@ private extension ScopePickerView {
         ScopeEditorSummaryRow(
             summary: viewStore.scopeEditor.summary,
             ruleDescription: viewStore.scopeEditor.scopeRuleDescription,
+            includeSubfolders: viewStore.scopeEditor.selection.isRootOnly ? nil : viewStore.scopeEditor
+                .includeSubfolders,
+            onToggleIncludeSubfolders: { store.send(.scopeEditorSetIncludeSubfolders(!$0)) },
         )
         .accessibilityIdentifier(ScopePickerAccessibilityID.currentSummary)
     }
@@ -109,15 +109,6 @@ private extension ScopePickerView {
             VoyagerDS.SystemColor.separator
                 .frame(height: 1)
         }
-    }
-
-    private func includeSubfoldersRow(
-        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
-    ) -> some View {
-        IncludeSubfoldersRow(
-            includeSubfolders: viewStore.scopeEditor.includeSubfolders,
-            onTap: { store.send(.scopeEditorSetIncludeSubfolders(!$0)) },
-        )
     }
 
     @ViewBuilder
