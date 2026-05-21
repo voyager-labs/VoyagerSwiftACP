@@ -34,6 +34,7 @@ public struct AiChatAddedAttachmentChipDisplayModel: Identifiable, Equatable, Se
     public var attachmentID: AiChatAttachmentID
     public var title: String
     public var statusLabel: String
+    public var statusDetail: String
     public var isRemovable: Bool
     public var iconSystemName: String?
     public var iconAssetName: String?
@@ -43,6 +44,7 @@ public struct AiChatAddedAttachmentChipDisplayModel: Identifiable, Equatable, Se
         attachmentID: AiChatAttachmentID,
         title: String,
         statusLabel: String,
+        statusDetail: String,
         isRemovable: Bool,
         iconSystemName: String? = nil,
         iconAssetName: String? = nil,
@@ -51,6 +53,7 @@ public struct AiChatAddedAttachmentChipDisplayModel: Identifiable, Equatable, Se
         self.attachmentID = attachmentID
         self.title = title
         self.statusLabel = statusLabel
+        self.statusDetail = statusDetail
         self.isRemovable = isRemovable
         self.iconSystemName = iconSystemName
         self.iconAssetName = iconAssetName
@@ -66,7 +69,7 @@ public struct AiChatRequestContextDisplayModel: Equatable, Sendable {
     public init(
         source: AiChatRequestContextDisplaySource,
         currentContext: AiChatCurrentContextChipDisplayModel?,
-        addedAttachments: [AiChatAddedAttachmentChipDisplayModel],
+        addedAttachments: [AiChatAddedAttachmentChipDisplayModel]
     ) {
         self.source = source
         self.currentContext = currentContext

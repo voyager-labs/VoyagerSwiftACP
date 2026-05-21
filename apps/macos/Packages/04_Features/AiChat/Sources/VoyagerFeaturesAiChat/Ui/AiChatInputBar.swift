@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 import UniformTypeIdentifiers
+import VoyagerEntitiesAi
 
 struct AiChatInputBar: View {
     let store: StoreOf<AiChatFeature>
@@ -187,7 +188,7 @@ struct AiChatInputBar: View {
         restoreChatInputFocus()
     }
 
-    nonisolated private static func droppedFileURL(from item: (any NSSecureCoding)?) -> URL? {
+    private nonisolated static func droppedFileURL(from item: (any NSSecureCoding)?) -> URL? {
         if let url = item as? URL, url.isFileURL {
             return url
         }
@@ -228,14 +229,27 @@ struct AiChatInputBar: View {
 private extension AiChatInputBar {
     @ViewBuilder var requestContextRow: some View {
         if !requestContext.isEmpty {
-            AiChatRequestContextRow(store: store, displayModel: requestContext)
+            AiChatRequestContextRow(store: store, state: state, displayModel: requestContext)
         }
     }
 }
 
 private struct AiChatRequestContextRow: View {
     let store: StoreOf<AiChatFeature>
+    let state: AiChatState
     let displayModel: AiChatRequestContextDisplayModel
+
+    private var destinationProvider: AiProvider? {
+        state.executionPhase.lock?.selectedModelHandle.provider ?? state.selectedModelHandle?.provider
+    }
+
+    private var currentContextSnapshot: AiChatCurrentContextSnapshot {
+        state.executionPhase.lock?.context.requestContext.currentContext ?? state.currentContext
+    }
+
+    private var destinationLabel: String {
+        destinationProvider.map(aiChatProviderSectionTitle(for:)) ?? "Selected provider"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -268,9 +282,23 @@ private struct AiChatRequestContextRow: View {
     }
 
     private func currentContextChip(_ chip: AiChatCurrentContextChipDisplayModel) -> some View {
-        removableChip(
+        let statusLabel = aiChatCurrentContextStatusLabel(
+            for: currentContextSnapshot,
+            destinationProvider: destinationProvider
+        )
+        let statusDetail = aiChatCurrentContextStatusDetail(
+            for: currentContextSnapshot,
+            destinationProvider: destinationProvider
+        )
+        let detail = [chip.detail, statusDetail].compactMap { $0 }.joined(separator: " · ")
+        return removableChip(
             title: chip.title,
-            help: chip.detail ?? chip.title,
+            help: aiChatRequestContextTooltipText(
+                sourceLabel: "Current context",
+                destinationLabel: destinationLabel,
+                statusLabel: statusLabel,
+                statusDetail: detail.isEmpty ? chip.title : detail
+            ),
             iconSystemName: chip.iconSystemName,
             iconAssetName: chip.iconAssetName,
             iconFilePath: chip.iconFilePath,
@@ -282,10 +310,16 @@ private struct AiChatRequestContextRow: View {
     private func attachmentChip(_ chip: AiChatAddedAttachmentChipDisplayModel) -> some View {
         removableChip(
             title: chip.title,
-            help: chip.statusLabel.isEmpty ? chip.title : "\(chip.title) · \(chip.statusLabel)",
+            help: aiChatRequestContextTooltipText(
+                sourceLabel: "Attachments",
+                destinationLabel: destinationLabel,
+                statusLabel: chip.statusLabel,
+                statusDetail: chip.statusDetail
+            ),
             iconSystemName: chip.iconSystemName,
             iconAssetName: chip.iconAssetName,
             iconFilePath: chip.iconFilePath,
+            statusLabel: chip.statusLabel,
             isRemovable: chip.isRemovable,
             accessibilityLabel: "Remove attachment"
         ) {
@@ -299,6 +333,7 @@ private struct AiChatRequestContextRow: View {
         iconSystemName: String?,
         iconAssetName: String?,
         iconFilePath: String?,
+        statusLabel: String? = nil,
         isRemovable: Bool,
         accessibilityLabel: String,
         remove: @escaping () -> Void
@@ -309,6 +344,7 @@ private struct AiChatRequestContextRow: View {
             iconSystemName: iconSystemName,
             iconAssetName: iconAssetName,
             iconFilePath: iconFilePath,
+            statusLabel: statusLabel,
             isRemovable: isRemovable,
             accessibilityLabel: accessibilityLabel,
             remove: remove
@@ -324,6 +360,7 @@ private struct AiChatRemovableRequestContextChip: View {
     let iconSystemName: String?
     let iconAssetName: String?
     let iconFilePath: String?
+    let statusLabel: String?
     let isRemovable: Bool
     let accessibilityLabel: String
     let remove: () -> Void
@@ -338,6 +375,19 @@ private struct AiChatRemovableRequestContextChip: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+
+            if let statusLabel, !statusLabel.isEmpty {
+                Text(statusLabel)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.primary.opacity(0.05))
+                    )
+            }
 
             if isRemovable {
                 Button(action: remove) {

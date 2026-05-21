@@ -391,7 +391,15 @@ func aiChatRequestContextDisplayModel(
         return AiChatRequestContextDisplayModel(
             source: .locked,
             currentContext: aiChatCurrentContextChipDisplayModel(for: lockedRequestContext.currentContext),
-            addedAttachments: lockedRequestContext.addedAttachments.map(aiChatAddedAttachmentChipDisplayModel(for:))
+            addedAttachments: lockedRequestContext.addedAttachments.map { attachment in
+                aiChatAddedAttachmentChipDisplayModel(
+                    for: attachment,
+                    matchingPart: aiChatLockedAttachmentPart(
+                        for: attachment,
+                        in: lockedRequestContext.parts
+                    )
+                )
+            }
         )
     }
 
@@ -434,7 +442,8 @@ private func aiChatCurrentContextChipDisplayModel(
 private func aiChatAddedAttachmentChipDisplayModel(
     for attachment: AiChatAttachmentDraft
 ) -> AiChatAddedAttachmentChipDisplayModel {
-    AiChatAddedAttachmentChipDisplayModel(
+    let status = aiChatAttachmentChipStatus(for: attachment.currentStatus)
+    return AiChatAddedAttachmentChipDisplayModel(
         attachmentID: attachment.id,
         title: aiChatAttachmentDisplayTitle(
             id: attachment.id,
@@ -442,7 +451,8 @@ private func aiChatAddedAttachmentChipDisplayModel(
             displayTitle: attachment.displayTitle,
             sourceLocation: attachment.sourceLocation
         ),
-        statusLabel: aiChatAttachmentStatusLabel(for: attachment.currentStatus),
+        statusLabel: status.label,
+        statusDetail: aiChatAttachmentChipDetail(for: attachment.currentStatus),
         isRemovable: true,
         iconSystemName: aiChatAttachmentIconSystemName(for: attachment.source),
         iconAssetName: aiChatAttachmentIconAssetName(for: attachment.source),
@@ -451,9 +461,14 @@ private func aiChatAddedAttachmentChipDisplayModel(
 }
 
 private func aiChatAddedAttachmentChipDisplayModel(
-    for attachment: AiChatAttachmentSnapshot
+    for attachment: AiChatAttachmentSnapshot,
+    matchingPart: AiChatLockedContextPartSnapshot? = nil
 ) -> AiChatAddedAttachmentChipDisplayModel {
-    AiChatAddedAttachmentChipDisplayModel(
+    let statusLabel = matchingPart.map { aiChatContextPartStatusLabel(for: $0.resolution) }
+        ?? aiChatAttachmentChipStatus(for: attachment.resolutionResult).label
+    let statusDetail = matchingPart.map { aiChatContextPartStatusDetail(for: $0.resolution) }
+        ?? aiChatAttachmentChipDetail(for: attachment.resolutionResult)
+    return AiChatAddedAttachmentChipDisplayModel(
         attachmentID: attachment.id,
         title: aiChatAttachmentDisplayTitle(
             id: attachment.id,
@@ -461,7 +476,8 @@ private func aiChatAddedAttachmentChipDisplayModel(
             displayTitle: attachment.displayTitle,
             sourceLocation: attachment.sourceLocation
         ),
-        statusLabel: aiChatAttachmentStatusLabel(for: attachment.resolutionResult),
+        statusLabel: statusLabel,
+        statusDetail: statusDetail,
         isRemovable: false,
         iconSystemName: aiChatAttachmentIconSystemName(for: attachment.source),
         iconAssetName: aiChatAttachmentIconAssetName(for: attachment.source),
@@ -470,6 +486,178 @@ private func aiChatAddedAttachmentChipDisplayModel(
             sourceLocation: attachment.sourceLocation
         )
     )
+}
+
+private func aiChatAttachmentChipStatus(for status: AiChatAttachmentDraftStatus) -> AiChatRequestContextChipStatus {
+    switch status {
+    case .pending:
+        .willUpload
+    case let .resolved(result):
+        aiChatContextPartChipStatus(for: result.contextPartResolution)
+    }
+}
+
+private func aiChatAttachmentChipStatus(for result: AiChatAttachmentResolutionResult) -> AiChatRequestContextChipStatus {
+    aiChatContextPartChipStatus(for: result.contextPartResolution)
+}
+
+private func aiChatAttachmentChipDetail(for result: AiChatAttachmentResolutionResult) -> String {
+    aiChatContextPartChipDetail(for: result.contextPartResolution)
+}
+
+private func aiChatAttachmentChipDetail(for status: AiChatAttachmentDraftStatus) -> String {
+    switch status {
+    case .pending:
+        "Will upload when sent"
+    case let .resolved(result):
+        aiChatContextPartChipDetail(for: result.contextPartResolution)
+    }
+}
+
+private func aiChatContextPartChipStatus(for resolution: AiChatContextPartResolution) -> AiChatRequestContextChipStatus {
+    switch resolution {
+    case .inlineText:
+        .included
+    case let .partialText(_, truncated, _):
+        truncated ? .partial : .included
+    case let .referenceOnly(metadata):
+        aiChatCollectionItemPaths(from: metadata).isEmpty ? .referenceOnly : .collectionPaths
+    case .collectionPathList:
+        .collectionPaths
+    case let .providerNativeFile(kind, _, _):
+        kind == .codexPathScope ? .codexPath : .uploadedNative
+    case let .failure(reason, _):
+        reason == .unsupportedType ? .unsupported : .failed
+    }
+}
+
+private func aiChatContextPartChipDetail(for resolution: AiChatContextPartResolution) -> String {
+    switch resolution {
+    case .inlineText:
+        "Included as text"
+    case let .partialText(_, truncated, _):
+        truncated ? "Included first 64 KiB as text" : "Included as text"
+    case let .referenceOnly(metadata):
+        aiChatCollectionItemPaths(from: metadata).isEmpty
+            ? "Reference only; contents not included"
+            : "Collection paths only; contents not included"
+    case .collectionPathList:
+        "Collection paths only; contents not included"
+    case let .providerNativeFile(kind, mimeType, _):
+        kind == .codexPathScope
+            ? "Codex path reference; not uploaded"
+            : "Uploaded natively as \(mimeType)"
+    case let .failure(reason, _):
+        reason == .unsupportedType ? "Not sent: unsupported type" : "Not sent: \(reason.rawValue)"
+    }
+}
+
+func aiChatContextPartStatusLabel(for resolution: AiChatContextPartResolution) -> String {
+    aiChatContextPartChipStatus(for: resolution).label
+}
+
+func aiChatContextPartStatusDetail(for resolution: AiChatContextPartResolution) -> String {
+    aiChatContextPartChipDetail(for: resolution)
+}
+
+private func aiChatLockedAttachmentPart(
+    for attachment: AiChatAttachmentSnapshot,
+    in parts: [AiChatLockedContextPartSnapshot]
+) -> AiChatLockedContextPartSnapshot? {
+    parts.first { part in
+        guard part.source == .attachment else { return false }
+        return aiChatContextPartMetadata(part.resolution)["attachmentID"] == attachment.id.rawValue
+    }
+}
+
+private func aiChatContextPartMetadata(_ resolution: AiChatContextPartResolution) -> [String: String] {
+    switch resolution {
+    case let .inlineText(_, metadata),
+         let .partialText(_, _, metadata),
+         let .referenceOnly(metadata),
+         let .collectionPathList(_, metadata),
+         let .providerNativeFile(_, _, metadata),
+         let .failure(_, metadata):
+        metadata
+    }
+}
+
+private func aiChatCollectionItemPaths(from metadata: [String: String]) -> [String] {
+    guard let rawPaths = metadata["collectionItemPaths"] else { return [] }
+    return rawPaths
+        .split(whereSeparator: \.isNewline)
+        .map(String.init)
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+}
+
+func aiChatRequestContextTooltipText(
+    sourceLabel: String,
+    destinationLabel: String,
+    statusLabel: String,
+    statusDetail: String
+) -> String {
+    [
+        "Source: \(sourceLabel)",
+        "Destination: \(destinationLabel)",
+        "Status: \(statusLabel)",
+        statusDetail,
+    ]
+    .filter { !$0.isEmpty }
+    .joined(separator: " · ")
+}
+
+func aiChatCurrentContextStatusLabel(
+    for snapshot: AiChatCurrentContextSnapshot,
+    destinationProvider: AiProvider?
+) -> String {
+    if aiChatCurrentContextIsCollection(snapshot) {
+        return "Collection paths"
+    }
+
+    if aiChatCurrentContextIsReferenceOnly(snapshot) {
+        return "Reference only"
+    }
+
+    if aiChatCurrentContextContainsFileLikeContent(snapshot) {
+        return destinationProvider == .chatgptCodex ? "Codex path" : "Included"
+    }
+
+    return snapshot.references.isEmpty && snapshot.items.isEmpty && snapshot.attachments.isEmpty
+        ? "Reference only"
+        : "Included"
+}
+
+func aiChatCurrentContextStatusDetail(
+    for snapshot: AiChatCurrentContextSnapshot,
+    destinationProvider: AiProvider?
+) -> String {
+    switch aiChatCurrentContextStatusLabel(for: snapshot, destinationProvider: destinationProvider) {
+    case "Collection paths":
+        "Collection paths only; contents not included"
+    case "Reference only":
+        "Reference only; contents not included"
+    case "Codex path":
+        "Codex path reference; not uploaded"
+    case "Included":
+        destinationProvider == .chatgptCodex
+            ? "Codex path reference; not uploaded"
+            : "May be included as text or provider-native file when supported"
+    default:
+        "Contents not included"
+    }
+}
+
+private func aiChatCurrentContextIsReferenceOnly(_ snapshot: AiChatCurrentContextSnapshot) -> Bool {
+    snapshot.items.contains { $0.kind == .folder }
+        || snapshot.references.contains { $0.metadata["route"] == "folder" }
+}
+
+private func aiChatCurrentContextContainsFileLikeContent(_ snapshot: AiChatCurrentContextSnapshot) -> Bool {
+    snapshot.items.contains { $0.kind == .file || $0.kind == .attachment }
+        || snapshot.references.contains { reference in
+            reference.metadata["path"] != nil || reference.metadata["filePath"] != nil
+        }
 }
 
 private func aiChatCurrentContextIconSystemName(for snapshot: AiChatCurrentContextSnapshot) -> String? {
@@ -653,26 +841,19 @@ private func aiChatDisplayTitleByRemovingCollectionExtension(_ title: String) ->
     return strippedTitle.isEmpty ? title : strippedTitle
 }
 
-private func aiChatAttachmentStatusLabel(for status: AiChatAttachmentDraftStatus) -> String {
-    switch status {
-    case .pending:
-        "resolving"
-    case let .resolved(result):
-        aiChatAttachmentStatusLabel(for: result)
-    }
-}
+private struct AiChatRequestContextChipStatus: Equatable, Sendable {
+    let label: String
+    let detail: String
 
-private func aiChatAttachmentStatusLabel(for result: AiChatAttachmentResolutionResult) -> String {
-    switch result {
-    case .resolvedText:
-        "normal"
-    case .resolvedReference:
-        "참조만 포함 · 내용 미확장"
-    case let .resolvedPartial(_, truncated, _):
-        truncated ? "truncated" : "partial"
-    case let .failure(reason, _):
-        "failed · \(reason.rawValue)"
-    }
+    static let included = Self(label: "Included", detail: "Included as text")
+    static let partial = Self(label: "Partial", detail: "Included first 64 KiB as text")
+    static let referenceOnly = Self(label: "Reference only", detail: "Reference only; contents not included")
+    static let collectionPaths = Self(label: "Collection paths", detail: "Collection paths only; contents not included")
+    static let willUpload = Self(label: "Will upload", detail: "Will upload when sent")
+    static let uploadedNative = Self(label: "Uploaded/native", detail: "Uploaded natively as provider file")
+    static let unsupported = Self(label: "Unsupported", detail: "Not sent: unsupported type")
+    static let failed = Self(label: "Failed", detail: "Not sent")
+    static let codexPath = Self(label: "Codex path", detail: "Codex path reference; not uploaded")
 }
 
 private func aiChatNormalizedDisplayValue(_ value: String?) -> String? {

@@ -28,7 +28,8 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
                     source: .collectionDocument,
                     displayTitle: "Workspace.voycoll",
                     filePath: "/tmp/Workspace.voycoll",
-                    status: .resolved(.resolvedReference(metadata: [:]))
+                    metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two"],
+                    status: .resolved(.resolvedReference(metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two"]))
                 ),
                 makeDraftAttachment(
                     id: "pending",
@@ -56,7 +57,14 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
             "Notes.txt", "Workspace", "Pending.txt", "Long.txt", "Broken.txt",
         ])
         XCTAssertEqual(displayModel.addedAttachments.map { $0.statusLabel }, [
-            "normal", "참조만 포함 · 내용 미확장", "resolving", "truncated", "failed · brokenReference",
+            "Included", "Collection paths", "Will upload", "Partial", "Failed",
+        ])
+        XCTAssertEqual(displayModel.addedAttachments.map { $0.statusDetail }, [
+            "Included as text",
+            "Collection paths only; contents not included",
+            "Will upload when sent",
+            "Included first 64 KiB as text",
+            "Not sent: brokenReference",
         ])
         XCTAssertEqual(displayModel.addedAttachments[1].iconFilePath, "/tmp/Workspace.voycoll")
         XCTAssertEqual(displayModel.addedAttachments[1].iconAssetName, "voycollFileIcon")
@@ -77,7 +85,6 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
         XCTAssertEqual(AiChatStateDisplayModelBuilder(state: multiSelectState).requestContextDisplayModel.currentContext?.title, "3 Selected")
     }
 
-
     func testCurrentFolderContextUsesFinderFolderIconPath() {
         let state = AiChatFeature.State(
             currentContext: makeContextSnapshot(
@@ -95,9 +102,47 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
         )
 
         let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+        let currentContextTooltip = aiChatRequestContextTooltipText(
+            sourceLabel: "Current context",
+            destinationLabel: "ChatGPT Codex",
+            statusLabel: aiChatCurrentContextStatusLabel(for: state.currentContext, destinationProvider: .chatgptCodex),
+            statusDetail: aiChatCurrentContextStatusDetail(for: state.currentContext, destinationProvider: .chatgptCodex)
+        )
 
         XCTAssertEqual(currentContext?.title, "Desktop")
         XCTAssertEqual(currentContext?.iconFilePath, "/Users/test/Desktop")
+        XCTAssertTrue(currentContextTooltip.contains("Source: Current context"))
+        XCTAssertTrue(currentContextTooltip.contains("Destination: ChatGPT Codex"))
+        XCTAssertTrue(currentContextTooltip.contains("Status: Reference only"))
+        XCTAssertTrue(currentContextTooltip.contains("contents not included"))
+    }
+
+    func testCurrentFileContextTooltipMentionsProviderInclusion() {
+        let state = AiChatFeature.State(
+            currentContext: makeContextSnapshot(
+                summary: "Selected file",
+                references: [],
+                items: [
+                    makeContextItem(
+                        title: "Notes.pdf",
+                        metadata: ["path": "/Users/test/Notes.pdf"]
+                    ),
+                ],
+                attachments: []
+            ),
+            addedAttachments: []
+        )
+
+        let currentContextTooltip = aiChatRequestContextTooltipText(
+            sourceLabel: "Current context",
+            destinationLabel: "OpenAI",
+            statusLabel: aiChatCurrentContextStatusLabel(for: state.currentContext, destinationProvider: .openai),
+            statusDetail: aiChatCurrentContextStatusDetail(for: state.currentContext, destinationProvider: .openai)
+        )
+
+        XCTAssertTrue(currentContextTooltip.contains("Source: Current context"))
+        XCTAssertTrue(currentContextTooltip.contains("Status: Included"))
+        XCTAssertTrue(currentContextTooltip.contains("provider-native file when supported"))
     }
 
     func testSelectedCollectionCurrentContextRemovesVoycollExtension() {
@@ -155,12 +200,50 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
                     source: .collectionDocument,
                     displayTitle: "Workspace.voycoll",
                     filePath: "/tmp/Workspace.voycoll",
+                    metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two"],
+                    result: .resolvedReference(metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two"])
+                ),
+                makeLockedAttachment(
+                    id: "locked-native",
+                    displayTitle: "Design.pdf",
+                    filePath: "/tmp/Design.pdf",
                     result: .resolvedReference(metadata: [:])
                 ),
                 makeLockedAttachment(
                     id: "locked-fail",
                     filePath: "/tmp/Secret.txt",
                     result: .failure(reason: .permissionDenied, metadata: [:])
+                ),
+            ],
+            parts: [
+                AiChatLockedContextPartSnapshot(
+                    source: .attachment,
+                    resolution: .collectionPathList(
+                        paths: ["/tmp/One", "/tmp/Two"],
+                        metadata: ["attachmentID": "locked-ref"]
+                    ),
+                    fileKind: .attachment,
+                    displayTitle: "Workspace.voycoll"
+                ),
+                AiChatLockedContextPartSnapshot(
+                    source: .attachment,
+                    resolution: .providerNativeFile(
+                        kind: .pdf,
+                        mimeType: "application/pdf",
+                        metadata: ["attachmentID": "locked-native"]
+                    ),
+                    fileKind: .file,
+                    displayTitle: "Design.pdf",
+                    mimeType: "application/pdf"
+                ),
+                AiChatLockedContextPartSnapshot(
+                    source: .attachment,
+                    resolution: .failure(
+                        reason: .permissionDenied,
+                        metadata: ["attachmentID": "locked-fail"]
+                    ),
+                    fileKind: .file,
+                    displayTitle: "Secret.txt"
                 ),
             ]
         )
@@ -210,8 +293,13 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
         let processingDisplayModel = AiChatStateDisplayModelBuilder(state: processingState).requestContextDisplayModel
         XCTAssertEqual(processingDisplayModel.source, AiChatRequestContextDisplaySource.locked)
         XCTAssertEqual(processingDisplayModel.currentContext?.title, "VoyagerEntitiesAi.swift")
-        XCTAssertEqual(processingDisplayModel.addedAttachments.map { $0.title }, ["Workspace", "Secret.txt"])
-        XCTAssertEqual(processingDisplayModel.addedAttachments.map { $0.statusLabel }, ["참조만 포함 · 내용 미확장", "failed · permissionDenied"])
+        XCTAssertEqual(processingDisplayModel.addedAttachments.map { $0.title }, ["Workspace", "Design.pdf", "Secret.txt"])
+        XCTAssertEqual(processingDisplayModel.addedAttachments.map { $0.statusLabel }, ["Collection paths", "Uploaded/native", "Failed"])
+        XCTAssertEqual(processingDisplayModel.addedAttachments.map { $0.statusDetail }, [
+            "Collection paths only; contents not included",
+            "Uploaded natively as application/pdf",
+            "Not sent: permissionDenied",
+        ])
         XCTAssertEqual(processingDisplayModel.addedAttachments[0].iconFilePath, "/tmp/Workspace.voycoll")
         XCTAssertEqual(processingDisplayModel.addedAttachments[0].iconAssetName, "voycollFileIcon")
         XCTAssertTrue(processingDisplayModel.addedAttachments.allSatisfy { !$0.isRemovable })
@@ -243,6 +331,38 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
         XCTAssertEqual(completedDisplayModel.currentContext?.title, "LiveOnly.txt")
         XCTAssertEqual(completedDisplayModel.addedAttachments.map { $0.title }, ["LiveOnly.txt"])
     }
+
+    func testContextPartResolutionMapsToClosedChipStates() {
+        let fixtures: [(AiChatContextPartResolution, String, String)] = [
+            (.inlineText(text: "Hello", metadata: [:]), "Included", "Included as text"),
+            (.partialText(text: "Hello", truncated: true, metadata: [:]), "Partial", "Included first 64 KiB as text"),
+            (.partialText(text: "Hello", truncated: false, metadata: [:]), "Included", "Included as text"),
+            (.referenceOnly(metadata: [:]), "Reference only", "Reference only; contents not included"),
+            (
+                .referenceOnly(metadata: ["collectionItemPaths": "/tmp/A\n/tmp/B"]),
+                "Collection paths",
+                "Collection paths only; contents not included"
+            ),
+            (.collectionPathList(paths: ["/tmp/A", "/tmp/B"], metadata: [:]), "Collection paths", "Collection paths only; contents not included"),
+            (
+                .providerNativeFile(kind: .plainTextDocument, mimeType: "text/plain", metadata: [:]),
+                "Uploaded/native",
+                "Uploaded natively as text/plain"
+            ),
+            (
+                .providerNativeFile(kind: .codexPathScope, mimeType: "text/plain", metadata: [:]),
+                "Codex path",
+                "Codex path reference; not uploaded"
+            ),
+            (.failure(reason: .unsupportedType, metadata: [:]), "Unsupported", "Not sent: unsupported type"),
+            (.failure(reason: .permissionDenied, metadata: [:]), "Failed", "Not sent: permissionDenied"),
+        ]
+
+        for (resolution, expectedLabel, expectedDetail) in fixtures {
+            XCTAssertEqual(aiChatContextPartStatusLabel(for: resolution), expectedLabel)
+            XCTAssertEqual(aiChatContextPartStatusDetail(for: resolution), expectedDetail)
+        }
+    }
 }
 
 private func makeDraftAttachment(
@@ -250,6 +370,7 @@ private func makeDraftAttachment(
     source: AiChatAttachmentSource = .file,
     displayTitle: String? = nil,
     filePath: String? = nil,
+    metadata: [String: String] = [:],
     status: AiChatAttachmentDraftStatus
 ) -> AiChatAttachmentDraft {
     AiChatAttachmentDraft(
@@ -257,6 +378,7 @@ private func makeDraftAttachment(
         source: source,
         displayTitle: displayTitle,
         sourceLocation: AiChatAttachmentSourceLocation(filePath: filePath),
+        metadata: metadata,
         currentStatus: status
     )
 }
@@ -266,6 +388,7 @@ private func makeLockedAttachment(
     source: AiChatAttachmentSource = .file,
     displayTitle: String? = nil,
     filePath: String? = nil,
+    metadata: [String: String] = [:],
     result: AiChatAttachmentResolutionResult
 ) -> AiChatAttachmentSnapshot {
     AiChatAttachmentSnapshot(
@@ -273,6 +396,7 @@ private func makeLockedAttachment(
         source: source,
         displayTitle: displayTitle,
         sourceLocation: AiChatAttachmentSourceLocation(filePath: filePath),
+        metadata: metadata,
         resolutionResult: result
     )
 }
