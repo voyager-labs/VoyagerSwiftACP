@@ -92,13 +92,28 @@ struct ScopeTreeRowView: View {
         Button(
             action: { onAction(action) },
             label: {
-                HStack(spacing: 4) {
+                HStack(spacing: isHovering ? 4 : 0) {
                     Image(systemName: actionSymbolName(for: action))
                         .font(.system(size: 9, weight: .semibold))
-                    Text(actionLabel(for: action))
-                        .font(.system(size: 11, weight: .medium))
+                    if isHovering {
+                        Text(actionLabel(for: action))
+                            .font(.system(size: 10, weight: .medium))
+                    }
                 }
                 .foregroundColor(actionForegroundColor(for: action))
+                .padding(.horizontal, isHovering ? 8 : 6)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme).opacity(isHovering ? 0.95 : 0.7)),
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            VoyagerDS.Surface.chipItemBorder(for: colorScheme).opacity(isHovering ? 1 : 0.65),
+                            lineWidth: 0.5,
+                        ),
+                )
             },
         )
         .buttonStyle(.borderless)
@@ -290,10 +305,10 @@ struct ScopeTreeRowView: View {
         helpText: String? = nil,
     ) -> some View {
         Text(text)
-            .font(.system(size: 9, weight: .medium))
+            .font(.system(size: 8, weight: .medium))
             .foregroundColor(tint)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
             .background(
                 Capsule()
                     .fill(background),

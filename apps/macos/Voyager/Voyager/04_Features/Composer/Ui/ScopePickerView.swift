@@ -139,24 +139,93 @@ private extension ScopePickerView {
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                treeSection(rows: rows, viewStore: viewStore)
+                scopeSections(rows: rows, viewStore: viewStore)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
     }
 
-    private func treeSection(
+    @ViewBuilder
+    private func scopeSections(
         rows: [ComposerScopeTreeRow],
         viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) -> some View {
+        let sections = makeScopeSections(rows: rows, listState: viewStore.scopeEditor.listState)
+
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(sections.indices, id: \.self) { index in
+                if index > 0 {
+                    sectionDivider
+                }
+
+                scopeSectionView(section: sections[index], viewStore: viewStore)
+                    .padding(.top, index == 0 ? 0 : 6)
+            }
+        }
+        .accessibilityIdentifier(ScopePickerAccessibilityID.treeSection)
+    }
+
+    private var sectionDivider: some View {
+        VoyagerDS.SystemColor.separator
+            .frame(height: 1)
+            .padding(.horizontal, 2)
+            .opacity(0.8)
+    }
+
+    private func makeScopeSections(
+        rows: [ComposerScopeTreeRow],
+        listState: ComposerScopeEditorListState,
+    ) -> [ScopePickerSection] {
+        let currentScopeRows = rows.filter { row in
+            switch row.kind {
+            case .root, .base, .exception:
+                true
+            case .candidate:
+                false
+            }
+        }
+        let candidateRows = rows.filter { $0.kind == .candidate }
+
+        var sections: [ScopePickerSection] = []
+        if !currentScopeRows.isEmpty {
+            sections.append(
+                ScopePickerSection(
+                    kind: .currentScope,
+                    title: "Current scope",
+                    rows: currentScopeRows,
+                    showsNoResultsFooter: false,
+                ),
+            )
+        }
+
+        if !candidateRows.isEmpty || listState.noResultsQuery != nil {
+            sections.append(
+                ScopePickerSection(
+                    kind: .candidate,
+                    title: treeSectionTitle(for: listState),
+                    rows: candidateRows,
+                    showsNoResultsFooter: listState.noResultsQuery != nil,
+                ),
+            )
+        }
+
+        return sections
+    }
+
+    @ViewBuilder
+    private func scopeSectionView(
+        section: ScopePickerSection,
+        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(treeSectionTitle(for: viewStore.scopeEditor.listState))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
+            Text(section.title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary.opacity(0.85))
+                .padding(.horizontal, 2)
 
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(rows) { row in
+                ForEach(section.rows) { row in
                     ScopeTreeRowView(
                         row: row,
                         colorScheme: colorScheme,
@@ -172,12 +241,11 @@ private extension ScopePickerView {
                     .accessibilityIdentifier(ScopePickerAccessibilityID.treeRow(path: row.path))
                 }
 
-                if viewStore.scopeEditor.listState.noResultsQuery != nil {
+                if section.showsNoResultsFooter {
                     noResultsFooter(viewStore.scopeEditor.listState)
                 }
             }
         }
-        .accessibilityIdentifier(ScopePickerAccessibilityID.treeSection)
     }
 
     @ViewBuilder
@@ -216,6 +284,20 @@ private extension ScopePickerView {
         case let .noResults(query):
             "No Results for \"\(query)\""
         }
+    }
+
+    private struct ScopePickerSection: Identifiable {
+        enum Kind: Hashable {
+            case currentScope
+            case candidate
+        }
+
+        let kind: Kind
+        let title: String
+        let rows: [ComposerScopeTreeRow]
+        let showsNoResultsFooter: Bool
+
+        var id: Kind { kind }
     }
 
     private func handleTreeRowBodyTap(
