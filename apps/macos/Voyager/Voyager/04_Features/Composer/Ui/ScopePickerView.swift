@@ -186,8 +186,25 @@ private extension ScopePickerView {
             }
         }
         let candidateRows = rows.filter { $0.kind == .candidate }
+        let candidateFirst = isCandidateSectionPrimary(listState)
 
         var sections: [ScopePickerSection] = []
+
+        if candidateFirst {
+            appendCandidateSection(to: &sections, candidateRows: candidateRows, listState: listState)
+            appendCurrentScopeSection(to: &sections, currentScopeRows: currentScopeRows)
+        } else {
+            appendCurrentScopeSection(to: &sections, currentScopeRows: currentScopeRows)
+            appendCandidateSection(to: &sections, candidateRows: candidateRows, listState: listState)
+        }
+
+        return sections
+    }
+
+    private func appendCurrentScopeSection(
+        to sections: inout [ScopePickerSection],
+        currentScopeRows: [ComposerScopeTreeRow],
+    ) {
         if !currentScopeRows.isEmpty {
             sections.append(
                 ScopePickerSection(
@@ -198,7 +215,13 @@ private extension ScopePickerView {
                 ),
             )
         }
+    }
 
+    private func appendCandidateSection(
+        to sections: inout [ScopePickerSection],
+        candidateRows: [ComposerScopeTreeRow],
+        listState: ComposerScopeEditorListState,
+    ) {
         if !candidateRows.isEmpty || listState.noResultsQuery != nil {
             sections.append(
                 ScopePickerSection(
@@ -209,8 +232,15 @@ private extension ScopePickerView {
                 ),
             )
         }
+    }
 
-        return sections
+    private func isCandidateSectionPrimary(_ listState: ComposerScopeEditorListState) -> Bool {
+        switch listState {
+        case .searchResults, .noResults:
+            true
+        case .defaultCandidates, .childFolders:
+            false
+        }
     }
 
     @ViewBuilder
