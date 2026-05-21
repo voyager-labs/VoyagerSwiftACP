@@ -30,7 +30,7 @@ enum ComposerScopeChildDirectoryCandidates {
                 return nil
             }
 
-            let locationMetadata = ComposerScopeUtils.candidateLocationMetadata(path: path)
+            let locationMetadata = ComposerScopeCandidateDisambiguation.locationMetadata(path: path)
 
             return ComposerScopeUtils.DirectoryItem(
                 id: path,

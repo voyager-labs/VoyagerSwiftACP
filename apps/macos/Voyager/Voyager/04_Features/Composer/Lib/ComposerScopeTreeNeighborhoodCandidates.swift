@@ -78,7 +78,7 @@ enum ComposerScopeTreeNeighborhoodCandidates {
         entryLoadingClient: EntryLoadingClient,
     ) -> ComposerScopeTreeSeedItem {
         let normalizedPath = ComposerScopeUtils.normalizeScopePath(path)
-        let locationMetadata = ComposerScopeUtils.candidateLocationMetadata(path: normalizedPath)
+        let locationMetadata = ComposerScopeCandidateDisambiguation.locationMetadata(path: normalizedPath)
 
         return ComposerScopeTreeSeedItem(
             path: normalizedPath,
