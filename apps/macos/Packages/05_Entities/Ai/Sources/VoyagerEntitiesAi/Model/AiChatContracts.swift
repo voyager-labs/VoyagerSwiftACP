@@ -231,11 +231,61 @@ public enum AiChatAttachmentResolutionFailure: String, Codable, Equatable, Senda
     case emptyContent
 }
 
+public enum AiChatProviderNativeFileKind: String, Codable, Equatable, Sendable {
+    case pdf
+    case image
+    case plainTextDocument
+    case openAIDocument
+    case spreadsheet
+    case codexPathScope
+}
+
+public enum AiChatContextPartResolution: Codable, Equatable, Sendable {
+    case inlineText(text: String, metadata: [String: String])
+    case partialText(text: String, truncated: Bool, metadata: [String: String])
+    case referenceOnly(metadata: [String: String])
+    case collectionPathList(paths: [String], metadata: [String: String])
+    case providerNativeFile(kind: AiChatProviderNativeFileKind, mimeType: String, metadata: [String: String])
+    case failure(reason: AiChatAttachmentResolutionFailure, metadata: [String: String])
+}
+
 public enum AiChatAttachmentResolutionResult: Codable, Equatable, Sendable {
     case resolvedText(text: String, metadata: [String: String])
     case resolvedReference(metadata: [String: String])
     case resolvedPartial(text: String, truncated: Bool, metadata: [String: String])
     case failure(reason: AiChatAttachmentResolutionFailure, metadata: [String: String])
+
+    public var contextPartResolution: AiChatContextPartResolution {
+        switch self {
+        case let .resolvedText(text, metadata):
+            return AiChatContextPartResolution.inlineText(text: text, metadata: metadata)
+        case let .resolvedReference(metadata):
+            let paths = Self.collectionItemPaths(from: metadata)
+            if paths.isEmpty {
+                return AiChatContextPartResolution.referenceOnly(metadata: metadata)
+            }
+            return AiChatContextPartResolution.collectionPathList(
+                paths: paths,
+                metadata: Self.collectionPathMetadata(from: metadata),
+            )
+        case let .resolvedPartial(text, truncated, metadata):
+            return AiChatContextPartResolution.partialText(text: text, truncated: truncated, metadata: metadata)
+        case let .failure(reason, metadata):
+            return AiChatContextPartResolution.failure(reason: reason, metadata: metadata)
+        }
+    }
+
+    private static func collectionPathMetadata(from metadata: [String: String]) -> [String: String] {
+        metadata.filter { $0.key != "collectionItemPaths" }
+    }
+
+    private static func collectionItemPaths(from metadata: [String: String]) -> [String] {
+        guard let rawPaths = metadata["collectionItemPaths"] else { return [] }
+        return rawPaths
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
 }
 
 public enum AiChatAttachmentDraftStatus: Codable, Equatable, Sendable {
@@ -339,18 +389,57 @@ public struct AiChatRequestContextDraft: Codable, Equatable, Sendable {
     }
 }
 
+public enum AiChatLockedContextPartSource: String, Codable, Equatable, Sendable {
+    case currentContext
+    case attachment
+}
+
+public struct AiChatLockedContextPartSnapshot: Codable, Equatable, Sendable {
+    public let source: AiChatLockedContextPartSource
+    public let resolution: AiChatContextPartResolution
+    public let canonicalPath: String?
+    public let displayPath: String?
+    public let fileKind: AiChatContextItemKind
+    public let displayTitle: String?
+    public let byteCount: Int64?
+    public let mimeType: String?
+
+    public init(
+        source: AiChatLockedContextPartSource,
+        resolution: AiChatContextPartResolution,
+        canonicalPath: String? = nil,
+        displayPath: String? = nil,
+        fileKind: AiChatContextItemKind,
+        displayTitle: String? = nil,
+        byteCount: Int64? = nil,
+        mimeType: String? = nil,
+    ) {
+        self.source = source
+        self.resolution = resolution
+        self.canonicalPath = canonicalPath
+        self.displayPath = displayPath
+        self.fileKind = fileKind
+        self.displayTitle = displayTitle
+        self.byteCount = byteCount
+        self.mimeType = mimeType
+    }
+}
+
 public struct AiChatLockedRequestContextSnapshot: Codable, Equatable, Sendable {
     public let currentContext: AiChatCurrentContextSnapshot
     public let addedAttachments: [AiChatAttachmentSnapshot]
+    public let parts: [AiChatLockedContextPartSnapshot]
     public let status: AiChatRequestContextStatus
 
     public init(
         currentContext: AiChatCurrentContextSnapshot = .init(),
         addedAttachments: [AiChatAttachmentSnapshot] = [],
+        parts: [AiChatLockedContextPartSnapshot] = [],
         status: AiChatRequestContextStatus = .requestContextLocked,
     ) {
         self.currentContext = currentContext
         self.addedAttachments = addedAttachments
+        self.parts = parts
         self.status = status
     }
 }
