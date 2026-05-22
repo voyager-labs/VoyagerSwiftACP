@@ -915,9 +915,12 @@ private extension AiChatContextPartResolverClient {
                     provider: provider
                 )
             } else {
-                metadata = AiChatAttachmentResolverClient.directoryReferenceMetadata(
-                    base: baseMetadata,
-                    directoryURL: fileIdentity.canonicalURL
+                metadata = sanitizeContextMetadata(
+                    AiChatAttachmentResolverClient.directoryReferenceMetadata(
+                        base: baseMetadata,
+                        directoryURL: fileIdentity.canonicalURL
+                    ),
+                    provider: provider
                 )
             }
             return .referenceOnly(metadata: metadata)

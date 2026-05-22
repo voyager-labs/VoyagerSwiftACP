@@ -320,6 +320,53 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         )
     }
 
+    func testRemoteCurrentContextFolderRedactsCollectionItemPathsForNonCodexProvider() async throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let folderURL = sandbox.appendingPathComponent("Workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let insideURL = folderURL.appendingPathComponent("Inside.md")
+        try "folder note".write(to: insideURL, atomically: true, encoding: .utf8)
+
+        let currentContext = makeContextSnapshot(
+            summary: "Current folder",
+            references: [],
+            items: [
+                AiChatContextItem(
+                    kind: .folder,
+                    identifier: folderURL.path(percentEncoded: false),
+                    title: "Workspace",
+                    subtitle: folderURL.path(percentEncoded: false),
+                    metadata: ["path": folderURL.path(percentEncoded: false)]
+                )
+            ],
+            attachments: []
+        )
+
+        let result = AiChatContextPartResolverClient.live().resolve(
+            AiChatContextPartResolverInput(
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                requestFamily: .openAIResponses,
+                currentContext: currentContext,
+                attachments: []
+            )
+        )
+
+        XCTAssertEqual(result.parts.count, 1)
+        guard case let .referenceOnly(metadata) = result.parts[0].resolution else {
+            XCTFail("Expected current context folder to resolve as referenceOnly")
+            return
+        }
+
+        XCTAssertEqual(metadata["collectionItemPaths"]?.split(separator: "\n").map(String.init), ["Inside.md"])
+        XCTAssertFalse(metadata["collectionItemPaths"]?.contains(sandbox.path(percentEncoded: false)) ?? false)
+        XCTAssertEqual(metadata["path"], "Workspace")
+    }
+
     func testRemoteCurrentContextSelectedFileUsesProviderNativeBase64AndRedactedPathMetadata() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
