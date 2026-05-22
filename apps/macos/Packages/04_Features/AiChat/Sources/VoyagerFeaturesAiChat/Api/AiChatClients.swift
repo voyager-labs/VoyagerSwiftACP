@@ -474,12 +474,12 @@ private extension AiChatAttachmentResolverClient {
             }
             let truncated = data.count > allowedBytes
             let selectedData = truncated ? data.prefix(allowedBytes) : data[...]
-            guard let text = String(data: Data(selectedData), encoding: .utf8) else {
+            guard let decoded = decodeUTF8Prefix(Data(selectedData)) else {
                 return .failure(.unsupportedType)
             }
-            let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedText = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalizedText.isEmpty else { return .failure(.emptyContent) }
-            remainingTotalBudget -= selectedData.count
+            remainingTotalBudget -= decoded.byteCount
             return .success(text: normalizedText, truncated: truncated)
         } catch CocoaError.fileReadNoPermission {
             return .failure(.permissionDenied)
@@ -1062,11 +1062,7 @@ private extension AiChatContextPartResolverClient {
         provider: AiProvider,
         displayPath redactedPath: String?
     ) -> AiChatAttachmentSourceLocation {
-        guard provider != .chatgptCodex else { return sourceLocation }
-        let path = redactedPath
-            ?? displayPath(for: sourceLocation.filePath, provider: provider)
-            ?? displayPath(for: sourceLocation.fileURL?.path(percentEncoded: false), provider: provider)
-        return AiChatAttachmentSourceLocation(fileURL: nil, filePath: path)
+        sourceLocation
     }
 
     static func nativeUploadData(fileURL: URL, safeLimitBytes: Int64) -> Data? {
@@ -1273,4 +1269,14 @@ public extension DependencyValues {
         get { self[AiChatSessionPersistenceClient.self] }
         set { self[AiChatSessionPersistenceClient.self] = newValue }
     }
+}
+private func decodeUTF8Prefix(_ data: Data) -> (text: String, byteCount: Int)? {
+    var selectedData = data
+    while !selectedData.isEmpty {
+        if let text = String(data: selectedData, encoding: .utf8) {
+            return (text, selectedData.count)
+        }
+        selectedData.removeLast()
+    }
+    return nil
 }

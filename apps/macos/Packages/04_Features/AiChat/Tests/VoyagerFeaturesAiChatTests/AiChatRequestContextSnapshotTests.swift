@@ -180,6 +180,29 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
     }
 
 
+    func testSubmitTruncatedUTF8AttachmentBacksUpToValidScalarBoundary() async throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let fileURL = sandbox.appendingPathComponent("MultibyteNotes.txt")
+        let prefix = String(repeating: "a", count: 64 * 1024 - 1)
+        try (prefix + "😀 trailing").write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let request = await submitRequest(attachments: [makeDraftAttachment(url: fileURL, source: .file)])
+        let attachment = try XCTUnwrap(request.context.requestContext.addedAttachments.first)
+
+        switch attachment.resolutionResult {
+        case let .resolvedPartial(text, truncated, _):
+            XCTAssertTrue(truncated)
+            XCTAssertEqual(text, prefix)
+            XCTAssertLessThanOrEqual(text.utf8.count, 64 * 1024)
+        default:
+            XCTFail("Expected resolvedPartial, got \(attachment.resolutionResult)")
+        }
+    }
+
     func testSubmitBoundsLargeUTF8AttachmentReadToTextBudget() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -644,6 +667,13 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         await store.send(.regenerateTapped)
 
         let request = try XCTUnwrap(stream.requests.first)
+        let regeneratedAttachment = try XCTUnwrap(request.context.requestContext.addedAttachments.first)
+        XCTAssertEqual(regeneratedAttachment.sourceLocation.filePath, fileURL.path(percentEncoded: false))
+        XCTAssertEqual(regeneratedAttachment.resolutionResult, .resolvedText(text: "provider-specific regenerate body", metadata: [
+            "filePath": fileURL.path(percentEncoded: false),
+            "relativePath": "RegenerateNotes.txt",
+            "source": "file",
+        ]))
         XCTAssertEqual(request.context.model, codexHandle)
         XCTAssertEqual(request.context.provider, .chatgptCodex)
         XCTAssertEqual(request.context.currentContext.summary, "Original regenerate context")
