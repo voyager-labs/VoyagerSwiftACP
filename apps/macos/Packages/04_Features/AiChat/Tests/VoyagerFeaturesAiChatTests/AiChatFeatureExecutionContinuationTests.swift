@@ -271,6 +271,124 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
     }
 
+    func testMakeSessionSnapshotDropsProviderNativeBinaryPayloadMetadata() throws {
+        let feature = AiChatFeature()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let requestContext = AiChatLockedRequestContextSnapshot(
+            currentContext: AiChatCurrentContextSnapshot(
+                references: [
+                    AiChatContextReference(
+                        kind: .file,
+                        identifier: "ref",
+                        title: "Reference.pdf",
+                        metadata: ["base64Data": "REFERENCE_BYTES", "path": "/tmp/Reference.pdf"]
+                    )
+                ],
+                items: [
+                    AiChatContextItem(
+                        kind: .file,
+                        identifier: "item",
+                        title: "Item.pdf",
+                        metadata: ["nativeBase64Data": "ITEM_BYTES", "path": "/tmp/Item.pdf"],
+                        references: [
+                            AiChatContextReference(
+                                kind: .file,
+                                identifier: "nested",
+                                title: "Nested.pdf",
+                                metadata: ["fileDataBase64": "NESTED_BYTES", "path": "/tmp/Nested.pdf"]
+                            )
+                        ]
+                    )
+                ],
+                attachments: [
+                    AiChatContextAttachment(
+                        identifier: "current-attachment",
+                        title: "CurrentAttachment.pdf",
+                        metadata: ["base64Data": "CURRENT_ATTACHMENT_BYTES", "path": "/tmp/CurrentAttachment.pdf"]
+                    )
+                ]
+            ),
+            addedAttachments: [
+                AiChatAttachmentSnapshot(
+                    id: AiChatAttachmentID(rawValue: "native-attachment"),
+                    source: .file,
+                    displayTitle: "Native.pdf",
+                    sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Native.pdf"),
+                    metadata: ["nativeBase64Data": "ATTACHMENT_METADATA_BYTES"],
+                    resolutionResult: .resolvedReference(metadata: [
+                        "base64Data": "ATTACHMENT_RESULT_BYTES",
+                        "path": "/tmp/Native.pdf",
+                    ])
+                )
+            ],
+            parts: [
+                AiChatLockedContextPartSnapshot(
+                    source: .attachment,
+                    resolution: .providerNativeFile(
+                        kind: .pdf,
+                        mimeType: "application/pdf",
+                        metadata: [
+                            "base64Data": "PART_BYTES",
+                            "nativeBase64Data": "PART_NATIVE_BYTES",
+                            "fileDataBase64": "PART_FILE_BYTES",
+                            "path": "/tmp/Native.pdf",
+                        ]
+                    ),
+                    canonicalPath: "/tmp/Native.pdf",
+                    displayPath: "Native.pdf",
+                    fileKind: .file,
+                    displayTitle: "Native.pdf",
+                    byteCount: 128,
+                    mimeType: "application/pdf"
+                )
+            ]
+        )
+        let context = AiChatRequestContextSnapshot(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111161")),
+            requestID: AiChatRequestID(rawValue: makeUUID("11111111-1111-1111-1111-111111111162")),
+            runID: AiChatRunID(rawValue: makeUUID("11111111-1111-1111-1111-111111111163")),
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModel: makeProviderModels()[0],
+            selectedModelRow: catalogRows[0],
+            sessionStatus: .active,
+            requestContext: requestContext,
+            promptSummary: "Hello"
+        )
+        let request = AiChatRequest(context: context, messages: [AiChatMessage(role: .user, content: "Hello")])
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        )
+        let state = AiChatFeature.State(
+            sessionID: request.context.sessionID,
+            sessionStatus: .active,
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "Done")],
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .completed(lock)
+        )
+
+        let snapshot = feature.makeSessionSnapshot(state: state, lock: lock)
+        let persisted = try XCTUnwrap(snapshot.lastRequestContext)
+
+        XCTAssertEqual(persisted.addedAttachments[0].resolutionResult, .resolvedReference(metadata: ["path": "/tmp/Native.pdf"]))
+        XCTAssertEqual(persisted.parts[0].resolution, .providerNativeFile(
+            kind: .pdf,
+            mimeType: "application/pdf",
+            metadata: ["path": "/tmp/Native.pdf"]
+        ))
+        XCTAssertNil(persisted.currentContext.references[0].metadata["base64Data"])
+        XCTAssertNil(persisted.currentContext.items[0].metadata["nativeBase64Data"])
+        XCTAssertNil(persisted.currentContext.items[0].references[0].metadata["fileDataBase64"])
+        XCTAssertNil(persisted.currentContext.attachments[0].metadata["base64Data"])
+        XCTAssertEqual(lock.context.requestContext.parts[0].resolution, requestContext.parts[0].resolution)
+    }
+
     // swiftlint:disable:next function_body_length
     func testSubmitFreezesContextTimingAndDeterministicHistoryTruncation() async {
         let stream = AiChatExecutionStreamDriver()

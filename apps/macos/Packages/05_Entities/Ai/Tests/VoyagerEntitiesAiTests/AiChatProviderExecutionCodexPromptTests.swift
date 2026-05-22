@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 
 final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
-    func testMakeCodexPrompt_defaultsWorkingDirectoryToFilesystemRoot() throws {
+    func testMakeCodexPrompt_withoutWorkingDirectoryKeepsPathsReferenceOnly() throws {
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("codex-root-default-\(UUID().uuidString).txt")
         try createFile(at: fileURL, contents: "root default\n")
         defer { try? FileManager.default.removeItem(at: fileURL) }
@@ -15,10 +15,12 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
                 )
             ))
 
-            XCTAssertTrue(prompt.contains("working_directory: /"), prompt)
+            XCTAssertTrue(prompt.contains("working_directory: unavailable"), prompt)
+            XCTAssertTrue(prompt.contains("working_directory_note: Codex working directory is unavailable"), prompt)
             XCTAssertTrue(prompt.contains("path: \(fileURL.path)"), prompt)
-            XCTAssertTrue(prompt.contains("status: in_scope"), prompt)
-            XCTAssertTrue(prompt.contains("access: referenced path (Codex filesystem access)"), prompt)
+            XCTAssertTrue(prompt.contains("status: reference_only"), prompt)
+            XCTAssertTrue(prompt.contains("access: reference-only"), prompt)
+            XCTAssertFalse(prompt.contains("status: in_scope"), prompt)
         }
     }
 

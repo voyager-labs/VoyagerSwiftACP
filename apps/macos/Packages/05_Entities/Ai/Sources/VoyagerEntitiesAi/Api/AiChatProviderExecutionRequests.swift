@@ -330,7 +330,7 @@ extension AiChatProviderExecutionClient {
         if let workingDirectory = ProcessInfo.processInfo.environment["VOYAGER_CODEX_WORKING_DIRECTORY"], !workingDirectory.isEmpty {
             return URL(fileURLWithPath: workingDirectory)
         }
-        return URL(fileURLWithPath: "/", isDirectory: true)
+        return nil
     }
 
     struct CodexProcessRequest {
