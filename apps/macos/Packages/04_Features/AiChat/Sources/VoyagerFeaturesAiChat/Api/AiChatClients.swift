@@ -460,10 +460,18 @@ private extension AiChatAttachmentResolverClient {
         fileURL: URL,
         remainingTotalBudget: inout Int
     ) -> ResolvedAttachmentText {
+        let allowedBytes = min(perAttachmentUTF8ByteBudget, remainingTotalBudget)
+        guard allowedBytes > 0 else { return .failure(.tooLarge) }
+
         do {
-            let data = try Data(contentsOf: fileURL)
-            guard !data.isEmpty else { return .failure(.emptyContent) }
-            let allowedBytes = min(perAttachmentUTF8ByteBudget, remainingTotalBudget)
+            let fileHandle = try FileHandle(forReadingFrom: fileURL)
+            defer {
+                try? fileHandle.close()
+            }
+
+            guard let data = try fileHandle.read(upToCount: allowedBytes + 1), !data.isEmpty else {
+                return .failure(.emptyContent)
+            }
             let truncated = data.count > allowedBytes
             let selectedData = truncated ? data.prefix(allowedBytes) : data[...]
             guard let text = String(data: Data(selectedData), encoding: .utf8) else {

@@ -180,6 +180,28 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
     }
 
 
+    func testSubmitBoundsLargeUTF8AttachmentReadToTextBudget() async throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let fileURL = sandbox.appendingPathComponent("HugeNotes.txt")
+        try String(repeating: "h", count: 256 * 1024).write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let request = await submitRequest(attachments: [makeDraftAttachment(url: fileURL, source: .file)])
+        let attachment = try XCTUnwrap(request.context.requestContext.addedAttachments.first)
+
+        switch attachment.resolutionResult {
+        case let .resolvedPartial(text, truncated, _):
+            XCTAssertTrue(truncated)
+            XCTAssertLessThanOrEqual(text.utf8.count, 64 * 1024)
+            XCTAssertEqual(text, String(repeating: "h", count: 64 * 1024))
+        default:
+            XCTFail("Expected resolvedPartial, got \(attachment.resolutionResult)")
+        }
+    }
+
     func testSubmitDedupesCurrentContextCanonicalPathWhenAttachmentTargetsSameFile() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
