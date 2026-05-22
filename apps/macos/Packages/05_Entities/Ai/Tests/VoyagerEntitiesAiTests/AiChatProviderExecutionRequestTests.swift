@@ -127,6 +127,70 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("/Users/"))
     }
 
+    func testMakeAnthropicRequest_omitsBase64PayloadMetadataFromSystemPrompt() throws {
+        let payload = try makePayload(
+            provider: .anthropic,
+            rawModelID: "claude-sonnet-4-20250514",
+            requestContext: AiChatLockedRequestContextSnapshot(
+                currentContext: .init(),
+                addedAttachments: [
+                    AiChatAttachmentSnapshot(
+                        id: AiChatAttachmentID(rawValue: "native-image"),
+                        source: .file,
+                        displayTitle: "Diagram.png",
+                        kind: .file,
+                        sourceLocation: AiChatAttachmentSourceLocation(filePath: "Diagram.png"),
+                        metadata: ["nativeBase64Data": "ATTACHMENT_NATIVE_BYTES"],
+                        resolutionResult: .resolvedReference(metadata: [
+                            "base64Data": "ATTACHMENT_BASE64_BYTES",
+                            "fileDataBase64": "ATTACHMENT_FILE_DATA_BYTES",
+                            "nativeUploadMode": "requestBase64",
+                            "resolution": "provider_native",
+                        ])
+                    ),
+                ],
+                parts: [
+                    AiChatLockedContextPartSnapshot(
+                        source: .attachment,
+                        resolution: .providerNativeFile(
+                            kind: .image,
+                            mimeType: "image/png",
+                            metadata: [
+                                "base64Data": "NATIVE_BLOCK_BYTES",
+                                "nativeBase64Data": "NATIVE_BLOCK_DUPLICATE_BYTES",
+                                "fileDataBase64": "NATIVE_BLOCK_FILE_DATA_BYTES",
+                                "nativeUploadMode": "requestBase64",
+                            ]
+                        ),
+                        fileKind: .file,
+                        displayTitle: "Diagram.png",
+                        byteCount: 128,
+                        mimeType: "image/png"
+                    ),
+                ]
+            )
+        )
+
+        let request = try AiChatProviderExecutionClient.makeAnthropicRequest(
+            payload: payload,
+            credential: .apiKey("anthropic-key")
+        )
+        let decoded = try decodeAnthropicRequestBody(request)
+        let system = try XCTUnwrap(decoded.system)
+
+        XCTAssertTrue(system.contains("nativeUploadMode: requestBase64"), system)
+        XCTAssertTrue(system.contains("resolution: provider_native"), system)
+        XCTAssertFalse(system.contains("base64Data:"), system)
+        XCTAssertFalse(system.contains("nativeBase64Data:"), system)
+        XCTAssertFalse(system.contains("fileDataBase64:"), system)
+        XCTAssertFalse(system.contains("ATTACHMENT_BASE64_BYTES"), system)
+        XCTAssertFalse(system.contains("ATTACHMENT_NATIVE_BYTES"), system)
+        XCTAssertFalse(system.contains("ATTACHMENT_FILE_DATA_BYTES"), system)
+        XCTAssertFalse(system.contains("NATIVE_BLOCK_BYTES"), system)
+        XCTAssertFalse(system.contains("NATIVE_BLOCK_DUPLICATE_BYTES"), system)
+        XCTAssertFalse(system.contains("NATIVE_BLOCK_FILE_DATA_BYTES"), system)
+    }
+
     func testMakeAnthropicRequest_fallsBackToPromptOnlyWhenNativeUploadIsDisallowedOrTooLarge() throws {
         let payload = try makePayload(
             provider: .anthropic,

@@ -271,9 +271,16 @@ private enum SharedContextPromptBuilder {
         return value
     }
 
+    private static let promptMetadataExcludedKeys: Set<String> = [
+        "base64Data",
+        "nativeBase64Data",
+        "fileDataBase64",
+        "collectionItemPaths",
+    ]
+
     private static func metadataLines(_ metadata: [String: String], indent: String) -> [String] {
         let filtered = metadata
-            .filter { $0.key != "collectionItemPaths" }
+            .filter { !promptMetadataExcludedKeys.contains($0.key) }
             .mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.key.isEmpty && !$0.value.isEmpty }
             .sorted { lhs, rhs in lhs.key < rhs.key }
