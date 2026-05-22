@@ -57,12 +57,12 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
             "Notes.txt", "Workspace", "Pending.txt", "Long.txt", "Broken.txt",
         ])
         XCTAssertEqual(displayModel.addedAttachments.map { $0.statusLabel }, [
-            "Included", "Collection paths", "Will upload", "Partial", "Failed",
+            "Included", "Collection paths", "", "Partial", "Failed",
         ])
         XCTAssertEqual(displayModel.addedAttachments.map { $0.statusDetail }, [
             "Included as text",
             "Collection paths only; contents not included",
-            "Will upload when sent",
+            "",
             "Included first 64 KiB as text",
             "Not sent: brokenReference",
         ])

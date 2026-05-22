@@ -491,7 +491,7 @@ private func aiChatAddedAttachmentChipDisplayModel(
 private func aiChatAttachmentChipStatus(for status: AiChatAttachmentDraftStatus) -> AiChatRequestContextChipStatus {
     switch status {
     case .pending:
-        .willUpload
+        .pending
     case let .resolved(result):
         aiChatContextPartChipStatus(for: result.contextPartResolution)
     }
@@ -508,7 +508,7 @@ private func aiChatAttachmentChipDetail(for result: AiChatAttachmentResolutionRe
 private func aiChatAttachmentChipDetail(for status: AiChatAttachmentDraftStatus) -> String {
     switch status {
     case .pending:
-        "Will upload when sent"
+        ""
     case let .resolved(result):
         aiChatContextPartChipDetail(for: result.contextPartResolution)
     }
@@ -600,7 +600,7 @@ func aiChatRequestContextTooltipText(
     [
         "Source: \(sourceLabel)",
         "Destination: \(destinationLabel)",
-        "Status: \(statusLabel)",
+        statusLabel.isEmpty ? "" : "Status: \(statusLabel)",
         statusDetail,
     ]
     .filter { !$0.isEmpty }
@@ -849,7 +849,7 @@ private struct AiChatRequestContextChipStatus: Equatable, Sendable {
     static let partial = Self(label: "Partial", detail: "Included first 64 KiB as text")
     static let referenceOnly = Self(label: "Reference only", detail: "Reference only; contents not included")
     static let collectionPaths = Self(label: "Collection paths", detail: "Collection paths only; contents not included")
-    static let willUpload = Self(label: "Will upload", detail: "Will upload when sent")
+    static let pending = Self(label: "", detail: "")
     static let uploadedNative = Self(label: "Uploaded/native", detail: "Uploaded natively as provider file")
     static let unsupported = Self(label: "Unsupported", detail: "Not sent: unsupported type")
     static let failed = Self(label: "Failed", detail: "Not sent")
