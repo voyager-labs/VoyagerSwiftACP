@@ -10,6 +10,7 @@ struct AiChatPreparedRequest {
     var assistantReplacementIndex: Int?
     var historyTruncation: AiChatHistoryTruncationMetadata
     var requestContextOverride: AiChatLockedRequestContextSnapshot? = nil
+    var requestContextSource: AiChatLockedRequestContextSnapshot? = nil
 }
 
 struct AiChatRequestLockInput {
@@ -107,12 +108,20 @@ extension AiChatFeature {
 
         let truncatedHistory = truncateHistory(messages, currentUserMessage: lastUserPrompt)
 
+        let selectedHandle = state.resolvedSelectedModelHandle ?? state.selectedModelHandle
+        let lastSubmittedContext = lastSubmittedRequestContext(in: state)
+        let requestContextOverride = reusableRequestContext(
+            from: lastSubmittedContext,
+            selectedHandle: selectedHandle
+        )
+
         return AiChatPreparedRequest(
             prompt: lastUserPrompt,
             messages: truncatedHistory.messages,
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: truncatedHistory.metadata,
-            requestContextOverride: lastSubmittedRequestContext(in: state)
+            requestContextOverride: requestContextOverride,
+            requestContextSource: requestContextOverride == nil ? lastSubmittedContext?.context : nil
         )
     }
 
@@ -121,8 +130,9 @@ extension AiChatFeature {
         let runID = AiChatRunID(rawValue: uuid())
         let submittedAtMs = currentTimestampMs()
         let selectedHandle = input.selectedModel.id
-        let lockedRequestContext = input.preparedRequest.requestContextOverride ??
-            makeLockedRequestContextSnapshot(state: state)
+        let lockedRequestContext = input.preparedRequest.requestContextOverride
+            ?? input.preparedRequest.requestContextSource.map { makeLockedRequestContextSnapshot(from: $0, state: state) }
+            ?? makeLockedRequestContextSnapshot(state: state)
         let context = AiChatRequestContextSnapshot(
             sessionID: input.sessionID,
             requestID: requestID,
@@ -204,6 +214,8 @@ extension AiChatFeature {
 
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
+        state.lastRequestContext = lock.context.requestContext
+        state.lastRequestContextModelHandle = lock.context.model
         state.executionPhase = .completed(lock)
     }
 
@@ -249,8 +261,24 @@ extension AiChatFeature {
         transcriptHistory.reversed().first(where: { $0.role == .user })?.content
     }
 
-    private func lastSubmittedRequestContext(in state: State) -> AiChatLockedRequestContextSnapshot? {
-        state.executionPhase.lock?.context.requestContext ?? state.lastRequestContext
+    private func lastSubmittedRequestContext(
+        in state: State
+    ) -> (model: AiModelHandle?, context: AiChatLockedRequestContextSnapshot)? {
+        if let lock = state.executionPhase.lock {
+            return (lock.context.model, lock.context.requestContext)
+        }
+        guard let context = state.lastRequestContext else { return nil }
+        return (state.lastRequestContextModelHandle, context)
+    }
+
+    private func reusableRequestContext(
+        from submittedContext: (model: AiModelHandle?, context: AiChatLockedRequestContextSnapshot)?,
+        selectedHandle: AiModelHandle?
+    ) -> AiChatLockedRequestContextSnapshot? {
+        guard let submittedContext else { return nil }
+        guard let submittedModel = submittedContext.model else { return submittedContext.context }
+        guard submittedModel == selectedHandle else { return nil }
+        return submittedContext.context
     }
 
     private func makeLockedRequestContextSnapshot(state: State) -> AiChatLockedRequestContextSnapshot {
@@ -265,6 +293,42 @@ extension AiChatFeature {
                 requestFamily: requestFamily,
                 currentContext: state.currentContext,
                 attachments: state.addedAttachments
+            )
+        )
+
+        return AiChatLockedRequestContextSnapshot(
+            currentContext: resolvedContext.currentContext,
+            addedAttachments: resolvedContext.addedAttachments,
+            parts: resolvedContext.parts.map { part in
+                AiChatLockedContextPartSnapshot(
+                    source: part.source == .attachment ? .attachment : .currentContext,
+                    resolution: part.resolution,
+                    canonicalPath: part.canonicalPath,
+                    displayPath: part.displayPath,
+                    fileKind: part.fileKind,
+                    displayTitle: part.displayTitle,
+                    byteCount: part.byteCount,
+                    mimeType: part.mimeType
+                )
+            }
+        )
+    }
+
+    private func makeLockedRequestContextSnapshot(
+        from previousContext: AiChatLockedRequestContextSnapshot,
+        state: State
+    ) -> AiChatLockedRequestContextSnapshot {
+        let selectedModel = state.resolvedSelectedModel
+        let provider = selectedModel?.provider ?? state.selectedModelHandle?.provider ?? .openai
+        let rawModelID = selectedModel?.rawModelID ?? state.selectedModelHandle?.rawValue ?? ""
+        let requestFamily = aiChatRequestFamily(for: provider)
+        let resolvedContext = aiChatContextPartResolverClient.resolve(
+            AiChatContextPartResolverInput(
+                provider: provider,
+                rawModelID: rawModelID,
+                requestFamily: requestFamily,
+                currentContext: previousContext.currentContext,
+                attachments: previousContext.addedAttachments.map(AiChatAttachmentDraft.init(snapshot:))
             )
         )
 
@@ -337,5 +401,21 @@ extension AiChatFeature {
 
     func resolvedSelectedModelRow(in state: State) -> AiModelCatalogRow? {
         state.resolvedModelRow(for: state.selectedModelHandle)
+    }
+}
+
+
+private extension AiChatAttachmentDraft {
+    init(snapshot: AiChatAttachmentSnapshot) {
+        self.init(
+            id: snapshot.id,
+            source: snapshot.source,
+            displayTitle: snapshot.displayTitle,
+            subtitle: snapshot.subtitle,
+            kind: snapshot.kind,
+            sourceLocation: snapshot.sourceLocation,
+            metadata: snapshot.metadata,
+            currentStatus: .pending
+        )
     }
 }

@@ -526,6 +526,139 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Original.txt"])
     }
 
+    func testRegenerateAfterModelSwitchReResolvesLockedRequestContextForSelectedProvider() async throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let fileURL = sandbox.appendingPathComponent("RegenerateNotes.txt")
+        try "provider-specific regenerate body".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let stream = AiChatExecutionStreamDriver()
+        let openAIModel = makeProviderModels()[0]
+        let openAIRow = makeCatalogRows()[0]
+        let codexHandle = AiModelHandle(provider: .chatgptCodex, rawValue: "gpt-5-codex")
+        let codexModel = AiProviderModel(
+            id: codexHandle,
+            provider: .chatgptCodex,
+            rawModelID: "gpt-5-codex",
+            displayName: "GPT-5 Codex",
+            providerDisplayName: "ChatGPT Codex",
+            thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
+            unavailableReason: nil
+        )
+        let codexRow = AiModelCatalogRow(
+            handle: codexHandle,
+            displayName: "GPT-5 Codex",
+            authMethod: .oauth,
+            subtitle: "Codex CLI",
+            sortOrder: 30,
+            isDefault: false,
+            isRecommended: true
+        )
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111155"))
+        let attachmentID = AiChatAttachmentID(rawValue: fileURL.path(percentEncoded: false))
+        let originalLockedContext = AiChatLockedRequestContextSnapshot(
+            currentContext: makeContextSnapshot(summary: "Original regenerate context"),
+            addedAttachments: [
+                AiChatAttachmentSnapshot(
+                    id: attachmentID,
+                    source: .file,
+                    displayTitle: "RegenerateNotes.txt",
+                    sourceLocation: AiChatAttachmentSourceLocation(
+                        fileURL: fileURL.standardizedFileURL,
+                        filePath: fileURL.path(percentEncoded: false)
+                    ),
+                    resolutionResult: .resolvedText(text: "provider-specific regenerate body", metadata: [:])
+                )
+            ],
+            parts: [
+                AiChatLockedContextPartSnapshot(
+                    source: .attachment,
+                    resolution: .providerNativeFile(
+                        kind: .plainTextDocument,
+                        mimeType: "text/plain",
+                        metadata: ["base64Data": "stale-openai-native"]
+                    ),
+                    fileKind: .attachment,
+                    displayTitle: "RegenerateNotes.txt"
+                )
+            ]
+        )
+        let originalRequestContext = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("22222222-2222-2222-2222-222222222255")),
+            runID: AiChatRunID(rawValue: makeUUID("33333333-3333-3333-3333-333333333355")),
+            provider: openAIModel.provider,
+            model: openAIModel.id,
+            selectedModel: openAIModel,
+            selectedModelRow: openAIRow,
+            sessionStatus: .active,
+            currentContext: originalLockedContext.currentContext,
+            requestContext: originalLockedContext,
+            promptSummary: "Explain this file",
+            submittedAtMs: 1_700_000_000_000
+        )
+        let originalRequest = AiChatRequest(
+            context: originalRequestContext,
+            messages: [AiChatMessage(role: .user, content: "Explain this file")]
+        )
+        let completedLock = makeRequestLock(
+            kind: .submit,
+            request: originalRequest,
+            selectedHandle: openAIModel.id,
+            selectedRow: openAIRow,
+            assistantReplacementIndex: nil
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Changed live selection"),
+            addedAttachments: [],
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Explain this file"),
+                AiChatMessage(role: .assistant, content: "Old answer"),
+            ],
+            catalogRows: [openAIRow, codexRow],
+            modelListState: .loaded([openAIModel, codexModel]),
+            selectedModelHandle: codexHandle,
+            executionPhase: .completed(completedLock)
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_001_900))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { .empty() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(.empty()) }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.regenerateTapped)
+
+        let request = try XCTUnwrap(stream.requests.first)
+        XCTAssertEqual(request.context.model, codexHandle)
+        XCTAssertEqual(request.context.provider, .chatgptCodex)
+        XCTAssertEqual(request.context.currentContext.summary, "Original regenerate context")
+        XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["RegenerateNotes.txt"])
+        let part = try XCTUnwrap(request.context.requestContext.parts.first)
+        guard case let .providerNativeFile(kind, _, metadata) = part.resolution else {
+            XCTFail("Expected Codex path-scope part, got \(part.resolution)")
+            return
+        }
+        XCTAssertEqual(kind, .codexPathScope)
+        XCTAssertNil(metadata["base64Data"])
+        XCTAssertNil(metadata["nativeBase64Data"])
+        XCTAssertEqual(metadata["attachmentID"], attachmentID.rawValue)
+    }
+
     func testRegenerateAfterRestoreReusesPersistedLockedRequestContextSnapshot() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()

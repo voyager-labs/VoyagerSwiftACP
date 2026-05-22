@@ -51,6 +51,7 @@ public struct AiChatState: Equatable, Sendable {
     public var lockedModelHandle: AiModelHandle?
     public var lastExecutionFailure: AiChatExecutionFailure?
     public var lastRequestContext: AiChatLockedRequestContextSnapshot?
+    public var lastRequestContextModelHandle: AiModelHandle?
     public var executionPhase: AiChatExecutionPhase
     public var modelListRequestID: UUID?
     public var modelListProvider: AiProvider?
@@ -81,6 +82,7 @@ public struct AiChatState: Equatable, Sendable {
         lockedModelHandle: AiModelHandle? = nil,
         lastExecutionFailure: AiChatExecutionFailure? = nil,
         lastRequestContext: AiChatLockedRequestContextSnapshot? = nil,
+        lastRequestContextModelHandle: AiModelHandle? = nil,
         executionPhase: AiChatExecutionPhase = .idle,
         modelListRequestID: UUID? = nil,
         modelListProvider: AiProvider? = nil,
@@ -111,6 +113,7 @@ public struct AiChatState: Equatable, Sendable {
         self.lockedModelHandle = lockedModelHandle
         self.lastExecutionFailure = lastExecutionFailure
         self.lastRequestContext = lastRequestContext
+        self.lastRequestContextModelHandle = lastRequestContextModelHandle
         self.executionPhase = executionPhase
         self.modelListRequestID = modelListRequestID
         self.modelListProvider = modelListProvider

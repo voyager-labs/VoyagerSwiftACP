@@ -121,6 +121,7 @@ extension AiChatFeature {
         state.sessionStatus = setup.sessionStatus
         state.currentContext = setup.currentContext
         state.lastRequestContext = nil
+        state.lastRequestContextModelHandle = nil
         state.transcriptHistory = setup.transcriptHistory
         state.draftText = setup.draftText
         state.streamingAssistantDraft = nil
@@ -184,6 +185,7 @@ extension AiChatFeature {
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.lastRequestContext = snapshot.lastRequestContext
+        state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
         state.executionPhase = .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
@@ -197,6 +199,7 @@ extension AiChatFeature {
         state.lockedModelHandle = nil
         state.lastExecutionFailure = nil
         state.lastRequestContext = nil
+        state.lastRequestContextModelHandle = nil
         state.executionPhase = .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
