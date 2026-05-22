@@ -330,14 +330,18 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             )
         }
 
-        await store.send(.appDidBecomeActive)
-        await store.receive(\.fullDiskAccessStatusResponse) { state in
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 1
+        }
+        await store.receive(\.fullDiskAccessRefreshResponse) { state in
             state.fullDiskAccessStatus = .granted
+            state.latestAppActiveRefreshGeneration = 1
             state.isComplete = false
         }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
+        await store.receive(\.helperFolderAccessRefreshLoaded) { state in
             state.helperFolderAccess = kGrantedHelperAccess
             state.helperFolderAccessError = nil
+            state.latestAppActiveRefreshGeneration = 1
             state.isComplete = true
         }
         await store.finish()
@@ -361,14 +365,18 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             )
         }
 
-        await store.send(.appDidBecomeActive)
-        await store.receive(\.fullDiskAccessStatusResponse) { state in
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 1
+        }
+        await store.receive(\.fullDiskAccessRefreshResponse) { state in
             state.fullDiskAccessStatus = .granted
+            state.latestAppActiveRefreshGeneration = 1
             state.isComplete = false
         }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
+        await store.receive(\.helperFolderAccessRefreshLoaded) { state in
             state.helperFolderAccess = kGrantedHelperAccess
             state.helperFolderAccessError = nil
+            state.latestAppActiveRefreshGeneration = 1
             state.isComplete = true
         }
 
@@ -400,11 +408,14 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             )
         }
 
-        await store.send(.appDidBecomeActive)
-        await store.receive(\.fullDiskAccessStatusResponse) { state in
-            state.fullDiskAccessStatus = .granted
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 1
         }
-        await store.receive(\.helperFolderAccessStatusLoaded)
+        await store.receive(\.fullDiskAccessRefreshResponse) { state in
+            state.fullDiskAccessStatus = .granted
+            state.latestAppActiveRefreshGeneration = 1
+        }
+        await store.receive(\.helperFolderAccessRefreshLoaded)
 
         XCTAssertFalse(store.state.isComplete)
         XCTAssertEqual(store.state.helperFolderAccessStatus, .notGranted)
@@ -434,12 +445,16 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
             )
         }
 
-        await store.send(.appDidBecomeActive)
-        await store.receive(\.fullDiskAccessStatusResponse) { state in
-            state.fullDiskAccessStatus = .granted
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 1
         }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
+        await store.receive(\.fullDiskAccessRefreshResponse) { state in
+            state.fullDiskAccessStatus = .granted
+            state.latestAppActiveRefreshGeneration = 1
+        }
+        await store.receive(\.helperFolderAccessRefreshLoaded) { state in
             state.helperFolderAccess = kGrantedHelperAccess
+            state.latestAppActiveRefreshGeneration = 1
             state.isComplete = true
         }
 
@@ -476,19 +491,82 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         XCTAssertFalse(store.state.isComplete)
 
         // 새로고침: FDA 클라이언트가 이제 .granted를 반환함
-        await store.send(.appDidBecomeActive)
-        await store.receive(\.fullDiskAccessStatusResponse) { state in
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 1
+        }
+        await store.receive(\.fullDiskAccessRefreshResponse) { state in
             state.fullDiskAccessStatus = .granted
+            state.latestAppActiveRefreshGeneration = 1
             state.isComplete = false
         }
-        await store.receive(\.helperFolderAccessStatusLoaded) { state in
+        await store.receive(\.helperFolderAccessRefreshLoaded) { state in
             state.helperFolderAccess = kGrantedHelperAccess
             state.helperFolderAccessError = nil
+            state.latestAppActiveRefreshGeneration = 1
             state.isComplete = true
         }
 
         XCTAssertTrue(store.state.isComplete)
         XCTAssertNil(store.state.nextDisabledMessage)
+
+        await store.finish()
+    }
+
+    /// 두 번의 appDidBecomeActive 새로고침에서 더 오래된 응답이 나중에 도착해도
+    /// 최신 세대의 granted 상태가 보존됨을 검증합니다.
+    ///
+    /// - 검증 내용: 첫 번째 새로고침(generation 1)과 두 번째 새로고침(generation 2)이
+    ///   모두 granted로 해결된 후, 오래된 generation 1의 helper 응답이 notGranted로
+    ///   직접 전송되어도 최신 granted 상태를 덮어쓰지 않습니다.
+    ///   generation 가드가 세대 불일치 응답을 무시하는지 확인합니다.
+    /// - 사전 조건: FDA `.granted`, 헬퍼 접근 `kGrantedHelperAccess`.
+    /// - 기대 결과: 오래된 helperFolderAccessRefreshLoaded(1, denied) 전송 후에도
+    ///   `helperFolderAccessStatus == .granted`, `isComplete == true`.
+    /// - 관련 사양: ONB-003-refresh_onboarding_permission_status
+    func testLatestPermissionRefreshWinsWhenOlderHelperResponseArrivesLast() async {
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
+            $0.helperFolderAccessClient = HelperFolderAccessClient(
+                checkAccess: { kGrantedHelperAccess },
+                requestAccess: { kGrantedHelperAccess },
+            )
+        }
+
+        // First appDidBecomeActive (generation 1)
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 1
+        }
+        await store.receive(\.fullDiskAccessRefreshResponse) { state in
+            state.fullDiskAccessStatus = .granted
+            state.latestAppActiveRefreshGeneration = 1
+            state.isComplete = false
+        }
+        await store.receive(\.helperFolderAccessRefreshLoaded) { state in
+            state.helperFolderAccess = kGrantedHelperAccess
+            state.helperFolderAccessError = nil
+            state.latestAppActiveRefreshGeneration = 1
+            state.isComplete = true
+        }
+
+        // Second appDidBecomeActive (generation 2)
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 2
+        }
+        await store.receive(\.fullDiskAccessRefreshResponse)
+        await store.receive(\.helperFolderAccessRefreshLoaded)
+
+        // Stale generation-1 helper response should be ignored
+        let deniedAccess = FolderAccessResult(
+            desktop: .notGranted,
+            documents: .notGranted,
+            downloads: .notGranted,
+        )
+        await store.send(.helperFolderAccessRefreshLoaded(1, deniedAccess))
+        // State should NOT change - stale generation is ignored
+        XCTAssertEqual(store.state.helperFolderAccessStatus, .granted)
+        XCTAssertTrue(store.state.isComplete)
 
         await store.finish()
     }

@@ -105,16 +105,14 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     /// - 기대 결과: welcome에서 시작, welcome만 완료, 저장된 스냅샷의 `currentStep`이 `.welcome`입니다.
     /// - 관련 사양: ONB-001-start_onboarding_session
     func testEmptyProgressStartsFreshSession() async {
-        let snapshotRecorder = SnapshotRecorder()
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .empty },
-                save: { snapshot in
-                    Task { await snapshotRecorder.set(snapshot) }
-                },
+                save: { snapshot in saveRecorder.setValue(snapshot) },
                 reset: {},
             )
         }
@@ -129,7 +127,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         XCTAssertFalse(store.state.complete.isComplete)
 
         // 올바른 초기 상태로 스냅샷이 저장되었는지 확인
-        let savedSnapshot = await snapshotRecorder.value
+        let savedSnapshot = saveRecorder.value
         XCTAssertNotNil(savedSnapshot)
         XCTAssertEqual(savedSnapshot?.currentStep, .welcome)
 
@@ -142,23 +140,21 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     /// - 기대 결과: 스냅샷의 `welcomeComplete`는 `true`, 나머지 단계(`betaAccess`, `permissions`, `complete`)는 모두 `false`입니다.
     /// - 관련 사양: ONB-001-start_onboarding_session
     func testStartSessionSavesProgressSnapshot() async {
-        let snapshotRecorder = SnapshotRecorder()
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .empty },
-                save: { snapshot in
-                    Task { await snapshotRecorder.set(snapshot) }
-                },
+                save: { snapshot in saveRecorder.setValue(snapshot) },
                 reset: {},
             )
         }
 
         await store.send(.onAppear)
 
-        let savedSnapshot = await snapshotRecorder.value
+        let savedSnapshot = saveRecorder.value
         XCTAssertNotNil(savedSnapshot)
         XCTAssertEqual(savedSnapshot?.stepState.welcomeComplete, true)
         XCTAssertEqual(savedSnapshot?.stepState.betaAccessComplete, false)
@@ -1000,16 +996,14 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     /// - 기대 결과: `currentStep = .welcome`, welcome만 완료, 저장된 스냅샷도 동일한 초기 상태를 반영합니다.
     /// - 관련 사양: ONB-001-resume_onboarding_session
     func testResumeFromCorruptStepStateFallsBackToWelcome() async {
-        let snapshotRecorder = SnapshotRecorder()
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .resetRequired },
-                save: { snapshot in
-                    Task { await snapshotRecorder.set(snapshot) }
-                },
+                save: { snapshot in saveRecorder.setValue(snapshot) },
                 reset: {},
             )
         }
@@ -1020,7 +1014,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         XCTAssertTrue(store.state.welcome.isComplete)
         XCTAssertFalse(store.state.betaAccess.isComplete)
 
-        let saved = await snapshotRecorder.value
+        let saved = saveRecorder.value
         XCTAssertNotNil(saved)
         XCTAssertEqual(saved?.currentStep, .welcome)
         XCTAssertEqual(saved?.stepState.welcomeComplete, true)
@@ -1080,7 +1074,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     /// - 기대 결과: 창이 `.defaultTabPath`로 1회 열리고, 저장된 스냅샷의 `completeComplete`이 `true`입니다.
     /// - 관련 사양: ONB-001-complete_onboarding_session
     func testCompleteOpensWindowAndSavesProgress() async {
-        let snapshotRecorder = SnapshotRecorder()
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
         let pathRecorder = PathRecorder()
 
         var initialState = OnboardingFeature.State()
@@ -1091,11 +1085,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         } withDependencies: {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .empty },
-                save: { snapshot in
-                    Task {
-                        await snapshotRecorder.set(snapshot)
-                    }
-                },
+                save: { snapshot in saveRecorder.setValue(snapshot) },
                 reset: {},
             )
             $0.onboardingWindowClient = OnboardingWindowClient(
@@ -1123,7 +1113,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         let openedPaths = await pathRecorder.snapshot()
         XCTAssertEqual(openedPaths.count, 1)
         XCTAssertEqual(openedPaths[0], .defaultTabPath)
-        let savedSnapshot = await snapshotRecorder.value
+        let savedSnapshot = saveRecorder.value
         XCTAssertEqual(savedSnapshot?.stepState.completeComplete, true)
         await store.finish()
     }
@@ -1173,7 +1163,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     /// - 기대 결과: 저장된 스냅샷의 `completeComplete = true`, `currentStep = .complete`입니다.
     /// - 관련 사양: ONB-001-complete_onboarding_session
     func testCompletionSavesCompleteStepState() async {
-        let snapshotRecorder = SnapshotRecorder()
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
@@ -1183,9 +1173,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         } withDependencies: {
             $0.onboardingProgressClient = OnboardingProgressClient(
                 load: { .empty },
-                save: { snapshot in
-                    Task { await snapshotRecorder.set(snapshot) }
-                },
+                save: { snapshot in saveRecorder.setValue(snapshot) },
                 reset: {},
             )
             $0.onboardingWindowClient = OnboardingWindowClient(
@@ -1207,7 +1195,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        let saved = await snapshotRecorder.value
+        let saved = saveRecorder.value
         XCTAssertNotNil(saved)
         XCTAssertEqual(saved?.stepState.completeComplete, true)
         XCTAssertEqual(saved?.currentStep, .complete)

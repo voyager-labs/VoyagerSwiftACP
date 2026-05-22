@@ -5,14 +5,6 @@ import VoyagerEntitiesAppPreferences
 
 // MARK: - ONB-001 Shared Fixtures
 
-actor SnapshotRecorder {
-    var value: OnboardingProgressSnapshot?
-
-    func set(_ snapshot: OnboardingProgressSnapshot) {
-        value = snapshot
-    }
-}
-
 actor PathRecorder {
     private var paths: [OnboardingOpenMainWindowRequest] = []
 
