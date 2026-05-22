@@ -127,34 +127,19 @@ private extension ScopePickerView {
         let rows = viewStore.scopeEditor.treeRows(
             neighborhoodSeedItems: viewStore.scopeEditor.treeNeighborhoodSeedItems,
         )
+        let sections = makeScopeSections(rows: rows, viewStore: viewStore)
+        let listItems = makeScopeListItems(sections: sections)
 
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                scopeSections(rows: rows, viewStore: viewStore)
+            LazyVStack(alignment: .leading, spacing: 4) {
+                ForEach(listItems) { item in
+                    scopeListItemView(item, viewStore: viewStore)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .accessibilityIdentifier(ScopePickerAccessibilityID.treeSection)
         }
-    }
-
-    @ViewBuilder
-    private func scopeSections(
-        rows: [ComposerScopeTreeRow],
-        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
-    ) -> some View {
-        let sections = makeScopeSections(rows: rows, listState: viewStore.scopeEditor.listState)
-
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(sections.indices, id: \.self) { index in
-                if index > 0 {
-                    sectionDivider
-                }
-
-                scopeSectionView(section: sections[index], viewStore: viewStore)
-                    .padding(.top, index == 0 ? 0 : 6)
-            }
-        }
-        .accessibilityIdentifier(ScopePickerAccessibilityID.treeSection)
     }
 
     private var sectionDivider: some View {
@@ -166,8 +151,9 @@ private extension ScopePickerView {
 
     private func makeScopeSections(
         rows: [ComposerScopeTreeRow],
-        listState: ComposerScopeEditorListState,
+        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) -> [ScopePickerSection] {
+        let listState = viewStore.scopeEditor.listState
         let currentScopeRows = rows.filter { row in
             switch row.kind {
             case .root, .base, .exception:
@@ -182,11 +168,21 @@ private extension ScopePickerView {
         var sections: [ScopePickerSection] = []
 
         if candidateFirst {
-            appendCandidateSection(to: &sections, candidateRows: candidateRows, listState: listState)
+            appendCandidateSections(
+                to: &sections,
+                candidateRows: candidateRows,
+                listState: listState,
+                viewStore: viewStore,
+            )
             appendCurrentScopeSection(to: &sections, currentScopeRows: currentScopeRows)
         } else {
             appendCurrentScopeSection(to: &sections, currentScopeRows: currentScopeRows)
-            appendCandidateSection(to: &sections, candidateRows: candidateRows, listState: listState)
+            appendCandidateSections(
+                to: &sections,
+                candidateRows: candidateRows,
+                listState: listState,
+                viewStore: viewStore,
+            )
         }
 
         return sections
@@ -199,7 +195,7 @@ private extension ScopePickerView {
         if !currentScopeRows.isEmpty {
             sections.append(
                 ScopePickerSection(
-                    kind: .currentScope,
+                    id: "current-scope",
                     title: "Current scope",
                     rows: currentScopeRows,
                     showsNoResultsFooter: false,
@@ -208,21 +204,132 @@ private extension ScopePickerView {
         }
     }
 
-    private func appendCandidateSection(
+    private func appendCandidateSections(
         to sections: inout [ScopePickerSection],
         candidateRows: [ComposerScopeTreeRow],
         listState: ComposerScopeEditorListState,
+        viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) {
+        if case .childFolders = listState,
+           let editingPath = viewStore.scopeEditor.editingPath
+        {
+            appendChildFolderCandidateSections(
+                to: &sections,
+                candidateRows: candidateRows,
+                editingPath: editingPath,
+            )
+            return
+        }
+
         if !candidateRows.isEmpty || listState.noResultsQuery != nil {
             sections.append(
                 ScopePickerSection(
-                    kind: .candidate,
+                    id: "candidate",
                     title: treeSectionTitle(for: listState),
                     rows: candidateRows,
                     showsNoResultsFooter: listState.noResultsQuery != nil,
                 ),
             )
         }
+    }
+
+    private func appendChildFolderCandidateSections(
+        to sections: inout [ScopePickerSection],
+        candidateRows: [ComposerScopeTreeRow],
+        editingPath: String,
+    ) {
+        let groupedRows = childFolderCandidateGroups(candidateRows: candidateRows, editingPath: editingPath)
+
+        appendScopeSection(
+            to: &sections,
+            id: "child-folders",
+            title: "Child folders",
+            rows: groupedRows.childRows,
+        )
+        appendScopeSection(
+            to: &sections,
+            id: "parent-folder",
+            title: "Parent folder",
+            rows: groupedRows.parentRows,
+        )
+        appendScopeSection(
+            to: &sections,
+            id: "current-folder",
+            title: "Current folder",
+            rows: groupedRows.currentRows,
+        )
+        appendScopeSection(
+            to: &sections,
+            id: "sibling-folders",
+            title: "Sibling folders",
+            rows: groupedRows.siblingRows,
+        )
+        appendScopeSection(
+            to: &sections,
+            id: "related-folders",
+            title: "Related folders",
+            rows: groupedRows.relatedRows,
+        )
+    }
+
+    private func appendScopeSection(
+        to sections: inout [ScopePickerSection],
+        id: String,
+        title: String,
+        rows: [ComposerScopeTreeRow],
+    ) {
+        guard !rows.isEmpty else { return }
+        sections.append(
+            ScopePickerSection(
+                id: id,
+                title: title,
+                rows: rows,
+                showsNoResultsFooter: false,
+            ),
+        )
+    }
+
+    private func childFolderCandidateGroups(
+        candidateRows: [ComposerScopeTreeRow],
+        editingPath: String,
+    ) -> ChildFolderCandidateGroups {
+        let normalizedEditingPath = ComposerScopeUtils.normalizeScopePath(editingPath)
+        let normalizedParentPath = ComposerScopeUtils.normalizeScopePath(
+            (normalizedEditingPath as NSString).deletingLastPathComponent,
+        )
+
+        var childRows: [ComposerScopeTreeRow] = []
+        var parentRows: [ComposerScopeTreeRow] = []
+        var currentRows: [ComposerScopeTreeRow] = []
+        var siblingRows: [ComposerScopeTreeRow] = []
+        var relatedRows: [ComposerScopeTreeRow] = []
+
+        for row in candidateRows {
+            let normalizedRowPath = ComposerScopeUtils.normalizeScopePath(row.path)
+            let rowParentPath = ComposerScopeUtils.normalizeScopePath(
+                (normalizedRowPath as NSString).deletingLastPathComponent,
+            )
+
+            if normalizedRowPath == normalizedEditingPath {
+                currentRows.append(row)
+            } else if normalizedRowPath == normalizedParentPath {
+                parentRows.append(row)
+            } else if rowParentPath == normalizedEditingPath {
+                childRows.append(row)
+            } else if rowParentPath == normalizedParentPath {
+                siblingRows.append(row)
+            } else {
+                relatedRows.append(row)
+            }
+        }
+
+        return ChildFolderCandidateGroups(
+            childRows: childRows,
+            parentRows: parentRows,
+            currentRows: currentRows,
+            siblingRows: siblingRows,
+            relatedRows: relatedRows,
+        )
     }
 
     private func isCandidateSectionPrimary(_ listState: ComposerScopeEditorListState) -> Bool {
@@ -234,39 +341,60 @@ private extension ScopePickerView {
         }
     }
 
+    private func makeScopeListItems(sections: [ScopePickerSection]) -> [ScopePickerListItem] {
+        sections.enumerated().flatMap { index, section -> [ScopePickerListItem] in
+            var items: [ScopePickerListItem] = []
+            if index > 0 {
+                items.append(.divider(id: "divider-\(section.id)"))
+            }
+            items.append(.header(id: "header-\(section.id)", title: section.title))
+            items.append(
+                contentsOf: section.rows.map { row in
+                    .row(id: "row-\(section.id)-\(row.id)", row: row)
+                },
+            )
+            if section.showsNoResultsFooter {
+                items.append(.noResultsFooter(id: "footer-\(section.id)"))
+            }
+            return items
+        }
+    }
+
     @ViewBuilder
-    private func scopeSectionView(
-        section: ScopePickerSection,
+    private func scopeListItemView(
+        _ item: ScopePickerListItem,
         viewStore: ViewStore<ViewState, ComposerFeature.Action>,
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(section.title)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary.opacity(0.85))
-                .padding(.horizontal, 2)
-
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(section.rows) { row in
-                    ScopeTreeRowView(
-                        row: row,
-                        colorScheme: colorScheme,
-                        applicationsIcon: Self.cachedApplicationsIcon,
-                        onBodyTap: { handleTreeRowBodyTap(row, viewStore: viewStore) },
-                        onAction: { action in
-                            handleTreeRowAction(row, action: action, viewStore: viewStore)
-                        },
-                        actionAccessibilityIdentifier: { action in
-                            ScopePickerAccessibilityID.treeAction(action, path: row.path)
-                        },
-                    )
-                    .accessibilityIdentifier(ScopePickerAccessibilityID.treeRow(path: row.path))
-                }
-
-                if section.showsNoResultsFooter {
-                    noResultsFooter(viewStore.scopeEditor.listState)
-                }
-            }
+        switch item {
+        case .divider:
+            sectionDivider
+                .padding(.vertical, 6)
+        case let .header(_, title):
+            scopeSectionHeader(title)
+        case let .row(_, row):
+            ScopeTreeRowView(
+                row: row,
+                colorScheme: colorScheme,
+                applicationsIcon: Self.cachedApplicationsIcon,
+                onBodyTap: { handleTreeRowBodyTap(row, viewStore: viewStore) },
+                onAction: { action in
+                    handleTreeRowAction(row, action: action, viewStore: viewStore)
+                },
+                actionAccessibilityIdentifier: { action in
+                    ScopePickerAccessibilityID.treeAction(action, path: row.path)
+                },
+            )
+            .accessibilityIdentifier(ScopePickerAccessibilityID.treeRow(path: row.path))
+        case .noResultsFooter:
+            noResultsFooter(viewStore.scopeEditor.listState)
         }
+    }
+
+    private func scopeSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(.secondary.opacity(0.85))
+            .padding(.horizontal, 2)
     }
 
     @ViewBuilder
@@ -308,17 +436,32 @@ private extension ScopePickerView {
     }
 
     private struct ScopePickerSection: Identifiable {
-        enum Kind: Hashable {
-            case currentScope
-            case candidate
-        }
-
-        let kind: Kind
+        let id: String
         let title: String
         let rows: [ComposerScopeTreeRow]
         let showsNoResultsFooter: Bool
+    }
 
-        var id: Kind { kind }
+    private enum ScopePickerListItem: Identifiable {
+        case divider(id: String)
+        case header(id: String, title: String)
+        case row(id: String, row: ComposerScopeTreeRow)
+        case noResultsFooter(id: String)
+
+        var id: String {
+            switch self {
+            case let .divider(id), let .header(id, _), let .row(id, _), let .noResultsFooter(id):
+                id
+            }
+        }
+    }
+
+    private struct ChildFolderCandidateGroups {
+        let childRows: [ComposerScopeTreeRow]
+        let parentRows: [ComposerScopeTreeRow]
+        let currentRows: [ComposerScopeTreeRow]
+        let siblingRows: [ComposerScopeTreeRow]
+        let relatedRows: [ComposerScopeTreeRow]
     }
 
     private func handleTreeRowBodyTap(
