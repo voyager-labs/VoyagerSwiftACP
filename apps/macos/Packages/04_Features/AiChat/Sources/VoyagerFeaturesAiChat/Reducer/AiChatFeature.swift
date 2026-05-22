@@ -153,7 +153,7 @@ public struct AiChatFeature {
             case let .attachmentDropSelection(urls):
                 let didAddAttachments = addAttachmentDrafts(
                     from: urls,
-                    skippingCurrentContextDuplicates: true,
+                    skippingCurrentContextDuplicates: false,
                     state: &state
                 )
                 guard didAddAttachments else { return .none }
