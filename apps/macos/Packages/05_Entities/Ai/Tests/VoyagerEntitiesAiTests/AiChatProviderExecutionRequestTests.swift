@@ -382,6 +382,37 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertFalse(prompt.contains("live attachment should not leak"))
     }
 
+    func testMakeOpenAIRequest_redactsAddedAttachmentAbsoluteFilePathInPrompt() throws {
+        let payload = try makePayload(
+            provider: .openai,
+            rawModelID: "gpt-4.1-mini",
+            requestContext: AiChatLockedRequestContextSnapshot(
+                currentContext: .init(),
+                addedAttachments: [
+                    AiChatAttachmentSnapshot(
+                        id: AiChatAttachmentID(rawValue: "secret-notes"),
+                        source: .file,
+                        displayTitle: "SecretNotes.txt",
+                        kind: .file,
+                        sourceLocation: AiChatAttachmentSourceLocation(filePath: "/Users/me/secret/docs/SecretNotes.txt"),
+                        resolutionResult: .resolvedText(text: "safe body", metadata: ["encoding": "utf-8"])
+                    ),
+                ],
+                parts: []
+            )
+        )
+
+        let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
+            payload: payload,
+            credential: .apiKey("openai-key")
+        )
+        let decoded = try decodeOpenAIRequestBody(request)
+        let prompt = try XCTUnwrap(decoded.input.first?.content.text)
+
+        XCTAssertTrue(prompt.contains("file_path: SecretNotes.txt"), prompt)
+        XCTAssertFalse(prompt.contains("/Users/me/secret"), prompt)
+    }
+
     func testMakeOpenAIRequest_usesNativeImageAndFileBlocksWhenAllowed() throws {
         let payload = try makePayload(
             provider: .openai,

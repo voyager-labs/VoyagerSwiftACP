@@ -168,10 +168,8 @@ private enum SharedContextPromptBuilder {
         if let subtitle = normalized(attachment.subtitle) {
             lines.append("    subtitle: \(subtitle)")
         }
-        if let filePath = normalized(attachment.sourceLocation.filePath) {
+        if let filePath = promptSafeSourcePath(attachment.sourceLocation) {
             lines.append("    file_path: \(filePath)")
-        } else if let fileURL = attachment.sourceLocation.fileURL?.path(percentEncoded: false), !fileURL.isEmpty {
-            lines.append("    file_path: \(fileURL)")
         }
         switch attachment.resolutionResult {
         case let .resolvedText(text, metadata):
@@ -199,6 +197,23 @@ private enum SharedContextPromptBuilder {
             lines.append("    note: not included: \(reason.rawValue)")
         }
         return lines
+    }
+
+
+    private static func promptSafeSourcePath(_ sourceLocation: AiChatAttachmentSourceLocation) -> String? {
+        if let filePath = normalized(sourceLocation.filePath) {
+            return displayPath(for: filePath)
+        }
+        if let fileURL = sourceLocation.fileURL?.path(percentEncoded: false), !fileURL.isEmpty {
+            return displayPath(for: fileURL)
+        }
+        return nil
+    }
+
+    private static func displayPath(for path: String) -> String {
+        guard path.hasPrefix("/") else { return path }
+        let filename = URL(fileURLWithPath: path).lastPathComponent
+        return filename.isEmpty ? "redacted-path" : filename
     }
 
     private static func displayAttachmentTitle(_ part: AiChatLockedContextPartSnapshot) -> String {

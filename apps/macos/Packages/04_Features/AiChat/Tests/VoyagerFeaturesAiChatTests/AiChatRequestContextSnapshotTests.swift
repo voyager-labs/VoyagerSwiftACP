@@ -549,6 +549,34 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Original.txt"])
     }
 
+    func testCodexMissingAttachmentDoesNotBecomePathScopeReference() async throws {
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-codex-attachment-\(UUID().uuidString).txt")
+        let draft = makeDraftAttachment(url: missingURL, source: .file)
+
+        let resolvedContext = AiChatContextPartResolverClient.live().resolve(
+            AiChatContextPartResolverInput(
+                provider: .chatgptCodex,
+                rawModelID: "gpt-5-codex",
+                requestFamily: .codexCLI,
+                currentContext: .init(),
+                attachments: [draft]
+            )
+        )
+
+        let attachment = try XCTUnwrap(resolvedContext.addedAttachments.first)
+        guard case .failure(reason: .readFailed, _) = attachment.resolutionResult else {
+            XCTFail("Expected missing file attachment failure, got \(attachment.resolutionResult)")
+            return
+        }
+
+        let part = try XCTUnwrap(resolvedContext.parts.first)
+        guard case .failure(reason: .readFailed, _) = part.resolution else {
+            XCTFail("Expected missing file context part failure, got \(part.resolution)")
+            return
+        }
+    }
+
     func testRegenerateAfterModelSwitchReResolvesLockedRequestContextForSelectedProvider() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

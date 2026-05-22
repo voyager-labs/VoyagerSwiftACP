@@ -991,14 +991,16 @@ private extension AiChatContextPartResolverClient {
     static func resolveFileIdentity(_ url: URL) -> AiChatResolvedFileIdentity? {
         let originalURL = url.standardizedFileURL
         let canonicalURL = originalURL.resolvingSymlinksInPath().standardizedFileURL
-        let resourceValues = try? canonicalURL.resourceValues(forKeys: [
+        guard let resourceValues = try? canonicalURL.resourceValues(forKeys: [
             .isDirectoryKey,
             .isRegularFileKey,
             .fileSizeKey,
             .totalFileAllocatedSizeKey,
             .contentTypeKey,
-        ])
-        let contentType = resourceValues?.contentType ?? UTType(filenameExtension: canonicalURL.pathExtension)
+        ]) else {
+            return nil
+        }
+        let contentType = resourceValues.contentType ?? UTType(filenameExtension: canonicalURL.pathExtension)
         let mimeType = contentType?.preferredMIMEType ?? "application/octet-stream"
         let displayPath = displayPath(for: canonicalURL.path(percentEncoded: false), provider: .openai)
             ?? canonicalURL.lastPathComponent
@@ -1006,9 +1008,9 @@ private extension AiChatContextPartResolverClient {
             originalURL: originalURL,
             canonicalURL: canonicalURL,
             displayPath: displayPath,
-            isDirectory: resourceValues?.isDirectory == true,
-            isRegularFile: resourceValues?.isRegularFile != false,
-            sizeBytes: resourceValues?.totalFileAllocatedSize.map(Int64.init) ?? resourceValues?.fileSize.map(Int64.init),
+            isDirectory: resourceValues.isDirectory == true,
+            isRegularFile: resourceValues.isRegularFile == true,
+            sizeBytes: resourceValues.totalFileAllocatedSize.map(Int64.init) ?? resourceValues.fileSize.map(Int64.init),
             mimeType: mimeType,
             contentTypeIdentifier: contentType?.identifier,
             fileExtension: canonicalURL.pathExtension
