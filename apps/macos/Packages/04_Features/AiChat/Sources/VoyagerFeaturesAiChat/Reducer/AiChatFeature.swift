@@ -201,10 +201,13 @@ public struct AiChatFeature {
                 state.lastExecutionFailure = nil
                 state.lockedModelHandle = nil
                 state.executionPhase = .idle
-                return .merge(
-                    .cancel(id: CancelID.request),
-                    .cancel(id: CancelID.restore)
-                )
+                return cancelAllInFlightWork()
+
+            case .teardownRequested:
+                state.streamingAssistantDraft = nil
+                state.lockedModelHandle = nil
+                state.executionPhase = .idle
+                return cancelAllInFlightWork()
 
             case let .restoreOutcome(requestedSessionID, result, restoreFailure):
                 guard state.restoreSessionID == requestedSessionID else { return .none }
@@ -245,6 +248,16 @@ public struct AiChatFeature {
                 return .none
             }
         }
+    }
+
+
+    private func cancelAllInFlightWork() -> Effect<Action> {
+        .merge(
+            .cancel(id: CancelID.request),
+            .cancel(id: CancelID.restore),
+            .cancel(id: CancelID.persistenceRecovery),
+            .cancel(id: CancelID.modelList)
+        )
     }
 }
 
