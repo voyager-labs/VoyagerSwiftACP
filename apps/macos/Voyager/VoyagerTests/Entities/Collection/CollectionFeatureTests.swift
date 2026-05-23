@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -7,8 +6,8 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 컬렉션 기능 — 레거시 키, 날짜 범위, 연산자 변경, 비활성 필터 지속성을 검증.
+@MainActor
 final class CollectionFeatureTests: XCTestCase {
     /// testResolveDetailedMapsLegacyKeysAndUnknowns 테스트 동작을 검증한다.
     func testResolveDetailedMapsLegacyKeysAndUnknowns() {
@@ -574,5 +573,3 @@ private actor SavedCollectionsRecorder {
         entries.last
     }
 }
-
-// swiftlint:enable file_length
