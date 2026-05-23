@@ -822,6 +822,120 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Restored.txt"])
     }
 
+
+    func testSubmitAfterNewChatUsesLatestCurrentContextInsteadOfSeedSnapshot() async throws {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let originalContext = makeContextSnapshot(summary: "Seed session context")
+        let updatedContext = makeContextSnapshot(summary: "Live context before submit")
+        let fixedMs: Int64 = 1_700_000_002_000
+        let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionStatus: .active,
+            currentContext: originalContext,
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "stale")],
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[1].handle,
+            selectedThinking: .effort(.high)
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                },
+                deleteSession: { _ in }
+            )
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { .empty() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(.empty()) }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.newChatTapped) { state in
+            state.sessionID = newSessionID
+            state.sessionStatus = .idle
+            state.mode = .chat
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.errorMessage = nil
+            state.transcriptHistory = []
+            state.draftText = ""
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = nil
+            state.lastRequestContextModelHandle = nil
+            state.executionPhase = .idle
+            state.selectedModelHandle = nil
+            state.selectedThinking = nil
+            state.unavailableSelectedModelHandle = nil
+        }
+
+        let expectedNewChatSnapshot = AiChatSessionSnapshot(
+            sessionID: newSessionID,
+            status: .idle,
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [],
+            updatedAtMs: fixedMs
+        )
+
+        await store.receive(.newChatCreated(expectedNewChatSnapshot)) { state in
+            state.sessionID = newSessionID
+            state.sessionStatus = .idle
+            state.transcriptHistory = []
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = nil
+            state.lastRequestContextModelHandle = nil
+            state.executionPhase = .idle
+            state.selectedModelHandle = nil
+            state.selectedThinking = nil
+            state.restoreSessionID = newSessionID
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.selectedSessionID = newSessionID
+            state.sessionList.errorMessage = nil
+        }
+        await store.send(.selectedModelChanged(catalogRows[1].handle)) { state in
+            state.selectedModelHandle = catalogRows[1].handle
+            state.unavailableSelectedModelHandle = nil
+        }
+        await store.send(.currentContextChanged(updatedContext)) { state in
+            state.currentContext = updatedContext
+        }
+        await store.send(.draftTextChanged("Ask about the latest selection")) { state in
+            state.draftText = "Ask about the latest selection"
+        }
+        await store.send(.submitTapped)
+
+        let request = try XCTUnwrap(stream.requests.first)
+        XCTAssertEqual(savedSnapshots.value, [expectedNewChatSnapshot])
+        XCTAssertEqual(request.context.requestContext.currentContext, updatedContext)
+        XCTAssertEqual(request.context.currentContext, updatedContext)
+        XCTAssertNotEqual(request.context.requestContext.currentContext, originalContext)
+    }
+
 }
 
 
