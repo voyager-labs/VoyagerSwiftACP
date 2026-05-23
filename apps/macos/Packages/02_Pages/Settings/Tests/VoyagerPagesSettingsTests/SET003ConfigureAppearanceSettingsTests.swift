@@ -6,47 +6,46 @@ import VoyagerEntitiesAppPreferences
 import VoyagerShared
 import XCTest
 
-// MARK: - SET003 Appearance Settings — Evidence Contract
+// MARK: - SET-003-configure_appearance_settings — 증거 계약
 
-// Interaction IDs covered:
-//   SET-003:set_theme_mode → focused automated test
-//     - testLoadSettingsRestoresTheme (load theme from dependency)
-//     - testSetThemePersistsRawValueAndApplies (persist raw value + applyTheme call)
-//   SET-003:set_list_icon_size → focused automated test
-//     - testLoadSettingsRestoresListIconSize (load saved value)
-//     - testMissingListIconSizePreservesDefault (missing numeric → default)
+// 포함한 interaction_id:
+//   SET-003-switch_theme_mode → 집중 자동화 테스트
+//     - testLoadSettingsRestoresTheme (dependency에서 theme 로드)
+//     - testSetThemePersistsRawValueAndApplies (raw value 저장 + applyTheme 호출)
+//   SET-003-adjust_icon_size → 집중 자동화 테스트
+//     - testLoadSettingsRestoresListIconSize (저장값 로드)
+//     - testMissingListIconSizePreservesDefault (숫자 저장값 누락 → 기본값)
 //     - testSetListIconSizePersistsExactKeyValue
-//   SET-003:set_grid_icon_size → focused automated test
+//   SET-003-adjust_icon_size → 집중 자동화 테스트
 //     - testLoadSettingsRestoresGridIconSize
 //     - testMissingGridIconSizePreservesDefault
 //     - testSetGridIconSizePersistsExactKeyValue
-//   SET-003:set_list_text_size → focused automated test
+//   SET-003-adjust_text_size → 집중 자동화 테스트
 //     - testLoadSettingsRestoresListTextSize
 //     - testMissingListTextSizePreservesDefault
 //     - testSetListTextSizePersistsExactKeyValue
-//   SET-003:set_grid_text_size → focused automated test
+//   SET-003-adjust_text_size → 집중 자동화 테스트
 //     - testLoadSettingsRestoresGridTextSize
 //     - testMissingGridTextSizePreservesDefault
 //     - testSetGridTextSizePersistsExactKeyValue
-//   SET-003:toggle_show_hidden_files → focused automated test
+//   SET-003 supplemental current behavior(showHiddenFiles; canonical interaction_id 없음) → 집중 자동화 테스트
 //     - testLoadSettingsRestoresShowHiddenFiles
 //     - testSetShowHiddenFilesEnabled
 //     - testSetShowHiddenFilesDisabled
 //
-// Unsupported surface classification:
-//   - Permissions: follow-up/manual QA (implementation lives in Onboarding, not Settings)
-//   - SET-005 Shortcuts: manual QA (docs-only; app uses static menu commands, no Settings UI)
-//   - SET-007 AI Connections: external project dependency
+// 미지원 surface 분류:
+//   - Permissions: follow-up/manual QA (구현이 Settings가 아니라 Onboarding에 있음)
+//   - SET-005 Shortcuts: 수동 QA (문서 전용 항목이며 앱은 정적 메뉴 명령을 사용함)
+//   - SET-007 AI Connections: 외부 프로젝트 dependency
 //     (https://linear.app/voyager-fm/project/byok구독-계정-연결-기반-ai-채팅-기능-도입-453bf1118aec)
-//   - Account/License: external project dependency
+//   - Account/License: 외부 프로젝트 dependency
 //     (https://linear.app/voyager-fm/project/dollar5-core-license-결제권한앱-unlock-실험-21b8e66140e2)
 //
-// Evidence path: .sisyphus/evidence/task-f1-set003-remediation.txt
-// Fixture reset: InMemoryStorage reset per test via setUp(); no persistent UserDefaults.
-// Classification: focused automated test
+// fixture reset: setUp()마다 InMemoryStorage를 재생성하며 영구 UserDefaults 상태가 필요 없다.
+// 분류: 집중 자동화 테스트
 
 @MainActor
-final class SET003AppearanceSettingsFeatureTests: XCTestCase {
+final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     private nonisolated(unsafe) var storage: InMemoryStorage!
     private nonisolated(unsafe) var themeRecorder: ThemeApplyRecorder!
 
@@ -93,8 +92,9 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         }
     }
 
-    // MARK: - SET-003:set_theme_mode
+    // MARK: - SET-003-switch_theme_mode
 
+    // SET-003-switch_theme_mode — AC: Appearance tab 로드 시 저장된 theme가 유효한 theme 상태로 복원되는지 검증한다.
     func testLoadSettingsRestoresTheme() async {
         let store = makeStore(loadTheme: { .dark })
         store.exhaustivity = .off
@@ -104,6 +104,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.theme, .dark)
     }
 
+    // SET-003-switch_theme_mode — AC: Dark 선택 시 theme이 Dark로 저장되고 app appearance 적용 의존성이 호출되는지 검증한다.
     func testSetThemePersistsRawValueAndApplies() async {
         let store = makeStore(loadTheme: { .system })
         store.exhaustivity = .off
@@ -117,6 +118,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(themeRecorder.values, [.dark])
     }
 
+    // SET-003-switch_theme_mode — AC: Light 선택 시 theme이 Light로 저장되고 app appearance 적용 의존성이 호출되는지 검증한다.
     func testSetThemeToLightPersistsAndApplies() async {
         let store = makeStore(loadTheme: { .dark })
         store.exhaustivity = .off
@@ -129,8 +131,9 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(themeRecorder.values, [.light])
     }
 
-    // MARK: - SET-003:set_list_icon_size
+    // MARK: - SET-003-adjust_icon_size
 
+    // SET-003-adjust_icon_size — AC: 저장된 list_icon_size가 있으면 Appearance tab 로드 시 해당 값이 표시되는지 검증한다.
     func testLoadSettingsRestoresListIconSize() async {
         storage.setObject(CGFloat(25.0), forKey: SettingsKeys.listIconSize)
         let store = makeStore()
@@ -141,6 +144,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.listIconSize, 25.0)
     }
 
+    // SET-003-adjust_icon_size — AC: 저장된 icon size 값이 없으면 appearance_settings_defaults 값이 표시되는지 검증한다.
     func testMissingListIconSizePreservesDefault() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -150,6 +154,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.listIconSize, AppearanceSettingsDefaults.listIconSize)
     }
 
+    // SET-003-adjust_icon_size — AC: list 아이콘 크기를 조절하면 list_icon_size로 저장되는지 검증한다.
     func testSetListIconSizePersistsExactKeyValue() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -164,8 +169,9 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(persisted, newSize)
     }
 
-    // MARK: - SET-003:set_grid_icon_size
+    // MARK: - SET-003-adjust_icon_size
 
+    // SET-003-adjust_icon_size — AC: 저장된 grid_icon_size가 있으면 Appearance tab 로드 시 해당 값이 표시되는지 검증한다.
     func testLoadSettingsRestoresGridIconSize() async {
         storage.setObject(CGFloat(80.0), forKey: SettingsKeys.gridIconSize)
         let store = makeStore()
@@ -176,6 +182,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.gridIconSize, 80.0)
     }
 
+    // SET-003-adjust_icon_size — AC: 저장된 icon size 값이 없으면 grid 아이콘 크기도 기본값을 유지하는지 검증한다.
     func testMissingGridIconSizePreservesDefault() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -185,6 +192,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.gridIconSize, AppearanceSettingsDefaults.gridIconSize)
     }
 
+    // SET-003-adjust_icon_size — AC: grid 아이콘 크기를 조절하면 grid_icon_size로 저장되는지 검증한다.
     func testSetGridIconSizePersistsExactKeyValue() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -199,8 +207,9 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(persisted, newSize)
     }
 
-    // MARK: - SET-003:set_list_text_size
+    // MARK: - SET-003-adjust_text_size
 
+    // SET-003-adjust_text_size — AC: 저장된 list_text_size가 있으면 Appearance tab 로드 시 해당 값이 표시되는지 검증한다.
     func testLoadSettingsRestoresListTextSize() async {
         storage.setObject(CGFloat(15.0), forKey: SettingsKeys.listTextSize)
         let store = makeStore()
@@ -211,6 +220,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.listTextSize, 15.0)
     }
 
+    // SET-003-adjust_text_size — AC: 저장된 text size 값이 없으면 appearance_settings_defaults 기본값이 표시되는지 검증한다.
     func testMissingListTextSizePreservesDefault() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -220,6 +230,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.listTextSize, AppearanceSettingsDefaults.listTextSize)
     }
 
+    // SET-003-adjust_text_size — AC: list text size를 조절하면 list_text_size가 저장되는지 검증한다.
     func testSetListTextSizePersistsExactKeyValue() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -234,8 +245,9 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(persisted, newSize)
     }
 
-    // MARK: - SET-003:set_grid_text_size
+    // MARK: - SET-003-adjust_text_size
 
+    // SET-003-adjust_text_size — AC: 저장된 grid_text_size가 있으면 Appearance tab 로드 시 해당 값이 표시되는지 검증한다.
     func testLoadSettingsRestoresGridTextSize() async {
         storage.setObject(CGFloat(14.0), forKey: SettingsKeys.gridTextSize)
         let store = makeStore()
@@ -246,6 +258,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.gridTextSize, 14.0)
     }
 
+    // SET-003-adjust_text_size — AC: 저장된 text size 값이 없으면 grid 텍스트 크기도 기본값을 유지하는지 검증한다.
     func testMissingGridTextSizePreservesDefault() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -255,6 +268,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.gridTextSize, AppearanceSettingsDefaults.gridTextSize)
     }
 
+    // SET-003-adjust_text_size — AC: grid text size를 조절하면 grid_text_size가 저장되는지 검증한다.
     func testSetGridTextSizePersistsExactKeyValue() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -269,8 +283,9 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(persisted, newSize)
     }
 
-    // MARK: - SET-003:toggle_show_hidden_files
+    // MARK: - SET-003 supplemental current behavior — showHiddenFiles
 
+    // SET-003 supplemental current behavior — AC: flow에 포함된 hidden files 표시 설정 저장값이 로드 시 복원되는지 검증한다.
     func testLoadSettingsRestoresShowHiddenFiles() async {
         storage.setBool(true, forKey: SettingsKeys.showHiddenFiles)
         let store = makeStore()
@@ -281,6 +296,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertTrue(store.state.showHiddenFiles)
     }
 
+    // SET-003 supplemental current behavior — AC: hidden files 표시 활성화 토글이 상태와 저장값을 true로 반영하는지 검증한다.
     func testSetShowHiddenFilesEnabled() async {
         let store = makeStore()
         store.exhaustivity = .off
@@ -293,6 +309,7 @@ final class SET003AppearanceSettingsFeatureTests: XCTestCase {
         XCTAssertTrue(storage.getBool(SettingsKeys.showHiddenFiles) ?? false)
     }
 
+    // SET-003 supplemental current behavior — AC: hidden files 표시 비활성화 토글이 상태와 저장값을 false로 반영하는지 검증한다.
     func testSetShowHiddenFilesDisabled() async {
         storage.setBool(true, forKey: SettingsKeys.showHiddenFiles)
         let store = makeStore()
