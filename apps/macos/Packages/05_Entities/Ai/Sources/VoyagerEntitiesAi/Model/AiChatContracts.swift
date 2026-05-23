@@ -514,8 +514,8 @@ public struct AiChatRequestContextSnapshot: Codable, Equatable, Sendable {
 public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
     public let sessionID: AiChatSessionID
     public let status: AiChatSessionStatus
-    public let provider: AiProvider
-    public let model: AiModelHandle
+    public let provider: AiProvider?
+    public let model: AiModelHandle?
     public let selectedModelRow: AiModelCatalogRow?
     public let selectedThinking: AiThinkingSelection?
     public let transcriptHistory: [AiChatMessage]
@@ -528,8 +528,8 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
     public init(
         sessionID: AiChatSessionID,
         status: AiChatSessionStatus,
-        provider: AiProvider,
-        model: AiModelHandle,
+        provider: AiProvider?,
+        model: AiModelHandle?,
         selectedModelRow: AiModelCatalogRow? = nil,
         selectedThinking: AiThinkingSelection? = nil,
         transcriptHistory: [AiChatMessage] = [],
@@ -553,6 +553,60 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
     // swiftlint:enable function_default_parameter_at_end
 }
 
+public struct AiChatSessionSummary: Codable, Equatable, Sendable {
+    public let sessionID: AiChatSessionID
+    public let title: String
+    public let preview: String?
+    public let messageCount: Int
+    public let contextTitle: String?
+    public let provider: AiProvider?
+    public let model: AiModelHandle?
+    public let createdAtMs: Int64
+    public let updatedAtMs: Int64
+    public let status: AiChatSessionStatus
+
+    // swiftlint:disable function_default_parameter_at_end
+    public init(
+        sessionID: AiChatSessionID,
+        title: String,
+        preview: String? = nil,
+        messageCount: Int,
+        contextTitle: String? = nil,
+        provider: AiProvider?,
+        model: AiModelHandle?,
+        createdAtMs: Int64,
+        updatedAtMs: Int64,
+        status: AiChatSessionStatus,
+    ) {
+        self.sessionID = sessionID
+        self.title = title
+        self.preview = preview
+        self.messageCount = messageCount
+        self.contextTitle = contextTitle
+        self.provider = provider
+        self.model = model
+        self.createdAtMs = createdAtMs
+        self.updatedAtMs = updatedAtMs
+        self.status = status
+    }
+    // swiftlint:enable function_default_parameter_at_end
+
+    public init(snapshot: AiChatSessionSnapshot) {
+        self.init(
+            sessionID: snapshot.sessionID,
+            title: snapshot.sessionTitle,
+            preview: snapshot.sessionPreview,
+            messageCount: snapshot.transcriptHistory.count,
+            contextTitle: snapshot.contextTitle,
+            provider: snapshot.provider,
+            model: snapshot.model,
+            createdAtMs: snapshot.createdAtMs,
+            updatedAtMs: snapshot.updatedAtMs,
+            status: snapshot.status,
+        )
+    }
+}
+
 public enum AiChatSessionRestoreResult: Codable, Equatable, Sendable {
     case restored(snapshot: AiChatSessionSnapshot)
     case newSession(snapshot: AiChatSessionSnapshot)
@@ -560,10 +614,61 @@ public enum AiChatSessionRestoreResult: Codable, Equatable, Sendable {
     case failed(reason: AiChatSessionRestoreFailure)
 }
 
+private extension AiChatSessionSnapshot {
+    var createdAtMs: Int64 {
+        updatedAtMs
+    }
+
+    var sessionTitle: String {
+        sessionTitleCandidate ?? contextTitle ?? selectedModelRow?.displayName ?? model?.rawValue ?? "New Chat"
+    }
+
+    var sessionPreview: String? {
+        transcriptHistory
+            .reversed()
+            .compactMap(\.content.nilIfBlank)
+            .map { Self.normalizedSummaryText($0) }
+            .first
+    }
+
+    var contextTitle: String? {
+        let currentContext = lastRequestContext?.currentContext
+        return currentContext?.summary?.nilIfBlank
+            ?? currentContext?.items.lazy.compactMap(\.title).first(where: { $0.nilIfBlank != nil })?.nilIfBlank
+            ?? currentContext?.references.lazy.compactMap(\.title).first(where: { $0.nilIfBlank != nil })?.nilIfBlank
+            ?? currentContext?.attachments.lazy.compactMap(\.title).first(where: { $0.nilIfBlank != nil })?.nilIfBlank
+    }
+
+    private var sessionTitleCandidate: String? {
+        transcriptHistory
+            .first(where: { $0.role == .user })?
+            .content
+            .nilIfBlank
+            .map { Self.normalizedSummaryText($0) }
+    }
+
+    static func normalizedSummaryText(_ value: String, limit: Int = 120) -> String {
+        let collapsed = value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard collapsed.count > limit else { return collapsed }
+        let endIndex = collapsed.index(collapsed.startIndex, offsetBy: limit)
+        return String(collapsed[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 private extension AiChatCurrentContextSnapshot {
     var isEmpty: Bool {
         let summaryIsEmpty = summary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
         return summaryIsEmpty && references.isEmpty && items.isEmpty && attachments.isEmpty
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

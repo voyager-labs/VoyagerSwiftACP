@@ -238,7 +238,8 @@ private struct TestExecutionClient: AiChatExecutionClientProtocol {
 }
 
 private struct TestPersistenceClient: AiChatSessionPersistenceClientProtocol {
-    func loadSession(id _: AiChatSessionID) async -> AiChatSessionSnapshot? { nil }
-    func saveSession(_: AiChatSessionSnapshot) async {}
-    func deleteSession(id _: AiChatSessionID) async {}
+    func listSessions(limit _: Int?, query _: String?) async throws -> [AiChatSessionSummary] { [] }
+    func loadSession(id _: AiChatSessionID) async throws -> AiChatSessionSnapshot? { nil }
+    func saveSession(_: AiChatSessionSnapshot) async throws {}
+    func deleteSession(id _: AiChatSessionID) async throws {}
 }
