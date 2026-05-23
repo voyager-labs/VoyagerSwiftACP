@@ -21,48 +21,71 @@ public struct AiChatView: View {
     public var body: some View {
         WithPerceptionTracking {
             let state = store.state
+            let builder = AiChatStateDisplayModelBuilder(state: state)
             let skeleton = state.skeletonDisplayModel
-            let requestContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
+            let requestContext = builder.requestContextDisplayModel
+            let sessions = AiChatSessionsDisplayModel(rows: state.sessionList.rows, now: Date())
 
-            ScrollViewReader { scrollProxy in
-                VStack(spacing: 0) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            AiChatConversationSurface(
+            Group {
+                if state.mode == .sessions {
+                    AiChatSessionsView(store: store, state: state, displayModel: sessions)
+                } else {
+                    ScrollViewReader { scrollProxy in
+                        VStack(spacing: 0) {
+                            HStack {
+                                Button("Back to Sessions") {
+                                    store.send(.backToSessionsTapped)
+                                }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 12, weight: .medium))
+
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.top, 10)
+                            .padding(.bottom, 4)
+
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    AiChatConversationSurface(
+                                        state: state,
+                                        skeleton: skeleton,
+                                        onOpenSettings: { store.send(.openSettingsTapped) },
+                                        onErrorRecovery: { store.send(.errorRecoveryTapped) },
+                                        onRebindContext: { store.send(.rebindContextTapped) },
+                                        onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) }
+                                    )
+                                    Color.clear
+                                        .frame(height: 1)
+                                        .id(Self.transcriptBottomAnchorID)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.top, 10)
+                                .padding(.bottom, 8)
+                            }
+                            .onChange(of: transcriptScrollSignature(state: state)) { _ in
+                                scrollTranscriptToBottom(scrollProxy)
+                            }
+
+                            AiChatInputBar(
+                                store: store,
                                 state: state,
-                                skeleton: skeleton,
-                                onOpenSettings: { store.send(.openSettingsTapped) },
-                                onErrorRecovery: { store.send(.errorRecoveryTapped) }
+                                input: skeleton.chatInput,
+                                requestContext: requestContext,
+                                colorScheme: colorScheme,
+                                isChatInputFocused: $isChatInputFocused,
+                                chatInputTextHeight: $chatInputTextHeight,
+                                isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
+                                isThinkingSelectorPresented: $isThinkingSelectorPresented
                             )
-                            Color.clear
-                                .frame(height: 1)
-                                .id(Self.transcriptBottomAnchorID)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 8)
+                            .padding(.bottom, 10)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 10)
-                        .padding(.bottom, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
-                    .onChange(of: transcriptScrollSignature(state: state)) { _ in
-                        scrollTranscriptToBottom(scrollProxy)
-                    }
-
-                    AiChatInputBar(
-                        store: store,
-                        state: state,
-                        input: skeleton.chatInput,
-                        requestContext: requestContext,
-                        colorScheme: colorScheme,
-                        isChatInputFocused: $isChatInputFocused,
-                        chatInputTextHeight: $chatInputTextHeight,
-                        isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
-                        isThinkingSelectorPresented: $isThinkingSelectorPresented
-                    )
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-                    .padding(.bottom, 10)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
     }
