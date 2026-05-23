@@ -3,29 +3,15 @@ import VoyagerFeaturesBetaAccess
 @testable import VoyagerPagesOnboarding
 import XCTest
 
-// MARK: - ONB-001 Test Fixtures
-
-private actor PathRecorder {
-    private var paths: [OnboardingOpenMainWindowRequest] = []
-
-    func append(_ request: OnboardingOpenMainWindowRequest) {
-        paths.append(request)
-    }
-
-    func snapshot() -> [OnboardingOpenMainWindowRequest] {
-        paths
-    }
-}
-
 @MainActor
-final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
+final class ONB001RunUserOnboardingTests: XCTestCase {
     // MARK: - ONB-001-start_onboarding_session
 
     // 온보딩 세션 시작 상호작용을 검증합니다.
     // 앱 첫 실행, 빈 진행 상태, 버전 불일치로 인한 리셋 등 세션 초기화 시나리오에서
     // 초기 단계 상태가 올바르게 설정되고 진행 상태 스냅샷이 저장되는지 확인합니다.
 
-    /// ONB-001:start_onboarding_session — 저장 버전이 현재 앱 버전과 다를 때 온보딩이 시작되면 기존 진행 상태를 리셋하고 welcome에서 안전하게 재시작한다.
+    /// ONB-001-start_onboarding_session: 저장 버전이 현재 앱 버전과 다를 때 온보딩이 시작되면 기존 진행 상태를 리셋하고 welcome에서 안전하게 재시작한다.
     /// 저장된 버전이 앱 버전과 불일치할 때 세션이 완전히 초기화되는지 검증합니다.
     /// - 검증 내용: `load`가 `.resetRequired`를 반환하면 reducer가 기존 진행 상태를 버리고 새 세션을 시작합니다.
     /// - 사전 조건: `onboardingProgressClient.load`가 `.resetRequired`를 반환하여 앱 업데이트 등으로 인한 리셋 필요를 나타냅니다.
@@ -52,7 +38,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:start_onboarding_session — 저장된 진행 상태가 없을 때 온보딩이 시작되면 welcome 단계의 새 세션과 초기 navigation 상태를 만든다.
+    /// ONB-001-start_onboarding_session: 저장된 진행 상태가 없을 때 온보딩이 시작되면 welcome 단계의 새 세션과 초기 navigation 상태를 만든다.
     /// 저장된 진행 상태가 없을 때 새 온보딩 세션이 welcome 단계에서 시작되는지 검증합니다.
     /// - 검증 내용: `load`가 `.empty`를 반환하면 reducer가 기본 상태로 새 세션을 생성합니다.
     /// - 사전 조건: 진행 상태 저장소가 `.empty`를 반환하여 이전 세션이 없음을 나타냅니다.
@@ -84,7 +70,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:start_onboarding_session — resetRequired 상태일 때 세션을 재시작하면 저장소 reset과 새 snapshot save가 모두 실행된다.
+    /// ONB-001-start_onboarding_session: resetRequired 상태일 때 세션을 재시작하면 저장소 reset과 새 snapshot save가 모두 실행된다.
     /// `resetRequired` 응답 시 reducer가 `reset()`과 `save()`를 모두 호출하는지 검증합니다.
     /// - 검증 내용: 세션 리셋 시 실제 저장소 초기화와 새 진행 상태 저장이 순차적으로 발생합니다.
     /// - 사전 조건: `load`가 `.resetRequired`를 반환합니다. `resetRecorder`로 `reset()` 호출 여부를 추적합니다.
@@ -109,7 +95,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:start_onboarding_session — empty progress일 때 onAppear가 실행되면 welcome 상태로 시작하고 재개 가능한 첫 snapshot을 저장한다.
+    /// ONB-001-start_onboarding_session: empty progress일 때 onAppear가 실행되면 welcome 상태로 시작하고 재개 가능한 첫 snapshot을 저장한다.
     /// `load`가 `.empty`를 반환하면 상태가 새 세션으로 초기화되고 초기 스냅샷이 저장되는지 검증합니다.
     /// - 검증 내용: 진행 상태가 없을 때 세션 초기화 후 첫 스냅샷이 올바른 단계 상태와 함께 저장됩니다.
     /// - 사전 조건: `load`가 `.empty`를 반환합니다. `snapshotRecorder`로 `save()`에 전달된 스냅샷을 캡처합니다.
@@ -144,7 +130,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:start_onboarding_session — 새 세션이 생성될 때 초기 snapshot을 저장하면 각 step completion flag가 초기 AC 상태와 일치한다.
+    /// ONB-001-start_onboarding_session: 새 세션이 생성될 때 초기 snapshot을 저장하면 각 step completion flag가 초기 AC 상태와 일치한다.
     /// `onAppear` 시 초기 단계 상태를 반영하여 진행 상태 스냅샷이 올바르게 저장되는지 검증합니다.
     /// - 검증 내용: 세션 시작 시 저장되는 스냅샷의 각 단계별 완료 플래그가 초기 상태와 일치합니다.
     /// - 사전 조건: `load`가 `.empty`를 반환합니다. `snapshotRecorder`로 저장된 스냅샷을 캡처합니다.
@@ -179,7 +165,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     // 온보딩 단계 표시: 각 단계의 title, subtitle, 인덱스, 네비게이션 플래그,
     // 정식 단계 순서(welcome → betaAccess → permissions → complete)를 검증합니다.
 
-    /// ONB-001:show_onboarding_step — fresh session일 때 첫 화면을 표시하면 welcome step의 title/subtitle/progress metadata가 노출된다.
+    /// ONB-001-show_onboarding_step: fresh session일 때 첫 화면을 표시하면 welcome step의 title/subtitle/progress metadata가 노출된다.
     /// 초기 `onAppear` 시 welcome 단계가 올바른 속성(title, subtitle, 인덱스, 총 단계 수)과 함께 표시되는지 검증합니다.
     /// - 검증 내용: welcome 단계의 메타데이터와 네비게이션 컨텍스트가 기대값과 일치합니다.
     /// - 사전 조건: `load`가 `.empty`를 반환하여 새 세션이 시작됩니다.
@@ -208,7 +194,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:show_onboarding_step — welcome이 완료된 상태일 때 Next를 누르면 beta access step을 현재 step으로 표시한다.
+    /// ONB-001-show_onboarding_step: welcome이 완료된 상태일 때 Next를 누르면 beta access step을 현재 step으로 표시한다.
     /// welcome에서 `nextTapped` 후 betaAccess 단계가 올바른 속성과 함께 표시되는지 검증합니다.
     /// - 검증 내용: 단계 전환 후 `currentStep`, title, 인덱스가 betaAccess에 해당하는 값으로 갱신됩니다.
     /// - 사전 조건: 새 세션이 시작되어 welcome 단계에 위치합니다.
@@ -236,7 +222,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:show_onboarding_step — beta access가 active로 완료되었을 때 Next를 누르면 permissions step을 현재 step으로 표시한다.
+    /// ONB-001-show_onboarding_step: beta access가 active로 완료되었을 때 Next를 누르면 permissions step을 현재 step으로 표시한다.
     /// betaAccess가 확인 완료된 후 `nextTapped`로 permissions 단계가 표시되는지 검증합니다.
     /// - 검증 내용: betaAccess 검증 성공(`.active`) 후 다음 단계 전환이 정상 동작합니다.
     /// - 사전 조건: welcome 통과, betaAccess에서 `.active` 확인 응답 수신 후 `isComplete = true` 상태입니다.
@@ -272,7 +258,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:show_onboarding_step — required permissions가 완료되었을 때 Next를 누르면 complete step을 현재 step으로 표시한다.
+    /// ONB-001-show_onboarding_step: required permissions가 완료되었을 때 Next를 누르면 complete step을 현재 step으로 표시한다.
     /// 모든 이전 단계(welcome, betaAccess, permissions)가 완료되면 complete 단계가 표시되는지 검증합니다.
     /// - 검증 내용: 선행 단계 모두 완료 시 `nextTapped`가 complete 단계로 전환합니다.
     /// - 사전 조건: welcome, betaAccess(`.active`), permissions 모두 `isComplete = true`이고 `currentStep = .permissions`입니다.
@@ -308,7 +294,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:show_onboarding_step — 온보딩 표시가 시작될 때 onAppear가 실행되면 welcome step과 첫 진행률 상태를 표시한다.
+    /// ONB-001-show_onboarding_step: 온보딩 표시가 시작될 때 onAppear가 실행되면 welcome step과 첫 진행률 상태를 표시한다.
     /// 초기 `onAppear` 시 welcome 단계가 올바른 네비게이션 플래그(`canGoNext`, `canGoBack`)와 함께 표시되는지 검증합니다.
     /// - 검증 내용: 첫 단계에서 앞으로는 이동 가능, 뒤로는 이동 불가능한지 확인합니다.
     /// - 사전 조건: `load`가 `.empty`를 반환하여 새 세션이 시작됩니다.
@@ -333,7 +319,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:show_onboarding_step — 모든 step completion 조건이 순서대로 충족될 때 Next를 반복하면 welcome → betaAccess → permissions →
+    /// ONB-001-show_onboarding_step: 모든 step completion 조건이 순서대로 충족될 때 Next를 반복하면 welcome → betaAccess → permissions →
     /// complete 순서를 보존한다.
     /// 단계 순서가 정식 순서(welcome → betaAccess → permissions → complete)를 따르는지 검증합니다.
     /// - 검증 내용: `OnboardingStep.allCases`가 정식 순서와 일치하고, `nextTapped`가 각 단계를 올바르게 이동합니다.
@@ -383,7 +369,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     // 단계 상태 업데이트: 자식 액션을 통한 단계 완료 상태 변경, 진행 상태 저장 트리거,
     // 단계별 완료 추적 및 스냅샷 캡처를 검증합니다.
 
-    /// ONB-001:update_onboarding_step_state — child welcome action이 발생할 때 step state를 갱신하면 welcome completion state를
+    /// ONB-001-update_onboarding_step_state: child welcome action이 발생할 때 step state를 갱신하면 welcome completion state를
     /// session snapshot에 반영한다.
     /// 자식 액션(`.welcome(.setCompleted)`)을 통한 welcome 단계 완료 상태 변경이 올바르게 전파되는지 검증합니다.
     /// - 검증 내용: welcome의 `isComplete`를 끄고 다시 켤 때 `canGoNext`가 그에 맞게 변경됩니다.
@@ -420,7 +406,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:update_onboarding_step_state — ONB-002 verification이 active를 반환할 때 child result가 들어오면 betaAccess step을
+    /// ONB-001-update_onboarding_step_state: ONB-002 verification이 active를 반환할 때 child result가 들어오면 betaAccess step을
     /// complete로 정규화한다.
     /// betaAccess 단계에서 확인 응답(`.active`) 수신 시 상태가 올바르게 업데이트되는지 검증합니다.
     /// - 검증 내용: `verificationResponse` 액션이 `status`, `reason`, `isComplete`를 올바르게 갱신합니다.
@@ -456,7 +442,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:update_onboarding_step_state — 하위 step state가 변경될 때 reducer가 action을 처리하면 변경된 completion state를 progress
+    /// ONB-001-update_onboarding_step_state: 하위 step state가 변경될 때 reducer가 action을 처리하면 변경된 completion state를 progress
     /// snapshot으로 저장한다.
     /// 자식 액션 후 단계 상태 업데이트가 진행 상태 스냅샷 저장을 트리거하는지 검증합니다.
     /// - 검증 내용: betaAccess 확인 응답 처리 후 `save()`가 호출되고 업데이트된 단계 상태를 반영합니다.
@@ -490,7 +476,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:update_onboarding_step_state — 각 child step completion 상태가 다를 때 step state를 계산하면 step별 complete flag를
+    /// ONB-001-update_onboarding_step_state: 각 child step completion 상태가 다를 때 step state를 계산하면 step별 complete flag를
     /// 독립적으로 유지한다.
     /// `isStepComplete`가 각 단계별로 완료 상태를 올바르게 추적하는지 검증합니다.
     /// - 검증 내용: 기본 상태에서 welcome만 완료이고, 각 단계를 수동 완료할 때마다 추적이 갱신됩니다.
@@ -515,7 +501,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         XCTAssertTrue(state.isStepComplete(.complete))
     }
 
-    /// ONB-001:update_onboarding_step_state — session snapshot을 생성할 때 모든 step state를 직렬화하면 ONB-002/ONB-003 결과까지 포함한다.
+    /// ONB-001-update_onboarding_step_state: session snapshot을 생성할 때 모든 step state를 직렬화하면 ONB-002/ONB-003 결과까지 포함한다.
     /// `progressSnapshot`이 모든 4개 단계의 완료 플래그를 정확히 캡처하는지 검증합니다.
     /// - 검증 내용: 수동으로 설정한 단계 상태가 스냅샷 생성 시 그대로 반영됩니다.
     /// - 사전 조건: `currentStep = .permissions`, `betaAccess.isComplete = true`, `permissions.isComplete = true`입니다.
@@ -542,7 +528,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     // 단계 앞으로 이동: nextTapped를 통한 단계 전환, 완료 전제 조건, 마지막 단계 제한,
     // 이동 시 진행 상태 저장을 검증합니다.
 
-    /// ONB-001:advance_onboarding_step / ONB-001:go_back_onboarding_step — 현재 step이 완료되었을 때 Next/Back을 누르면 인접 step으로만
+    /// ONB-001-advance_onboarding_step: ONB-001:go_back_onboarding_step — 현재 step이 완료되었을 때 Next/Back을 누르면 인접 step으로만
     /// 이동한다.
     /// `nextTapped`와 `backTapped`를 통한 앞/뒤 네비게이션이 모두 정상 동작하는지 검증합니다.
     /// - 검증 내용: welcome → betaAccess → permissions로 앞으로 이동 후 betaAccess로 뒤로 이동합니다.
@@ -585,7 +571,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:advance_onboarding_step — 현재 step이 incomplete일 때 Next를 누르면 다음 step으로 잘못 진행하지 않는다.
+    /// ONB-001-advance_onboarding_step: 현재 step이 incomplete일 때 Next를 누르면 다음 step으로 잘못 진행하지 않는다.
     /// 현재 단계가 완료되어야만 `nextTapped`로 다음 단계로 이동할 수 있음을 검증합니다.
     /// - 검증 내용: 미완료 단계에서 `nextTapped`는 아무 상태 변화도 일으키지 않아야(no-op) 합니다.
     /// - 사전 조건: `currentStep = .betaAccess`, `betaAccess.isComplete = false` 상태입니다.
@@ -616,7 +602,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:advance_onboarding_step — complete step에 도달했을 때 추가 advance가 발생하면 범위를 넘어 진행하지 않는다.
+    /// ONB-001-advance_onboarding_step: complete step에 도달했을 때 추가 advance가 발생하면 범위를 넘어 진행하지 않는다.
     /// 마지막 단계(complete)에서는 `nextTapped`로 더 이상 앞으로 이동할 수 없음을 검증합니다.
     /// - 검증 내용: complete 단계는 `currentStep.next`가 `nil`이며 `nextTapped`가 no-op입니다.
     /// - 사전 조건: `currentStep = .complete` 상태입니다.
@@ -645,7 +631,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:advance_onboarding_step — step advance가 성공할 때 currentStep이 바뀌면 새 currentStep snapshot을 저장한다.
+    /// ONB-001-advance_onboarding_step: step advance가 성공할 때 currentStep이 바뀌면 새 currentStep snapshot을 저장한다.
     /// 단계 이동 시 진행 상태 스냅샷이 저장되어 새 단계가 반영되는지 검증합니다.
     /// - 검증 내용: `nextTapped` 후 `save()`가 호출되고 갱신된 `currentStep`이 스냅샷에 반영됩니다.
     /// - 사전 조건: `saveRecorder`로 저장 호출을 캡처합니다. `onAppear` 후 welcome 단계입니다.
@@ -680,7 +666,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     // 단계 뒤로 이동: backTapped를 통한 이전 단계 복귀, 첫 단계 제한,
     // 완료 상태 보존 및 진행 상태 저장을 검증합니다.
 
-    /// ONB-001:go_back_onboarding_step — welcome step일 때 Back을 누르면 이전 step으로 이동하지 않는다.
+    /// ONB-001-go_back_onboarding_step: welcome step일 때 Back을 누르면 이전 step으로 이동하지 않는다.
     /// 첫 번째 단계(welcome)에서는 `backTapped`로 뒤로 이동할 수 없음을 검증합니다.
     /// - 검증 내용: welcome에서 `backTapped`는 no-op이며 단계가 유지됩니다.
     /// - 사전 조건: `onAppear` 후 `currentStep = .welcome`, `canGoBack = false` 상태입니다.
@@ -708,7 +694,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:go_back_onboarding_step — 완료된 child step들이 있을 때 이전 step으로 돌아가면 completion state를 잃지 않는다.
+    /// ONB-001-go_back_onboarding_step: 완료된 child step들이 있을 때 이전 step으로 돌아가면 completion state를 잃지 않는다.
     /// 뒤로 이동 시 이미 완료된 단계의 완료 상태가 보존됨을 검증합니다.
     /// - 검증 내용: permissions → betaAccess → welcome으로 뒤로 이동해도 각 단계의 `isComplete`와 `status`가 유지됩니다.
     /// - 사전 조건: `currentStep = .permissions`, welcome/betaAccess 모두 완료(`.active`) 상태입니다.
@@ -752,7 +738,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:go_back_onboarding_step — Back 이동이 성공할 때 currentStep이 변경되면 되돌아간 step snapshot을 저장한다.
+    /// ONB-001-go_back_onboarding_step: Back 이동이 성공할 때 currentStep이 변경되면 되돌아간 step snapshot을 저장한다.
     /// 뒤로 이동 시 진행 상태 스냅샷이 저장되어 이전 단계가 반영됨을 검증합니다.
     /// - 검증 내용: `backTapped` 후 `save()`가 호출되고 스냅샷의 `currentStep`이 이전 단계로 갱신됩니다.
     /// - 사전 조건: `currentStep = .betaAccess`, `welcome.isComplete = true`, `saveRecorder`로 저장 호출을 캡처합니다.
@@ -790,7 +776,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     // 세션 이어서 진행: 저장된 스냅샷에서 세션 복원, 미완료 단계의 fallback-to-last-valid-step,
     // 리셋 필요 시 세션 초기화, 복원 후 스냅샷 저장을 검증합니다.
 
-    /// ONB-001:resume_onboarding_session — 유효한 persisted snapshot이 있을 때 앱이 재시작되면 마지막 유효 step에서 재개한다.
+    /// ONB-001-resume_onboarding_session: 유효한 persisted snapshot이 있을 때 앱이 재시작되면 마지막 유효 step에서 재개한다.
     /// 저장된 스냅샷에서 세션을 이어서 진행할 때 상태가 올바르게 복원되는지 검증합니다.
     /// - 검증 내용: `load`가 `.success(snapshot)`를 반환하면 reducer가 스냅샷 기반으로 상태를 복원합니다.
     /// - 사전 조건: snapshot에 `currentStep = .permissions`, welcome/betaAccess 완료, permissions/complete 미완료가 저장되어 있습니다.
@@ -830,7 +816,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:resume_onboarding_session — persisted current step이 incomplete일 때 resume하면 안전한 이전/기본 step으로 fallback한다.
+    /// ONB-001-resume_onboarding_session: persisted current step이 incomplete일 때 resume하면 안전한 이전/기본 step으로 fallback한다.
     /// 저장된 `currentStep`은 유효하지만 해당 단계가 미완료인 스냅샷으로 이어서 진행 시
     /// 마지막 유효한 완료 단계로 대체(fallback-to-last-valid-step)됨을 검증합니다.
     /// - 검증 내용: `currentStep = .permissions`이지만 betaAccess가 미완료이면 welcome으로 되돌아갑니다.
@@ -874,7 +860,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:resume_onboarding_session — 이전 step들이 완료된 snapshot일 때 resume하면 완료 상태를 보존하고 다음 유효 step을 표시한다.
+    /// ONB-001-resume_onboarding_session: 이전 step들이 완료된 snapshot일 때 resume하면 완료 상태를 보존하고 다음 유효 step을 표시한다.
     /// complete 이전의 모든 단계가 완료된 상태로 이어서 진행 시
     /// 마지막 완료 단계인 permissions에 위치해야 함을 검증합니다.
     /// - 검증 내용: `currentStep = .complete`이지만 `complete` 미완료 시 `permissions`로 fallback합니다.
@@ -917,7 +903,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:resume_onboarding_session — welcome만 완료된 snapshot일 때 resume하면 betaAccess 진입 준비 상태로 복원한다.
+    /// ONB-001-resume_onboarding_session: welcome만 완료된 snapshot일 때 resume하면 betaAccess 진입 준비 상태로 복원한다.
     /// 저장된 스냅샷에서 welcome만 완료된 경우 welcome 단계가 표시되어야 함을 검증합니다.
     /// - 검증 내용: betaAccess 미완료 시 fallback-to-last-valid-step이 welcome을 선택합니다.
     /// - 사전 조건: snapshot에 `currentStep = .betaAccess`, welcome만 완료, 나머지 미완료입니다.
@@ -960,7 +946,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:resume_onboarding_session — resume 중 snapshot 보정이 필요할 때 복원 로직이 실행되면 보정된 진행 상태를 다시 저장한다.
+    /// ONB-001-resume_onboarding_session: resume 중 snapshot 보정이 필요할 때 복원 로직이 실행되면 보정된 진행 상태를 다시 저장한다.
     /// 이어서 진행 시 단계 상태 적용 후 업데이트된 스냅샷이 저장됨을 검증합니다.
     /// - 검증 내용: 복원된 상태(보정된 단계 포함)가 `save()`를 통해 올바르게 저장됩니다.
     /// - 사전 조건: snapshot에 `currentStep = .permissions`, welcome/betaAccess 완료가 저장되어 있습니다.
@@ -1006,7 +992,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:resume_onboarding_session — 손상된 stepState가 저장되어 있을 때 resume하면 welcome fallback으로 안전하게 복구한다.
+    /// ONB-001-resume_onboarding_session: 손상된 stepState가 저장되어 있을 때 resume하면 welcome fallback으로 안전하게 복구한다.
     /// `load`가 `.resetRequired`를 반환하면 상태가 welcome으로 초기화되고 새 스냅샷이 저장됨을 검증합니다.
     /// - 검증 내용: 손상되거나 호환되지 않는 진행 상태를 감지하면 세션을 완전히 리셋합니다.
     /// - 사전 조건: `load`가 `.resetRequired`를 반환합니다. `snapshotRecorder`로 저장된 스냅샷을 캡처합니다.
@@ -1039,7 +1025,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:resume_onboarding_session — 알 수 없는 currentStep이 저장되어 있을 때 resume하면 마지막 유효 step으로 fallback한다.
+    /// ONB-001-resume_onboarding_session: 알 수 없는 currentStep이 저장되어 있을 때 resume하면 마지막 유효 step으로 fallback한다.
     /// 스냅샷에 유효한 단계(`.complete`)가 있지만 선행 조건이 미완료면
     /// 마지막 유효 단계로 대체됨을 검증합니다.
     /// - 검증 내용: complete/betaAccess/permissions가 모두 미완료이면 welcome으로 fallback합니다.
@@ -1082,7 +1068,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
     // 세션 완료: startUsingTapped를 통한 완료 처리, 메인 창 열기, 진행 상태 저장,
     // 재진입 시 세션 스킵, 실패/재시도/멱등성을 검증합니다.
 
-    /// ONB-001:complete_onboarding_session — 모든 필수 step이 완료되었을 때 완료 액션을 실행하면 progress를 completed로 저장하고 main window open
+    /// ONB-001-complete_onboarding_session: 모든 필수 step이 완료되었을 때 완료 액션을 실행하면 progress를 completed로 저장하고 main window open
     /// contract를 호출한다.
     /// 세션 완료 시 메인 창이 열리고 진행 상태가 저장되는지 검증합니다.
     /// - 검증 내용: `startUsingTapped`가 `isComplete`, `isOpeningWindow`를 설정하고
@@ -1135,7 +1121,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:resume_onboarding_session — 이미 completed snapshot이 있을 때 앱이 시작되면 온보딩 표시를 건너뛰는 completed state를 복원한다.
+    /// ONB-001-resume_onboarding_session: 이미 completed snapshot이 있을 때 앱이 시작되면 온보딩 표시를 건너뛰는 completed state를 복원한다.
     /// 세션 완료 후 재진입 시 이어서 진행 세션이 완료된 상태로 건너뜀을 검증합니다.
     /// - 검증 내용: 모든 단계가 완료된 스냅샷이 저장되어 있으면 `onAppear` 시 바로 complete 상태로 복원됩니다.
     /// - 사전 조건: snapshot에 모든 단계가 완료(`completeComplete = true`)로 저장되어 있습니다.
@@ -1174,7 +1160,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:complete_onboarding_session — complete step에서 완료할 때 progress를 저장하면 completeComplete flag와 completed 상태가
+    /// ONB-001-complete_onboarding_session: complete step에서 완료할 때 progress를 저장하면 completeComplete flag와 completed 상태가
     /// snapshot에 반영된다.
     /// 완료 시 모든 단계가 완료로 표시된 스냅샷이 저장되는지 검증합니다.
     /// - 검증 내용: `startUsingTapped` 후 `save()`가 호출되고 `completeComplete`과 `currentStep`이 올바르게 저장됩니다.
@@ -1221,7 +1207,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:complete_onboarding_session — completion action이 반복 입력될 때 Start Using을 다시 누르면 main window open contract를
+    /// ONB-001-complete_onboarding_session: completion action이 반복 입력될 때 Start Using을 다시 누르면 main window open contract를
     /// 일관되게 다시 호출한다.
     /// `startUsingTapped`를 두 번 호출하면 창이 두 번 열리는지(reducer에 멱등성 가드 없음) 검증합니다.
     /// - 검증 내용: 연속 탭 시 reducer가 전체 완료 흐름을 반복 실행합니다.
@@ -1279,7 +1265,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:complete_onboarding_session — main window open이 실패할 때 완료 액션을 실행하면 완료로 위장하지 않고 retry 가능한 error state를
+    /// ONB-001-complete_onboarding_session: main window open이 실패할 때 완료 액션을 실행하면 완료로 위장하지 않고 retry 가능한 error state를
     /// 표시한다.
     /// `openMainWindow`가 `false`를 반환하면 에러 상태가 설정됨을 검증합니다.
     /// - 검증 내용: 창 열기 실패 시 `openWindowError`에 사용자 친화적 메시지가 설정됩니다.
@@ -1324,7 +1310,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:complete_onboarding_session — completion side effect가 실패할 때 reducer가 실패 응답을 받으면 completion failure 상태를
+    /// ONB-001-complete_onboarding_session: completion side effect가 실패할 때 reducer가 실패 응답을 받으면 completion failure 상태를
     /// 저장하지 않는다.
     /// 완료 실패 경로 — `openMainWindow`가 `false`를 반환하고 에러가 설정됨을 검증합니다.
     /// - 검증 내용: `testCompletionOpenWindowFailureShowsError`와 동일한 시나리오의 독립 검증입니다.
@@ -1367,7 +1353,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:complete_onboarding_session — 이전 completion이 실패했을 때 사용자가 재시도하면 성공 시 completed snapshot과 window open
+    /// ONB-001-complete_onboarding_session: 이전 completion이 실패했을 때 사용자가 재시도하면 성공 시 completed snapshot과 window open
     /// contract를 회복한다.
     /// 완료 실패 후 `retryTapped`가 창 열기를 재시도하는지 검증합니다.
     /// - 검증 내용: 에러 상태에서 재시도 시 `openWindowError`가 초기화되고 창이 다시 열립니다.
@@ -1418,7 +1404,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:complete_onboarding_session — 이미 완료된 상태일 때 completion을 다시 처리하면 completed state를 안정적으로 유지한다.
+    /// ONB-001-complete_onboarding_session: 이미 완료된 상태일 때 completion을 다시 처리하면 completed state를 안정적으로 유지한다.
     /// 멱등적 완료 — `startUsingTapped`를 두 번 호출해도 `isComplete`가 일관되게 유지됨을 검증합니다.
     /// - 검증 내용: 두 번째 호출 시에도 동일한 상태 변화(`isOpeningWindow`, `openWindowError = nil`)가 발생합니다.
     /// - 사전 조건: `currentStep = .complete` 상태입니다. `pathRecorder`로 창 열기 호출을 캡처합니다.
@@ -1475,7 +1461,7 @@ final class ONB001RunUserOnboardingFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:complete_onboarding_session / ONB-001:resume_onboarding_session — completed session으로 재진입할 때 state를 복원하면
+    /// ONB-001-complete_onboarding_session: ONB-001:resume_onboarding_session — completed session으로 재진입할 때 state를 복원하면
     /// completion 상태와 complete step 표시가 일치한다.
     /// 재진입: 이미 온보딩을 완료한 사용자가 다시 실행하면
     /// 세션이 완전히 완료된 상태로 로드되고 `isSessionComplete`이 `true`임을 검증합니다.

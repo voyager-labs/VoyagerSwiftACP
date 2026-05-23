@@ -5,16 +5,8 @@ import VoyagerEntitiesAppPreferences
 @testable import VoyagerPagesOnboarding
 import XCTest
 
-// MARK: - ONB-003 Test Fixtures
-
-private let kGrantedHelperAccess = FolderAccessResult(
-    desktop: .granted,
-    documents: .granted,
-    downloads: .granted,
-)
-
 @MainActor
-final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
+final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase {
     // MARK: - ONB-003-show_onboarding_permission_status
 
     // 온보딩 권한 구성 화면(ONB-003)의 첫 번째 스펙 인터랙션입니다.
@@ -23,7 +15,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
     // 대상 권한: Full Disk Access(FDA), 헬퍼 폴더 접근(Desktop/Documents/Downloads),
     // 로그인 시 실행(LaunchAtLogin).
 
-    /// ONB-003:show_onboarding_permission_status — 권한 step이 표시될 때 onAppear가 실행되면 FDA/helper/launch 상태를 수집하고 필수 권한 완료
+    /// ONB-003-show_onboarding_permission_status: 권한 step이 표시될 때 onAppear가 실행되면 FDA/helper/launch 상태를 수집하고 필수 권한 완료
     /// 여부를 계산한다.
     /// ONB-003-show_onboarding_permission_status 스펙에서 onAppear 시 권한 상태를 병렬로 수집하는 흐름을 검증합니다.
     ///
@@ -66,7 +58,6 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:show_onboarding_permission_status — FDA가 unknown일 때 권한 상태를 표시하면 Next를 차단하고 사용자 조치를 요구한다.
     /// ONB-003-show_onboarding_permission_status: FDA가 `.unknown`일 때 온보딩 완료가 차단되는지 검증합니다.
     ///
     /// macOS는 FDA 권한을 허용/거부/미확인 세 가지로 보고합니다. `.unknown`은 사용자가 아직
@@ -106,7 +97,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:show_onboarding_permission_status — helper folder access가 부분 허용일 때 상태를 표시하면 partial 상태와 추가 action 필요성을
+    /// ONB-003-show_onboarding_permission_status: helper folder access가 부분 허용일 때 상태를 표시하면 partial 상태와 추가 action 필요성을
     /// 노출한다.
     /// 헬퍼 폴더 접근이 부분적으로 허용된 상태에서 isComplete가 false임을 검증합니다.
     ///
@@ -154,7 +145,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:show_onboarding_permission_status — FDA/helper가 모두 미충족일 때 상태를 표시하면 denied/notGranted 상태와 progression
+    /// ONB-003-show_onboarding_permission_status: FDA/helper가 모두 미충족일 때 상태를 표시하면 denied/notGranted 상태와 progression
     /// blocking을 노출한다.
     /// 모든 권한이 거부된 최악의 시나리오에서 올바른 상태 표시를 검증합니다.
     ///
@@ -198,7 +189,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:show_onboarding_permission_status — 필수 권한 중 하나라도 미충족일 때 초기 상태를 계산하면 isComplete를 false로 유지한다.
+    /// ONB-003-show_onboarding_permission_status: 필수 권한 중 하나라도 미충족일 때 초기 상태를 계산하면 isComplete를 false로 유지한다.
     /// FDA 미허용 상태에서는 헬퍼 접근이 허용되더라도 isComplete가 false임을 검증합니다.
     ///
     /// - 검증 내용: 헬퍼 폴더 접근은 `kGrantedHelperAccess`로 통과하더라도
@@ -238,7 +229,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:show_onboarding_permission_status — FDA는 허용됐지만 helper 접근이 거부됐을 때 상태를 계산하면 completion을 차단한다.
+    /// ONB-003-show_onboarding_permission_status: FDA는 허용됐지만 helper 접근이 거부됐을 때 상태를 계산하면 completion을 차단한다.
     /// FDA 허용 상태에서 헬퍼 폴더 접근 거부 시 isComplete가 차단됨을 검증합니다.
     ///
     /// - 검증 내용: FDA는 `.granted`이더라도 헬퍼 폴더 접근이 전체 거부되면
@@ -286,7 +277,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
     // 사용자가 시스템 설정에서 변경한 권한을 즉시 반영하는 것이 핵심 목표입니다.
     // onDisappear는 TCA Effect 취소 및 옵저버 해제를 보장합니다.
 
-    /// ONB-003:refresh_onboarding_permission_status — 권한 step을 떠날 때 onDisappear가 실행되면 app-active refresh observation을
+    /// ONB-003-refresh_onboarding_permission_status: 권한 step을 떠날 때 onDisappear가 실행되면 app-active refresh observation을
     /// 취소한다.
     /// onDisappear가 권한 관찰 Effect를 정상적으로 취소하는지 검증합니다.
     ///
@@ -318,7 +309,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:refresh_onboarding_permission_status — 앱이 다시 active가 될 때 refresh가 실행되면 FDA/helper 상태를 다시 읽어 completion을
+    /// ONB-003-refresh_onboarding_permission_status: 앱이 다시 active가 될 때 refresh가 실행되면 FDA/helper 상태를 다시 읽어 completion을
     /// 갱신한다.
     /// 앱이 포그라운드로 복귀할 때 권한 상태를 새로고침하는지 검증합니다.
     ///
@@ -356,7 +347,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:refresh_onboarding_permission_status — FDA가 새로 허용됐을 때 refresh 결과를 받으면 completion이 true로 전환된다.
+    /// ONB-003-refresh_onboarding_permission_status: FDA가 새로 허용됐을 때 refresh 결과를 받으면 completion이 true로 전환된다.
     /// 새로고침 후 FDA가 허용되면 isComplete가 true로 전환됨을 검증합니다.
     ///
     /// - 검증 내용: appDidBecomeActive가 FDA `.granted` + 헬퍼 `kGrantedHelperAccess`를
@@ -393,7 +384,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:refresh_onboarding_permission_status — helper folder 권한이 변경됐을 때 refresh 결과를 받으면 helper status와
+    /// ONB-003-refresh_onboarding_permission_status: helper folder 권한이 변경됐을 때 refresh 결과를 받으면 helper status와
     /// completion을 최신 값으로 갱신한다.
     /// 새로고침 시 헬퍼 폴더 접근이 거부로 변경되면 상태가 올바르게 갱신됨을 검증합니다.
     ///
@@ -432,7 +423,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:refresh_onboarding_permission_status — launch-at-login은 non-gate일 때 permission refresh가 실행되면 launch
+    /// ONB-003-refresh_onboarding_permission_status: launch-at-login은 non-gate일 때 permission refresh가 실행되면 launch
     /// state를 불필요하게 초기화하지 않는다.
     /// 새로고침이 로그인 시 실행 상태를 초기화하지 않음을 검증합니다.
     ///
@@ -473,7 +464,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:refresh_onboarding_permission_status — FDA 오류/미충족 상태 후 권한이 허용됐을 때 refresh가 성공하면 error를 지우고 completion을
+    /// ONB-003-refresh_onboarding_permission_status: FDA 오류/미충족 상태 후 권한이 허용됐을 때 refresh가 성공하면 error를 지우고 completion을
     /// true로 만든다.
     /// FDA가 `.needsAction`에서 `.granted`로 전환된 후 새로고침이 isComplete를 true로 만드는지 검증합니다.
     ///
@@ -524,7 +515,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:refresh_onboarding_permission_status — 중복 app-active refresh가 겹칠 때 오래된 helper 응답이 늦게 도착하면 최신 generation
+    /// ONB-003-refresh_onboarding_permission_status: 중복 app-active refresh가 겹칠 때 오래된 helper 응답이 늦게 도착하면 최신 generation
     /// 결과만 상태에 반영한다.
     /// 두 번의 appDidBecomeActive 새로고침에서 더 오래된 응답이 나중에 도착해도
     /// 최신 세대의 granted 상태가 보존됨을 검증합니다.
@@ -591,7 +582,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
     // 반영되는지 검증합니다. Next 버튼의 게이팅 로직(FDA + 헬퍼 필수,
     // 로그인 시 실행 선택)도 이 그룹에서 확인합니다.
 
-    /// ONB-003:request_onboarding_permission_access — FDA가 미충족일 때 progression을 평가하면 Next/Complete를 차단한다.
+    /// ONB-003-request_onboarding_permission_access: FDA가 미충족일 때 progression을 평가하면 Next/Complete를 차단한다.
     /// FDA 상태에 따라 Next 버튼이 활성화·비활성화되는 게이팅 동작을 검증합니다.
     ///
     /// - 검증 내용: 헬퍼 폴더는 `kGrantedHelperAccess`로 통과하더라도
@@ -626,7 +617,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — FDA 요청 후 거부 상태가 유지될 때 응답을 처리하면 denied 상태와 blocking을 유지한다.
+    /// ONB-003-request_onboarding_permission_access: FDA 요청 후 거부 상태가 유지될 때 응답을 처리하면 denied 상태와 blocking을 유지한다.
     /// 사용자가 시스템 설정 열기를 시도한 후 FDA가 여전히 거부 상태인 경우를 검증합니다.
     ///
     /// - 검증 내용: systemSettingsOpenResult(true)로 hasAttemptedFullDiskAccessEnable를 true로
@@ -654,7 +645,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — 시스템 설정 열기가 실패할 때 FDA action을 실행하면 retry 가능한 error를 표시한다.
+    /// ONB-003-request_onboarding_permission_access: 시스템 설정 열기가 실패할 때 FDA action을 실행하면 retry 가능한 error를 표시한다.
     /// 시스템 설정 열기 실패 시 에러 메시지가 표시되는지 검증합니다.
     ///
     /// - 검증 내용: systemSettingsOpenResult(false)가 반환되면 systemSettingsError에
@@ -676,7 +667,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — launch-at-login 토글 요청이 성공할 때 action을 실행하면 non-gate 설정 상태만 갱신한다.
+    /// ONB-003-request_onboarding_permission_access: launch-at-login 토글 요청이 성공할 때 action을 실행하면 non-gate 설정 상태만 갱신한다.
     /// 로그인 시 실행 토글이 성공적으로 상태를 갱신하는지 검증합니다 (비게이팅 권한).
     ///
     /// - 검증 내용: launchAtLoginToggled(true)가 launchAtLoginEnabled를 true로 설정하고
@@ -702,7 +693,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — launch-at-login 토글 요청이 실패할 때 action을 실행하면 필수 권한 completion과 분리된
+    /// ONB-003-request_onboarding_permission_access: launch-at-login 토글 요청이 실패할 때 action을 실행하면 필수 권한 completion과 분리된
     /// error를 표시한다.
     /// 로그인 시 실행 토글 실패 시 에러 복구 동작을 검증합니다 (비게이팅 권한).
     ///
@@ -736,7 +727,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — 사용자가 FDA 설정 열기를 선택할 때 action을 실행하면 system settings client 호출을
+    /// ONB-003-request_onboarding_permission_access: 사용자가 FDA 설정 열기를 선택할 때 action을 실행하면 system settings client 호출을
     /// 보장한다.
     /// openSystemSettingsTapped이 systemSettingsClient를 호출하는지 검증합니다.
     ///
@@ -759,7 +750,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — helper folder 요청이 성공할 때 request action을 실행하면 helper access를
+    /// ONB-003-request_onboarding_permission_access: helper folder 요청이 성공할 때 request action을 실행하면 helper access를
     /// granted로 저장하고 completion을 갱신한다.
     /// 헬퍼 폴더 접근 요청이 성공하여 isComplete가 true가 되는 흐름을 검증합니다.
     ///
@@ -795,7 +786,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — helper folder 요청이 partial을 반환할 때 응답을 처리하면 partial 상태와 blocking을
+    /// ONB-003-request_onboarding_permission_access: helper folder 요청이 partial을 반환할 때 응답을 처리하면 partial 상태와 blocking을
     /// 유지한다.
     /// 헬퍼 폴더 접근 요청이 부분 허용 결과를 반환하는 경우 에러 메시지와 isComplete를 검증합니다.
     ///
@@ -837,7 +828,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — FDA가 denied일 때 Next 가능 여부를 계산하면 progression을 차단한다.
+    /// ONB-003-request_onboarding_permission_access: FDA가 denied일 때 Next 가능 여부를 계산하면 progression을 차단한다.
     /// FDA가 명시적으로 `.denied`일 때 Next 버튼이 비활성화됨을 검증합니다.
     ///
     /// - 검증 내용: fullDiskAccessStatusResponse(.denied)를 보내면
@@ -863,7 +854,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — helper access가 notGranted일 때 Next 가능 여부를 계산하면 progression을 차단한다.
+    /// ONB-003-request_onboarding_permission_access: helper access가 notGranted일 때 Next 가능 여부를 계산하면 progression을 차단한다.
     /// 헬퍼 폴더 접근이 미허용일 때 FDA가 허용되더라도 Next가 비활성화됨을 검증합니다.
     ///
     /// - 검증 내용: FDA가 `.granted`이더라도 헬퍼 폴더가 전체 `.notGranted`이면
@@ -894,7 +885,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — 필수 권한은 충족되고 launch-at-login만 disabled일 때 progression을 계산하면 Next를
+    /// ONB-003-request_onboarding_permission_access: 필수 권한은 충족되고 launch-at-login만 disabled일 때 progression을 계산하면 Next를
     /// 차단하지 않는다.
     /// 로그인 시 실행이 비활성화되어도 Next를 차단하지 않음을 검증합니다.
     ///
@@ -922,7 +913,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — FDA가 denied였다가 granted로 바뀔 때 사용자가 retry/refresh하면 completion을
+    /// ONB-003-request_onboarding_permission_access: FDA가 denied였다가 granted로 바뀔 때 사용자가 retry/refresh하면 completion을
     /// 회복한다.
     /// FDA 권한이 거부에서 허용으로 전환되는 재시도 성공 시나리오를 검증합니다.
     ///
@@ -957,7 +948,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — launch-at-login 상태가 false일 때 필수 권한이 충족되면 completion gate에 영향을 주지
+    /// ONB-003-request_onboarding_permission_access: launch-at-login 상태가 false일 때 필수 권한이 충족되면 completion gate에 영향을 주지
     /// 않는다.
     /// 로그인 시 실행 토글이 isComplete에 영향을 주지 않음을 검증합니다.
     ///
@@ -1000,7 +991,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — FDA required gate가 미충족일 때 Next 버튼 상태를 계산하면 nextDisabledMessage로
+    /// ONB-003-request_onboarding_permission_access: FDA required gate가 미충족일 때 Next 버튼 상태를 계산하면 nextDisabledMessage로
     /// 차단 이유를 제공한다.
     /// FDA가 `.needsAction`일 때 헬퍼가 허용되더라도 Next가 차단됨을 검증합니다.
     ///
@@ -1031,7 +1022,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — helper folder required gate가 미충족일 때 Next 버튼 상태를 계산하면
+    /// ONB-003-request_onboarding_permission_access: helper folder required gate가 미충족일 때 Next 버튼 상태를 계산하면
     /// nextDisabledMessage로 차단 이유를 제공한다.
     /// 헬퍼 폴더 접근이 미허용이면 FDA가 허용되어도 Next가 차단됨을 검증합니다.
     ///
@@ -1066,7 +1057,7 @@ final class ONB003ConfigureRequiredPermissionsFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-003:request_onboarding_permission_access — launch-at-login만 미충족/disabled일 때 FDA/helper가 충족되면 completion을
+    /// ONB-003-request_onboarding_permission_access: launch-at-login만 미충족/disabled일 때 FDA/helper가 충족되면 completion을
     /// 허용한다.
     /// 필수 권한(FDA + 헬퍼) 충족 시 로그인 시 실행이 비활성화되어도 isComplete == true임을 검증합니다.
     ///
