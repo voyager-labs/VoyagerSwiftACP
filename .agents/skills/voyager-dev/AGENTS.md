@@ -24,7 +24,7 @@ Route through this namespace for:
 - `planner/` — scaffold, decompose, and reuse-evaluation planning.
 - `implementer/` — TCA contract and observation implementation mechanics.
 - `reviewer/` — architecture-gate and boundary review.
-- `verifier/` — testing and final verification discipline.
+- `verifier/` — spec test authoring, test execution/failure analysis, and final verification discipline.
 - Role `references/` directories — canonical Voyager-dev references owned by the role that uses them most directly. Do not duplicate long policy text across roles.
 
 ## Rules
