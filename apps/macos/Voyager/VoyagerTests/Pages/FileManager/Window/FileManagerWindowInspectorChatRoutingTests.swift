@@ -310,7 +310,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
 
         XCTAssertEqual(store.state.inspector.aiChat.modelListProvider, .anthropic)
         XCTAssertEqual(store.state.inspector.aiChat.catalogRows.map(\.handle), [anthropicModel.id])
-        XCTAssertEqual(store.state.inspector.aiChat.selectedModelHandle, anthropicModel.id)
+        XCTAssertNil(store.state.inspector.aiChat.selectedModelHandle)
         XCTAssertEqual(store.state.inspector.aiChat.connectionState, .connected)
     }
 
@@ -356,6 +356,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.send(.inspector(.closeChat)) {
             $0.inspector.inspectorVisible = false
         }
+        await store.receive(\.inspector.aiChat.teardownRequested)
 
         XCTAssertEqual(store.state.inspector.activeMode, .chat)
     }
@@ -471,6 +472,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
         await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.closeChat) {
             $0.windows[id: fixture.focusedUUID]?.window.inspector.inspectorVisible = false
         }
+        await store.receive(\.windows[id: fixture.focusedUUID].window.inspector.aiChat.teardownRequested)
     }
 
     private func assertWindowManagerRequest(
@@ -727,6 +729,7 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         await store.receive(\.inspector.closeChat) {
             $0.inspector.inspectorVisible = false
         }
+        await store.receive(\.inspector.aiChat.teardownRequested)
     }
 
     private func assertOpenChatRouting(
