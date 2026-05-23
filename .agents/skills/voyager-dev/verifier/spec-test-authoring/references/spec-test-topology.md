@@ -41,6 +41,7 @@ Examples:
 - Use `// MARK: - <SPEC-ID>-<interaction_id>` for each interaction AC.
 - Keep all scenarios for that interaction under the section.
 - Use multiple methods when the AC has distinct success, failure, retry, cancellation, stale response, or idempotency semantics.
+- Put a `///` traceability doc comment before every executable interaction test method. Use the fixed shape: `<SPEC-ID>-<interaction_id>: <scenario>`, one intent sentence, then `- 검증 내용`, `- 사전 조건`, and `- 기대 결과` bullets.
 - Do not create placeholder files for future interactions. If a placeholder is useful, use an empty `// MARK:` section with a clear TODO comment.
 
 ## Focused filter rule

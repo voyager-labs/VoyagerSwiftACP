@@ -34,8 +34,14 @@ Do not use this workflow only to select or run existing tests; use `../../testin
 
 1. Use one `// MARK: - <spec-id>-<interaction_id>` section per interaction AC.
 2. Add one or more test methods under each section for happy path, failure, retry, cancellation, stale response, and edge variants that matter.
-3. Use concise doc comments only when they clarify spec traceability or non-obvious intent.
-4. If a product behavior currently lives in `PolicyTests`, `ContractTests`, or `LifecycleTests`, move it under the spec owner unless it is a true technical contract with no AC owner.
+3. Add a required `///` traceability doc comment immediately before every executable interaction test method. The comment must include:
+    - First line: `<SPEC-ID>-<interaction_id>: <scenario summary>`.
+    - One sentence explaining the user/product situation being verified.
+    - `- 검증 내용`: the reducer/action/effect/state contract under test.
+    - `- 사전 조건`: the initial state, fixture, dependency override, or stored snapshot.
+    - `- 기대 결과`: the observable state, emitted action, dependency call, persistence, or completion result.
+4. Keep `// MARK:` for interaction section navigation only. Do not replace method traceability docs with plain `//` line comments.
+5. If a product behavior currently lives in `PolicyTests`, `ContractTests`, or `LifecycleTests`, move it under the spec owner unless it is a true technical contract with no AC owner.
 
 ### 4. Write deterministic TCA tests
 
@@ -61,6 +67,7 @@ xcrun swift test --package-path apps/macos/Packages/02_Pages/Onboarding \
 - [ ] Every product behavior test has a single spec owner.
 - [ ] New spec suite names use `<SpecID><PascalCaseSpecTitle>Tests.swift`, not `FeatureTests`.
 - [ ] Interaction ACs are `// MARK:` sections inside the owning suite, not separate files.
+- [ ] Every executable interaction test method has the required `///` traceability doc comment shape.
 - [ ] Test infrastructure is under `Support/` and contains no behavior assertions as ownership.
 - [ ] TCA tests control dependencies, avoid no-op state closures, and complete long-lived effects.
 - [ ] Focused test filters and renamed class/file references are updated together.
@@ -95,18 +102,33 @@ Inside `PAY002ConfirmPaymentTests.swift`:
 final class PAY002ConfirmPaymentTests: XCTestCase {
     // MARK: - PAY-002-select_payment_method
 
+    /// PAY-002-select_payment_method: saved card를 선택하면 현재 결제 수단으로 저장한다.
+    /// 사용자가 결제 수단 목록에서 saved card를 선택하는 대표 성공 경로를 검증한다.
+    /// - 검증 내용: `.selectPaymentMethod` action이 selected method state와 persistence dependency를 갱신한다.
+    /// - 사전 조건: saved card fixture가 결제 수단 목록에 있고 선택된 결제 수단은 없다.
+    /// - 기대 결과: selected method가 saved card로 설정되고 저장 dependency가 한 번 호출된다.
     func testSelectingPaymentMethodStoresSelection() async {
         // TestStore scenario here.
     }
 
     // MARK: - PAY-002-submit_payment
 
+    /// PAY-002-submit_payment: 유효한 결제 수단으로 제출하면 authorization 성공 상태로 라우팅한다.
+    /// 사용자가 결제를 제출한 뒤 성공 응답을 받는 happy path를 검증한다.
+    /// - 검증 내용: submit effect가 payment client를 호출하고 성공 응답을 승인 완료 state로 반영한다.
+    /// - 사전 조건: selected method가 있고 payment client는 success authorization을 반환한다.
+    /// - 기대 결과: 결제 상태가 authorized로 바뀌고 에러 상태는 비어 있다.
     func testSubmitPaymentRoutesSuccessfulAuthorization() async {
         // TestStore scenario here.
     }
 
     // MARK: - PAY-002-handle_payment_failure
 
+    /// PAY-002-handle_payment_failure: authorization 실패 시 retry 가능한 실패 상태를 표시한다.
+    /// 결제 client 실패가 사용자에게 복구 가능한 오류로 노출되는지 검증한다.
+    /// - 검증 내용: 실패 응답 action이 error message와 retry 가능 상태를 설정한다.
+    /// - 사전 조건: selected method가 있고 payment client는 retryable failure를 반환한다.
+    /// - 기대 결과: payment state가 failed이고 retry affordance가 활성화된다.
     func testPaymentFailureShowsRetryState() async {
         // TestStore scenario here.
     }
@@ -121,15 +143,17 @@ final class PAY002ConfirmPaymentTests: XCTestCase {
 | Naming new suites `...FeatureTests.swift`                                              | Use `<SpecID><PascalCaseSpecTitle>Tests.swift`.                                     |
 | Keeping product behavior in `PolicyTests` or `ContractTests` after a spec owner exists | Move the behavior under the spec suite; keep only pure technical contracts outside. |
 | Mixing fixtures and executable assertions in the same support file                     | Keep support files limited to infrastructure; assertions live in spec suites.       |
+| Documenting test intent with plain `//` method comments                                | Use the required `///` traceability shape before every interaction test method.     |
 | Adding `TestStore.send` mutation closures for actions that do not change state         | Omit the closure and assert external effects or unchanged state separately.         |
 | Using the test target name as the SwiftPM filter                                       | Filter by suite class, such as `--filter ONB004FinishOnboardingTests`.              |
 
 ## Quick reference
 
-| Decision                  | Default                                                     |
-| ------------------------- | ----------------------------------------------------------- |
-| Spec suite name           | `<SpecID><PascalCaseSpecTitle>Tests.swift`                  |
-| Interaction layout        | `// MARK: - <spec-id>-<interaction_id>` inside owning suite |
-| Product behavior location | Owning spec suite under `Specs/`                            |
-| Fixture/recorder location | `Support/<SpecID>/` or `Support/Shared/`                    |
-| Verification handoff      | `../../testing/SKILL.md` with focused class filter          |
+| Decision                  | Default                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------- |
+| Spec suite name           | `<SpecID><PascalCaseSpecTitle>Tests.swift`                                            |
+| Interaction layout        | `// MARK: - <spec-id>-<interaction_id>` inside owning suite                           |
+| Method doc comment        | `/// <SPEC-ID>-<interaction_id>: <scenario>` + intent + 검증 내용/사전 조건/기대 결과 |
+| Product behavior location | Owning spec suite under `Specs/`                                                      |
+| Fixture/recorder location | `Support/<SpecID>/` or `Support/Shared/`                                              |
+| Verification handoff      | `../../testing/SKILL.md` with focused class filter                                    |
