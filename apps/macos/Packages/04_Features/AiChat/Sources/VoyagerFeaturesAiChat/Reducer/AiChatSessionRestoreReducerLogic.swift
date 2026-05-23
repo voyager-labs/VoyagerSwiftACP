@@ -30,10 +30,14 @@ extension AiChatFeature {
         context: AiChatRestoreContext,
         uuid: UUIDGenerator,
     ) -> Action {
-        if snapshot.status == .rebindRequired {
-            return rebindRequiredRestoreAction(context: context, uuid: uuid)
-        }
         let normalizedSnapshot = normalizeRestoredSnapshot(snapshot, catalogRows: context.catalogRows)
+        if snapshot.status == .rebindRequired {
+            return .restoreOutcome(
+                requestedSessionID: context.sessionID,
+                .rebindRequired(snapshot: normalizedSnapshot),
+                restoreFailure: .contextMismatch,
+            )
+        }
         return .restoreOutcome(
             requestedSessionID: context.sessionID,
             .restored(snapshot: normalizedSnapshot),
@@ -164,8 +168,9 @@ extension AiChatFeature {
             state.restoreFailure = restoreFailure
 
         case let .rebindRequired(snapshot):
-            applyNewSessionSnapshot(snapshot, state: &state)
-            state.restoreOutcome = .newSession(snapshot: snapshot)
+            applyRestoredSnapshot(snapshot, state: &state)
+            state.sessionStatus = .rebindRequired
+            state.restoreOutcome = result
             state.restoreFailure = restoreFailure ?? .contextMismatch
 
         case let .failed(reason):
@@ -209,7 +214,7 @@ extension AiChatFeature {
         _ snapshot: AiChatSessionSnapshot,
         catalogRows: [AiModelCatalogRow],
     ) -> AiChatSessionSnapshot {
-        let selectedRow = catalogRows.first(where: { $0.handle == snapshot.model })
+        let selectedRow = snapshot.model.flatMap { model in catalogRows.first(where: { $0.handle == model }) }
         return AiChatSessionSnapshot(
             sessionID: snapshot.sessionID,
             status: .active,
@@ -231,19 +236,15 @@ extension AiChatFeature {
         selectedHandle: AiModelHandle?,
         selectedThinking: AiThinkingSelection?,
     ) -> AiChatSessionSnapshot? {
-        guard let selectedHandle,
-              let selectedRow = catalogRows.first(where: { $0.handle == selectedHandle })
-        else {
-            return nil
-        }
+        let selectedRow = selectedHandle.flatMap { handle in catalogRows.first(where: { $0.handle == handle }) }
 
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .idle,
-            provider: selectedHandle.provider,
+            provider: selectedHandle?.provider,
             model: selectedHandle,
             selectedModelRow: selectedRow,
-            selectedThinking: selectedThinking,
+            selectedThinking: selectedHandle == nil ? nil : selectedThinking,
             transcriptHistory: [],
             updatedAtMs: 0,
         )

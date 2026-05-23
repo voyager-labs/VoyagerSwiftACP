@@ -12,6 +12,9 @@ public struct AiChatFeature {
         case restore
         case persistenceRecovery
         case modelList
+        case sessionList
+        case sessionDelete
+        case newChat
     }
 
     @Dependency(\.aiChatExecutionClient)
@@ -38,6 +41,98 @@ public struct AiChatFeature {
             switch action {
             case .onAppear:
                 normalizeSelectionIfNeeded(&state)
+                return .none
+
+            case .sessionsAppeared:
+                state.mode = .sessions
+                state.sessionList.isLoading = true
+                state.sessionList.errorMessage = nil
+                return loadSessions()
+
+            case .newChatTapped:
+                let snapshot = startNewUnselectedChat(state: &state)
+                return saveNewChat(snapshot)
+
+            case .startNewChatFromRebindTapped:
+                let snapshot = startNewUnselectedChat(state: &state)
+                return saveNewChat(snapshot)
+
+            case .rebindContextTapped:
+                state.sessionStatus = .active
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.unavailableSelectedModelHandle = nil
+                normalizeSelectionIfNeeded(&state)
+                return .none
+
+            case let .sessionRowTapped(sessionID):
+                state.mode = .sessions
+                state.sessionList.selectedSessionID = sessionID
+                state.sessionList.errorMessage = nil
+                state.restoreSessionID = sessionID
+                return restoreSession(sessionID: sessionID, state: state)
+
+            case let .deleteSessionTapped(sessionID):
+                state.sessionList.errorMessage = nil
+                if state.restoreSessionID == sessionID {
+                    state.restoreSessionID = nil
+                    state.restoreOutcome = nil
+                    state.restoreFailure = nil
+                    state.sessionList.selectedSessionID = nil
+                    return .concatenate(
+                        .cancel(id: CancelID.restore),
+                        deleteSession(sessionID)
+                    )
+                }
+                return deleteSession(sessionID)
+
+            case .backToSessionsTapped:
+                state.mode = .sessions
+                return .none
+
+            case let .sessionSearchQueryChanged(query):
+                state.sessionList.updateQuery(query)
+                return .none
+
+            case let .sessionListLoaded(rows):
+                state.sessionList.setLoadedRows(rows)
+                state.sessionList.isLoading = false
+                state.sessionList.errorMessage = nil
+                return .none
+
+            case let .sessionListFailed(message):
+                state.sessionList.setLoadedRows([])
+                state.sessionList.isLoading = false
+                state.sessionList.errorMessage = message
+                return .none
+
+            case let .sessionDeleteSucceeded(sessionID):
+                state.sessionList.removeRow(sessionID: sessionID)
+                if state.restoreSessionID == sessionID {
+                    state.restoreSessionID = nil
+                    state.restoreOutcome = nil
+                    state.restoreFailure = nil
+                }
+                return .none
+
+            case let .sessionDeleteFailed(_, message):
+                state.sessionList.errorMessage = message
+                return .none
+
+            case let .newChatCreated(snapshot):
+                applyNewSessionSnapshot(snapshot, state: &state)
+                state.restoreSessionID = snapshot.sessionID
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.mode = .chat
+                state.sessionList.selectedSessionID = snapshot.sessionID
+                state.sessionList.errorMessage = nil
+                return .none
+
+            case let .newChatFailed(message):
+                state.mode = .sessions
+                state.sessionList.selectedSessionID = nil
+                state.sessionList.errorMessage = message
                 return .none
 
             case let .setup(setup):
@@ -208,7 +303,20 @@ public struct AiChatFeature {
 
             case let .restoreOutcome(requestedSessionID, result, restoreFailure):
                 guard state.restoreSessionID == requestedSessionID else { return .none }
+                let isSessionListRestore = state.mode == .sessions && state.sessionList.selectedSessionID == requestedSessionID
+                if isSessionListRestore,
+                   let restoreFailure,
+                   restoreFailure != .contextMismatch
+                {
+                    state.sessionList.selectedSessionID = nil
+                    state.sessionList.errorMessage = sessionRestoreFailureMessage(for: restoreFailure)
+                    return .none
+                }
                 applyRestoreOutcome(result, restoreFailure: restoreFailure, state: &state)
+                if isSessionListRestore {
+                    state.mode = .chat
+                    state.sessionList.errorMessage = nil
+                }
                 return .none
 
             case let .executionEvent(event):
@@ -433,7 +541,6 @@ private extension AiChatFeature {
 }
 
 private extension AiChatFeature {
-
     func removeCurrentContextDuplicates(state: inout State) {
         state.currentContext = currentContextSnapshot(state.currentContext, excluding: state.addedAttachments)
     }
@@ -635,6 +742,133 @@ private extension AiChatFeature {
     func normalizedFileURL(from url: URL) -> URL? {
         guard url.isFileURL else { return nil }
         return url.standardizedFileURL
+    }
+
+    func loadSessions() -> Effect<Action> {
+        .run { [aiChatSessionPersistenceClient] send in
+            do {
+                let rows = try await aiChatSessionPersistenceClient.listSessions(nil, nil)
+                await send(.sessionListLoaded(rows))
+            } catch {
+                await send(.sessionListFailed(Self.sessionListFailureMessage(for: error)))
+            }
+        }
+        .cancellable(id: CancelID.sessionList, cancelInFlight: true)
+    }
+
+    func startNewUnselectedChat(state: inout State) -> AiChatSessionSnapshot {
+        let sessionID = AiChatSessionID(rawValue: uuid())
+        state.sessionID = sessionID
+        state.sessionStatus = .idle
+        state.mode = .chat
+        state.restoreSessionID = nil
+        state.restoreOutcome = nil
+        state.restoreFailure = nil
+        state.sessionList.selectedSessionID = nil
+        state.sessionList.errorMessage = nil
+        state.transcriptHistory = []
+        state.draftText = ""
+        state.streamingAssistantDraft = nil
+        state.lockedModelHandle = nil
+        state.lastExecutionFailure = nil
+        state.lastRequestContext = nil
+        state.lastRequestContextModelHandle = nil
+        state.executionPhase = .idle
+        state.selectedModelHandle = nil
+        state.selectedThinking = nil
+        state.unavailableSelectedModelHandle = nil
+
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .idle,
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
+            updatedAtMs: currentTimestampMs()
+        )
+    }
+
+    func saveNewChat(_ snapshot: AiChatSessionSnapshot) -> Effect<Action> {
+        .run { [aiChatSessionPersistenceClient] send in
+            do {
+                try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                await send(.newChatCreated(snapshot))
+            } catch {
+                await send(.newChatFailed(Self.newChatFailureMessage(for: error)))
+            }
+        }
+        .cancellable(id: CancelID.newChat, cancelInFlight: true)
+    }
+
+    func deleteSession(_ sessionID: AiChatSessionID) -> Effect<Action> {
+        .run { [aiChatSessionPersistenceClient] send in
+            do {
+                try await aiChatSessionPersistenceClient.deleteSession(sessionID)
+                await send(.sessionDeleteSucceeded(sessionID))
+            } catch {
+                await send(.sessionDeleteFailed(sessionID, Self.sessionDeleteFailureMessage(for: error)))
+            }
+        }
+        .cancellable(id: CancelID.sessionDelete, cancelInFlight: false)
+    }
+
+    static func sessionListFailureMessage(for error: Error) -> String {
+        guard let persistenceError = error as? AiChatSessionPersistenceClientError else {
+            return "Chat history could not be loaded."
+        }
+
+        switch persistenceError {
+        case .applicationSupportDirectoryUnavailable:
+            return "Chat history is unavailable right now."
+        case .corruptedRecord:
+            return "A saved chat could not be read."
+        }
+    }
+
+    static func newChatFailureMessage(for error: Error) -> String {
+        guard let persistenceError = error as? AiChatSessionPersistenceClientError else {
+            return "A new chat could not be saved."
+        }
+
+        switch persistenceError {
+        case .applicationSupportDirectoryUnavailable:
+            return "A new chat could not be saved right now."
+        case .corruptedRecord:
+            return "A new chat could not be saved because chat history is corrupted."
+        }
+    }
+
+    static func sessionDeleteFailureMessage(for error: Error) -> String {
+        guard let persistenceError = error as? AiChatSessionPersistenceClientError else {
+            return "That chat could not be deleted."
+        }
+
+        switch persistenceError {
+        case .applicationSupportDirectoryUnavailable:
+            return "That chat could not be deleted right now."
+        case .corruptedRecord:
+            return "That chat could not be deleted because chat history is corrupted."
+        }
+    }
+
+    func sessionRestoreFailureMessage(for failure: AiChatSessionRestoreFailure) -> String {
+        switch failure {
+        case .missingRecord:
+            return "That chat is no longer available."
+        case .contextMismatch:
+            return "That chat can no longer be restored with the current model context."
+        case .corruptedRecord:
+            return "That chat could not be restored because its saved data is corrupted."
+        case .unsupportedVersion:
+            return "That chat was saved in an unsupported format."
+        case .unknown:
+            return "That chat could not be restored."
+        }
     }
 
     func attachmentSource(for url: URL) -> AiChatAttachmentSource {

@@ -6,6 +6,18 @@ import VoyagerEntitiesAi
 public enum AiChatAction: CasePathable, Equatable, Sendable {
     case delegate(Delegate)
     case onAppear
+    case sessionsAppeared
+    case newChatTapped
+    case sessionRowTapped(AiChatSessionID)
+    case deleteSessionTapped(AiChatSessionID)
+    case backToSessionsTapped
+    case sessionSearchQueryChanged(String)
+    case sessionListLoaded([AiChatSessionSummary])
+    case sessionListFailed(String)
+    case sessionDeleteSucceeded(AiChatSessionID)
+    case sessionDeleteFailed(AiChatSessionID, String)
+    case newChatCreated(AiChatSessionSnapshot)
+    case newChatFailed(String)
     case setup(AiChatSetupState)
     case providerConnectionsUpdated(AIConnectionsFile)
     case modelListLoading(requestID: UUID, provider: AiProvider, credential: StoredCredentialPayload?)
@@ -23,6 +35,8 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case removeAddedAttachment(AiChatAttachmentID)
     case openSettingsTapped
     case errorRecoveryTapped
+    case rebindContextTapped
+    case startNewChatFromRebindTapped
     case submitTapped
     case regenerateTapped
     case cancelTapped

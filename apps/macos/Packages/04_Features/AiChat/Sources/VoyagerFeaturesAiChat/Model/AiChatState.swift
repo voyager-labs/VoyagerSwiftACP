@@ -30,11 +30,72 @@ public enum AiChatModelListState: Equatable, Sendable {
     case failed(AiModelListFailure)
 }
 
+public enum AiChatMode: Equatable, Sendable {
+    case sessions
+    case chat
+}
+
+public struct AiChatSessionListState: Equatable, Sendable {
+    public var allRows: [AiChatSessionSummary]
+    public var rows: [AiChatSessionSummary]
+    public var query: String
+    public var isLoading: Bool
+    public var errorMessage: String?
+    public var selectedSessionID: AiChatSessionID?
+
+    public init(
+        allRows: [AiChatSessionSummary] = [],
+        rows: [AiChatSessionSummary]? = nil,
+        query: String = "",
+        isLoading: Bool = false,
+        errorMessage: String? = nil,
+        selectedSessionID: AiChatSessionID? = nil
+    ) {
+        self.allRows = allRows
+        self.query = query
+        self.isLoading = isLoading
+        self.errorMessage = errorMessage
+        self.selectedSessionID = selectedSessionID
+        self.rows = rows ?? Self.filteredRows(from: allRows, query: query)
+    }
+
+    public mutating func setLoadedRows(_ rows: [AiChatSessionSummary]) {
+        allRows = rows
+        self.rows = Self.filteredRows(from: rows, query: query)
+    }
+
+    public mutating func updateQuery(_ query: String) {
+        self.query = query
+        rows = Self.filteredRows(from: allRows, query: query)
+    }
+
+    public mutating func removeRow(sessionID: AiChatSessionID) {
+        allRows.removeAll { $0.sessionID == sessionID }
+        rows = Self.filteredRows(from: allRows, query: query)
+        if selectedSessionID == sessionID {
+            selectedSessionID = nil
+        }
+    }
+
+    static func filteredRows(from rows: [AiChatSessionSummary], query: String) -> [AiChatSessionSummary] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return rows }
+        let normalizedQuery = trimmedQuery.localizedLowercase
+        return rows.filter { row in
+            [row.title, row.preview, row.contextTitle]
+                .compactMap { $0?.localizedLowercase }
+                .contains { $0.contains(normalizedQuery) }
+        }
+    }
+}
+
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     public var restoreSessionID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
     public var restoreFailure: AiChatSessionRestoreFailure?
+    public var mode: AiChatMode
+    public var sessionList: AiChatSessionListState
     public var sessionID: AiChatSessionID?
     public var sessionStatus: AiChatSessionStatus
     public var currentContext: AiChatCurrentContextSnapshot
@@ -66,6 +127,8 @@ public struct AiChatState: Equatable, Sendable {
         restoreSessionID: AiChatSessionID? = nil,
         restoreOutcome: AiChatSessionRestoreResult? = nil,
         restoreFailure: AiChatSessionRestoreFailure? = nil,
+        mode: AiChatMode = .sessions,
+        sessionList: AiChatSessionListState = .init(),
         sessionID: AiChatSessionID? = nil,
         sessionStatus: AiChatSessionStatus = .idle,
         currentContext: AiChatCurrentContextSnapshot = .init(),
@@ -96,6 +159,8 @@ public struct AiChatState: Equatable, Sendable {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
         self.restoreFailure = restoreFailure
+        self.mode = mode
+        self.sessionList = sessionList
         self.sessionID = sessionID
         self.sessionStatus = sessionStatus
         self.currentContext = currentContext

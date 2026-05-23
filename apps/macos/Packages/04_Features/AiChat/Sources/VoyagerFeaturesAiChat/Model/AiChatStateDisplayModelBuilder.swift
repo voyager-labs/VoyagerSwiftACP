@@ -117,6 +117,7 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var canSubmit: Bool {
+        guard state.sessionStatus != .rebindRequired else { return false }
         guard !state.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard !isProcessing else { return false }
         guard case .loaded = state.modelListState else { return false }
