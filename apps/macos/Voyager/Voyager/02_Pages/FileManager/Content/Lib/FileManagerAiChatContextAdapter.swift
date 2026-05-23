@@ -7,7 +7,7 @@ import VoyagerFeaturesContentPageNavigation
 enum FileManagerAiChatContextAdapter {
     static func makeAiChatSetupState(
         content state: FileManagerContentState,
-        sessionID: AiChatSessionID,
+        sessionID: AiChatSessionID? = nil,
     ) -> AiChatSetupState {
         AiChatSetupState(
             sessionID: sessionID,
