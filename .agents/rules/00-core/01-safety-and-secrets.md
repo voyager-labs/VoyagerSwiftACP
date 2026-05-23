@@ -1,13 +1,9 @@
 ---
-alwaysApply: true
 description: "Security baseline: secrets, logs, and sensitive data handling."
+alwaysApply: true
 ---
 
 # Safety and Secrets
-
-## Applies when
-
-- All tasks, especially config/logging/release changes.
 
 ## Must
 

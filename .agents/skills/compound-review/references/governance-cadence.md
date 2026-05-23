@@ -19,7 +19,7 @@ The cadence is event-driven. It does not run on a wall-clock schedule. It runs w
 
 ### 2.1 When It Fires
 
-After every completed Sisyphus Work cycle where the plan has been marked complete with final evidence artifacts under `.sisyphus/evidence/`.
+After every completed Sisyphus Work cycle where the plan has been marked complete with final evidence artifacts under `.sisyphus/evidence/{plan_slug}/`.
 
 Concretely: when the operator confirms Work is done and the Stage 1 handoff conditions in `lifecycle-contract.md` §Stage 1 hold (all tasks checked, at least one evidence file exists, operator has confirmed completion), the operator may trigger `compound-review` for that plan.
 
@@ -29,8 +29,8 @@ A single governance bundle per run, written to:
 
 - `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json`
 - `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json`
-- `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`
-- `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`
+- `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`
+- `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`
 
 ### 2.3 Purpose
 
@@ -71,7 +71,7 @@ A run does NOT count when:
 A cross-plan sweep reviews all accumulated compound artifacts across all plan slugs:
 
 1. Scan all `findings.json` files under `.sisyphus/reviews/` for recurrence patterns (matching `dedupe_key` values across plan slugs).
-2. Scan all `learning.md` files under `.sisyphus/compound/` for cross-plan category/tag overlap.
+2. Scan all `learning.md` files under `.sisyphus/reviews/*/*/learning.md` for cross-plan category/tag overlap.
 3. Apply the promotion decision rules from `promotion-policy.md` §5 to determine which findings qualify for CREATE NEW, EXTEND EXISTING, or STAY LOCAL-ONLY.
 4. Run the conflict detection algorithm from `promotion-policy.md` §6.
 5. Produce a sweep report with promotion recommendations.
