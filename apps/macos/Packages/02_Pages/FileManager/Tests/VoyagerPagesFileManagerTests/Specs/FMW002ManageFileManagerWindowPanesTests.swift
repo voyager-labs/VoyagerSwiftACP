@@ -184,7 +184,7 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - Independence Invariants
+    // MARK: - FMW-002 Sidebar/Inspector Independence Invariants
 
     // sidebar_and_inspector_visibility_are_independent = true
 
