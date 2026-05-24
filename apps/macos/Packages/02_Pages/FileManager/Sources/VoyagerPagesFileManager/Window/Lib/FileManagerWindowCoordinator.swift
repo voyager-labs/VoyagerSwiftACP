@@ -25,7 +25,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
         initialWindowSizeProvider: (() -> NSSize?)? = nil,
-        makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil
+        makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         self.windowID = windowID
         self.store = store
@@ -39,7 +39,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             store: store,
             path: path,
             makeContentViewController: makeContentViewController,
-            initialWindowSizeProvider: initialWindowSizeProvider
+            initialWindowSizeProvider: initialWindowSizeProvider,
         )
 
         super.init(window: window)
@@ -55,7 +55,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         onResignedKey: (@MainActor (UUID) -> Void)? = nil,
         onWillClose: (@MainActor (UUID) -> Void)? = nil,
         initialWindowSizeProvider: (() -> NSSize?)? = nil,
-        makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil
+        makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)? = nil,
     ) {
         let windowID = UUID()
         let state = Self.createInitialState(path: path, duplicateState: duplicateState)
@@ -63,7 +63,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         let store = Self.createStore(
             state: state,
             undoManager: undoManager,
-            registryClient: registryClient
+            registryClient: registryClient,
         )
 
         if duplicateState != nil {
@@ -84,7 +84,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
             store: store,
             path: path,
             makeContentViewController: makeContentViewController,
-            initialWindowSizeProvider: initialWindowSizeProvider
+            initialWindowSizeProvider: initialWindowSizeProvider,
         )
 
         super.init(window: window)
@@ -99,7 +99,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
     static func createInitialState(
         path: String?,
-        duplicateState: FileManagerFeature.State?
+        duplicateState: FileManagerFeature.State?,
     ) -> FileManagerFeature.State {
         var state: FileManagerFeature.State = if let duplicateState {
             duplicateState
@@ -117,7 +117,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     private static func createStore(
         state: FileManagerFeature.State,
         undoManager: UndoManager,
-        registryClient: RegistryClient
+        registryClient: RegistryClient,
     ) -> StoreOf<FileManagerFeature> {
         Store(initialState: state) {
             FileManagerFeature()
@@ -131,14 +131,14 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
         store: StoreOf<FileManagerFeature>,
         path: String?,
         makeContentViewController: ((StoreOf<FileManagerFeature>, String?) -> NSViewController)?,
-        initialWindowSizeProvider: (() -> NSSize?)?
+        initialWindowSizeProvider: (() -> NSSize?)?,
     ) -> NSWindow {
         let contentViewController: NSViewController = if let makeContentViewController {
             makeContentViewController(store, path)
         } else {
             FileManagerWindowSplitCoordinator(
                 store: store,
-                isDark: FileManagerWindowChrome.currentIsDark
+                isDark: FileManagerWindowChrome.currentIsDark,
             )
         }
 
@@ -163,7 +163,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
 // MARK: - NSWindowDelegate
 
-extension FileManagerWindowCoordinator {
+public extension FileManagerWindowCoordinator {
     func windowDidBecomeKey(_: Notification) {
         if let onBecameKey {
             onBecameKey(windowID)
@@ -178,7 +178,7 @@ extension FileManagerWindowCoordinator {
 
     func window(
         _: NSWindow,
-        willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions
+        willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions,
     ) -> NSApplication.PresentationOptions {
         var options = proposedOptions
         options.insert(.autoHideMenuBar)
