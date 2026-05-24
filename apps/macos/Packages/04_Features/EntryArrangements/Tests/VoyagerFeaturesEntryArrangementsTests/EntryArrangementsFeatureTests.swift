@@ -7,6 +7,8 @@ import XCTest
 @MainActor
 final class EntryArrangementsFeatureTests: XCTestCase {
     /// 그룹 키가 없을 때 정렬된 항목이 하나의 그룹으로 묶여 delegate까지 전달되는지 검증
+    // 회귀 불변: groupKey=.none에서 정렬 후 groupedItems가 단일 그룹으로 래핑되는 불변 조건 검증.
+    // spec suite과 fixture 빌더가 다르므로 독립 회귀 테스트로 유지.
     func testApply_sortsAndUpdatesGroupedItems_whenGroupKeyNone() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -36,6 +38,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
     }
 
     /// kind 그룹이 활성화되면 폴더/이미지/텍스트/기타 순으로 그룹화되는지 검증
+    // 회귀 불변: kind가 공백/미확인인 항목이 "Other" 그룹으로 분류되는 불변 조건 검증.
+    // spec suite의 kind 그룹핑 테스트에는 "Other" 엣지 케이스가 없으므로 독립 회귀 테스트로 유지.
     func testApply_groupsByKind_andKeepsGroupOrderingSemantics() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -73,6 +77,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
     }
 
     /// VOY-213: tags 그룹이 태그 색상 코드를 함께 보존하는지 검증
+    // 회귀 불변: 태그 그룹이 EntryArrangements의 colorCode를 GroupedItems에 올바르게 전달하는지 확인.
+    // VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
     func testVOY213TagsGroupingCarriesColorCodeFromEntryArrangements() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -107,6 +113,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
     }
 
     /// VOY-213: 동일 태그 이름이 입력 순서와 무관하게 안정적인 색상 선택을 유지하는지 검증
+    // 회귀 불변: 동일 태그명에 다른 colorCode가 있을 때 첫 번째 항목의 colorCode가 선택되는 안정성 보장.
+    // VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
     func testVOY213TagColorSelectionIsStableAcrossInputOrder() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -138,6 +146,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
     }
 
     /// VOY-213: lastOpenedDate가 없으면 더 이른 그룹으로 폴백되는지 검증
+    // 회귀 불변: lastOpenedDate가 nil인 항목이 "Earlier" 그룹으로 분류되는 날짜 폴백 동작 보장.
+    // VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
     func testVOY213DateLastOpenedFallsBackToEarlierForMissingDates() async {
         let today = Date()
         let missing = makeEntry(
@@ -182,6 +192,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
     }
 
     /// VOY-213: tags 그룹의 표시 이름과 fallback 그룹 이름이 사용자가 읽을 수 있게 유지되는지 검증
+    // 회귀 불변: 태그 그룹은 태그명을, 미분류 항목은 "No Tags"를 표시하는지 확인.
+    // 그룹명과 colorCode가 함께 올바르게 설정되는 엣지 케이스 회귀 방지.
     func testVOY213GroupedItemsKeepVisibleTitlesForTagAndFallbackGroups() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -224,6 +236,8 @@ final class EntryArrangementsFeatureTests: XCTestCase {
     // MARK: - 지속성 계약 회귀 테스트
 
     /// persistence key 문자열이 저장소 계약과 정확히 일치하는지 검증
+    // 지속성 계약: UserDefaults에 저장되는 sortKey, sortOrder, groupKey 문자열 리터럴 불변성 검증.
+    // raw-value 테스트와 함께 직렬화/역직렬화 호환성 유지.
     func testPersistenceKeyLiterals() {
         XCTAssertEqual(EntryArrangementsPersistenceKey.sortKey, "sortKey")
         XCTAssertEqual(EntryArrangementsPersistenceKey.sortOrder, "sortOrder")
@@ -231,6 +245,9 @@ final class EntryArrangementsFeatureTests: XCTestCase {
     }
 
     /// enum rawValue가 저장/복원 계약에 필요한 문자열을 유지하는지 검증
+    // 지속성 계약: SortKey, SortOrder, GroupKey enum의 rawValue 불변성 검증.
+    // 직렬화 포맷(Codable, UserDefaults)과의 호환성을 보장하는 기술적 계약.
+    // spec interaction과 무관한 순수 persistence 레이어 계약 테스트.
     func testSortKeyGroupKeySortOrderRawValues() {
         // SortKey 원시값: 정렬 기준 저장 문자열이 바뀌면 설정 복원이 깨진다.
         XCTAssertEqual(SortKey.application.rawValue, "Application")
