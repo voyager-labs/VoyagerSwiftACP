@@ -91,9 +91,10 @@ Extract when the same dependency construction block appears **3 or more times** 
 
 ### Where to place helpers
 
-- Test-target-local: `Tests/<TestTargetName>/Support/<FeatureID>/`.
+- Test-target-local: `Tests/<TestTargetName>/Support/` (flat).
 - Helpers must not be `public` or leak into production targets.
-- Each feature or spec ID gets its own subdirectory under `Support/`.
+- Keep `Support/` flat — file names describe the role (e.g. `ProgressClient.swift`, `PermissionFixtures.swift`), not the spec ID.
+- If a helper type name collides with a production type (via `@testable import`), append `Fixture` (e.g. `BetaAccessClientFixture`).
 
 ### Enum namespace pattern
 
