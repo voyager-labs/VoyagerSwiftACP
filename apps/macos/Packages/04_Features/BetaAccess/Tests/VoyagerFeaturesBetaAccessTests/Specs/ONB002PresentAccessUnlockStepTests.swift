@@ -92,9 +92,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                BetaAccessVerifyResponse(ok: true)
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.success
         }
 
         await store.send(.checkTapped) { state in
@@ -213,9 +211,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                BetaAccessVerifyResponse(ok: true)
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.success
         }
 
         await store.send(.checkTapped) { state in
@@ -246,9 +242,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "invalid_token")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "invalid_token")
         }
 
         await store.send(.checkTapped) { state in
@@ -344,9 +338,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                BetaAccessVerifyResponse(ok: true)
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.success
         }
 
         await store.send(.checkTapped) { state in
@@ -378,9 +370,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                BetaAccessVerifyResponse(ok: false)
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.notOk
         }
 
         await store.send(.checkTapped) { state in
@@ -411,9 +401,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.networkError
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.throwing(.networkError)
         }
 
         await store.send(.checkTapped) { state in
@@ -442,9 +430,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.decodingError
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.throwing(.decodingError)
         }
 
         await store.send(.checkTapped) { state in
@@ -473,9 +459,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.deviceIdUnavailable
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.throwing(.deviceIdUnavailable)
         }
 
         await store.send(.checkTapped) { state in
@@ -504,9 +488,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.invalidRequest
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.throwing(.invalidRequest)
         }
 
         await store.send(.checkTapped) { state in
@@ -518,36 +500,6 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             state.status = .checkFailed
             state.reason = .invalidRequest
             state.isComplete = false
-        }
-
-        await store.finish()
-    }
-
-    /// ONB-002:apply_access_unlock_result — active 상태 전환이 완료 플래그를 함께 세우는지 확인한다.
-    ///
-    /// - 검증 내용: 성공 응답 후 active와 complete가 같이 반영되어야 한다.
-    /// - 사전 조건: 이메일·토큰이 채워진 상태에서 성공 응답.
-    /// - 기대 결과: `status == .active`, `isComplete == true`.
-    func testActiveStatusSetsIsComplete() async {
-        let store = TestStore(initialState: BetaAccessFeature.State(
-            email: "tester@example.com",
-            token: "cbt-token",
-        )) {
-            BetaAccessFeature()
-        } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                BetaAccessVerifyResponse(ok: true)
-            })
-        }
-
-        await store.send(.checkTapped) { state in
-            state.isVerifying = true
-        }
-        await store.receive(\.verificationResponse) { state in
-            state.isVerifying = false
-            state.status = .active
-            state.reason = .none
-            state.isComplete = true
         }
 
         await store.finish()
@@ -567,9 +519,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                BetaAccessVerifyResponse(ok: true)
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.success
         }
 
         await store.send(.checkTapped) { state in
@@ -600,9 +550,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                BetaAccessVerifyResponse(ok: true)
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.success
         }
 
         XCTAssertEqual(store.state.email, "tester@example.com")
@@ -643,9 +591,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                BetaAccessVerifyResponse(ok: true)
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.success
         }
 
         await store.send(.retryTapped) { state in
@@ -671,9 +617,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         let store = TestStore(initialState: BetaAccessFeature.State()) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "invalid_gateway_url")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "invalid_gateway_url")
         }
 
         await store.send(.emailChanged("tester@example.com")) { state in
@@ -711,9 +655,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "missing_token")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "missing_token")
         }
 
         await store.send(.checkTapped) { state in
@@ -742,9 +684,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "invalid_token")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "invalid_token")
         }
 
         await store.send(.checkTapped) { state in
@@ -773,9 +713,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "invalid_request")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "invalid_request")
         }
 
         await store.send(.checkTapped) { state in
@@ -804,9 +742,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "email_mismatch")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "email_mismatch")
         }
 
         await store.send(.checkTapped) { state in
@@ -835,9 +771,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "device_mismatch")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "device_mismatch")
         }
 
         await store.send(.checkTapped) { state in
@@ -866,9 +800,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "auth_backend_error")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "auth_backend_error")
         }
 
         await store.send(.checkTapped) { state in
@@ -897,9 +829,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "some_unknown_code")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "some_unknown_code")
         }
 
         await store.send(.checkTapped) { state in
@@ -1079,9 +1009,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         )) {
             BetaAccessFeature()
         } withDependencies: {
-            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
-                throw BetaAccessVerificationError.gatewayError(code: "timeout")
-            })
+            $0.betaAccessClient = BetaAccessClientFixture.gatewayError(code: "timeout")
         }
 
         await store.send(.checkTapped) { state in
