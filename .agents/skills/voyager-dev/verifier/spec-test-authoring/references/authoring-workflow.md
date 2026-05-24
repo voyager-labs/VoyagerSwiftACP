@@ -27,7 +27,7 @@ Do not use this workflow only to select or run existing tests; use `../../testin
 - Spec suite file/class: `<SpecID><PascalCaseSpecTitle>Tests.swift`.
 - Do **not** append `FeatureTests` to new spec AC suites.
 - Put executable spec tests under `Tests/<TestTargetName>/Specs/` when establishing or cleaning topology.
-- Put fixtures, recorders, dependency doubles, builders, and helper assertions under `Tests/<TestTargetName>/Support/`.
+- Put fixtures, recorders, dependency doubles, builders, and helper assertions under `Tests/<TestTargetName>/Support/` as flat files named by role/type, not by spec ID.
 - Keep product behavior in the spec suite. Support files must never become behavior owners.
 
 ### 3. Author interaction AC methods
@@ -89,9 +89,9 @@ Tests/VoyagerFeaturesPaymentTests/
 ├── Specs/
 │   └── PAY002ConfirmPaymentTests.swift
 └── Support/
-    ├── PAY002PaymentFixtures.swift
-    ├── PAY002PaymentRecorders.swift
-    └── Shared/
+    ├── PaymentFixtures.swift
+    ├── PaymentRecorders.swift
+    └── PaymentClients.swift
 ```
 
 Inside `PAY002ConfirmPaymentTests.swift`:
@@ -170,5 +170,5 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Interaction layout        | `// MARK: - <spec-id>-<interaction_id>` inside owning suite                           |
 | Method doc comment        | `/// <SPEC-ID>-<interaction_id>: <scenario>` + intent + 검증 내용/사전 조건/기대 결과 |
 | Product behavior location | Owning spec suite under `Specs/`                                                      |
-| Fixture/recorder location | `Support/<FileName>.swift` or `Support/Shared/<FileName>.swift`                       |
+| Fixture/recorder location | Flat files under `Support/`, named by role/type such as `PaymentFixtures.swift`       |
 | Verification handoff      | `../../testing/SKILL.md` with focused class filter                                    |

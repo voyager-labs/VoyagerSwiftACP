@@ -11,12 +11,9 @@ Tests/<TestTargetName>/
 ├── Specs/
 │   └── <SpecID><PascalCaseSpecTitle>Tests.swift
 └── Support/
-    ├── <SpecID>/
-    │   ├── <SpecID><Purpose>Fixtures.swift
-    │   ├── <SpecID><Purpose>Recorders.swift
-    │   └── <SpecID><Purpose>DependencyDoubles.swift
-    └── Shared/
-        └── <SharedPurpose>TestHelpers.swift
+    ├── <Purpose>Fixtures.swift
+    ├── <Purpose>Recorders.swift
+    └── <Purpose>Clients.swift
 ```
 
 Use this shape when creating a new test target area or when a task explicitly includes test topology cleanup. If an existing target is flat and the task is a small additive change, avoid broad churn; still apply the naming and ownership rules.
@@ -88,45 +85,23 @@ For `ONB-004 Finish Onboarding`, use `--filter ONB004FinishOnboardingTests`, not
 ## Support rules
 
 - Put fixtures, recorders, dependency doubles, builders, and helper assertions in `Support/`.
-- Spec-local helpers (single-suite consumers) go flat under `Support/<FileName>.swift`, not in a subdirectory.
-- Use `Support/Shared/` only after at least two spec suites need the helper.
+- Keep `Support/` flat; do not create nested support directories.
+- Name support files by role/type, not by spec ID prefix. Good examples: `PermissionFixtures.swift`, `PathRecorder.swift`, `ProgressClient.swift`, `InMemoryStorage.swift`.
 - Support files must not contain executable product behavior test methods.
 - In SwiftPM packages, folders under the same test target compile together. In Xcode project targets, verify target membership when adding files.
 
-### Shared support promotion rule
+### Support file naming rule
 
-Promoting a helper to `Support/Shared/` is a deliberate act, not a default. Follow these criteria:
+Support file names should describe the helper role or dependency shape, matching the flat pattern used by Onboarding tests:
 
-**Default placement**: Flat under `Support/<FileName>.swift`. No spec-specific subdirectories.
+- `PermissionFixtures.swift`
+- `PermissionClients.swift`
+- `PathRecorder.swift`
+- `ProgressClient.swift`
+- `WindowClient.swift`
 
-**Promote to `Support/Shared/` when:**
-
-- 2 or more spec suites directly reference the helper.
-- 1 suite references it directly, but another suite uses it indirectly through a wrapper that would be meaningless without the underlying helper (e.g. `MutationRecorder<T>` is generic infrastructure even if only one suite creates a typed alias).
-
-**Do NOT promote when:**
-
-- Only one spec suite uses the helper with no indirect consumers.
-- The helper is tightly coupled to one spec's domain types.
-
-**Exception process:**
-
-- If a helper currently has one consumer but cross-suite use is imminent (already planned, not speculative), document the exception with a comment:
-    ```swift
-    // Shared promotion 예외: SET004에서도 사용 예정 (VOY-NNN)
-    ```
-- Without a tracking issue or documented plan, single-consumer helpers stay flat under `Support/`.
-
-**Reference counting before promotion:**
-
-Before moving any helper to `Shared/`, count actual references:
-
-```bash
-grep -r 'SymbolName' Specs/
-```
-
-If the count is fewer than 2 direct references and no indirect wrapper dependency exists, keep the helper under `Support/`.
+Avoid names that merely repeat the spec ID, such as `PAY002PaymentFixtures.swift`, unless the domain term would otherwise be ambiguous.
 
 ### Evidence
 
-Task 5 of VOY-356 applied this rule: `ThemeApplyRecorder` was SET003-only, so it moved out of `Shared/`. `MutationRecorder<T>` stayed in `Shared/` as generic infrastructure used across suites. `InMemoryStorage` stayed in `Shared/` because SET002 and SET003 both use it.
+VOY-356 Settings support files follow this shape: `InMemoryStorage.swift`, `MutationRecorder.swift`, and `ThemeApplyRecorder.swift` live directly under `Support/` with no nested support directory.

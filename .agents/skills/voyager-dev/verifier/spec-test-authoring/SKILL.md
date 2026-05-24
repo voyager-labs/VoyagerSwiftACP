@@ -33,4 +33,4 @@ These rules codify patterns discovered during spec-test hardening (VOY-356). Loa
 1. **Canonical `// MARK` format**: Headings must match `// MARK: - [A-Z]{2,4}-\d{3}-[a-z0-9_]+`. No Korean text, descriptions, or parenthetical notes. See `references/spec-test-topology.md` section "Section rules".
 2. **`store.exhaustivity = .off` rationale**: Every override needs an adjacent Korean rationale comment. See `references/tca-test-authoring.md` section "Exhaustivity".
 3. **`store.finish()` selective criteria**: Apply only for fire-and-forget effects and unconsumed async lifecycles. See `references/tca-test-authoring.md` section "`store.finish()` application criteria".
-4. **Shared support promotion**: 2+ suite consumers or documented exception required. Flat file placement under `Support/`; only genuinely shared helpers go to `Support/Shared/`. See `references/spec-test-topology.md` section "Shared support promotion rule".
+4. **Flat Support naming**: Keep support files directly under `Support/` and name them by role/type, not by spec ID or subdirectory. See `references/spec-test-topology.md` section "Support rules".
