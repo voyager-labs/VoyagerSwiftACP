@@ -5,13 +5,16 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class EVM001NavigationFeatureTests: XCTestCase {
+final class EVM001NavigatePagesTests: XCTestCase {
     // MARK: - EVM-001-navigate_pages
 
-    /// 동일 경로로 navigate하면 history를 기록하지 않지만
-    /// resetComposer 없이 logDAU + navigateToState 델리게이트는 발생한다.
+    /// EVM-001-navigate_pages: 동일 경로 재네비게이션 시 history 미기록
+    /// 현재 위치와 동일한 경로로 navigate할 때 history에 새 항목이 추가되지 않음을 확인한다.
+    /// - 검증 내용: performNavigateToPath가 같은 경로에서 backHistory/forwardHistory 불변, resetComposer 미발생
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore
+    /// - 기대 결과: logDAUNavigation + navigateToState 델리게이트만 발생, 상태 변화 없음
     func testDirectNavigateToSamePathDoesNotRecordHistory() async {
-        let store = makeStore(seedPath: "/seed")
+        let store = makeNavigationStore(seedPath: "/seed")
 
         await store.send(.internal(.performNavigateToPath("/seed")))
 
@@ -22,10 +25,14 @@ final class EVM001NavigationFeatureTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(.folder("/seed"))))
     }
 
-    /// 다른 경로로 navigate하면 backHistory에 스냅샷이 기록되고
-    /// forwardHistory가 초기화되며 델리게이트 순서는 resetComposer → logDAU → navigateToState이다.
+    /// EVM-001-navigate_pages: 다른 경로 네비게이션 시 history 기록 및 델리게이트 발생
+    /// 다른 경로로 navigate하면 backHistory에 이전 상태가 기록되고 forwardHistory가 초기화된다.
+    /// - 검증 내용: performNavigateToPath로 다른 경로 이동 시 backHistory/forwardHistory 재조정, 델리게이트 순서 resetComposer → logDAU →
+    /// navigateToState
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore
+    /// - 기대 결과: navigationState="/next", backHistory=["/seed"], forwardHistory=[], 델리게이트 3개 순차 발생
     func testDirectNavigateRecordsHistoryAndEmitsDelegates() async {
-        let store = makeStore(seedPath: "/seed")
+        let store = makeNavigationStore(seedPath: "/seed")
 
         await store.send(.internal(.performNavigateToPath("/next"))) {
             $0.navigationState = .folder("/next")
@@ -40,17 +47,25 @@ final class EVM001NavigationFeatureTests: XCTestCase {
 
     // MARK: - EVM-001-go_page_history_back
 
-    /// backHistory가 비어있을 때 back 네비게이션은 no-op이다.
+    /// EVM-001-go_page_history_back: 빈 backHistory에서 back 네비게이션 no-op
+    /// backHistory가 비어있을 때 back 액션은 아무 상태 변화나 델리게이트도 발생시키지 않는다.
+    /// - 검증 내용: performNavigation(.back)이 빈 backHistory에서 no-op인지 확인
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore (backHistory = [])
+    /// - 기대 결과: 상태 변화 없음, 델리게이트 발생 없음
     func testBackOnEmptyHistoryIsNoop() async {
-        let store = makeStore(seedPath: "/seed")
+        let store = makeNavigationStore(seedPath: "/seed")
 
         await store.send(.internal(.performNavigation(.back)))
     }
 
-    /// back 네비게이션: 현재 상태를 forwardHistory로 이동, backHistory 마지막을 복원.
-    /// 델리게이트 순서: resetComposer → logDAU → navigateToState
+    /// EVM-001-go_page_history_back: back 네비게이션 시 현재 상태를 forwardHistory로 이동하고 이전 상태 복원
+    /// back 액션 수행 시 현재 상태가 forwardHistory에 push되고 backHistory 마지막 항목으로 복원된다.
+    /// - 검증 내용: back 후 navigationState 복원, backHistory pop, forwardHistory push, 델리게이트 순서 resetComposer → logDAU →
+    /// navigateToState
+    /// - 사전 조건: /seed → /next로 이동하여 backHistory=["/seed"]인 TestStore
+    /// - 기대 결과: navigationState="/seed", backHistory=[], forwardHistory=["/next"], 델리게이트 3개 순차 발생
     func testBackMovesCurrentToForwardAndRestoresPrevious() async {
-        let store = makeStore(seedPath: "/seed")
+        let store = makeNavigationStore(seedPath: "/seed")
 
         // 먼저 /next로 이동하여 backHistory를 채운다
         await store.send(.internal(.performNavigateToPath("/next"))) {
@@ -75,17 +90,24 @@ final class EVM001NavigationFeatureTests: XCTestCase {
 
     // MARK: - EVM-001-forward_page_history
 
-    /// forwardHistory가 비어있을 때 forward 네비게이션은 no-op이다.
+    /// EVM-001-forward_page_history: 빈 forwardHistory에서 forward 네비게이션 no-op
+    /// forwardHistory가 비어있을 때 forward 액션은 아무 상태 변화나 델리게이트도 발생시키지 않는다.
+    /// - 검증 내용: performNavigation(.forward)이 빈 forwardHistory에서 no-op인지 확인
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore (forwardHistory = [])
+    /// - 기대 결과: 상태 변화 없음, 델리게이트 발생 없음
     func testForwardOnEmptyHistoryIsNoop() async {
-        let store = makeStore(seedPath: "/seed")
+        let store = makeNavigationStore(seedPath: "/seed")
 
         await store.send(.internal(.performNavigation(.forward)))
     }
 
-    /// back 후 forward하면 원래 상태로 복귀한다.
-    /// backHistory와 forwardHistory가 올바르게 재조정된다.
+    /// EVM-001-forward_page_history: back 후 forward 시 원래 상태로 복귀
+    /// back으로 이동한 후 forward하면 back/forward history가 올바르게 재조정되며 원래 상태로 복귀한다.
+    /// - 검증 내용: back 후 forward 시 navigationState 복원, backHistory/forwardHistory 재조정, 델리게이트 순서
+    /// - 사전 조건: /seed → /next 이동 후 back으로 /seed로 복귀한 TestStore (forwardHistory=["/next"])
+    /// - 기대 결과: navigationState="/next", backHistory=["/seed"], forwardHistory=[], 델리게이트 3개 순차 발생
     func testForwardAfterBackRestoresForwardEntry() async {
-        let store = makeStore(seedPath: "/seed")
+        let store = makeNavigationStore(seedPath: "/seed")
 
         // /seed → /next
         await store.send(.internal(.performNavigateToPath("/next"))) {
@@ -120,10 +142,14 @@ final class EVM001NavigationFeatureTests: XCTestCase {
 
     // MARK: - EVM-001-show_page_history
 
-    /// history index 점프: backHistory의 첫 번째 엔트리(index 0)로 점프하면
-    /// backHistory는 비어있고, 나머지는 forwardHistory로 이동한다.
+    /// EVM-001-show_page_history: history index 점프 시 back/forward history 재조정
+    /// backHistory의 특정 인덱스로 점프하면 점프 지점 이전은 backHistory, 이후와 현재는 forwardHistory로 재배치된다.
+    /// - 검증 내용: performNavigation(.history(index:isBackHistory:))로 backHistory[0] 점프 시 backHistory/forwardHistory 재조정
+    /// - 사전 조건: /seed → /a → /b → /c로 이동하여 backHistory=["/seed", "/a", "/b"]인 TestStore
+    /// - 기대 결과: navigationState="/seed", backHistory=[], forwardHistory=["/c", "/a", "/b"], 델리게이트 3개 발생
     func testGoToHistoryIndexRebalancesBackAndForward() async {
-        let store = makeStore(seedPath: "/seed")
+        let store = makeNavigationStore(seedPath: "/seed")
+        // 설정 단계의 내부 델리게이트는 이 시나리오의 검증 대상이 아니므로 끈다.
         store.exhaustivity = .off
 
         // /seed → /a → /b → /c
@@ -164,17 +190,24 @@ final class EVM001NavigationFeatureTests: XCTestCase {
 
     // MARK: - EVM-001-go_to_enclosing_directory
 
-    /// 루트 경로("/")에서 enclosing directory 네비게이션은 no-op이다.
+    /// EVM-001-go_to_enclosing_directory: 루트 경로에서 상위 디렉토리 네비게이션 no-op
+    /// 루트 경로("/")에서 enclosing directory 액션은 부모가 없으므로 no-op이다.
+    /// - 검증 내용: performNavigation(.enclosingDirectory)가 루트 경로에서 no-op인지 확인
+    /// - 사전 조건: seedPath="/"로 초기화된 TestStore
+    /// - 기대 결과: 상태 변화 없음, 델리게이트 발생 없음
     func testEnclosingDirectoryFromRootIsNoop() async {
-        let store = makeStore(seedPath: "/")
+        let store = makeNavigationStore(seedPath: "/")
 
         await store.send(.internal(.performNavigation(.enclosingDirectory)))
     }
 
-    /// 하위 경로에서 enclosing directory 네비게이션은 부모 경로로 이동한다.
-    /// backHistory에 현재 스냅샷이 추가되고 forwardHistory가 초기화된다.
+    /// EVM-001-go_to_enclosing_directory: 하위 경로에서 부모 경로로 이동
+    /// 하위 경로에서 enclosing directory 액션 시 부모 경로로 이동하고 backHistory에 현재 스냅샷이 추가된다.
+    /// - 검증 내용: performNavigation(.enclosingDirectory)로 부모 경로 이동, backHistory push, forwardHistory 초기화, 델리게이트 순서
+    /// - 사전 조건: seedPath="/a/b"로 초기화된 TestStore
+    /// - 기대 결과: navigationState="/a", backHistory=["/a/b"], forwardHistory=[], 델리게이트 3개 순차 발생
     func testEnclosingDirectoryMovesToParent() async {
-        let store = makeStore(seedPath: "/a/b")
+        let store = makeNavigationStore(seedPath: "/a/b")
 
         await store.send(.internal(.performNavigation(.enclosingDirectory))) {
             $0.navigationState = .folder("/a")
@@ -189,11 +222,13 @@ final class EVM001NavigationFeatureTests: XCTestCase {
 
     // MARK: - EVM-001-view_current_page_title
 
-    // EVM-001-view_current_page_title: titlePath는 seedInitialFolderPath에서만 설정되며
-    // 리듀서가 직접 업데이트하지 않는다. View 레이어에서 navigationState로부터 파생된다.
-    // 이 테스트는 아키텍처적 사실을 문서화한다.
+    /// EVM-001-view_current_page_title: titlePath는 seed에서만 설정되며 리듀서가 직접 업데이트하지 않음
+    /// 네비게이션 후 navigationState는 변경되지만 titlePath는 리듀서에서 업데이트되지 않아 view 레이어 책임임을 확인한다.
+    /// - 검증 내용: navigate 후 titlePath 불변, navigationState만 변경, 아키텍처적 책임 분리 문서화
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore
+    /// - 기대 결과: 초기 titlePath="/seed", navigate("/next") 후에도 titlePath="/seed" 유지, navigationState만 "/next"로 변경
     func testViewCurrentPageTitleReflectsRoute() async {
-        let store = makeStore(seedPath: "/seed")
+        let store = makeNavigationStore(seedPath: "/seed")
 
         // 초기 titlePath는 seed 시 설정됨
         XCTAssertEqual(store.state.titlePath, "/seed")
@@ -213,16 +248,5 @@ final class EVM001NavigationFeatureTests: XCTestCase {
         // titlePath가 여전히 seed 값을 유지 — view 레이어 책임
         XCTAssertEqual(store.state.titlePath, "/seed")
         XCTAssertEqual(store.state.navigationState, .folder("/next"))
-    }
-}
-
-@MainActor
-private func makeStore(
-    seedPath: String,
-) -> TestStore<ContentPageNavigationFeature.State, ContentPageNavigationFeature.Action> {
-    var state = ContentPageNavigationFeature.State()
-    state.seedInitialFolderPath(seedPath)
-    return TestStore(initialState: state) {
-        ContentPageNavigationFeature()
     }
 }
