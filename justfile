@@ -26,31 +26,3 @@ submodules:
 # hooks 재설치
 reinstall-hooks:
     lefthook install --force
-
-# Onboarding package tests (ONB-001 + ONB-003)
-test-onboarding:
-    swift test --package-path apps/macos/Packages/02_Pages/Onboarding
-
-# ONB-001 focused tests
-test-onb001:
-    swift test --package-path apps/macos/Packages/02_Pages/Onboarding --filter ONB001RunUserOnboardingFeatureTests
-
-# ONB-003 focused tests
-test-onb003:
-    swift test --package-path apps/macos/Packages/02_Pages/Onboarding --filter ONB003ConfigureRequiredPermissionsFeatureTests
-
-# BetaAccess package tests (ONB-002)
-test-beta-access:
-    swift test --package-path apps/macos/Packages/04_Features/BetaAccess
-
-# Build OnboardingHost
-build-onboarding-host:
-    xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug -derivedDataPath .sisyphus/derivedData/onboardinghost build
-
-# Smoke test OnboardingHost (reset mode)
-smoke-onboarding-host-reset: build-onboarding-host
-    ONBOARDING_HOST_SMOKE=1 ONBOARDING_HOST_RESET_PROGRESS=1 .sisyphus/derivedData/onboardinghost/Build/Products/Debug/OnboardingHost.app/Contents/MacOS/OnboardingHost
-
-# Smoke test OnboardingHost (non-reset mode)
-smoke-onboarding-host-no-reset: build-onboarding-host
-    ONBOARDING_HOST_SMOKE=1 ONBOARDING_HOST_RESET_PROGRESS=0 .sisyphus/derivedData/onboardinghost/Build/Products/Debug/OnboardingHost.app/Contents/MacOS/OnboardingHost
