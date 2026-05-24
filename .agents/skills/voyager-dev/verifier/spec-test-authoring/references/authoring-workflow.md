@@ -135,6 +135,22 @@ final class PAY002ConfirmPaymentTests: XCTestCase {
 }
 ```
 
+## Review-Driven Test Cleanup
+
+When a review or refactor reveals duplicate or low-value tests, clean up with this workflow instead of ad-hoc deletion.
+
+### Workflow
+
+1. **Inventory duplicates before deleting anything.** Map every candidate-for-removal to the test that preserves its coverage. Build a table: removed test name, preserved-by test name, reason (exact duplicate, subset, near-duplicate with narrower scope).
+2. **Verify the mapping.** Read both tests side by side. Confirm the preserved-by test covers every assertion path the removed test exercised. If a removed test has even one unique assertion, keep it or merge that assertion.
+3. **Remove bottom-to-top in large files.** When removing multiple tests from one file, delete from the bottom of the file upward so line numbers stay valid for subsequent edits.
+4. **Run targeted verification.** Execute only the affected test class filter, not the full suite. Confirm the preserved-by tests pass after removal.
+5. **Record evidence.** Save the coverage mapping and removal rationale in evidence or notepad. Future reviewers need to see why coverage was not lost.
+
+### When to stop
+
+If two tests look similar but test different initial states, entry paths, or assertion focus, keep both. Collapsing distinct scenarios into one test hides real coverage gaps.
+
 ## Common mistakes
 
 | Mistake                                                                                | Fix                                                                                 |

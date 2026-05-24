@@ -48,6 +48,19 @@
         "Output states that Support files must not contain behavior assertions as ownership.",
         "Output does not recommend putting everything in a single file."
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "A spec test suite has 30+ tests with repeated dependency setup (same client instantiated 10+ times), 2 near-duplicate tests that verify the same behavior with slightly different fixture values, and one test using Task.sleep for async timing. Review this suite and produce a cleanup plan that preserves coverage while removing redundancy.",
+      "expected_output": "A targeted cleanup plan that extracts repeated setup into helpers under Support/<Feature>/ using an enum namespace pattern, maps which tests cover which ACs before deleting duplicates (removed → preserved by), replaces Task.sleep with deterministic synchronization via fulfillment or expectation-based waiting, and recommends running a focused --filter verification instead of the full suite.",
+      "files": [],
+      "assertions": [
+        "Output extracts repeated dependency setup into helpers under Support/<Feature>/, using an enum namespace pattern, not inline in the spec file.",
+        "Output maps coverage before deleting duplicates and states which removed test is preserved by which surviving test (removed → preserved by).",
+        "Output replaces Task.sleep with deterministic synchronization such as fulfillment, expectation, or continuation-based waiting, not timeouts.",
+        "Output recommends running a focused test filter (--filter or equivalent) for the affected suite, not the full test suite.",
+        "Output does NOT recommend a broad rewrite, generic refactoring without specifics, or deleting tests without coverage mapping."
+      ]
     }
   ]
 }
