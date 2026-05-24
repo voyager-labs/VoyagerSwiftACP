@@ -149,6 +149,15 @@ A sleep after `fulfillment(of:timeout:)` is redundant when the expectation alrea
 
 For UIKit/AppKit callback sequences where XCTestExpectation does not apply, use `waitForExpectations(timeout:handler:)` with explicit expectations rather than bare `Task.sleep`. If you must poll, use a tight loop with `Task.sleep(nanoseconds: 1_000_000)` (1ms) and a timeout guard, not a single long sleep.
 
+## TestStore modernization pattern
+
+When converting synchronous TestStore tests to the modern async pattern:
+
+- Add `@MainActor` to the test class and `async` to test methods.
+- Use `await store.finish()` to drain long-lived effects rather than relying on synchronous TestStore teardown.
+- `@testable import` grants internal access to the target module. Production API widening (promoting internal symbols to public) is never required for test modernization.
+- Helper extraction (`makeStore()`, `makeState()`) should follow the 3-occurrence threshold: extract when the same setup appears in 3 or more test methods. Place helpers under `Support/` using an enum namespace pattern.
+
 ## Scope boundary
 
 This reference covers TestStore authoring mechanics and gotchas. For test execution commands, failure analysis, rerun loops, and dependency testing rules, load `../../testing/references/testing-playbook.md`.

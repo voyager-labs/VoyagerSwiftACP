@@ -74,6 +74,18 @@
         "Output says to document missing eval runner discovery or fallback validation when no runner exists.",
         "Output records the verification as evidence, not just an informal note."
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "I'm modernizing FMW001FileManagerWindowRequestRoutingTests from synchronous to async TestStore. The test class uses @testable import. Some nested action enums were public in the source module. Should I need any production API changes?",
+      "expected_output": "No production API changes needed. @testable import grants internal access. Add @MainActor to the test class, async to test methods, and await store.finish() to drain effects. Public promotion of nested enums is not required for test modernization.",
+      "files": [],
+      "assertions": [
+        "Output states no production API changes are needed.",
+        "Output mentions @testable import grants internal access.",
+        "Output mentions @MainActor and async as the modernization pattern.",
+        "Output does not suggest making nested enums public for test access."
+      ]
     }
   ]
 }
