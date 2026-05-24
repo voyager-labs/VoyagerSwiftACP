@@ -11,33 +11,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     // 앱 첫 실행, 빈 진행 상태, 버전 불일치로 인한 리셋 등 세션 초기화 시나리오에서
     // 초기 단계 상태가 올바르게 설정되고 진행 상태 스냅샷이 저장되는지 확인합니다.
 
-    /// ONB-001-start_onboarding_session: 저장 버전이 현재 앱 버전과 다를 때 온보딩이 시작되면 기존 진행 상태를 리셋하고 welcome에서 안전하게 재시작한다.
-    /// 저장된 버전이 앱 버전과 불일치할 때 세션이 완전히 초기화되는지 검증합니다.
-    /// - 검증 내용: `load`가 `.resetRequired`를 반환하면 reducer가 기존 진행 상태를 버리고 새 세션을 시작합니다.
-    /// - 사전 조건: `onboardingProgressClient.load`가 `.resetRequired`를 반환하여 앱 업데이트 등으로 인한 리셋 필요를 나타냅니다.
-    /// - 기대 결과: `currentStep`이 `.welcome`으로 초기화, welcome은 완료, 나머지 단계는 미완료 상태입니다.
-    func testResetOnVersionMismatch() async {
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .resetRequired },
-                save: { _ in },
-                reset: {},
-            )
-        }
-
-        await store.send(.onAppear)
-
-        XCTAssertEqual(store.state.currentStep, .welcome)
-        XCTAssertTrue(store.state.welcome.isComplete)
-        XCTAssertFalse(store.state.betaAccess.isComplete)
-        XCTAssertFalse(store.state.permissions.isComplete)
-        XCTAssertFalse(store.state.complete.isComplete)
-
-        await store.finish()
-    }
-
     /// ONB-001-start_onboarding_session: 저장된 진행 상태가 없을 때 온보딩이 시작되면 welcome 단계의 새 세션과 초기 navigation 상태를 만든다.
     /// 저장된 진행 상태가 없을 때 새 온보딩 세션이 welcome 단계에서 시작되는지 검증합니다.
     /// - 검증 내용: `load`가 `.empty`를 반환하면 reducer가 기본 상태로 새 세션을 생성합니다.
@@ -47,11 +20,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -77,14 +46,14 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 기대 결과: `resetRecorder.value`가 `true`로 설정되어 `reset()`이 실제로 호출되었음을 확인합니다.
     func testResetSessionCallsResetAndSave() async {
         let resetRecorder = LockIsolated(false)
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .resetRequired },
-                save: { _ in },
-                reset: { resetRecorder.setValue(true) },
+            $0.onboardingProgressClient = ProgressClient.resetRequiredWithRecorders(
+                saveRecorder: saveRecorder,
+                resetRecorder: resetRecorder,
             )
         }
 
@@ -106,11 +75,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
         await store.send(.onAppear)
@@ -141,11 +106,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
         await store.send(.onAppear)
@@ -175,11 +136,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -203,11 +160,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -231,11 +184,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -243,9 +192,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.currentStep = .betaAccess
         }
         await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
         }
         await store.send(.nextTapped) { state in
             state.currentStep = .permissions
@@ -275,11 +222,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.nextTapped) { state in
@@ -290,31 +233,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(store.state.currentStep.title, "Start your voyage")
         XCTAssertEqual(store.state.currentStepIndex, 4)
         XCTAssertFalse(store.state.canGoNext)
-
-        await store.finish()
-    }
-
-    /// ONB-001-show_onboarding_step: 온보딩 표시가 시작될 때 onAppear가 실행되면 welcome step과 첫 진행률 상태를 표시한다.
-    /// 초기 `onAppear` 시 welcome 단계가 올바른 네비게이션 플래그(`canGoNext`, `canGoBack`)와 함께 표시되는지 검증합니다.
-    /// - 검증 내용: 첫 단계에서 앞으로는 이동 가능, 뒤로는 이동 불가능한지 확인합니다.
-    /// - 사전 조건: `load`가 `.empty`를 반환하여 새 세션이 시작됩니다.
-    /// - 기대 결과: `currentStep`은 `.welcome`, `canGoNext`는 `true`(welcome은 기본 완료), `canGoBack`은 `false`(첫 단계)입니다.
-    func testOnAppearDisplaysWelcomeStep() async {
-        let store = TestStore(initialState: OnboardingFeature.State()) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
-        }
-
-        await store.send(.onAppear)
-
-        XCTAssertEqual(store.state.currentStep, .welcome)
-        XCTAssertTrue(store.state.canGoNext)
-        XCTAssertFalse(store.state.canGoBack)
 
         await store.finish()
     }
@@ -332,11 +250,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -348,9 +262,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         // beta access를 완료하여 다음 네비게이션 활성화
         await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
         }
 
         // betaAccess → permissions
@@ -379,11 +291,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -416,11 +324,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -431,9 +335,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         // 성공적인 확인이 상태를 업데이트
         await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
         }
 
         XCTAssertTrue(store.state.betaAccess.isComplete)
@@ -454,17 +356,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
         await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
         }
 
         // 업데이트된 스냅샷으로 save가 호출되어야 함
@@ -539,11 +435,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -555,9 +447,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.send(.nextTapped)
 
         await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
         }
 
         await store.send(.nextTapped) { state in
@@ -584,11 +474,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         XCTAssertFalse(store.state.canGoNext)
@@ -614,11 +500,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         XCTAssertNil(store.state.currentStep.next)
@@ -642,11 +524,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
         await store.send(.onAppear)
@@ -675,11 +553,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         await store.send(.onAppear)
@@ -710,11 +584,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
         }
 
         // permissions → betaAccess로 뒤로 이동
@@ -753,11 +623,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
         }
 
         await store.send(.backTapped) { state in
@@ -796,19 +662,13 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .success(snapshot) },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
         await store.send(.onAppear) { state in
             state.currentStep = .betaAccess
             state.welcome.isComplete = true
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
             state.permissions.isComplete = false
             state.complete.isComplete = false
         }
@@ -842,11 +702,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .success(snapshot) },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
         // permissions 미완료 → lastValidStep이 welcome으로 되돌아감
@@ -880,20 +736,14 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .success(snapshot) },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
         // complete 미완료 → lastValidStep이 permissions(완료됨)로 되돌아감
         await store.send(.onAppear) { state in
             state.currentStep = .permissions
             state.welcome.isComplete = true
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
             state.permissions.isComplete = true
             state.complete.isComplete = false
         }
@@ -928,11 +778,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .success(snapshot) },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
         // betaAccess 미완료 → welcome(완료됨)으로 대체
@@ -967,19 +813,16 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .success(snapshot) },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
+            $0.onboardingProgressClient = ProgressClient.resumingAndRecording(
+                snapshot: snapshot,
+                saveRecorder: saveRecorder,
             )
         }
 
         await store.send(.onAppear) { state in
             state.currentStep = .betaAccess
             state.welcome.isComplete = true
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
             state.permissions.isComplete = false
             state.complete.isComplete = false
         }
@@ -999,14 +842,14 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 기대 결과: `currentStep = .welcome`, welcome만 완료, 저장된 스냅샷도 동일한 초기 상태를 반영합니다.
     func testResumeFromCorruptStepStateFallsBackToWelcome() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        let resetRecorder = LockIsolated(false)
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .resetRequired },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
+            $0.onboardingProgressClient = ProgressClient.resetRequiredWithRecorders(
+                saveRecorder: saveRecorder,
+                resetRecorder: resetRecorder,
             )
         }
 
@@ -1045,11 +888,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .success(snapshot) },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
         // complete ✗ → permissions ✗ → betaAccess ✗ → welcome ✓
@@ -1086,21 +925,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
-            )
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: { false },
-                showIfNeeded: { false },
-                showWindow: {},
-                closeWindow: {},
-                openMainWindow: { request in
-                    await pathRecorder.append(request)
-                    return true
-                },
-            )
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+            $0.onboardingWindowClient = WindowClient.recording(pathRecorder: pathRecorder)
         }
 
         await store.send(.complete(.startUsingTapped)) { state in
@@ -1140,19 +966,13 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .success(snapshot) },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
         await store.send(.onAppear) { state in
             state.currentStep = .complete
             state.welcome.isComplete = true
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
             state.permissions.isComplete = true
             state.complete.isComplete = true
         }
@@ -1175,18 +995,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { snapshot in saveRecorder.setValue(snapshot) },
-                reset: {},
-            )
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: { false },
-                showIfNeeded: { false },
-                showWindow: {},
-                closeWindow: {},
-                openMainWindow: { _ in true },
-            )
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+            $0.onboardingWindowClient = WindowClient.successMock
         }
 
         await store.send(.complete(.startUsingTapped)) { state in
@@ -1207,64 +1017,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-complete_onboarding_session: completion action이 반복 입력될 때 Start Using을 다시 누르면 main window open contract를
-    /// 일관되게 다시 호출한다.
-    /// `startUsingTapped`를 두 번 호출하면 창이 두 번 열리는지(reducer에 멱등성 가드 없음) 검증합니다.
-    /// - 검증 내용: 연속 탭 시 reducer가 전체 완료 흐름을 반복 실행합니다.
-    /// - 사전 조건: `currentStep = .complete` 상태입니다. `pathRecorder`로 창 열기 호출을 캡처합니다.
-    /// - 기대 결과: `pathRecorder`에 2개의 경로가 기록되어 창이 각 탭마다 열렸음을 확인합니다.
-    func testCompletionRepeatedTapReopensWindow() async {
-        let pathRecorder = PathRecorder()
-
-        var initialState = OnboardingFeature.State()
-        initialState.currentStep = .complete
-
-        let store = TestStore(initialState: initialState) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: { false },
-                showIfNeeded: { false },
-                showWindow: {},
-                closeWindow: {},
-                openMainWindow: { request in
-                    await pathRecorder.append(request)
-                    return true
-                },
-            )
-        }
-
-        // 첫 번째 완료
-        await store.send(.complete(.startUsingTapped)) { state in
-            state.complete.isComplete = true
-            state.complete.isOpeningWindow = true
-            state.complete.openWindowError = nil
-        }
-        await store.receive(\.complete.openWindowResponse) { state in
-            state.complete.isOpeningWindow = false
-        }
-
-        // 두 번째 호출 — reducer가 전체 흐름 반복
-        await store.send(.complete(.startUsingTapped)) { state in
-            state.complete.isComplete = true
-            state.complete.isOpeningWindow = true
-            state.complete.openWindowError = nil
-        }
-        await store.receive(\.complete.openWindowResponse) { state in
-            state.complete.isOpeningWindow = false
-        }
-
-        let paths = await pathRecorder.snapshot()
-        XCTAssertEqual(paths.count, 2, "Window opened on each tap")
-
-        await store.finish()
-    }
-
     /// ONB-001-complete_onboarding_session: main window open이 실패할 때 완료 액션을 실행하면 완료로 위장하지 않고 retry 가능한 error state를
     /// 표시한다.
     /// `openMainWindow`가 `false`를 반환하면 에러 상태가 설정됨을 검증합니다.
@@ -1279,18 +1031,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: { false },
-                showIfNeeded: { false },
-                showWindow: {},
-                closeWindow: {},
-                openMainWindow: { _ in false },
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
+            $0.onboardingWindowClient = WindowClient.failureMock
         }
 
         await store.send(.complete(.startUsingTapped)) { state in
@@ -1306,49 +1048,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         XCTAssertNotNil(store.state.complete.openWindowError)
         XCTAssertFalse(store.state.complete.isOpeningWindow)
-
-        await store.finish()
-    }
-
-    /// ONB-001-complete_onboarding_session: completion side effect가 실패할 때 reducer가 실패 응답을 받으면 completion failure 상태를
-    /// 저장하지 않는다.
-    /// 완료 실패 경로 — `openMainWindow`가 `false`를 반환하고 에러가 설정됨을 검증합니다.
-    /// - 검증 내용: `testCompletionOpenWindowFailureShowsError`와 동일한 시나리오의 독립 검증입니다.
-    /// - 사전 조건: `currentStep = .complete` 상태입니다. `openMainWindow`가 항상 `false`를 반환합니다.
-    /// - 기대 결과: `openWindowResponse` 수신 후 `openWindowError`가 `nil`이 아닙니다.
-    func testCompletionFailurePath() async {
-        var initialState = OnboardingFeature.State()
-        initialState.currentStep = .complete
-
-        let store = TestStore(initialState: initialState) {
-            OnboardingFeature()
-        } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: { false },
-                showIfNeeded: { false },
-                showWindow: {},
-                closeWindow: {},
-                openMainWindow: { _ in false },
-            )
-        }
-
-        await store.send(.complete(.startUsingTapped)) { state in
-            state.complete.isComplete = true
-            state.complete.isOpeningWindow = true
-            state.complete.openWindowError = nil
-        }
-
-        await store.receive(\.complete.openWindowResponse) { state in
-            state.complete.isOpeningWindow = false
-            state.complete.openWindowError = "We couldn't open a file manager window. Please try again."
-        }
-
-        XCTAssertNotNil(store.state.complete.openWindowError)
 
         await store.finish()
     }
@@ -1370,21 +1069,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: { false },
-                showIfNeeded: { false },
-                showWindow: {},
-                closeWindow: {},
-                openMainWindow: { request in
-                    await pathRecorder.append(request)
-                    return true
-                },
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
+            $0.onboardingWindowClient = WindowClient.recording(pathRecorder: pathRecorder)
         }
 
         await store.send(.complete(.retryTapped)) { state in
@@ -1417,21 +1103,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .empty },
-                save: { _ in },
-                reset: {},
-            )
-            $0.onboardingWindowClient = OnboardingWindowClient(
-                isRequired: { false },
-                showIfNeeded: { false },
-                showWindow: {},
-                closeWindow: {},
-                openMainWindow: { request in
-                    await pathRecorder.append(request)
-                    return true
-                },
-            )
+            $0.onboardingProgressClient = ProgressClient.noOp
+            $0.onboardingWindowClient = WindowClient.recording(pathRecorder: pathRecorder)
         }
 
         // 첫 번째 완료
@@ -1482,19 +1155,13 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
-            $0.onboardingProgressClient = OnboardingProgressClient(
-                load: { .success(snapshot) },
-                save: { _ in },
-                reset: {},
-            )
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
         await store.send(.onAppear) { state in
             state.currentStep = .complete
             state.welcome.isComplete = true
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.isComplete = true
+            StateMutation.applyActiveBetaAccess(state: &state)
             state.permissions.isComplete = true
             state.complete.isComplete = true
         }
