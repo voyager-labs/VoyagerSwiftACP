@@ -195,3 +195,30 @@ xcrun swift test --package-path apps/macos/Packages/05_Entities/Ai \
 
 - **Bad:** A callback-heavy feature gets one happy-path test even though failure, cancel, and teardown branches have different semantics.
   **Good:** Add focused tests for the meaningful branch variants where state is supposed to diverge.
+
+## Verification Evidence Requirements
+
+When recording focused test verification results, always include:
+
+- **Command**: The exact `xcrun swift test` command used
+- **Exit code**: The numeric exit code
+- **Suite filter**: The `--filter` value used
+- **Executed test count**: How many tests ran (from XCTest output)
+- **Result**: PASS, FAIL, or BLOCKED
+- **Failure phase**: `compilation`, `test-execution`, or `N/A`
+
+For packages where source-level build errors prevent test compilation:
+
+- Record as **BLOCKED** (not PASS or FAIL)
+- Include the **first failure path** (file and line)
+- Classify as **pre-existing source build blocker** or **test-caused blocker**
+- Mark as a **proof gap** — changed tests were NOT proven to compile/execute
+- Never claim verification passed if tests did not compile
+
+Example evidence matrix:
+
+| Spec    | Result  | Tests | Proof Gap                         |
+| ------- | ------- | ----- | --------------------------------- |
+| EVM-001 | PASS    | 10    | No                                |
+| EVM-002 | BLOCKED | N/A   | Yes (pre-existing source blocker) |
+| EVM-004 | PASS    | 10    | No                                |
