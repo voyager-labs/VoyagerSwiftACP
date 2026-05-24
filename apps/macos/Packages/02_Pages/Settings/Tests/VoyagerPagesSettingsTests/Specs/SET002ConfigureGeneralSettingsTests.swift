@@ -82,8 +82,9 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
         }
     }
 
-    // MARK: - SET-002-configure_initial_page — 디렉터리 로드
+    // MARK: - SET-002-configure_initial_page
 
+    /// 디렉터리 로드
     /// SET-002-configure_initial_page: 저장된 시작 경로가 없으면 home directory를 기본 시작 위치로 사용한다.
     /// General tab 첫 로드에서 사용자가 별도 시작 폴더를 저장하지 않은 fresh 상태를 검증한다.
     /// - 검증 내용: `.loadSettings`가 `default_tab_path` 부재 시 `DirectorySelectionClient.defaultHomePath()` 값을 적용한다.
@@ -91,6 +92,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     /// - 기대 결과: `startingDirectory = "/home/user"`, `selectedDirectoryOption = .custom("/home/user")`이다.
     func testLoadSettingsUsesHomeWhenNoSavedPath() async {
         let store = makeStore(homePath: "/home/user")
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 startingDirectory만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -107,6 +109,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     func testLoadSettingsRestoresSavedDirectory() async {
         storage.setString("/Users/test/saved-dir", forKey: SettingsKeys.defaultTabPath)
         let store = makeStore(homePath: "/home/user")
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 startingDirectory만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -114,8 +117,9 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
         XCTAssertEqual(store.state.startingDirectory, "/Users/test/saved-dir")
     }
 
-    // MARK: - SET-002-configure_initial_page — 자동 업데이트 및 종료 전 알림 로드
+    // MARK: - SET-002-configure_initial_page
 
+    /// 자동 업데이트 및 종료 전 알림 로드
     /// SET-002-toggle_automatic_update_install: 저장된 automatic update 설정을 General tab 토글 상태로 복원한다.
     /// 사용자가 이전에 켜 둔 자동 업데이트 설정이 load 단계에서 UI state로 반영되는지 검증한다.
     /// - 검증 내용: `.loadSettings`가 `SettingsKeys.automaticUpdate` 값을 `automaticUpdate`에 반영한다.
@@ -124,6 +128,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     func testLoadSettingsRestoresAutomaticUpdateFromStorage() async {
         storage.setObject(true, forKey: SettingsKeys.automaticUpdate)
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 automaticUpdate만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -139,6 +144,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     func testLoadSettingsRestoresAlertBeforeQuitFromStorage() async {
         storage.setBool(true, forKey: SettingsKeys.alertBeforeQuit)
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 alertBeforeQuit만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -154,6 +160,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     func testLoadSettingsDefaultsAutomaticUpdateToFalseWhenMissing() async {
         // storage에 automaticUpdate key가 없는 상태를 구성한다.
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 automaticUpdate 기본값만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -169,6 +176,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     func testLoadSettingsDefaultsAlertBeforeQuitToFalseWhenMissing() async {
         // storage에 alertBeforeQuit key가 없는 상태를 구성한다.
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 alertBeforeQuit 기본값만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -176,8 +184,9 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
         XCTAssertFalse(store.state.alertBeforeQuit)
     }
 
-    // MARK: - SET-002-configure_initial_page — 디렉터리 옵션 선택
+    // MARK: - SET-002-configure_initial_page
 
+    /// 디렉터리 옵션 선택
     /// SET-002-configure_initial_page: 표준 디렉터리 옵션을 선택하면 해당 시스템 경로를 시작 경로로 저장한다.
     /// 사용자가 Root 같은 predefined option을 선택했을 때 state와 persistence가 함께 갱신되는지 검증한다.
     /// - 검증 내용: `.selectDirectoryOption(.root)`가 `.setStartingDirectory`를 거쳐 state와 storage를 갱신한다.
@@ -205,6 +214,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     /// - 기대 결과: `isSelectingDirectory = true`, `startingDirectoryError = nil`이다.
     func testSelectDirectoryOptionOtherOpensPanel() async {
         let store = makeStore()
+        // store.exhaustivity = .off: openOtherDirectoryPanel 이후 pickDirectory 효과의 완료 액션 추적 생략
         store.exhaustivity = .off
 
         await store.send(.selectDirectoryOption(.other))
@@ -212,10 +222,14 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
             state.isSelectingDirectory = true
             state.startingDirectoryError = nil
         }
+
+        // finish(): pickDirectory 비동기 효과가 startingDirectorySelected를 발생시키나 검증 범위 밖
+        await store.finish()
     }
 
-    // MARK: - SET-002-configure_initial_page — 디렉터리 picker 경로
+    // MARK: - SET-002-configure_initial_page
 
+    /// 디렉터리 picker 경로
     /// SET-002-configure_initial_page: Directory picker를 취소하면 기존 시작 경로를 유지하고 선택 상태만 해제한다.
     /// 사용자가 picker에서 취소를 눌렀을 때 저장값이나 선택 옵션이 불필요하게 바뀌지 않는지 검증한다.
     /// - 검증 내용: `.openOtherDirectoryPanel` 후 picker가 `nil`을 반환하면 `.startingDirectorySelected`에서 선택 상태만 종료한다.
@@ -223,6 +237,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     /// - 기대 결과: `isSelectingDirectory = false`가 되고 추가 `setStartingDirectory` action은 발생하지 않는다.
     func testStartingDirectorySelectedWithCancelReturnsNil() async {
         let store = makeStore(pickDirectory: { nil })
+        // store.exhaustivity = .off: openOtherDirectoryPanel 상태 변화(isSelectingDirectory, startingDirectoryError) 추적 생략
         store.exhaustivity = .off
 
         await store.send(.openOtherDirectoryPanel)
@@ -283,6 +298,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
             pathExists: { _ in false },
             isDirectory: { _ in false },
         )
+        // store.exhaustivity = .off: openOtherDirectoryPanel 상태 변화 추적 생략, 에러 경로 검증에 집중
         store.exhaustivity = .off
 
         await store.send(.openOtherDirectoryPanel)
@@ -310,6 +326,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
             pathExists: { _ in true },
             isDirectory: { _ in false },
         )
+        // store.exhaustivity = .off: openOtherDirectoryPanel 상태 변화 추적 생략, 에러 경로 검증에 집중
         store.exhaustivity = .off
 
         await store.send(.openOtherDirectoryPanel)
@@ -336,7 +353,6 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
                 recorder.record(enabled)
             },
         )
-        store.exhaustivity = .off
 
         await store.send(.toggleLaunchAtStartup(true)) { state in
             state.launchAtStartup = true
@@ -361,6 +377,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
                 throw LaunchAtLoginError()
             },
         )
+        // store.exhaustivity = .off: setEnabled throw 시 state 변화를 assert로 간접 검증
         store.exhaustivity = .off
 
         let previousLaunchAtStartup = store.state.launchAtStartup
@@ -381,6 +398,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     func testLoadSettingsSyncsLaunchAtStartupWhenMismatch() async {
         storage.setBool(false, forKey: SettingsKeys.launchAtStartup)
         let store = makeStore(launchAtLoginEnabled: true)
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 launchAtStartup 동기화만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -398,7 +416,6 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     /// - 기대 결과: `automaticUpdate = true`, `automaticUpdateError = nil`, 저장값은 `true`다.
     func testToggleAutomaticUpdateEnabled() async {
         let store = makeStore()
-        store.exhaustivity = .off
 
         await store.send(.toggleAutomaticUpdate(true)) { state in
             state.automaticUpdate = true
@@ -416,6 +433,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     func testToggleAutomaticUpdateDisabled() async {
         storage.setBool(true, forKey: SettingsKeys.automaticUpdate)
         let store = makeStore()
+        // store.exhaustivity = .off: 초기값(false)과 토글값(false)이 같아 상태 변화 없음, storage 갱신만 검증
         store.exhaustivity = .off
 
         await store.send(.toggleAutomaticUpdate(false)) { state in
@@ -435,7 +453,6 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     /// - 기대 결과: `alertBeforeQuit = true`이고 저장값도 `true`다.
     func testToggleAlertBeforeQuitEnabled() async {
         let store = makeStore()
-        store.exhaustivity = .off
 
         await store.send(.toggleAlertBeforeQuit(true)) { state in
             state.alertBeforeQuit = true
@@ -444,8 +461,9 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
         XCTAssertTrue(storage.getBool(SettingsKeys.alertBeforeQuit) ?? false)
     }
 
-    // MARK: - SET-002-check_for_updates (package-level no-op)
+    // MARK: - SET-002-check_for_updates
 
+    /// package-level no-op
     /// SET-002-check_for_updates: Settings package 레벨의 Check for Updates action은 no-op으로 유지된다.
     /// 업데이트 확인의 실제 orchestration이 상위 앱 경계에 있을 때 package reducer가 부분 state를 변경하지 않는지 검증한다.
     /// - 검증 내용: `.checkForUpdates` 전송 후 automatic update 관련 state가 바뀌지 않는다.
@@ -453,7 +471,6 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
     /// - 기대 결과: `automaticUpdate = false`, `automaticUpdateError = nil`로 유지된다.
     func testCheckForUpdatesIsNoOp() async {
         let store = makeStore()
-        store.exhaustivity = .off
 
         await store.send(.checkForUpdates)
 

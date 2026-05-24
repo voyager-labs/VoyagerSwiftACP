@@ -39,6 +39,7 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
             $0.directorySelectionClient = .testValue
             $0.appearanceSettingsClient = .testValue
         }
+        // store.exhaustivity = .off: loadSettings가 다수 필드를 동시 갱신하나 검증 대상은 일부 필드만 해당
         store.exhaustivity = .off
 
         await store.send(.onAppear)

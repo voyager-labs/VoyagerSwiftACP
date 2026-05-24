@@ -1,5 +1,4 @@
 import Foundation
-import VoyagerEntitiesAppPreferences
 
 final class MutationRecorder<T>: @unchecked Sendable {
     private let lock = NSLock()
@@ -15,18 +14,6 @@ final class MutationRecorder<T>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return recordedValues
-    }
-}
-
-final class ThemeApplyRecorder: @unchecked Sendable {
-    private let recorder = MutationRecorder<AppTheme>()
-
-    func record(_ theme: AppTheme) {
-        recorder.record(theme)
-    }
-
-    var values: [AppTheme] {
-        recorder.values
     }
 }
 

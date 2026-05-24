@@ -86,6 +86,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: `store.state.theme = .dark`다.
     func testLoadSettingsRestoresTheme() async {
         let store = makeStore(loadTheme: { .dark })
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 theme만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -100,6 +101,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: `theme = .dark`, 저장 raw value는 `AppTheme.dark.rawValue`, recorder 값은 `[.dark]`다.
     func testSetThemePersistsRawValueAndApplies() async {
         let store = makeStore(loadTheme: { .system })
+        // store.exhaustivity = .off: setTheme의 applyTheme run 효과가 action을 발생시키지 않아 추적 생략
         store.exhaustivity = .off
 
         await store.send(.setTheme(.dark)) { state in
@@ -109,6 +111,9 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
         XCTAssertEqual(store.state.theme, .dark)
         XCTAssertEqual(storage.getObject(SettingsKeys.theme) as? String, AppTheme.dark.rawValue)
         XCTAssertEqual(themeRecorder.values, [.dark])
+
+        // finish(): applyTheme 비동기 효과 완료 대기
+        await store.finish()
     }
 
     /// SET-003-switch_theme_mode: Light 선택 시 theme raw value를 저장하고 app appearance 적용 dependency를 호출한다.
@@ -118,6 +123,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: 저장 raw value는 `AppTheme.light.rawValue`, recorder 값은 `[.light]`다.
     func testSetThemeToLightPersistsAndApplies() async {
         let store = makeStore(loadTheme: { .dark })
+        // store.exhaustivity = .off: setTheme의 applyTheme run 효과가 action을 발생시키지 않아 추적 생략
         store.exhaustivity = .off
 
         await store.send(.setTheme(.light)) { state in
@@ -126,6 +132,9 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
 
         XCTAssertEqual(storage.getObject(SettingsKeys.theme) as? String, AppTheme.light.rawValue)
         XCTAssertEqual(themeRecorder.values, [.light])
+
+        // finish(): applyTheme 비동기 효과 완료 대기
+        await store.finish()
     }
 
     // MARK: - SET-003-adjust_icon_size
@@ -138,6 +147,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     func testLoadSettingsRestoresListIconSize() async {
         storage.setObject(CGFloat(25.0), forKey: SettingsKeys.listIconSize)
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 listIconSize만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -152,6 +162,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: `listIconSize = AppearanceSettingsDefaults.listIconSize`다.
     func testMissingListIconSizePreservesDefault() async {
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 listIconSize 기본값만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -166,7 +177,6 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: state와 저장값 모두 `35.0`이다.
     func testSetListIconSizePersistsExactKeyValue() async {
         let store = makeStore()
-        store.exhaustivity = .off
 
         let newSize: CGFloat = 35.0
         await store.send(.setListIconSize(newSize)) { state in
@@ -188,6 +198,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     func testLoadSettingsRestoresGridIconSize() async {
         storage.setObject(CGFloat(80.0), forKey: SettingsKeys.gridIconSize)
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 gridIconSize만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -202,6 +213,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: `gridIconSize = AppearanceSettingsDefaults.gridIconSize`다.
     func testMissingGridIconSizePreservesDefault() async {
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 gridIconSize 기본값만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -216,7 +228,6 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: state와 저장값 모두 `96.0`이다.
     func testSetGridIconSizePersistsExactKeyValue() async {
         let store = makeStore()
-        store.exhaustivity = .off
 
         let newSize: CGFloat = 96.0
         await store.send(.setGridIconSize(newSize)) { state in
@@ -238,6 +249,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     func testLoadSettingsRestoresListTextSize() async {
         storage.setObject(CGFloat(15.0), forKey: SettingsKeys.listTextSize)
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 listTextSize만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -252,6 +264,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: `listTextSize = AppearanceSettingsDefaults.listTextSize`다.
     func testMissingListTextSizePreservesDefault() async {
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 listTextSize 기본값만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -266,7 +279,6 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: state와 저장값 모두 `16.0`이다.
     func testSetListTextSizePersistsExactKeyValue() async {
         let store = makeStore()
-        store.exhaustivity = .off
 
         let newSize: CGFloat = 16.0
         await store.send(.setListTextSize(newSize)) { state in
@@ -288,6 +300,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     func testLoadSettingsRestoresGridTextSize() async {
         storage.setObject(CGFloat(14.0), forKey: SettingsKeys.gridTextSize)
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 gridTextSize만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -302,6 +315,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: `gridTextSize = AppearanceSettingsDefaults.gridTextSize`다.
     func testMissingGridTextSizePreservesDefault() async {
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 gridTextSize 기본값만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -316,7 +330,6 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: state와 저장값 모두 `14.0`이다.
     func testSetGridTextSizePersistsExactKeyValue() async {
         let store = makeStore()
-        store.exhaustivity = .off
 
         let newSize: CGFloat = 14.0
         await store.send(.setGridTextSize(newSize)) { state in
@@ -328,9 +341,10 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
         XCTAssertEqual(persisted, newSize)
     }
 
-    // MARK: - SET-003 supplemental current behavior — showHiddenFiles
+    // MARK: - SET-003-show_hidden_files
 
-    /// SET-003 supplemental current behavior: hidden files 표시 저장값이 Appearance tab 로드 시 복원된다.
+    /// supplemental current behavior — showHiddenFiles
+    /// SET-003-show_hidden_files: hidden files 표시 저장값이 Appearance tab 로드 시 복원된다.
     /// canonical interaction_id는 없지만 현재 Appearance flow가 소유한 표시 preference의 load 계약을 검증한다.
     /// - 검증 내용: `.loadSettings`가 `SettingsKeys.showHiddenFiles` bool 값을 `showHiddenFiles` state로 반영한다.
     /// - 사전 조건: storage에 `showHiddenFiles = true`가 저장되어 있다.
@@ -338,6 +352,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     func testLoadSettingsRestoresShowHiddenFiles() async {
         storage.setBool(true, forKey: SettingsKeys.showHiddenFiles)
         let store = makeStore()
+        // store.exhaustivity = .off: loadSettings 다중 필드 갱신 중 showHiddenFiles만 검증
         store.exhaustivity = .off
 
         await store.send(.loadSettings)
@@ -352,7 +367,6 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     /// - 기대 결과: `showHiddenFiles = true`이고 저장값도 `true`다.
     func testSetShowHiddenFilesEnabled() async {
         let store = makeStore()
-        store.exhaustivity = .off
 
         await store.send(.setShowHiddenFiles(true)) { state in
             state.showHiddenFiles = true
@@ -370,6 +384,7 @@ final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
     func testSetShowHiddenFilesDisabled() async {
         storage.setBool(true, forKey: SettingsKeys.showHiddenFiles)
         let store = makeStore()
+        // store.exhaustivity = .off: 초기값(false)과 설정값(false)이 같아 상태 변화 없음, storage 갱신만 검증
         store.exhaustivity = .off
 
         await store.send(.setShowHiddenFiles(false)) { state in
