@@ -109,6 +109,16 @@ When a task updates verifier skills, references, or evals under `.agents/skills/
 - When semantics depend on branch kind or lifecycle outcome, verify the distinct success, failure, cancel, reload, and teardown paths separately.
 - When persistence follows verification or another async precondition, verify that failure, cancellation, and superseded completions do not commit success state.
 
+## Split-target spec verification
+
+When a spec spans two test targets (app and package), apply these additional gates:
+
+- Confirm both targets have a suite with the same spec ID and consistent `// MARK:` / traceability comment structure.
+- Confirm each suite only asserts behavior within its own target ownership scope.
+- Run focused tests per target (see `../../testing/references/testing-playbook.md` for filter commands). Report pass/fail per target, not merged.
+- Verify no support files cross target boundaries (no symlinks, no shared file paths between targets).
+- When the split-target spec docs or filter commands change, confirm `.agents/skills` and `.claude/skills` mirrors are byte-identical via `cmp`.
+
 ## Few-shot examples
 
 - **Bad:** Verification stops after a routing assertion because the callback reached the reducer boundary.

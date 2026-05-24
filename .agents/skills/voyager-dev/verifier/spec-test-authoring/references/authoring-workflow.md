@@ -34,7 +34,7 @@ Do not use this workflow only to select or run existing tests; use `../../testin
 
 1. Use one `// MARK: - <spec-id>-<interaction_id>` section per interaction AC.
 2. Add one or more test methods under each section for happy path, failure, retry, cancellation, stale response, and edge variants that matter.
-3. Add a required `///` traceability doc comment immediately before every executable interaction test method. The comment must include:
+3. Add a required `///` traceability doc comment immediately before every executable interaction test method. Every field is mandatory; omit none. The comment must include:
     - First line: `<SPEC-ID>-<interaction_id>: <scenario summary>`.
     - One sentence explaining the user/product situation being verified.
     - `- 검증 내용`: the reducer/action/effect/state contract under test.
@@ -77,6 +77,8 @@ xcrun swift test --package-path <package-path> \
 - **Unclear ownership**: If an existing test file covers behavior from two specs, split by spec owner. Do not leave dual-owned files; each product behavior gets exactly one suite.
 - **Spec with zero interaction ACs**: Do not create an empty suite. Document the spec as "no testable ACs yet" and revisit when ACs arrive.
 - **Mixed policy + product tests in one file**: Extract product behavior lines into the spec owner suite. Leave only pure technical contract assertions, such as parser conformance, serialization, or adapter invariants, in the original file.
+- **Split-target spec**: When a single logical spec spans two test targets (one app target, one package target), create a suite with the same spec ID in each target. Each suite owns only the behavior its target is responsible for. Traceability comments and `// MARK:` sections use identical spec IDs and interaction IDs across targets so grepping the spec ID finds all related tests. See `spec-test-topology.md` for the full topology.
+- **Empty Support directory**: Do not create an empty `Support/<SpecID>/` directory. Only create the directory when at least one support file is ready to place there. An empty `Support/Shared/` is acceptable when shared helpers are anticipated imminently, but remove it if no shared helper materializes.
 
 ## Example
 

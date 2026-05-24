@@ -35,6 +35,23 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
 
 ## Test selection rules
 
+### Split-target spec suites
+
+When a spec owns suites in two targets (app and package), run focused filters against each target separately. Do not rely on a single filter that only hits one target.
+
+```bash
+# Package target
+xcrun swift test --package-path <package-path> --filter <SpecID><PascalCaseSpecTitle>Tests
+
+# App target (xcodebuild)
+xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj \
+  -only-testing:VoyagerTests/<SpecID><PascalCaseSpecTitle>Tests
+```
+
+If the spec ID is the same in both targets, a grep for the spec ID should find tests in both locations. Report pass/fail per target; do not merge results.
+
+### Task-shape rules
+
 - `scaffold`
     - Add at least one focused reducer test when new behavior is introduced.
 - `decompose`
