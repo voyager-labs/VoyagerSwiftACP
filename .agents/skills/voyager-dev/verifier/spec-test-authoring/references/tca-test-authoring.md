@@ -19,6 +19,95 @@
 - Use `store.exhaustivity = .off` only for broad integration flows where asserting every internal action creates noise. Add a short rationale.
 - Use `store.finish()` or an equivalent completion check when long-lived effects could remain active.
 
+### `store.exhaustivity = .off` rationale requirement
+
+Every `store.exhaustivity = .off` MUST have an adjacent Korean rationale comment explaining why exhaustive assertions are not practical for this test.
+
+**Required comment format:**
+
+```swift
+// store.exhaustivity = .off: {reason in Korean}
+store.exhaustivity = .off
+```
+
+### Classification decision tree
+
+For each `store.exhaustivity = .off`, classify as one of:
+
+1. **Remove**: The test can use exhaustive assertions. No rationale needed.
+2. **Keep with rationale**: Exhaustivity is genuinely needed, with documented reason.
+3. **Defer with reason**: Unclear, but document the uncertainty to revisit later.
+
+### Safe to remove when
+
+- Single-field synchronous state change
+- No-op action with no state mutation
+- Fully tracked state changes with no hidden effects
+- All effects are fully consumed via `receive` and produce only tracked state mutations
+
+### Must keep when
+
+- Multi-field load effects that update several unrelated state properties
+- Fire-and-forget effects where the test does not assert intermediate actions
+- Partial state verification where only specific fields matter for the scenario
+- Integration breadth tests covering reducer composition across multiple features
+
+### Audit process
+
+1. Read the reducer first to understand effect behavior (sync vs. async, single vs. multi-field).
+2. Classify each `store.exhaustivity = .off` usage.
+3. Remove the ones that are safe to remove.
+4. Add rationale comments to the ones that must stay.
+
+### Audit command
+
+After authoring or reviewing, find all exhaustivity overrides without rationale:
+
+```bash
+grep -n 'store.exhaustivity = .off' <SuiteFile>.swift
+```
+
+For each match, verify the line above or the same line contains a Korean rationale comment. If not, classify and fix.
+
+### Evidence
+
+Task 4 of VOY-356 audited 36 `store.exhaustivity = .off` usages across GeneralSettingsFeature and AppearanceSettingsFeature: 9 removed as unnecessary (single-field sync toggles, no-op actions), 27 kept with Korean rationale comments.
+
+## `store.finish()` application criteria
+
+`await store.finish()` drains remaining in-flight effects. Apply it selectively, not as a blanket default.
+
+### When to apply
+
+- Test triggers async effects (`.run`) that are fire-and-forget (no `receive` for their completion action).
+- Test has in-flight effects not consumed by `receive` assertions.
+- Test involves effect cancellation where the cancellation itself is not the final assertion.
+- Test spawns long-lived effects (e.g. observation, timer, directory watching) that need clean shutdown.
+
+### When NOT to apply
+
+- Synchronous reducer-only assertions with no effects.
+- All effects are fully consumed via `receive`.
+- No async lifecycle risk exists (no `.run`, no `.concatenate`, no fire-and-forget).
+
+### Comment convention for non-applicability
+
+When a test has no effects and omits `store.finish()`, no comment is required. When a test has effects but all are consumed via `receive`, add:
+
+```swift
+// store.finish() 불필요: 동기 reducer-only assertion
+```
+
+or:
+
+```swift
+// store.finish() 불필요: 모든 effect가 receive로 소비됨
+```
+
+### Evidence
+
+Task 4 of VOY-356 added 3 `await store.finish()` calls for fire-and-forget effects (pickDirectory, applyTheme) where async effects were not consumed by receive assertions. The remaining tests did not need `store.finish()` because they were synchronous or fully consumed.
+
 ## RED/GREEN discipline
 
 - A RED test should compile and fail for the intended assertion or receive mismatch, not because the test file does not build.

@@ -89,9 +89,8 @@ Tests/VoyagerFeaturesPaymentTests/
 ├── Specs/
 │   └── PAY002ConfirmPaymentTests.swift
 └── Support/
-    ├── PAY002/
-    │   ├── PAY002PaymentFixtures.swift
-    │   └── PAY002PaymentRecorders.swift
+    ├── PAY002PaymentFixtures.swift
+    ├── PAY002PaymentRecorders.swift
     └── Shared/
 ```
 
@@ -171,5 +170,5 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Interaction layout        | `// MARK: - <spec-id>-<interaction_id>` inside owning suite                           |
 | Method doc comment        | `/// <SPEC-ID>-<interaction_id>: <scenario>` + intent + 검증 내용/사전 조건/기대 결과 |
 | Product behavior location | Owning spec suite under `Specs/`                                                      |
-| Fixture/recorder location | `Support/<SpecID>/` or `Support/Shared/`                                              |
+| Fixture/recorder location | `Support/<FileName>.swift` or `Support/Shared/<FileName>.swift`                       |
 | Verification handoff      | `../../testing/SKILL.md` with focused class filter                                    |
