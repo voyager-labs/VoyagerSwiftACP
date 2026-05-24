@@ -58,8 +58,8 @@ After authoring, load `../../testing/references/testing-playbook.md` and run the
 Example:
 
 ```bash
-xcrun swift test --package-path apps/macos/Packages/02_Pages/Onboarding \
-  --filter ONB004FinishOnboardingTests
+xcrun swift test --package-path <package-path> \
+  --filter <SpecID><PascalCaseSpecTitle>Tests
 ```
 
 ## Checklist
@@ -160,7 +160,7 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Mixing fixtures and executable assertions in the same support file                     | Keep support files limited to infrastructure; assertions live in spec suites.       |
 | Documenting test intent with plain `//` method comments                                | Use the required `///` traceability shape before every interaction test method.     |
 | Adding `TestStore.send` mutation closures for actions that do not change state         | Omit the closure and assert external effects or unchanged state separately.         |
-| Using the test target name as the SwiftPM filter                                       | Filter by suite class, such as `--filter ONB004FinishOnboardingTests`.              |
+| Using the test target name as the SwiftPM filter                                       | Filter by suite class, such as `--filter <SpecID><PascalCaseSpecTitle>Tests`.       |
 
 ## Quick reference
 

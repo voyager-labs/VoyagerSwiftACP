@@ -73,7 +73,7 @@ The first verification command should filter by the owning suite class, not by t
 xcrun swift test --package-path <package-path> --filter <SpecID><PascalCaseSpecTitle>Tests
 ```
 
-For `ONB-004 Finish Onboarding`, use `--filter ONB004FinishOnboardingTests`, not `--filter VoyagerPagesOnboardingTests`.
+Use `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
 
 ## Ownership rules
 
