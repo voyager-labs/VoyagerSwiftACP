@@ -45,6 +45,96 @@ final class EVM001NavigatePagesTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
     }
 
+    /// EVM-001-navigate_pages: direct navigation to recents records history and emits delegates in order
+    func testDirectShowRecentsRecordsHistoryAndEmitsDelegatesInOrder() async {
+        let store = makeNavigationStore(seedPath: "/seed")
+
+        await store.send(.internal(.performShowRecents)) {
+            $0.navigationState = .recents
+            $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/seed"))]
+            $0.forwardHistory = []
+        }
+
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .recents)))
+        await store.receive(.delegate(.navigateToState(.recents)))
+    }
+
+    /// EVM-001-navigate_pages: direct navigation to tag records history and emits delegates in order
+    func testDirectShowTagRecordsHistoryAndEmitsDelegatesInOrder() async {
+        let store = makeNavigationStore(seedPath: "/seed")
+
+        await store.send(.internal(.performShowTag("work"))) {
+            $0.navigationState = .tags("work")
+            $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/seed"))]
+            $0.forwardHistory = []
+        }
+
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .tags("work"))))
+        await store.receive(.delegate(.navigateToState(.tags("work"))))
+    }
+
+    /// EVM-001-navigate_pages: direct navigation to computer records history and emits delegates in order
+    func testDirectShowComputerRecordsHistoryAndEmitsDelegatesInOrder() async {
+        let store = makeNavigationStore(seedPath: "/seed")
+
+        await store.send(.internal(.performShowComputer)) {
+            $0.navigationState = .computer
+            $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/seed"))]
+            $0.forwardHistory = []
+        }
+
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .computer)))
+        await store.receive(.delegate(.navigateToState(.computer)))
+    }
+
+    /// EVM-001-navigate_pages: history navigation to collection does not emit reset composer
+    func testHistoryNavigationToCollectionDoesNotEmitResetComposer() async {
+        let collectionRoute = ContentPageNavigationRoute.collection(ContentPageCollectionNavigation(
+            kind: .temporary,
+            context: CollectionContext(query: "", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+
+        var initial = ContentPageNavigationFeature.State()
+        initial.seedInitialFolderPath("/folder")
+        initial.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: collectionRoute)]
+
+        let store = TestStore(initialState: initial) {
+            ContentPageNavigationFeature()
+        }
+
+        await store.send(.internal(.performNavigation(.back))) {
+            $0.navigationState = collectionRoute
+            $0.backHistory = []
+            $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/folder"))]
+        }
+
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/folder"), next: collectionRoute)))
+        await store.receive(.delegate(.navigateToState(collectionRoute)))
+    }
+
+    /// EVM-001-navigate_pages: prepare collection file open records actual current snapshot
+    func testPrepareCollectionFileOpenRecordsActualCurrentSnapshot() async {
+        var initial = ContentPageNavigationFeature.State()
+        initial.navigationState = .recents
+
+        let store = TestStore(initialState: initial) {
+            ContentPageNavigationFeature()
+        }
+
+        let url = URL(fileURLWithPath: "/folder/sample.voycoll")
+
+        await store.send(.internal(.prepareCollectionFileOpen(url))) {
+            $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+            $0.forwardHistory = []
+        }
+    }
+
     // MARK: - EVM-001-go_page_history_back
 
     /// EVM-001-go_page_history_back: 빈 backHistory에서 back 네비게이션 no-op
@@ -184,6 +274,28 @@ final class EVM001NavigatePagesTests: XCTestCase {
         await store.receive(.delegate(.resetComposer))
         await store.receive(.delegate(.logDAUNavigation(previous: .folder("/c"), next: .folder("/seed"))))
         await store.receive(.delegate(.navigateToState(.folder("/seed"))))
+
+        await store.finish()
+    }
+
+    /// EVM-001-show_page_history: history is trimmed to ten entries
+    func testHistoryIsTrimmedToTenEntries() async {
+        let store = makeNavigationStore(seedPath: "/seed")
+        store.exhaustivity = .off
+
+        for index in 0 ..< 12 {
+            await store.send(.internal(.performNavigateToPath("/p/\(index)")))
+            await store.receive(.delegate(.resetComposer))
+            await store.receive(\.delegate)
+            await store.receive(\.delegate)
+        }
+
+        XCTAssertEqual(store.state.backHistory.count, 10)
+        XCTAssertEqual(store.state.forwardHistory.count, 0)
+        XCTAssertEqual(store.state.navigationState, .folder("/p/11"))
+
+        XCTAssertEqual(store.state.backHistory.first?.navigationState, .folder("/p/1"))
+        XCTAssertEqual(store.state.backHistory.last?.navigationState, .folder("/p/10"))
 
         await store.finish()
     }
