@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryArrangements
 import XCTest
 
@@ -209,6 +210,202 @@ final class EVM004ArrangeEntriesViewTests: XCTestCase {
             $0.groupedItems = expectedGrouped
         }
         await store.receive(.delegate(.applied(sortedItems: expectedSorted, isCollectionMode: false)))
+        await store.finish()
+    }
+
+    /// EVM-004-group_entries_by_property: kind 그룹이 활성화되면 폴더/이미지/텍스트/기타 순으로 그룹화
+    /// 회귀 불변: kind가 공백/미확인인 항목이 "Other" 그룹으로 분류되는 불변 조건 검증.
+    /// spec suite의 kind 그룹핑 테스트에는 "Other" 엣지 케이스가 없으므로 독립 회귀 테스트로 유지.
+    func testApply_groupsByKind_andKeepsGroupOrderingSemantics() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let folder = makeEntry(fixedDate, "Zoo", "/tmp/Zoo", dir: true, kind: "Folder")
+        let imageB = makeEntry(fixedDate, "b.png", "/tmp/b.png", 20, ext: "png", kind: "Image")
+        let imageA = makeEntry(fixedDate, "a.png", "/tmp/a.png", 10, ext: "png", kind: "Image")
+        let text = makeEntry(fixedDate, "c.txt", "/tmp/c.txt", 30, ext: "txt", kind: "Text")
+        let other = makeEntry(fixedDate, "d", "/tmp/d", 40, ext: "bin", kind: "   ")
+
+        let expectedSortedItems = [imageA, imageB, text, other, folder]
+        let expectedGroupedItems: [GroupedItems] = [
+            GroupedItems(groupName: "Folders", items: [folder]),
+            GroupedItems(groupName: "Image", items: [imageA, imageB]),
+            GroupedItems(groupName: "Text", items: [text]),
+            GroupedItems(groupName: "Other", items: [other]),
+        ]
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .kind,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(fixedDate)
+        }
+
+        await store.send(.apply(items: [other, imageB, folder, text, imageA], isCollectionMode: true)) {
+            $0.groupedItems = expectedGroupedItems
+        }
+        await store.receive(.delegate(.applied(sortedItems: expectedSortedItems, isCollectionMode: true)))
+        await store.finish()
+    }
+
+    /// EVM-004-group_entries_by_property: VOY-213 tags 그룹이 태그 색상 코드를 함께 보존
+    /// 회귀 불변: 태그 그룹이 EntryArrangements의 colorCode를 GroupedItems에 올바르게 전달하는지 확인.
+    /// VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
+    func testVOY213TagsGroupingCarriesColorCodeFromEntryArrangements() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let blueTag = Tag(name: "Blue", colorCode: 6)
+        let redTag = Tag(name: "Red", colorCode: 1)
+
+        let itemA = makeEntry(fixedDate, "a.txt", "/tmp/a.txt", 10, ext: "txt", kind: "Text", tags: [blueTag])
+        let itemB = makeEntry(fixedDate, "b.txt", "/tmp/b.txt", 20, ext: "txt", kind: "Text", tags: [redTag, blueTag])
+        let itemC = makeEntry(fixedDate, "c.txt", "/tmp/c.txt", 30, ext: "txt", kind: "Text", tags: nil)
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .tags,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(fixedDate)
+        }
+
+        await store.send(.apply(items: [itemC, itemB, itemA], isCollectionMode: false)) {
+            $0.groupedItems = [
+                GroupedItems(groupName: "Blue", items: [itemA, itemB], colorCode: 6),
+                GroupedItems(groupName: "Red", items: [itemB], colorCode: 1),
+                GroupedItems(groupName: "No Tags", items: [itemC]),
+            ]
+        }
+        await store.receive(.delegate(.applied(sortedItems: [itemA, itemB, itemC], isCollectionMode: false)))
+        await store.finish()
+    }
+
+    /// EVM-004-group_entries_by_property: VOY-213 동일 태그 이름이 입력 순서와 무관하게 안정적인 색상 선택 유지
+    /// 회귀 불변: 동일 태그명에 다른 colorCode가 있을 때 첫 번째 항목의 colorCode가 선택되는 안정성 보장.
+    /// VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
+    func testVOY213TagColorSelectionIsStableAcrossInputOrder() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let lowPriorityBlue = Tag(name: "Blue", colorCode: 6)
+        let highPriorityBlue = Tag(name: "Blue", colorCode: 1)
+
+        let first = makeEntry(fixedDate, "z.txt", "/tmp/z.txt", 10, ext: "txt", kind: "Text", tags: [lowPriorityBlue])
+        let second = makeEntry(fixedDate, "a.txt", "/tmp/a.txt", 20, ext: "txt", kind: "Text", tags: [highPriorityBlue])
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .tags,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(fixedDate)
+        }
+
+        await store.send(.apply(items: [first, second], isCollectionMode: false)) {
+            $0.groupedItems = [
+                GroupedItems(groupName: "Blue", items: [second, first], colorCode: 6),
+            ]
+        }
+        await store.receive(.delegate(.applied(sortedItems: [second, first], isCollectionMode: false)))
+        await store.finish()
+    }
+
+    /// EVM-004-group_entries_by_property: VOY-213 lastOpenedDate가 없으면 더 이른 그룹으로 폴백
+    /// 회귀 불변: lastOpenedDate가 nil인 항목이 "Earlier" 그룹으로 분류되는 날짜 폴백 동작 보장.
+    /// VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
+    func testVOY213DateLastOpenedFallsBackToEarlierForMissingDates() async {
+        let today = Date()
+        let missing = makeEntry(
+            today,
+            "missing.txt",
+            "/tmp/missing.txt",
+            10,
+            ext: "txt",
+            kind: "Text",
+            lastOpenedDate: nil,
+        )
+        let opened = makeEntry(
+            today,
+            "opened.txt",
+            "/tmp/opened.txt",
+            20,
+            ext: "txt",
+            kind: "Text",
+            lastOpenedDate: today,
+        )
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .dateLastOpened,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(today)
+        }
+
+        await store.send(.apply(items: [missing, opened], isCollectionMode: false)) {
+            $0.groupedItems = [
+                GroupedItems(groupName: "Today", items: [opened]),
+                GroupedItems(groupName: "Earlier", items: [missing]),
+            ]
+        }
+        await store.receive(.delegate(.applied(sortedItems: [missing, opened], isCollectionMode: false)))
+        await store.finish()
+    }
+
+    /// EVM-004-group_entries_by_property: VOY-213 tags 그룹의 표시 이름과 fallback 그룹 이름이 사용자가 읽을 수 있게 유지
+    /// 회귀 불변: 태그 그룹은 태그명을, 미분류 항목은 "No Tags"를 표시하는지 확인.
+    /// 그룹명과 colorCode가 함께 올바르게 설정되는 엣지 케이스 회귀 방지.
+    func testVOY213GroupedItemsKeepVisibleTitlesForTagAndFallbackGroups() async {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let blueTag = Tag(name: "Blue", colorCode: 6)
+        let tagged = makeEntry(
+            fixedDate,
+            "tagged.txt",
+            "/tmp/tagged.txt",
+            10,
+            ext: "txt",
+            kind: "Text",
+            tags: [blueTag],
+        )
+        let noTag = makeEntry(fixedDate, "untagged.txt", "/tmp/untagged.txt", 20, ext: "txt", kind: "Text", tags: nil)
+
+        let store = TestStore(
+            initialState: EntryArrangementsState(
+                sortKey: .name,
+                sortOrder: .ascending,
+                groupKey: .tags,
+            ),
+        ) {
+            EntryArrangementsFeature()
+        } withDependencies: {
+            $0.date = .constant(fixedDate)
+        }
+
+        await store.send(.apply(items: [tagged, noTag], isCollectionMode: false)) {
+            $0.groupedItems = [
+                GroupedItems(groupName: "Blue", items: [tagged], colorCode: 6),
+                GroupedItems(groupName: "No Tags", items: [noTag]),
+            ]
+        }
+        XCTAssertEqual(store.state.groupedItems.map(\.groupName), ["Blue", "No Tags"])
+        XCTAssertEqual(store.state.groupedItems.map(\.colorCode), [6, nil])
+        await store.receive(.delegate(.applied(sortedItems: [tagged, noTag], isCollectionMode: false)))
         await store.finish()
     }
 }
