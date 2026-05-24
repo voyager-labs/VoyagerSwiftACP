@@ -34,12 +34,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            PermissionClients.allGranted(&$0)
         }
 
         await store.send(.onAppear)
@@ -75,12 +70,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .unknown })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            PermissionClients.fdaUnknown(&$0)
         }
 
         await store.send(.onAppear)
@@ -109,20 +99,12 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
     /// - 기대 결과: helperFolderAccessStatus == `.partial`, showsHelperFolderAccessAction == true,
     ///   isComplete == false. 세 폴더 모두 허용되어야만 완료 처리됩니다.
     func testOnAppearWithPartialHelperAccessShowsPartial() async {
-        let partialAccess = FolderAccessResult(
-            desktop: .granted,
-            documents: .granted,
-            downloads: .notGranted,
-        )
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { partialAccess },
-                requestAccess: { partialAccess },
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            $0.fullDiskAccessClient = PermissionClients.grantedFDA
+            $0.helperFolderAccessClient = PermissionClients.deniedHelper(kPartialHelperAccess)
+            $0.launchAtLoginClient = PermissionClients.disabledLaunchAtLogin
         }
 
         await store.send(.onAppear)
@@ -131,7 +113,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
             state.isComplete = false
         }
         await store.receive(\.helperFolderAccessStatusLoaded) { state in
-            state.helperFolderAccess = partialAccess
+            state.helperFolderAccess = kPartialHelperAccess
             state.helperFolderAccessError = nil
             state.isComplete = false
         }
@@ -157,20 +139,10 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
     /// - 기대 결과: fullDiskAccessStatus == `.denied`, helperFolderAccessStatus == `.notGranted`,
     ///   isComplete == false, nextDisabledMessage가 non-nil (Next 버튼 비활성화).
     func testOnAppearWithAllDeniedShowsCorrectStatus() async {
-        let deniedAccess = FolderAccessResult(
-            desktop: .notGranted,
-            documents: .notGranted,
-            downloads: .notGranted,
-        )
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .denied })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { deniedAccess },
-                requestAccess: { deniedAccess },
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            PermissionClients.allDenied(&$0)
         }
 
         await store.send(.onAppear)
@@ -202,12 +174,9 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .needsAction })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            $0.fullDiskAccessClient = PermissionClients.needsActionFDA
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
+            $0.launchAtLoginClient = PermissionClients.disabledLaunchAtLogin
         }
 
         await store.send(.onAppear)
@@ -239,20 +208,11 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
     ///   로그인 시 실행 비활성화.
     /// - 기대 결과: isComplete == false, nextDisabledMessage가 non-nil.
     func testHelperFolderAccessDeniedBlocksCompletion() async {
-        let deniedAccess = FolderAccessResult(
-            desktop: .notGranted,
-            documents: .notGranted,
-            downloads: .notGranted,
-        )
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { deniedAccess },
-                requestAccess: { deniedAccess },
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            PermissionClients.helperDenied(&$0)
+            $0.launchAtLoginClient = PermissionClients.disabledLaunchAtLogin
         }
 
         await store.send(.onAppear)
@@ -290,12 +250,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .unknown })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            PermissionClients.fdaUnknown(&$0)
         }
 
         await store.send(.onAppear)
@@ -323,11 +278,8 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
+            $0.fullDiskAccessClient = PermissionClients.grantedFDA
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
         }
 
         await store.send(.appDidBecomeActive) { state in
@@ -358,11 +310,8 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
+            $0.fullDiskAccessClient = PermissionClients.grantedFDA
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
         }
 
         await store.send(.appDidBecomeActive) { state in
@@ -394,19 +343,10 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
     /// - 사전 조건: FDA `.granted`, 헬퍼 폴더 desktop·documents·downloads 모두 `.notGranted`.
     /// - 기대 결과: isComplete == false, helperFolderAccessStatus == `.notGranted`.
     func testRefreshAfterHelperFolderAccessChangeUpdatesStatus() async {
-        let deniedAccess = FolderAccessResult(
-            desktop: .notGranted,
-            documents: .notGranted,
-            downloads: .notGranted,
-        )
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { deniedAccess },
-                requestAccess: { deniedAccess },
-            )
+            PermissionClients.helperDenied(&$0)
         }
 
         await store.send(.appDidBecomeActive) { state in
@@ -440,11 +380,8 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: initialState) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
+            $0.fullDiskAccessClient = PermissionClients.grantedFDA
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
         }
 
         await store.send(.appDidBecomeActive) { state in
@@ -479,11 +416,8 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
+            $0.fullDiskAccessClient = PermissionClients.grantedFDA
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
         }
 
         // 시드: FDA를 needsAction으로 설정, 헬퍼는 granted → 아직 온보딩 미완료 상태
@@ -531,11 +465,8 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
+            $0.fullDiskAccessClient = PermissionClients.grantedFDA
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
         }
 
         // First appDidBecomeActive (generation 1)
@@ -562,12 +493,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         await store.receive(\.helperFolderAccessRefreshLoaded)
 
         // Stale generation-1 helper response should be ignored
-        let deniedAccess = FolderAccessResult(
-            desktop: .notGranted,
-            documents: .notGranted,
-            downloads: .notGranted,
-        )
-        await store.send(.helperFolderAccessRefreshLoaded(1, deniedAccess))
+        await store.send(.helperFolderAccessRefreshLoaded(1, kDeniedHelperAccess))
         // State should NOT change - stale generation is ignored
         XCTAssertEqual(store.state.helperFolderAccessStatus, .granted)
         XCTAssertTrue(store.state.isComplete)
@@ -679,7 +605,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            $0.launchAtLoginClient = PermissionClients.disabledLaunchAtLogin
         }
 
         await store.send(.launchAtLoginToggled(true)) { state in
@@ -768,10 +694,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: initialState) {
             PermissionsFeature()
         } withDependencies: {
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
         }
 
         await store.send(.requestHelperFolderAccessTapped) { state in
@@ -805,10 +728,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { partialAccess },
-                requestAccess: { partialAccess },
-            )
+            $0.helperFolderAccessClient = PermissionClients.deniedHelper(partialAccess)
         }
 
         await store.send(.requestHelperFolderAccessTapped) { state in
@@ -863,11 +783,6 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
     /// - 사전 조건: 의존성 기본값.
     /// - 기대 결과: nextDisabledMessage에 헬퍼 접근 안내 메시지, isComplete == false.
     func testHelperAccessBlocksNextWhenNotGranted() async {
-        let deniedAccess = FolderAccessResult(
-            desktop: .notGranted,
-            documents: .notGranted,
-            downloads: .notGranted,
-        )
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         }
@@ -875,7 +790,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
             state.fullDiskAccessStatus = .granted
         }
-        await store.send(.helperFolderAccessStatusLoaded(deniedAccess))
+        await store.send(.helperFolderAccessStatusLoaded(kDeniedHelperAccess))
 
         XCTAssertEqual(
             store.state.nextDisabledMessage,
@@ -961,7 +876,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            $0.launchAtLoginClient = PermissionClients.disabledLaunchAtLogin
         }
 
         await store.send(.helperFolderAccessStatusLoaded(kGrantedHelperAccess)) { state in
@@ -991,72 +906,6 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         await store.finish()
     }
 
-    /// ONB-003-request_onboarding_permission_access: FDA required gate가 미충족일 때 Next 버튼 상태를 계산하면 nextDisabledMessage로
-    /// 차단 이유를 제공한다.
-    /// FDA가 `.needsAction`일 때 헬퍼가 허용되더라도 Next가 차단됨을 검증합니다.
-    ///
-    /// - 검증 내용: 헬퍼 폴더 `kGrantedHelperAccess`가 이미 로드되었더라도
-    ///   FDA가 `.needsAction`이면 nextDisabledMessage가 "Turn on Full Disk Access to continue."
-    ///   이고 isComplete == false입니다. FDA는 선행 필수 권한입니다.
-    /// - 사전 조건: 의존성 기본값.
-    /// - 기대 결과: nextDisabledMessage에 FDA 안내 메시지, isComplete == false.
-    func testFDARequiredGateBlocksNextButton() async {
-        let store = TestStore(initialState: PermissionsFeature.State()) {
-            PermissionsFeature()
-        }
-
-        await store.send(.helperFolderAccessStatusLoaded(kGrantedHelperAccess)) { state in
-            state.helperFolderAccess = kGrantedHelperAccess
-            state.helperFolderAccessError = nil
-            state.isComplete = false
-        }
-
-        await store.send(.fullDiskAccessStatusResponse(.needsAction)) { state in
-            state.fullDiskAccessStatus = .needsAction
-            state.isComplete = false
-        }
-
-        XCTAssertEqual(store.state.nextDisabledMessage, "Turn on Full Disk Access to continue.")
-        XCTAssertFalse(store.state.isComplete)
-
-        await store.finish()
-    }
-
-    /// ONB-003-request_onboarding_permission_access: helper folder required gate가 미충족일 때 Next 버튼 상태를 계산하면
-    /// nextDisabledMessage로 차단 이유를 제공한다.
-    /// 헬퍼 폴더 접근이 미허용이면 FDA가 허용되어도 Next가 차단됨을 검증합니다.
-    ///
-    /// - 검증 내용: FDA `.granted` + 헬퍼 폴더 전체 `.notGranted` 조합에서
-    ///   isComplete == false이고 nextDisabledMessage에 헬퍼 접근 안내 메시지가 표시됩니다.
-    ///   헬퍼 폴더 접근은 FDA와 독립적인 필수 권한입니다.
-    /// - 사전 조건: 의존성 기본값.
-    /// - 기대 결과: isComplete == false, nextDisabledMessage에 헬퍼 안내.
-    func testHelperFolderAccessRequiredGateBlocksNext() async {
-        let deniedAccess = FolderAccessResult(
-            desktop: .notGranted,
-            documents: .notGranted,
-            downloads: .notGranted,
-        )
-        let store = TestStore(initialState: PermissionsFeature.State()) {
-            PermissionsFeature()
-        }
-
-        await store.send(.fullDiskAccessStatusResponse(.granted)) { state in
-            state.fullDiskAccessStatus = .granted
-            state.isComplete = false
-        }
-
-        await store.send(.helperFolderAccessStatusLoaded(deniedAccess))
-
-        XCTAssertFalse(store.state.isComplete)
-        XCTAssertEqual(
-            store.state.nextDisabledMessage,
-            "Grant VoyagerHelper access to Desktop, Documents, and Downloads to continue.",
-        )
-
-        await store.finish()
-    }
-
     /// ONB-003-request_onboarding_permission_access: launch-at-login만 미충족/disabled일 때 FDA/helper가 충족되면 completion을
     /// 허용한다.
     /// 필수 권한(FDA + 헬퍼) 충족 시 로그인 시 실행이 비활성화되어도 isComplete == true임을 검증합니다.
@@ -1070,12 +919,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
-            $0.fullDiskAccessClient = FullDiskAccessClient(status: { .granted })
-            $0.helperFolderAccessClient = HelperFolderAccessClient(
-                checkAccess: { kGrantedHelperAccess },
-                requestAccess: { kGrantedHelperAccess },
-            )
-            $0.launchAtLoginClient = LaunchAtLoginClient(isEnabled: { false }, setEnabled: { _ in })
+            PermissionClients.allGranted(&$0)
         }
 
         await store.send(.onAppear)
@@ -1090,7 +934,6 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         }
         await store.receive(\.launchAtLoginStateLoaded)
 
-        // 필수 권한(FDA + 헬퍼) 모두 허용, 로그인 시 실행은 비활성화 → 온보딩 완료 가능
         XCTAssertTrue(store.state.isComplete)
         XCTAssertFalse(store.state.launchAtLoginEnabled)
         XCTAssertNil(store.state.nextDisabledMessage)
