@@ -28,7 +28,7 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
         }
     }
 
-    // MARK: - FMW-001-toggleSidebar
+    // MARK: - Sidebar Routing
 
     /// FMW-001-toggleSidebar: 사이드바 토글 명령 라우팅
     /// toggleSidebar 요청이 sidebar 리듀서로 전달되는지 검증.
@@ -62,7 +62,7 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - FMW-001-navigation
+    // MARK: - Navigation Routing
 
     /// FMW-001-goBack: 뒤로 가기 명령 라우팅
     /// goBack 요청이 navigation 리듀서로 전달되는지 검증.
@@ -103,13 +103,13 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - FMW-001-selectionDependent
+    // MARK: - No-Op Guard
 
     /// FMW-001-openSelectedItem: 선택 항목 없을 때 openSelectedItem no-op
-    /// 선택 항목이 없을 때 openSelectedItem 요청이 no-op인지 검증.
-    /// - 검증 내용: request(.openSelectedItem) 전송 후 수신 액션 없음
+    /// 선택 항목이 없을 때 openSelectedItem 요청이 하위 리듀서로 전달되지 않고 no-op인지 검증.
+    /// - 검증 내용: request(.openSelectedItem) 전송 후 하위 리듀서 수신(downstream receive) 없음
     /// - 사전 조건: 기본 상태 (선택 항목 없음)
-    /// - 기대 결과: 수신 액션 없이 finish
+    /// - 기대 결과: 하위 리듀서로의 라우팅 없이 finish (no downstream effect)
     func test_commandWithNoSelection_openSelectedItem_isNoOp() async {
         let store = makeStore()
 
@@ -118,10 +118,10 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
     }
 
     /// FMW-001-quickLookSelectedItem: 선택 항목 없을 때 quickLookSelectedItem no-op
-    /// 선택 항목이 없을 때 quickLookSelectedItem 요청이 no-op인지 검증.
-    /// - 검증 내용: request(.quickLookSelectedItem) 전송 후 수신 액션 없음
+    /// 선택 항목이 없을 때 quickLookSelectedItem 요청이 하위 리듀서로 전달되지 않고 no-op인지 검증.
+    /// - 검증 내용: request(.quickLookSelectedItem) 전송 후 하위 리듀서 수신(downstream receive) 없음
     /// - 사전 조건: 기본 상태 (선택 항목 없음)
-    /// - 기대 결과: 수신 액션 없이 finish
+    /// - 기대 결과: 하위 리듀서로의 라우팅 없이 finish (no downstream effect)
     func test_commandWithNoSelection_quickLookSelectedItem_isNoOp() async {
         let store = makeStore()
 
@@ -129,13 +129,13 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - FMW-001-isolation
+    // MARK: - Invariance
 
     /// FMW-001-goBack: 명령 라우팅 시 관련 없는 윈도우 상태 불변 (navigation)
-    /// goBack 라우팅이 sidebar, inspector 등 관련 없는 상태를 변경하지 않는지 검증.
-    /// - 검증 내용: goBack 전송 후 sidebarVisible, sidebarWidth, isFavoritesCollapsed 상태 보존
+    /// goBack 라우팅이 sidebar, inspector 등 관련 없는 상태를 변경하지 않고 불변을 유지하는지 검증.
+    /// - 검증 내용: goBack 전송 후 sidebarVisible, sidebarWidth, isFavoritesCollapsed 상태 보존 (unchanged state)
     /// - 사전 조건: sidebarVisible=true, sidebarWidth=250, isFavoritesCollapsed=true
-    /// - 기대 결과: 관련 없는 상태 필드 변화 없이 goBack만 수신
+    /// - 기대 결과: 관련 없는 상태 필드 변화 없이 goBack만 수신 (invariance)
     func test_commandRouting_doesNotMutateUnrelatedWindowState_navigation() async {
         var initialState = FileManagerWindowState()
         initialState.sidebar.sidebarVisible = true
@@ -150,10 +150,10 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
     }
 
     /// FMW-001-toggleSidebar: 명령 라우팅 시 관련 없는 윈도우 상태 불변 (sidebar toggle)
-    /// toggleSidebar 라우팅이 inspector 등 관련 없는 상태를 변경하지 않는지 검증.
-    /// - 검증 내용: toggleSidebar 전송 후 inspectorVisible 상태 보존
+    /// toggleSidebar 라우팅이 inspector 등 관련 없는 상태를 변경하지 않고 불변을 유지하는지 검증.
+    /// - 검증 내용: toggleSidebar 전송 후 inspectorVisible 상태 보존 (unchanged state)
     /// - 사전 조건: inspectorVisible=true
-    /// - 기대 결과: inspector 상태 변화 없이 setSidebarVisible만 수신
+    /// - 기대 결과: inspector 상태 변화 없이 setSidebarVisible만 수신 (invariance)
     func test_commandRouting_doesNotMutateUnrelatedWindowState_sidebarToggle() async {
         var initialState = FileManagerWindowState()
         initialState.inspector.inspectorVisible = true
@@ -165,7 +165,7 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - FMW-001-undoRedo
+    // MARK: - Undo/Redo Routing
 
     /// FMW-001-requestUndo: undo 명령 라우팅
     /// requestUndo 요청이 entryOperations undoRedo 리듀서로 전달되는지 검증.
@@ -193,7 +193,7 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - FMW-001-composer
+    // MARK: - Composer Routing
 
     /// FMW-001-toggleComposer: 컴포저 토글 명령 라우팅
     /// toggleComposer 요청이 content.composer 리듀서로 전달되는지 검증.
