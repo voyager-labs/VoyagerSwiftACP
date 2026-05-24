@@ -9,46 +9,6 @@ import XCTest
 final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     private typealias SidebarWidth = FMW002PaneTestSupport.SidebarWidth
 
-    // MARK: - Helper: 사이드바 TestStore 생성
-
-    private func makeSidebarStore(
-        initialState: FileManagerSidebarState = FileManagerSidebarState(),
-    ) -> TestStore<FileManagerSidebarState, FileManagerSidebarAction> {
-        TestStore(initialState: initialState) {
-            FileManagerSidebarFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = .testValue
-        }
-    }
-
-    private func makeInspectorStore(
-        initialState: FileManagerInspectorState = FileManagerInspectorState(),
-    ) -> TestStore<FileManagerInspectorState, FileManagerInspectorAction> {
-        TestStore(initialState: initialState) {
-            FileManagerInspectorFeature()
-        }
-    }
-
-    private func makeSidebarState(
-        visible: Bool = true,
-        width: CGFloat = SidebarWidth.defaultValue,
-    ) -> FileManagerSidebarState {
-        var state = FileManagerSidebarState()
-        state.sidebarVisible = visible
-        state.sidebarWidth = width
-        return state
-    }
-
-    private func makeInspectorState(
-        visible: Bool = false,
-        paneExists: Bool = false,
-    ) -> FileManagerInspectorState {
-        var state = FileManagerInspectorState()
-        state.inspectorVisible = visible
-        state.inspectorPaneExists = paneExists
-        return state
-    }
-
     // MARK: - FMW-002-show_sidebar / FMW-002-hide_sidebar
 
     /// FMW-002-show_sidebar: 사이드바 표시 액션이 sidebarVisible을 true로 설정
@@ -57,7 +17,8 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: sidebarVisible == false
     /// - 기대 결과: state.sidebarVisible == true
     func test_showSidebar_setsSidebarVisible() async {
-        let store = makeSidebarStore(initialState: makeSidebarState(visible: false))
+        let store = FMW002PaneTestSupport
+            .makeSidebarStore(initialState: FMW002PaneTestSupport.makeSidebarState(visible: false))
 
         await store.send(.view(.setSidebarVisible(true))) { state in
             state.sidebarVisible = true
@@ -72,7 +33,8 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: sidebarVisible == true
     /// - 기대 결과: state.sidebarVisible == false
     func test_hideSidebar_setsSidebarHidden() async {
-        let store = makeSidebarStore(initialState: makeSidebarState(visible: true))
+        let store = FMW002PaneTestSupport
+            .makeSidebarStore(initialState: FMW002PaneTestSupport.makeSidebarState(visible: true))
 
         await store.send(.view(.setSidebarVisible(false))) { state in
             state.sidebarVisible = false
@@ -87,7 +49,8 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: sidebarVisible == true
     /// - 기대 결과: 최종 sidebarVisible == true
     func test_repeatedToggle_returnsToOriginalState() async {
-        let store = makeSidebarStore(initialState: makeSidebarState(visible: true))
+        let store = FMW002PaneTestSupport
+            .makeSidebarStore(initialState: FMW002PaneTestSupport.makeSidebarState(visible: true))
 
         await store.send(.view(.setSidebarVisible(false))) { state in
             state.sidebarVisible = false
@@ -121,7 +84,8 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: sidebarWidth == defaultValue (220)
     /// - 기대 결과: state.sidebarWidth == inRange (250)
     func test_sidebarWidth_withinAllowedRange_appliesValue() async {
-        let store = makeSidebarStore(initialState: makeSidebarState(width: SidebarWidth.defaultValue))
+        let store = FMW002PaneTestSupport
+            .makeSidebarStore(initialState: FMW002PaneTestSupport.makeSidebarState(width: SidebarWidth.defaultValue))
 
         await store.send(.view(.setSidebarWidth(SidebarWidth.inRange))) { state in
             state.sidebarWidth = SidebarWidth.inRange
@@ -136,7 +100,8 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: sidebarWidth == defaultValue (220)
     /// - 기대 결과: state.sidebarWidth == min (150)
     func test_sidebarWidth_belowMinimum_clampsToMinimum() async {
-        let store = makeSidebarStore(initialState: makeSidebarState(width: SidebarWidth.defaultValue))
+        let store = FMW002PaneTestSupport
+            .makeSidebarStore(initialState: FMW002PaneTestSupport.makeSidebarState(width: SidebarWidth.defaultValue))
 
         // belowMinimum은 min 미만이므로 min으로 클램프된다.
         await store.send(.view(.setSidebarWidth(SidebarWidth.belowMinimum))) { state in
@@ -152,7 +117,8 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: sidebarWidth == defaultValue (220)
     /// - 기대 결과: state.sidebarWidth == max (400)
     func test_sidebarWidth_aboveMaximum_clampsToMaximum() async {
-        let store = makeSidebarStore(initialState: makeSidebarState(width: SidebarWidth.defaultValue))
+        let store = FMW002PaneTestSupport
+            .makeSidebarStore(initialState: FMW002PaneTestSupport.makeSidebarState(width: SidebarWidth.defaultValue))
 
         // aboveMaximum은 max 초과이므로 max로 클램프된다.
         await store.send(.view(.setSidebarWidth(SidebarWidth.aboveMaximum))) { state in
@@ -170,7 +136,8 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: inspectorVisible == false
     /// - 기대 결과: state.inspectorVisible == true
     func test_showInspector_setsInspectorVisible() async {
-        let store = makeInspectorStore(initialState: makeInspectorState(visible: false))
+        let store = FMW002PaneTestSupport
+            .makeInspectorStore(initialState: FMW002PaneTestSupport.makeInspectorState(visible: false))
 
         await store.send(.toggleInspector) { state in
             state.inspectorVisible = true
@@ -185,7 +152,8 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: inspectorVisible == true
     /// - 기대 결과: state.inspectorVisible == false
     func test_hideInspector_setsInspectorHidden() async {
-        let store = makeInspectorStore(initialState: makeInspectorState(visible: true))
+        let store = FMW002PaneTestSupport
+            .makeInspectorStore(initialState: FMW002PaneTestSupport.makeInspectorState(visible: true))
 
         await store.send(.toggleInspector) { state in
             state.inspectorVisible = false
@@ -201,7 +169,7 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 기대 결과: toggleInspector 후 inspectorVisible=true, setInspectorPaneExists 후 inspectorPaneExists=true (크래시 없음)
     func test_noSelection_inspectorSafety_doesNotCrash() async {
         // no-selection 상태: inspectorVisible=false, inspectorPaneExists=false
-        let store = makeInspectorStore(initialState: makeInspectorState())
+        let store = FMW002PaneTestSupport.makeInspectorStore(initialState: FMW002PaneTestSupport.makeInspectorState())
 
         // toggleInspector 동작이 크래시 없이 정상 동작
         await store.send(.toggleInspector) { state in
@@ -228,10 +196,10 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     func test_sidebarToggle_doesNotAffectInspector() async {
         // 사이드바와 인스펙터는 독립 리듀서이므로
         // 사이드바 상태 변화가 인스펙터 상태에 영향을 주지 않음을 검증
-        let sidebarState = makeSidebarState(visible: true)
-        let inspectorState = makeInspectorState()
+        let sidebarState = FMW002PaneTestSupport.makeSidebarState(visible: true)
+        let inspectorState = FMW002PaneTestSupport.makeInspectorState()
 
-        let sidebarStore = makeSidebarStore(initialState: sidebarState)
+        let sidebarStore = FMW002PaneTestSupport.makeSidebarStore(initialState: sidebarState)
 
         // 사이드바 토글
         await sidebarStore.send(.view(.setSidebarVisible(false))) { state in
@@ -250,8 +218,9 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
     /// - 사전 조건: sidebarVisible=true (기본값), inspectorVisible=false
     /// - 기대 결과: sidebarState.sidebarVisible == true, sidebarState.sidebarWidth == defaultValue 유지 (독립 인스턴스 불변 단언)
     func test_inspectorToggle_doesNotAffectSidebar() async {
-        let sidebarState = makeSidebarState()
-        let inspectorStore = makeInspectorStore(initialState: makeInspectorState(visible: false))
+        let sidebarState = FMW002PaneTestSupport.makeSidebarState()
+        let inspectorStore = FMW002PaneTestSupport
+            .makeInspectorStore(initialState: FMW002PaneTestSupport.makeInspectorState(visible: false))
 
         // 인스펙터 토글
         await inspectorStore.send(.toggleInspector) { state in
