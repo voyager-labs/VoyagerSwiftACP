@@ -27,7 +27,7 @@ Do not use this workflow only to select or run existing tests; use `../../testin
 - Spec suite file/class: `<SpecID><PascalCaseSpecTitle>Tests.swift`.
 - Do **not** append `FeatureTests` to new spec AC suites.
 - Put executable spec tests under `Tests/<TestTargetName>/Specs/` when establishing or cleaning topology.
-- Put fixtures, recorders, dependency doubles, builders, and helper assertions under `Tests/<TestTargetName>/Support/`.
+- Put fixtures, recorders, dependency doubles, builders, and helper assertions under `Tests/<TestTargetName>/Support/` as flat files named by role/type, not by spec ID.
 - Keep product behavior in the spec suite. Support files must never become behavior owners.
 
 ### 3. Author interaction AC methods
@@ -58,8 +58,8 @@ After authoring, load `../../testing/references/testing-playbook.md` and run the
 Example:
 
 ```bash
-xcrun swift test --package-path apps/macos/Packages/02_Pages/Onboarding \
-  --filter ONB004FinishOnboardingTests
+xcrun swift test --package-path <package-path> \
+  --filter <SpecID><PascalCaseSpecTitle>Tests
 ```
 
 ## Checklist
@@ -89,10 +89,9 @@ Tests/VoyagerFeaturesPaymentTests/
 ├── Specs/
 │   └── PAY002ConfirmPaymentTests.swift
 └── Support/
-    ├── PAY002/
-    │   ├── PAY002PaymentFixtures.swift
-    │   └── PAY002PaymentRecorders.swift
-    └── Shared/
+    ├── PaymentFixtures.swift
+    ├── PaymentRecorders.swift
+    └── PaymentClients.swift
 ```
 
 Inside `PAY002ConfirmPaymentTests.swift`:
@@ -161,7 +160,7 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Mixing fixtures and executable assertions in the same support file                     | Keep support files limited to infrastructure; assertions live in spec suites.       |
 | Documenting test intent with plain `//` method comments                                | Use the required `///` traceability shape before every interaction test method.     |
 | Adding `TestStore.send` mutation closures for actions that do not change state         | Omit the closure and assert external effects or unchanged state separately.         |
-| Using the test target name as the SwiftPM filter                                       | Filter by suite class, such as `--filter ONB004FinishOnboardingTests`.              |
+| Using the test target name as the SwiftPM filter                                       | Filter by suite class, such as `--filter <SpecID><PascalCaseSpecTitle>Tests`.       |
 
 ## Quick reference
 
@@ -171,5 +170,5 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Interaction layout        | `// MARK: - <spec-id>-<interaction_id>` inside owning suite                           |
 | Method doc comment        | `/// <SPEC-ID>-<interaction_id>: <scenario>` + intent + 검증 내용/사전 조건/기대 결과 |
 | Product behavior location | Owning spec suite under `Specs/`                                                      |
-| Fixture/recorder location | `Support/<SpecID>/` or `Support/Shared/`                                              |
+| Fixture/recorder location | Flat files under `Support/`, named by role/type such as `PaymentFixtures.swift`       |
 | Verification handoff      | `../../testing/SKILL.md` with focused class filter                                    |

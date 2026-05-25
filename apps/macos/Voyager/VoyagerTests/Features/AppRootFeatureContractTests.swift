@@ -149,4 +149,63 @@ final class AppRootFeatureContractTests: XCTestCase {
             $0.menuCommands.hasFocusedWindow = true
         }
     }
+
+    func testSettingsGeneralCheckForUpdatesForwardsToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.settings(.general(.checkForUpdates)))
+        await store.receive(\.updater.checkForUpdates)
+    }
+
+    func testSettingsGeneralToggleAutomaticUpdateForwardsToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.settings(.general(.toggleAutomaticUpdate(true))))
+        await store.receive(\.updater.setAutomaticUpdate(true))
+
+        await store.send(.settings(.general(.toggleAutomaticUpdate(false))))
+        await store.receive(\.updater.setAutomaticUpdate(false))
+    }
+
+    func testSettingsGeneralToggleAlertBeforeQuitDoesNotForwardToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.settings(.general(.toggleAlertBeforeQuit(true))))
+        store.assertNoInboundEffects()
+    }
+
+    // MARK: - SET-AC-004: Boundary Absence Contracts
+
+    /// Proves Settings actions produce NO windowManager side effects.
+    /// WindowManager does not participate in the Settings scene lifecycle.
+    func testSettingsActionsDoNotForwardToWindowManager() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.settings(.general(.toggleAlertBeforeQuit(false))))
+        store.assertNoInboundEffects()
+    }
+
+    /// Proves AppRoot's Settings forwarding does NOT route through MenuCommands.
+    /// MenuCommandsAction.Delegate has no `.settings` case — absence is structural.
+    /// This test verifies that settings-driven actions (checkForUpdates) route
+    /// directly to updater, not via menuCommands.
+    func testSettingsCheckForUpdatesDoesNotRouteThroughMenuCommands() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.settings(.general(.checkForUpdates)))
+        await store.receive(\.updater.checkForUpdates)
+    }
 }

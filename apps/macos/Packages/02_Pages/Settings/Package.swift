@@ -1,6 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
+// swiftlint:disable:next prefixed_toplevel_constant
 let package = Package(
     name: "VoyagerPagesSettings",
     platforms: [
@@ -26,15 +27,16 @@ let package = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Perception", package: "swift-perception"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerPagesSettingsTests",
             dependencies: [
                 "VoyagerPagesSettings",
+                .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
-            ]
+            ],
         ),
-    ]
+    ],
 )

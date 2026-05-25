@@ -24,4 +24,13 @@ One spec = one owning test suite named `<SpecID><PascalCaseSpecTitle>Tests.swift
 6. Put interaction AC scenarios inside the owning suite as `// MARK: - <spec-id>-<interaction_id>` sections.
 7. Before every executable interaction test method, write a `///` doc comment using the required traceability shape: first line `<SPEC-ID>-<interaction_id>: <scenario>`, then one intent sentence, then `- 검증 내용`, `- 사전 조건`, and `- 기대 결과` bullets.
 8. Put fixtures, recorders, dependency doubles, builders, and helper assertions under `Support/`; support files must not own product behavior.
-9. After authoring, hand off to `../testing/SKILL.md` for focused command selection, execution, failure analysis, and reruns; the initial filter should target the suite class such as `--filter ONB004FinishOnboardingTests`, not `--filter VoyagerPagesOnboardingTests`.
+9. After authoring, hand off to `../testing/SKILL.md` for focused command selection, execution, failure analysis, and reruns; the initial filter should target the suite class such as `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
+
+## Second-pass rules
+
+These rules codify patterns discovered during spec-test hardening (VOY-356). Load the referenced files for full detail.
+
+1. **Canonical `// MARK` format**: Headings must match `// MARK: - [A-Z]{2,4}-\d{3}-[a-z0-9_]+`. No Korean text, descriptions, or parenthetical notes. See `references/spec-test-topology.md` section "Section rules".
+2. **`store.exhaustivity = .off` rationale**: Every override needs an adjacent Korean rationale comment. See `references/tca-test-authoring.md` section "Exhaustivity".
+3. **`store.finish()` selective criteria**: Apply only for fire-and-forget effects and unconsumed async lifecycles. See `references/tca-test-authoring.md` section "`store.finish()` application criteria".
+4. **Flat Support naming**: Keep support files directly under `Support/` and name them by role/type, not by spec ID or subdirectory. See `references/spec-test-topology.md` section "Support rules".
