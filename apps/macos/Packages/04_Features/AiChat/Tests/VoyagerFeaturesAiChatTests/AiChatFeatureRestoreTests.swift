@@ -416,6 +416,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
 
         await store.send(.startNewChatFromRebindTapped) { state in
             state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
             state.sessionStatus = .idle
             state.mode = .chat
             state.restoreSessionID = nil
@@ -449,6 +450,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
 
         await store.receive(.newChatCreated(expectedSnapshot)) { state in
             state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
             state.sessionStatus = .idle
             state.transcriptHistory = []
             state.streamingAssistantDraft = nil

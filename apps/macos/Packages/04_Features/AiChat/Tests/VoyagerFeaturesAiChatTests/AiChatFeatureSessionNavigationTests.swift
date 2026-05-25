@@ -63,6 +63,195 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         XCTAssertEqual(store.state.addedAttachments, [attachment])
         XCTAssertEqual(store.state.sessionList.selectedSessionID, selectedSessionID)
     }
+
+    func testBackToSessionsDeletesUntouchedNewChatDraft() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333"))
+        let summary = makeSessionSummary(sessionID: sessionID, status: .idle)
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: sessionID,
+            mode: .chat,
+            sessionList: .init(
+                allRows: [summary],
+                selectedSessionID: sessionID
+            ),
+            sessionID: sessionID,
+            emptyDraftSessionID: sessionID,
+            sessionStatus: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
+                }
+            )
+        }
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+            state.emptyDraftSessionID = nil
+            state.sessionID = nil
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.sessionList.allRows = []
+            state.sessionList.rows = []
+        }
+
+        XCTAssertEqual(deletedSessionIDs.value, [sessionID])
+    }
+
+    func testBackToSessionsDeletesNewChatDraftAfterTypingWithoutSending() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444"))
+        let summary = makeSessionSummary(sessionID: sessionID, status: .idle)
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: sessionID,
+            mode: .chat,
+            sessionList: .init(
+                allRows: [summary],
+                selectedSessionID: sessionID
+            ),
+            sessionID: sessionID,
+            emptyDraftSessionID: sessionID,
+            sessionStatus: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
+                }
+            )
+        }
+
+        await store.send(.draftTextChanged("Do not keep unsent draft")) { state in
+            state.draftText = "Do not keep unsent draft"
+        }
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+            state.emptyDraftSessionID = nil
+            state.sessionID = nil
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.sessionList.allRows = []
+            state.sessionList.rows = []
+        }
+
+        XCTAssertEqual(deletedSessionIDs.value, [sessionID])
+    }
+
+    func testBackToSessionsDeletesNewChatDraftAfterModelSelectionWithoutSending() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666"))
+        let model = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let summary = makeSessionSummary(sessionID: sessionID, status: .idle)
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: sessionID,
+            mode: .chat,
+            sessionList: .init(
+                allRows: [summary],
+                selectedSessionID: sessionID
+            ),
+            sessionID: sessionID,
+            emptyDraftSessionID: sessionID,
+            sessionStatus: .idle,
+            selectedModelHandle: model
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
+                }
+            )
+        }
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+            state.emptyDraftSessionID = nil
+            state.sessionID = nil
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.sessionList.allRows = []
+            state.sessionList.rows = []
+        }
+
+        XCTAssertEqual(deletedSessionIDs.value, [sessionID])
+    }
+
+    func testBackToSessionsSurfacesEmptyDraftDeleteFailure() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555"))
+        let summary = makeSessionSummary(sessionID: sessionID, status: .idle)
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: sessionID,
+            mode: .chat,
+            sessionList: .init(
+                allRows: [summary],
+                selectedSessionID: sessionID
+            ),
+            sessionID: sessionID,
+            emptyDraftSessionID: sessionID,
+            sessionStatus: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in
+                    throw AiChatSessionPersistenceClientError.applicationSupportDirectoryUnavailable
+                }
+            )
+        }
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+            state.emptyDraftSessionID = nil
+            state.sessionID = nil
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.receive(.sessionDeleteFailed(sessionID, "That chat could not be deleted right now.")) { state in
+            state.sessionList.errorMessage = "That chat could not be deleted right now."
+        }
+
+        XCTAssertEqual(store.state.sessionList.allRows, [summary])
+    }
+
 }
 
 private func makeSessionSummary(

@@ -14,6 +14,7 @@ public struct AiChatFeature {
         case modelList
         case sessionList
         case sessionDelete
+        case sessionRename
         case newChat
     }
 
@@ -66,6 +67,8 @@ public struct AiChatFeature {
                 return .none
 
             case let .sessionRowTapped(sessionID):
+                state.emptyDraftSessionID = nil
+                state.sessionList.cancelRenaming()
                 state.mode = .sessions
                 state.sessionList.selectedSessionID = sessionID
                 state.sessionList.errorMessage = nil
@@ -74,6 +77,9 @@ public struct AiChatFeature {
 
             case let .deleteSessionTapped(sessionID):
                 state.sessionList.errorMessage = nil
+                if state.sessionList.renamingSessionID == sessionID {
+                    state.sessionList.cancelRenaming()
+                }
                 if state.restoreSessionID == sessionID {
                     state.restoreSessionID = nil
                     state.restoreOutcome = nil
@@ -86,9 +92,52 @@ public struct AiChatFeature {
                 }
                 return deleteSession(sessionID)
 
+            case let .renameSessionTapped(sessionID):
+                state.sessionList.errorMessage = nil
+                state.sessionList.beginRenaming(sessionID: sessionID)
+                return .none
+
+            case let .renameSessionTitleChanged(title):
+                state.sessionList.renameDraftText = title
+                return .none
+
+            case .renameSessionCancelled:
+                state.sessionList.cancelRenaming()
+                state.sessionList.errorMessage = nil
+                return .none
+
+            case .renameSessionConfirmed:
+                guard let sessionID = state.sessionList.renamingSessionID else { return .none }
+                let title = state.sessionList.renameDraftText
+                state.sessionList.errorMessage = nil
+                return renameSession(sessionID: sessionID, title: title)
+
+            case let .sessionRenameSucceeded(summary, customTitle):
+                state.sessionList.replaceRow(summary)
+                if state.sessionID == summary.sessionID {
+                    state.currentSessionCustomTitle = customTitle
+                }
+                state.sessionList.cancelRenaming()
+                state.sessionList.errorMessage = nil
+                return .none
+
+            case let .sessionRenameFailed(_, message):
+                state.sessionList.errorMessage = message
+                return .none
+
             case .backToSessionsTapped:
                 state.mode = .sessions
-                return .none
+                guard let emptyDraftSessionID = cleanupEligibleEmptyDraftSessionID(for: state) else {
+                    return .none
+                }
+                state.emptyDraftSessionID = nil
+                state.sessionID = nil
+                state.restoreSessionID = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.sessionList.selectedSessionID = nil
+                state.sessionList.errorMessage = nil
+                return deleteSession(emptyDraftSessionID)
 
             case let .sessionSearchQueryChanged(query):
                 state.sessionList.updateQuery(query)
@@ -121,6 +170,7 @@ public struct AiChatFeature {
 
             case let .newChatCreated(snapshot):
                 applyNewSessionSnapshot(snapshot, state: &state)
+                state.emptyDraftSessionID = snapshot.sessionID
                 state.restoreSessionID = snapshot.sessionID
                 state.restoreOutcome = nil
                 state.restoreFailure = nil
@@ -130,12 +180,16 @@ public struct AiChatFeature {
                 return .none
 
             case let .newChatFailed(message):
+                state.emptyDraftSessionID = nil
+                state.currentSessionCustomTitle = nil
                 state.mode = .sessions
                 state.sessionList.selectedSessionID = nil
                 state.sessionList.errorMessage = message
                 return .none
 
             case let .setup(setup):
+                state.emptyDraftSessionID = nil
+                state.currentSessionCustomTitle = nil
                 apply(setup: setup, to: &state)
                 normalizeSelectionIfNeeded(&state)
                 guard let restoreSessionID = state.restoreSessionID else { return .none }
@@ -242,7 +296,7 @@ public struct AiChatFeature {
                 return .send(.delegate(.requestAttachmentPicker))
 
             case let .attachmentPickerSelection(urls):
-                addAttachmentDrafts(from: urls, skippingCurrentContextDuplicates: true, state: &state)
+                _ = addAttachmentDrafts(from: urls, skippingCurrentContextDuplicates: true, state: &state)
                 return .none
 
             case let .attachmentDropSelection(urls):
@@ -270,6 +324,7 @@ public struct AiChatFeature {
 
             case .submitTapped:
                 guard state.canSubmit else { return .none }
+                state.emptyDraftSessionID = nil
                 return startRequest(kind: .submit, state: &state)
 
             case .regenerateTapped:
@@ -287,6 +342,7 @@ public struct AiChatFeature {
                 return .cancel(id: CancelID.request)
 
             case .resetTapped:
+                state.emptyDraftSessionID = nil
                 state.restoreSessionID = nil
                 state.restoreOutcome = nil
                 state.restoreFailure = nil
@@ -757,6 +813,20 @@ private extension AiChatFeature {
         return url.standardizedFileURL
     }
 
+
+    func cleanupEligibleEmptyDraftSessionID(for state: State) -> AiChatSessionID? {
+        guard let emptyDraftSessionID = state.emptyDraftSessionID,
+              let sessionID = state.sessionID,
+              emptyDraftSessionID == sessionID,
+              state.sessionStatus == .idle,
+              state.transcriptHistory.isEmpty,
+              state.streamingAssistantDraft == nil,
+              state.lastRequestContext == nil
+        else { return nil }
+
+        return emptyDraftSessionID
+    }
+
     func loadSessions() -> Effect<Action> {
         .run { [aiChatSessionPersistenceClient] send in
             do {
@@ -772,9 +842,11 @@ private extension AiChatFeature {
     func startNewUnselectedChat(state: inout State) -> AiChatSessionSnapshot {
         let sessionID = AiChatSessionID(rawValue: uuid())
         state.sessionID = sessionID
+        state.emptyDraftSessionID = sessionID
         state.sessionStatus = .idle
         state.mode = .chat
         state.restoreSessionID = nil
+        state.currentSessionCustomTitle = nil
         state.restoreOutcome = nil
         state.restoreFailure = nil
         state.sessionList.selectedSessionID = nil
@@ -794,6 +866,7 @@ private extension AiChatFeature {
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .idle,
+            customTitle: nil,
             provider: nil,
             model: nil,
             selectedModelRow: nil,
@@ -816,6 +889,49 @@ private extension AiChatFeature {
             }
         }
         .cancellable(id: CancelID.newChat, cancelInFlight: true)
+    }
+
+
+    func renameSession(sessionID: AiChatSessionID, title: String) -> Effect<Action> {
+        .run { [aiChatSessionPersistenceClient] send in
+            do {
+                guard let snapshot = try await aiChatSessionPersistenceClient.loadSession(sessionID) else {
+                    await send(.sessionRenameFailed(sessionID, Self.sessionRenameFailureMessage(for: nil)))
+                    return
+                }
+                let renamedSnapshot = Self.snapshot(snapshot, renamedTo: title, updatedAtMs: snapshot.updatedAtMs)
+                try await aiChatSessionPersistenceClient.saveSession(renamedSnapshot)
+                await send(.sessionRenameSucceeded(
+                    AiChatSessionSummary(snapshot: renamedSnapshot),
+                    customTitle: renamedSnapshot.customTitle
+                ))
+            } catch {
+                await send(.sessionRenameFailed(sessionID, Self.sessionRenameFailureMessage(for: error)))
+            }
+        }
+        .cancellable(id: CancelID.sessionRename, cancelInFlight: true)
+    }
+
+    static func snapshot(
+        _ snapshot: AiChatSessionSnapshot,
+        renamedTo title: String,
+        updatedAtMs: Int64
+    ) -> AiChatSessionSnapshot {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlankForSessionRename
+        return AiChatSessionSnapshot(
+            sessionID: snapshot.sessionID,
+            status: snapshot.status,
+            customTitle: normalizedTitle,
+            provider: snapshot.provider,
+            model: snapshot.model,
+            selectedModelRow: snapshot.selectedModelRow,
+            selectedThinking: snapshot.selectedThinking,
+            transcriptHistory: snapshot.transcriptHistory,
+            lastRequestID: snapshot.lastRequestID,
+            lastRunID: snapshot.lastRunID,
+            lastRequestContext: snapshot.lastRequestContext,
+            updatedAtMs: updatedAtMs
+        )
     }
 
     func deleteSession(_ sessionID: AiChatSessionID) -> Effect<Action> {
@@ -856,6 +972,19 @@ private extension AiChatFeature {
         }
     }
 
+    static func sessionRenameFailureMessage(for error: Error?) -> String {
+        guard let persistenceError = error as? AiChatSessionPersistenceClientError else {
+            return "That chat could not be renamed."
+        }
+
+        switch persistenceError {
+        case .applicationSupportDirectoryUnavailable:
+            return "That chat could not be renamed right now."
+        case .corruptedRecord:
+            return "That chat could not be renamed because chat history is corrupted."
+        }
+    }
+
     static func sessionDeleteFailureMessage(for error: Error) -> String {
         guard let persistenceError = error as? AiChatSessionPersistenceClientError else {
             return "That chat could not be deleted."
@@ -893,5 +1022,11 @@ private extension AiChatFeature {
             return .folder
         }
         return .file
+    }
+}
+
+private extension String {
+    var nilIfBlankForSessionRename: String? {
+        isEmpty ? nil : self
     }
 }

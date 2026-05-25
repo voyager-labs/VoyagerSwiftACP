@@ -133,6 +133,7 @@ final class AiChatFeatureSessionListTests: XCTestCase {
 
         await store.send(.newChatTapped) { state in
             state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
             state.sessionStatus = .idle
             state.mode = .chat
             state.restoreSessionID = nil
@@ -166,6 +167,7 @@ final class AiChatFeatureSessionListTests: XCTestCase {
 
         await store.receive(.newChatCreated(expectedSnapshot)) { state in
             state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
             state.sessionStatus = .idle
             state.transcriptHistory = []
             state.streamingAssistantDraft = nil
@@ -220,6 +222,7 @@ final class AiChatFeatureSessionListTests: XCTestCase {
 
         await store.send(.newChatTapped) { state in
             state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
             state.sessionStatus = .idle
             state.mode = .chat
             state.restoreSessionID = nil
@@ -253,6 +256,7 @@ final class AiChatFeatureSessionListTests: XCTestCase {
 
         await store.receive(.newChatCreated(expectedSnapshot)) { state in
             state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
             state.sessionStatus = .idle
             state.transcriptHistory = []
             state.streamingAssistantDraft = nil

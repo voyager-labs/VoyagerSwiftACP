@@ -42,6 +42,8 @@ public struct AiChatSessionListState: Equatable, Sendable {
     public var isLoading: Bool
     public var errorMessage: String?
     public var selectedSessionID: AiChatSessionID?
+    public var renamingSessionID: AiChatSessionID?
+    public var renameDraftText: String
 
     public init(
         allRows: [AiChatSessionSummary] = [],
@@ -49,13 +51,17 @@ public struct AiChatSessionListState: Equatable, Sendable {
         query: String = "",
         isLoading: Bool = false,
         errorMessage: String? = nil,
-        selectedSessionID: AiChatSessionID? = nil
+        selectedSessionID: AiChatSessionID? = nil,
+        renamingSessionID: AiChatSessionID? = nil,
+        renameDraftText: String = ""
     ) {
         self.allRows = allRows
         self.query = query
         self.isLoading = isLoading
         self.errorMessage = errorMessage
         self.selectedSessionID = selectedSessionID
+        self.renamingSessionID = renamingSessionID
+        self.renameDraftText = renameDraftText
         self.rows = rows ?? Self.filteredRows(from: allRows, query: query)
     }
 
@@ -75,6 +81,35 @@ public struct AiChatSessionListState: Equatable, Sendable {
         if selectedSessionID == sessionID {
             selectedSessionID = nil
         }
+        if renamingSessionID == sessionID {
+            renamingSessionID = nil
+            renameDraftText = ""
+        }
+    }
+
+    public mutating func replaceRow(_ row: AiChatSessionSummary) {
+        if let index = allRows.firstIndex(where: { $0.sessionID == row.sessionID }) {
+            allRows[index] = row
+        } else {
+            allRows.append(row)
+        }
+        allRows.sort { lhs, rhs in
+            if lhs.updatedAtMs == rhs.updatedAtMs {
+                return lhs.sessionID.rawValue.uuidString < rhs.sessionID.rawValue.uuidString
+            }
+            return lhs.updatedAtMs > rhs.updatedAtMs
+        }
+        rows = Self.filteredRows(from: allRows, query: query)
+    }
+
+    public mutating func beginRenaming(sessionID: AiChatSessionID) {
+        renamingSessionID = sessionID
+        renameDraftText = allRows.first(where: { $0.sessionID == sessionID })?.title ?? ""
+    }
+
+    public mutating func cancelRenaming() {
+        renamingSessionID = nil
+        renameDraftText = ""
     }
 
     static func filteredRows(from rows: [AiChatSessionSummary], query: String) -> [AiChatSessionSummary] {
@@ -97,6 +132,8 @@ public struct AiChatState: Equatable, Sendable {
     public var mode: AiChatMode
     public var sessionList: AiChatSessionListState
     public var sessionID: AiChatSessionID?
+    public var emptyDraftSessionID: AiChatSessionID?
+    public var currentSessionCustomTitle: String?
     public var sessionStatus: AiChatSessionStatus
     public var currentContext: AiChatCurrentContextSnapshot
     public var addedAttachments: [AiChatAttachmentDraft]
@@ -130,6 +167,8 @@ public struct AiChatState: Equatable, Sendable {
         mode: AiChatMode = .sessions,
         sessionList: AiChatSessionListState = .init(),
         sessionID: AiChatSessionID? = nil,
+        emptyDraftSessionID: AiChatSessionID? = nil,
+        currentSessionCustomTitle: String? = nil,
         sessionStatus: AiChatSessionStatus = .idle,
         currentContext: AiChatCurrentContextSnapshot = .init(),
         addedAttachments: [AiChatAttachmentDraft] = [],
@@ -162,6 +201,8 @@ public struct AiChatState: Equatable, Sendable {
         self.mode = mode
         self.sessionList = sessionList
         self.sessionID = sessionID
+        self.emptyDraftSessionID = emptyDraftSessionID
+        self.currentSessionCustomTitle = currentSessionCustomTitle
         self.sessionStatus = sessionStatus
         self.currentContext = currentContext
         self.addedAttachments = addedAttachments
