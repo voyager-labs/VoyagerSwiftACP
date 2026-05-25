@@ -3,9 +3,9 @@ import XCTest
 
 @testable import Voyager
 
-// FMW-001 WindowManagerTests 공용 테스트 서포트
+// WindowManagerTests 공용 테스트 서포트.
 
-enum FMW001WindowManagerTestSupport {
+enum WindowManagerTestSupport {
     enum Spec {
         static let focusedPath = "/focused"
         static let backgroundPath = "/background"

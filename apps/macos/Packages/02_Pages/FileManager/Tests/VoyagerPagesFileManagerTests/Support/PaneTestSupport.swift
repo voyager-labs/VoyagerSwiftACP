@@ -3,11 +3,10 @@ import Foundation
 @testable import VoyagerPagesFileManager
 import XCTest
 
-// FMW-002 패인 관리 테스트 서포트
-// FileManagerSidebarPreferenceReducer의 클램프 상수와 동기화
+// FileManagerSidebarPreferenceReducer의 클램프 상수와 동기화된 패인 테스트 서포트.
 
 @MainActor
-enum FMW002PaneTestSupport {
+enum PaneTestSupport {
     enum SidebarWidth {
         static let min: CGFloat = 150
         static let max: CGFloat = 400
@@ -16,8 +15,6 @@ enum FMW002PaneTestSupport {
         static let belowMinimum: CGFloat = 100
         static let aboveMaximum: CGFloat = 500
     }
-
-    // MARK: - TestStore 팩토리
 
     static func makeSidebarStore(
         initialState: FileManagerSidebarState = FileManagerSidebarState(),
@@ -36,8 +33,6 @@ enum FMW002PaneTestSupport {
             FileManagerInspectorFeature()
         }
     }
-
-    // MARK: - 상태 빌더
 
     static func makeSidebarState(
         visible: Bool = true,
