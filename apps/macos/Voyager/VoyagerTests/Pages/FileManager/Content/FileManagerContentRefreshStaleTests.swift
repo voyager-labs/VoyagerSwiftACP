@@ -9,8 +9,8 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// FileManager content에서 stale 상태 전환과 write-back 경계를 검증한다.
+@MainActor
 final class FileManagerContentRefreshStaleTests: XCTestCase {
     /// testRefreshStaleCollectionStartsRefreshingAndClearsWriteBackFlag 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionStartsRefreshingAndClearsWriteBackFlag() async {

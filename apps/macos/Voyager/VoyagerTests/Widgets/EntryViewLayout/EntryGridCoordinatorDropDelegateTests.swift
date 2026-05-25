@@ -6,8 +6,8 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 드래그/드롭 경로와 시각 상태 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
     /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropOnFolderTileUsesFolderDestinationAndEnablesTargetState() throws {

@@ -5,8 +5,8 @@ import VoyagerEntitiesTag
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 선택 상태 전환과 하이라이트 관련 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
     /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testSelectedNameHighlightWrapsNameLabelWithPadding() throws {

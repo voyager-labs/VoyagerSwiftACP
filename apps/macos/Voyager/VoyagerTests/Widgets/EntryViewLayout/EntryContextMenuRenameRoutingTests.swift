@@ -5,8 +5,8 @@ import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 import XCTest
 
-@MainActor
 /// 이름 변경(리네임) 동작 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryContextMenuRenameRoutingTests: XCTestCase {
     // MARK: - 도우미
 

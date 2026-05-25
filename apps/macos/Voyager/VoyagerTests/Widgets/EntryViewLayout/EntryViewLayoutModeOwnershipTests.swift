@@ -3,8 +3,8 @@ import ComposableArchitecture
 import VoyagerFeaturesContentPageNavigation
 import XCTest
 
-@MainActor
 /// 레이아웃 모드 상태 인코딩 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryViewLayoutModeOwnershipTests: XCTestCase {
     // MARK: - 모드 원시값 테스트
 

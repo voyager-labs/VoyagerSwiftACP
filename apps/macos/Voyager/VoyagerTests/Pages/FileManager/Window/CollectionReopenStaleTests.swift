@@ -9,8 +9,8 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// FileManager에서 staleness 복구/재오픈 시 페이지 상태 계약이 유지되는지 검증한다.
+@MainActor
 final class CollectionReopenStaleTests: XCTestCase {
     /// testOpenCollectionFileRestoresStaleStateFromStalenessClient 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenCollectionFileRestoresStaleStateFromStalenessClient() async {

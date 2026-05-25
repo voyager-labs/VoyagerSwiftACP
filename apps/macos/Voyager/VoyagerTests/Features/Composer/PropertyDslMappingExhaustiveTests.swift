@@ -5,8 +5,8 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 속성→연산자 DSL 매핑 — 모든 비-NSURL 속성에 대한 완전성을 검증.
+@MainActor
 final class PropertyDslMappingExhaustiveTests: XCTestCase {
     /// testAllNonNSURLPropertiesHaveValidOperatorMapping 테스트 동작을 검증한다.
     func testAllNonNSURLPropertiesHaveValidOperatorMapping() {

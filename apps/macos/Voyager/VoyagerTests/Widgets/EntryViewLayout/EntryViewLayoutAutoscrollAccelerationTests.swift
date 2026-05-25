@@ -1,8 +1,8 @@
 @testable import Voyager
 import XCTest
 
-@MainActor
 /// 위젯 동작의 회귀를 빠르게 검출하기 위한 테스트 모음이다.
+@MainActor
 final class EntryViewLayoutAutoscrollAccelTests: XCTestCase {
     /// 테스트 시나리오 회귀를 방지하기 위한 동작을 검증한다.
     func testDeltaIsZeroForZeroOrInvalidDistance() {

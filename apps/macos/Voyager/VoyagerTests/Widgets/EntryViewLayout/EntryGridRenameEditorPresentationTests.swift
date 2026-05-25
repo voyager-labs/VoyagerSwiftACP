@@ -2,8 +2,8 @@ import AppKit
 @testable import Voyager
 import XCTest
 
-@MainActor
 /// 이름 변경(리네임) 동작 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryGridRenameEditorPresentationTests: XCTestCase {
     // MARK: - 이름 변경 중 단일 행 인라인 편집기
 

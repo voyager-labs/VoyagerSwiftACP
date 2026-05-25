@@ -4,8 +4,8 @@ import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesComposer
 import XCTest
 
-@MainActor
 /// 값 정규화 유틸 — 텍스트/숫자/날짜/토글 및 범위 입력 정규화 규칙을 검증.
+@MainActor
 final class ValueNormalizerUtilsTests: XCTestCase {
     func testNormalizeNoneAlwaysReturnsEmptyValues() {
         let result = ValueNormalizerUtils.normalize(

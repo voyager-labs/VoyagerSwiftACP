@@ -6,8 +6,8 @@ import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
 
-@MainActor
 /// 콘텐츠 엔트리 조작 브릿지 — 컬렉션 모드 및 저장 자격 조건 판별을 검증.
+@MainActor
 final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
     /// testIsCollectionModeOnLayoutState 테스트 동작을 검증한다.
     func testIsCollectionModeOnLayoutState() {

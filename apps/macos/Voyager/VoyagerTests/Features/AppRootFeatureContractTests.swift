@@ -5,8 +5,8 @@ import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
 import XCTest
 
-@MainActor
 /// 앱 루트 계약 — 최상위 라우팅과 델리게이트 전달을 검증.
+@MainActor
 final class AppRootFeatureContractTests: XCTestCase {
     /// testAppPreferencesUpdatedForwardsToWindowManagerApplyAppPreferences 테스트 동작을 검증한다.
     func testAppPreferencesUpdatedForwardsToWindowManagerApplyAppPreferences() async {

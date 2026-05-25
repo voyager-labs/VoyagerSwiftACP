@@ -5,8 +5,8 @@ import Foundation
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// Composer 피드백 계약 — 상태, 요청 ID, stale 응답 처리의 비회귀를 검증.
+@MainActor
 final class ComposerFeedbackContractTests: XCTestCase {
     /// testSubmitStoresBaselineAndRequestIDs 테스트 동작을 검증한다.
     func testSubmitStoresBaselineAndRequestIDs() async throws {

@@ -6,8 +6,8 @@ import VoyagerFeaturesComposer
 @testable import VoyagerPagesFileManager
 import XCTest
 
-@MainActor
 /// FileManager content stale 상태에서 툴바 리프레시 라우팅 계약을 검증한다.
+@MainActor
 final class FileManagerToolbarRefreshTests: XCTestCase {
     /// testRefreshStaleCollectionDispatchesSubmitForQueryCollections 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDispatchesSubmitForQueryCollections() async {

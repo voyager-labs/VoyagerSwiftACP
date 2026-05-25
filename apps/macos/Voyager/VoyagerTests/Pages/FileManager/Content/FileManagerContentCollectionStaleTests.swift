@@ -9,8 +9,8 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// FileManager collection stale 전파와 상태 보존 계약을 검증한다.
+@MainActor
 final class FileManagerContentCollectionStaleTests: XCTestCase {
     /// testFileSystemChangedDoesNotMarkOpenCollectionStaleWithoutReload 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedDoesNotMarkOpenCollectionStaleWithoutReload() async {

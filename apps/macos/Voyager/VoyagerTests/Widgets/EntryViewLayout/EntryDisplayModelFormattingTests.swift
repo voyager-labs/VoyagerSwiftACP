@@ -2,8 +2,8 @@
 import VoyagerEntitiesEntry
 import XCTest
 
-@MainActor
 /// 포맷팅 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryDisplayModelFormattingTests: XCTestCase {
     /// 서식/출력 경계 회귀를 방지한다.
     func testFormatsSizeAndDatesAndSupplementaryInfoLikeEquivalentFormatters() throws {

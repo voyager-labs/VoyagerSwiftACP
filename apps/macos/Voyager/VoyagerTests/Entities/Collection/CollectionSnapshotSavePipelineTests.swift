@@ -5,8 +5,8 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 컬렉션 스냅샷 저장 파이프라인 — 정상/취소/실패 경로를 검증.
+@MainActor
 final class CollectionSnapshotSavePipelineTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     /// testSaveToExistingPersistsSnapshotAndClearsInvalidationState 테스트 동작을 검증한다.

@@ -5,8 +5,8 @@ import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesComposer
 import VoyagerShared
 
-@MainActor
 /// 연산자 DSL 인코딩 — 형태/인자 수(0-arity 포함) 완전성을 검증.
+@MainActor
 final class OperatorDslMappingExhaustiveTests: XCTestCase {
     /// testAllOperatorsEncodeExpectedDslShapeByType 테스트 동작을 검증한다.
     func testAllOperatorsEncodeExpectedDslShapeByType() {

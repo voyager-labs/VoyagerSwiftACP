@@ -5,8 +5,8 @@ import VoyagerEntitiesTag
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 태그 렌더링 회귀를 검증하는 테스트 모듈이다.
+@MainActor
 final class EntryListTagRenderingTests: XCTestCase {
     /// 태그 표시/가시성 회귀를 방지한다.
     func testVOY216NameCellRendersTagDotsInOriginalOrder() throws {

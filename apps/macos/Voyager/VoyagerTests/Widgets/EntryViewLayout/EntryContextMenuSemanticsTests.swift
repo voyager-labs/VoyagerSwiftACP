@@ -4,8 +4,8 @@ import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import XCTest
 
-@MainActor
 /// 정렬/헤더/메뉴 동작 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryContextMenuSemanticsTests: XCTestCase {
     /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testBlankSpaceWithoutSelectionUsesContainerSelectionCountZero() {

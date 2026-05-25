@@ -5,8 +5,8 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 컬렉션 파일 마이그레이션 실패 정책 — 잘못된/미래 버전 처리를 검증.
+@MainActor
 final class CollectionFileFailurePolicyTests: XCTestCase {
     private let fileManager = FileManager.default
 

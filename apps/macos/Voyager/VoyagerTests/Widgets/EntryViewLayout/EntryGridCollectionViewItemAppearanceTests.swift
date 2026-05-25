@@ -4,8 +4,8 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 위젯 동작의 회귀를 빠르게 검출하기 위한 테스트 모음이다.
+@MainActor
 final class EntryGridItemDropAppearanceTests: XCTestCase {
     // MARK: - 드롭 하이라이트와 선택 하이라이트 분리
 

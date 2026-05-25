@@ -6,8 +6,8 @@ import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
 
-@MainActor
 /// 윈도우 엔트리 조작 계약 — 기본 상태와 컬렉션 모드 인식 조작 동작을 검증.
+@MainActor
 final class FileManagerWindowEntryOpsContractTests: XCTestCase {
     /// testMakeInitialCreatesStateWithoutWindowID 테스트 동작을 검증한다.
     func testMakeInitialCreatesStateWithoutWindowID() {

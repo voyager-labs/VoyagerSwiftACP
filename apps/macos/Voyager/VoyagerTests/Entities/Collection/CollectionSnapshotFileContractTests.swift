@@ -5,8 +5,8 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 컬렉션 스냅샷 파일 계약 — 저장/로드, 스키마 버전, 인코딩 엣지 케이스를 검증.
+@MainActor
 final class CollectionSnapshotFileContractTests: XCTestCase {
     private let fileManager = FileManager.default
 

@@ -5,8 +5,8 @@ import VoyagerFeaturesComposer
 @testable import VoyagerPagesFileManager
 import XCTest
 
-@MainActor
 /// FileManager content의 collection 상태(dirty/stale/refresh) 계약을 검증한다.
+@MainActor
 final class FileManagerContentCollectionStateTests: XCTestCase {
     /// testDirtyAndStaleStayIndependent 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testDirtyAndStaleStayIndependent() {

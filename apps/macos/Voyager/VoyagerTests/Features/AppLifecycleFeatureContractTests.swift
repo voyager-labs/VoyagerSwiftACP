@@ -3,8 +3,8 @@ import ComposableArchitecture
 import VoyagerFeaturesEntryArrangements
 import XCTest
 
-@MainActor
 /// 앱 생명주기 계약 — 액션/상태 구조와 Equatable 준수를 검증.
+@MainActor
 final class AppLifecycleFeatureContractTests: XCTestCase {
     /// testInitialStateHasDidStartHelperFalse 테스트 동작을 검증한다.
     func testInitialStateHasDidStartHelperFalse() {

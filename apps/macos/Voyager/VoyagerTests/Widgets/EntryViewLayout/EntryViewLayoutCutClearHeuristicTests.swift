@@ -2,8 +2,8 @@
 import VoyagerFeaturesEntryOperations
 import XCTest
 
-@MainActor
 /// 드래그/클립보드 상태 정리 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryOperationsCutClearHeuristicTests: XCTestCase {
     /// 잘라내기 상태 정리 회귀를 방지한다.
     func testKeepsCutWhenPasteboardChangeCountChangedButCutSessionIdStillMatches() {

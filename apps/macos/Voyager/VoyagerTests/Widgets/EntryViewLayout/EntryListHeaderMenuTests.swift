@@ -2,8 +2,8 @@ import AppKit
 @testable import Voyager
 import XCTest
 
-@MainActor
 /// 정렬/헤더/메뉴 동작 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryListHeaderMenuTests: XCTestCase {
     /// 메뉴 동작 회귀를 방지한다.
     func testMenuMatchesModelToggleItemsAndResetItem() {

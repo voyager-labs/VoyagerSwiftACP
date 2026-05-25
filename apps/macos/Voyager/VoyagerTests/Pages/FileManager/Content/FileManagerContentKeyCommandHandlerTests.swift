@@ -8,8 +8,8 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// FileManager 키 커맨드 처리에서 page/content 경계와 액션 라우팅 계약을 검증한다.
+@MainActor
 final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
     /// testOpenAndQuickLookShortcutsUseSharedCommandContextInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenAndQuickLookShortcutsUseSharedCommandContextInListAndGrid() async {

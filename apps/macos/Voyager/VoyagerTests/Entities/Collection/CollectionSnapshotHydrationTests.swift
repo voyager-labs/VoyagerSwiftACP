@@ -4,8 +4,8 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 컬렉션 스냅샷 하이드레이션 — 사용성/핑거프린트/조건 매핑 결정을 검증.
+@MainActor
 final class CollectionSnapshotHydrationTests: XCTestCase {
     /// testUsableSnapshotBuildsSyntheticSearchResponse 테스트 동작을 검증한다.
     func testUsableSnapshotBuildsSyntheticSearchResponse() {

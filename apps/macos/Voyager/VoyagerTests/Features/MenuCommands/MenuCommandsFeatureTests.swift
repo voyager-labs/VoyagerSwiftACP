@@ -4,8 +4,8 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesUpdateVersion
 import XCTest
 
-@MainActor
 /// 메뉴 명령 기능 — 앱/보기/편집/작업 명령의 델리게이트 라우팅을 검증.
+@MainActor
 final class MenuCommandsFeatureTests: XCTestCase {
     /// testAppCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
     func testAppCommandRoutesToWindowManagerDelegate() async {

@@ -2,8 +2,8 @@ import AppKit
 @testable import Voyager
 import XCTest
 
-@MainActor
 /// 이름 변경(리네임) 동작 회귀를 검증하는 테스트 모음이다.
+@MainActor
 final class EntryInlineRenameBeginSelectionTests: XCTestCase {
     // MARK: - initialSelectionRange 테스트
 
