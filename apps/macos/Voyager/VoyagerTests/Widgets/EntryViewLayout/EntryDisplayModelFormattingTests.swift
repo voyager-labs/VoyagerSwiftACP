@@ -3,7 +3,9 @@ import VoyagerEntitiesEntry
 import XCTest
 
 @MainActor
+/// 포맷팅 회귀를 검증하는 테스트 모음이다.
 final class EntryDisplayModelFormattingTests: XCTestCase {
+    /// 서식/출력 경계 회귀를 방지한다.
     func testFormatsSizeAndDatesAndSupplementaryInfoLikeEquivalentFormatters() throws {
         let modifiedDate = Date(timeIntervalSince1970: 1_700_000_000)
         let createdDate = Date(timeIntervalSince1970: 1_700_000_123)
@@ -22,6 +24,7 @@ final class EntryDisplayModelFormattingTests: XCTestCase {
         XCTAssertEqual(display.supplementaryInfoText, archiveSizeFormatter().string(fromByteCount: 9_876_543))
     }
 
+    /// 서식/출력 경계 회귀를 방지한다.
     func testFormatsFolderAndMetadataEdgeCasesExactly() throws {
         let display = EntryDisplayModel(entry: makeEntry(
             isFolder: true,

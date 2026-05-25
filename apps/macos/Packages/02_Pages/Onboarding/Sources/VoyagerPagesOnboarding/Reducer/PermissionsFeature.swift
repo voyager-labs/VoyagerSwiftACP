@@ -30,22 +30,45 @@ struct PermissionsFeature {
             case .onAppear:
                 return .merge(
                     loadInitialState(),
-                    observeAppDidBecomeActive()
+                    observeAppDidBecomeActive(),
                 )
 
             case .onDisappear:
                 return .cancel(id: appDidBecomeActiveObserverCancelID)
 
             case .appDidBecomeActive:
+                state.latestAppActiveRefreshGeneration += 1
+                let generation = state.latestAppActiveRefreshGeneration
                 return .merge(
-                    refreshFullDiskAccess(),
-                    refreshHelperFolderAccess()
+                    refreshFullDiskAccess(generation: generation),
+                    refreshHelperFolderAccess(generation: generation),
                 )
+
+            case let .fullDiskAccessRefreshResponse(generation, status):
+                guard generation == state.latestAppActiveRefreshGeneration else { return .none }
+                let resolvedStatus = resolveFullDiskAccessStatus(
+                    status,
+                    hasAttempted: state.hasAttemptedFullDiskAccessEnable,
+                )
+                state.fullDiskAccessStatus = resolvedStatus
+                refreshCompletionState(state: &state)
+                return .none
+
+            case let .helperFolderAccessRefreshLoaded(generation, result):
+                guard generation == state.latestAppActiveRefreshGeneration else { return .none }
+                state.helperFolderAccess = result
+                if result.status == .granted {
+                    state.helperFolderAccessError = nil
+                }
+                let data = try? JSONEncoder().encode(result)
+                userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
+                refreshCompletionState(state: &state)
+                return .none
 
             case let .fullDiskAccessStatusResponse(status):
                 let resolvedStatus = resolveFullDiskAccessStatus(
                     status,
-                    hasAttempted: state.hasAttemptedFullDiskAccessEnable
+                    hasAttempted: state.hasAttemptedFullDiskAccessEnable,
                 )
                 state.fullDiskAccessStatus = resolvedStatus
                 refreshCompletionState(state: &state)
@@ -140,7 +163,7 @@ struct PermissionsFeature {
         .run { [notificationCenterClient] send in
             for await _ in notificationCenterClient.notifications(
                 NSApplication.didBecomeActiveNotification,
-                nil
+                nil,
             ) {
                 await send(.appDidBecomeActive)
             }
@@ -148,23 +171,23 @@ struct PermissionsFeature {
         .cancellable(id: appDidBecomeActiveObserverCancelID, cancelInFlight: true)
     }
 
-    private func refreshFullDiskAccess() -> Effect<Action> {
+    private func refreshFullDiskAccess(generation: Int) -> Effect<Action> {
         .run { [fullDiskAccessClient] send in
             let status = fullDiskAccessClient.status()
-            await send(.fullDiskAccessStatusResponse(status))
+            await send(.fullDiskAccessRefreshResponse(generation, status))
         }
     }
 
-    private func refreshHelperFolderAccess() -> Effect<Action> {
+    private func refreshHelperFolderAccess(generation: Int) -> Effect<Action> {
         .run { [helperFolderAccessClient] send in
             let result = await helperFolderAccessClient.checkAccess()
-            await send(.helperFolderAccessStatusLoaded(result))
+            await send(.helperFolderAccessRefreshLoaded(generation, result))
         }
     }
 
     private func resolveFullDiskAccessStatus(
         _ status: FullDiskAccessStatus,
-        hasAttempted: Bool
+        hasAttempted: Bool,
     ) -> FullDiskAccessStatus {
         if status == .needsAction, hasAttempted {
             return .denied

@@ -7,7 +7,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 정렬/헤더/메뉴 동작 회귀를 검증하는 테스트 모음이다.
 final class EntryListSortSyncTests: XCTestCase {
+    /// 정렬 동기화 동작 회귀를 방지한다.
     func testSortDescriptorMapperDerivesTcaChange() {
         let descriptors = [NSSortDescriptor(key: EntryListColumn.size.rawValue, ascending: false)]
         let change = EntryListSortDescriptorMapper.change(from: descriptors)
@@ -26,6 +28,7 @@ final class EntryListSortSyncTests: XCTestCase {
         XCTAssertEqual(needed.sortOrder, .descending)
     }
 
+    /// 정렬 동기화 동작 회귀를 방지한다.
     func testSortSyncGateConsumesSuppressedSignature() {
         var gate = EntryListSortSyncGate()
         let descriptors = [NSSortDescriptor(key: EntryListColumn.kind.rawValue, ascending: true)]
@@ -39,6 +42,7 @@ final class EntryListSortSyncTests: XCTestCase {
         gate = EntryListSortSyncGate()
     }
 
+    /// 테스트 시나리오 회귀를 방지하기 위한 동작을 검증한다.
     func testVOY211SameIndexMoveIsNoOp() async {
         let initialColumns = EntryListColumn.defaultVisibleColumns
 
@@ -55,6 +59,7 @@ final class EntryListSortSyncTests: XCTestCase {
         }
     }
 
+    /// 테스트 시나리오 회귀를 방지하기 위한 동작을 검증한다.
     func testVOY211RapidMovesKeepSingleCanonicalOrder() async {
         let store = TestStore(initialState: {
             var state = EntryViewLayoutState()
@@ -78,6 +83,7 @@ final class EntryListSortSyncTests: XCTestCase {
         }
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testVOY211RightmostDropUsesFinalAppKitIndex() async {
         let store = TestStore(initialState: {
             var state = EntryViewLayoutState()
@@ -92,6 +98,7 @@ final class EntryListSortSyncTests: XCTestCase {
         }
     }
 
+    /// 테스트 시나리오 회귀를 방지하기 위한 동작을 검증한다.
     func testVOY211AdjacentRightMoveIsNotSwallowed() async {
         let store = TestStore(initialState: {
             var state = EntryViewLayoutState()
@@ -106,10 +113,12 @@ final class EntryListSortSyncTests: XCTestCase {
         }
     }
 
+    /// 정렬 동기화 동작 회귀를 방지한다.
     func testVOY211DateModifiedDefaultsToDescendingSortPrototype() {
         XCTAssertFalse(EntryListColumn.dateModified.defaultSortAscending)
     }
 
+    /// 정렬 동기화 동작 회귀를 방지한다.
     func testVOY211NonDateColumnsDefaultToAscendingSortPrototype() {
         XCTAssertTrue(EntryListColumn.name.defaultSortAscending)
         XCTAssertTrue(EntryListColumn.size.defaultSortAscending)

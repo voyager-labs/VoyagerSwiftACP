@@ -4,6 +4,10 @@ import XCTest
 
 @MainActor
 final class EntryListHorizontalScrollTests: XCTestCase {
+    /// 리스트 뷰가 가로 스크롤을 유지하도록 테이블 설정을 고정하는지 검증
+    ///
+    /// - 검증 내용: 가로 스크롤바 활성화, 컬럼 자동 리사이즈 비활성화
+    /// - 회귀 방지: 긴 열 이름이나 넓은 컬럼이 강제로 축소되는 문제 방지
     func testEntryListViewEnablesHorizontalScrollingConfiguration() {
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
 
@@ -12,6 +16,7 @@ final class EntryListHorizontalScrollTests: XCTestCase {
         XCTAssertFalse(view.tableView.autoresizesOutlineColumn)
     }
 
+    /// 뷰 폭이 바뀌어도 컬럼 폭을 뷰포트에 맞춰 자동 재조정하지 않는지 검증
     func testResizingDoesNotAutoFitColumnsToViewportWidth() {
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 1000, height: 320))
         view.layoutSubtreeIfNeeded()

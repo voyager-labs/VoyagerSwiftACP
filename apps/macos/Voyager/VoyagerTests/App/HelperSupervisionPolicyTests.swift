@@ -2,7 +2,9 @@
 import XCTest
 
 @MainActor
+/// 헬퍼 감독 정책 — 재시도/쿨다운/백오프 및 상태 리셋 의미론을 검증.
 final class HelperSupervisionPolicyTests: XCTestCase {
+    /// testFirstThreeAttemptsAllowed 테스트 동작을 검증한다.
     func testFirstThreeAttemptsAllowed() {
         var policy = HelperSupervisionPolicy()
         let now = Date()
@@ -12,6 +14,7 @@ final class HelperSupervisionPolicyTests: XCTestCase {
         XCTAssertEqual(policy.recordRestartAttempt(at: now.addingTimeInterval(2)), .allowed)
     }
 
+    /// testFourthAttemptTriggersCooldown 테스트 동작을 검증한다.
     func testFourthAttemptTriggersCooldown() {
         var policy = HelperSupervisionPolicy()
         let now = Date()
@@ -28,6 +31,7 @@ final class HelperSupervisionPolicyTests: XCTestCase {
         }
     }
 
+    /// testCooldownExpiresAfterWindow 테스트 동작을 검증한다.
     func testCooldownExpiresAfterWindow() {
         var policy = HelperSupervisionPolicy()
         let now = Date()
@@ -46,6 +50,7 @@ final class HelperSupervisionPolicyTests: XCTestCase {
         XCTAssertEqual(decision, .allowed)
     }
 
+    /// testGraceWindowBlocksImmediateRetry 테스트 동작을 검증한다.
     func testGraceWindowBlocksImmediateRetry() {
         var policy = HelperSupervisionPolicy()
         let now = Date()
@@ -60,6 +65,7 @@ final class HelperSupervisionPolicyTests: XCTestCase {
         }
     }
 
+    /// testGraceWindowExpires 테스트 동작을 검증한다.
     func testGraceWindowExpires() {
         var policy = HelperSupervisionPolicy()
         let now = Date()
@@ -71,6 +77,7 @@ final class HelperSupervisionPolicyTests: XCTestCase {
         XCTAssertFalse(policy.isInGraceWindow)
     }
 
+    /// testResetClearsAllState 테스트 동작을 검증한다.
     func testResetClearsAllState() {
         var policy = HelperSupervisionPolicy()
         let now = Date()
@@ -90,6 +97,7 @@ final class HelperSupervisionPolicyTests: XCTestCase {
         XCTAssertFalse(policy.isInGraceWindow)
     }
 
+    /// testWindowPrunesOldAttempts 테스트 동작을 검증한다.
     func testWindowPrunesOldAttempts() {
         var policy = HelperSupervisionPolicy()
         let now = Date()

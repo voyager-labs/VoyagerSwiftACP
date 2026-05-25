@@ -1,23 +1,23 @@
 import ComposableArchitecture
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
-// MARK: - VOY-201 Task 5: Sidebar-Local Guardrail Tests
+// MARK: - VOY-201 작업 5: 사이드바 로컬 가드레일 테스트
 
-// These tests lock down local owner behavior for sidebar width clamping and restore-selection cleanup.
-// Focused on sidebar-local concern regression guardrails only.
-// NOT testing: parent navigation/content routing, delegate migration (handled in Task 4).
+// 이 테스트들은 사이드바 너비 클램프 및 복원 선택 정리를 위한 사이드바 로컬 소유 동작을 고정합니다.
+// 사이드바 로컬 범주의 회귀 가드레일만 검증합니다.
+// 미검증: 상위 네비게이션/콘텐츠 라우팅, delegate 마이그레이션(작업 4에서 처리).
 
 @MainActor
 final class FileManagerSidebarFeatureTests: XCTestCase {
-    // MARK: - Width Clamp Tests
+    // MARK: - 너비 클램프 테스트
 
-    /// Test that sidebar width is clamped to lower bound (150) when value is below minimum.
-    /// Guardrail: Values below 150 must be clamped to 150.
+    /// 사이드바 너비가 최소값 미만일 때 하한값(150)으로 클램프되는지 검증
+    /// 가드레일: 150 미만 값은 150으로 클램프되어야 함.
     func testSetSidebarWidth_ClampsToLowerBound() async {
         var initialState = FileManagerSidebarState()
         initialState.sidebarWidth = 220
@@ -34,7 +34,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // Send width below minimum (100), expect clamp to 150
+        // 최소값 미만 너비(100) 전송: 150으로 클램프 예상
         await store.send(.view(.setSidebarWidth(100))) { state in
             state.sidebarWidth = 150
         }
@@ -42,8 +42,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Test that sidebar width is clamped to upper bound (400) when value is above maximum.
-    /// Guardrail: Values above 400 must be clamped to 400.
+    /// 사이드바 너비가 최대값 초과 시 상한값(400)으로 클램프되는지 검증
+    /// 가드레일: 400 초과 값은 400으로 클램프되어야 함.
     func testSetSidebarWidth_ClampsToUpperBound() async {
         var initialState = FileManagerSidebarState()
         initialState.sidebarWidth = 220
@@ -60,7 +60,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // Send width above maximum (500), expect clamp to 400
+        // 최대값 초과 너비(500) 전송: 400으로 클램프 예상
         await store.send(.view(.setSidebarWidth(500))) { state in
             state.sidebarWidth = 400
         }
@@ -68,8 +68,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Test that width change within 0.5 of current value is ignored (no state change).
-    /// Guardrail: Early return for sub-threshold changes prevents unnecessary state churn.
+    /// 현재 값에서 0.5 이내 변화는 무시되는지(상태 변경 없음) 검증
+    /// 가드레일: 임계값 미만 변경은 조기 반환되어 불필요한 상태 변경을 방지.
     func testSetSidebarWidth_IgnoresSmallChanges() async {
         var initialState = FileManagerSidebarState()
         initialState.sidebarWidth = 220
@@ -86,14 +86,14 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // Send width within 0.5 of current (220.3), expect no state change
+        // 현재 값(220.3)에서 0.5 이내 너비 전송: 상태 변경 없음 예상
         await store.send(.view(.setSidebarWidth(220.3)))
 
         await store.finish()
     }
 
-    /// Test that valid width within bounds is preserved.
-    /// Guardrail: Values in 150...400 range are preserved.
+    /// 허용 범위 내의 유효한 너비가 유지되는지 검증
+    /// 가드레일: 150...400 범위 값은 유지됨.
     func testSetSidebarWidth_PreservesValidWidth() async {
         var initialState = FileManagerSidebarState()
         initialState.sidebarWidth = 220
@@ -110,7 +110,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // Send valid width (300), expect state change
+        // 유효한 너비(300) 전송: 상태 변경 예상
         await store.send(.view(.setSidebarWidth(300))) { state in
             state.sidebarWidth = 300
         }
@@ -118,10 +118,10 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - Restore Selection Tests
+    // MARK: - 복원 선택 테스트
 
-    /// Test that restoreSidebarSelection clears pending flag after restoring.
-    /// Guardrail: pendingSidebarSelectionRestore must be nil after restore action.
+    /// restoreSidebarSelection이 복원 후 pending 플래그를 해제하는지 검증
+    /// 가드레일: 복원 액션 이후 pendingSidebarSelectionRestore는 nil이어야 함.
     func testRestoreSidebarSelection_ClearsPendingRestore() async {
         var initialState = FileManagerSidebarState()
         initialState.pendingSidebarSelectionRestore = "favorite:/Users/test"
@@ -138,7 +138,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // Send restore action, expect state changes
+        // 복원 액션 전송, 상태 변경 예상
         await store.send(.internal(.restoreSidebarSelection)) { state in
             state.selectedSidebarItem = "favorite:/Users/test"
             state.pendingSidebarSelectionRestore = nil
@@ -147,8 +147,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Test that restoreSidebarSelection does nothing when pending is nil.
-    /// Guardrail: No crash or unexpected state change when pending is nil.
+    /// pending이 nil일 때 restoreSidebarSelection이 아무 동작도 하지 않음을 검증
+    /// 가드레일: pending이 nil일 때 충돌이나 예기치 않은 상태 변경이 없어야 함.
     func testRestoreSidebarSelection_DoesNothingWhenPendingIsNil() async {
         let initialState = FileManagerSidebarState()
 
@@ -164,14 +164,14 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // Send restore action when pending is nil, expect no state change
+        // pending이 nil일 때 복원 액션 전송, 상태 변경 없음 예상
         await store.send(.internal(.restoreSidebarSelection))
 
         await store.finish()
     }
 
-    /// Test that restoreSidebarSelection preserves existing selection when pending is nil.
-    /// Guardrail: Existing selectedSidebarItem must not be overwritten when pending is nil.
+    /// pending이 nil일 때 기존 선택이 보존되는지 검증
+    /// 가드레일: pending이 nil일 때 기존 selectedSidebarItem은 덮어쓰면 안 됨.
     func testRestoreSidebarSelection_PreservesExistingSelectionWhenPendingIsNil() async {
         var initialState = FileManagerSidebarState()
         initialState.selectedSidebarItem = "location:/Applications"
@@ -189,20 +189,20 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // Send restore action when pending is nil, expect no state change
+        // pending이 nil일 때 복원 액션 전송, 상태 변경 없음 예상
         await store.send(.internal(.restoreSidebarSelection))
 
         await store.finish()
     }
 
-    // MARK: - Tag Loading Tests (VOY-208 Task 1)
+    // MARK: - 태그 로딩 테스트 (VOY-208 작업 1)
 
-    /// Test that loadTags action updates state.tags with favoriteTags from client.
-    /// Expected: loadTags → tagsLoaded → state.tags updated
+    /// loadTags 액션이 클라이언트의 favoriteTags로 state.tags를 업데이트하는지 검증
+    /// 기대: loadTags → tagsLoaded → state.tags 업데이트
     func testLoadTags_UpdatesStateWithFavoriteTags() async {
         let initialState = FileManagerSidebarState()
 
-        // Mock favoriteTags to return specific tags with color codes
+        // 색상 코드가 있는 특정 태그를 반환하도록 favoriteTags를 모킹
         let expectedTags = [
             Tag(name: "Important", colorCode: 1),
             Tag(name: "Work", colorCode: 6),
@@ -225,7 +225,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // loadTags triggers tagsLoaded synchronously with the result from favoriteTags()
+        // loadTags가 favoriteTags() 결과로 tagsLoaded를 동기적으로 트리거
         await store.send(.internal(.loadTags)) { state in
             state.tags = expectedTags
         }
@@ -233,8 +233,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Test that loadTags with empty favoriteTags results in empty state.tags.
-    /// Expected: Empty tags → state.tags = []
+    /// favoriteTags가 비어 있을 때 loadTags 결과가 빈 state.tags가 되는지 검증
+    /// 기대: 빈 태그 → state.tags = []
     func testLoadTags_WithEmptyFavoriteTags_SetsEmptyTags() async {
         let initialState = FileManagerSidebarState()
 
@@ -260,8 +260,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Test that loadTags preserves color codes from favoriteTags client.
-    /// Expected: Tags with color codes are preserved exactly
+    /// loadTags가 favoriteTags 클라이언트의 색상 코드를 보존하는지 검증
+    /// 기대: 색상 코드가 있는 태그가 정확히 보존됨
     func testLoadTags_PreservesColorCodes() async {
         let initialState = FileManagerSidebarState()
 
@@ -294,15 +294,15 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
 
         await store.send(.internal(.loadTags)) { state in
             state.tags = expectedTags
-            // Verify color codes are preserved
+            // 색상 코드가 보존되었는지 확인
             XCTAssertEqual(state.tags.map(\.colorCode), [6, 7, 5, 2, 4, 3, 1])
         }
 
         await store.finish()
     }
 
-    /// Test that tagsLoaded action directly sets state.tags.
-    /// Expected: tagsLoaded with tags → state.tags = tags
+    /// tagsLoaded 액션이 state.tags를 직접 설정하는지 검증
+    /// 기대: tagsLoaded(태그 배열) → state.tags = tags
     func testTagsLoaded_SetsStateTags() async {
         var initialState = FileManagerSidebarState()
         initialState.tags = [Tag(name: "Old", colorCode: 0)]
@@ -331,10 +331,10 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - Seam Separation Tests (VOY-335 Task 2)
+    // MARK: - 시임 분리 테스트 (VOY-335 작업 2)
 
-    /// Verify preference seam only affects preference fields.
-    /// Sends .view(.setSidebarVisible(false)) and confirms only sidebarVisible changed.
+    /// 선호도(Preference) 시임이 선호도 필드에만 영향을 주는지 확인
+    /// .view(.setSidebarVisible(false))를 전송하고 sidebarVisible만 변경되는지 확인
     func testPreferenceSeamOnlyAffectsPreferenceFields() async {
         var initialState = FileManagerSidebarState()
         initialState.sidebarVisible = true
@@ -372,8 +372,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Verify source loading seam only affects source fields.
-    /// Sends .internal(.favoritesLoaded) and confirms only favorites changed.
+    /// 소스 로딩 시임이 소스 필드에만 영향을 주는지 확인
+    /// .internal(.favoritesLoaded)를 전송하고 favorites만 변경되는지 확인
     func testSourceLoadingSeamOnlyAffectsSourceFields() async {
         var initialState = FileManagerSidebarState()
         initialState.sidebarVisible = false
@@ -401,7 +401,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
 
         await store.send(.internal(.favoritesLoaded([newFavorite]))) { state in
             state.favorites = [newFavorite]
-            // Verify preference/interaction fields untouched
+            // 선호도/인터랙션 필드가 변경되지 않았는지 확인
             XCTAssertFalse(state.sidebarVisible)
             XCTAssertEqual(state.sidebarWidth, 300)
             XCTAssertEqual(state.contextMenuTargetId, "target-x")
@@ -411,8 +411,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Verify interaction seam only affects interaction fields.
-    /// Sends .view(.setContextMenuTarget) and confirms only context menu state changed.
+    /// 인터랙션 시임이 인터랙션 필드에만 영향을 주는지 확인
+    /// .view(.setContextMenuTarget)를 전송하고 context menu 상태만 변경되는지 확인
     func testInteractionSeamOnlyAffectsInteractionFields() async {
         var initialState = FileManagerSidebarState()
         initialState.sidebarVisible = true
@@ -440,7 +440,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.send(.view(.setContextMenuTarget(id: "ctx-42", wasSelected: true))) { state in
             state.contextMenuTargetId = "ctx-42"
             state.contextMenuTargetWasSelected = true
-            // Verify preference/source fields untouched
+            // 선호도/소스 필드가 변경되지 않았는지 확인
             XCTAssertTrue(state.sidebarVisible)
             XCTAssertEqual(state.sidebarWidth, 250)
             XCTAssertEqual(state.favorites.count, 1)
@@ -449,8 +449,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
         await store.finish()
     }
 
-    /// Verify shell contract fields remain accessible after decomposition.
-    /// Confirms sidebarVisible and sidebarWidth are readable/writable via state.
+    /// 분해 후에도 shell contract 필드 접근성이 유지되는지 확인
+    /// sidebarVisible 및 sidebarWidth가 state로 읽기/쓰기 가능한지 확인.
     func testShellContractFieldsRemainAccessible() async {
         var initialState = FileManagerSidebarState()
         initialState.sidebarVisible = false
@@ -468,7 +468,7 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // Verify initial values are readable
+        // 초기값이 읽을 수 있는지 확인
         XCTAssertEqual(store.state.sidebarVisible, false)
         XCTAssertEqual(store.state.sidebarWidth, 180)
 

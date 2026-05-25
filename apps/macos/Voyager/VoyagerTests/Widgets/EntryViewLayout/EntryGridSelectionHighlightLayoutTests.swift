@@ -6,7 +6,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 선택 상태 전환과 하이라이트 관련 회귀를 검증하는 테스트 모음이다.
 final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testSelectedNameHighlightWrapsNameLabelWithPadding() throws {
         let item = makeEntryGridSelectionTestItem(tags: [Tag(name: "blue", colorCode: 1)])
         item.isSelected = true
@@ -34,6 +36,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertEqual(bottomInset, 2, accuracy: 1.5)
     }
 
+    /// 태그 표시/가시성 회귀를 방지한다.
     func testTagStackIsAlignedToLabelStackNotTileTopLeading() throws {
         let item = makeEntryGridSelectionTestItem(tags: [
             Tag(name: "blue", colorCode: 1),
@@ -60,7 +63,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertLessThan(tagFrame.maxY, iconFrame.minY)
     }
 
-    // MARK: - Finder-like Selection Tests
+    // MARK: - Finder 유사 선택 테스트
 
     func testSelectedShowsHighlightPillAndThumbnailBackground() throws {
         let item = makeEntryGridSelectionTestItem()
@@ -86,6 +89,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertNil(background.layer?.backgroundColor, "Selected item should NOT tint tile background")
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testDeselectedClearsHighlightAndIconBackground() throws {
         let item = makeEntryGridSelectionTestItem()
         item.isSelected = false
@@ -102,7 +106,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertNil(iconBackground.layer?.backgroundColor, "Deselected item should have clear icon background")
     }
 
-    // MARK: - Selection Priority Tests
+    // MARK: - 선택 우선순위 테스트
 
     func testRenamingSuppressesHighlightWithoutTinting() throws {
         let item = makeEntryGridSelectionTestItem(isRenaming: true)
@@ -124,6 +128,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertNil(background.layer?.backgroundColor, "Renaming state should NOT tint tile background")
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testDropTargetShowsSelectedStyleVisuals() throws {
         let item = makeEntryGridSelectionTestItem(isDropTargeted: true)
         item.isSelected = false
@@ -162,6 +167,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         )
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testDropTargetAndSelectionProduceIdenticalVisuals() throws {
         let item = makeEntryGridSelectionTestItem(isDropTargeted: true)
         item.isSelected = true
@@ -194,7 +200,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         )
     }
 
-    // MARK: - Finder-like drop border restraint (NEW)
+    // MARK: - Finder 유사 드롭 테두리 억제 (신규)
 
     func testDropTargetHasNoBorderOnAnyView() throws {
         let item = makeEntryGridSelectionTestItem(isDropTargeted: true)
@@ -221,6 +227,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDropTargetShowsIconTintNotBorder() throws {
         let item = makeEntryGridSelectionTestItem(isDropTargeted: true)
         item.view.layoutSubtreeIfNeeded()
@@ -241,6 +248,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         )
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testSelectedPlusTargetedSelectionPillRemainsPrimary() throws {
         let item = makeEntryGridSelectionTestItem(isDropTargeted: true)
         item.isSelected = true
@@ -258,7 +266,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertEqual(nameField.textColor, .white, "Selected+targeted text must remain white (selection wins)")
     }
 
-    // MARK: - Cross-Surface Regression Tests
+    // MARK: - 교차 표면 회귀 테스트
 
     func testTaggedSelectedItemKeepsVisibleTagDots() throws {
         let tags = [Tag(name: "Work", colorCode: 4), Tag(name: "Personal", colorCode: 2)]
@@ -280,6 +288,7 @@ final class EntryGridSelectionHighlightLayoutTests: XCTestCase {
         XCTAssertEqual(tagStack.arrangedSubviews.count, 2, "Both tag dots should be visible")
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testDropTargetSelectedTaggedItemHandlesPriorityCorrectly() throws {
         let tags = [Tag(name: "Important", colorCode: 6)]
         let item = makeEntryGridSelectionTestItem(tags: tags, isDropTargeted: true)

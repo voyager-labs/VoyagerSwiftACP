@@ -5,8 +5,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 위젯 동작의 회귀를 빠르게 검출하기 위한 테스트 모음이다.
 final class EntryGridItemDropAppearanceTests: XCTestCase {
-    // MARK: - Drop highlight vs selection highlight separation
+    // MARK: - 드롭 하이라이트와 선택 하이라이트 분리
 
     func testDropTargetShowsSelectedStyleVisuals() throws {
         let item = makeConfiguredItem(isDropTargeted: true)
@@ -32,6 +33,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         )
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testSelectionHighlightRendersNameHighlightOnly() throws {
         let item = makeConfiguredItem(isDropTargeted: false)
         item.isSelected = true
@@ -45,7 +47,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         XCTAssertEqual(bg.layer?.borderWidth ?? -1, 0, "Selection should NOT produce a drop border")
     }
 
-    // MARK: - Drop highlight cleared immediately
+    // MARK: - 드롭 하이라이트 즉시 해제
 
     func testDropTargetVisualsClearedAfterReconfiguringWithoutDropTarget() throws {
         let item = makeConfiguredItem(isDropTargeted: true)
@@ -66,7 +68,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         XCTAssertTrue(nameHighlight.isHidden, "Name pill should hide when untargeted")
     }
 
-    // MARK: - Drop + selection coexist independently
+    // MARK: - 드롭 + 선택 독립적으로 공존
 
     func testTargetedAndSelectedAreVisuallyIdentical() throws {
         let targetedOnly = makeConfiguredItem(isDropTargeted: true)
@@ -109,7 +111,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         XCTAssertEqual(bothHighlight.isHidden, selectedHighlight.isHidden)
     }
 
-    // MARK: - Finder-like drop target visual contract (NEW)
+    // MARK: - Finder 유사 드롭 대상 시각적 계약 (신규)
 
     func testDropTargetHasNoBorderOnAnyView() throws {
         let item = makeConfiguredItem(isDropTargeted: true)
@@ -132,6 +134,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDropTargetUsesIconBackgroundTintNotBorder() throws {
         let item = makeConfiguredItem(isDropTargeted: true)
         item.view.layoutSubtreeIfNeeded()
@@ -151,6 +154,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         )
     }
 
+    /// 선택 상태 전환 경계를 검증해 회귀를 방지한다.
     func testSelectedPlusTargetedMatchesSelectedOnlyVisuals() throws {
         let selectedOnly = makeConfiguredItem(isDropTargeted: false)
         selectedOnly.isSelected = true
@@ -188,7 +192,7 @@ final class EntryGridItemDropAppearanceTests: XCTestCase {
         )
     }
 
-    // MARK: - Helpers
+    // MARK: - 도우미
 
     private func makeConfiguredItem(isDropTargeted: Bool = false) -> EntryGridCollectionViewItem {
         let item = EntryGridCollectionViewItem()

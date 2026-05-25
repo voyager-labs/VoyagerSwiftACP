@@ -6,7 +6,9 @@ import VoyagerFeaturesComposer
 import XCTest
 
 @MainActor
+/// FileManager content의 collection 상태(dirty/stale/refresh) 계약을 검증한다.
 final class FileManagerContentCollectionStateTests: XCTestCase {
+    /// testDirtyAndStaleStayIndependent 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testDirtyAndStaleStayIndependent() {
         var state = FileManagerContentState()
         state.entryViewLayout.isCollectionMode = true
@@ -29,6 +31,7 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertEqual(state.collection.collectionSession.metadata.lastRefreshAt, .distantFuture)
     }
 
+    /// testCanSaveCollectionTracksDirtyOnly 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCanSaveCollectionTracksDirtyOnly() {
         var state = FileManagerContentState()
         state.entryViewLayout.isCollectionMode = true
@@ -43,6 +46,7 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertTrue(state.isCollectionMode && state.collection.collectionSession.phase.isStale)
     }
 
+    /// testHydratedStaleSessionRefreshBoundaryUsesPhaseAndTimestamp 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testHydratedStaleSessionRefreshBoundaryUsesPhaseAndTimestamp() {
         var state = FileManagerContentState()
 
@@ -62,6 +66,7 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertFalse(shouldRefreshOnOpen(state.collection.collectionSession))
     }
 
+    /// testRefreshBlockingReasonRequiresCleanSavedCollectionAndNoInflightWork 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshBlockingReasonRequiresCleanSavedCollectionAndNoInflightWork() {
         var state = FileManagerContentState()
         state.entryViewLayout.isCollectionMode = true
@@ -115,6 +120,7 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         ), .dirtyCollection)
     }
 
+    /// testRefreshBlockingReasonUsesPriorityOrder 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshBlockingReasonUsesPriorityOrder() {
         var state = FileManagerContentState()
 
@@ -227,11 +233,13 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         )
     }
 
+    /// testResetComposerOnNextDirectoryNavigationDefaultsFalse 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testResetComposerOnNextDirectoryNavigationDefaultsFalse() {
         let state = FileManagerContentState()
         XCTAssertFalse(state.resetComposerOnNextDirectoryNavigation)
     }
 
+    /// testResetComposerOnNextDirectoryNavigationRoundTrips 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testResetComposerOnNextDirectoryNavigationRoundTrips() {
         var state = FileManagerContentState()
         state.resetComposerOnNextDirectoryNavigation = true
@@ -240,6 +248,7 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertFalse(state.resetComposerOnNextDirectoryNavigation)
     }
 
+    /// testResetComposerOnNextDirectoryNavigationToleratesCollectionSessionMutation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testResetComposerOnNextDirectoryNavigationToleratesCollectionSessionMutation() {
         var state = FileManagerContentState()
         state.resetComposerOnNextDirectoryNavigation = true

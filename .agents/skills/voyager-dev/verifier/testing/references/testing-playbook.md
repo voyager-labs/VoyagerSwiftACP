@@ -81,6 +81,65 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
 - Does at least one test prove the real downstream execution path for the highest-risk routed flow?
 - Do tests distinguish routing-only assertions from execution-chain assertions where both matter?
 
+## Helper Extraction for Test Maintenance
+
+When test files grow large with repeated dependency setup, extract helpers to reduce duplication and improve readability.
+
+### When to extract
+
+Extract when the same dependency construction block appears **3 or more times** across tests. Two occurrences are tolerable. Three or more means a named helper pays for itself in readability and maintenance.
+
+### Where to place helpers
+
+- Test-target-local: `Tests/<TestTargetName>/Support/` (flat).
+- Helpers must not be `public` or leak into production targets.
+- Keep `Support/` flat — file names describe the role (e.g. `ProgressClient.swift`, `PermissionFixtures.swift`), not the spec ID.
+- If a helper type name collides with a production type (via `@testable import`), append `Fixture` (e.g. `BetaAccessClientFixture`).
+
+### Enum namespace pattern
+
+Use an enum with no cases as a namespace for related helpers. This prevents accidental instantiation and groups variants logically.
+
+```swift
+enum FeatureClient {
+    static var success: SomeDependencyClient {
+        SomeDependencyClient(perform: { _, _ in .ok })
+    }
+    static func throwing(_ error: SomeError) -> SomeDependencyClient {
+        SomeDependencyClient(perform: { _, _ in throw error })
+    }
+}
+```
+
+Variants should cover the common cases: success, failure by error type, and parameterized responses.
+
+### Composite helpers
+
+When multiple dependencies always appear together (e.g. permission checks that grant or deny a set of related capabilities), create a composite helper that configures all of them at once.
+
+```swift
+enum PermissionClients {
+    static func allGranted(_ deps: inout DependencyValues) {
+        deps.fullDiskAccess = .init(status: { .granted })
+        deps.helperFolder = .init(checkAccess: { kGranted }, requestAccess: { kGranted })
+    }
+}
+```
+
+Usage inside `withDependencies`:
+
+```swift
+withDependencies { PermissionClients.allGranted(&$0) }
+```
+
+Composite helpers eliminate the most duplication when N tests need the same multi-dependency setup.
+
+### What not to extract
+
+- Assertion-based verify closures that inspect arguments with `XCTAssertEqual`. These are unique per test and lose their value when generalized.
+- Attempt-counter or retry-counting closures that branch on invocation number. The branching logic is test-specific.
+- Single-use dependency setups. A helper used once adds indirection without benefit.
+
 ## SPM Package Test Guidance
 
 ### Package inventory (8 macOS packages)

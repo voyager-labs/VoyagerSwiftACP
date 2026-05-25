@@ -10,7 +10,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 드래그/드롭 경로와 시각 상태 회귀를 검증하는 테스트 모음이다.
 final class EntryGridThumbnailDropTargetTests: XCTestCase {
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropOnThumbnailImageCenterResolvesFolderDestination() throws {
         let folder = makeThumbnailDropFolderEntry(path: "/tmp/target")
         let harness = makeThumbnailDropHarness(
@@ -34,6 +36,7 @@ final class EntryGridThumbnailDropTargetTests: XCTestCase {
         XCTAssertEqual(harness.coordinator.dropTargetEntryId, folder.id)
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropOnPackageDirectoryThumbnailResolvesDestination() throws {
         let package = makeThumbnailDropFolderEntry(path: "/tmp/Test.app")
         let harness = makeThumbnailDropHarness(
@@ -57,6 +60,7 @@ final class EntryGridThumbnailDropTargetTests: XCTestCase {
         XCTAssertEqual(harness.coordinator.dropTargetEntryId, package.id)
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropOnThumbnailImageCenterRoutesHandleDrop() throws {
         let folder = makeThumbnailDropFolderEntry(path: "/tmp/target")
         let recorder = ThumbnailDropRouteRecorder()
@@ -79,6 +83,7 @@ final class EntryGridThumbnailDropTargetTests: XCTestCase {
         XCTAssertEqual(recorder.lastRoutingAction, .handleDrop(destinationPath: folder.fullPath))
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testThumbnailToItemCenterStabilizesEntryTarget() throws {
         let folder = makeThumbnailDropFolderEntry(path: "/tmp/target")
         let harness = makeThumbnailDropHarness(

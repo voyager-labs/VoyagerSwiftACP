@@ -6,8 +6,10 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 컬렉션 스냅샷 저장 파이프라인 — 정상/취소/실패 경로를 검증.
 final class CollectionSnapshotSavePipelineTests: XCTestCase {
     // swiftlint:disable:next function_body_length
+    /// testSaveToExistingPersistsSnapshotAndClearsInvalidationState 테스트 동작을 검증한다.
     func testSaveToExistingPersistsSnapshotAndClearsInvalidationState() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -66,6 +68,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
+    /// testDefinitionOnlySaveLeavesSnapshotNil 테스트 동작을 검증한다.
     func testDefinitionOnlySaveLeavesSnapshotNil() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -116,6 +119,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
+    /// testEmptySnapshotSavePersistsEmptySnapshotArray 테스트 동작을 검증한다.
     func testEmptySnapshotSavePersistsEmptySnapshotArray() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -166,6 +170,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
+    /// testSavePipelinePersistsCanonicalCurrentSchemaVersionForConstructedPayload 테스트 동작을 검증한다.
     func testSavePipelinePersistsCanonicalCurrentSchemaVersionForConstructedPayload() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -215,6 +220,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         XCTAssertNil(saved?.file.snapshotMeta)
     }
 
+    /// testSaveToExistingIsBlockedForFutureMinorCompatibility 테스트 동작을 검증한다.
     func testSaveToExistingIsBlockedForFutureMinorCompatibility() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -287,6 +293,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
 
 @MainActor
 final class CollectionSavePanelClientTests: XCTestCase {
+    /// testSaveRequestedHappyPathProceedsThroughPanelToSaveCompleted 테스트 동작을 검증한다.
     func testSaveRequestedHappyPathProceedsThroughPanelToSaveCompleted() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -328,6 +335,7 @@ final class CollectionSavePanelClientTests: XCTestCase {
         XCTAssertEqual(saved?.file.snapshot?.items, [.string("/tmp/report.txt")])
     }
 
+    /// testSaveRequestedCancelPathClearsPendingSaveWithoutWriting 테스트 동작을 검증한다.
     func testSaveRequestedCancelPathClearsPendingSaveWithoutWriting() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -365,6 +373,7 @@ final class CollectionSavePanelClientTests: XCTestCase {
         XCTAssertNil(saved, "No file should be saved when panel is cancelled")
     }
 
+    /// testSaveRequestedFailurePathEmitsSaveCompletedFailure 테스트 동작을 검증한다.
     func testSaveRequestedFailurePathEmitsSaveCompletedFailure() async {
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
         let selectedURL = URL(fileURLWithPath: "/tmp/test-fail.voycoll")

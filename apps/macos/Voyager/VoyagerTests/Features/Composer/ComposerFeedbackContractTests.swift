@@ -6,7 +6,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// Composer 피드백 계약 — 상태, 요청 ID, stale 응답 처리의 비회귀를 검증.
 final class ComposerFeedbackContractTests: XCTestCase {
+    /// testSubmitStoresBaselineAndRequestIDs 테스트 동작을 검증한다.
     func testSubmitStoresBaselineAndRequestIDs() async throws {
         let recorder = SearchRequestRecorder()
         var initialState = ComposerState()
@@ -55,6 +57,7 @@ final class ComposerFeedbackContractTests: XCTestCase {
         XCTAssertEqual(store.state.queryRenderPhase, ComposerQueryRenderPhase.idle)
     }
 
+    /// testStaleResponseDoesNotMutateComposerState 테스트 동작을 검증한다.
     func testStaleResponseDoesNotMutateComposerState() async {
         let activeSearchRequestID = UUID()
         let staleSearchRequestID = UUID()

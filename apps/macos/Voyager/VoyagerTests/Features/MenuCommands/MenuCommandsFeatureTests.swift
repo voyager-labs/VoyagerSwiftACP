@@ -5,7 +5,9 @@ import VoyagerFeaturesUpdateVersion
 import XCTest
 
 @MainActor
+/// 메뉴 명령 기능 — 앱/보기/편집/작업 명령의 델리게이트 라우팅을 검증.
 final class MenuCommandsFeatureTests: XCTestCase {
+    /// testAppCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
     func testAppCommandRoutesToWindowManagerDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -20,6 +22,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// testAppCommandRoutesToUpdaterDelegate 테스트 동작을 검증한다.
     func testAppCommandRoutesToUpdaterDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -34,6 +37,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// testViewCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
     func testViewCommandRoutesToWindowManagerDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -48,6 +52,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// testEditCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
     func testEditCommandRoutesToWindowManagerDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -62,6 +67,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// testTask3EntryCommandsRouteToWindowManagerDelegate 테스트 동작을 검증한다.
     func testTask3EntryCommandsRouteToWindowManagerDelegate() async {
         let appCases: [(MenuCommandItem.AppCommand, WindowManagerAction)] = [
             (.open, .file(.open)),

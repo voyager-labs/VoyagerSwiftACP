@@ -9,6 +9,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// FileManager content 외부 파일시스템 이벤트가 페이지 리로드 계약과 맞는지 검증한다.
 final class FileManagerContentExternalReloadTests: XCTestCase {
     private func extractLoadItems(from action: FileManagerContentAction) -> (path: String, showHidden: Bool)? {
         let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)
@@ -42,6 +43,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         return true
     }
 
+    /// testFileSystemChangedReloadsCurrentFolderForDirectChildPath 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedReloadsCurrentFolderForDirectChildPath() async {
         var initialState = FileManagerContentState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
@@ -59,6 +61,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         }
     }
 
+    /// testFileSystemChangedReloadsCurrentFolderForNestedPath 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedReloadsCurrentFolderForNestedPath() async {
         var initialState = FileManagerContentState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
@@ -76,6 +79,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         }
     }
 
+    /// testFileSystemChangedDoesNotReloadUnrelatedFolder 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedDoesNotReloadUnrelatedFolder() async {
         var initialState = FileManagerContentState()
         initialState.navigation.seedInitialFolderPath("/tmp/voyager")
@@ -88,6 +92,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         await store.finish()
     }
 
+    /// testFileSystemChangedDoesNotReloadCollectionRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedDoesNotReloadCollectionRoute() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .collection(
@@ -108,6 +113,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         await store.finish()
     }
 
+    /// testFileSystemChangedReloadsRecentsRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedReloadsRecentsRoute() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .recents
@@ -125,6 +131,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         }
     }
 
+    /// testFileSystemChangedReloadsTagRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedReloadsTagRoute() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .tags("blue")
@@ -142,6 +149,7 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         }
     }
 
+    /// testFileSystemChangedReloadsComputerRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedReloadsComputerRoute() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .computer

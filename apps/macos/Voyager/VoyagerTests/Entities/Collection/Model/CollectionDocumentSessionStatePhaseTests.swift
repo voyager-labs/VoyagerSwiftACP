@@ -4,7 +4,9 @@ import VoyagerEntitiesCollection
 import XCTest
 
 @MainActor
+/// 컬렉션 문서 세션 페이즈 — 전환 헬퍼와 상태 변환을 검증.
 final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
+    /// testPhaseDerivesLegacyLifecycleBools 테스트 동작을 검증한다.
     func testPhaseDerivesLegacyLifecycleBools() {
         var session = CollectionDocumentSessionState()
 
@@ -29,6 +31,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertNotEqual(session.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
+    /// testExplicitPhaseHelpersTranslateToPhaseTransitions 테스트 동작을 검증한다.
     func testExplicitPhaseHelpersTranslateToPhaseTransitions() {
         var phase = CollectionSessionPhase.idle
 
@@ -60,6 +63,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertEqual(phase, .opened(kind: .definition, base: .ready, inflight: .none))
     }
 
+    /// testReopeningPhaseIgnoresBaseKindAndInflightRewritesUntilOpenCompletes 테스트 동작을 검증한다.
     func testReopeningPhaseIgnoresBaseKindAndInflightRewritesUntilOpenCompletes() {
         var phase: CollectionSessionPhase = .reopening(kind: .definition, base: .ready, inflight: .none)
 
@@ -71,6 +75,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertEqual(phase, .opened(kind: .definition, base: .ready, inflight: .none))
     }
 
+    /// testTransientRefreshStatusesReturnToStaleUntilExplicitlyCleared 테스트 동작을 검증한다.
     func testTransientRefreshStatusesReturnToStaleUntilExplicitlyCleared() {
         var session = CollectionDocumentSessionState()
 
@@ -94,6 +99,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertEqual(session.phase, .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none))
     }
 
+    /// testRefreshFailureBecomesExplicitFailedPhase 테스트 동작을 검증한다.
     func testRefreshFailureBecomesExplicitFailedPhase() {
         var session = CollectionDocumentSessionState()
 
@@ -107,6 +113,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertNotEqual(session.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
+    /// testEqualityTracksPhaseIdentityDirectly 테스트 동작을 검증한다.
     func testEqualityTracksPhaseIdentityDirectly() {
         var lhs = CollectionDocumentSessionState()
         var rhs = CollectionDocumentSessionState()
@@ -117,6 +124,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertNotEqual(lhs, rhs)
     }
 
+    /// testReopeningPreservesHydrationAndStaleSignalsUntilOpenCommits 테스트 동작을 검증한다.
     func testReopeningPreservesHydrationAndStaleSignalsUntilOpenCommits() {
         var phase: CollectionSessionPhase = .reopening(kind: .definition, base: .ready, inflight: .none)
 

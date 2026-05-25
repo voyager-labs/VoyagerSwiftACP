@@ -6,7 +6,9 @@ import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
+/// 이름 변경(리네임) 동작 회귀를 검증하는 테스트 모음이다.
 final class EntryViewLayoutRenameLifecycleTests: XCTestCase {
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testSelectionChangeCancelsRenameWhenSelectedItemChanges() async {
         let renamingItem = makeEntry(name: "renaming", fullPath: "/tmp/renaming.txt")
         let otherItem = makeEntry(name: "other", fullPath: "/tmp/other.txt")
@@ -35,6 +37,7 @@ final class EntryViewLayoutRenameLifecycleTests: XCTestCase {
         await store.finish()
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testSelectionChangeCancelsRenameWhenSelectionBecomesEmpty() async {
         let renamingItem = makeEntry(name: "renaming", fullPath: "/tmp/renaming.txt")
 
@@ -62,6 +65,7 @@ final class EntryViewLayoutRenameLifecycleTests: XCTestCase {
         await store.finish()
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testSelectionChangeCancelsRenameWhenSelectionBecomesMultiSelect() async {
         let renamingItem = makeEntry(name: "renaming", fullPath: "/tmp/renaming.txt")
         let otherItem = makeEntry(name: "other", fullPath: "/tmp/other.txt")
@@ -90,6 +94,7 @@ final class EntryViewLayoutRenameLifecycleTests: XCTestCase {
         await store.finish()
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testSelectionChangePreservesRenameWhenSameSingleItemRemainsSelected() async {
         let renamingItem = makeEntry(name: "renaming", fullPath: "/tmp/renaming.txt")
         let otherItem = makeEntry(name: "other", fullPath: "/tmp/other.txt")
@@ -119,6 +124,7 @@ final class EntryViewLayoutRenameLifecycleTests: XCTestCase {
         await store.finish()
     }
 
+    /// 리네임/선택 전환 경계를 검증해 회귀를 방지한다.
     func testSelectionChangeDoesNothingWhenNoRenameActive() async {
         let item1 = makeEntry(name: "item1", fullPath: "/tmp/item1.txt")
         let item2 = makeEntry(name: "item2", fullPath: "/tmp/item2.txt")

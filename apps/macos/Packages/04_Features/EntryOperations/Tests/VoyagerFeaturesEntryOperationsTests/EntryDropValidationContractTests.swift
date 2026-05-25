@@ -4,6 +4,7 @@ import XCTest
 
 @MainActor
 final class EntryDropValidationContractTests: XCTestCase {
+    /// 동일 부모 내부 이동은 추가 파일 작업 없이 무시되는지 검증
     func testValidateDropReturnsNoOpForSameParentInternalMove() async {
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
             EntryOperationsFeature()
@@ -34,6 +35,7 @@ final class EntryDropValidationContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// 하위 경로로 드롭하는 내부 이동도 무시되어 순환 이동을 막는지 검증
     func testValidateDropReturnsNoOpForDescendantInternalMove() async {
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
             EntryOperationsFeature()
@@ -64,15 +66,11 @@ final class EntryDropValidationContractTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - Bug 2: VoyagerDragOption never written
+    // MARK: - 버그 2: 드래그 Option 상태가 세션에 기록되지 않는 문제
 
     func testDragOptionIsCapturedAtSessionStart() async {
-        // DESIRED: When a drag session begins, the Option-key state should be
-        // captured via saveDragWithOption so it can be read deterministically
-        // during drop handling.
-        //
-        // WILL FAIL: The current reducer does not call saveDragWithOption from
-        // any action. loadDragWithOption returns stale/empty values.
+        // 드래그 세션 시작 시 Option-key 상태를 캡처해야 드롭 정책을 일관되게 재현할 수 있다.
+        // 저장되지 않으면 이후 로드 시 오래되거나 빈 값이 들어와 분기 판단이 흔들린다.
         let recorder = DragOptionRecorder()
 
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
@@ -102,12 +100,7 @@ final class EntryDropValidationContractTests: XCTestCase {
     }
 
     func testDragOptionDoesNotLeakBetweenSessions() async {
-        // DESIRED: Each drag session starts with fresh option state. The
-        // saveDragWithOption call at session start means loadDragWithOption
-        // returns the current session's value, not stale state from a prior drag.
-        //
-        // WILL FAIL: Since saveDragWithOption is never called, loadDragWithOption
-        // returns whatever was left from a prior session.
+        // 각 드래그 세션은 자기 Option 상태를 따로 저장해야 이전 세션 값이 섞이지 않는다.
         let recorder = DragOptionRecorder()
 
         let store1 = TestStore(initialState: EntryOperationsFeature.State()) {

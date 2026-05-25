@@ -1,7 +1,9 @@
 @testable import Voyager
 import XCTest
 
+/// 포맷팅 회귀를 검증하는 테스트 모음이다.
 final class EntryViewLayoutDateFormattingTests: XCTestCase {
+    /// 테스트 시나리오 회귀를 방지하기 위한 동작을 검증한다.
     func testTemplateMapping() {
         // < 140 -> yMd
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: 50), "yMd")
@@ -15,11 +17,12 @@ final class EntryViewLayoutDateFormattingTests: XCTestCase {
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: 220), "yMMMdjm")
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: 500), "yMMMdjm")
 
-        // width <= 0 -> safe fallback (yMd)
+        // width <= 0 -> 안전한 폴백 (yMd)
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: 0), "yMd")
         XCTAssertEqual(EntryListDateFormatting.template(forWidth: -10), "yMd")
     }
 
+    /// 서식/출력 경계 회귀를 방지한다.
     func testFormattingWithFixedLocaleAndTimeZone() throws {
         let date = Date(timeIntervalSince1970: 1_700_000_000) // 2023-11-14 22:13:20 UTC
         let locale = Locale(identifier: "en_US_POSIX")
@@ -43,6 +46,7 @@ final class EntryViewLayoutDateFormattingTests: XCTestCase {
         XCTAssertNotEqual(detailedUTC, detailedSeoul)
     }
 
+    /// 서식/출력 경계 회귀를 방지한다.
     func testRepeatedFormattingIsStable() throws {
         let date = Date()
         let locale = Locale(identifier: "en_US_POSIX")

@@ -6,7 +6,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// Composer 피드백 리셋 — 타이핑/취소/stale 이벤트에 따른 피드백 보존/초기화를 검증.
 final class ComposerFeedbackResetTests: XCTestCase {
+    /// testTypingClearsFeedbackImmediately 테스트 동작을 검증한다.
     func testTypingClearsFeedbackImmediately() async {
         let feedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "boom")
         var initialState = ComposerState()
@@ -21,6 +23,7 @@ final class ComposerFeedbackResetTests: XCTestCase {
         }
     }
 
+    /// testCancelSearchClearsFeedbackImmediately 테스트 동작을 검증한다.
     func testCancelSearchClearsFeedbackImmediately() async {
         let feedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "boom")
         var initialState = ComposerState()
@@ -40,6 +43,7 @@ final class ComposerFeedbackResetTests: XCTestCase {
         }
     }
 
+    /// testDuplicateFailureKeepsExistingFeedbackAndTimer 테스트 동작을 검증한다.
     func testDuplicateFailureKeepsExistingFeedbackAndTimer() async {
         let clock = TestClock()
         let requestID = UUID()
@@ -81,6 +85,7 @@ final class ComposerFeedbackResetTests: XCTestCase {
         }
     }
 
+    /// testStaleDismissActionDoesNotClearReplacementFeedback 테스트 동작을 검증한다.
     func testStaleDismissActionDoesNotClearReplacementFeedback() async {
         let oldFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "old")
         let newFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "new")

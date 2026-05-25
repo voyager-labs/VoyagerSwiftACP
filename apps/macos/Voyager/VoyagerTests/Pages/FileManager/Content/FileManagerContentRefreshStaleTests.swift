@@ -10,7 +10,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// FileManager content에서 stale 상태 전환과 write-back 경계를 검증한다.
 final class FileManagerContentRefreshStaleTests: XCTestCase {
+    /// testRefreshStaleCollectionStartsRefreshingAndClearsWriteBackFlag 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionStartsRefreshingAndClearsWriteBackFlag() async {
         let store = makeRefreshStore(initialState: makeRefreshState())
 
@@ -46,6 +48,7 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
         }
     }
 
+    /// testRefreshFailureClearsInflightFlagsButKeepsStaleLifecycle 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshFailureClearsInflightFlagsButKeepsStaleLifecycle() async {
         struct RefreshError: Error {}
 
@@ -71,6 +74,7 @@ final class FileManagerContentRefreshStaleTests: XCTestCase {
         ))
     }
 
+    /// testRefreshSuccessTransitionsFromRefreshingToWriteBackBeforeSaveCompletes 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshSuccessTransitionsFromRefreshingToWriteBackBeforeSaveCompletes() async {
         let requestID = UUID()
         let response = makeRefreshResponse()

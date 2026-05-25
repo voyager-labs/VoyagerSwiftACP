@@ -4,6 +4,7 @@ import XCTest
 
 @MainActor
 final class EntryListHeaderMenuTests: XCTestCase {
+    /// 헤더 메뉴가 모델의 토글 항목과 초기화 항목을 같은 순서로 렌더링하는지 검증
     func testMenuMatchesModelToggleItemsAndResetItem() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name, .size])
         let headerView = EntryListHeaderView()
@@ -17,7 +18,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
             XCTAssertEqual(menuItem.title, toggle.title)
             XCTAssertEqual(
                 menuItem.state,
-                toggle.isChecked ? NSControl.StateValue.on : NSControl.StateValue.off
+                toggle.isChecked ? NSControl.StateValue.on : NSControl.StateValue.off,
             )
             XCTAssertEqual(menuItem.isEnabled, toggle.isEnabled)
         }
@@ -27,6 +28,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertEqual(resetItem.isEnabled, model.resetItem.isEnabled)
     }
 
+    /// 필수 name 컬럼이 메뉴에서 체크된 상태이면서 비활성화되는지 검증
     func testRequiredNameColumnMenuItemIsDisabledAndChecked() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.dateModified])
         let headerView = EntryListHeaderView()
@@ -39,6 +41,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertFalse(nameItem.isEnabled)
     }
 
+    /// 토글 메뉴 클릭이 실제 컬럼 가시성 변경 액션으로 전달되는지 검증
     func testToggleClickSendsSetListColumnVisibility() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name])
         let headerView = EntryListHeaderView()
@@ -73,6 +76,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertTrue(isVisible)
     }
 
+    /// 필수 name 컬럼은 강제로 활성화해도 숨김 액션이 발행되지 않는지 검증
     func testRequiredNameColumnCannotBeHiddenEvenIfHandlerIsInvoked() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.dateModified])
         let headerView = EntryListHeaderView()
@@ -100,6 +104,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertTrue(sentActions.isEmpty)
     }
 
+    /// 초기화 메뉴 클릭이 기본 컬럼 구성을 복원하는 액션으로 이어지는지 검증
     func testResetClickSendsResetListVisibleColumns() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: [.name])
         let headerView = EntryListHeaderView()
@@ -132,6 +137,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         }
     }
 
+    /// VOY-216: 별도의 Tags 컬럼이 메뉴에 노출되지 않는지 검증
     func testVOY216MenuDoesNotExposeSeparateTagsColumn() {
         let model = EntryViewLayoutColumnsMenuModel(visibleColumns: EntryListColumn.defaultVisibleColumns)
         let headerView = EntryListHeaderView()
@@ -140,6 +146,7 @@ final class EntryListHeaderMenuTests: XCTestCase {
         XCTAssertNil(menu.items.first(where: { $0.title == "Tags" }))
     }
 
+    /// VOY-216: 메타데이터 컬럼 제목과 기본 가시성 구성이 기대값인지 검증
     func testVOY216ColumnsRenderConfiguredFallbacks() {
         XCTAssertEqual(EntryListColumn.application.title, "Application")
         XCTAssertEqual(EntryListColumn.dateAdded.title, "Date Added")

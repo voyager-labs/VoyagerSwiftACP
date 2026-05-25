@@ -4,14 +4,16 @@ import VoyagerFeaturesContentPageNavigation
 import XCTest
 
 @MainActor
+/// 레이아웃 모드 상태 인코딩 회귀를 검증하는 테스트 모음이다.
 final class EntryViewLayoutModeOwnershipTests: XCTestCase {
-    // MARK: - Mode Raw Value Tests
+    // MARK: - 모드 원시값 테스트
 
     func testModeRawValues() {
         XCTAssertEqual(EntryViewLayoutState.Mode.list.rawValue, "list")
         XCTAssertEqual(EntryViewLayoutState.Mode.grid.rawValue, "grid")
     }
 
+    /// 모드/상태 동작 회귀를 방지한다.
     func testModeFromRawValue() {
         XCTAssertEqual(EntryViewLayoutState.Mode.from("list"), .list)
         XCTAssertEqual(EntryViewLayoutState.Mode.from("grid"), .grid)
@@ -19,14 +21,14 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         XCTAssertNil(EntryViewLayoutState.Mode.from(nil))
     }
 
-    // MARK: - Mode isGridLayout Tests
+    // MARK: - isGridLayout 테스트
 
     func testModeIsGridLayout() {
         XCTAssertFalse(EntryViewLayoutState.Mode.list.isGridLayout)
         XCTAssertTrue(EntryViewLayoutState.Mode.grid.isGridLayout)
     }
 
-    // MARK: - State Mode Ownership Tests
+    // MARK: - 상태 모드 소유권 테스트
 
     func testEntryViewLayoutStateDefaultModeIsList() {
         let state = EntryViewLayoutState()
@@ -34,6 +36,7 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         XCTAssertFalse(state.mode.isGridLayout)
     }
 
+    /// 모드/상태 동작 회귀를 방지한다.
     func testEntryViewLayoutStateModeCanBeChanged() {
         var state = EntryViewLayoutState()
         state.mode = .grid
@@ -45,7 +48,7 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         XCTAssertFalse(state.mode.isGridLayout)
     }
 
-    // MARK: - FileManagerContentState Projection Tests
+    // MARK: - FileManagerContentState 프로젝션 테스트
 
     func testFileManagerContentStateEntryViewLayoutModeAccess() {
         var state = FileManagerContentState()
@@ -58,7 +61,7 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         XCTAssertEqual(state.entryViewLayout.mode, .list)
     }
 
-    // MARK: - Codable Tests
+    // MARK: - Codable 테스트
 
     func testModeCodable() throws {
         let modes: [EntryViewLayoutState.Mode] = [.list, .grid]
@@ -70,6 +73,7 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         }
     }
 
+    /// 모드/상태 동작 회귀를 방지한다.
     func testModeDecodesFromRawValue() throws {
         let listJson = Data("\"list\"".utf8)
         let gridJson = Data("\"grid\"".utf8)
@@ -81,7 +85,7 @@ final class EntryViewLayoutModeOwnershipTests: XCTestCase {
         XCTAssertEqual(gridMode, .grid)
     }
 
-    // MARK: - Equatable Tests
+    // MARK: - Equatable 테스트
 
     func testModeEquatable() {
         XCTAssertEqual(EntryViewLayoutState.Mode.list, EntryViewLayoutState.Mode.list)

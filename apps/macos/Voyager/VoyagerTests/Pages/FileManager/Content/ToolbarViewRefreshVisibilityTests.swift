@@ -5,7 +5,9 @@ import VoyagerEntitiesCollection
 import XCTest
 
 @MainActor
+/// 툴바 리프레시 버튼 가시성 계약이 stale/비 stale 경계에 맞는지 검증한다.
 final class ToolbarViewRefreshVisibilityTests: XCTestCase {
+    /// testToolbarRefreshButtonUsesCollectionStatusVisibilityGate 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testToolbarRefreshButtonUsesCollectionStatusVisibilityGate() {
         let status = ToolbarCollectionStatusViewState(
             isCollectionMode: true,
@@ -20,6 +22,7 @@ final class ToolbarViewRefreshVisibilityTests: XCTestCase {
         XCTAssertTrue(isToolbarRefreshButtonEnabled(status))
     }
 
+    /// testToolbarRefreshButtonStaysHiddenOutsideStaleCollectionContext 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testToolbarRefreshButtonStaysHiddenOutsideStaleCollectionContext() {
         let status = ToolbarCollectionStatusViewState(
             isCollectionMode: false,
@@ -34,6 +37,7 @@ final class ToolbarViewRefreshVisibilityTests: XCTestCase {
         XCTAssertFalse(isToolbarRefreshButtonEnabled(status))
     }
 
+    /// testToolbarRefreshButtonHidesWhenStaleIsNotResolvable 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testToolbarRefreshButtonHidesWhenStaleIsNotResolvable() {
         let status = ToolbarCollectionStatusViewState(
             isCollectionMode: true,

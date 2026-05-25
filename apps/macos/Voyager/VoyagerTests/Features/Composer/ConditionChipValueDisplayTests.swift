@@ -5,6 +5,7 @@ import VoyagerEntitiesCollection
 import XCTest
 
 @MainActor
+/// 조건 칩 값 표시 — 날짜/숫자 범위 렌더링 포맷을 검증.
 final class ConditionChipValueDisplayTests: XCTestCase {
     private func makeCondition(
         propertyKey: String,
@@ -24,6 +25,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         )
     }
 
+    /// testDisplayedValuesForDateUsesPickerValuesWhileEditingSameCondition 테스트 동작을 검증한다.
     func testDisplayedValuesForDateUsesPickerValuesWhileEditingSameCondition() {
         let displayed = ConditionChipDisplayUtils.displayedValuesForDate(
             conditionValues: ["2026-02-01", "2026-02-10"],
@@ -36,6 +38,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         XCTAssertEqual(displayed, ["2026-02-15", ""])
     }
 
+    /// testDisplayedValuesForDateFallsBackWhenPickerClosed 테스트 동작을 검증한다.
     func testDisplayedValuesForDateFallsBackWhenPickerClosed() {
         let displayed = ConditionChipDisplayUtils.displayedValuesForDate(
             conditionValues: ["2026-02-01", "2026-02-10"],
@@ -48,6 +51,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         XCTAssertEqual(displayed, ["2026-02-01", "2026-02-10"])
     }
 
+    /// testFormattedValueTextForDateRangeUsesHyphen 테스트 동작을 검증한다.
     func testFormattedValueTextForDateRangeUsesHyphen() {
         let text = ConditionChipDisplayUtils.displayValueText(for: makeCondition(
             propertyKey: "content_modified_at",
@@ -58,6 +62,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         XCTAssertEqual(text, "2026-02-01 ~ 2026-02-10")
     }
 
+    /// testFormattedValueTextForDateRangeCollapsesWhenSameDate 테스트 동작을 검증한다.
     func testFormattedValueTextForDateRangeCollapsesWhenSameDate() {
         let text = ConditionChipDisplayUtils.displayValueText(for: makeCondition(
             propertyKey: "content_modified_at",
@@ -68,6 +73,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         XCTAssertEqual(text, "2026-02-01")
     }
 
+    /// testFormattedValueTextForNumberRangeUsesHyphen 테스트 동작을 검증한다.
     func testFormattedValueTextForNumberRangeUsesHyphen() {
         let text = ConditionChipDisplayUtils.displayValueText(for: makeCondition(
             propertyKey: "size",

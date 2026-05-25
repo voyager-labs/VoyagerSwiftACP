@@ -6,6 +6,7 @@ import XCTest
 final class UnitValueUtilsTests: XCTestCase {
     private let registryClient = RegistryTestSupport.makeRegistryClient()
 
+    /// testFromCanonicalConvertsBytesToDisplayUnit 테스트 동작을 검증한다.
     func testFromCanonicalConvertsBytesToDisplayUnit() {
         let spec = tryUnwrapSizeSpec()
 
@@ -19,6 +20,7 @@ final class UnitValueUtilsTests: XCTestCase {
         )
     }
 
+    /// testToCanonicalConvertsDisplayUnitToBytes 테스트 동작을 검증한다.
     func testToCanonicalConvertsDisplayUnitToBytes() {
         let spec = tryUnwrapSizeSpec()
 
@@ -32,6 +34,7 @@ final class UnitValueUtilsTests: XCTestCase {
         )
     }
 
+    /// testStripUnitSuffixIfNeededRemovesKnownUnits 테스트 동작을 검증한다.
     func testStripUnitSuffixIfNeededRemovesKnownUnits() {
         let spec = tryUnwrapSizeSpec()
 
@@ -40,6 +43,7 @@ final class UnitValueUtilsTests: XCTestCase {
         XCTAssertEqual(UnitValueUtils.stripUnitSuffixIfNeeded("128", spec: spec), "128")
     }
 
+    /// testFromCanonicalConvertsBitrateToDisplayUnit 테스트 동작을 검증한다.
     func testFromCanonicalConvertsBitrateToDisplayUnit() {
         let spec = tryUnwrapAudioBitRateSpec()
 
@@ -53,6 +57,7 @@ final class UnitValueUtilsTests: XCTestCase {
         )
     }
 
+    /// testToCanonicalConvertsDisplayUnitToBitrate 테스트 동작을 검증한다.
     func testToCanonicalConvertsDisplayUnitToBitrate() {
         let spec = tryUnwrapAudioBitRateSpec()
 
@@ -66,6 +71,7 @@ final class UnitValueUtilsTests: XCTestCase {
         )
     }
 
+    /// testStripUnitSuffixIfNeededRemovesBitrateUnits 테스트 동작을 검증한다.
     func testStripUnitSuffixIfNeededRemovesBitrateUnits() {
         let spec = tryUnwrapAudioBitRateSpec()
 
@@ -74,6 +80,7 @@ final class UnitValueUtilsTests: XCTestCase {
         XCTAssertEqual(UnitValueUtils.stripUnitSuffixIfNeeded("128000", spec: spec), "128000")
     }
 
+    /// testVideoBitRateUsesSameUnitSpecAsAudioBitRate 테스트 동작을 검증한다.
     func testVideoBitRateUsesSameUnitSpecAsAudioBitRate() {
         let spec = tryUnwrapSpec(for: "video_bit_rate")
 
@@ -85,6 +92,7 @@ final class UnitValueUtilsTests: XCTestCase {
         )
     }
 
+    /// testTotalBitRateUsesSameUnitSpecAsAudioBitRate 테스트 동작을 검증한다.
     func testTotalBitRateUsesSameUnitSpecAsAudioBitRate() {
         let spec = tryUnwrapSpec(for: "total_bit_rate")
 

@@ -6,7 +6,9 @@ import VoyagerFeaturesEntryThumbnail
 import XCTest
 
 @MainActor
+/// 썸네일 디맨드/타이밍 회귀를 검증하는 테스트 모음이다.
 final class EntryGridThumbnailDemandDispatchTests: XCTestCase {
+    /// 썸네일 디맨드/노출 경계 회귀를 방지한다.
     func testGridVisibleRangeDispatchesThumbnailRequest() {
         var state = EntryViewLayoutState()
         state.entries = [

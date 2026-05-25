@@ -7,7 +7,9 @@ import VoyagerShared
 import XCTest
 
 @MainActor
+/// 드래그/드롭 경로와 시각 상태 회귀를 검증하는 테스트 모음이다.
 final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropOnFolderTileUsesFolderDestinationAndEnablesTargetState() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let harness = makeHarness(entries: [folder], currentPath: "/tmp")
@@ -25,6 +27,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertEqual(harness.coordinator.dropTargetEntryId, folder.id)
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropReturnsNoneForSameParentInternalMove() throws {
         let folder = makeFolderEntry(path: "/tmp/parent")
         let harness = makeHarness(
@@ -46,6 +49,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertNil(harness.coordinator.dropTargetEntryId)
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testValidateDropReturnsNoneForDescendantInternalMove() throws {
         let childFolder = makeFolderEntry(path: "/tmp/folder/child")
         let harness = makeHarness(
@@ -67,6 +71,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertNil(harness.coordinator.dropTargetEntryId)
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropOnValidInternalFolderTargetRoutesHandleDrop() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let recorder = RouteRecorder()
@@ -89,6 +94,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertEqual(recorder.lastRoutingAction, .handleDrop(destinationPath: folder.fullPath))
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropUsesHoveredFolderTargetWhenAppKitReportsBeforeOperation() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let recorder = RouteRecorder()
@@ -113,6 +119,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertEqual(recorder.lastRoutingAction, .handleDrop(destinationPath: folder.fullPath))
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropOnValidExternalFolderTargetRoutesDropItems() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let recorder = RouteRecorder()
@@ -136,6 +143,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testAcceptDropOnPackageDirectoryRejectsDrop() throws {
         let package = makeFolderEntry(path: "/tmp/Test.app")
         let recorder = RouteRecorder()
@@ -159,7 +167,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         XCTAssertNil(recorder.lastRoutingAction)
     }
 
-    // MARK: - Bug 1: Successful drop should retain highlight after accept
+    // MARK: - 버그 1: 성공적인 드롭 후 하이라이트가 유지되어야 함
 
     func testSuccessfulDropRetainsHighlightAfterAccept() {
         let folder = makeFolderEntry(path: "/tmp/target")
@@ -176,12 +184,12 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
             pasteboard: NSPasteboard(name: .drag),
         )
 
-        // validateDrop sets up highlight state (mirrors real AppKit flow)
+        // validateDrop은 하이라이트 상태를 설정합니다(실제 AppKit 동작과 동일한 흐름).
         _ = harness.validateDrop(draggingInfo)
         XCTAssertTrue(harness.store.state.isDropTargeted, "validateDrop should enable drop targeting")
         XCTAssertEqual(harness.coordinator.dropTargetEntryId, folder.id)
 
-        // acceptDrop should retain highlight (T2 fix)
+        // acceptDrop은 하이라이트를 유지해야 합니다(T2 수정).
         let accepted = harness.acceptDrop(draggingInfo)
 
         XCTAssertTrue(accepted, "Drop should be accepted on valid folder target")
@@ -197,7 +205,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         )
     }
 
-    // MARK: - Entry-target invariance: subview boundaries must not change the target
+    // MARK: - 항목 대상 불변성: 하위 뷰 경계가 대상을 변경하지 않아야 함
 
     func testDropTargetIsInvariantAcrossEntrySubregions() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
@@ -238,6 +246,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         }
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDropTargetStabilizesAcrossConsecutiveValidateCalls() throws {
         let folder = makeFolderEntry(path: "/tmp/target")
         let harness = makeHarness(
@@ -247,7 +256,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         )
         let indexPath = IndexPath(item: 0, section: 0)
 
-        // Establish target from icon background
+        // 아이콘 배경에서 대상 설정
         let bgPoint = try harness.windowPoint(for: indexPath, region: .iconBackground)
         _ = harness.validateDrop(MockDraggingInfo(
             draggingLocation: bgPoint,
@@ -256,7 +265,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         ))
         XCTAssertEqual(harness.coordinator.dropTargetEntryId, folder.id)
 
-        // Move to thumbnail — same entry, different subview — target must remain
+        // 썸네일로 이동 — 같은 항목, 다른 하위 뷰 — 대상은 유지되어야 함
         let thumbPoint = try harness.thumbnailImageWindowPoint(for: indexPath)
         _ = harness.validateDrop(MockDraggingInfo(
             draggingLocation: thumbPoint,
@@ -269,7 +278,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
             "Target should remain stable when moving from icon background to thumbnail",
         )
 
-        // Move to name area — still same entry
+        // 이름 영역으로 이동 — 여전히 같은 항목
         let namePoint = try harness.windowPoint(for: indexPath, region: .nameArea)
         _ = harness.validateDrop(MockDraggingInfo(
             draggingLocation: namePoint,
@@ -283,6 +292,7 @@ final class EntryGridCoordinatorDropDelegateTests: XCTestCase {
         )
     }
 
+    /// 드래그/드롭 타겟 처리 회귀를 방지한다.
     func testDropTargetUpdatesWhenMovingToDifferentEntry() throws {
         let folder1 = makeFolderEntry(path: "/tmp/folder1")
         let folder2 = makeFolderEntry(path: "/tmp/folder2")

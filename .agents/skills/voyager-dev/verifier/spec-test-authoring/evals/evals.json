@@ -1,0 +1,66 @@
+{
+  "skill_name": "spec-test-authoring",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Create a test topology plan for spec ONB-004 Finish Onboarding with interactions show_completion_summary, open_main_window, and retry_window_open. The test target is VoyagerPagesOnboardingTests. Include where support files go and what focused test filter should be used.",
+      "expected_output": "A topology plan that creates one spec-owner suite without FeatureTests suffix, places interactions as MARK sections, separates Support files, and uses a class-name focused filter.",
+      "files": [],
+      "assertions": [
+        "Output names the suite ONB004FinishOnboardingTests.swift or ONB004FinishOnboardingTests and does not use FeatureTests.",
+        "Output places interaction ACs as MARK sections or equivalent sections inside the owning suite rather than separate files.",
+        "Output places fixtures/recorders/dependency doubles under Support, not in the spec file.",
+        "Output includes a focused test command or filter using ONB004FinishOnboardingTests."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We already have BillingPolicyTests.swift, BillingRetryLifecycleTests.swift, and PAY002ConfirmPaymentFeatureTests.swift. The product spec PAY-002 Confirm Payment owns the ACs select_payment_method, submit_payment, and handle_payment_failure. Recommend a cleanup plan.",
+      "expected_output": "A cleanup plan that consolidates product AC behavior into PAY002ConfirmPaymentTests, treats policy/lifecycle files as stale or technical-only owners, removes FeatureTests suffix, and updates filters/references together.",
+      "files": [],
+      "assertions": [
+        "Output identifies PAY002ConfirmPaymentTests as the target spec-owner suite without FeatureTests suffix.",
+        "Output recommends moving product AC behavior out of policy/lifecycle files unless they are pure technical contracts.",
+        "Output preserves one owner per product behavior and rejects one-file-per-interaction topology.",
+        "Output mentions updating class/file names and focused filters together."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Authoring a TCA TestStore test for SPEC-007 refresh_status. The reducer only emits an effect for one action, derived completion is updated by an action method, and a stale async response can arrive after a newer one. What authoring rules should the agent follow before verification?",
+      "expected_output": "Guidance that avoids no-op mutation closures, drives derived state through reducer actions, uses deterministic dependency doubles/recorders for stale async ordering, and plans focused verification after GREEN.",
+      "files": [],
+      "assertions": [
+        "Output says not to add TestStore mutation closures for no-op/effect-only actions.",
+        "Output says derived state must be driven through reducer actions or methods rather than assumed from initialization.",
+        "Output requires deterministic dependency doubles, continuations, clocks, or recorders instead of sleeps for stale async responses.",
+        "Output includes focused verification after authoring."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I'm writing PAY002ConfirmPaymentTests and I have a helper that constructs a test payment request and asserts the response matches a snapshot. Should this helper live in the spec file or in Support/?",
+      "expected_output": "The helper should be split: construction (fixture/builder) goes in Support/PAY002/, snapshot assertion lives in the spec suite method. Support files must not own executable behavior assertions.",
+      "files": [],
+      "assertions": [
+        "Output places the request construction/builder in Support/, not in the spec file.",
+        "Output keeps executable assertions or test method logic in the spec suite, not in Support/.",
+        "Output states that Support files must not contain behavior assertions as ownership.",
+        "Output does not recommend putting everything in a single file."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "A spec test suite has 30+ tests with repeated dependency setup (same client instantiated 10+ times), 2 near-duplicate tests that verify the same behavior with slightly different fixture values, and one test using Task.sleep for async timing. Review this suite and produce a cleanup plan that preserves coverage while removing redundancy.",
+      "expected_output": "A targeted cleanup plan that extracts repeated setup into helpers under Support/<Feature>/ using an enum namespace pattern, maps which tests cover which ACs before deleting duplicates (removed → preserved by), replaces Task.sleep with deterministic synchronization via fulfillment or expectation-based waiting, and recommends running a focused --filter verification instead of the full suite.",
+      "files": [],
+      "assertions": [
+        "Output extracts repeated dependency setup into helpers under Support/<Feature>/, using an enum namespace pattern, not inline in the spec file.",
+        "Output maps coverage before deleting duplicates and states which removed test is preserved by which surviving test (removed → preserved by).",
+        "Output replaces Task.sleep with deterministic synchronization such as fulfillment, expectation, or continuation-based waiting, not timeouts.",
+        "Output recommends running a focused test filter (--filter or equivalent) for the affected suite, not the full test suite.",
+        "Output does NOT recommend a broad rewrite, generic refactoring without specifics, or deleting tests without coverage mapping."
+      ]
+    }
+  ]
+}

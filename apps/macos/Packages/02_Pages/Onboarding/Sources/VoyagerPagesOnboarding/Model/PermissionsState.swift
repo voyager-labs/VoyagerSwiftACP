@@ -9,7 +9,7 @@ struct PermissionsState: Equatable, Sendable {
     var helperFolderAccess: FolderAccessResult = .init(
         desktop: .notGranted,
         documents: .notGranted,
-        downloads: .notGranted
+        downloads: .notGranted,
     )
     var systemSettingsError: String?
     var helperFolderAccessError: String?
@@ -17,6 +17,7 @@ struct PermissionsState: Equatable, Sendable {
     var launchAtLoginEnabled: Bool = false
     var launchAtLoginError: String?
     var hasAttemptedFullDiskAccessEnable: Bool = false
+    var latestAppActiveRefreshGeneration: Int = 0
 
     var fullDiskAccessStatusMessage: String {
         switch fullDiskAccessStatus {

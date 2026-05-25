@@ -4,6 +4,7 @@ import XCTest
 
 @MainActor
 final class CollectionSnapshotHydrationTests: XCTestCase {
+    /// 스냅샷이 없으면 복원 가능한 synthetic response도 없다는 점을 검증
     func testNilSnapshotReturnsNil() {
         let file = VoyagerCollectionFile(
             id: "no-snapshot",
@@ -15,7 +16,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
             conditions: [],
             snapshot: nil,
             snapshotMeta: nil,
-            appVersion: nil
+            appVersion: nil,
         )
 
         let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
@@ -23,6 +24,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertNil(response)
     }
 
+    /// fingerprint가 다르면 스냅샷을 복원하지 않는 안전장치를 검증
     func testMismatchFingerprintReturnsNil() {
         let file = VoyagerCollectionFile(
             id: "mismatch",
@@ -37,9 +39,9 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
                 definitionFingerprint: "different-fingerprint",
                 capturedAt: Date.distantPast,
                 itemCount: 1,
-                relevanceRoots: ["/tmp"]
+                relevanceRoots: ["/tmp"],
             ),
-            appVersion: nil
+            appVersion: nil,
         )
 
         let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
@@ -47,6 +49,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertNil(response)
     }
 
+    /// 유효한 스냅샷은 synthetic search response로 복원되는지 검증
     func testUsableSnapshotBuildsSyntheticSearchResponse() {
         let query = "report"
         let scopes = ["/tmp"]
@@ -57,7 +60,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         let fingerprint = CollectionSnapshotHydration.definitionFingerprint(
             query: query,
             scopes: scopes,
-            conditions: conditions
+            conditions: conditions,
         )
 
         let file = VoyagerCollectionFile(
@@ -73,9 +76,9 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
                 definitionFingerprint: fingerprint,
                 capturedAt: Date.distantPast,
                 itemCount: 1,
-                relevanceRoots: scopes
+                relevanceRoots: scopes,
             ),
-            appVersion: nil
+            appVersion: nil,
         )
 
         let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
@@ -89,6 +92,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         ])
     }
 
+    /// 정의 fingerprint 계산이 파일/인자 기반 계산과 일치하는지 검증
     func testDefinitionFingerprintConsistency() {
         let conditions: [CollectionCondition] = [
             .init(propertyKey: "name_full", operatorCode: "eq", value: .string("report")),
@@ -97,7 +101,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         let fp1 = CollectionSnapshotHydration.definitionFingerprint(
             query: " report ",
             scopes: ["/tmp"],
-            conditions: conditions
+            conditions: conditions,
         )
 
         let file = VoyagerCollectionFile(
@@ -110,7 +114,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
             conditions: conditions,
             snapshot: nil,
             snapshotMeta: nil,
-            appVersion: nil
+            appVersion: nil,
         )
 
         let fp2 = CollectionSnapshotHydration.definitionFingerprint(file: file)
