@@ -91,9 +91,11 @@ Extract when the same dependency construction block appears **3 or more times** 
 
 ### Where to place helpers
 
-- Test-target-local: `Tests/<TestTargetName>/Support/` (flat).
+- Test-target-local by default: `Tests/<TestTargetName>/Support/<FeatureOrAC>/` when the helper is owned by one feature, spec, or acceptance-criteria slice.
+- Use flat `Tests/<TestTargetName>/Support/` only for helpers intentionally shared by several suites in that test target.
+- Use `Support/Shared/` only after multiple feature/AC folders prove a concrete shared need.
 - Helpers must not be `public` or leak into production targets.
-- Keep `Support/` flat — file names describe the role (e.g. `ProgressClient.swift`, `PermissionFixtures.swift`), not the spec ID.
+- File names should describe the dependency or role (e.g. `ProgressClient.swift`, `PermissionFixtures.swift`) inside the owning feature/AC folder.
 - If a helper type name collides with a production type (via `@testable import`), append `Fixture` (e.g. `BetaAccessClientFixture`).
 
 ### Enum namespace pattern
@@ -139,6 +141,12 @@ Composite helpers eliminate the most duplication when N tests need the same mult
 - Assertion-based verify closures that inspect arguments with `XCTAssertEqual`. These are unique per test and lose their value when generalized.
 - Attempt-counter or retry-counting closures that branch on invocation number. The branching logic is test-specific.
 - Single-use dependency setups. A helper used once adds indirection without benefit.
+- Helpers that would need production visibility widening (`public`/`open`) just to compile.
+- Feature-specific helpers promoted to `Shared` before at least two independent suites need them.
+
+### Cleanup evidence pairing
+
+When helper extraction happens as part of duplicate-test cleanup, pair it with the spec-test-authoring coverage map: each removed or merged test must point to the surviving test/helper/assertion that preserves behavior. Helper extraction alone is not evidence that coverage remained intact.
 
 ## SPM Package Test Guidance
 

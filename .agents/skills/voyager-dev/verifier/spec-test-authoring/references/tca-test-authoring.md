@@ -137,6 +137,14 @@ A sleep after `fulfillment(of:timeout:)` is redundant when the expectation alrea
 2. **Actor-based recorders.** Use an actor (e.g. `actor Counter { private var value = 0; func increment() { value += 1 }; func value() -> Int { value } }`) to capture side-effect results. Read the actor after fulfillment. No sleep needed.
 3. **TestStore `.receive` for effect-driven actions.** When testing reducer effects that produce actions, `store.receive` synchronizes the effect completion. This is the preferred path for TCA effect testing.
 
+### Replacement checklist
+
+- Identify the event that proves the async work happened: fulfilled expectation, actor recorder append, continuation resume, controlled clock advance, or `TestStore.receive`.
+- Assert only after that event. If the callback mutates a recorder and then fulfills an expectation, the recorder read after fulfillment is deterministic.
+- Document the causality in evidence or a short test comment when replacing an existing sleep.
+- Add a static guardrail for the touched file when the plan explicitly removes sleeps, for example `! grep -R "Task.sleep" <test-file>`.
+- Do not replace one sleep with a longer sleep or a polling loop unless no event source exists and the poll has a bounded timeout plus a clear rationale.
+
 ### When you might still need a wait
 
 For UIKit/AppKit callback sequences where XCTestExpectation does not apply, use `waitForExpectations(timeout:handler:)` with explicit expectations rather than bare `Task.sleep`. If you must poll, use a tight loop with `Task.sleep(nanoseconds: 1_000_000)` (1ms) and a timeout guard, not a single long sleep.
