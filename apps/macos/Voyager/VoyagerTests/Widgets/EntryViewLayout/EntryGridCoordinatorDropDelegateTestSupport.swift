@@ -29,7 +29,7 @@ func makeHarness(
         $0.entryFileOpsClient.loadDragPaths = { internalDragPaths }
         $0.entryFileOpsClient.loadDragWithOption = { false }
         $0.workspaceClient = VoyagerShared.WorkspaceClient.testValue
-        $0.finderFavoritesTagClient = Voyager.FinderFavoritesTagClient.testValue
+        $0.finderFavoritesTagClient = .testValue
         $0.entryThumbnailCacheClient = VoyagerEntitiesEntry.EntryThumbnailCacheClient.testValue
         $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
     }

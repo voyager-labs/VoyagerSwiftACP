@@ -41,7 +41,11 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 XCTAssertEqual(model, "gpt-5-codex")
                 XCTAssertEqual(thinking, .effort(.high))
                 XCTAssertEqual(credential.accessToken, "codex-token")
-                XCTAssertTrue(prompt.contains("Current context summary: workspace context"))
+                XCTAssertTrue(prompt.contains("current_context:"))
+                XCTAssertTrue(prompt.contains("summary: locked workspace context"))
+                XCTAssertTrue(prompt.contains("added_attachments:"))
+                XCTAssertTrue(prompt.contains("Notes.txt [resolvedText]"))
+                XCTAssertTrue(prompt.contains("Attachment body from locked snapshot"))
                 XCTAssertTrue(prompt.contains("User:\nPing"))
                 onDelta("Codex ")
                 onDelta("answer")
@@ -62,7 +66,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Codex answer"),
                 completedAtMs: 30001,
-            ))
+            )),
         ])
         XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 0)
     }
@@ -170,7 +174,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hello"),
                 completedAtMs: 9999,
-            ))
+            )),
         ])
         XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 1)
     }
@@ -193,7 +197,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .invalidRequest)
+            .failed(context: request.context, reason: .invalidRequest),
         ])
     }
 
@@ -219,7 +223,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hello"),
                 completedAtMs: 10001,
-            ))
+            )),
         ])
     }
 
@@ -240,7 +244,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .authentication)
+            .failed(context: request.context, reason: .authentication),
         ])
     }
 
@@ -261,7 +265,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .modelUnavailable)
+            .failed(context: request.context, reason: .modelUnavailable),
         ])
     }
 
@@ -278,7 +282,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .network)
+            .failed(context: request.context, reason: .network),
         ])
     }
 
@@ -314,7 +318,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
                 completedAtMs: 20001,
-            ))
+            )),
         ])
     }
 
@@ -350,7 +354,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Final answer"),
                 completedAtMs: 200_011,
-            ))
+            )),
         ])
     }
 
@@ -442,7 +446,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 context: request.context,
                 assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
                 completedAtMs: 20002,
-            ))
+            )),
         ])
     }
 
@@ -523,7 +527,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .authentication)
+            .failed(context: request.context, reason: .authentication),
         ])
     }
 
@@ -544,7 +548,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .modelUnavailable)
+            .failed(context: request.context, reason: .modelUnavailable),
         ])
     }
 
@@ -565,7 +569,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .quotaExceeded)
+            .failed(context: request.context, reason: .quotaExceeded),
         ])
     }
 
@@ -586,7 +590,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .quotaExceeded)
+            .failed(context: request.context, reason: .quotaExceeded),
         ])
     }
 
@@ -607,7 +611,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .invalidRequest)
+            .failed(context: request.context, reason: .invalidRequest),
         ])
     }
 
@@ -629,8 +633,29 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 
         XCTAssertEqual(events, [
             .started(context: request.context),
-            .failed(context: request.context, reason: .invalidRequest)
+            .failed(context: request.context, reason: .invalidRequest),
         ])
+    }
+
+    func testLowerRequest_usesLockedRequestContextForPayload() throws {
+        let request = makePreparedRequestFixture()
+
+        let payload = try AiChatProviderRequestPayload.lower(request)
+
+        XCTAssertEqual(payload.context.requestContext, request.context.requestContext)
+        XCTAssertEqual(payload.context.currentContext.summary, "locked workspace context")
+        XCTAssertEqual(payload.context.requestContext.addedAttachments.count, 4)
+        XCTAssertEqual(payload.context.requestContext.addedAttachments.first?.displayTitle, "Notes.txt")
+        XCTAssertEqual(payload.context.requestContext.currentContext.summary, "locked workspace context")
+        XCTAssertEqual(
+            payload.context.requestContext.currentContext.summary,
+            request.context.requestContext.currentContext.summary,
+        )
+        XCTAssertEqual(request.context.currentContext.summary, "locked workspace context")
+        XCTAssertEqual(
+            payload.context.requestContext.currentContext.summary,
+            request.context.currentContext.summary,
+        )
     }
 
     func testLowerRequest_detectsProviderMismatchBeforeExecution() {
@@ -697,6 +722,7 @@ private extension AiChatProviderExecutionClientTests {
                 selectedThinking: selectedThinking,
                 sessionStatus: .idle,
                 currentContext: .init(summary: "workspace context"),
+                requestContext: makeLockedRequestContextFixture(),
                 promptSummary: nil,
                 submittedAtMs: 1,
             ),
@@ -715,6 +741,8 @@ private extension AiChatProviderExecutionClientTests {
             unavailableReason: nil,
         )
 
+        let lockedRequestContext = makeLockedRequestContextFixture()
+
         return AiChatRequest(
             context: AiChatRequestContextSnapshot(
                 requestID: AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000001")),
@@ -725,33 +753,22 @@ private extension AiChatProviderExecutionClientTests {
                 selectedThinking: .effort(.high),
                 sessionStatus: .idle,
                 currentContext: AiChatCurrentContextSnapshot(
-                    summary: "workspace context",
-                    references: [
-                        AiChatContextReference(
-                            kind: .file,
-                            identifier: "/tmp/workspace/File.swift",
-                            title: "File.swift",
-                        )
-                    ],
-                    items: [
-                        AiChatContextItem(
-                            kind: .file,
-                            identifier: "item-1",
-                            title: "Notes.md",
-                            subtitle: "/tmp/workspace/Notes.md",
-                        )
-                    ],
+                    summary: "live workspace context",
                     attachments: [
-                        AiChatContextAttachment(identifier: "attachment-1", title: "Screenshot")
+                        AiChatContextAttachment(
+                            identifier: "live-attachment",
+                            title: "Should not leak live attachment",
+                        ),
                     ],
                 ),
+                requestContext: lockedRequestContext,
                 promptSummary: "summarized prompt",
                 submittedAtMs: 1234,
             ),
             messages: [
                 AiChatMessage(role: .system, content: "System rule"),
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Previous answer")
+                AiChatMessage(role: .assistant, content: "Previous answer"),
             ],
         )
     }
@@ -772,6 +789,8 @@ private extension AiChatProviderExecutionClientTests {
             unavailableReason: nil,
         )
 
+        let lockedRequestContext = makeLockedRequestContextFixture()
+
         return AiChatRequest(
             context: AiChatRequestContextSnapshot(
                 requestID: AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000101")),
@@ -782,24 +801,116 @@ private extension AiChatProviderExecutionClientTests {
                 selectedThinking: selectedThinking,
                 sessionStatus: .idle,
                 currentContext: AiChatCurrentContextSnapshot(
-                    summary: "workspace context",
+                    summary: "live workspace context",
                     references: [
                         AiChatContextReference(
                             kind: .file,
-                            identifier: "/tmp/workspace/File.swift",
-                            title: "File.swift",
-                        )
+                            identifier: "/tmp/workspace/Live.swift",
+                            title: "Live.swift",
+                        ),
                     ],
                 ),
+                requestContext: lockedRequestContext,
                 promptSummary: "anthropic prompt summary",
                 submittedAtMs: 2345,
             ),
             messages: [
                 AiChatMessage(role: .system, content: "Answer briefly"),
                 AiChatMessage(role: .user, content: "Say hi"),
-                AiChatMessage(role: .assistant, content: "Previous reply")
+                AiChatMessage(role: .assistant, content: "Previous reply"),
             ],
         )
+    }
+
+    func makeLockedRequestContextFixture() -> AiChatLockedRequestContextSnapshot {
+        AiChatLockedRequestContextSnapshot(
+            currentContext: makeLockedCurrentContextFixture(),
+            addedAttachments: makeLockedAttachmentSnapshotFixtures(),
+        )
+    }
+
+    private func makeLockedCurrentContextFixture() -> AiChatCurrentContextSnapshot {
+        AiChatCurrentContextSnapshot(
+            summary: "locked workspace context",
+            references: [
+                AiChatContextReference(
+                    kind: .file,
+                    identifier: "/tmp/workspace/File.swift",
+                    title: "File.swift",
+                ),
+            ],
+            items: [
+                AiChatContextItem(
+                    kind: .file,
+                    identifier: "item-1",
+                    title: "Notes.md",
+                    subtitle: "/tmp/workspace/Notes.md",
+                    references: [
+                        AiChatContextReference(
+                            kind: .selection,
+                            identifier: "selection-1",
+                            title: "Selected lines 1-4",
+                        ),
+                    ],
+                ),
+            ],
+            attachments: [
+                AiChatContextAttachment(identifier: "attachment-1", title: "Screenshot"),
+            ],
+        )
+    }
+
+    private func makeLockedAttachmentSnapshotFixtures() -> [AiChatAttachmentSnapshot] {
+        [
+            AiChatAttachmentSnapshot(
+                id: AiChatAttachmentID(rawValue: "attachment-text"),
+                source: .file,
+                displayTitle: "Notes.txt",
+                subtitle: "Locked note",
+                kind: .file,
+                sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/workspace/Notes.txt"),
+                metadata: ["mimeType": "text/plain"],
+                resolutionResult: .resolvedText(
+                    text: "Attachment body from locked snapshot",
+                    metadata: ["encoding": "utf-8"],
+                ),
+            ),
+            AiChatAttachmentSnapshot(
+                id: AiChatAttachmentID(rawValue: "attachment-reference"),
+                source: .collectionDocument,
+                displayTitle: "Workspace.voycoll",
+                kind: .file,
+                sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/workspace/Workspace.voycoll"),
+                metadata: ["mimeType": "application/x-voycoll"],
+                resolutionResult: .resolvedReference(
+                    metadata: ["resolution": "reference_only"],
+                ),
+            ),
+            AiChatAttachmentSnapshot(
+                id: AiChatAttachmentID(rawValue: "attachment-too-large"),
+                source: .file,
+                displayTitle: "Large.bin",
+                kind: .file,
+                sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/workspace/Large.bin"),
+                metadata: ["mimeType": "application/octet-stream"],
+                resolutionResult: .failure(
+                    reason: .tooLarge,
+                    metadata: ["limitBytes": "65536"],
+                ),
+            ),
+            AiChatAttachmentSnapshot(
+                id: AiChatAttachmentID(rawValue: "attachment-unsupported"),
+                source: .file,
+                displayTitle: "Unsupported.bin",
+                kind: .file,
+                sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/workspace/Unsupported.bin"),
+                metadata: ["mimeType": "application/octet-stream"],
+                resolutionResult: .failure(
+                    reason: .unsupportedType,
+                    metadata: ["detectedType": "application/octet-stream"],
+                ),
+            ),
+        ]
     }
 }
 
@@ -812,7 +923,65 @@ private struct CapturedOpenAIRequestBody: Decodable {
 
 private struct CapturedOpenAIInputItem: Decodable {
     let role: String
-    let content: String
+    let content: CapturedOpenAIContent
+}
+
+private enum CapturedOpenAIContent: Decodable, Equatable {
+    case text(String)
+    case parts([CapturedOpenAIContentItem])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let text = try? container.decode(String.self) {
+            self = .text(text)
+            return
+        }
+        self = .parts(try container.decode([CapturedOpenAIContentItem].self))
+    }
+
+    var text: String? {
+        guard case let .text(value) = self else { return nil }
+        return value
+    }
+
+    var parts: [CapturedOpenAIContentItem]? {
+        guard case let .parts(value) = self else { return nil }
+        return value
+    }
+}
+
+private struct CapturedOpenAIContentItem: Decodable, Equatable {
+    let type: String
+    let text: String?
+    let detail: String?
+    let imageURL: String?
+    let fileData: String?
+    let filename: String?
+
+    init(
+        type: String,
+        text: String? = nil,
+        detail: String? = nil,
+        imageURL: String? = nil,
+        fileData: String? = nil,
+        filename: String? = nil,
+    ) {
+        self.type = type
+        self.text = text
+        self.detail = detail
+        self.imageURL = imageURL
+        self.fileData = fileData
+        self.filename = filename
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case detail
+        case imageURL = "image_url"
+        case fileData = "file_data"
+        case filename
+    }
 }
 
 private struct CapturedOpenAIReasoning: Decodable {
@@ -851,7 +1020,37 @@ private struct CapturedAnthropicOutputConfig: Decodable {
 
 private struct CapturedAnthropicMessage: Decodable {
     let role: String
-    let content: String
+    let content: [CapturedAnthropicContentItem]
+}
+
+private struct CapturedAnthropicContentItem: Decodable, Equatable {
+    let type: String
+    let text: String?
+    let source: CapturedAnthropicSource?
+    let title: String?
+
+    static func text(_ value: String) -> Self {
+        .init(type: "text", text: value, source: nil, title: nil)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case source
+        case title
+    }
+}
+
+private struct CapturedAnthropicSource: Decodable, Equatable {
+    let type: String
+    let mediaType: String
+    let data: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case mediaType = "media_type"
+        case data
+    }
 }
 
 private struct CapturedAnthropicThinking: Decodable {
@@ -931,11 +1130,22 @@ private func assertOpenAIRequest(_ request: URLRequest, expectedModel: String) t
     XCTAssertTrue(decoded.stream)
     XCTAssertEqual(decoded.reasoning?.effort, "high")
     XCTAssertEqual(decoded.input.map(\.role), ["developer", "developer", "user", "assistant"])
-    XCTAssertEqual(decoded.input.first?.content.contains("Current context summary: workspace context"), true)
-    XCTAssertEqual(decoded.input.first?.content.contains("Use this context when answering the user."), true)
-    XCTAssertEqual(decoded.input[1].content, "System rule")
-    XCTAssertEqual(decoded.input[2].content, "Hello")
-    XCTAssertEqual(decoded.input[3].content, "Previous answer")
+    let prompt = decoded.input.first?.content.text
+    XCTAssertEqual(prompt?.contains("current_context:"), true)
+    XCTAssertEqual(prompt?.contains("summary: locked workspace context"), true)
+    XCTAssertEqual(prompt?.contains("Notes.txt [resolvedText]"), true)
+    XCTAssertEqual(prompt?.contains("Attachment body from locked snapshot"), true)
+    XCTAssertEqual(prompt?.contains("Workspace.voycoll [resolvedReference]"), true)
+    XCTAssertEqual(prompt?.contains("reference included; content not expanded."), true)
+    XCTAssertEqual(prompt?.contains("Large.bin [tooLarge]"), true)
+    XCTAssertEqual(prompt?.contains("not included: tooLarge"), true)
+    XCTAssertEqual(prompt?.contains("Unsupported.bin [unsupportedType]"), true)
+    XCTAssertEqual(prompt?.contains("not included: unsupportedType"), true)
+    XCTAssertEqual(prompt?.contains("live workspace context"), false)
+    XCTAssertEqual(prompt?.contains("Should not leak live attachment"), false)
+    XCTAssertEqual(decoded.input[1].content.text, "System rule")
+    XCTAssertEqual(decoded.input[2].content.text, "Hello")
+    XCTAssertEqual(decoded.input[3].content.text, "Previous answer")
 }
 
 private func assertAnthropicRequest(
@@ -955,11 +1165,17 @@ private func assertAnthropicRequest(
     XCTAssertEqual(decoded.model, expectedModel)
     XCTAssertEqual(decoded.maxTokens, 4096)
     XCTAssertTrue(decoded.stream)
-    XCTAssertEqual(decoded.system?.contains("Current context summary: workspace context"), true)
+    XCTAssertEqual(decoded.system?.contains("current_context:"), true)
+    XCTAssertEqual(decoded.system?.contains("summary: locked workspace context"), true)
+    XCTAssertEqual(decoded.system?.contains("Notes.txt [resolvedText]"), true)
+    XCTAssertEqual(decoded.system?.contains("Workspace.voycoll [resolvedReference]"), true)
+    XCTAssertEqual(decoded.system?.contains("Large.bin [tooLarge]"), true)
+    XCTAssertEqual(decoded.system?.contains("Unsupported.bin [unsupportedType]"), true)
+    XCTAssertEqual(decoded.system?.contains("live workspace context"), false)
     XCTAssertEqual(decoded.system?.contains("Answer briefly"), true)
     XCTAssertEqual(decoded.messages.map(\.role), ["user", "assistant"])
-    XCTAssertEqual(decoded.messages.first?.content, "Say hi")
-    XCTAssertEqual(decoded.messages.last?.content, "Previous reply")
+    XCTAssertEqual(decoded.messages.first?.content, [.text("Say hi")])
+    XCTAssertEqual(decoded.messages.last?.content, [.text("Previous reply")])
 
     switch expectedThinking {
     case .disabled:

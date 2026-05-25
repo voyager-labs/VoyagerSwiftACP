@@ -17,6 +17,14 @@ struct AiChatStateDisplayModelBuilder {
         aiChatContextSummaryDisplayModel(for: state.currentContext)
     }
 
+    var requestContextDisplayModel: AiChatRequestContextDisplayModel {
+        aiChatRequestContextDisplayModel(
+            currentContext: state.currentContext,
+            addedAttachments: state.addedAttachments,
+            lockedRequestContext: lockedRequestContextSnapshot
+        )
+    }
+
     var connectionState: AiChatConnectionState {
         if let metadata = aiChatUnconnectedMetadata(for: state) {
             return .unconnected(metadata)
@@ -103,6 +111,11 @@ struct AiChatStateDisplayModelBuilder {
         AiChatModelCatalogStateBuilder(state: state, availableModels: availableModels)
     }
 
+    private var lockedRequestContextSnapshot: AiChatLockedRequestContextSnapshot? {
+        guard state.executionPhase.isProcessing else { return nil }
+        return state.executionPhase.lock?.context.requestContext
+    }
+
     var canSubmit: Bool {
         guard !state.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard !isProcessing else { return false }
@@ -126,17 +139,17 @@ struct AiChatStateDisplayModelBuilder {
     var requestStatusText: String? {
         switch state.executionPhase {
         case .idle:
-            return selectedModelUnsupportedStatusText
+            selectedModelUnsupportedStatusText
         case let .processing(lock):
-            return "Processing \(lock.selectedModelRow?.displayName ?? lock.selectedModelHandle.rawValue)"
+            "Processing \(lock.selectedModelRow?.displayName ?? lock.selectedModelHandle.rawValue)"
         case .completed:
-            return selectedModelUnsupportedStatusText
+            selectedModelUnsupportedStatusText
         case let .failed(_, failure):
-            return failure.displayMessage
+            failure.displayMessage
         case .cancelled:
-            return "Request cancelled"
+            "Request cancelled"
         case let .persistenceRecovery(_, failure):
-            return "Finalized locally; \(failure.displayMessage)"
+            "Finalized locally; \(failure.displayMessage)"
         }
     }
 
@@ -232,13 +245,13 @@ struct AiChatStateDisplayModelBuilder {
     private var modelListStatusLabel: String {
         switch state.modelListState {
         case .idle, .loading:
-            return "Loading models"
+            "Loading models"
         case .empty:
-            return "No models available"
+            "No models available"
         case let .failed(failure):
-            return failure.message
+            failure.message
         case .loaded:
-            return "Select model"
+            "Select model"
         }
     }
 

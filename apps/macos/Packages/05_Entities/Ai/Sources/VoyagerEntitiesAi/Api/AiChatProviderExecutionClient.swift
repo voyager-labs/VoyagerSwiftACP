@@ -75,15 +75,43 @@ public extension AiChatProviderExecutionClient {
     ) -> AiChatProviderExecutionClient {
         AiChatProviderExecutionClient(
             execute: { request, credential in
+                NSLog(
+                    "[AiChatProviderExecution] Preparing provider request provider=%@ model=%@ requestID=%@ credentialPresent=%@",
+                    request.context.provider.rawValue,
+                    request.context.selectedModel?.rawModelID ?? request.context.model.rawValue,
+                    request.context.requestID.rawValue.uuidString,
+                    String(credential != nil)
+                )
+
                 let result: AiChatProviderPreflightResult
                 do {
                     result = try AiChatProviderPreflight.prepare(request, credential: credential)
                 } catch let error as AiChatProviderPreflightError {
+                    NSLog(
+                        "[AiChatProviderExecution] Provider preflight failed provider=%@ model=%@ requestID=%@ reason=%@",
+                        request.context.provider.rawValue,
+                        request.context.selectedModel?.rawModelID ?? request.context.model.rawValue,
+                        request.context.requestID.rawValue.uuidString,
+                        preflightLogReason(error)
+                    )
                     throw mapPreflightError(error)
                 }
 
+                NSLog(
+                    "[AiChatProviderExecution] Provider request prepared provider=%@ model=%@ requestID=%@ parts=%ld messages=%ld",
+                    result.payload.provider.rawValue,
+                    result.payload.rawModelID,
+                    request.context.requestID.rawValue.uuidString,
+                    result.payload.context.requestContext.parts.count,
+                    result.payload.messages.count
+                )
+
                 switch result.payload.provider {
                 case .openai:
+                    NSLog(
+                        "[AiChatProviderExecution] Starting OpenAI stream requestID=%@",
+                        request.context.requestID.rawValue.uuidString
+                    )
                     return openAIStream(
                         context: request.context,
                         preflight: result,
@@ -91,6 +119,10 @@ public extension AiChatProviderExecutionClient {
                         now: now,
                     )
                 case .anthropic:
+                    NSLog(
+                        "[AiChatProviderExecution] Starting Anthropic stream requestID=%@",
+                        request.context.requestID.rawValue.uuidString
+                    )
                     return anthropicStream(
                         context: request.context,
                         preflight: result,
@@ -98,6 +130,10 @@ public extension AiChatProviderExecutionClient {
                         now: now,
                     )
                 case .chatgptCodex:
+                    NSLog(
+                        "[AiChatProviderExecution] Starting Codex execution requestID=%@",
+                        request.context.requestID.rawValue.uuidString
+                    )
                     return codexStream(
                         context: request.context,
                         preflight: result,
@@ -107,5 +143,25 @@ public extension AiChatProviderExecutionClient {
                 }
             },
         )
+    }
+}
+
+private func preflightLogReason(_ error: AiChatProviderPreflightError) -> String {
+    switch error {
+    case let .missingCredential(provider):
+        return "missingCredential(\(provider.rawValue))"
+    case let .invalidCredential(provider, expected):
+        return "invalidCredential(\(provider.rawValue), expected: \(expected.rawValue))"
+    case let .loweringFailed(error):
+        return "loweringFailed(\(loweringLogReason(error)))"
+    }
+}
+
+private func loweringLogReason(_ error: AiChatProviderRequestLoweringError) -> String {
+    switch error {
+    case let .modelProviderMismatch(requestProvider, modelProvider):
+        return "modelProviderMismatch(request: \(requestProvider.rawValue), model: \(modelProvider.rawValue))"
+    case let .missingModelID(provider):
+        return "missingModelID(\(provider.rawValue))"
     }
 }

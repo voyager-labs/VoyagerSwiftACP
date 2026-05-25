@@ -38,6 +38,7 @@ public struct AiChatState: Equatable, Sendable {
     public var sessionID: AiChatSessionID?
     public var sessionStatus: AiChatSessionStatus
     public var currentContext: AiChatCurrentContextSnapshot
+    public var addedAttachments: [AiChatAttachmentDraft]
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
     public var streamingAssistantDraft: String?
@@ -49,6 +50,8 @@ public struct AiChatState: Equatable, Sendable {
     public var unavailableSelectedModelHandle: AiModelHandle?
     public var lockedModelHandle: AiModelHandle?
     public var lastExecutionFailure: AiChatExecutionFailure?
+    public var lastRequestContext: AiChatLockedRequestContextSnapshot?
+    public var lastRequestContextModelHandle: AiModelHandle?
     public var executionPhase: AiChatExecutionPhase
     public var modelListRequestID: UUID?
     public var modelListProvider: AiProvider?
@@ -66,6 +69,7 @@ public struct AiChatState: Equatable, Sendable {
         sessionID: AiChatSessionID? = nil,
         sessionStatus: AiChatSessionStatus = .idle,
         currentContext: AiChatCurrentContextSnapshot = .init(),
+        addedAttachments: [AiChatAttachmentDraft] = [],
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
         streamingAssistantDraft: String? = nil,
@@ -77,6 +81,8 @@ public struct AiChatState: Equatable, Sendable {
         unavailableSelectedModelHandle: AiModelHandle? = nil,
         lockedModelHandle: AiModelHandle? = nil,
         lastExecutionFailure: AiChatExecutionFailure? = nil,
+        lastRequestContext: AiChatLockedRequestContextSnapshot? = nil,
+        lastRequestContextModelHandle: AiModelHandle? = nil,
         executionPhase: AiChatExecutionPhase = .idle,
         modelListRequestID: UUID? = nil,
         modelListProvider: AiProvider? = nil,
@@ -85,7 +91,7 @@ public struct AiChatState: Equatable, Sendable {
         modelListLoadedModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
         modelListFailedProviders: [AiProvider: AiModelListFailure] = [:],
         providerConnectionSnapshot: AiChatProviderConnectionSnapshot = .unknown,
-        availableModelsByProvider: [AiProvider: [AiProviderModel]] = [:]
+        availableModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
     ) {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
@@ -93,6 +99,7 @@ public struct AiChatState: Equatable, Sendable {
         self.sessionID = sessionID
         self.sessionStatus = sessionStatus
         self.currentContext = currentContext
+        self.addedAttachments = addedAttachments
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
         self.streamingAssistantDraft = streamingAssistantDraft
@@ -105,6 +112,8 @@ public struct AiChatState: Equatable, Sendable {
         self.unavailableSelectedModelHandle = unavailableSelectedModelHandle
         self.lockedModelHandle = lockedModelHandle
         self.lastExecutionFailure = lastExecutionFailure
+        self.lastRequestContext = lastRequestContext
+        self.lastRequestContextModelHandle = lastRequestContextModelHandle
         self.executionPhase = executionPhase
         self.modelListRequestID = modelListRequestID
         self.modelListProvider = modelListProvider
@@ -165,17 +174,18 @@ public struct AiChatState: Equatable, Sendable {
 
     func normalizedSelectionHandle(
         _ preferredHandle: AiModelHandle?,
-        in models: [AiProviderModel]? = nil
+        in models: [AiProviderModel]? = nil,
     ) -> AiModelHandle? {
         resolvedModel(for: preferredHandle, in: models)?.id
     }
 
     func normalizedSelectionHandlePreservingCurrentSelection(
         in models: [AiProviderModel],
-        preferredHandle: AiModelHandle?
+        preferredHandle: AiModelHandle?,
     ) -> AiModelHandle? {
         if let currentHandle = resolvedSelectedModelHandle,
-           Self.containsModelHandle(currentHandle, in: models) {
+           Self.containsModelHandle(currentHandle, in: models)
+        {
             return currentHandle
         }
         return normalizedSelectionHandle(preferredHandle, in: models)
@@ -191,7 +201,7 @@ public struct AiChatState: Equatable, Sendable {
 
     static func normalizedSelectionHandle(
         _ preferredHandle: AiModelHandle?,
-        in models: [AiProviderModel]
+        in models: [AiProviderModel],
     ) -> AiModelHandle? {
         AiChatStateSelection.normalizedSelectionHandle(preferredHandle, in: models)
     }
@@ -214,7 +224,7 @@ public struct AiChatState: Equatable, Sendable {
 
     static func normalizeSelectedThinking(
         _ selectedThinking: AiThinkingSelection?,
-        for model: AiProviderModel?
+        for model: AiProviderModel?,
     ) -> AiThinkingSelection? {
         AiChatStateSelection.normalizeSelectedThinking(selectedThinking, for: model)
     }
@@ -225,7 +235,7 @@ public struct AiChatState: Equatable, Sendable {
 
     static func makeCatalogRows(
         for models: [AiProviderModel],
-        preserving existingRows: [AiModelCatalogRow] = []
+        preserving existingRows: [AiModelCatalogRow] = [],
     ) -> [AiModelCatalogRow] {
         AiChatStateSelection.makeCatalogRows(for: models, preserving: existingRows)
     }

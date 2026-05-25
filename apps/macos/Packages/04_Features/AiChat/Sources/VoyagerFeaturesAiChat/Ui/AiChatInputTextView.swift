@@ -9,12 +9,12 @@ struct AiChatInputTextView: NSViewRepresentable {
     let isDisabled: Bool
     let maxVisibleHeight: CGFloat
     let onSubmit: () -> Void
+    let onAttachmentsDropped: ([URL]) -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
+        let textView = AttachmentDroppingTextView()
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
 
         configure(scrollView: scrollView)
         configure(textView: textView, coordinator: context.coordinator)
@@ -61,8 +61,12 @@ struct AiChatInputTextView: NSViewRepresentable {
         scrollView.automaticallyAdjustsContentInsets = false
     }
 
-    private func configure(textView: NSTextView, coordinator: Coordinator) {
+    private func configure(textView: AttachmentDroppingTextView, coordinator: Coordinator) {
         textView.delegate = coordinator
+        textView.onAttachmentsDropped = { [weak coordinator] urls in
+            coordinator?.handleAttachmentsDropped(urls)
+        }
+        textView.registerForDraggedTypes([.fileURL, .URL])
         textView.drawsBackground = false
         textView.isRichText = false
         textView.importsGraphics = false
@@ -112,6 +116,55 @@ struct AiChatInputTextView: NSViewRepresentable {
 
     private static let trailingReservedWidth: CGFloat = 14
 
+    final class AttachmentDroppingTextView: NSTextView {
+        var onAttachmentsDropped: (([URL]) -> Void)?
+
+        init() {
+            let textStorage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
+            let textContainer = NSTextContainer(containerSize: NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            ))
+            textContainer.widthTracksTextView = false
+            layoutManager.addTextContainer(textContainer)
+            textStorage.addLayoutManager(layoutManager)
+            super.init(frame: .zero, textContainer: textContainer)
+            minSize = .zero
+            maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            nil
+        }
+
+        override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+            let urls = Coordinator.fileURLs(from: sender.draggingPasteboard)
+            guard !urls.isEmpty else { return super.draggingEntered(sender) }
+            return .copy
+        }
+
+        override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+            let urls = Coordinator.fileURLs(from: sender.draggingPasteboard)
+            guard !urls.isEmpty else { return super.draggingUpdated(sender) }
+            return .copy
+        }
+
+        override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+            consumeFileURLs(from: sender.draggingPasteboard) || super.performDragOperation(sender)
+        }
+
+        @discardableResult
+        func consumeFileURLs(from pasteboard: NSPasteboard) -> Bool {
+            let urls = Coordinator.fileURLs(from: pasteboard)
+            guard !urls.isEmpty else { return false }
+
+            onAttachmentsDropped?(urls)
+            return true
+        }
+    }
+
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: AiChatInputTextView
         weak var textView: NSTextView?
@@ -137,6 +190,24 @@ struct AiChatInputTextView: NSViewRepresentable {
             parent.isFocused = false
         }
 
+        @MainActor
+        func textView(
+            _ textView: NSTextView,
+            readSelectionFrom pasteboard: NSPasteboard,
+            type _: NSPasteboard.PasteboardType
+        ) -> Bool {
+            let urls = Self.fileURLs(from: pasteboard)
+            guard !urls.isEmpty else { return false }
+
+            handleAttachmentsDropped(urls)
+            return true
+        }
+
+        @MainActor
+        func handleAttachmentsDropped(_ urls: [URL]) {
+            parent.onAttachmentsDropped(urls)
+        }
+
         func textView(
             _ textView: NSTextView,
             doCommandBy commandSelector: Selector
@@ -153,6 +224,43 @@ struct AiChatInputTextView: NSViewRepresentable {
 
             parent.onSubmit()
             return true
+        }
+
+        static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+            var urls: [URL] = []
+
+            if let objectURLs = pasteboard.readObjects(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]
+            ) as? [URL] {
+                urls.append(contentsOf: objectURLs)
+            }
+
+            for type in [NSPasteboard.PasteboardType.fileURL, .URL] {
+                if let value = pasteboard.string(forType: type), let url = URL(string: value), url.isFileURL {
+                    urls.append(url)
+                }
+            }
+
+            if let fileList = pasteboard.propertyList(forType: .fileURL) as? [String] {
+                urls.append(contentsOf: fileList.map(URL.init(fileURLWithPath:)))
+            }
+
+            return normalizedUniqueFileURLs(from: urls)
+        }
+
+        private static func normalizedUniqueFileURLs(from urls: [URL]) -> [URL] {
+            var seenPaths: Set<String> = []
+            var normalizedURLs: [URL] = []
+
+            for url in urls where url.isFileURL {
+                let normalizedURL = url.standardizedFileURL
+                let path = normalizedURL.path(percentEncoded: false)
+                guard !path.isEmpty, seenPaths.insert(path).inserted else { continue }
+                normalizedURLs.append(normalizedURL)
+            }
+
+            return normalizedURLs
         }
     }
 }

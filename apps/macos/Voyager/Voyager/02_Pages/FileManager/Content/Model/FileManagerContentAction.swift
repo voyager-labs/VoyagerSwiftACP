@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
@@ -55,5 +56,6 @@ enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case openPathInNewTab(String)
         case closeWindow
         case openContextualAiChat
+        case currentContextChanged(AiChatCurrentContextSnapshot)
     }
 }

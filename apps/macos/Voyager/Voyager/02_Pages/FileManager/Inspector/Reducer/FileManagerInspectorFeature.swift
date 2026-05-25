@@ -42,7 +42,7 @@ struct FileManagerInspectorFeature {
 
             case .closeChat:
                 state.inspectorVisible = false
-                return .none
+                return .send(.aiChat(.teardownRequested))
 
             case let .openChat(setup, connectionsFile):
                 state.inspectorVisible = true
@@ -63,6 +63,12 @@ struct FileManagerInspectorFeature {
 
             case .aiChat(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
+
+            case .aiChat(.delegate(.requestAttachmentPicker)):
+                return .send(.delegate(.requestAttachmentPicker))
+
+            case .aiChat(.delegate(.clearCurrentContextSelection)):
+                return .send(.delegate(.clearCurrentContextSelection))
 
             case .delegate, .aiChat:
                 return .none

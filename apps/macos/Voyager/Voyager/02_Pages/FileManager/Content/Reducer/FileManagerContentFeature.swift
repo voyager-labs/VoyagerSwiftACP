@@ -4,6 +4,7 @@ import Foundation
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -115,6 +116,9 @@ struct FileManagerContentFeature {
 
             case let .view(.handleKeyCommand(command)):
                 return FileManagerContentKeyCommandHandler.effect(for: command, state: state)
+
+            case .delegate(.currentContextChanged):
+                return .none
 
             case .delegate(.openPathInNewWindow),
                  .delegate(.openPathInNewTab),
@@ -240,6 +244,10 @@ struct FileManagerContentFeature {
         case let .startRename(item, text):
             let entryOperationsAction = EntryOperationsAction.edit(.startRename(item: item, text: text))
             return sendEntryOperations(entryOperationsAction)
+
+        case .selectionChanged:
+            let snapshot = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state)
+            return .send(.delegate(.currentContextChanged(snapshot)))
         }
     }
 

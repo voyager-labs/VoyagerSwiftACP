@@ -1,10 +1,14 @@
+import AppKit
 import ComposableArchitecture
 import SwiftUI
+import UniformTypeIdentifiers
+import VoyagerEntitiesAi
 
 struct AiChatInputBar: View {
     let store: StoreOf<AiChatFeature>
     let state: AiChatState
     let input: AiChatInputDisplayModel
+    let requestContext: AiChatRequestContextDisplayModel
     let colorScheme: ColorScheme
 
     @Binding var isChatInputFocused: Bool
@@ -14,28 +18,35 @@ struct AiChatInputBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            requestContextRow
+
             chatInputTextField
 
             HStack(alignment: .bottom, spacing: 4) {
-                AiChatHoverTextAffordance(
-                    title: input.contextAffordanceLabel,
-                    systemName: nil,
-                    titleFontSize: 14,
-                    titleWeight: .semibold,
-                    hoverColor: .primary,
-                )
-                .fixedSize(horizontal: true, vertical: false)
+                Button {
+                    store.send(.attachmentPickerTapped)
+                } label: {
+                    AiChatHoverTextAffordance(
+                        title: input.contextAffordanceLabel,
+                        systemName: nil,
+                        titleFontSize: 14,
+                        titleWeight: .semibold,
+                        hoverColor: .primary
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+                .buttonStyle(.plain)
                 HStack(alignment: .bottom, spacing: 8) {
                     AiChatModelSelectorButton(
                         store: store,
                         state: state,
-                        isPresented: $isModelSelectorPopoverPresented,
+                        isPresented: $isModelSelectorPopoverPresented
                     )
                     AiChatThinkingSelectorButton(
                         store: store,
                         state: state,
                         input: input,
-                        isPresented: $isThinkingSelectorPresented,
+                        isPresented: $isThinkingSelectorPresented
                     )
                 }
                 .layoutPriority(1)
@@ -51,12 +62,15 @@ struct AiChatInputBar: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(chatInputBackground),
+                .fill(chatInputBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(chatInputBorder, lineWidth: 1),
+                .strokeBorder(chatInputBorder, lineWidth: 1)
         )
+        .onDrop(of: attachmentDropTypeIdentifiers, isTargeted: nil) { providers in
+            handleAttachmentDrop(providers)
+        }
     }
 
     private var chatInputTextField: some View {
@@ -64,13 +78,16 @@ struct AiChatInputBar: View {
             AiChatInputTextView(
                 text: Binding(
                     get: { state.draftText },
-                    set: { store.send(.draftTextChanged($0)) },
+                    set: { store.send(.draftTextChanged($0)) }
                 ),
                 isFocused: $isChatInputFocused,
                 measuredHeight: $chatInputTextHeight,
                 isDisabled: state.isProcessing,
                 maxVisibleHeight: AiChatView.chatInputMaxTextHeight,
                 onSubmit: { submitAndRestoreInputFocus() },
+                onAttachmentsDropped: { urls in
+                    acceptDroppedAttachments(urls)
+                }
             )
             .frame(height: boundedChatInputTextHeight)
 
@@ -93,7 +110,7 @@ struct AiChatInputBar: View {
     private var boundedChatInputTextHeight: CGFloat {
         min(
             max(chatInputTextHeight, AiChatView.chatInputMinTextHeight),
-            AiChatView.chatInputMaxTextHeight,
+            AiChatView.chatInputMaxTextHeight
         )
     }
 
@@ -138,6 +155,58 @@ struct AiChatInputBar: View {
         restoreChatInputFocus()
     }
 
+    private var attachmentDropTypeIdentifiers: [String] {
+        [UTType.fileURL.identifier, UTType.url.identifier]
+    }
+
+    private func handleAttachmentDrop(_ providers: [NSItemProvider]) -> Bool {
+        var didScheduleLoad = false
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                didScheduleLoad = true
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    guard let url = Self.droppedFileURL(from: item) else { return }
+                    Task { @MainActor in
+                        acceptDroppedAttachments([url])
+                    }
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                didScheduleLoad = true
+                provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, _ in
+                    guard let url = Self.droppedFileURL(from: item) else { return }
+                    Task { @MainActor in
+                        acceptDroppedAttachments([url])
+                    }
+                }
+            }
+        }
+        return didScheduleLoad
+    }
+
+    private func acceptDroppedAttachments(_ urls: [URL]) {
+        store.send(.attachmentDropSelection(urls))
+        restoreChatInputFocus()
+    }
+
+    private nonisolated static func droppedFileURL(from item: (any NSSecureCoding)?) -> URL? {
+        if let url = item as? URL, url.isFileURL {
+            return url
+        }
+        if let data = item as? Data,
+           let url = URL(dataRepresentation: data, relativeTo: nil),
+           url.isFileURL
+        {
+            return url
+        }
+        if let string = item as? String,
+           let url = URL(string: string),
+           url.isFileURL
+        {
+            return url
+        }
+        return nil
+    }
+
     private func restoreChatInputFocus() {
         Task { @MainActor in
             isChatInputFocused = true
@@ -146,13 +215,233 @@ struct AiChatInputBar: View {
 
     private func actionGlyph(symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 9, weight: .semibold))
+            .font(.system(size: 8, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: 24, height: 24)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary),
+                    .fill(Color.primary)
             )
             .opacity(1)
+    }
+}
+
+private extension AiChatInputBar {
+    @ViewBuilder var requestContextRow: some View {
+        if !requestContext.isEmpty {
+            AiChatRequestContextRow(store: store, state: state, displayModel: requestContext)
+        }
+    }
+}
+
+private struct AiChatRequestContextRow: View {
+    let store: StoreOf<AiChatFeature>
+    let state: AiChatState
+    let displayModel: AiChatRequestContextDisplayModel
+
+    private var destinationProvider: AiProvider? {
+        state.executionPhase.lock?.selectedModelHandle.provider ?? state.selectedModelHandle?.provider
+    }
+
+    private var currentContextSnapshot: AiChatCurrentContextSnapshot {
+        state.executionPhase.lock?.context.requestContext.currentContext ?? state.currentContext
+    }
+
+    private var destinationLabel: String {
+        destinationProvider.map(aiChatProviderSectionTitle(for:)) ?? "Selected provider"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let currentContext = displayModel.currentContext {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .center, spacing: 8) {
+                        groupLabel("Current context")
+                        currentContextChip(currentContext)
+                    }
+                }
+            }
+
+            if !displayModel.addedAttachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .center, spacing: 8) {
+                        groupLabel("Attachments")
+                        ForEach(displayModel.addedAttachments) { attachment in
+                            attachmentChip(attachment)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func groupLabel(_ title: String) -> some View {
+        Text(title)
+            .font(chipTitleFont)
+            .foregroundStyle(.secondary)
+    }
+
+    private func currentContextChip(_ chip: AiChatCurrentContextChipDisplayModel) -> some View {
+        let statusLabel = aiChatCurrentContextStatusLabel(
+            for: currentContextSnapshot,
+            destinationProvider: destinationProvider
+        )
+        let statusDetail = aiChatCurrentContextStatusDetail(
+            for: currentContextSnapshot,
+            destinationProvider: destinationProvider
+        )
+        let detail = [chip.detail, statusDetail].compactMap { $0 }.joined(separator: " · ")
+        return removableChip(
+            title: chip.title,
+            help: aiChatRequestContextTooltipText(
+                sourceLabel: "Current context",
+                destinationLabel: destinationLabel,
+                statusLabel: statusLabel,
+                statusDetail: detail.isEmpty ? chip.title : detail
+            ),
+            iconSystemName: chip.iconSystemName,
+            iconAssetName: chip.iconAssetName,
+            iconFilePath: chip.iconFilePath,
+            isRemovable: false,
+            accessibilityLabel: "Current context"
+        ) {}
+    }
+
+    private func attachmentChip(_ chip: AiChatAddedAttachmentChipDisplayModel) -> some View {
+        removableChip(
+            title: chip.title,
+            help: aiChatRequestContextTooltipText(
+                sourceLabel: "Attachments",
+                destinationLabel: destinationLabel,
+                statusLabel: chip.statusLabel,
+                statusDetail: chip.statusDetail
+            ),
+            iconSystemName: chip.iconSystemName,
+            iconAssetName: chip.iconAssetName,
+            iconFilePath: chip.iconFilePath,
+            statusLabel: chip.statusLabel,
+            isRemovable: chip.isRemovable,
+            accessibilityLabel: "Remove attachment"
+        ) {
+            store.send(.removeAddedAttachment(chip.attachmentID))
+        }
+    }
+
+    private func removableChip(
+        title: String,
+        help: String,
+        iconSystemName: String?,
+        iconAssetName: String?,
+        iconFilePath: String?,
+        statusLabel: String? = nil,
+        isRemovable: Bool,
+        accessibilityLabel: String,
+        remove: @escaping () -> Void
+    ) -> some View {
+        AiChatRemovableRequestContextChip(
+            title: title,
+            help: help,
+            iconSystemName: iconSystemName,
+            iconAssetName: iconAssetName,
+            iconFilePath: iconFilePath,
+            statusLabel: statusLabel,
+            isRemovable: isRemovable,
+            accessibilityLabel: accessibilityLabel,
+            remove: remove
+        )
+    }
+
+    private var chipTitleFont: Font { .system(size: 11, weight: .medium) }
+}
+
+private struct AiChatRemovableRequestContextChip: View {
+    let title: String
+    let help: String
+    let iconSystemName: String?
+    let iconAssetName: String?
+    let iconFilePath: String?
+    let statusLabel: String?
+    let isRemovable: Bool
+    let accessibilityLabel: String
+    let remove: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            chipIcon
+            Text(title)
+                .font(chipTitleFont)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            if let statusLabel, !statusLabel.isEmpty {
+                Text(statusLabel)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.primary.opacity(0.05))
+                    )
+            }
+
+            if isRemovable {
+                Button(action: remove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(isHovering ? .primary : .secondary)
+                        .frame(width: 14, height: 14)
+                        .background(
+                            Circle()
+                                .fill(isHovering ? Color.primary.opacity(0.08) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(accessibilityLabel)
+            }
+        }
+        .padding(.horizontal, chipHorizontalPadding)
+        .padding(.vertical, chipVerticalPadding)
+        .background(chipBackground)
+        .overlay(chipBorder)
+        .clipShape(Capsule(style: .continuous))
+        .help(help)
+        .onHover { isHovering = $0 }
+    }
+
+    @ViewBuilder private var chipIcon: some View {
+        if let iconFilePath {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: iconFilePath))
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 11, height: 11)
+        } else if let iconAssetName {
+            Image(iconAssetName)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 11, height: 11)
+        } else if let iconSystemName {
+            Image(systemName: iconSystemName)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var chipTitleFont: Font { .system(size: 11, weight: .medium) }
+    private var chipHorizontalPadding: CGFloat { 8 }
+    private var chipVerticalPadding: CGFloat { 4 }
+
+    private var chipBackground: some View {
+        Capsule(style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var chipBorder: some View {
+        Capsule(style: .continuous)
+            .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
     }
 }

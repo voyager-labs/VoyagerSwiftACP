@@ -15,13 +15,19 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case modelSelectorDismissed
     case selectedModelChanged(AiModelHandle?)
     case selectedThinkingChanged(AiThinkingSelection?)
+    case currentContextChanged(AiChatCurrentContextSnapshot)
     case draftTextChanged(String)
+    case attachmentPickerTapped
+    case attachmentPickerSelection([URL])
+    case attachmentDropSelection([URL])
+    case removeAddedAttachment(AiChatAttachmentID)
     case openSettingsTapped
     case errorRecoveryTapped
     case submitTapped
     case regenerateTapped
     case cancelTapped
     case resetTapped
+    case teardownRequested
     case restoreOutcome(
         requestedSessionID: AiChatSessionID,
         AiChatSessionRestoreResult,
@@ -35,5 +41,7 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     @CasePathable
     public enum Delegate: CasePathable, Equatable, Sendable {
         case openAISettings
+        case requestAttachmentPicker
+        case clearCurrentContextSelection
     }
 }
