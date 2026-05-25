@@ -3,7 +3,7 @@ import ComposableArchitecture
 import XCTest
 
 @MainActor
-final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
+final class EVM002EntryViewLayoutWidgetPresentationTests: XCTestCase {
     // MARK: - EVM-002-show_hide_hidden_entry
 
     /// EVM-002-show_hide_hidden_entry: 숨김 파일 토글이 상태를 반전시키는지 검증
