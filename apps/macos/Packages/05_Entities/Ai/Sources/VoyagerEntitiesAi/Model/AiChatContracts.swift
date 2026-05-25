@@ -514,6 +514,7 @@ public struct AiChatRequestContextSnapshot: Codable, Equatable, Sendable {
 public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
     public let sessionID: AiChatSessionID
     public let status: AiChatSessionStatus
+    public let customTitle: String?
     public let provider: AiProvider?
     public let model: AiModelHandle?
     public let selectedModelRow: AiModelCatalogRow?
@@ -528,6 +529,7 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
     public init(
         sessionID: AiChatSessionID,
         status: AiChatSessionStatus,
+        customTitle: String? = nil,
         provider: AiProvider?,
         model: AiModelHandle?,
         selectedModelRow: AiModelCatalogRow? = nil,
@@ -540,6 +542,7 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
     ) {
         self.sessionID = sessionID
         self.status = status
+        self.customTitle = customTitle
         self.provider = provider
         self.model = model
         self.selectedModelRow = selectedModelRow
@@ -624,7 +627,12 @@ private extension AiChatSessionSnapshot {
     }
 
     var sessionTitle: String {
-        sessionTitleCandidate ?? contextTitle ?? selectedModelRow?.displayName ?? model?.rawValue ?? "New Chat"
+        customTitle.map { Self.normalizedSummaryText($0) }?.nilIfBlank
+            ?? sessionTitleCandidate
+            ?? contextTitle
+            ?? selectedModelRow?.displayName
+            ?? model?.rawValue
+            ?? "New Chat"
     }
 
     var sessionPreview: String? {

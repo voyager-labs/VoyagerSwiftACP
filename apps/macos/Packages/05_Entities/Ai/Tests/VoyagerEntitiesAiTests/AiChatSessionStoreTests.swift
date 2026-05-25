@@ -80,6 +80,45 @@ final class AiChatSessionStoreTests: XCTestCase {
         XCTAssertEqual(summaries.map(\.sessionID), [transcriptOnlyMatch.sessionID])
     }
 
+    func testAiChatSessionSummary_prefersCustomTitleOverDerivedTitle() throws {
+        let snapshot = makeSnapshot(
+            sessionID: UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!,
+            userPrompt: "Original prompt",
+            assistantReply: "Original answer",
+            customTitle: "  Renamed Release Chat  ",
+            updatedAtMs: 600
+        )
+
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+
+        XCTAssertEqual(summary.title, "Renamed Release Chat")
+    }
+
+    func testAiChatSessionStore_queryMatchesCustomTitle() async throws {
+        let store = try makeStore()
+        let customTitleMatch = makeSnapshot(
+            sessionID: UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!,
+            userPrompt: "Original prompt",
+            assistantReply: "Original answer",
+            customTitle: "Renamed migration chat",
+            updatedAtMs: 700
+        )
+        let nonMatch = makeSnapshot(
+            sessionID: UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd")!,
+            userPrompt: "Design sync",
+            assistantReply: "Spacing only",
+            updatedAtMs: 650
+        )
+
+        try await store.saveSession(customTitleMatch)
+        try await store.saveSession(nonMatch)
+
+        let summaries = try await store.listSessions(limit: nil, query: "migration")
+
+        XCTAssertEqual(summaries.map(\.sessionID), [customTitleMatch.sessionID])
+        XCTAssertEqual(summaries.first?.title, "Renamed migration chat")
+    }
+
     func testAiChatSessionStore_saveUsesOwnerOnlyPermissions() async throws {
         let store = try makeStore()
         let snapshot = makeSnapshot(
@@ -205,6 +244,7 @@ final class AiChatSessionStoreTests: XCTestCase {
         status: AiChatSessionStatus = .active,
         userPrompt: String,
         assistantReply: String,
+        customTitle: String? = nil,
         extraMessages: [AiChatMessage] = [],
         contextSummary: String? = nil,
         updatedAtMs: Int64
@@ -212,6 +252,7 @@ final class AiChatSessionStoreTests: XCTestCase {
         AiChatSessionSnapshot(
             sessionID: AiChatSessionID(rawValue: sessionID),
             status: status,
+            customTitle: customTitle,
             provider: .openai,
             model: AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
             selectedModelRow: AiModelCatalogRow(
