@@ -32,19 +32,6 @@ public struct AiChatView: View {
                 } else {
                     ScrollViewReader { scrollProxy in
                         VStack(spacing: 0) {
-                            HStack {
-                                Button("Back to Sessions") {
-                                    store.send(.backToSessionsTapped)
-                                }
-                                .buttonStyle(.plain)
-                                .font(.system(size: 12, weight: .medium))
-
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.top, 10)
-                            .padding(.bottom, 4)
-
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 12) {
                                     AiChatConversationSurface(

@@ -65,6 +65,14 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
 
         let store = TestStore(initialState: FileManagerInspectorFeature.State()) {
             FileManagerInspectorFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
         }
 
         await store.send(.openChat(setup, .empty())) {
@@ -84,10 +92,39 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
             $0.aiChat.executionPhase = .idle
         }
 
-        await store.receive(\.aiChat.providerConnectionsUpdated)
+        await store.receive(\.aiChat.providerConnectionsUpdated) {
+            $0.aiChat.providerConnectionSnapshot = .known([])
+        }
+
+        let fallbackSessionID = makeSessionID("00000000-0000-0000-0000-000000000000")
+        let fallbackSnapshot = AiChatSessionSnapshot(
+            sessionID: fallbackSessionID,
+            status: .idle,
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [],
+            updatedAtMs: 0,
+        )
+
+        await store.receive(\.aiChat.restoreOutcome) {
+            $0.aiChat.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
+            $0.aiChat.restoreFailure = .missingRecord
+            $0.aiChat.sessionID = fallbackSessionID
+            $0.aiChat.sessionStatus = .idle
+            $0.aiChat.transcriptHistory = []
+            $0.aiChat.draftText = ""
+            $0.aiChat.selectedModelHandle = nil
+            $0.aiChat.selectedThinking = nil
+            $0.aiChat.unavailableSelectedModelHandle = nil
+            $0.aiChat.lockedModelHandle = nil
+            $0.aiChat.lastExecutionFailure = nil
+            $0.aiChat.executionPhase = .idle
+        }
 
         XCTAssertEqual(store.state.aiChat.restoreSessionID, restoreSessionID)
-        XCTAssertEqual(store.state.aiChat.sessionStatus, .restoring)
+        XCTAssertEqual(store.state.aiChat.sessionStatus, .idle)
         XCTAssertEqual(store.state.aiChat.mode, .sessions)
     }
 
@@ -118,6 +155,22 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
 
         XCTAssertEqual(store.state.activeMode, .chat)
         XCTAssertTrue(store.state.inspectorPaneExists)
+    }
+
+    func testSessionHeaderBackButtonRoutesToAiChatSessions() async {
+        let store = TestStore(initialState: FileManagerInspectorFeature.State(
+            inspectorVisible: true,
+            inspectorPaneExists: true,
+            activeMode: .chat,
+            aiChat: AiChatFeature.State(mode: .chat),
+        )) {
+            FileManagerInspectorFeature()
+        }
+
+        await store.send(.sessionHeaderBackTapped)
+        await store.receive(\.aiChat.backToSessionsTapped) {
+            $0.aiChat.mode = .sessions
+        }
     }
 
     func testOpenChatAfterClosePreservesExistingConversationAndSelection() async {

@@ -8,18 +8,6 @@ struct AiChatSessionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                Text(displayModel.title)
-                    .font(.system(size: 20, weight: .semibold))
-
-                Spacer(minLength: 0)
-
-                Button(displayModel.newChatTitle) {
-                    store.send(.newChatTapped)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-
             TextField(
                 displayModel.searchPlaceholder,
                 text: Binding(
