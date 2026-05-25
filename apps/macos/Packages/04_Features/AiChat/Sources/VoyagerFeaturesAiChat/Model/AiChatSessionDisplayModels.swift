@@ -1,12 +1,78 @@
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerShared
 
-public enum AiChatSessionDateBucket: String, Equatable, Sendable {
-    case today = "Today"
-    case yesterday = "Yesterday"
-    case older = "Older"
+public enum AiChatSessionDateBucket: Hashable, Sendable {
+    case today
+    case yesterday
+    case previous7Days
+    case previous30Days
+    case month(Int)
+    case year(Int)
 
-    public var title: String { rawValue }
+    public init(_ bucket: DateGroupBucket) {
+        switch bucket {
+        case .today:
+            self = .today
+        case .yesterday:
+            self = .yesterday
+        case .previous7Days:
+            self = .previous7Days
+        case .previous30Days:
+            self = .previous30Days
+        case let .month(month):
+            self = .month(month)
+        case let .year(year):
+            self = .year(year)
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .today:
+            "Today"
+        case .yesterday:
+            "Yesterday"
+        case .previous7Days:
+            "Previous 7 Days"
+        case .previous30Days:
+            "Previous 30 Days"
+        case let .month(month):
+            Self.monthTitle(month)
+        case let .year(year):
+            "\(year)"
+        }
+    }
+
+    public var dateGroupBucket: DateGroupBucket {
+        switch self {
+        case .today:
+            .today
+        case .yesterday:
+            .yesterday
+        case .previous7Days:
+            .previous7Days
+        case .previous30Days:
+            .previous30Days
+        case let .month(month):
+            .month(month)
+        case let .year(year):
+            .year(year)
+        }
+    }
+
+    private static func monthTitle(_ month: Int) -> String {
+        let calendar = Calendar.current
+        let currentYear = calendar.component(.year, from: Date())
+        guard let date = calendar.date(from: DateComponents(year: currentYear, month: month, day: 1)) else {
+            return "\(month)"
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM"
+        formatter.locale = Locale.current
+        return formatter.string(from: date)
+    }
 }
 
 public struct AiChatSessionRowDisplayModel: Identifiable, Equatable, Sendable {
@@ -82,7 +148,10 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
             bucket(forUpdatedAtMs: summary.updatedAtMs, now: now, calendar: calendar)
         }
 
-        return [AiChatSessionDateBucket.today, .yesterday, .older]
+        return grouped.keys
+            .sorted { lhs, rhs in
+                DateGroupBucket.ordered(lhs.dateGroupBucket, rhs.dateGroupBucket)
+            }
             .compactMap { bucket in
                 guard let bucketRows = grouped[bucket], !bucketRows.isEmpty else { return nil }
                 return AiChatSessionSectionDisplayModel(
@@ -98,18 +167,6 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
         calendar: Calendar = .current
     ) -> AiChatSessionDateBucket {
         let updatedAt = Date(timeIntervalSince1970: TimeInterval(updatedAtMs) / 1000)
-        if calendar.isDate(updatedAt, inSameDayAs: now) {
-            return .today
-        }
-
-        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: now) else {
-            return .older
-        }
-
-        if calendar.isDate(updatedAt, inSameDayAs: yesterday) {
-            return .yesterday
-        }
-
-        return .older
+        return AiChatSessionDateBucket(DateGroupBucket.bucket(for: updatedAt, now: now, calendar: calendar))
     }
 }

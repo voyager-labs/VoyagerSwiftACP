@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import AppKit
 import SwiftUI
 
 struct AiChatSessionsView: View {
@@ -87,23 +88,11 @@ struct AiChatSessionsView: View {
             }
             .buttonStyle(.plain)
 
-            Menu {
-                Button("Rename") {
-                    store.send(.renameSessionTapped(row.id))
-                }
-                Button("Delete", role: .destructive) {
-                    store.send(.deleteSessionTapped(row.id))
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            AiChatSessionActionsMenuButton(
+                onRename: { store.send(.renameSessionTapped(row.id)) },
+                onDelete: { store.send(.deleteSessionTapped(row.id)) }
+            )
+            .frame(width: 24, height: 24)
             .help("Session actions")
         }
     }
@@ -181,9 +170,79 @@ struct AiChatSessionsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
+
+private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
+    let onRename: () -> Void
+    let onDelete: () -> Void
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(frame: .zero)
+        button.bezelStyle = .texturedRounded
+        button.isBordered = false
+        button.title = "…"
+        button.font = .systemFont(ofSize: 15, weight: .semibold)
+        button.contentTintColor = .secondaryLabelColor
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.showMenu(_:))
+        button.setButtonType(.momentaryPushIn)
+        button.focusRingType = .none
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.onRename = onRename
+        context.coordinator.onDelete = onDelete
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onRename: onRename, onDelete: onDelete)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var onRename: () -> Void
+        var onDelete: () -> Void
+
+        init(onRename: @escaping () -> Void, onDelete: @escaping () -> Void) {
+            self.onRename = onRename
+            self.onDelete = onDelete
+        }
+
+        @objc func showMenu(_ sender: NSButton) {
+            let menu = NSMenu()
+            menu.addItem(menuItem(title: "Rename", action: #selector(rename)))
+            menu.addItem(menuItem(title: "Delete", action: #selector(delete), isDestructive: true))
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY + 2), in: sender)
+        }
+
+        @objc private func rename() {
+            onRename()
+        }
+
+        @objc private func delete() {
+            onDelete()
+        }
+
+        private func menuItem(
+            title: String,
+            action: Selector,
+            isDestructive: Bool = false
+        ) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            if isDestructive {
+                item.attributedTitle = NSAttributedString(
+                    string: title,
+                    attributes: [.foregroundColor: NSColor.systemRed]
+                )
+            }
+            return item
+        }
+    }
+}
 
 private enum RenameAction: Equatable {
     case cancel
     case save
-}
 }

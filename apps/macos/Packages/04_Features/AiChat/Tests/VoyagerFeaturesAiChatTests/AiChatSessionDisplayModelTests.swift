@@ -5,39 +5,72 @@ import XCTest
 
 @MainActor
 final class AiChatSessionDisplayModelTests: XCTestCase {
-    func testBucketingGroupsRowsIntoTodayYesterdayAndOlder() {
+    func testBucketingGroupsRowsUsingContentPaneDateSections() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let now = makeDate(year: 2026, month: 5, day: 25, calendar: calendar)
 
         let today = makeSessionSummary(
             sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111111")),
             title: "Today session",
-            updatedAtMs: Int64(now.timeIntervalSince1970 * 1000)
+            updatedAtMs: milliseconds(for: now)
         )
-        let yesterdayDate = calendar.date(byAdding: .day, value: -1, to: now) ?? now
         let yesterday = makeSessionSummary(
             sessionID: AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222222")),
             title: "Yesterday session",
-            updatedAtMs: Int64(yesterdayDate.timeIntervalSince1970 * 1000)
+            updatedAtMs: milliseconds(for: makeDate(year: 2026, month: 5, day: 24, calendar: calendar))
         )
-        let olderDate = calendar.date(byAdding: .day, value: -3, to: now) ?? now
-        let older = makeSessionSummary(
+        let previous7Days = makeSessionSummary(
             sessionID: AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333")),
-            title: "Older session",
-            updatedAtMs: Int64(olderDate.timeIntervalSince1970 * 1000)
+            title: "Previous 7 Days session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2026, month: 5, day: 21, calendar: calendar))
+        )
+        let previous30Days = makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444")),
+            title: "Previous 30 Days session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2026, month: 5, day: 1, calendar: calendar))
+        )
+        let month = makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555")),
+            title: "Month session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2026, month: 2, day: 1, calendar: calendar))
+        )
+        let year = makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666")),
+            title: "Year session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2024, month: 12, day: 1, calendar: calendar))
         )
 
         let displayModel = AiChatSessionsDisplayModel(
-            rows: [today, yesterday, older],
+            rows: [year, previous30Days, today, month, yesterday, previous7Days],
             now: now,
             calendar: calendar
         )
 
-        XCTAssertEqual(displayModel.sections.map { $0.bucket }, [.today, .yesterday, .older])
-        XCTAssertEqual(displayModel.sections[0].rows.map { $0.title }, ["Today session"])
-        XCTAssertEqual(displayModel.sections[1].rows.map { $0.title }, ["Yesterday session"])
-        XCTAssertEqual(displayModel.sections[2].rows.map { $0.title }, ["Older session"])
+        XCTAssertEqual(displayModel.sections.map { $0.bucket }, [
+            .today,
+            .yesterday,
+            .previous7Days,
+            .previous30Days,
+            .month(2),
+            .year(2024),
+        ])
+        XCTAssertEqual(displayModel.sections.map { $0.title }, [
+            "Today",
+            "Yesterday",
+            "Previous 7 Days",
+            "Previous 30 Days",
+            "February",
+            "2024",
+        ])
+        XCTAssertEqual(displayModel.sections.map { $0.rows.map(\.title) }, [
+            ["Today session"],
+            ["Yesterday session"],
+            ["Previous 7 Days session"],
+            ["Previous 30 Days session"],
+            ["Month session"],
+            ["Year session"],
+        ])
     }
 
     func testEmptyStateUsesExactStrings() {
@@ -79,6 +112,19 @@ final class AiChatSessionDisplayModelTests: XCTestCase {
         XCTAssertEqual(displayModel.emptyDetail, "Start a new chat with the current context")
         XCTAssertTrue(displayModel.sections.isEmpty)
     }
+}
+
+private func makeDate(
+    year: Int,
+    month: Int,
+    day: Int,
+    calendar: Calendar
+) -> Date {
+    calendar.date(from: DateComponents(year: year, month: month, day: day)) ?? Date(timeIntervalSince1970: 0)
+}
+
+private func milliseconds(for date: Date) -> Int64 {
+    Int64(date.timeIntervalSince1970 * 1000)
 }
 
 private func makeSessionSummary(
