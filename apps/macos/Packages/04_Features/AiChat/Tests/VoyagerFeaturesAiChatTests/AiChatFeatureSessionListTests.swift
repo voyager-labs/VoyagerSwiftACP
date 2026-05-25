@@ -66,6 +66,13 @@ final class AiChatFeatureSessionListTests: XCTestCase {
             preview: "Need a repro",
             contextTitle: "release checklist"
         )
+        let transcriptMatch = makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555")),
+            title: "Backend cleanup",
+            preview: "Discuss retries",
+            contextTitle: "Operations",
+            searchText: "Earlier conversation mentioned RELEASE blockers in detail."
+        )
         let nonMatch = makeSessionSummary(
             sessionID: AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444")),
             title: "Design sync",
@@ -74,17 +81,17 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         )
 
         let store = TestStore(initialState: AiChatFeature.State(
-            sessionList: .init(allRows: [titleMatch, previewMatch, contextMatch, nonMatch])
+            sessionList: .init(allRows: [titleMatch, previewMatch, contextMatch, transcriptMatch, nonMatch])
         )) {
             AiChatFeature()
         }
 
         await store.send(.sessionSearchQueryChanged("  rElEaSe  ")) { state in
             state.sessionList.query = "  rElEaSe  "
-            state.sessionList.rows = [titleMatch, previewMatch, contextMatch]
+            state.sessionList.rows = [titleMatch, previewMatch, contextMatch, transcriptMatch]
         }
 
-        XCTAssertEqual(store.state.sessionList.allRows, [titleMatch, previewMatch, contextMatch, nonMatch])
+        XCTAssertEqual(store.state.sessionList.allRows, [titleMatch, previewMatch, contextMatch, transcriptMatch, nonMatch])
     }
 
     func testNewChatTappedStartsUnselectedDraftAndSavesDurableUnselectedSnapshot() async {
@@ -278,6 +285,7 @@ private func makeSessionSummary(
     preview: String? = "Need the latest diff summary.",
     messageCount: Int = 2,
     contextTitle: String? = "Release docs",
+    searchText: String? = nil,
     provider: AiProvider = .openai,
     model: AiModelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
     createdAtMs: Int64 = 1000,
@@ -290,6 +298,7 @@ private func makeSessionSummary(
         preview: preview,
         messageCount: messageCount,
         contextTitle: contextTitle,
+        searchText: searchText,
         provider: provider,
         model: model,
         createdAtMs: createdAtMs,

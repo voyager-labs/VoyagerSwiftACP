@@ -238,6 +238,7 @@ private extension AiChatSessionSummary {
             title,
             preview,
             contextTitle,
+            searchText,
             provider?.rawValue,
             model?.rawValue,
             model?.provider.rawValue,

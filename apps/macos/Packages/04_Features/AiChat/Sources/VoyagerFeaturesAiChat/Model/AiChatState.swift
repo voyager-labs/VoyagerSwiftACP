@@ -82,7 +82,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         guard !trimmedQuery.isEmpty else { return rows }
         let normalizedQuery = trimmedQuery.localizedLowercase
         return rows.filter { row in
-            [row.title, row.preview, row.contextTitle]
+            [row.title, row.preview, row.contextTitle, row.searchText]
                 .compactMap { $0?.localizedLowercase }
                 .contains { $0.contains(normalizedQuery) }
         }

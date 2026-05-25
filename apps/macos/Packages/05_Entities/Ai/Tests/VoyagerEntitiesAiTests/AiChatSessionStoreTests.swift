@@ -22,6 +22,7 @@ final class AiChatSessionStoreTests: XCTestCase {
         XCTAssertEqual(derived.preview, "Final answer with useful detail.")
         XCTAssertEqual(derived.messageCount, 2)
         XCTAssertEqual(derived.contextTitle, "Workspace / Docs")
+        XCTAssertEqual(derived.searchText, "Summarize these diffs please Final answer with useful detail.")
         XCTAssertEqual(derived.provider, .openai)
         XCTAssertEqual(derived.model, snapshot.model)
         XCTAssertEqual(derived.createdAtMs, snapshot.updatedAtMs)
@@ -51,6 +52,32 @@ final class AiChatSessionStoreTests: XCTestCase {
 
         XCTAssertEqual(summaries.map(\.sessionID), [newer.sessionID, older.sessionID])
         XCTAssertEqual(summaries.map(\.updatedAtMs), [200, 100])
+    }
+
+    func testAiChatSessionStore_queryMatchesFullTranscriptContent() async throws {
+        let store = try makeStore()
+        let transcriptOnlyMatch = makeSnapshot(
+            sessionID: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!,
+            userPrompt: "Initial question",
+            assistantReply: "Final reply",
+            extraMessages: [
+                AiChatMessage(role: .assistant, content: "The hidden migration keyword appears in the middle.")
+            ],
+            updatedAtMs: 500
+        )
+        let nonMatch = makeSnapshot(
+            sessionID: UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!,
+            userPrompt: "Design sync",
+            assistantReply: "Spacing only",
+            updatedAtMs: 400
+        )
+
+        try await store.saveSession(transcriptOnlyMatch)
+        try await store.saveSession(nonMatch)
+
+        let summaries = try await store.listSessions(limit: nil, query: "  migration  ")
+
+        XCTAssertEqual(summaries.map(\.sessionID), [transcriptOnlyMatch.sessionID])
     }
 
     func testAiChatSessionStore_saveUsesOwnerOnlyPermissions() async throws {
@@ -178,6 +205,7 @@ final class AiChatSessionStoreTests: XCTestCase {
         status: AiChatSessionStatus = .active,
         userPrompt: String,
         assistantReply: String,
+        extraMessages: [AiChatMessage] = [],
         contextSummary: String? = nil,
         updatedAtMs: Int64
     ) -> AiChatSessionSnapshot {
@@ -192,10 +220,9 @@ final class AiChatSessionStoreTests: XCTestCase {
                 authMethod: .apiKey,
                 sortOrder: 0
             ),
-            transcriptHistory: [
-                AiChatMessage(role: .user, content: userPrompt),
-                AiChatMessage(role: .assistant, content: assistantReply)
-            ],
+            transcriptHistory: [AiChatMessage(role: .user, content: userPrompt)]
+                + extraMessages
+                + [AiChatMessage(role: .assistant, content: assistantReply)],
             lastRequestContext: AiChatLockedRequestContextSnapshot(
                 currentContext: AiChatCurrentContextSnapshot(summary: contextSummary)
             ),

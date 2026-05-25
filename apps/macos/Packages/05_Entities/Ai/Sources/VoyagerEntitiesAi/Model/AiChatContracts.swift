@@ -559,6 +559,7 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
     public let preview: String?
     public let messageCount: Int
     public let contextTitle: String?
+    public let searchText: String?
     public let provider: AiProvider?
     public let model: AiModelHandle?
     public let createdAtMs: Int64
@@ -572,6 +573,7 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
         preview: String? = nil,
         messageCount: Int,
         contextTitle: String? = nil,
+        searchText: String? = nil,
         provider: AiProvider?,
         model: AiModelHandle?,
         createdAtMs: Int64,
@@ -583,6 +585,7 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
         self.preview = preview
         self.messageCount = messageCount
         self.contextTitle = contextTitle
+        self.searchText = searchText
         self.provider = provider
         self.model = model
         self.createdAtMs = createdAtMs
@@ -598,6 +601,7 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
             preview: snapshot.sessionPreview,
             messageCount: snapshot.transcriptHistory.count,
             contextTitle: snapshot.contextTitle,
+            searchText: snapshot.transcriptSearchText,
             provider: snapshot.provider,
             model: snapshot.model,
             createdAtMs: snapshot.createdAtMs,
@@ -631,6 +635,14 @@ private extension AiChatSessionSnapshot {
             .first
     }
 
+    var transcriptSearchText: String? {
+        transcriptHistory
+            .compactMap(\.content.nilIfBlank)
+            .map { Self.normalizedSearchText($0) }
+            .joined(separator: " ")
+            .nilIfBlank
+    }
+
     var contextTitle: String? {
         let currentContext = lastRequestContext?.currentContext
         return currentContext?.summary?.nilIfBlank
@@ -655,6 +667,13 @@ private extension AiChatSessionSnapshot {
         guard collapsed.count > limit else { return collapsed }
         let endIndex = collapsed.index(collapsed.startIndex, offsetBy: limit)
         return String(collapsed[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func normalizedSearchText(_ value: String) -> String {
+        value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
 
