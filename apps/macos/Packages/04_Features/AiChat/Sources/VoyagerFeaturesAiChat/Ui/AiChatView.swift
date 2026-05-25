@@ -24,7 +24,12 @@ public struct AiChatView: View {
             let builder = AiChatStateDisplayModelBuilder(state: state)
             let skeleton = state.skeletonDisplayModel
             let requestContext = builder.requestContextDisplayModel
-            let sessions = AiChatSessionsDisplayModel(rows: state.sessionList.rows, now: Date())
+            let sessions = AiChatSessionsDisplayModel(
+                rows: state.sessionList.rows,
+                now: Date(),
+                query: state.sessionList.query,
+                totalRowCount: state.sessionList.allRows.count
+            )
 
             Group {
                 if state.mode == .sessions {

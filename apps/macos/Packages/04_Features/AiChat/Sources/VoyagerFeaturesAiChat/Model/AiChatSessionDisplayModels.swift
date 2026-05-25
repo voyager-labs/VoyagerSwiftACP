@@ -48,13 +48,24 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
     public init(
         rows: [AiChatSessionSummary],
         now: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        query: String = "",
+        totalRowCount: Int? = nil
     ) {
         title = "Sessions"
         newChatTitle = "New Chat"
         searchPlaceholder = "Search sessions"
-        emptyTitle = "No sessions yet"
-        emptyDetail = "Start a new chat with the current context"
+
+        let hasActiveSearch = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasSessionsBeforeFiltering = (totalRowCount ?? rows.count) > 0
+        if rows.isEmpty, hasActiveSearch, hasSessionsBeforeFiltering {
+            emptyTitle = "No matching sessions"
+            emptyDetail = "Try a different search term."
+        } else {
+            emptyTitle = "No sessions yet"
+            emptyDetail = "Start a new chat with the current context"
+        }
+
         sections = Self.makeSections(rows: rows, now: now, calendar: calendar)
     }
 

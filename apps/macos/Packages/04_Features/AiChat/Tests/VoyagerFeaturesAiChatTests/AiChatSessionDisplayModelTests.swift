@@ -51,6 +51,34 @@ final class AiChatSessionDisplayModelTests: XCTestCase {
         XCTAssertEqual(displayModel.emptyDetail, "Start a new chat with the current context")
         XCTAssertTrue(displayModel.sections.isEmpty)
     }
+
+    func testSearchEmptyStateUsesExactStringsWhenRowsAreFilteredOut() {
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [],
+            now: makeFixedDate(milliseconds: 1_700_000_000_000),
+            query: "  missing  ",
+            totalRowCount: 2
+        )
+
+        XCTAssertTrue(displayModel.isEmpty)
+        XCTAssertEqual(displayModel.emptyTitle, "No matching sessions")
+        XCTAssertEqual(displayModel.emptyDetail, "Try a different search term.")
+        XCTAssertTrue(displayModel.sections.isEmpty)
+    }
+
+    func testSearchQueryStillUsesNoSessionsCopyWhenThereAreNoSavedSessions() {
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [],
+            now: makeFixedDate(milliseconds: 1_700_000_000_000),
+            query: "  missing  ",
+            totalRowCount: 0
+        )
+
+        XCTAssertTrue(displayModel.isEmpty)
+        XCTAssertEqual(displayModel.emptyTitle, "No sessions yet")
+        XCTAssertEqual(displayModel.emptyDetail, "Start a new chat with the current context")
+        XCTAssertTrue(displayModel.sections.isEmpty)
+    }
 }
 
 private func makeSessionSummary(
