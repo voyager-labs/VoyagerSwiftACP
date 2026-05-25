@@ -41,6 +41,7 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case regenerateTapped
     case cancelTapped
     case resetTapped
+    case teardownRequested
     case restoreOutcome(
         requestedSessionID: AiChatSessionID,
         AiChatSessionRestoreResult,

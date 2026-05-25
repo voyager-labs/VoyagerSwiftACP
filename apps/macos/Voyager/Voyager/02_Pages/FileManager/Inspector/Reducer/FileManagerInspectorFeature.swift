@@ -42,7 +42,7 @@ struct FileManagerInspectorFeature {
 
             case .closeChat:
                 state.inspectorVisible = false
-                return .none
+                return .send(.aiChat(.teardownRequested))
 
             case let .openChat(setup, connectionsFile):
                 state.inspectorVisible = true

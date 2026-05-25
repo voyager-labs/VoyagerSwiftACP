@@ -26,13 +26,20 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
             $0.aiChat.transcriptHistory = setup.transcriptHistory
             $0.aiChat.draftText = setup.draftText
             $0.aiChat.catalogRows = setup.catalogRows
+            $0.aiChat.modelListState = self.makeLoadedModelListState(from: setup.catalogRows)
             $0.aiChat.selectedModelHandle = setup.selectedModelHandle
             $0.aiChat.lockedModelHandle = setup.lockedModelHandle
             $0.aiChat.lastExecutionFailure = setup.lastExecutionFailure
             $0.aiChat.executionPhase = .idle
         }
 
-        await store.receive(\.aiChat.providerConnectionsUpdated)
+        await store.receive(\.aiChat.providerConnectionsUpdated) {
+            $0.aiChat.catalogRows = []
+            $0.aiChat.modelListState = .empty
+            $0.aiChat.selectedModelHandle = nil
+            $0.aiChat.unavailableSelectedModelHandle = setup.selectedModelHandle
+            $0.aiChat.providerConnectionSnapshot = .known([])
+        }
 
         XCTAssertTrue(store.state.inspectorVisible)
         XCTAssertEqual(store.state.activeMode, .chat)
@@ -84,17 +91,29 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.aiChat.mode, .sessions)
     }
 
-    func testCloseChatHidesInspectorPane() async {
-        let store = TestStore(initialState: FileManagerInspectorFeature.State(
-            inspectorVisible: true,
-            inspectorPaneExists: true,
-            activeMode: .chat,
-        )) {
+    func testCloseChatHidesInspectorPaneAndRequestsAiChatTeardown() async {
+        let setup = makeSetup(
+            sessionID: makeSessionID("00000000-0000-0000-0000-000000000002"),
+            summary: "Documents · streaming context",
+        )
+        var processingFixture = makeProcessingState(existingSetup: setup)
+        processingFixture.state.inspectorVisible = true
+        processingFixture.state.inspectorPaneExists = true
+        processingFixture.state.aiChat.lockedModelHandle = setup.selectedModelHandle
+        processingFixture.state.aiChat.streamingAssistantDraft = "Partial response"
+
+        let store = TestStore(initialState: processingFixture.state) {
             FileManagerInspectorFeature()
         }
 
         await store.send(.closeChat) {
             $0.inspectorVisible = false
+        }
+
+        await store.receive(\.aiChat.teardownRequested) {
+            $0.aiChat.lockedModelHandle = nil
+            $0.aiChat.streamingAssistantDraft = nil
+            $0.aiChat.executionPhase = .idle
         }
 
         XCTAssertEqual(store.state.activeMode, .chat)
@@ -286,6 +305,20 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
                 isRecommended: true,
             ),
         ]
+    }
+
+    private func makeLoadedModelListState(from rows: [AiModelCatalogRow]) -> AiChatModelListState {
+        .loaded(rows.map { row in
+            AiProviderModel(
+                id: row.handle,
+                provider: row.handle.provider,
+                rawModelID: row.handle.rawValue,
+                displayName: row.displayName,
+                providerDisplayName: ProviderDescriptor.descriptor(for: row.handle.provider)?.displayName
+                    ?? row.handle.provider.rawValue,
+                thinkingCapability: .unknown(reason: .init(message: "Thinking capability metadata is not loaded yet.")),
+            )
+        })
     }
 
     private func makeRequestLock(

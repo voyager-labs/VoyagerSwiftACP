@@ -195,6 +195,75 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(requestSpy.requests[1].context.selectedThinking, .effort(.medium))
     }
 
+    func testTeardownRequestedStopsProcessingDraftWithoutClearingConversation() async {
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let summary = makeContextSnapshot()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111122"))
+        let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000004"))
+        let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000005"))
+        let messages = [AiChatMessage(role: .user, content: "Keep this transcript")]
+        let context = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: catalogRows[0].handle.provider,
+            model: catalogRows[0].handle,
+            selectedModel: models[0],
+            selectedModelRow: catalogRows[0],
+            selectedThinking: .effort(.medium),
+            sessionStatus: .active,
+            currentContext: summary,
+            promptSummary: "Keep this transcript",
+            submittedAtMs: 1_700_000_000_600,
+        )
+        let request = AiChatRequest(context: context, messages: messages)
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: request,
+            selectedModelHandle: catalogRows[0].handle,
+            selectedModelRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+            historyTruncation: AiChatHistoryTruncationMetadata(
+                includedMessageCount: 1,
+                excludedMessageCount: 0,
+                budget: 24000,
+                truncationReason: nil,
+            ),
+            observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: 1_700_000_000_600),
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: summary,
+            transcriptHistory: messages,
+            draftText: "Draft survives close",
+            streamingAssistantDraft: "Partial response",
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium),
+            lockedModelHandle: catalogRows[0].handle,
+            lastExecutionFailure: nil,
+            executionPhase: .processing(lock),
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.teardownRequested) { state in
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.executionPhase = .idle
+        }
+
+        XCTAssertEqual(store.state.transcriptHistory, messages)
+        XCTAssertEqual(store.state.draftText, "Draft survives close")
+        XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
+    }
+
     func testCodexModelSelectionCanSubmitThroughCLIExecutionPath() {
         let handle = AiModelHandle(provider: .chatgptCodex, rawValue: "gpt-5-codex")
         let row = AiModelCatalogRow(
