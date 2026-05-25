@@ -4,8 +4,6 @@ import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryArrangements
 import XCTest
 
-// MARK: - EVM-004 Arrangement (Sort / Group) AC Coverage
-
 @MainActor
 final class EVM004ArrangeEntriesViewTests: XCTestCase {
     // MARK: - EVM-004-sort_entries_by_property
@@ -213,9 +211,11 @@ final class EVM004ArrangeEntriesViewTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-004-group_entries_by_property: kind 그룹이 활성화되면 폴더/이미지/텍스트/기타 순으로 그룹화
-    /// 회귀 불변: kind가 공백/미확인인 항목이 "Other" 그룹으로 분류되는 불변 조건 검증.
-    /// spec suite의 kind 그룹핑 테스트에는 "Other" 엣지 케이스가 없으므로 독립 회귀 테스트로 유지.
+    /// EVM-004-group_entries_by_property: kind 그룹 활성화 시 Other 엣지 케이스 포함 그룹 순서 검증
+    /// kind가 공백/미확인인 항목이 "Other" 그룹으로 분류되는 불변 조건을 검증한다.
+    /// - 검증 내용: apply가 groupKey=.kind에서 Folder/Image/Text/Other 순으로 그룹화하는지 확인
+    /// - 사전 조건: sortKey=.name, sortOrder=.ascending, groupKey=.kind, Other 항목(kind="   ") 포함
+    /// - 기대 결과: Folders, Image, Text, Other 그룹 순서로 분류됨
     func testApply_groupsByKind_andKeepsGroupOrderingSemantics() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -252,9 +252,11 @@ final class EVM004ArrangeEntriesViewTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-004-group_entries_by_property: VOY-213 tags 그룹이 태그 색상 코드를 함께 보존
-    /// 회귀 불변: 태그 그룹이 EntryArrangements의 colorCode를 GroupedItems에 올바르게 전달하는지 확인.
-    /// VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
+    /// EVM-004-group_entries_by_property: VOY-213 태그 그룹 colorCode 보존 회귀 검증
+    /// 태그 그룹이 EntryArrangements의 colorCode를 GroupedItems에 올바르게 전달하는지 확인한다.
+    /// - 검증 내용: apply가 groupKey=.tags에서 각 태그 그룹의 colorCode를 GroupedItems에 설정하는지 확인
+    /// - 사전 조건: sortKey=.name, sortOrder=.ascending, groupKey=.tags, Blue(colorCode=6)/Red(colorCode=1) 태그
+    /// - 기대 결과: Blue 그룹 colorCode=6, Red 그룹 colorCode=1, No Tags 그룹 colorCode=nil
     func testVOY213TagsGroupingCarriesColorCodeFromEntryArrangements() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -288,9 +290,11 @@ final class EVM004ArrangeEntriesViewTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-004-group_entries_by_property: VOY-213 동일 태그 이름이 입력 순서와 무관하게 안정적인 색상 선택 유지
-    /// 회귀 불변: 동일 태그명에 다른 colorCode가 있을 때 첫 번째 항목의 colorCode가 선택되는 안정성 보장.
-    /// VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
+    /// EVM-004-group_entries_by_property: VOY-213 동일 태그명 colorCode 안정성 회귀 검증
+    /// 동일 태그명에 다른 colorCode가 있을 때 첫 번째 항목의 colorCode가 선택되는 안정성을 보장한다.
+    /// - 검증 내용: 동일 태그명 "Blue"에 colorCode 6과 1이 있을 때 첫 항목의 colorCode(6)가 선택되는지 확인
+    /// - 사전 조건: sortKey=.name, sortOrder=.ascending, groupKey=.tags, Blue 태그 두 개(각각 colorCode=6, 1)
+    /// - 기대 결과: Blue 그룹의 colorCode가 6으로 설정됨
     func testVOY213TagColorSelectionIsStableAcrossInputOrder() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -321,9 +325,11 @@ final class EVM004ArrangeEntriesViewTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-004-group_entries_by_property: VOY-213 lastOpenedDate가 없으면 더 이른 그룹으로 폴백
-    /// 회귀 불변: lastOpenedDate가 nil인 항목이 "Earlier" 그룹으로 분류되는 날짜 폴백 동작 보장.
-    /// VOY-213 전용 동작으로 spec interaction ID에 매핑되지 않는 회귀 테스트.
+    /// EVM-004-group_entries_by_property: VOY-213 lastOpenedDate 누락 시 Earlier 폴백 회귀 검증
+    /// lastOpenedDate가 nil인 항목이 "Earlier" 그룹으로 분류되는 날짜 폴백 동작을 보장한다.
+    /// - 검증 내용: apply가 groupKey=.dateLastOpened에서 lastOpenedDate=nil인 항목을 "Earlier"로 분류하는지 확인
+    /// - 사전 조건: sortKey=.name, sortOrder=.ascending, groupKey=.dateLastOpened, nil/오늘 lastOpenedDate 항목 혼합
+    /// - 기대 결과: Today 그룹에 opened 항목, Earlier 그룹에 missing 항목 분류됨
     func testVOY213DateLastOpenedFallsBackToEarlierForMissingDates() async {
         let today = Date()
         let missing = makeEntry(
@@ -367,9 +373,11 @@ final class EVM004ArrangeEntriesViewTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-004-group_entries_by_property: VOY-213 tags 그룹의 표시 이름과 fallback 그룹 이름이 사용자가 읽을 수 있게 유지
-    /// 회귀 불변: 태그 그룹은 태그명을, 미분류 항목은 "No Tags"를 표시하는지 확인.
-    /// 그룹명과 colorCode가 함께 올바르게 설정되는 엣지 케이스 회귀 방지.
+    /// EVM-004-group_entries_by_property: VOY-213 태그/fallback 그룹명 가시성 회귀 검증
+    /// 태그 그룹은 태그명을, 미분류 항목은 "No Tags"를 표시하는지 확인한다.
+    /// - 검증 내용: apply가 groupKey=.tags에서 태그명과 "No Tags"를 groupName으로 설정하고 colorCode를 보존하는지 확인
+    /// - 사전 조건: sortKey=.name, sortOrder=.ascending, groupKey=.tags, 태그있는 항목/태그없는 항목 혼합
+    /// - 기대 결과: Blue(colorCode=6), No Tags(colorCode=nil) 그룹명과 colorCode 올바르게 설정됨
     func testVOY213GroupedItemsKeepVisibleTitlesForTagAndFallbackGroups() async {
         let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
 

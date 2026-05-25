@@ -45,7 +45,12 @@ final class EVM001NavigatePagesTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
     }
 
-    /// EVM-001-navigate_pages: direct navigation to recents records history and emits delegates in order
+    /// EVM-001-navigate_pages: 최근 항목 네비게이션 시 history 기록 및 델리게이트 순차 발생 검증
+    /// 최근 항목으로 직접 네비게이션하면 backHistory에 이전 상태가 기록되고 델리게이트가 순차 발생한다.
+    /// - 검증 내용: performShowRecents 액션이 navigationState를 .recents로 변경하고 backHistory/forwardHistory를 재조정하는지 확인
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore
+    /// - 기대 결과: navigationState=.recents, backHistory=["/seed"], forwardHistory=[], resetComposer → logDAU →
+    /// navigateToState 순차 발생
     func testDirectShowRecentsRecordsHistoryAndEmitsDelegatesInOrder() async {
         let store = makeNavigationStore(seedPath: "/seed")
 
@@ -60,7 +65,12 @@ final class EVM001NavigatePagesTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(.recents)))
     }
 
-    /// EVM-001-navigate_pages: direct navigation to tag records history and emits delegates in order
+    /// EVM-001-navigate_pages: 태그 네비게이션 시 history 기록 및 델리게이트 순차 발생 검증
+    /// 태그 경로로 직접 네비게이션하면 backHistory에 이전 상태가 기록되고 델리게이트가 순차 발생한다.
+    /// - 검증 내용: performShowTag("work") 액션이 navigationState를 .tags("work")로 변경하고 backHistory/forwardHistory를 재조정하는지 확인
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore
+    /// - 기대 결과: navigationState=.tags("work"), backHistory=["/seed"], forwardHistory=[], resetComposer → logDAU →
+    /// navigateToState 순차 발생
     func testDirectShowTagRecordsHistoryAndEmitsDelegatesInOrder() async {
         let store = makeNavigationStore(seedPath: "/seed")
 
@@ -75,7 +85,12 @@ final class EVM001NavigatePagesTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(.tags("work"))))
     }
 
-    /// EVM-001-navigate_pages: direct navigation to computer records history and emits delegates in order
+    /// EVM-001-navigate_pages: 컴퓨터 루트 네비게이션 시 history 기록 및 델리게이트 순차 발생 검증
+    /// 컴퓨터 루트로 직접 네비게이션하면 backHistory에 이전 상태가 기록되고 델리게이트가 순차 발생한다.
+    /// - 검증 내용: performShowComputer 액션이 navigationState를 .computer로 변경하고 backHistory/forwardHistory를 재조정하는지 확인
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore
+    /// - 기대 결과: navigationState=.computer, backHistory=["/seed"], forwardHistory=[], resetComposer → logDAU →
+    /// navigateToState 순차 발생
     func testDirectShowComputerRecordsHistoryAndEmitsDelegatesInOrder() async {
         let store = makeNavigationStore(seedPath: "/seed")
 
@@ -90,7 +105,11 @@ final class EVM001NavigatePagesTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(.computer)))
     }
 
-    /// EVM-001-navigate_pages: history navigation to collection does not emit reset composer
+    /// EVM-001-navigate_pages: 컬렉션으로 history back 시 resetComposer 미발생 검증
+    /// 컬렉션 경로로 history back하면 resetComposer가 발생하지 않고 다른 델리게이트만 발생한다.
+    /// - 검증 내용: performNavigation(.back)이 컬렉션 경로에서 resetComposer를 발생시키지 않고 logDAU와 navigateToState만 발생하는지 확인
+    /// - 사전 조건: navigationState=.folder("/folder"), backHistory에 컬렉션 경로 스냅샷 존재
+    /// - 기대 결과: navigationState가 컬렉션으로 복원, resetComposer 미발생, logDAU → navigateToState 순차 발생
     func testHistoryNavigationToCollectionDoesNotEmitResetComposer() async {
         let collectionRoute = ContentPageNavigationRoute.collection(ContentPageCollectionNavigation(
             kind: .temporary,
@@ -118,7 +137,11 @@ final class EVM001NavigatePagesTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(collectionRoute)))
     }
 
-    /// EVM-001-navigate_pages: prepare collection file open records actual current snapshot
+    /// EVM-001-navigate_pages: 컬렉션 파일 열기 준비 시 현재 스냅샷 기록 검증
+    /// 컬렉션 파일 열기 준비 시 현재 navigationState가 backHistory에 스냅샷으로 기록된다.
+    /// - 검증 내용: prepareCollectionFileOpen 액션이 backHistory에 현재 navigationState(.recents)를 스냅샷으로 추가하는지 확인
+    /// - 사전 조건: navigationState=.recents로 설정된 TestStore
+    /// - 기대 결과: backHistory에 .recents 스냅샷 추가, forwardHistory 초기화
     func testPrepareCollectionFileOpenRecordsActualCurrentSnapshot() async {
         var initial = ContentPageNavigationFeature.State()
         initial.navigationState = .recents
@@ -278,9 +301,14 @@ final class EVM001NavigatePagesTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-001-show_page_history: history is trimmed to ten entries
+    /// EVM-001-show_page_history: history 최대 10개 항목 제한 검증
+    /// 네비게이션 history가 10개 항목으로 제한되어 초과 시 가장 오래된 항목이 제거된다.
+    /// - 검증 내용: 12번 연속 네비게이션 후 backHistory가 10개로 제한되고 가장 오래된 항목이 제거되는지 확인
+    /// - 사전 조건: seedPath="/seed"로 초기화된 TestStore
+    /// - 기대 결과: backHistory.count == 10, 첫 항목이 "/p/1", 마지막 항목이 "/p/10"
     func testHistoryIsTrimmedToTenEntries() async {
         let store = makeNavigationStore(seedPath: "/seed")
+        // 12번의 네비게이션 설정 단계 델리게이트는 이 시나리오의 검증 대상이 아니므로 끈다.
         store.exhaustivity = .off
 
         for index in 0 ..< 12 {
