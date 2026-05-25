@@ -84,12 +84,7 @@ private enum SharedContextPromptBuilder {
     private static func makeAttachmentTransmissionSection(
         from parts: [AiChatLockedContextPartSnapshot]
     ) -> String {
-        let attachmentParts = parts.filter { part in
-            switch part.resolution {
-            case .providerNativeFile, .inlineText, .partialText, .referenceOnly, .collectionPathList, .failure:
-                return true
-            }
-        }
+        let attachmentParts = parts.filter { $0.source == .attachment }
         var lines = ["attachment_transmission:"]
         guard !attachmentParts.isEmpty else {
             lines.append("  - none")

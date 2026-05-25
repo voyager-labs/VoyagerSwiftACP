@@ -127,6 +127,69 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("/Users/"))
     }
 
+    func testMakeAnthropicRequest_attachmentTransmissionOmitsCurrentContextParts() throws {
+        let payload = try makePayload(
+            provider: .anthropic,
+            rawModelID: "claude-sonnet-4-20250514",
+            requestContext: AiChatLockedRequestContextSnapshot(
+                currentContext: .init(summary: "Current context summary"),
+                addedAttachments: [],
+                parts: [
+                    AiChatLockedContextPartSnapshot(
+                        source: .currentContext,
+                        resolution: .providerNativeFile(
+                            kind: .image,
+                            mimeType: "image/png",
+                            metadata: [
+                                "base64Data": "Y3VycmVudC1jb250ZXh0LWJ5dGVz",
+                                "fileExtension": "png",
+                                "path": "/Users/me/secret/current-context.png",
+                            ]
+                        ),
+                        canonicalPath: "/Users/me/secret/current-context.png",
+                        displayPath: "/Users/me/secret/current-context.png",
+                        fileKind: .file,
+                        displayTitle: "current-context.png",
+                        byteCount: 64,
+                        mimeType: "image/png"
+                    ),
+                    AiChatLockedContextPartSnapshot(
+                        source: .attachment,
+                        resolution: .providerNativeFile(
+                            kind: .pdf,
+                            mimeType: "application/pdf",
+                            metadata: [
+                                "base64Data": "YXR0YWNobWVudC1ieXRlcw==",
+                                "fileExtension": "pdf",
+                                "filePath": "/Users/me/secret/Attachment.pdf",
+                                "attachmentID": "attachment-pdf",
+                            ]
+                        ),
+                        canonicalPath: "/Users/me/secret/Attachment.pdf",
+                        displayPath: "/Users/me/secret/Attachment.pdf",
+                        fileKind: .file,
+                        displayTitle: "Attachment.pdf",
+                        byteCount: 1_024,
+                        mimeType: "application/pdf"
+                    ),
+                ]
+            )
+        )
+
+        let request = try AiChatProviderExecutionClient.makeAnthropicRequest(
+            payload: payload,
+            credential: .apiKey("anthropic-key")
+        )
+        let decoded = try decodeAnthropicRequestBody(request)
+        let system = try XCTUnwrap(decoded.system)
+
+        XCTAssertTrue(system.contains("attachment_transmission:"), system)
+        XCTAssertTrue(system.contains("Attachment.pdf"), system)
+        XCTAssertTrue(system.contains("uploaded natively as application/pdf"), system)
+        XCTAssertFalse(system.contains("current-context.png"), system)
+        XCTAssertFalse(system.contains("uploaded natively as image/png"), system)
+    }
+
     func testMakeAnthropicRequest_omitsBase64PayloadMetadataFromSystemPrompt() throws {
         let payload = try makePayload(
             provider: .anthropic,
