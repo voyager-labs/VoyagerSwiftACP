@@ -10,12 +10,18 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case newChatTapped
     case sessionRowTapped(AiChatSessionID)
     case deleteSessionTapped(AiChatSessionID)
+    case renameSessionTapped(AiChatSessionID)
+    case renameSessionTitleChanged(String)
+    case renameSessionConfirmed
+    case renameSessionCancelled
     case backToSessionsTapped
     case sessionSearchQueryChanged(String)
     case sessionListLoaded([AiChatSessionSummary])
     case sessionListFailed(String)
     case sessionDeleteSucceeded(AiChatSessionID)
     case sessionDeleteFailed(AiChatSessionID, String)
+    case sessionRenameSucceeded(AiChatSessionSummary, customTitle: String?)
+    case sessionRenameFailed(AiChatSessionID, String)
     case newChatCreated(AiChatSessionSnapshot)
     case newChatFailed(String)
     case setup(AiChatSetupState)

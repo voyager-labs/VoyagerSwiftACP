@@ -123,6 +123,7 @@ extension AiChatFeature {
         state.restoreFailure = nil
         state.sessionID = setup.sessionID
         state.sessionStatus = setup.sessionStatus
+        state.currentSessionCustomTitle = nil
         state.currentContext = setup.currentContext
         state.lastRequestContext = nil
         state.lastRequestContextModelHandle = nil
@@ -185,6 +186,7 @@ extension AiChatFeature {
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
+        state.currentSessionCustomTitle = snapshot.customTitle
         state.transcriptHistory = snapshot.transcriptHistory
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
@@ -199,6 +201,7 @@ extension AiChatFeature {
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
+        state.currentSessionCustomTitle = snapshot.customTitle
         state.transcriptHistory = []
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
@@ -218,6 +221,7 @@ extension AiChatFeature {
         return AiChatSessionSnapshot(
             sessionID: snapshot.sessionID,
             status: .active,
+            customTitle: snapshot.customTitle,
             provider: snapshot.provider,
             model: snapshot.model,
             selectedModelRow: selectedRow,
@@ -241,6 +245,7 @@ extension AiChatFeature {
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .idle,
+            customTitle: nil,
             provider: selectedHandle?.provider,
             model: selectedHandle,
             selectedModelRow: selectedRow,

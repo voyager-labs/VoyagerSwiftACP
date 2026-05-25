@@ -231,6 +231,7 @@ extension AiChatFeature {
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: state.sessionStatus,
+            customTitle: state.currentSessionCustomTitle,
             provider: lock.context.provider,
             model: lock.context.model,
             selectedModelRow: lock.selectedModelRow,
