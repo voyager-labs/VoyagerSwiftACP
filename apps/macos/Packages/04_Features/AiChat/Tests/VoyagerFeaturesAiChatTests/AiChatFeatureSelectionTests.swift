@@ -78,6 +78,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             state.transcriptHistory = request.messages
             state.draftText = ""
             state.lockedModelHandle = catalogRows[0].handle
+            state.transcriptAutoScrollVersion = 1
             state.executionPhase = .processing(AiChatRequestLock(
                 kind: .submit,
                 requestID: requestID,
@@ -169,6 +170,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             state.transcriptHistory = request.messages
             state.draftText = ""
             state.lockedModelHandle = catalogRows[1].handle
+            state.transcriptAutoScrollVersion = 2
             state.executionPhase = .processing(AiChatRequestLock(
                 kind: .submit,
                 requestID: requestID,
@@ -408,6 +410,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
             state.transcriptHistory = request.messages
             state.draftText = ""
             state.lockedModelHandle = catalogRows[0].handle
+            state.transcriptAutoScrollVersion = 1
             state.executionPhase = .processing(AiChatRequestLock(
                 kind: .submit,
                 requestID: requestID,

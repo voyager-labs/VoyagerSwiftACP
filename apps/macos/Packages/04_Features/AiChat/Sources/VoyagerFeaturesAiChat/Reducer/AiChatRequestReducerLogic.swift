@@ -181,6 +181,7 @@ extension AiChatFeature {
         if kind == .submit {
             state.transcriptHistory.append(AiChatMessage(role: .user, content: prompt))
             state.draftText = ""
+            state.transcriptAutoScrollVersion += 1
         }
     }
 
@@ -217,6 +218,7 @@ extension AiChatFeature {
         state.lastRequestContext = persistenceSafeRequestContext(lock.context.requestContext)
         state.lastRequestContextModelHandle = lock.context.model
         state.executionPhase = .completed(lock)
+        state.transcriptAutoScrollVersion += 1
     }
 
     func makeSessionSnapshot(

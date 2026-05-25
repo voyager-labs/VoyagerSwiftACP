@@ -91,6 +91,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             state.lockedModelHandle = selectedHandle
             state.lastExecutionFailure = nil
             state.streamingAssistantDraft = nil
+            state.transcriptAutoScrollVersion = 1
             XCTAssertEqual(state.sessionID, sessionID)
             XCTAssertFalse(state.canSubmit)
         }
@@ -112,10 +113,12 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.receive(.executionEvent(.delta(context: lock.request.context, text: "Hel"))) { state in
             state.streamingAssistantDraft = "Hel"
             state.executionPhase = .processing(firstDeltaLock)
+            state.transcriptAutoScrollVersion = 2
         }
         await store.receive(.executionEvent(.delta(context: lock.request.context, text: "lo"))) { state in
             state.streamingAssistantDraft = "Hello"
             state.executionPhase = .processing(secondDeltaLock)
+            state.transcriptAutoScrollVersion = 3
         }
         await store.receive(.executionEvent(.final(response: rawResponse))) { state in
             state.transcriptHistory = [
@@ -129,6 +132,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
                 failure: nil,
                 wasCancelled: false,
             ))
+            state.transcriptAutoScrollVersion = 4
         }
         await store.finish()
 

@@ -87,6 +87,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         XCTAssertEqual(store.state.sessionStatusText, "Started new session")
         XCTAssertTrue(store.state.canSubmit)
         XCTAssertEqual(store.state.transcriptHistory, [])
+        XCTAssertEqual(store.state.transcriptAutoScrollVersion, 0)
     }
 
     // swiftlint:disable:next function_body_length
@@ -267,6 +268,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         XCTAssertNil(store.state.selectedModelHandle)
         XCTAssertEqual(store.state.unavailableSelectedModelHandle, rebindSnapshot.model)
         XCTAssertEqual(store.state.sessionStatusText, "Session needs rebind")
+        XCTAssertEqual(store.state.transcriptAutoScrollVersion, 0)
     }
     func testSessionRowRestoreFailureKeepsSessionsModeAndShowsOneTimeError() async {
         let catalogRows = makeCatalogRows()

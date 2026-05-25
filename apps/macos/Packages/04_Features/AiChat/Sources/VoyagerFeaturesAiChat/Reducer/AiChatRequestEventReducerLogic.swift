@@ -37,6 +37,7 @@ extension AiChatFeature {
         }
         state.streamingAssistantDraft = (state.streamingAssistantDraft ?? "") + text
         state.executionPhase = .processing(lock.recordingDelta(at: currentTimestampMs()))
+        state.transcriptAutoScrollVersion += 1
         return .none
     }
 
@@ -94,6 +95,7 @@ extension AiChatFeature {
             lock.recordingTerminal(at: currentTimestampMs(), failure: reason, wasCancelled: false),
             reason,
         )
+        state.transcriptAutoScrollVersion += 1
         return .cancel(id: CancelID.request)
     }
 

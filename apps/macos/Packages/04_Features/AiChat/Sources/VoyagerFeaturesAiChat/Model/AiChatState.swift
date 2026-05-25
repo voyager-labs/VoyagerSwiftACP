@@ -140,6 +140,7 @@ public struct AiChatState: Equatable, Sendable {
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
     public var streamingAssistantDraft: String?
+    public var transcriptAutoScrollVersion: Int
     public var catalogRows: [AiModelCatalogRow]
     public var modelListState: AiChatModelListState
     public var isModelSelectorPresented: Bool
@@ -175,6 +176,7 @@ public struct AiChatState: Equatable, Sendable {
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
         streamingAssistantDraft: String? = nil,
+        transcriptAutoScrollVersion: Int = 0,
         catalogRows: [AiModelCatalogRow] = [],
         modelListState: AiChatModelListState? = nil,
         isModelSelectorPresented: Bool = false,
@@ -209,6 +211,7 @@ public struct AiChatState: Equatable, Sendable {
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
         self.streamingAssistantDraft = streamingAssistantDraft
+        self.transcriptAutoScrollVersion = transcriptAutoScrollVersion
         let resolvedModelListState = modelListState ?? Self.modelListState(from: catalogRows)
         self.catalogRows = catalogRows.isEmpty ? Self.makeCatalogRows(for: resolvedModelListState) : catalogRows
         self.modelListState = resolvedModelListState
