@@ -31,7 +31,7 @@ struct AiChatSessionsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
                         ForEach(displayModel.sections) { section in
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(section.title)
