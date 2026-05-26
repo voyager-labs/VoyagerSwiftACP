@@ -60,7 +60,7 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case navigateToState(ContentPageNavigationRoute)
         case logDAUNavigation(
             previous: ContentPageNavigationRoute,
-            next: ContentPageNavigationRoute
+            next: ContentPageNavigationRoute,
         )
         case resetComposer
     }

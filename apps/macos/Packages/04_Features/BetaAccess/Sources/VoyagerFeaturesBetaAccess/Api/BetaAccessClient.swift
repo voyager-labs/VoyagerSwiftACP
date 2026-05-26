@@ -8,7 +8,7 @@ public struct BetaAccessClient: Sendable {
     public var verify: @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse
 
     public nonisolated init(
-        verify: @escaping @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse
+        verify: @escaping @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse,
     ) {
         self.verify = verify
     }
@@ -72,7 +72,7 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
         email: email,
         deviceId: deviceId,
         appVersion: AppVersionInfo.shortVersion,
-        osVersion: ProcessInfo.processInfo.operatingSystemVersionString
+        osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
     )
 
     do {
@@ -125,7 +125,7 @@ private enum DeviceIdentifier {
             service,
             kIOPlatformUUIDKey as CFString,
             kCFAllocatorDefault,
-            0
+            0,
         )?.takeRetainedValue() as? String else {
             return nil
         }

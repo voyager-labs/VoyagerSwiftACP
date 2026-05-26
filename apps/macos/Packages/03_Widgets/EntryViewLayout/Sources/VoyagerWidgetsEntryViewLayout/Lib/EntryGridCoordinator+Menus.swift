@@ -15,7 +15,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             isTrashFolder: isTrashFolder,
             canPaste: !state.entryOperations.clipboardItems.isEmpty,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
-            openWithApplications: openWithApplications(selectedEntries: selectedEntries)
+            openWithApplications: openWithApplications(selectedEntries: selectedEntries),
         )
         let coordinator = EntryContextMenuCoordinator(store: store, rowEntry: rowEntry)
         contextMenuCoordinator = coordinator
@@ -29,7 +29,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
             isTrashFolder: menuSpec.isTrashFolder,
             openWithApplications: menuSpec.openWithApplications,
             showOpenWith: menuSpec.showOpenWith,
-            tags: menuSpec.tags
+            tags: menuSpec.tags,
         ))
     }
 }

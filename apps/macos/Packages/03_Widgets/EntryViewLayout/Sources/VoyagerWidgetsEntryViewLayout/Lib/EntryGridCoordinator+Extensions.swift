@@ -112,7 +112,7 @@ extension EntryGridCoordinator {
         }
         boundsDidChangeObserver = notificationCenterClient.addObserver(
             NSView.boundsDidChangeNotification,
-            scrollView.contentView
+            scrollView.contentView,
         ) { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
                 self?.thumbnailPrefetchThrottler.schedule { [weak self] in
@@ -224,7 +224,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
 
     public func collectionView(
         _ collectionView: NSCollectionView,
-        itemForRepresentedObjectAt indexPath: IndexPath
+        itemForRepresentedObjectAt indexPath: IndexPath,
     ) -> NSCollectionViewItem {
         let identifier = NSUserInterfaceItemIdentifier("EntryGridCollectionViewItem")
         guard let item = collectionView.makeItem(withIdentifier: identifier, for: indexPath)
@@ -259,7 +259,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             },
             onRenameCancel: { [weak self] in
                 self?.sendEntryOperations(.edit(.cancelRename))
-            }
+            },
         ))
 
         return item
@@ -267,7 +267,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
 
     public func collectionView(
         _: NSCollectionView,
-        pasteboardWriterForItemAt indexPath: IndexPath
+        pasteboardWriterForItemAt indexPath: IndexPath,
     ) -> NSPasteboardWriting? {
         guard let entry = entry(at: indexPath) else { return nil }
         return NSURL(fileURLWithPath: entry.fullPath)
@@ -276,7 +276,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
     public func collectionView(
         _ collectionView: NSCollectionView,
         viewForSupplementaryElementOfKind kind: String,
-        at indexPath: IndexPath
+        at indexPath: IndexPath,
     ) -> NSView {
         guard kind == NSCollectionView.elementKindSectionHeader else {
             return NSView()
@@ -285,7 +285,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
         guard let header = collectionView.makeSupplementaryView(
             ofKind: kind,
             withIdentifier: identifier,
-            for: indexPath
+            for: indexPath,
         ) as? EntryGridSectionHeaderView else {
             return NSView()
         }
@@ -301,7 +301,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
                 if let title = section.title {
                     sendEntryArrangements(.toggleCollapsedGroup(title))
                 }
-            }
+            },
         )
         return header
     }
@@ -321,7 +321,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
     public func collectionView(
         _ collectionView: NSCollectionView,
         layout _: NSCollectionViewLayout,
-        referenceSizeForHeaderInSection section: Int
+        referenceSizeForHeaderInSection section: Int,
     ) -> NSSize {
         let hasHeader = sections[section].title != nil
         return hasHeader ? NSSize(width: collectionView.bounds.width, height: 32) : .zero
@@ -330,7 +330,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
     public func collectionView(
         _: NSCollectionView,
         layout _: NSCollectionViewLayout,
-        sizeForItemAt _: IndexPath
+        sizeForItemAt _: IndexPath,
     ) -> NSSize {
         flowLayout.itemSize
     }
@@ -339,7 +339,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         _: NSCollectionView,
         draggingSession _: NSDraggingSession,
         willBeginAt _: NSPoint,
-        forItemsAt indexPaths: Set<IndexPath>
+        forItemsAt indexPaths: Set<IndexPath>,
     ) {
         let paths = indexPaths.compactMap { indexPath -> String? in
             guard let entry = entry(at: indexPath) else { return nil }
@@ -355,7 +355,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         _: NSCollectionView,
         draggingSession _: NSDraggingSession,
         endedAt _: NSPoint,
-        dragOperation operation: NSDragOperation
+        dragOperation operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
         entryFileOpsClient.saveDragWithOption(false)
@@ -369,7 +369,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         _: NSCollectionView,
         validateDrop draggingInfo: any NSDraggingInfo,
         proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
-        dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>
+        dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>,
     ) -> NSDragOperation {
         let draggingLocation = draggingInfo.draggingLocation
         let localPoint = collectionView.convert(draggingLocation, from: nil)
@@ -378,7 +378,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         let pointResolvedIndexPath = primaryIndexPath ?? fallbackIndexPath
         let hoverIndexPath = resolvedEntryTargetIndexPath(
             pointResolved: pointResolvedIndexPath,
-            localPoint: localPoint
+            localPoint: localPoint,
         )
         if let hoverIndexPath = hoverIndexPath as? NSIndexPath {
             proposedDropIndexPath.pointee = hoverIndexPath
@@ -405,7 +405,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             sourcePaths: sourcePaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy
+            prefersCopy: wantsCopy,
         ))))
         let operation = dragOperation(from: state.entryOperations.dropValidationResult.resolvedOperation)
         setDropTargetEntryId(operation.isEmpty ? nil : targetEntryId)
@@ -420,7 +420,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         _: NSCollectionView,
         acceptDrop draggingInfo: NSDraggingInfo,
         indexPath _: IndexPath,
-        dropOperation _: NSCollectionView.DropOperation
+        dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
         let destinationPath = validatedDropDestinationPath ?? state.currentPath
         var internalPaths = entryFileOpsClient.loadDragPaths()
@@ -447,7 +447,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             sourcePaths: internalPaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy
+            prefersCopy: wantsCopy,
         ))))
         let validation = state.entryOperations.dropValidationResult
         let resolvedOperation = dragOperation(from: validation.resolvedOperation)
@@ -472,7 +472,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         sendEntryOperations(.routing(.dropItems(
             sourcePaths: urls.map(\.path),
             destinationPath: destinationPath,
-            isOptionDrag: validation.isOptionDrag
+            isOptionDrag: validation.isOptionDrag,
         )))
         return true
     }
@@ -490,7 +490,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             ids: selectedIds,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,
-            shouldScrollToSelection: false
+            shouldScrollToSelection: false,
         )))
     }
 }

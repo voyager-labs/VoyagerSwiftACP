@@ -14,7 +14,7 @@ enum ContentPaneContextMenuBuilder {
 
     static func makeMenu(
         configuration: Configuration,
-        target: ContentPaneContextMenuCoordinator
+        target: ContentPaneContextMenuCoordinator,
     ) -> NSMenu {
         let menu = NSMenu()
 
@@ -22,13 +22,13 @@ enum ContentPaneContextMenuBuilder {
             menu.addItem(menuItem(
                 title: "Empty Trash",
                 action: #selector(ContentPaneContextMenuCoordinator.contextMenuEmptyTrash),
-                target: target
+                target: target,
             ))
         } else {
             let newFolder = menuItem(
                 title: "New Folder",
                 action: #selector(ContentPaneContextMenuCoordinator.contextMenuCreateNewFolder),
-                target: target
+                target: target,
             )
             newFolder.keyEquivalent = "n"
             newFolder.keyEquivalentModifierMask = [.command, .shift]
@@ -54,13 +54,13 @@ enum ContentPaneContextMenuBuilder {
 
     private static func makeViewMenu(
         configuration: Configuration,
-        target: ContentPaneContextMenuCoordinator
+        target: ContentPaneContextMenuCoordinator,
     ) -> NSMenu {
         let menu = NSMenu()
         let list = menuItem(
             title: "as List",
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetLayout(_:)),
-            target: target
+            target: target,
         )
         list.representedObject = EntryViewLayoutState.Mode.list.rawValue
         list.state = configuration.viewLayout == .list ? .on : .off
@@ -69,7 +69,7 @@ enum ContentPaneContextMenuBuilder {
         let grid = menuItem(
             title: "as Icon",
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetLayout(_:)),
-            target: target
+            target: target,
         )
         grid.representedObject = EntryViewLayoutState.Mode.grid.rawValue
         grid.state = configuration.viewLayout == .grid ? .on : .off
@@ -79,14 +79,14 @@ enum ContentPaneContextMenuBuilder {
 
     private static func makeSortMenu(
         configuration: Configuration,
-        target: ContentPaneContextMenuCoordinator
+        target: ContentPaneContextMenuCoordinator,
     ) -> NSMenu {
         let menu = NSMenu()
         for item in EntryArrangementMenuItems.sortItems {
             let menuItem = menuItem(
                 title: item.title,
                 action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetSortKey(_:)),
-                target: target
+                target: target,
             )
             menuItem.representedObject = item.key.rawValue
             menuItem.state = configuration.sortKey == item.key ? .on : .off
@@ -97,7 +97,7 @@ enum ContentPaneContextMenuBuilder {
         let ascending = menuItem(
             title: "Ascending",
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetSortOrder(_:)),
-            target: target
+            target: target,
         )
         ascending.representedObject = VoyagerShared.SortOrder.ascending.rawValue
         ascending.state = configuration.sortOrder == .ascending ? .on : .off
@@ -106,7 +106,7 @@ enum ContentPaneContextMenuBuilder {
         let descending = menuItem(
             title: "Descending",
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetSortOrder(_:)),
-            target: target
+            target: target,
         )
         descending.representedObject = VoyagerShared.SortOrder.descending.rawValue
         descending.state = configuration.sortOrder == .descending ? .on : .off
@@ -117,13 +117,13 @@ enum ContentPaneContextMenuBuilder {
 
     private static func makeGroupMenu(
         configuration: Configuration,
-        target: ContentPaneContextMenuCoordinator
+        target: ContentPaneContextMenuCoordinator,
     ) -> NSMenu {
         let menu = NSMenu()
         let none = menuItem(
             title: "None",
             action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetGroupKey(_:)),
-            target: target
+            target: target,
         )
         none.representedObject = GroupKey.none.rawValue
         none.state = configuration.groupKey == .none ? .on : .off
@@ -134,7 +134,7 @@ enum ContentPaneContextMenuBuilder {
             let menuItem = menuItem(
                 title: item.title,
                 action: #selector(ContentPaneContextMenuCoordinator.contextMenuSetGroupKey(_:)),
-                target: target
+                target: target,
             )
             menuItem.representedObject = item.key.rawValue
             menuItem.state = configuration.groupKey == item.key ? .on : .off
@@ -146,7 +146,7 @@ enum ContentPaneContextMenuBuilder {
     private static func menuItem(
         title: String,
         action: Selector,
-        target: ContentPaneContextMenuCoordinator
+        target: ContentPaneContextMenuCoordinator,
     ) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = target

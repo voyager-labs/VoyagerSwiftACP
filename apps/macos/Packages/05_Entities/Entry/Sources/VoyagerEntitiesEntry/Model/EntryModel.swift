@@ -23,7 +23,7 @@ public struct EntryFacets: Equatable, Sendable {
         kind: String,
         creatorApplication: String?,
         tags: [Tag]?,
-        supplementaryMetadata: EntrySupplementaryMetadata?
+        supplementaryMetadata: EntrySupplementaryMetadata?,
     ) {
         self.createdDate = createdDate
         self.addedDate = addedDate
@@ -55,7 +55,7 @@ public struct EntryModel: Identifiable, Sendable {
         size: Int64,
         modifiedDate: Date,
         fileExtension: String,
-        facets: EntryFacets
+        facets: EntryFacets,
     ) {
         self.name = name
         self.fullPath = fullPath
@@ -94,8 +94,8 @@ extension EntryModel: Equatable {
                 kind: "Folder",
                 creatorApplication: nil,
                 tags: nil,
-                supplementaryMetadata: nil
-            )
+                supplementaryMetadata: nil,
+            ),
         )
     }
 }

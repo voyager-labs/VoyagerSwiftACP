@@ -53,7 +53,8 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
         XCTAssertNil(CollectionSnapshotHydration.syntheticSearchResponse(for: file))
     }
 
-    /// testCompatibilityOwnerMigratesLegacyDefinitionOnlyPayloadToCurrentSemanticModel 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    /// testCompatibilityOwnerMigratesLegacyDefinitionOnlyPayloadToCurrentSemanticModel 시나리오가 FileManager 계약을 위반하지 않음을
+    /// 검증한다.
     func testCompatibilityOwnerMigratesLegacyDefinitionOnlyPayloadToCurrentSemanticModel() throws {
         struct LegacyDefinitionOnlyPayload: Codable {
             let schemaVersion: Int

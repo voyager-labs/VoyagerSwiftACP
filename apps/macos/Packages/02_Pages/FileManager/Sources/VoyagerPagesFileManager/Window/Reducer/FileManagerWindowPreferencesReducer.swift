@@ -29,7 +29,7 @@ struct FileManagerWindowPreferencesReducer {
                 return .merge(
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(preferences.sortKey))))),
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(preferences.sortOrder))))),
-                    .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(preferences.groupKey)))))
+                    .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(preferences.groupKey))))),
                 )
 
             default:

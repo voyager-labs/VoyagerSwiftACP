@@ -33,10 +33,10 @@ final class OperatorValueInputContractTests: XCTestCase {
                         operatorValueArity: nil,
                         operatorValueUIKind: nil,
                         valueType: "date",
-                        values: nil
+                        values: nil,
                     ),
                 ],
-                conditionDisplayByKey: [:]
+                conditionDisplayByKey: [:],
             )]
         }
     }
@@ -67,10 +67,10 @@ final class OperatorValueInputContractTests: XCTestCase {
                         operatorValueArity: nil,
                         operatorValueUIKind: nil,
                         valueType: "date",
-                        values: nil
+                        values: nil,
                     ),
                 ],
-                conditionDisplayByKey: [:]
+                conditionDisplayByKey: [:],
             )]
         }
     }
@@ -120,10 +120,10 @@ final class OperatorValueInputContractTests: XCTestCase {
                         operatorValueArity: nil,
                         operatorValueUIKind: nil,
                         valueType: "date",
-                        values: nil
+                        values: nil,
                     ),
                 ],
-                conditionDisplayByKey: [:]
+                conditionDisplayByKey: [:],
             )]
         }
     }
@@ -141,7 +141,7 @@ final class OperatorValueInputContractTests: XCTestCase {
                 operatorValueArity: nil,
                 operatorValueUIKind: nil,
                 valueType: "date",
-                values: nil
+                values: nil,
             ),
         ]
         return state
@@ -165,7 +165,7 @@ final class OperatorValueInputContractTests: XCTestCase {
                         allowedTypes: ["date"],
                         inverseOf: nil,
                         aliases: nil,
-                        uiValueKind: ["date": "none"]
+                        uiValueKind: ["date": "none"],
                     )
                 case "btw":
                     .init(
@@ -176,7 +176,7 @@ final class OperatorValueInputContractTests: XCTestCase {
                         allowedTypes: ["date"],
                         inverseOf: nil,
                         aliases: nil,
-                        uiValueKind: ["date": "rangeDate"]
+                        uiValueKind: ["date": "rangeDate"],
                     )
                 default:
                     .init(
@@ -187,14 +187,14 @@ final class OperatorValueInputContractTests: XCTestCase {
                         allowedTypes: nil,
                         inverseOf: nil,
                         aliases: nil,
-                        uiValueKind: ["date": "singleText"]
+                        uiValueKind: ["date": "singleText"],
                     )
                 }
             },
             operatorValueUIKind: { code, _ in
                 code == "exists" ? "none" : "rangeDate"
             },
-            resolvePropertyKey: { .canonical($0) }
+            resolvePropertyKey: { .canonical($0) },
         )
     }
 }

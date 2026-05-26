@@ -30,7 +30,7 @@ let package = Package(
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "Perception", package: "swift-perception"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerPagesOnboardingTests",
@@ -40,7 +40,7 @@ let package = Package(
                 .product(name: "VoyagerFeaturesBetaAccess", package: "VoyagerFeaturesBetaAccess"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
-            ]
+            ],
         ),
-    ]
+    ],
 )

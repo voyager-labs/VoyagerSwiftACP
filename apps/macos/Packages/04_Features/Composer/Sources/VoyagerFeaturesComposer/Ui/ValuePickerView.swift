@@ -21,8 +21,8 @@ struct ValuePickerView: View {
                         placeholder: ValuePickerDisplayUtils.fieldPlaceholder(for: viewStore.valueType),
                         text: viewStore.binding(
                             get: { $0.values.first ?? "" },
-                            send: { .setValue(index: 0, text: $0) }
-                        )
+                            send: { .setValue(index: 0, text: $0) },
+                        ),
                     )
                 } else {
                     ForEach(Array(viewStore.values.enumerated()), id: \.offset) { index, _ in
@@ -31,8 +31,8 @@ struct ValuePickerView: View {
                             placeholder: ValuePickerDisplayUtils.fieldPlaceholder(for: viewStore.valueType),
                             text: viewStore.binding(
                                 get: { $0.values.indices.contains(index) ? $0.values[index] : "" },
-                                send: { .setValue(index: index, text: $0) }
-                            )
+                                send: { .setValue(index: index, text: $0) },
+                            ),
                         )
                     }
                 }
@@ -45,10 +45,10 @@ struct ValuePickerView: View {
                             selectedUnitCode: unitValueState.selectedUnitCode,
                             selectedUnitLabel: UnitValuePresentationUtils.label(
                                 for: unitValueState.selectedUnitCode,
-                                state: unitValueState
+                                state: unitValueState,
                             ),
                             labelForUnit: { UnitValuePresentationUtils.label(for: $0, state: unitValueState) },
-                            onSelect: { viewStore.send(.selectUnit($0)) }
+                            onSelect: { viewStore.send(.selectUnit($0)) },
                         )
                     }
                 }
@@ -71,7 +71,7 @@ struct ValuePickerView: View {
             .frame(width: 240)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme))
+                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
             )
         })
     }

@@ -46,7 +46,7 @@ public struct MetricsClient: Sendable {
     public nonisolated init(
         logMetric: @escaping @Sendable (_ name: String, _ value: Double, _ tags: [String: String]?) -> Void,
         logDAUNavigation: @escaping @Sendable (DAUNavigationKind) -> Void,
-        logDAUEntryAction: @escaping @Sendable (DAUEntryActionKind, DAUEntryKind) -> Void
+        logDAUEntryAction: @escaping @Sendable (DAUEntryActionKind, DAUEntryKind) -> Void,
     ) {
         self.logMetric = logMetric
         self.logDAUNavigation = logDAUNavigation
@@ -59,7 +59,7 @@ extension MetricsClient: DependencyKey {
         .init(
             logMetric: { _, _, _ in },
             logDAUNavigation: { _ in },
-            logDAUEntryAction: { _, _ in }
+            logDAUEntryAction: { _, _ in },
         )
     }
 
@@ -67,7 +67,7 @@ extension MetricsClient: DependencyKey {
         .init(
             logMetric: { _, _, _ in },
             logDAUNavigation: { _ in },
-            logDAUEntryAction: { _, _ in }
+            logDAUEntryAction: { _, _ in },
         )
     }
 

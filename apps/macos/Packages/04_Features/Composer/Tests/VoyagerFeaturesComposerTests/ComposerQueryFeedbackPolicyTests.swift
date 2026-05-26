@@ -12,9 +12,9 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
                 VoyagerShared.SearchConditionPayload(
                     propertyKey: "name",
                     operator: "contains",
-                    value: .string("draft")
+                    value: .string("draft"),
                 ),
-            ]
+            ],
         )
 
         let applied = VoyagerShared.AppliedFiltersPayload(
@@ -23,9 +23,9 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
                 VoyagerShared.SearchConditionPayload(
                     propertyKey: "name",
                     operator: "contains",
-                    value: .string("draft")
+                    value: .string("draft"),
                 ),
-            ]
+            ],
         )
 
         XCTAssertTrue(ComposerQueryFeedbackPolicy.isNoOp(baseline: baseline, appliedFilters: applied))
@@ -35,15 +35,15 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
         XCTAssertEqual(
             ComposerQueryFeedbackPolicy
                 .failureMessage(for: MockLocalizedError("LLM_CONVERSION_FAILED: gateway timeout")),
-            ComposerQueryFeedbackPolicy.conversionFailureMessage
+            ComposerQueryFeedbackPolicy.conversionFailureMessage,
         )
         XCTAssertEqual(
             ComposerQueryFeedbackPolicy.failureMessage(for: MockLocalizedError("HELPER_UNAVAILABLE: xpc disconnected")),
-            ComposerQueryFeedbackPolicy.executionFailureMessage
+            ComposerQueryFeedbackPolicy.executionFailureMessage,
         )
         XCTAssertEqual(
             ComposerQueryFeedbackPolicy.executionFailureMessage,
-            "Couldn't complete that search. Please try again."
+            "Couldn't complete that search. Please try again.",
         )
     }
 }

@@ -55,7 +55,7 @@ public struct ContentPageCollectionNavigation: Equatable, Sendable {
         sortKey: SortKey,
         sortOrder: VoyagerShared.SortOrder,
         viewLayout: ContentPageNavigationViewLayout,
-        compatibility: CollectionFileCompatibilityMetadata? = nil
+        compatibility: CollectionFileCompatibilityMetadata? = nil,
     ) {
         self.kind = kind
         self.context = context

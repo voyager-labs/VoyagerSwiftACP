@@ -10,7 +10,7 @@ public struct EntryThumbnailState: Equatable, Sendable {
         requestsInFlight: Set<String> = [],
         readyPaths: Set<String> = [],
         failedPaths: Set<String> = [],
-        renderVersion: Int = 0
+        renderVersion: Int = 0,
     ) {
         self.requestsInFlight = requestsInFlight
         self.readyPaths = readyPaths

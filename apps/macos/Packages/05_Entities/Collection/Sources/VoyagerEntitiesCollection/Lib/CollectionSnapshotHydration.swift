@@ -8,7 +8,7 @@ public enum CollectionSnapshotHydration {
     public static func definitionFingerprint(
         query: String,
         scopes: [String],
-        conditions: [CollectionCondition]
+        conditions: [CollectionCondition],
     ) -> String {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedScopes = normalizePaths(scopes)
@@ -22,7 +22,7 @@ public enum CollectionSnapshotHydration {
         return digest(
             query: normalizedQuery,
             scopes: normalizedScopes,
-            conditions: normalizedConditions
+            conditions: normalizedConditions,
         )
     }
 
@@ -30,19 +30,19 @@ public enum CollectionSnapshotHydration {
         definitionFingerprint(
             query: file.query,
             scopes: file.scopes,
-            conditions: file.conditions
+            conditions: file.conditions,
         )
     }
 
     public static func definitionFingerprint(
         query: String,
         scopes: [String],
-        conditions: [Condition]
+        conditions: [Condition],
     ) -> String {
         definitionFingerprint(
             query: query,
             scopes: scopes,
-            conditions: collectionConditions(from: conditions)
+            conditions: collectionConditions(from: conditions),
         )
     }
 
@@ -56,7 +56,9 @@ public enum CollectionSnapshotHydration {
         return snapshot
     }
 
-    public static func syntheticSearchResponse(for file: VoyagerCollectionFile) -> VoyagerShared.SearchResponsePayload? {
+    public static func syntheticSearchResponse(for file: VoyagerCollectionFile) -> VoyagerShared
+        .SearchResponsePayload?
+    {
         guard let snapshot = usableSnapshot(for: file) else { return nil }
 
         return VoyagerShared.SearchResponsePayload(
@@ -67,12 +69,12 @@ public enum CollectionSnapshotHydration {
                     VoyagerShared.SearchConditionPayload(
                         propertyKey: $0.propertyKey,
                         operator: $0.operatorCode,
-                        value: $0.value
+                        value: $0.value,
                     )
-                }
+                },
             ),
             items: snapshot.items,
-            error: nil
+            error: nil,
         )
     }
 
@@ -128,7 +130,7 @@ public enum CollectionSnapshotHydration {
     private static func digest(
         query: String,
         scopes: [String],
-        conditions: [String]
+        conditions: [String],
     ) -> String {
         let canonical = [
             query,

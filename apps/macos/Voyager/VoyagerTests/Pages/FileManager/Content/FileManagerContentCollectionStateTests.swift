@@ -248,7 +248,8 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertFalse(state.resetComposerOnNextDirectoryNavigation)
     }
 
-    /// testResetComposerOnNextDirectoryNavigationToleratesCollectionSessionMutation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    /// testResetComposerOnNextDirectoryNavigationToleratesCollectionSessionMutation 시나리오가 FileManager 계약을 위반하지 않음을
+    /// 검증한다.
     func testResetComposerOnNextDirectoryNavigationToleratesCollectionSessionMutation() {
         var state = FileManagerContentState()
         state.resetComposerOnNextDirectoryNavigation = true

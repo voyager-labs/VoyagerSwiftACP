@@ -25,7 +25,7 @@ let package = Package(
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerEntitiesCollectionTests",
@@ -34,7 +34,7 @@ let package = Package(
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
-            ]
+            ],
         ),
-    ]
+    ],
 )

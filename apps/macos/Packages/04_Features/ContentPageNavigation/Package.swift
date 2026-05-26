@@ -31,7 +31,7 @@ let package = Package(
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerFeaturesContentPageNavigationTests",
@@ -43,7 +43,7 @@ let package = Package(
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
-    ]
+    ],
 )

@@ -217,7 +217,7 @@ final class ContentPageNavigationFeatureTests: XCTestCase {
 
 @MainActor
 private func makeStore(
-    seedPath: String
+    seedPath: String,
 ) -> TestStore<ContentPageNavigationFeature.State, ContentPageNavigationFeature.Action> {
     var state = ContentPageNavigationFeature.State()
     state.seedInitialFolderPath(seedPath)
@@ -232,6 +232,6 @@ private func makeCollectionNavigation() -> ContentPageCollectionNavigation {
         context: CollectionContext(query: "", scopes: [], conditions: []),
         sortKey: .name,
         sortOrder: .ascending,
-        viewLayout: .list
+        viewLayout: .list,
     )
 }

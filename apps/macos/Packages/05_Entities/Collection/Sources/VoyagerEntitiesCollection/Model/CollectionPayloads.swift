@@ -47,7 +47,7 @@ public struct CollectionNavigationStatePayload: Equatable, Sendable {
         baseline: CollectionBaseline?,
         composerText: String,
         scopes: [String],
-        conditions: [Condition]
+        conditions: [Condition],
     ) {
         self.context = context
         self.document = document

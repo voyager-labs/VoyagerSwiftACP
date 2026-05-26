@@ -23,7 +23,7 @@ public struct ScopeChipView: View {
         store: StoreOf<ComposerFeature>,
         favorites: [ScopeFavoriteItem],
         backHistory: [String],
-        isComboBoxPresented: Binding<Bool>
+        isComboBoxPresented: Binding<Bool>,
     ) {
         self.paths = paths
         self.store = store
@@ -59,7 +59,7 @@ public struct ScopeChipView: View {
         .frame(height: 28)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme))
+                .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme)),
         )
         .popover(isPresented: $isComboBoxPresented, arrowEdge: .bottom) {
             ScopePickerView(
@@ -75,7 +75,7 @@ public struct ScopeChipView: View {
                 },
                 favorites: favorites,
                 backHistory: backHistory,
-                entryLoadingClient: entryLoadingClient
+                entryLoadingClient: entryLoadingClient,
             )
         }
     }
@@ -92,7 +92,7 @@ public struct ScopeChipView: View {
                 .frame(height: 19)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear)
+                        .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
                 )
         }
         .buttonStyle(.borderless)
@@ -138,11 +138,11 @@ public struct ScopeChipView: View {
         .padding(.vertical, 2)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme))
+                .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5)
+                .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5),
         )
     }
 }

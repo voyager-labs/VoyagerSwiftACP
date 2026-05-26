@@ -13,17 +13,17 @@ public enum ComposerQueryFeedbackPolicy {
 
     public static func normalizedFilters(
         appliedFilters: VoyagerShared.AppliedFiltersPayload?,
-        fallback baseline: VoyagerShared.SearchFiltersPayload
+        fallback baseline: VoyagerShared.SearchFiltersPayload,
     ) -> VoyagerShared.SearchFiltersPayload {
         VoyagerShared.SearchFiltersPayload(
             scopes: appliedFilters?.scopes ?? baseline.scopes,
-            conditions: appliedFilters?.conditions ?? baseline.conditions
+            conditions: appliedFilters?.conditions ?? baseline.conditions,
         )
     }
 
     public static func isNoOp(
         baseline: VoyagerShared.SearchFiltersPayload,
-        appliedFilters: VoyagerShared.AppliedFiltersPayload?
+        appliedFilters: VoyagerShared.AppliedFiltersPayload?,
     ) -> Bool {
         normalizedFilters(appliedFilters: appliedFilters, fallback: baseline) == baseline
     }

@@ -125,7 +125,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             isTrashFolder: isTrashFolder,
             canPaste: !state.entryOperations.clipboardItems.isEmpty,
             favoriteTags: finderFavoritesTagClient.favoriteTags(),
-            openWithApplications: openWithApplications(selectedEntries: selectedEntries)
+            openWithApplications: openWithApplications(selectedEntries: selectedEntries),
         )
         let coordinator = EntryContextMenuCoordinator(store: store, rowEntry: rowEntry)
         contextMenuCoordinator = coordinator
@@ -139,7 +139,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
             isTrashFolder: menuSpec.isTrashFolder,
             openWithApplications: menuSpec.openWithApplications,
             showOpenWith: menuSpec.showOpenWith,
-            tags: menuSpec.tags
+            tags: menuSpec.tags,
         ))
     }
 }

@@ -26,7 +26,7 @@ final class EntryGridSectionHeaderView: NSView {
         count: Int,
         colorCode: Int?,
         isCollapsed: Bool,
-        onToggle: @escaping () -> Void
+        onToggle: @escaping () -> Void,
     ) {
         self.onToggle = onToggle
         titleLabel.stringValue = title ?? ""
@@ -34,7 +34,7 @@ final class EntryGridSectionHeaderView: NSView {
 
         toggleButton.image = NSImage(
             systemSymbolName: isCollapsed ? "chevron.right" : "chevron.down",
-            accessibilityDescription: nil
+            accessibilityDescription: nil,
         )
         toggleButton.isHidden = title == nil
 

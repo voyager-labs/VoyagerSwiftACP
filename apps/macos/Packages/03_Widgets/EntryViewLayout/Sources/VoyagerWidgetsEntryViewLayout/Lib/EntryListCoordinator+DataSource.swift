@@ -37,7 +37,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         _ outlineView: NSOutlineView,
         validateDrop info: any NSDraggingInfo,
         proposedItem item: Any?,
-        proposedChildIndex _: Int
+        proposedChildIndex _: Int,
     ) -> NSDragOperation {
         var destinationPath = state.currentPath
         if let outlineItem = item as? OutlineItem,
@@ -59,7 +59,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             sourcePaths: sourcePaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy
+            prefersCopy: wantsCopy,
         ))))
         let operation = dragOperation(from: state.entryOperations.dropValidationResult.resolvedOperation)
         store.send(.view(.setDropTargeted(!operation.isEmpty)))
@@ -70,7 +70,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         _: NSOutlineView,
         acceptDrop info: any NSDraggingInfo,
         item: Any?,
-        childIndex _: Int
+        childIndex _: Int,
     ) -> Bool {
         var destinationPath = state.currentPath
         if let outlineItem = item as? OutlineItem,
@@ -89,7 +89,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
             sourcePaths: internalPaths,
             destinationPath: destinationPath,
             allowedOperationsRawValue: allowed.rawValue,
-            prefersCopy: wantsCopy
+            prefersCopy: wantsCopy,
         ))))
         let validation = state.entryOperations.dropValidationResult
         let resolvedOperation = dragOperation(from: validation.resolvedOperation)
@@ -117,7 +117,7 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         sendEntryOperations(.routing(.dropItems(
             sourcePaths: urls.map(\.path),
             destinationPath: destinationPath,
-            isOptionDrag: validation.isOptionDrag
+            isOptionDrag: validation.isOptionDrag,
         )))
         store.send(.view(.setDropTargeted(false)))
         return true

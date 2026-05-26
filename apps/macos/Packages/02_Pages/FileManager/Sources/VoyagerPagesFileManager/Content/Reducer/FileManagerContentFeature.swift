@@ -56,7 +56,7 @@ public struct FileManagerContentFeature {
                 return handleCollectionModeAction(
                     action,
                     state: &state,
-                    computerName: fileManagerClient.displayName("/")
+                    computerName: fileManagerClient.displayName("/"),
                 )
 
             default:

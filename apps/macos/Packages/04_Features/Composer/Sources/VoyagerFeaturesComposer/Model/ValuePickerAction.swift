@@ -16,7 +16,7 @@ public enum ValuePickerAction: CasePathable, Sendable {
         propertyKey: String,
         values: [String],
         displayValues: [String],
-        selectedUnitCode: String?
+        selectedUnitCode: String?,
     )
 }
 
@@ -40,7 +40,7 @@ public struct PreparePayload: Sendable, Equatable {
         existingValues: [String]?,
         existingDisplayValues: [String]?,
         preferredUnitCode: String?,
-        editingIndex: Int?
+        editingIndex: Int?,
     ) {
         self.propertyKey = propertyKey
         self.operatorCode = operatorCode

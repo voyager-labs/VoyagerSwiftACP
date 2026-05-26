@@ -33,13 +33,13 @@ let package = Package(
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerWidgetsEntryViewLayoutTests",
             dependencies: [
                 "VoyagerWidgetsEntryViewLayout",
-            ]
+            ],
         ),
-    ]
+    ],
 )

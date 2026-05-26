@@ -11,13 +11,13 @@ import VoyagerShared
 enum FileManagerContentChromePropsBuilder {
     static func makeContentChromeProps(
         from state: FileManagerWindowState,
-        fileManagerClient: FileManagerClient
+        fileManagerClient: FileManagerClient,
     ) -> FileManagerContentChromeProps {
         let computerName = fileManagerClient.displayName("/")
         let trashPath = fileManagerClient.urlsForDirectory(.trashDirectory, .userDomainMask).first?.path
         let breadcrumbRoots = FileManagerBreadcrumbRoots(
             homePath: NSHomeDirectory(),
-            trashPath: trashPath
+            trashPath: trashPath,
         )
         let specialDirectoryIconNames = makeSpecialDirectoryIconNames(fileManagerClient: fileManagerClient)
 
@@ -28,14 +28,14 @@ enum FileManagerContentChromePropsBuilder {
                 contentState: state.content,
                 fileManagerClient: fileManagerClient,
                 computerName: computerName,
-                roots: breadcrumbRoots
+                roots: breadcrumbRoots,
             ),
-            specialDirectoryIconNames: specialDirectoryIconNames
+            specialDirectoryIconNames: specialDirectoryIconNames,
         )
     }
 
     static func makeContentOverlayProps(
-        from state: FileManagerWindowState
+        from state: FileManagerWindowState,
     ) -> FileManagerContentOverlayProps {
         FileManagerContentOverlayProps(
             isComposerPresented: state.content.composer.isPresented,
@@ -43,7 +43,7 @@ enum FileManagerContentChromePropsBuilder {
                 ScopeFavoriteItem(
                     name: favorite.name,
                     url: favorite.url,
-                    iconName: favorite.iconName
+                    iconName: favorite.iconName,
                 )
             },
             historyPaths: state.content.navigation.backHistory.compactMap { entry in
@@ -56,12 +56,12 @@ enum FileManagerContentChromePropsBuilder {
                 && state.content.collection.collectionSession.metadata.baseline != nil
                 && state.content.isOpenedCollectionDirty,
             canSaveCollection: state.content.canSaveCollection,
-            isTemporaryCollection: state.content.collection.collectionSession.document?.url == nil
+            isTemporaryCollection: state.content.collection.collectionSession.document?.url == nil,
         )
     }
 
     private static func makeSpecialDirectoryIconNames(
-        fileManagerClient: FileManagerClient
+        fileManagerClient: FileManagerClient,
     ) -> [String: String] {
         var result: [String: String] = [:]
         for mapping in FileManagerSpecialDirectoryIconConfig.specialDirectoryIconMappings {
@@ -76,15 +76,15 @@ enum FileManagerContentChromePropsBuilder {
         contentState: FileManagerContentState,
         fileManagerClient: FileManagerClient,
         computerName: String,
-        roots: FileManagerBreadcrumbRoots
+        roots: FileManagerBreadcrumbRoots,
     ) -> [String: String] {
         var paths = Set<String>()
 
         paths.formUnion(
             BreadcrumbBuilder.breadcrumbPaths(
                 navigationState: contentState.navigation.navigationState,
-                roots: roots
-            )
+                roots: roots,
+            ),
         )
 
         if contentState.navigation.titlePath.hasPrefix("/") {

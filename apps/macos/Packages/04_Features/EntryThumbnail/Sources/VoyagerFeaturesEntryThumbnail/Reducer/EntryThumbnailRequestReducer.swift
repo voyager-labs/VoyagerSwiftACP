@@ -136,7 +136,7 @@ struct EntryThumbnailRequestReducer {
     private func makeThumbnailTask(
         path: String,
         size: CGSize,
-        scale: CGFloat
+        scale: CGFloat,
     ) async -> (String, Bool) {
         let hasCached = await MainActor.run {
             entryThumbnailCacheClient.getThumbnail(for: path) != nil
@@ -149,7 +149,7 @@ struct EntryThumbnailRequestReducer {
         if let thumbnail = await thumbnailGeneratorClient.generateThumbnail(
             for: url,
             size: size,
-            scale: scale
+            scale: scale,
         ) {
             await MainActor.run {
                 entryThumbnailCacheClient.saveThumbnail(thumbnail, for: path)

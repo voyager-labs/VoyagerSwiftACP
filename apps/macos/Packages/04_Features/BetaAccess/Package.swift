@@ -30,7 +30,7 @@ let package = Package(
                 .product(name: "PerceptionCore", package: "swift-perception"),
                 .product(name: "XCTestDynamicOverlay", package: "xctest-dynamic-overlay"),
                 .product(name: "SwiftDotenv", package: "swift-dotenv"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerFeaturesBetaAccessTests",
@@ -38,7 +38,7 @@ let package = Package(
                 "VoyagerFeaturesBetaAccess",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "XCTestDynamicOverlay", package: "xctest-dynamic-overlay"),
-            ]
+            ],
         ),
-    ]
+    ],
 )
