@@ -21,23 +21,25 @@ final class OperatorValueInputContractTests: XCTestCase {
             $0.conditions[0].operatorValueUIKind = "none"
             $0.conditions[0].valueType = "string"
             $0.conditions[0].values = []
-            $0.history = [FilterSnapshot(
-                scopes: ["/tmp"],
-                conditions: [
-                    .init(
-                        propertyKey: "name_stem",
-                        propertyLabel: "Name",
-                        propertyType: "date",
-                        operatorCode: nil,
-                        operatorLabel: nil,
-                        operatorValueArity: nil,
-                        operatorValueUIKind: nil,
-                        valueType: "date",
-                        values: nil,
-                    ),
-                ],
-                conditionDisplayByKey: [:],
-            )]
+            $0.history = [
+                FilterSnapshot(
+                    scopes: ["/tmp"],
+                    conditions: [
+                        .init(
+                            propertyKey: "name_stem",
+                            propertyLabel: "Name",
+                            propertyType: "date",
+                            operatorCode: nil,
+                            operatorLabel: nil,
+                            operatorValueArity: nil,
+                            operatorValueUIKind: nil,
+                            valueType: "date",
+                            values: nil,
+                        ),
+                    ],
+                    conditionDisplayByKey: [:],
+                ),
+            ]
         }
     }
 
@@ -55,23 +57,25 @@ final class OperatorValueInputContractTests: XCTestCase {
             $0.conditions[0].operatorValueUIKind = "rangeDate"
             $0.conditions[0].valueType = "date"
             $0.conditions[0].values = nil
-            $0.history = [FilterSnapshot(
-                scopes: ["/tmp"],
-                conditions: [
-                    .init(
-                        propertyKey: "name_stem",
-                        propertyLabel: "Name",
-                        propertyType: "date",
-                        operatorCode: nil,
-                        operatorLabel: nil,
-                        operatorValueArity: nil,
-                        operatorValueUIKind: nil,
-                        valueType: "date",
-                        values: nil,
-                    ),
-                ],
-                conditionDisplayByKey: [:],
-            )]
+            $0.history = [
+                FilterSnapshot(
+                    scopes: ["/tmp"],
+                    conditions: [
+                        .init(
+                            propertyKey: "name_stem",
+                            propertyLabel: "Name",
+                            propertyType: "date",
+                            operatorCode: nil,
+                            operatorLabel: nil,
+                            operatorValueArity: nil,
+                            operatorValueUIKind: nil,
+                            valueType: "date",
+                            values: nil,
+                        ),
+                    ],
+                    conditionDisplayByKey: [:],
+                ),
+            ]
         }
     }
 
@@ -108,23 +112,25 @@ final class OperatorValueInputContractTests: XCTestCase {
             $0.valuePicker.valueType = "string"
             $0.valuePicker.values = ["", ""]
             $0.valuePicker.errorMessage = nil
-            $0.history = [FilterSnapshot(
-                scopes: ["/tmp"],
-                conditions: [
-                    .init(
-                        propertyKey: "name_stem",
-                        propertyLabel: "Name",
-                        propertyType: "date",
-                        operatorCode: nil,
-                        operatorLabel: nil,
-                        operatorValueArity: nil,
-                        operatorValueUIKind: nil,
-                        valueType: "date",
-                        values: nil,
-                    ),
-                ],
-                conditionDisplayByKey: [:],
-            )]
+            $0.history = [
+                FilterSnapshot(
+                    scopes: ["/tmp"],
+                    conditions: [
+                        .init(
+                            propertyKey: "name_stem",
+                            propertyLabel: "Name",
+                            propertyType: "date",
+                            operatorCode: nil,
+                            operatorLabel: nil,
+                            operatorValueArity: nil,
+                            operatorValueUIKind: nil,
+                            valueType: "date",
+                            values: nil,
+                        ),
+                    ],
+                    conditionDisplayByKey: [:],
+                ),
+            ]
         }
     }
 
