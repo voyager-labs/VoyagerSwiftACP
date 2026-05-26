@@ -6,6 +6,8 @@ excluded:
   - .build
   - DerivedData
   - Pods
+  - build
+  - Voyager/build
   - Voyager/.build
   - Voyager/Voyager.xcodeproj
   - Voyager/Voyager.xcodeproj/xcuserdata

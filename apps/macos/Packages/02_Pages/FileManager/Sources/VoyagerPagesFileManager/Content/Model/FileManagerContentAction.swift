@@ -44,6 +44,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case resetComposerAfterDirectoryNavigation
     }
 
+    // NSItemProvider가 Sendable을 준수하지 않아 @unchecked 필요. 드래그앤드롭은 @MainActor에서만 수행됨.
     @CasePathable
     public enum Delegate: @unchecked Sendable {
         case collectionChangesDiscarded

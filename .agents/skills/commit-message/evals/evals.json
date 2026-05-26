@@ -1,0 +1,26 @@
+{
+  "skill_name": "commit-message",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "현재 변경사항을 의미별로 나눠서 스테이징하고, 각 묶음마다 커밋 메시지 후보 3개를 보여준 뒤 선택하면 커밋하고 다음 묶음으로 넘어가줘.",
+      "expected_output": "A staged-scope workflow that proposes atomic groups before staging, stages only one group at a time, generates 3 candidates from staged changes, commits after selection, then repeats for remaining groups.",
+      "assertions": [
+        "Output proposes commit groups before staging",
+        "Output generates candidates from only the current staged group",
+        "Output repeats status/staging after each successful commit",
+        "Output leaves protected local files unstaged unless explicitly requested"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "이미 일부 파일만 staged야. 이 staged 변경만 기준으로 커밋 메시지 후보 3개를 만들고 선택하면 커밋해줘. unstaged는 건드리지 마.",
+      "expected_output": "A candidate flow for the already staged scope that does not alter unstaged files and commits only after the user selects one of three candidates.",
+      "assertions": [
+        "Output does not change staging when user asks for staged-only candidates",
+        "Output presents exactly 3 candidates plus Reroll",
+        "Output commits only after explicit selection"
+      ]
+    }
+  ]
+}

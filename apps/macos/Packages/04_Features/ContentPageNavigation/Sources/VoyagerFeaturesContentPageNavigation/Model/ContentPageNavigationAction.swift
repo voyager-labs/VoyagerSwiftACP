@@ -26,7 +26,8 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
     case delegate(Delegate)
     case `internal`(Internal)
 
-    public enum View: Equatable, Sendable {
+    @CasePathable
+    public enum View: CasePathable, Equatable, Sendable {
         case goBack
         case goForward
         case goToHistoryIndex(Int, isBackHistory: Bool)
@@ -38,7 +39,8 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case openCollectionFile(URL)
     }
 
-    public enum Internal: Equatable, Sendable {
+    @CasePathable
+    public enum Internal: CasePathable, Equatable, Sendable {
         case performNavigateToPath(String)
         case performShowRecents
         case performShowComputer
@@ -56,7 +58,8 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case unsavedNavigationAlertResponse(ContentPageNavigationPending, CollectionNavigationChoice)
     }
 
-    public enum Delegate: Equatable, Sendable {
+    @CasePathable
+    public enum Delegate: CasePathable, Equatable, Sendable {
         case navigateToState(ContentPageNavigationRoute)
         case logDAUNavigation(
             previous: ContentPageNavigationRoute,

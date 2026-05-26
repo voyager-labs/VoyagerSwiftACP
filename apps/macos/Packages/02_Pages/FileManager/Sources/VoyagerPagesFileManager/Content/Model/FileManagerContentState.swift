@@ -13,7 +13,7 @@ public struct FileManagerContentState: Equatable, @unchecked Sendable {
     var composer: ComposerFeature.State = .init()
     var collection: CollectionFeature.State = .init()
 
-    // Suppresses Swift 6 InferIsolatedConformances @MainActor-isolated Equatable synthesis.
+    // @ObservableState 하위 상태는 MainActor 격리로 비교해야 하므로 Equatable 비교를 MainActor에서 수행한다.
     public nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         MainActor.assumeIsolated {
             lhs.navigation == rhs.navigation

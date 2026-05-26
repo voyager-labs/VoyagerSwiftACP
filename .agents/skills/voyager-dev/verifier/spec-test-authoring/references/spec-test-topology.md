@@ -13,7 +13,8 @@ Tests/<TestTargetName>/
 └── Support/
     ├── <Purpose>Fixtures.swift
     ├── <Purpose>Recorders.swift
-    └── <Purpose>Clients.swift
+    ├── <Purpose>Clients.swift
+    └── <Purpose>DependencyDoubles.swift
 ```
 
 Use this shape when creating a new test target area or when a task explicitly includes test topology cleanup. If an existing target is flat and the task is a small additive change, avoid broad churn; still apply the naming and ownership rules.
@@ -82,13 +83,43 @@ Use `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
 - Existing `PolicyTests`, `ContractTests`, `LifecycleTests`, or `AdapterTests` files should not receive new product AC coverage once a spec owner exists.
 - Keep pure technical contracts outside spec suites only when no product AC owns them, such as parser conformance, serialization compatibility, or platform adapter invariants.
 
+## Split-target spec ownership
+
+When a single logical spec spans multiple test targets (for example, one app target and one package target) because ownership boundaries require it, follow these rules:
+
+- Each target owns only the behavior it is responsible for. The app target owns app-scoped behavior (window lifecycle, focus, hosting). The package target owns package-scoped behavior (command routing, reducer logic).
+- Each target gets its own `Specs/` directory containing a suite file named with the same spec ID and a scope qualifier: `<SpecID><PascalCaseSpecTitle>Tests.swift` in both targets. Do not create a single suite that spans targets.
+- Each target uses target-local `Support/` directories. Shared helpers between the two targets go in `Support/Shared/` within the target that owns the shared abstraction. Do not symlink or cross-reference support files between targets.
+- Traceability doc comments use the same spec ID and interaction ID across both targets so a grep for the spec ID finds all related tests.
+- The spec ID ties the split suites together logically. Do not invent separate spec IDs for the same logical feature.
+
+Topology example for a split-target spec:
+
+```text
+Tests/<AppTestTarget>/
+├── Specs/
+│   └── <SpecID><PascalCaseSpecTitle>Tests.swift
+└── Support/
+    └── <SpecID>/
+
+Tests/<PackageTestTarget>/
+├── Specs/
+│   └── <SpecID><PascalCaseSpecTitle>Tests.swift
+└── Support/
+    └── <SpecID>/
+```
+
+Both suites share the same spec ID prefix and the same interaction IDs in `// MARK:` sections and traceability comments, but each suite only asserts behavior within its own ownership scope.
+
 ## Support rules
 
 - Put fixtures, recorders, dependency doubles, builders, and helper assertions in `Support/`.
 - Keep `Support/` flat; do not create nested support directories.
 - Name support files by role/type, not by spec ID prefix. Good examples: `PermissionFixtures.swift`, `PathRecorder.swift`, `ProgressClient.swift`, `InMemoryStorage.swift`.
+- If a helper type name collides with a production type (via `@testable import`), append `Fixture` (e.g. `BetaAccessClientFixture`).
 - Support files must not contain executable product behavior test methods.
 - In SwiftPM packages, folders under the same test target compile together. In Xcode project targets, verify target membership when adding files.
+- After renaming a suite class, search for all references to the old class name and update them.
 
 ### Support file naming rule
 
