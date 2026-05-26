@@ -11,8 +11,22 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MACOS_ROOT="$REPO_ROOT/apps/macos"
 
 echo "================================"
+echo "🔧 SwiftFormat: using system installation..."
+echo "================================"
+
+if command -v swiftformat >/dev/null 2>&1; then
+    echo "✓ Running SwiftFormat at: $(which swiftformat)"
+    swiftformat --config "$MACOS_ROOT/.swiftformat" "$SWIFT_ROOT" --verbose || true
+    echo "✓ SwiftFormat completed"
+else
+    echo "⚠️ SwiftFormat not found in PATH"
+fi
+
+echo "================================"
 echo "🔍 SwiftLint: using system installation..."
 echo "================================"
+
+lint_status=0
 
 if command -v swiftlint >/dev/null 2>&1; then
     echo "✓ Running SwiftLint at: $(which swiftlint)"
@@ -30,28 +44,26 @@ if command -v swiftlint >/dev/null 2>&1; then
     done < <(find "$SWIFT_ROOT" -name '*.swift' -print0)
 
     if [[ ${#source_files[@]} -gt 0 ]]; then
-        swiftlint --config "$MACOS_ROOT/.swiftlint.yml" --reporter xcode "${source_files[@]}"
+        if ! swiftlint --config "$MACOS_ROOT/.swiftlint.yml" --reporter xcode --no-cache "${source_files[@]}"; then
+            lint_status=1
+        fi
     fi
 
     if [[ ${#test_files[@]} -gt 0 ]]; then
-        swiftlint --config "$MACOS_ROOT/.swiftlint-tests.yml" --reporter xcode "${test_files[@]}"
+        if ! swiftlint --config "$MACOS_ROOT/.swiftlint-tests.yml" --reporter xcode --no-cache "${test_files[@]}"; then
+            lint_status=1
+        fi
     fi
 
-    echo "✓ SwiftLint completed"
+    if [[ "$lint_status" -eq 0 ]]; then
+        echo "✓ SwiftLint completed"
+    else
+        echo "✗ SwiftLint completed with failures"
+    fi
 else
     echo "⚠️ SwiftLint not found in PATH"
 fi
 
 echo "================================"
-echo "🔧 SwiftFormat: using system installation..."
-echo "================================"
 
-if command -v swiftformat >/dev/null 2>&1; then
-    echo "✓ Running SwiftFormat at: $(which swiftformat)"
-    swiftformat --config "$MACOS_ROOT/.swiftformat" "$SWIFT_ROOT" --verbose || true
-    echo "✓ SwiftFormat completed"
-else
-    echo "⚠️ SwiftFormat not found in PATH"
-fi
-
-echo "================================"
+exit "$lint_status"
