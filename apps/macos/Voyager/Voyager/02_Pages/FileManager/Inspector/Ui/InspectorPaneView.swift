@@ -25,7 +25,7 @@ struct InspectorPaneView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: store.aiChat.mode == .chat ? 4 : 8) {
             if store.aiChat.mode == .sessions {
                 Text("Sessions")
                     .font(.system(size: 14, weight: .semibold))
@@ -74,7 +74,8 @@ struct InspectorPaneView: View {
             .accessibilityLabel("Close AI Chat")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        .padding(.leading, store.aiChat.mode == .chat ? 8 : 16)
+        .padding(.trailing, 16)
         .frame(height: 40)
     }
 

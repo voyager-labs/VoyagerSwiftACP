@@ -11,14 +11,7 @@ struct AiChatSessionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField(
-                displayModel.searchPlaceholder,
-                text: Binding(
-                    get: { state.sessionList.query },
-                    set: { store.send(.sessionSearchQueryChanged($0)) }
-                )
-            )
-            .textFieldStyle(.roundedBorder)
+            searchField
 
             if let errorMessage = state.sessionList.errorMessage, !errorMessage.isEmpty {
                 Text(errorMessage)
@@ -51,7 +44,7 @@ struct AiChatSessionsView: View {
                                         .padding(.vertical, 8)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .background(
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                                 .fill(Color.primary.opacity(0.05))
                                         )
                                 }
@@ -70,6 +63,37 @@ struct AiChatSessionsView: View {
             store.send(.sessionsAppeared)
         }
     }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            TextField(
+                displayModel.searchPlaceholder,
+                text: Binding(
+                    get: { state.sessionList.query },
+                    set: { store.send(.sessionSearchQueryChanged($0)) }
+                )
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 13, weight: .medium))
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+    }
+
     @ViewBuilder
     private func sessionRow(_ row: AiChatSessionRowDisplayModel) -> some View {
         if state.sessionList.renamingSessionID == row.id {
@@ -88,12 +112,29 @@ struct AiChatSessionsView: View {
             }
             .buttonStyle(.plain)
 
+            rowActivityIndicator(row)
+
             AiChatSessionActionsMenuButton(
                 onRename: { store.send(.renameSessionTapped(row.id)) },
                 onDelete: { store.send(.deleteSessionTapped(row.id)) }
             )
             .frame(width: 24, height: 24)
             .help("Session actions")
+        }
+    }
+
+    @ViewBuilder
+    private func rowActivityIndicator(_ row: AiChatSessionRowDisplayModel) -> some View {
+        switch row.activityState {
+        case .idle:
+            EmptyView()
+        case .processing:
+            EmptyView()
+        case .unreadCompleted:
+            Circle()
+                .fill(Color.blue)
+                .frame(width: 8, height: 8)
+                .accessibilityLabel("Unread completed response")
         }
     }
 
@@ -168,7 +209,52 @@ struct AiChatSessionsView: View {
                     .lineLimit(2)
             }
         }
+        .modifier(AiChatProcessingRowTextEffect(isActive: row.activityState == .processing))
+        .accessibilityLabel(row.activityState == .processing ? "\(row.title), generating response" : row.title)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AiChatProcessingRowTextEffect: ViewModifier {
+    let isActive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isActive {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                content
+                    .opacity(0.38)
+                    .overlay {
+                        movingHighlight(at: timeline.date)
+                            .mask(content)
+                    }
+            }
+        } else {
+            content
+        }
+    }
+
+    private func movingHighlight(at date: Date) -> some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let progress = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.45) / 1.45
+            let travel = width * 2.4
+            let offset = CGFloat(progress) * travel - width * 0.7
+
+            LinearGradient(
+                stops: [
+                    .init(color: Color.primary.opacity(0.34), location: 0),
+                    .init(color: Color.primary.opacity(0.52), location: 0.36),
+                    .init(color: Color.primary.opacity(1), location: 0.5),
+                    .init(color: Color.primary.opacity(0.52), location: 0.64),
+                    .init(color: Color.primary.opacity(0.34), location: 1),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: width * 1.15)
+            .offset(x: offset)
+        }
     }
 }
 
