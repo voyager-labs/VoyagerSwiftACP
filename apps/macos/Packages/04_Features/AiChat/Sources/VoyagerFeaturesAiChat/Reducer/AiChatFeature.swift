@@ -88,6 +88,7 @@ public struct AiChatFeature {
 
                 state.mode = .sessions
                 state.restoreSessionID = sessionID
+                let shouldCancelPreviousRequestLifecycle = state.sessionID != nil && state.sessionID != sessionID
                 if case let .processing(lock) = state.executionPhase,
                    state.sessionID != sessionID
                 {
@@ -98,12 +99,16 @@ public struct AiChatFeature {
                         failure: .cancelled,
                         wasCancelled: true
                     ))
-                    return .concatenate(
-                        cancelRequestLifecycle(),
-                        restoreSession(sessionID: sessionID, state: state)
-                    )
                 }
-                return restoreSession(sessionID: sessionID, state: state)
+
+                let restoreEffect = restoreSession(sessionID: sessionID, state: state)
+                guard shouldCancelPreviousRequestLifecycle else {
+                    return restoreEffect
+                }
+                return .concatenate(
+                    cancelRequestLifecycle(),
+                    restoreEffect
+                )
 
             case let .deleteSessionTapped(sessionID):
                 state.sessionList.errorMessage = nil
@@ -196,7 +201,9 @@ public struct AiChatFeature {
                     return .none
                 }
                 state.sessionList.replaceRow(summary)
-                state.sessionList.selectedSessionID = summary.sessionID
+                if state.restoreSessionID == nil || state.restoreSessionID == summary.sessionID {
+                    state.sessionList.selectedSessionID = summary.sessionID
+                }
                 if state.mode == .chat, state.sessionID == summary.sessionID {
                     state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
                 } else {
