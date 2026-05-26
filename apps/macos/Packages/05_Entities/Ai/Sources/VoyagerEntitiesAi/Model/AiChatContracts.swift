@@ -557,6 +557,12 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
 }
 
 public struct AiChatSessionSummary: Codable, Equatable, Sendable {
+    public static func automaticTitle(from value: String, limit: Int = 32) -> String {
+        let collapsed = normalizedSummaryText(value)
+        let sentence = firstSentence(in: collapsed)
+        return normalizedSummaryText(sentence, limit: limit)
+    }
+
     public let sessionID: AiChatSessionID
     public let title: String
     public let preview: String?
@@ -597,6 +603,26 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
     }
     // swiftlint:enable function_default_parameter_at_end
 
+    fileprivate static func normalizedSummaryText(_ value: String, limit: Int = 120) -> String {
+        let collapsed = value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard collapsed.count > limit else { return collapsed }
+        let endIndex = collapsed.index(collapsed.startIndex, offsetBy: limit)
+        let prefix = String(collapsed[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let lastSpace = prefix.lastIndex(of: " ") else { return prefix }
+        let wordBoundary = String(prefix[..<lastSpace]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return wordBoundary.count >= max(12, limit / 2) ? wordBoundary : prefix
+    }
+
+    private static func firstSentence(in value: String) -> String {
+        let sentenceEndCharacters = CharacterSet(charactersIn: ".!?。！？")
+        guard let range = value.rangeOfCharacter(from: sentenceEndCharacters) else { return value }
+        return String(value[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+
     public init(snapshot: AiChatSessionSnapshot) {
         self.init(
             sessionID: snapshot.sessionID,
@@ -627,7 +653,7 @@ private extension AiChatSessionSnapshot {
     }
 
     var sessionTitle: String {
-        customTitle.map { Self.normalizedSummaryText($0) }?.nilIfBlank
+        customTitle.map { AiChatSessionSummary.normalizedSummaryText($0) }?.nilIfBlank
             ?? sessionTitleCandidate
             ?? contextTitle
             ?? selectedModelRow?.displayName
@@ -639,7 +665,7 @@ private extension AiChatSessionSnapshot {
         transcriptHistory
             .reversed()
             .compactMap(\.content.nilIfBlank)
-            .map { Self.normalizedSummaryText($0) }
+            .map { AiChatSessionSummary.normalizedSummaryText($0) }
             .first
     }
 
@@ -664,17 +690,7 @@ private extension AiChatSessionSnapshot {
             .first(where: { $0.role == .user })?
             .content
             .nilIfBlank
-            .map { Self.normalizedSummaryText($0) }
-    }
-
-    static func normalizedSummaryText(_ value: String, limit: Int = 120) -> String {
-        let collapsed = value
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        guard collapsed.count > limit else { return collapsed }
-        let endIndex = collapsed.index(collapsed.startIndex, offsetBy: limit)
-        return String(collapsed[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+            .map { AiChatSessionSummary.automaticTitle(from: $0) }
     }
 
     static func normalizedSearchText(_ value: String) -> String {

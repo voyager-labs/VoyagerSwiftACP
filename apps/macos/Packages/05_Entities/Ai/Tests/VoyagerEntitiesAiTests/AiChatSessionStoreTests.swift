@@ -30,6 +30,27 @@ final class AiChatSessionStoreTests: XCTestCase {
         XCTAssertEqual(derived.status, .completed)
     }
 
+
+    func testAiChatSessionSummary_derivesShortAutomaticTitleWhileKeepingPromptPreview() throws {
+        let longPrompt = """
+        Can you explain how the sidebar session title should behave while the assistant response is still streaming, especially when the history list reloads before the final answer is saved?
+        """
+        let snapshot = makeSnapshot(
+            sessionID: UUID(uuidString: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")!,
+            status: .active,
+            userPrompt: longPrompt,
+            assistantReply: "",
+            updatedAtMs: 800
+        )
+
+        let summary = AiChatSessionSummary(snapshot: snapshot)
+
+        XCTAssertEqual(summary.title, "Can you explain how the")
+        XCTAssertTrue(summary.preview?.hasPrefix("Can you explain how the sidebar session title should behave") == true)
+        XCTAssertNotEqual(summary.preview, summary.title)
+        XCTAssertLessThanOrEqual(summary.title.count, 32)
+    }
+
     func testAiChatSessionStore_saveThenListOrdersByUpdatedAtDescending() async throws {
         let store = try makeStore()
         let older = makeSnapshot(
