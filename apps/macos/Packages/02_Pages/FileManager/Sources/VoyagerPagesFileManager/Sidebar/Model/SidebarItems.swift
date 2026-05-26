@@ -2,7 +2,7 @@ import Foundation
 import VoyagerEntitiesCollection
 
 public enum SidebarItems {
-    public struct LocationItem: Equatable {
+    public struct LocationItem: Equatable, Sendable {
         public let name: String
         public let url: URL
         public let iconName: String
@@ -12,7 +12,7 @@ public enum SidebarItems {
         }
     }
 
-    public struct FavoriteItem: Equatable, Codable {
+    public struct FavoriteItem: Equatable, Codable, Sendable {
         public let name: String
         public let url: URL
         public let iconName: String
@@ -23,7 +23,7 @@ public enum SidebarItems {
             self.iconName = iconName
         }
 
-        init(from decoder: Decoder) throws {
+        public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: FavoriteItemCodingKeys.self)
             name = try container.decode(String.self, forKey: .name)
             let urlString = try container.decode(String.self, forKey: .url)
@@ -41,7 +41,7 @@ public enum SidebarItems {
             iconName = try legacyContainer.decodeIfPresent(String.self, forKey: .iconName) ?? "folder"
         }
 
-        func encode(to encoder: Encoder) throws {
+        public func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: FavoriteItemCodingKeys.self)
             try container.encode(name, forKey: .name)
             try container.encode(url.absoluteString, forKey: .url)

@@ -7,6 +7,8 @@ public struct FileManagerFeature {
     public typealias State = FileManagerWindowState
     public typealias Action = FileManagerWindowAction
 
+    public init() {}
+
     public var body: some Reducer<State, Action> {
         Scope(state: \.content, action: \.content) {
             FileManagerContentFeature()

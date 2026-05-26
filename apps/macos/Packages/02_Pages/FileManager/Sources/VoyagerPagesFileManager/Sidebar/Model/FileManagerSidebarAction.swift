@@ -9,7 +9,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
     case `internal`(Internal)
 
     @CasePathable
-    enum View: CasePathable, Sendable {
+    public enum View: CasePathable, Sendable {
         case setSidebarVisible(Bool)
         case toggleFavoritesSection
         case toggleLocationsSection
@@ -19,7 +19,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Delegate: CasePathable, Sendable {
+    public enum Delegate: CasePathable, @unchecked Sendable {
         case openFavorite(SidebarItems.FavoriteItem)
         case openLocation(SidebarItems.LocationItem)
         case showTag(String)
@@ -30,7 +30,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Internal: CasePathable, Sendable {
+    public enum Internal: CasePathable, @unchecked Sendable {
         case restoreSidebarSelection
         case loadFavorites
         case favoritesLoaded([SidebarItems.FavoriteItem])

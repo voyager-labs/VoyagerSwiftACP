@@ -7,14 +7,14 @@ import VoyagerFeaturesEntryOperations
 import VoyagerWidgetsEntryViewLayout
 
 @ObservableState
-public struct FileManagerContentState: Equatable {
+public struct FileManagerContentState: Equatable, @unchecked Sendable {
     var navigation: ContentPageNavigationFeature.State = .init()
     var entryViewLayout: EntryViewLayoutFeature.State = .init()
     var composer: ComposerFeature.State = .init()
     var collection: CollectionFeature.State = .init()
 
     // Suppresses Swift 6 InferIsolatedConformances @MainActor-isolated Equatable synthesis.
-    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    public nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         MainActor.assumeIsolated {
             lhs.navigation == rhs.navigation
                 && lhs.entryViewLayout == rhs.entryViewLayout

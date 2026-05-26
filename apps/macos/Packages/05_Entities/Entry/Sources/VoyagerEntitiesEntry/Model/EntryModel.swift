@@ -36,8 +36,6 @@ public struct EntryFacets: Equatable, Sendable {
 }
 
 public struct EntryModel: Identifiable, Sendable {
-    public typealias ID = String
-
     public let name: String
     public let fullPath: String
     public let isFolder: Bool
@@ -67,7 +65,7 @@ public struct EntryModel: Identifiable, Sendable {
         self.facets = facets
     }
 
-    public var id: ID { fullPath }
+    public var id: String { fullPath }
 }
 
 extension EntryModel: Equatable {
