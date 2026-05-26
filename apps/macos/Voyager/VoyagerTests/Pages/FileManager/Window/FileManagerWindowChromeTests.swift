@@ -158,12 +158,40 @@ final class FileManagerWindowChromeTests: XCTestCase {
     /// 사이드바 초기 폭이 상한을 초과하면 clamping되는지 검증.
     func testSidebarSyncClampsInitialWidth() {
         let sync = FileManagerSidebarSync(storeSidebarWidth: 500)
-        XCTAssertLessThanOrEqual(sync.currentSidebarWidth, sync.sidebarMaxWidth)
+        XCTAssertLessThanOrEqual(sync.currentSidebarWidth, FileManagerSidebarSync.sidebarMaxWidth)
     }
 
     /// 사이드바 폭이 하한 미만이면 최소값으로 clamping되는지 검증.
     func testSidebarSyncClampsBelowMinWidth() {
         let sync = FileManagerSidebarSync(storeSidebarWidth: 10)
-        XCTAssertGreaterThanOrEqual(sync.currentSidebarWidth, sync.sidebarMinWidth)
+        XCTAssertGreaterThanOrEqual(sync.currentSidebarWidth, FileManagerSidebarSync.sidebarMinWidth)
+    }
+
+    /// visible 상태의 초기 폭이 0이어도 실제 사이드바가 최소 폭으로 복원되는지 검증.
+    func testSidebarSyncInitialLayoutClampsVisibleZeroWidth() {
+        var sync = FileManagerSidebarSync(storeSidebarWidth: 0)
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let sidebarView = NSView()
+        let contentView = NSView()
+        splitView.addArrangedSubview(sidebarView)
+        splitView.addArrangedSubview(contentView)
+
+        var trafficLightUpdates: [Bool] = []
+        sync.applyInitialLayoutIfNeeded(
+            sidebarVisible: true,
+            sidebarWidth: 0,
+            splitView: splitView,
+            mainContainerLeading: nil,
+            contentVerticalMargin: 4,
+        ) { isSidebarVisible in
+            trafficLightUpdates.append(isSidebarVisible)
+        }
+
+        XCTAssertGreaterThanOrEqual(sidebarView.frame.width, FileManagerSidebarSync.sidebarMinWidth - 0.5)
+        XCTAssertTrue(sync.currentSidebarVisible ?? false)
+        XCTAssertEqual(trafficLightUpdates, [true])
     }
 }

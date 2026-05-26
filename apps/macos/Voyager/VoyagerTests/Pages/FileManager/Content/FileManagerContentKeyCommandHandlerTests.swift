@@ -156,21 +156,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         initialState.entryViewLayout.entryOperations.items = [selected]
         initialState.entryViewLayout.selectedIds = [selected.id]
 
-        let store = TestStore(initialState: initialState) {
-            FileManagerContentFeature()
-        } withDependencies: {
-            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
-            $0.entryFileOpsClient = .previewValue
-            $0.entryOpenClient = .previewValue
-            $0.entryQuickLookClient = .previewValue
-            $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
-            )
-            $0.uuid = UUIDGenerator.incrementing
-        }
-        store.exhaustivity = .off
+        let store = makeContentTestStore(initialState: initialState)
 
         await store.send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
         await store.receive { action in
@@ -350,6 +336,27 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                 await multiStore.finish()
             }
         }
+    }
+
+    private func makeContentTestStore(
+        initialState: FileManagerContentState,
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
+            $0.entryFileOpsClient = .previewValue
+            $0.entryOpenClient = .previewValue
+            $0.entryQuickLookClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.uuid = UUIDGenerator.incrementing
+        }
+        store.exhaustivity = .off
+        return store
     }
 
     private func makeEntry(

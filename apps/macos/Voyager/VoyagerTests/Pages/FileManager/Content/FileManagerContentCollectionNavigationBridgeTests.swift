@@ -14,34 +14,6 @@ import XCTest
 final class ContentCollectionNavBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
-    @MainActor
-    struct EntryOperationsBridgeHarness: Reducer {
-        @MainActor
-        struct State: Equatable {
-            var content: FileManagerContentState
-        }
-
-        enum Action: Sendable {
-            case bridge(EntryOperationsAction)
-            case forwarded(FileManagerContentAction)
-        }
-
-        var body: some Reducer<State, Action> {
-            Reduce { state, action in
-                switch action {
-                case let .bridge(entryAction):
-                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
-                        entryAction,
-                        state: &state.content,
-                    )
-                    .map(Action.forwarded)
-                case .forwarded:
-                    .none
-                }
-            }
-        }
-    }
-
     // MARK: - Non-Collection Navigation: clearCollectionPresentation + Load
 
     /// testFolderNavigationSendsClearCollectionPresentationThenLoadItems 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.

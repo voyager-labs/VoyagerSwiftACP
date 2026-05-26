@@ -8,20 +8,12 @@ import XCTest
 /// 컬렉션 스냅샷 저장 파이프라인 — 정상/취소/실패 경로를 검증.
 @MainActor
 final class CollectionSnapshotSavePipelineTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     /// testSaveToExistingPersistsSnapshotAndClearsInvalidationState 테스트 동작을 검증한다.
     func testSaveToExistingPersistsSnapshotAndClearsInvalidationState() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
         let url = URL(fileURLWithPath: "/tmp/collection.voycoll")
-        stalenessClient.upsertRecord(
-            url.path,
-            .init(
-                definitionFingerprint: "old-fingerprint",
-                relevanceRoots: ["/tmp"],
-                lastInvalidatedAt: .distantPast,
-            ),
-        )
+        seedStalenessRecord(stalenessClient: stalenessClient, url: url)
 
         let payload = SaveRequestPayload(
             context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: []),
@@ -289,6 +281,17 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             ),
         )
     }
+}
+
+private func seedStalenessRecord(stalenessClient: CollectionStalenessClient, url: URL) {
+    stalenessClient.upsertRecord(
+        url.path,
+        .init(
+            definitionFingerprint: "old-fingerprint",
+            relevanceRoots: ["/tmp"],
+            lastInvalidatedAt: .distantPast,
+        ),
+    )
 }
 
 let kEmptyCollectionFile = VoyagerCollectionFile(

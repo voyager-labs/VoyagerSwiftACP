@@ -40,7 +40,7 @@ enum FileManagerContentComposerCoordinator {
 
         switch action {
         case let .view(.setPresented(isPresented)):
-            return handleSetPresented(isPresented, state: &state)
+            return handleSetPresented(isPresented, state: &state, dependencies: dependencies)
 
         case .view(.applyFilters):
             return .send(.composer(.setLoadingFilters(true)))

@@ -108,6 +108,7 @@ struct FileManagerSidebarSync {
 
         splitView.adjustSubviews()
         hasSetInitialLayout = true
+        currentSidebarVisible = sidebarVisible
         onTrafficLightUpdate(sidebarVisible)
     }
 
