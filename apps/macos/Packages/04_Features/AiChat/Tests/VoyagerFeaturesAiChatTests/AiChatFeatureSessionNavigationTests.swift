@@ -105,6 +105,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
             state.sessionList.allRows = []
             state.sessionList.rows = []
+            state.sessionList.deletedSessionIDs = [sessionID]
         }
 
         XCTAssertEqual(deletedSessionIDs.value, [sessionID])
@@ -155,6 +156,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
             state.sessionList.allRows = []
             state.sessionList.rows = []
+            state.sessionList.deletedSessionIDs = [sessionID]
         }
 
         XCTAssertEqual(deletedSessionIDs.value, [sessionID])
@@ -203,6 +205,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
             state.sessionList.allRows = []
             state.sessionList.rows = []
+            state.sessionList.deletedSessionIDs = [sessionID]
         }
 
         XCTAssertEqual(deletedSessionIDs.value, [sessionID])

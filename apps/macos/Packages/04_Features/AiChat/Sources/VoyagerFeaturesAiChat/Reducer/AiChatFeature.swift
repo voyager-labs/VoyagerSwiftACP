@@ -135,7 +135,8 @@ public struct AiChatFeature {
             case let .sessionSnapshotUpdated(summary, requestID, runID):
                 guard case let .processing(lock) = state.executionPhase,
                       lock.requestID == requestID,
-                      lock.runID == runID
+                      lock.runID == runID,
+                      !state.sessionList.deletedSessionIDs.contains(summary.sessionID)
                 else { return .none }
                 state.sessionList.replaceRow(summary)
                 state.sessionList.selectedSessionID = summary.sessionID
@@ -151,6 +152,9 @@ public struct AiChatFeature {
                 return .none
 
             case let .sessionSnapshotSaved(summary):
+                guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID) else {
+                    return .none
+                }
                 state.sessionList.replaceRow(summary)
                 state.sessionList.selectedSessionID = summary.sessionID
                 if state.mode == .chat, state.sessionID == summary.sessionID {

@@ -43,6 +43,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
     public var errorMessage: String?
     public var selectedSessionID: AiChatSessionID?
     public var unreadCompletedSessionIDs: Set<AiChatSessionID>
+    public var deletedSessionIDs: Set<AiChatSessionID>
     public var renamingSessionID: AiChatSessionID?
     public var renameDraftText: String
 
@@ -54,6 +55,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         errorMessage: String? = nil,
         selectedSessionID: AiChatSessionID? = nil,
         unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
+        deletedSessionIDs: Set<AiChatSessionID> = [],
         renamingSessionID: AiChatSessionID? = nil,
         renameDraftText: String = ""
     ) {
@@ -63,14 +65,16 @@ public struct AiChatSessionListState: Equatable, Sendable {
         self.errorMessage = errorMessage
         self.selectedSessionID = selectedSessionID
         self.unreadCompletedSessionIDs = unreadCompletedSessionIDs
+        self.deletedSessionIDs = deletedSessionIDs
         self.renamingSessionID = renamingSessionID
         self.renameDraftText = renameDraftText
         self.rows = rows ?? Self.filteredRows(from: allRows, query: query)
     }
 
     public mutating func setLoadedRows(_ rows: [AiChatSessionSummary]) {
-        allRows = rows
-        self.rows = Self.filteredRows(from: rows, query: query)
+        let visibleRows = rows.filter { !deletedSessionIDs.contains($0.sessionID) }
+        allRows = visibleRows
+        self.rows = Self.filteredRows(from: visibleRows, query: query)
     }
 
     public mutating func updateQuery(_ query: String) {
@@ -79,6 +83,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
     }
 
     public mutating func removeRow(sessionID: AiChatSessionID) {
+        deletedSessionIDs.insert(sessionID)
         allRows.removeAll { $0.sessionID == sessionID }
         rows = Self.filteredRows(from: allRows, query: query)
         unreadCompletedSessionIDs.remove(sessionID)
@@ -92,6 +97,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
     }
 
     public mutating func replaceRow(_ row: AiChatSessionSummary) {
+        guard !deletedSessionIDs.contains(row.sessionID) else { return }
         if let index = allRows.firstIndex(where: { $0.sessionID == row.sessionID }) {
             allRows[index] = row
         } else {

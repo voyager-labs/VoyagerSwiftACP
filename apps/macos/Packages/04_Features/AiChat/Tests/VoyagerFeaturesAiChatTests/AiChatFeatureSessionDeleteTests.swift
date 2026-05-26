@@ -46,6 +46,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
             state.sessionList.allRows = [keptRow]
             state.sessionList.rows = []
             state.sessionList.selectedSessionID = nil
+            state.sessionList.deletedSessionIDs = [deletedSessionID]
         }
 
         XCTAssertEqual(deletedIDs.value, [deletedSessionID])
@@ -131,6 +132,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         await store.receive(.sessionDeleteSucceeded(activeSessionID)) { state in
             state.sessionList.allRows = []
             state.sessionList.rows = []
+            state.sessionList.deletedSessionIDs = [activeSessionID]
         }
 
         XCTAssertEqual(store.state.mode, AiChatMode.sessions)
@@ -141,6 +143,86 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         XCTAssertEqual(store.state.currentContext, currentContext)
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
     }
+
+
+    func testLateSnapshotCallbacksDoNotReinsertDeletedProcessingSession() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("88888888-8888-8888-8888-888888888888"))
+        let requestID = AiChatRequestID(rawValue: makeUUID("99999999-9999-9999-9999-999999999999"))
+        let runID = AiChatRunID(rawValue: makeUUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
+        let prompt = "Summarize the deleted session"
+        let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: prompt)
+        let lateStartSummary = makeDeleteTestSessionSummary(
+            sessionID: sessionID,
+            title: prompt,
+            preview: prompt,
+            messageCount: 1,
+            updatedAtMs: 3_000
+        )
+        let lateFinalSummary = makeDeleteTestSessionSummary(
+            sessionID: sessionID,
+            title: prompt,
+            preview: "Late answer",
+            messageCount: 2,
+            updatedAtMs: 4_000
+        )
+        let selectedRow = makeCatalogRows()[0]
+        let model = selectedRow.handle
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            model: model,
+            selectedRow: selectedRow,
+            promptSummary: prompt
+        )
+        let request = AiChatRequest(
+            context: context,
+            messages: [AiChatMessage(role: .user, content: prompt)]
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: model,
+            selectedRow: selectedRow,
+            assistantReplacementIndex: nil
+        )
+        let deletedIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [row], selectedSessionID: sessionID),
+            sessionID: sessionID,
+            executionPhase: .processing(lock)
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { id in deletedIDs.withValue { $0.append(id) } }
+            )
+        }
+
+        await store.send(.deleteSessionTapped(sessionID))
+
+        await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.sessionList.allRows = []
+            state.sessionList.rows = []
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.deletedSessionIDs = [sessionID]
+        }
+
+        await store.send(.sessionSnapshotUpdated(lateStartSummary, requestID: requestID, runID: runID))
+        await store.send(.sessionSnapshotSaved(lateFinalSummary))
+        await store.send(.sessionListLoaded([lateFinalSummary]))
+
+        XCTAssertEqual(deletedIDs.value, [sessionID])
+        XCTAssertTrue(store.state.sessionList.allRows.isEmpty)
+        XCTAssertTrue(store.state.sessionList.rows.isEmpty)
+        XCTAssertNil(store.state.sessionList.selectedSessionID)
+        XCTAssertEqual(store.state.sessionList.deletedSessionIDs, [sessionID])
+    }
+
     func testRenameSessionSuccessPersistsCustomTitleAndUpdatesFilteredRows() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555"))
         let originalRow = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Original derived title")
