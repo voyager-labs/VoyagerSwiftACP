@@ -1,8 +1,8 @@
 @testable import Voyager
 import XCTest
 
-@MainActor
 /// 헬퍼 감독 정책 — 재시도/쿨다운/백오프 및 상태 리셋 의미론을 검증.
+@MainActor
 final class HelperSupervisionPolicyTests: XCTestCase {
     /// testFirstThreeAttemptsAllowed 테스트 동작을 검증한다.
     func testFirstThreeAttemptsAllowed() {

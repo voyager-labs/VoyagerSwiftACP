@@ -56,11 +56,17 @@ public struct SystemPropertyDefinition: Decodable, Equatable, Sendable {
     public let uiHidden: Bool?
 
     private enum CodingKeys: String, CodingKey {
-        case uiLabel = "ui_label"; case description; case type
-        case searchAliases = "search_aliases"; case legacyKeys = "legacy_keys"
-        case systemKeys = "system_keys"; case availability
-        case unitSpec = "unit_spec"; case dbIndexed = "db_indexed"
-        case uiPinned = "ui_pinned"; case uiHidden = "ui_hidden"
+        case uiLabel = "ui_label"
+        case description
+        case type
+        case searchAliases = "search_aliases"
+        case legacyKeys = "legacy_keys"
+        case systemKeys = "system_keys"
+        case availability
+        case unitSpec = "unit_spec"
+        case dbIndexed = "db_indexed"
+        case uiPinned = "ui_pinned"
+        case uiHidden = "ui_hidden"
     }
 }
 
@@ -72,7 +78,8 @@ public struct SystemPropertyUnitSpec: Decodable, Equatable, Sendable {
     public let defaultDisplayUnit: String
 
     private enum CodingKeys: String, CodingKey {
-        case canonicalUnit = "canonical_unit"; case units
+        case canonicalUnit = "canonical_unit"
+        case units
         case defaultDisplayUnit = "default_display_unit"
     }
 }
@@ -83,7 +90,9 @@ public struct SystemPropertyUnitOption: Decodable, Equatable, Sendable {
     public let factorToCanonical: String
 
     private enum CodingKeys: String, CodingKey {
-        case code; case label; case factorToCanonical = "factor_to_canonical"
+        case code
+        case label
+        case factorToCanonical = "factor_to_canonical"
     }
 }
 
@@ -107,7 +116,7 @@ public struct OperatorDefinition: Decodable, Equatable, Sendable {
         allowedTypes: [String]? = nil,
         inverseOf: String? = nil,
         aliases: [String]? = nil,
-        uiValueKind: [String: String]? = nil
+        uiValueKind: [String: String]? = nil,
     ) {
         self.uiLabel = uiLabel
         self.mdqueryOperator = mdqueryOperator
@@ -120,29 +129,40 @@ public struct OperatorDefinition: Decodable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case uiLabel = "ui_label"; case mdqueryOperator = "mdquery_operator"
-        case valueShape = "value_shape"; case valueCount = "value_count"
-        case allowedTypes = "allowed_types"; case inverseOf = "inverse_of"
-        case aliases; case uiValueKind = "ui_value_kind"
+        case uiLabel = "ui_label"
+        case mdqueryOperator = "mdquery_operator"
+        case valueShape = "value_shape"
+        case valueCount = "value_count"
+        case allowedTypes = "allowed_types"
+        case inverseOf = "inverse_of"
+        case aliases
+        case uiValueKind = "ui_value_kind"
     }
 }
 
 public enum ValueShape: String, Decodable, Sendable {
-    case none; case single; case list; case range
+    case none
+    case single
+    case list
+    case range
 }
 
 public enum ValueCount: Decodable, Equatable, Sendable {
-    case fixed(Int); case multiple
+    case fixed(Int)
+    case multiple
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let intValue = try? container.decode(Int.self) {
-            self = .fixed(intValue); return
+            self = .fixed(intValue)
+            return
         }
         let text = try container.decode(String.self)
-        if text == "n" { self = .multiple; return }
+        if text == "n" { self = .multiple
+            return
+        }
         throw DecodingError.dataCorruptedError(
-            in: container, debugDescription: "Unsupported value_count: \(text)"
+            in: container, debugDescription: "Unsupported value_count: \(text)",
         )
     }
 }
@@ -156,8 +176,10 @@ public struct PropertyConditionRegistry: Decodable, Sendable {
     public let operators: [String: OperatorDefinition]
 
     private enum CodingKeys: String, CodingKey {
-        case kind = "$kind"; case version = "$version"
-        case propertyTypes = "property_types"; case operators
+        case kind = "$kind"
+        case version = "$version"
+        case propertyTypes = "property_types"
+        case operators
     }
 }
 
@@ -173,7 +195,9 @@ public struct SystemPropertyRegistry: Decodable, Sendable {
     public let categories: [String: [String: SystemPropertyDefinition]]
 
     private enum CodingKeys: String, CodingKey {
-        case kind = "$kind"; case version = "$version"; case categories
+        case kind = "$kind"
+        case version = "$version"
+        case categories
     }
 
     public init(from decoder: Decoder) throws {
@@ -181,7 +205,7 @@ public struct SystemPropertyRegistry: Decodable, Sendable {
         kind = try container.decodeIfPresent(String.self, forKey: .kind)
         version = try container.decodeIfPresent(String.self, forKey: .version)
         categories = try container.decodeIfPresent(
-            [String: [String: SystemPropertyDefinition]].self, forKey: .categories
+            [String: [String: SystemPropertyDefinition]].self, forKey: .categories,
         ) ?? [:]
     }
 }

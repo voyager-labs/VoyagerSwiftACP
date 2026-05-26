@@ -1,14 +1,14 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import XCTest
 
-@MainActor
 /// FileManager content 리네임 라이프사이클에서 레이아웃 전환과 rename 상태 소유권 계약을 검증한다.
+@MainActor
 final class FileManagerContentRenameLifecycleTests: XCTestCase {
     /// testChangeLayoutCancelsActiveRenameWhenSwitchingListToGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testChangeLayoutCancelsActiveRenameWhenSwitchingListToGrid() async {

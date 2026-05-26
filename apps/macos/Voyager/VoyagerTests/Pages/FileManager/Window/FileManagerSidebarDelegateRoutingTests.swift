@@ -6,8 +6,8 @@ import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
 
-@MainActor
 /// FileManager 사이드바에서 라우팅/드롭 핸드오프 경계(사이드바-콘텐츠-내비게이션)의 계약을 검증한다.
+@MainActor
 final class FileManagerSidebarDelegateRoutingTests: XCTestCase {
     // MARK: - 1. openFavorite - 컬렉션 파일 분기와 경로 네비게이션 분기 모두 검증
 

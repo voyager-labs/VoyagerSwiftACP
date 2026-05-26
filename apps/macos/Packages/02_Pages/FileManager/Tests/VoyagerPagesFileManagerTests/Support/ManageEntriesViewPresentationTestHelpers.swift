@@ -20,11 +20,13 @@ func makeFileManagerContentStore(
 func makeFileManagerContentFeatureStore(
     initialState: FileManagerContentState = FileManagerContentState(),
     setString: @escaping @Sendable (String, String) -> Void = { _, _ in },
+    date: Date = Date(timeIntervalSince1970: 0),
 ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
     TestStore(initialState: initialState) {
         FileManagerContentFeature()
     } withDependencies: {
         $0.userDefaultsClient.setString = setString
+        $0.date = .constant(date)
     }
 }
 

@@ -144,7 +144,11 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
         let window = NSWindow(contentViewController: contentViewController)
         FileManagerWindowChrome.configureWindowStyle(window)
-        FileManagerWindowChrome.applyInitialFrame(window, initialWindowSizeProvider: initialWindowSizeProvider)
+        FileManagerWindowChrome.applyInitialFrame(
+            window,
+            initialWindowSizeProvider: initialWindowSizeProvider,
+            reservesSidebarWidth: store.sidebar.sidebarVisible,
+        )
         return window
     }
 

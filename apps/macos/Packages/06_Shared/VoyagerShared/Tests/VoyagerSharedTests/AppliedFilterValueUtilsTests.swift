@@ -62,14 +62,15 @@ final class AppliedFilterValueUtilsTests: XCTestCase {
     // MARK: - 날짜 포맷팅
 
     /// singleDate UI kind에서 ISO 문자열이 날짜 형식으로 변환되는지 검증
-    func testDateStringWithSingleDateKindReturnsFormattedDate() {
+    func testDateStringWithSingleDateKindReturnsFormattedDate() throws {
         // ISO8601 날짜 문자열
         let isoString = "2026-05-10T12:00:00Z"
         let result = AppliedFilterValueUtils.stringValues(from: .string(isoString), valueUIKind: "singleDate")
         // 날짜만 포맷된 문자열을 반환해야 함
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.count, 1)
-        XCTAssertFalse(result!.first!.contains("T")) // 날짜만 포함하고 시간 성분은 없어야 함
+        let formattedValue = try XCTUnwrap(result?.first)
+        XCTAssertFalse(formattedValue.contains("T")) // 날짜만 포함하고 시간 성분은 없어야 함
     }
 
     /// rangeDate UI kind도 날짜 문자열 한 개로 정규화되는지 검증

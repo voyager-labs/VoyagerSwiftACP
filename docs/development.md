@@ -16,11 +16,15 @@
 ### 1.1 macOS
 
 - macOS (앱 개발은 macOS에서만 가능)
-- Xcode (레포에서 고정한 버전 사용)
+- Xcode 26.1 (레포에서 고정한 버전 사용)
+- Swift 6.2.1 (`.swift-toolchain-version`, Xcode 26.1 toolchain 기준)
+- `swiftly` (권장 보조 도구: shell의 `swift`가 레포 Xcode toolchain을 보도록 맞춤)
 
 Xcode 버전 고정
 
 - 고정 파일: `.xcode-version`
+- Swiftly 선택 파일: `.swift-version` (`xcode`, 현재 선택된 Xcode toolchain 사용)
+- Swift 기대 버전 파일: `.swift-toolchain-version` (`just swift-version` 검증 기준)
 - 설치/선택 스크립트: `scripts/xcodes.sh`
 
 권장 설정 방법
@@ -29,6 +33,15 @@ Xcode 버전 고정
 chmod +x scripts/xcodes.sh
 ./scripts/xcodes.sh
 ```
+
+Swiftly를 사용하는 shell에서는 레포 루트에서 아래 값도 확인합니다.
+
+```bash
+swiftly use
+just swift-version
+```
+
+정상 출력은 `xcode` 및 `.swift-toolchain-version`과 일치하는 Swift 6.2.1입니다.
 
 ### 1.2 Backend (Python)
 
@@ -112,11 +125,11 @@ uv run pytest
 
 통합 동작은 아래 흐름으로 구성됩니다.
 
-1) Voyager 앱 실행
-2) Helper 실행 및 환경 로딩
-3) Helper가 백엔드 프로세스를 source/bundled 모드로 기동
-4) Helper가 포트를 예약하고 준비 상태를 검증
-5) 앱이 Helper 상태를 수신 후 API 호출
+1. Voyager 앱 실행
+2. Helper 실행 및 환경 로딩
+3. Helper가 백엔드 프로세스를 source/bundled 모드로 기동
+4. Helper가 포트를 예약하고 준비 상태를 검증
+5. 앱이 Helper 상태를 수신 후 API 호출
 
 통합/부트스트랩 상세는 `docs/macos/voyager-helper.md`, `docs/integration/backend-bootstrap.md`를 참고합니다.
 

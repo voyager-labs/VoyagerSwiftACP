@@ -12,7 +12,7 @@ public struct FileManagerFavoritesClient: Sendable {
     public nonisolated init(
         loadFavorites: @escaping @Sendable (EntryLoadingClient, UserDefaultsClient) async
             -> [SidebarItems.FavoriteItem],
-        saveFavorites: @escaping @Sendable ([SidebarItems.FavoriteItem], UserDefaultsClient) -> Void
+        saveFavorites: @escaping @Sendable ([SidebarItems.FavoriteItem], UserDefaultsClient) -> Void,
     ) {
         self.loadFavorites = loadFavorites
         self.saveFavorites = saveFavorites
@@ -34,7 +34,7 @@ extension FileManagerFavoritesClient: DependencyKey {
                                 return SidebarItems.FavoriteItem(
                                     name: favorite.name,
                                     url: favorite.url,
-                                    iconName: "appstore"
+                                    iconName: "appstore",
                                 )
                             }
 
@@ -43,12 +43,12 @@ extension FileManagerFavoritesClient: DependencyKey {
                                 let iconName = FileManagerIconClient.resolveIconName(
                                     for: favorite.url,
                                     isDirectory: isDirectory.boolValue,
-                                    entryLoadingClient: entryLoadingClient
+                                    entryLoadingClient: entryLoadingClient,
                                 )
                                 return SidebarItems.FavoriteItem(
                                     name: favorite.name,
                                     url: favorite.url,
-                                    iconName: iconName
+                                    iconName: iconName,
                                 )
                             }
 
@@ -70,7 +70,7 @@ extension FileManagerFavoritesClient: DependencyKey {
                 if let encoded = try? JSONEncoder().encode(favorites) {
                     userDefaultsClient.setObject(encoded, "favorites")
                 }
-            }
+            },
         )
     }
 
@@ -83,7 +83,7 @@ extension FileManagerFavoritesClient: DependencyKey {
                 directory: FileManager.SearchPathDirectory,
                 iconName: String,
                 entryLoadingClient: EntryLoadingClient,
-                domain: FileManager.SearchPathDomainMask = .userDomainMask
+                domain: FileManager.SearchPathDomainMask = .userDomainMask,
             ) -> SidebarItems.FavoriteItem? {
                 guard let url = entryLoadingClient.urlsForDirectory(directory, domain).first else { return nil }
                 return SidebarItems.FavoriteItem(name: name, url: url, iconName: iconName)
@@ -95,25 +95,25 @@ extension FileManagerFavoritesClient: DependencyKey {
                     directory: .applicationDirectory,
                     iconName: "appstore",
                     entryLoadingClient: entryLoadingClient,
-                    domain: .localDomainMask
+                    domain: .localDomainMask,
                 ),
                 makeFavorite(
                     name: "Desktop",
                     directory: .desktopDirectory,
                     iconName: "menubar.dock.rectangle",
-                    entryLoadingClient: entryLoadingClient
+                    entryLoadingClient: entryLoadingClient,
                 ),
                 makeFavorite(
                     name: "Documents",
                     directory: .documentDirectory,
                     iconName: "doc",
-                    entryLoadingClient: entryLoadingClient
+                    entryLoadingClient: entryLoadingClient,
                 ),
                 makeFavorite(
                     name: "Downloads",
                     directory: .downloadsDirectory,
                     iconName: "arrow.down.circle",
-                    entryLoadingClient: entryLoadingClient
+                    entryLoadingClient: entryLoadingClient,
                 ),
             ].compactMap(\.self)
         }
@@ -122,7 +122,7 @@ extension FileManagerFavoritesClient: DependencyKey {
     public nonisolated static var testValue: FileManagerFavoritesClient {
         FileManagerFavoritesClient(
             loadFavorites: { _, _ in [] },
-            saveFavorites: { _, _ in }
+            saveFavorites: { _, _ in },
         )
     }
 

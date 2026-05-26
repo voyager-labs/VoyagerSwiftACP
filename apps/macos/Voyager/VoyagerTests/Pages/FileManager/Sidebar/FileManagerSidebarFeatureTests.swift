@@ -468,8 +468,8 @@ final class FileManagerSidebarFeatureTests: XCTestCase {
             $0.fileManagerIconClient = .testValue
         }
 
-        // 초기값이 읽을 수 있는지 확인
-        XCTAssertEqual(store.state.sidebarVisible, false)
+        // Verify initial values are readable
+        XCTAssertFalse(store.state.sidebarVisible)
         XCTAssertEqual(store.state.sidebarWidth, 180)
 
         await store.finish()

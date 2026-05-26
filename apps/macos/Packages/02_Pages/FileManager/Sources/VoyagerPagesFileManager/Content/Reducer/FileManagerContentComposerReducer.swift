@@ -27,8 +27,8 @@ struct FileManagerContentComposerReducer {
                     state: &state,
                     dependencies: .init(
                         collectionAlertClient: collectionAlertClient,
-                        metricsClient: metricsClient
-                    )
+                        metricsClient: metricsClient,
+                    ),
                 )
             }
 
@@ -57,7 +57,7 @@ struct FileManagerContentComposerReducer {
         guard state.collection.refreshBlockingReason(
             isCollectionMode: state.isCollectionMode,
             isDirty: state.collection.isDirty,
-            isSearching: state.composer.isCollectionSearching
+            isSearching: state.composer.isCollectionSearching,
         ) == nil else {
             return .none
         }
@@ -68,14 +68,14 @@ struct FileManagerContentComposerReducer {
         if trimmedQuery.isEmpty {
             return .concatenate(
                 .send(.collection(.refreshRequested)),
-                .send(.composer(.applyFilters))
+                .send(.composer(.applyFilters)),
             )
         }
 
         return .concatenate(
             .send(.collection(.refreshRequested)),
             .send(.composer(.setText(trimmedQuery))),
-            .send(.composer(.submit))
+            .send(.composer(.submit)),
         )
     }
 
@@ -92,7 +92,7 @@ struct FileManagerContentComposerReducer {
             syncComposerCollectionStateEffect(state),
             isModeChanging && hasActiveRename
                 ? .send(.entryViewLayout(.entryOperations(.edit(.cancelRename))))
-                : .none
+                : .none,
         )
     }
 
@@ -113,7 +113,7 @@ struct FileManagerContentComposerReducer {
             context: state.collection.collectionContext,
             url: state.collection.collectionSession.document?.url,
             compatibility: state.collection.collectionSession.document?.compatibility,
-            isCollectionMode: state.isCollectionMode
+            isCollectionMode: state.isCollectionMode,
         )))
     }
 
@@ -122,7 +122,7 @@ struct FileManagerContentComposerReducer {
             context: state.collection.collectionContext,
             url: state.collection.collectionSession.document?.url,
             compatibility: state.collection.collectionSession.document?.compatibility,
-            isCollectionMode: state.isCollectionMode
+            isCollectionMode: state.isCollectionMode,
         )))
     }
 }

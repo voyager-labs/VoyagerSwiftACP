@@ -5,8 +5,8 @@ import Foundation
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// Composer 쿼리 피드백 생명주기 — 필터 유효/변경 없음/실패/stale 전이를 검증.
+@MainActor
 final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
     /// testChangedFiltersContinueToApplyFiltersWithoutShowingToast 테스트 동작을 검증한다.
     func testChangedFiltersContinueToApplyFiltersWithoutShowingToast() async {

@@ -15,7 +15,7 @@ public struct FileManagerWindowClient: Sendable {
         openTab: @escaping @Sendable (_ id: UUID) async -> Void,
         close: @escaping @Sendable (_ id: UUID) async -> Void,
         closeAll: @escaping @Sendable () async -> Void,
-        focusPath: @escaping @Sendable (_ path: String) async -> Void
+        focusPath: @escaping @Sendable (_ path: String) async -> Void,
     ) {
         self.open = open
         self.openTab = openTab
@@ -42,7 +42,7 @@ extension FileManagerWindowClient: DependencyKey {
             },
             focusPath: { _ in
                 fatalError("fileManagerWindowClient.focusPath live dependency is not configured")
-            }
+            },
         )
     }
 
@@ -62,7 +62,7 @@ extension FileManagerWindowClient: DependencyKey {
             },
             focusPath: { _ in
                 fatalError("fileManagerWindowClient.focusPath test dependency is not configured")
-            }
+            },
         )
     }
 
@@ -138,7 +138,7 @@ public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
             await MainActor.run {
                 fileManagerWindowFocus(path: path)
             }
-        }
+        },
     )
 }
 
@@ -149,7 +149,7 @@ public func configureFileManagerWindowClientLive(
     resolveFileManagerStore: @escaping (UUID) -> StoreOf<FileManagerFeature>?,
     onWindowBecameKey: @escaping (UUID) -> Void,
     onWindowResignedKey: @escaping (UUID) -> Void,
-    onWindowClosed: @escaping (UUID) -> Void
+    onWindowClosed: @escaping (UUID) -> Void,
 ) {
     fileManagerWindowRequestNewWindow = requestNewWindow
     fileManagerWindowRequestNewTab = requestNewTab
@@ -187,7 +187,7 @@ private func fileManagerWindowOpen(windowID: UUID) {
     let controller = makeManagedWindowController(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
-        undoManager: undoManager
+        undoManager: undoManager,
     )
     registerFileManagerWindowController(controller)
     controller.showWindow(nil as Any?)
@@ -218,7 +218,7 @@ private func fileManagerWindowOpenTab(windowID: UUID) {
     let controller = makeManagedWindowController(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
-        undoManager: undoManager
+        undoManager: undoManager,
     )
     registerFileManagerWindowController(controller)
 
@@ -265,7 +265,7 @@ private func unregisterFileManagerWindowController(windowID: UUID) {
 private func makeManagedWindowController(
     windowID: UUID,
     fileManagerStore: StoreOf<FileManagerFeature>,
-    undoManager: UndoManager
+    undoManager: UndoManager,
 ) -> FileManagerWindowCoordinator {
     FileManagerWindowCoordinator(
         windowID: windowID,
@@ -284,6 +284,6 @@ private func makeManagedWindowController(
         },
         initialWindowSizeProvider: {
             fileManagerWindowControllers.first?.window?.frame.size
-        }
+        },
     )
 }

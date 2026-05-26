@@ -3,8 +3,8 @@ import Foundation
 import VoyagerEntitiesCollection
 import XCTest
 
-@MainActor
 /// 컬렉션 문서 세션 페이즈 — 전환 헬퍼와 상태 변환을 검증.
+@MainActor
 final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
     /// testPhaseDerivesLegacyLifecycleBools 테스트 동작을 검증한다.
     func testPhaseDerivesLegacyLifecycleBools() {

@@ -11,7 +11,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
+final class ContentEntryOpsLifecycleTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
     // MARK: - 하네스

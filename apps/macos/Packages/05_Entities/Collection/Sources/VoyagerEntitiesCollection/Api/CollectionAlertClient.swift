@@ -7,7 +7,7 @@ public struct CollectionAlertClient: Sendable {
 
     public nonisolated init(
         showUnsavedNavigationAlert: @escaping @Sendable () async -> CollectionNavigationChoice,
-        showCollectionOpenErrorAlert: @escaping @Sendable (_ title: String, _ message: String) async -> Void
+        showCollectionOpenErrorAlert: @escaping @Sendable (_ title: String, _ message: String) async -> Void,
     ) {
         self.showUnsavedNavigationAlert = showUnsavedNavigationAlert
         self.showCollectionOpenErrorAlert = showCollectionOpenErrorAlert
@@ -47,21 +47,21 @@ extension CollectionAlertClient: DependencyKey {
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
                 }
-            }
+            },
         )
     }
 
     public nonisolated static var testValue: CollectionAlertClient {
         CollectionAlertClient(
             showUnsavedNavigationAlert: { .cancel },
-            showCollectionOpenErrorAlert: { _, _ in }
+            showCollectionOpenErrorAlert: { _, _ in },
         )
     }
 
     public nonisolated static var previewValue: CollectionAlertClient {
         CollectionAlertClient(
             showUnsavedNavigationAlert: { .cancel },
-            showCollectionOpenErrorAlert: { _, _ in }
+            showCollectionOpenErrorAlert: { _, _ in },
         )
     }
 }

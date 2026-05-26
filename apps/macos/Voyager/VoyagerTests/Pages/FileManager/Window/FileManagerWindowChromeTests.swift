@@ -91,6 +91,45 @@ final class FileManagerWindowChromeTests: XCTestCase {
         )
     }
 
+    /// visible sidebar로 시작하는 창은 초기 프레임에 sidebar 최소 폭을 추가로 확보해야 함을 검증.
+    func testChromeMinimumInitialWidthReservesVisibleSidebarWidth() {
+        XCTAssertEqual(
+            FileManagerWindowChrome.minimumInitialWidth(reservesSidebarWidth: true),
+            600 + FileManagerSidebarSync.sidebarMinWidth,
+        )
+        XCTAssertEqual(FileManagerWindowChrome.minimumInitialWidth(reservesSidebarWidth: false), 600)
+    }
+
+    /// 저장된/제공된 초기 창 크기가 sidebar 포함 최소 폭보다 작으면 보정되는지 검증.
+    func testChromeConstrainedInitialSizeIncludesSidebarMinimumWidth() {
+        let constrainedSize = FileManagerWindowChrome.constrainedInitialSize(
+            NSSize(width: 600, height: 300),
+            minimumWidth: FileManagerWindowChrome.minimumInitialWidth(reservesSidebarWidth: true),
+            minimumHeight: 350,
+        )
+
+        XCTAssertEqual(constrainedSize.width, 600 + FileManagerSidebarSync.sidebarMinWidth)
+        XCTAssertEqual(constrainedSize.height, 350)
+    }
+
+    /// 실제 초기 프레임 적용 시 sidebar visible 상태면 창 폭이 sidebar 최소 폭만큼 확보되는지 검증.
+    func testChromeApplyInitialFrameReservesVisibleSidebarWidth() {
+        let window = NSWindow(contentViewController: NSViewController())
+        FileManagerWindowChrome.configureWindowStyle(window)
+
+        FileManagerWindowChrome.applyInitialFrame(
+            window,
+            initialWindowSizeProvider: { NSSize(width: 600, height: 300) },
+            reservesSidebarWidth: true,
+        )
+
+        XCTAssertGreaterThanOrEqual(
+            window.frame.width,
+            FileManagerWindowChrome.minimumInitialWidth(reservesSidebarWidth: true) - 0.5,
+        )
+        XCTAssertGreaterThanOrEqual(window.frame.height, window.minSize.height)
+    }
+
     // MARK: - FileManagerWindowChrome.makeTitle
 
     /// 컬렉션 이름이 존재하면 makeTitle이 해당 이름을 반환하는지 검증.
@@ -158,12 +197,122 @@ final class FileManagerWindowChromeTests: XCTestCase {
     /// 사이드바 초기 폭이 상한을 초과하면 clamping되는지 검증.
     func testSidebarSyncClampsInitialWidth() {
         let sync = FileManagerSidebarSync(storeSidebarWidth: 500)
-        XCTAssertLessThanOrEqual(sync.currentSidebarWidth, sync.sidebarMaxWidth)
+        XCTAssertLessThanOrEqual(sync.currentSidebarWidth, FileManagerSidebarSync.sidebarMaxWidth)
     }
 
     /// 사이드바 폭이 하한 미만이면 최소값으로 clamping되는지 검증.
     func testSidebarSyncClampsBelowMinWidth() {
         let sync = FileManagerSidebarSync(storeSidebarWidth: 10)
-        XCTAssertGreaterThanOrEqual(sync.currentSidebarWidth, sync.sidebarMinWidth)
+        XCTAssertGreaterThanOrEqual(sync.currentSidebarWidth, FileManagerSidebarSync.sidebarMinWidth)
+    }
+
+    /// visible 상태에서 잘못 저장된 0 폭을 초기 레이아웃 최소 폭으로 보정하는지 검증.
+    func testSidebarSyncInitialLayoutClampsInvalidStoredWidthToMinimum() {
+        var sync = FileManagerSidebarSync(storeSidebarWidth: 0)
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let sidebarView = NSView()
+        let contentView = NSView()
+        splitView.addArrangedSubview(sidebarView)
+        splitView.addArrangedSubview(contentView)
+
+        var trafficLightUpdates: [Bool] = []
+        sync.applyInitialLayoutIfNeeded(
+            sidebarVisible: true,
+            sidebarWidth: 0,
+            splitView: splitView,
+            mainContainerLeading: nil,
+            contentVerticalMargin: 4,
+        ) { isSidebarVisible in
+            trafficLightUpdates.append(isSidebarVisible)
+        }
+
+        XCTAssertGreaterThanOrEqual(sidebarView.frame.width, FileManagerSidebarSync.sidebarMinWidth - 0.5)
+        XCTAssertTrue(FileManagerSidebarSync.isSidebarEffectivelyVisible(
+            splitView: splitView,
+            sidebarView: sidebarView,
+        ))
+        XCTAssertTrue(sync.currentSidebarVisible ?? false)
+        XCTAssertEqual(trafficLightUpdates, [true])
+    }
+
+    /// 초기화/자동 resize 중 sidebar가 최소 폭 미만이면 false 저장 대신 복구 요청을 반환하는지 검증.
+    func testSidebarSyncAutomaticResizeBelowMinimumRequestsRestoreWithoutHiding() {
+        var sync = FileManagerSidebarSync(storeSidebarWidth: 220)
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let sidebarView = NSView()
+        let contentView = NSView()
+        splitView.addArrangedSubview(sidebarView)
+        splitView.addArrangedSubview(contentView)
+
+        sync.applyInitialLayoutIfNeeded(
+            sidebarVisible: true,
+            sidebarWidth: 220,
+            splitView: splitView,
+            mainContainerLeading: nil,
+            contentVerticalMargin: 4,
+        ) { _ in }
+
+        splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth - 1, ofDividerAt: 0)
+        splitView.adjustSubviews()
+
+        var syncedWidths: [CGFloat] = []
+        let decision = sync.handleSplitViewResize(
+            splitView: splitView,
+            sidebarView: sidebarView,
+            storeSidebarVisible: true,
+            isUserInitiatedCollapse: false,
+        ) { width in
+            syncedWidths.append(width)
+        }
+
+        XCTAssertEqual(decision, .restoreSidebar)
+        XCTAssertTrue(syncedWidths.isEmpty)
+    }
+
+    /// 사용자가 최소 폭 아래로 사이드바를 접으면 폭을 0으로 저장하지 않고 숨김 전환을 요청하는지 검증.
+    func testSidebarSyncUserResizeBelowMinimumRequestsHideWithoutStoringZeroWidth() {
+        var sync = FileManagerSidebarSync(storeSidebarWidth: 220)
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let sidebarView = NSView()
+        let contentView = NSView()
+        splitView.addArrangedSubview(sidebarView)
+        splitView.addArrangedSubview(contentView)
+
+        sync.applyInitialLayoutIfNeeded(
+            sidebarVisible: true,
+            sidebarWidth: 220,
+            splitView: splitView,
+            mainContainerLeading: nil,
+            contentVerticalMargin: 4,
+        ) { _ in }
+
+        splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth - 1, ofDividerAt: 0)
+        splitView.adjustSubviews()
+
+        var syncedWidths: [CGFloat] = []
+        let decision = sync.handleSplitViewResize(
+            splitView: splitView,
+            sidebarView: sidebarView,
+            storeSidebarVisible: true,
+            isUserInitiatedCollapse: true,
+        ) { width in
+            syncedWidths.append(width)
+        }
+
+        XCTAssertEqual(decision, .hideSidebar)
+        XCTAssertTrue(syncedWidths.isEmpty)
+        XCTAssertFalse(FileManagerSidebarSync.isSidebarEffectivelyVisible(
+            splitView: splitView,
+            sidebarView: sidebarView,
+        ))
     }
 }

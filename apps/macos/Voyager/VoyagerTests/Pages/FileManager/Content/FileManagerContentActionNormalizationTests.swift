@@ -11,8 +11,7 @@ import XCTest
 /// content → entryViewLayout/entryOperations 라우팅 정규화가 올바른지 검증.
 /// 현재 API 미구현으로 스텁 상태.
 @MainActor
-final class FileManagerContentActionNormalizationTests: XCTestCase {
-    /// Action enum이 예상된 하위 케이스를 모두 포함하는지 확인 (미구현 스텁).
+final class ContentActionNormalizationTests: XCTestCase {
     func testActionHasChildCases() async {}
     /// 전체 선택 액션이 entryViewLayout으로 올바르게 라우팅되는지 확인 (미구현 스텁).
     func testSelectAllEntriesRoutesToEntryViewLayout() async {}

@@ -6,8 +6,8 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import XCTest
 
-@MainActor
 /// 컬렉션 모드 리듀서 — 토글/항목 업데이트/재적용/정리 전이를 검증.
+@MainActor
 final class EntryViewLayoutCollectionReducerTests: XCTestCase {
     private func makeTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
         TestStore(initialState: EntryViewLayoutState()) {

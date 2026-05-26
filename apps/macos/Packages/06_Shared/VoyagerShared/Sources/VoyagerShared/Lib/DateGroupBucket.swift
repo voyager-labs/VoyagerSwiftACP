@@ -28,7 +28,7 @@ public enum DateGroupBucket: Hashable, Sendable {
     public static func bucket(
         for date: Date,
         now: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
     ) -> DateGroupBucket {
         let itemDate = calendar.startOfDay(for: date)
         let todayStart = calendar.startOfDay(for: now)

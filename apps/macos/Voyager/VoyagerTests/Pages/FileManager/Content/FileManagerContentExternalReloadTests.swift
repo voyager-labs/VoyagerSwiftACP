@@ -1,15 +1,15 @@
 import ComposableArchitecture
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import struct VoyagerEntitiesCollection.CollectionContext
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// FileManager content 외부 파일시스템 이벤트가 페이지 리로드 계약과 맞는지 검증한다.
+@MainActor
 final class FileManagerContentExternalReloadTests: XCTestCase {
     private func extractLoadItems(from action: FileManagerContentAction) -> (path: String, showHidden: Bool)? {
         let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)

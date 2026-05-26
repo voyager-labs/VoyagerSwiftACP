@@ -27,14 +27,14 @@ struct EntryViewLayoutColumnsMenuModel: Equatable, Sendable {
                 column: column,
                 title: column.title,
                 isChecked: isChecked,
-                isEnabled: !isRequired
+                isEnabled: !isRequired,
             )
         }
 
         let defaultVisibleColumns = Self.normalizedVisibleColumns(EntryListColumn.defaultVisibleColumns)
         resetItem = ResetItem(
             title: "Reset Columns",
-            isEnabled: normalizedVisibleColumns != defaultVisibleColumns
+            isEnabled: normalizedVisibleColumns != defaultVisibleColumns,
         )
     }
 

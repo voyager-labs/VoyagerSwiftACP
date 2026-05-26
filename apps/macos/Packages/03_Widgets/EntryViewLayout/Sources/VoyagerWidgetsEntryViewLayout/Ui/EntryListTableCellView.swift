@@ -53,13 +53,13 @@ private enum EntryListCellDateFormatting {
         _ date: Date,
         width: CGFloat,
         locale: Locale = .current,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
     ) -> String {
         let template = template(forWidth: width)
         let key = CacheKey(
             template: template,
             localeIdentifier: locale.identifier,
-            timeZoneIdentifier: timeZone.identifier
+            timeZoneIdentifier: timeZone.identifier,
         )
 
         lock.lock()
@@ -121,7 +121,7 @@ final class EntryListGroupHeaderCellView: NSTableCellView {
         attachment.image = ColorDotImageFactory.make(
             color: TagColor(colorCode: colorCode).nsColor,
             size: 10,
-            inset: 1
+            inset: 1,
         )
         attachment.bounds = NSRect(x: 0, y: -1, width: 10, height: 10)
 
@@ -129,7 +129,7 @@ final class EntryListGroupHeaderCellView: NSTableCellView {
         attributed.append(NSAttributedString(string: " "))
         attributed.append(NSAttributedString(
             string: title,
-            attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold)]
+            attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold)],
         ))
         titleField.attributedStringValue = attributed
     }
@@ -195,14 +195,14 @@ final class EntryListEntryCellView: NSTableCellView {
 
         textLeadingToIconConstraint = customTextField.leadingAnchor.constraint(
             equalTo: customImageView.trailingAnchor,
-            constant: 6
+            constant: 6,
         )
         textLeadingToViewConstraint = customTextField.leadingAnchor.constraint(equalTo: leadingAnchor)
         let textTrailingToView = customTextField.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor)
         textTrailingToViewConstraint = textTrailingToView
         let textTrailingToTags = customTextField.trailingAnchor.constraint(
             lessThanOrEqualTo: tagStackView.leadingAnchor,
-            constant: -8
+            constant: -8,
         )
         textTrailingToTagsConstraint = textTrailingToTags
         let textCenterY = customTextField.centerYAnchor.constraint(equalTo: centerYAnchor)
@@ -236,7 +236,7 @@ final class EntryListEntryCellView: NSTableCellView {
         if let editor = customTextField.currentEditor() as? NSTextView {
             let range = EntryInlineRenameEditorRules.initialSelectionRange(
                 for: entryName,
-                isFolder: entryIsFolder
+                isFolder: entryIsFolder,
             )
             editor.setSelectedRange(range)
         }
@@ -311,7 +311,7 @@ final class EntryListEntryCellView: NSTableCellView {
     private func configureDateCell(context: EntryListEntryCellViewConfiguration.Context, date: Date) {
         configureTextOnlyCell(
             context: context,
-            text: EntryListCellDateFormatting.format(date, width: context.columnWidth)
+            text: EntryListCellDateFormatting.format(date, width: context.columnWidth),
         )
     }
 
@@ -326,7 +326,7 @@ final class EntryListEntryCellView: NSTableCellView {
     private func configureTextOnlyCell(
         context: EntryListEntryCellViewConfiguration.Context,
         text: String,
-        useCompactTextSize: Bool = true
+        useCompactTextSize: Bool = true,
     ) {
         let textSize = useCompactTextSize ? max(10, context.textSize - 1) : context.textSize
         hideIconAndSetupTextOnly(textSize: textSize)
@@ -336,7 +336,7 @@ final class EntryListEntryCellView: NSTableCellView {
     private func configureNameDisplay(name: String, tags: [Tag]?, textSize: CGFloat) {
         customTextField.attributedStringValue = NSAttributedString(
             string: name,
-            attributes: [.font: NSFont.systemFont(ofSize: textSize)]
+            attributes: [.font: NSFont.systemFont(ofSize: textSize)],
         )
 
         for view in tagStackView.arrangedSubviews {

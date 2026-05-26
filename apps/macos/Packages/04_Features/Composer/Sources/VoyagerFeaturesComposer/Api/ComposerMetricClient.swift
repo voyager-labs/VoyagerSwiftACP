@@ -14,13 +14,13 @@ public struct ComposerMetricClient: Sendable {
         _ name: String,
         _ value: Double,
         _ tags: [String: String]?,
-        _ level: ComposerMetricLevel
+        _ level: ComposerMetricLevel,
     ) -> Void
 
     public init(
         logMetric: @Sendable @escaping (
-            String, Double, [String: String]?, ComposerMetricLevel
-        ) -> Void
+            String, Double, [String: String]?, ComposerMetricLevel,
+        ) -> Void,
     ) {
         self.logMetric = logMetric
     }
@@ -43,7 +43,7 @@ public extension ComposerMetricClient {
         _ name: String,
         value: Double,
         tags: [String: String]? = nil,
-        level: ComposerMetricLevel = .info
+        level: ComposerMetricLevel = .info,
     ) {
         logMetric(name, value, tags, level)
     }

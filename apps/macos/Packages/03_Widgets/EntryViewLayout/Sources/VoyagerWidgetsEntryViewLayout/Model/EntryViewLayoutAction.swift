@@ -28,7 +28,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
             listTextSize: CGFloat,
             gridIconSize: CGFloat,
             gridTextSize: CGFloat,
-            showHiddenFiles: Bool
+            showHiddenFiles: Bool,
         ) {
             self.listIconSize = listIconSize
             self.listTextSize = listTextSize
@@ -65,7 +65,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
             ids: Set<EntryModel.ID>,
             lastSelectedId: EntryModel.ID?,
             rangeAnchorId: EntryModel.ID?,
-            shouldScrollToSelection: Bool
+            shouldScrollToSelection: Bool,
         )
         case applySelectAll(orderedItemIds: [EntryModel.ID])
         case applyClearSelection

@@ -40,7 +40,7 @@ public enum ComposerScopeUtils {
         entryLoadingClient: EntryLoadingClient,
         maxResults: Int = 50,
         initialMaxDepth: Int = 2,
-        timeout: TimeInterval = 2.0
+        timeout: TimeInterval = 2.0,
     ) async throws -> [DirectoryItem] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return [] }
@@ -52,21 +52,21 @@ public enum ComposerScopeUtils {
                 query: queryLower,
                 maxResults: maxResults,
                 homePath: homeDir,
-                iconPathMap: buildIconPathMapping(entryLoadingClient: entryLoadingClient)
+                iconPathMap: buildIconPathMapping(entryLoadingClient: entryLoadingClient),
             ),
             maxDepth: initialMaxDepth,
             startTime: Date(),
             timeout: timeout,
             resourceKeys: [.isDirectoryKey],
             resourceKeySet: Set([.isDirectoryKey]),
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
         )
 
         let searchPaths = makeSearchPaths(homeDir: homeDir)
         let results = bfsSearchDirectories(
             searchPaths: searchPaths,
             context: context,
-            entryLoadingClient: entryLoadingClient
+            entryLoadingClient: entryLoadingClient,
         )
         return Array(sortSearchResults(results, query: queryLower).prefix(maxResults))
     }
@@ -75,7 +75,7 @@ public enum ComposerScopeUtils {
         history: [String],
         favorites: [ScopeFavoriteItem],
         entryLoadingClient: EntryLoadingClient,
-        maxCount: Int = 10
+        maxCount: Int = 10,
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []
         var seenPaths: Set<String> = []
@@ -97,8 +97,8 @@ public enum ComposerScopeUtils {
                     id: path,
                     path: path,
                     name: displayName,
-                    iconName: iconName
-                )
+                    iconName: iconName,
+                ),
             )
 
             seenPaths.insert(path)
@@ -117,8 +117,8 @@ public enum ComposerScopeUtils {
                         id: path,
                         path: path,
                         name: favorite.name,
-                        iconName: favorite.iconName
-                    )
+                        iconName: favorite.iconName,
+                    ),
                 )
 
                 seenPaths.insert(path)
@@ -129,7 +129,7 @@ public enum ComposerScopeUtils {
     }
 
     private nonisolated static func buildIconPathMapping(
-        entryLoadingClient: EntryLoadingClient
+        entryLoadingClient: EntryLoadingClient,
     ) -> [String: String] {
         let mappings: [IconMapping] = [
             IconMapping(directory: .applicationDirectory, domain: .localDomainMask, iconName: "folder.badge.gearshape"),
@@ -155,7 +155,7 @@ public enum ComposerScopeUtils {
     private nonisolated static func iconNameForPath(
         _ path: String,
         homePath: String,
-        iconPathMap: [String: String]
+        iconPathMap: [String: String],
     ) -> String {
         if path == homePath { return "house" }
         if path.hasPrefix("/Volumes/") { return "externaldrive" }
@@ -186,7 +186,7 @@ public enum ComposerScopeUtils {
         quickName: String,
         results: inout [DirectoryItem],
         context: DirectoryMatchContext,
-        entryLoadingClient: EntryLoadingClient
+        entryLoadingClient: EntryLoadingClient,
     ) {
         guard results.count < context.maxResults else { return }
 
@@ -197,21 +197,21 @@ public enum ComposerScopeUtils {
         let iconName = iconNameForPath(
             fullPath,
             homePath: context.homePath,
-            iconPathMap: context.iconPathMap
+            iconPathMap: context.iconPathMap,
         )
         results.append(
             DirectoryItem(
                 id: fullPath,
                 path: fullPath,
                 name: displayName,
-                iconName: iconName
-            )
+                iconName: iconName,
+            ),
         )
     }
 
     private nonisolated static func sortSearchResults(
         _ results: [DirectoryItem],
-        query: String
+        query: String,
     ) -> [DirectoryItem] {
         results.sorted { item1, item2 in
             let name1 = item1.name.lowercased()
@@ -243,7 +243,7 @@ public enum ComposerScopeUtils {
 
     private nonisolated static func shouldStopSearch(
         resultsCount: Int,
-        context: SearchExecutionContext
+        context: SearchExecutionContext,
     ) -> Bool {
         if Task.isCancelled { return true }
         if Date().timeIntervalSince(context.startTime) > context.timeout { return true }
@@ -253,7 +253,7 @@ public enum ComposerScopeUtils {
     private nonisolated static func shouldSkipNode(
         _ node: (path: String, depth: Int),
         seenPaths: inout Set<String>,
-        context: SearchExecutionContext
+        context: SearchExecutionContext,
     ) -> Bool {
         if node.depth >= context.maxDepth { return true }
         if !seenPaths.insert(node.path).inserted { return true }
@@ -263,7 +263,7 @@ public enum ComposerScopeUtils {
     private nonisolated static func directoryContents(
         at path: String,
         entryLoadingClient: EntryLoadingClient,
-        context: SearchExecutionContext
+        context: SearchExecutionContext,
     ) -> [URL]? {
         let pathURL = URL(fileURLWithPath: path, isDirectory: true)
         return try? entryLoadingClient.contentsOfDirectory(pathURL, context.resourceKeys, context.options)
@@ -275,7 +275,7 @@ public enum ComposerScopeUtils {
         queue: inout [(path: String, depth: Int)],
         results: inout [DirectoryItem],
         context: SearchExecutionContext,
-        entryLoadingClient: EntryLoadingClient
+        entryLoadingClient: EntryLoadingClient,
     ) {
         for item in contents {
             if shouldStopSearch(resultsCount: results.count, context: context) {
@@ -294,7 +294,7 @@ public enum ComposerScopeUtils {
                 quickName: item.lastPathComponent,
                 results: &results,
                 context: context.match,
-                entryLoadingClient: entryLoadingClient
+                entryLoadingClient: entryLoadingClient,
             )
             queue.append((fullPath, currentDepth + 1))
         }
@@ -303,7 +303,7 @@ public enum ComposerScopeUtils {
     private nonisolated static func bfsSearchDirectories(
         searchPaths: [String],
         context: SearchExecutionContext,
-        entryLoadingClient: EntryLoadingClient
+        entryLoadingClient: EntryLoadingClient,
     ) -> [DirectoryItem] {
         var queue: [(path: String, depth: Int)] = searchPaths.map { ($0, 0) }
         var cursor = 0
@@ -325,7 +325,7 @@ public enum ComposerScopeUtils {
             guard let contents = directoryContents(
                 at: current.path,
                 entryLoadingClient: entryLoadingClient,
-                context: context
+                context: context,
             )
             else {
                 continue
@@ -337,7 +337,7 @@ public enum ComposerScopeUtils {
                 queue: &queue,
                 results: &results,
                 context: context,
-                entryLoadingClient: entryLoadingClient
+                entryLoadingClient: entryLoadingClient,
             )
         }
 

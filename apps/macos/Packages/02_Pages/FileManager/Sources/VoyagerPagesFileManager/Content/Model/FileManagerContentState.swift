@@ -7,19 +7,21 @@ import VoyagerFeaturesEntryOperations
 import VoyagerWidgetsEntryViewLayout
 
 @ObservableState
-public struct FileManagerContentState: Equatable {
+public struct FileManagerContentState: Equatable, @unchecked Sendable {
     var navigation: ContentPageNavigationFeature.State = .init()
     var entryViewLayout: EntryViewLayoutFeature.State = .init()
     var composer: ComposerFeature.State = .init()
     var collection: CollectionFeature.State = .init()
 
-    // Swift 6 패키지 공개 API 요구사항에 맞춰 Equatable 구현을 명시한다.
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.navigation == rhs.navigation
-            && lhs.entryViewLayout == rhs.entryViewLayout
-            && lhs.composer == rhs.composer
-            && lhs.collection == rhs.collection
-            && lhs.resetComposerOnNextDirectoryNavigation == rhs.resetComposerOnNextDirectoryNavigation
+    // @ObservableState 하위 상태는 MainActor 격리로 비교해야 하므로 Equatable 비교를 MainActor에서 수행한다.
+    public nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        MainActor.assumeIsolated {
+            lhs.navigation == rhs.navigation
+                && lhs.entryViewLayout == rhs.entryViewLayout
+                && lhs.composer == rhs.composer
+                && lhs.collection == rhs.collection
+                && lhs.resetComposerOnNextDirectoryNavigation == rhs.resetComposerOnNextDirectoryNavigation
+        }
     }
 
     // 컴포저 관련

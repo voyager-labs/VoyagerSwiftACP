@@ -2,14 +2,14 @@ import Clocks
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// FileManager collection refresh/write-back 정책이 content/page 계약을 지키는지 검증한다.
+@MainActor
 final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
     /// testRefreshSuccessStartsWriteBackWhenCollectionIsClean 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshSuccessStartsWriteBackWhenCollectionIsClean() async {

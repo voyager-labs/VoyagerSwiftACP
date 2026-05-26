@@ -1,15 +1,15 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// FileManager 키 커맨드 처리에서 page/content 경계와 액션 라우팅 계약을 검증한다.
+@MainActor
 final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
     /// testOpenAndQuickLookShortcutsUseSharedCommandContextInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenAndQuickLookShortcutsUseSharedCommandContextInListAndGrid() async {
@@ -156,21 +156,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         initialState.entryViewLayout.entryOperations.items = [selected]
         initialState.entryViewLayout.selectedIds = [selected.id]
 
-        let store = TestStore(initialState: initialState) {
-            FileManagerContentFeature()
-        } withDependencies: {
-            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
-            $0.entryFileOpsClient = .previewValue
-            $0.entryOpenClient = .previewValue
-            $0.entryQuickLookClient = .previewValue
-            $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
-            )
-            $0.uuid = UUIDGenerator.incrementing
-        }
-        store.exhaustivity = .off
+        let store = makeContentTestStore(initialState: initialState)
 
         await store.send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
         await store.receive { action in
@@ -350,6 +336,27 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                 await multiStore.finish()
             }
         }
+    }
+
+    private func makeContentTestStore(
+        initialState: FileManagerContentState,
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
+            $0.entryFileOpsClient = .previewValue
+            $0.entryOpenClient = .previewValue
+            $0.entryQuickLookClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.uuid = UUIDGenerator.incrementing
+        }
+        store.exhaustivity = .off
+        return store
     }
 
     private func makeEntry(

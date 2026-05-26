@@ -6,8 +6,8 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import XCTest
 
-@MainActor
 /// 엔트리 조작 계약 접근자 — 윈도우/이름 변경 메타데이터 접근을 검증.
+@MainActor
 final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
     /// testItemsAccessibleViaLoadingContext 테스트 동작을 검증한다.
     func testItemsAccessibleViaLoadingContext() {

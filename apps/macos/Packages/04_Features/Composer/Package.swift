@@ -1,7 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-let package = Package(
+let kPackage = Package(
     name: "VoyagerFeaturesComposer",
     platforms: [
         .macOS(.v13),
@@ -33,7 +33,7 @@ let package = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerFeaturesComposerTests",
@@ -45,7 +45,7 @@ let package = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
-    ]
+    ],
 )

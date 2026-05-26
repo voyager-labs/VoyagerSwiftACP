@@ -173,7 +173,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
                     colorCode: nil,
                     count: state.entries.count,
                     items: Array(state.entries),
-                    isCollapsed: false
+                    isCollapsed: false,
                 ),
             ]
         }
@@ -185,7 +185,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
                 colorCode: group.colorCode,
                 count: group.count,
                 items: isCollapsed ? [] : group.items,
-                isCollapsed: isCollapsed
+                isCollapsed: isCollapsed,
             )
         }
     }
@@ -197,7 +197,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             top: 8,
             left: horizontalPadding,
             bottom: horizontalPadding,
-            right: horizontalPadding
+            right: horizontalPadding,
         )
         flowLayout.headerReferenceSize = NSSize(width: width, height: 36)
         let itemSize = makeItemSize()
@@ -338,7 +338,7 @@ extension EntryGridCoordinator {
     /// otherwise fall through to the fresh point-resolution result.
     func resolvedEntryTargetIndexPath(
         pointResolved: IndexPath?,
-        localPoint: NSPoint
+        localPoint: NSPoint,
     ) -> IndexPath? {
         guard let currentId = dropTargetEntryId,
               let currentIndexPath = indexPathByEntryId[currentId],
@@ -395,7 +395,7 @@ extension EntryGridCoordinator {
                 guard let self else { return }
                 saveScrollPosition()
                 store.send(.delegate(.executeCommand(.navigation(.openSelectedItem))))
-            }
+            },
         )
     }
 
@@ -428,7 +428,7 @@ extension EntryGridCoordinator {
             },
             selectionUpdater: { [weak self] pointer in
                 self?.collectionView.updateLassoSelectionFromAutoscroll(pointer)
-            }
+            },
         )
         lassoAutoscrollController = controller
         controller.start()
@@ -443,7 +443,7 @@ extension EntryGridCoordinator {
         EntryGridLassoAutoscrollGeometry(
             visibleRect: collectionView.visibleRect,
             currentOrigin: scrollView.contentView.bounds.origin,
-            documentSize: collectionView.bounds.size
+            documentSize: collectionView.bounds.size,
         )
     }
 
@@ -465,7 +465,7 @@ extension EntryGridCoordinator {
                 ids: ids,
                 lastSelectedId: lastSelectedId,
                 rangeAnchorId: lastSelectedId,
-                shouldScrollToSelection: false
+                shouldScrollToSelection: false,
             )))
             return
         }
@@ -476,7 +476,7 @@ extension EntryGridCoordinator {
             ids: ids,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,
-            shouldScrollToSelection: false
+            shouldScrollToSelection: false,
         )))
     }
 

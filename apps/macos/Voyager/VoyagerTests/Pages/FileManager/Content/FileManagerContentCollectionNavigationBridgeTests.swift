@@ -11,39 +11,10 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-/// FileManager content/page 브리지를 통해 내비게이션 액션과 collection 소유권 경계를 검증한다.
-final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
+final class ContentCollectionNavBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
-    @MainActor
-    struct EntryOperationsBridgeHarness: Reducer {
-        @MainActor
-        struct State: Equatable {
-            var content: FileManagerContentState
-        }
-
-        enum Action: Sendable {
-            case bridge(EntryOperationsAction)
-            case forwarded(FileManagerContentAction)
-        }
-
-        var body: some Reducer<State, Action> {
-            Reduce { state, action in
-                switch action {
-                case let .bridge(entryAction):
-                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
-                        entryAction,
-                        state: &state.content,
-                    )
-                    .map(Action.forwarded)
-                case .forwarded:
-                    .none
-                }
-            }
-        }
-    }
-
-    // MARK: - 비컬렉션 내비게이션: clearCollectionPresentation + Load
+    // MARK: - Non-Collection Navigation: clearCollectionPresentation + Load
 
     /// testFolderNavigationSendsClearCollectionPresentationThenLoadItems 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFolderNavigationSendsClearCollectionPresentationThenLoadItems() async {
@@ -233,5 +204,35 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath("/tmp/voyager")
         return state
+    }
+}
+
+// MARK: - Test Harnesses
+
+@MainActor
+private struct EntryOperationsBridgeHarness: Reducer {
+    @MainActor
+    struct State: Equatable {
+        var content: FileManagerContentState
+    }
+
+    enum Action: Sendable {
+        case bridge(EntryOperationsAction)
+        case forwarded(FileManagerContentAction)
+    }
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .bridge(entryAction):
+                FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                    entryAction,
+                    state: &state.content,
+                )
+                .map(Action.forwarded)
+            case .forwarded:
+                .none
+            }
+        }
     }
 }

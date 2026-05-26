@@ -12,8 +12,8 @@ import XCTest
 // view/internal/delegate 케이스가 TCA 액션 분류 규약을 따르는지 확인합니다.
 
 @MainActor
-final class FileManagerSidebarActionNormalizationTests: XCTestCase {
-    // MARK: - 액션 구조 테스트
+final class SidebarActionNormalizationTests: XCTestCase {
+    // MARK: - Action Structure Tests
 
     /// FileManagerSidebarAction이 예상한 view/internal/delegate 케이스를 포함하는지 확인
     func testActionHasViewInternalDelegateCases() async {

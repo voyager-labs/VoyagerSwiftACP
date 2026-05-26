@@ -14,6 +14,7 @@ enum WindowManagerTestSupport {
         static let tempPath = "/tmp"
     }
 
+    @MainActor
     static func makeStore(
         initialState: WindowManagerFeature.State = WindowManagerFeature.State(),
         uuid: UUID? = nil,
@@ -31,6 +32,7 @@ enum WindowManagerTestSupport {
         }
     }
 
+    @MainActor
     static func makeState(
         focusedID: UUID?,
         windows: [(UUID, String?)],

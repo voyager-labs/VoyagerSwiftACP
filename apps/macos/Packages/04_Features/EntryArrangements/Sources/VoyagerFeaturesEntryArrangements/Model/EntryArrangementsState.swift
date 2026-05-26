@@ -16,7 +16,7 @@ public struct EntryArrangementsState: Equatable, Sendable {
         hasUserSetSortOrder: Bool = false,
         groupKey: GroupKey = .none,
         groupedItems: [GroupedItems] = [],
-        collapsedGroups: Set<String> = []
+        collapsedGroups: Set<String> = [],
     ) {
         self.sortKey = sortKey
         self.sortOrder = sortOrder

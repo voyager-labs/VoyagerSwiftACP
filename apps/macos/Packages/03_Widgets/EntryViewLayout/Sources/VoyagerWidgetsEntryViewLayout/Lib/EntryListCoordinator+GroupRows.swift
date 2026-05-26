@@ -5,7 +5,7 @@ extension EntryListCoordinator {
         outlineView: NSOutlineView,
         tableColumn: NSTableColumn?,
         title: String,
-        colorCode: Int?
+        colorCode: Int?,
     ) -> NSView {
         let resolvedTableColumn = tableColumn ?? outlineView.outlineTableColumn
         let columnId = resolvedTableColumn?.identifier.rawValue ?? EntryListColumn.name.rawValue
@@ -16,7 +16,7 @@ extension EntryListCoordinator {
                 outlineView: outlineView,
                 columnId: columnId,
                 title: title,
-                colorCode: colorCode
+                colorCode: colorCode,
             )
         }
 
@@ -27,12 +27,12 @@ extension EntryListCoordinator {
         outlineView: NSOutlineView,
         columnId: String,
         title: String,
-        colorCode: Int?
+        colorCode: Int?,
     ) -> EntryListGroupHeaderCellView {
         let headerIdentifier = NSUserInterfaceItemIdentifier("group-header-cell-\(columnId)")
         let header = (outlineView.makeView(
             withIdentifier: headerIdentifier,
-            owner: self
+            owner: self,
         ) as? EntryListGroupHeaderCellView)
             ?? EntryListGroupHeaderCellView()
         header.identifier = headerIdentifier

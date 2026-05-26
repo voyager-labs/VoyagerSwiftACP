@@ -6,8 +6,8 @@ import VoyagerEntitiesTag
 @testable import VoyagerFeaturesComposer
 import XCTest
 
-@MainActor
 /// ValuePicker 기능 — 태그 토큰 중복 제거, 단위 선택/변환 상태를 검증.
+@MainActor
 final class ValuePickerFeatureTests: XCTestCase {
     /// testPrepareForTagNamesLoadsDeduplicatedFinderTags 테스트 동작을 검증한다.
     func testPrepareForTagNamesLoadsDeduplicatedFinderTags() async {

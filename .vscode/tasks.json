@@ -172,6 +172,62 @@
       "launchEnv": {
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
+    },
+    {
+      "label": "Voyager LSP: Current File",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/lsp_context.py", "--path", "${file}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Voyager LSP: App",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/lsp_context.py", "--scope", "app"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Voyager LSP: Helper",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/lsp_context.py", "--scope", "helper"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Voyager LSP: OnboardingHost",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/lsp_context.py", "--scope", "onboarding"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Voyager Checks: Current File (Plan)",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/macos_checks.py", "--path", "${file}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Voyager Checks: Current File (Run)",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/macos_checks.py", "--path", "${file}", "--run"],
+      "problemMatcher": ["$sweetpad-xcodebuild-default", "$sweetpad-xcbeautify-errors", "$sweetpad-xcbeautify-warnings"]
+    },
+    {
+      "label": "Voyager Checks: Changed Files (Plan)",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/macos_checks.py", "--changed"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Voyager Checks: Changed Files (Run)",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/macos_checks.py", "--changed", "--run"],
+      "problemMatcher": ["$sweetpad-xcodebuild-default", "$sweetpad-xcbeautify-errors", "$sweetpad-xcbeautify-warnings"]
     }
   ]
 }

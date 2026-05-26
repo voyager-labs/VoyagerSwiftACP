@@ -38,7 +38,7 @@ enum EntryContextMenuSpecFactory {
         isTrashFolder: Bool,
         canPaste: Bool,
         favoriteTags: [Tag],
-        openWithApplications: [ApplicationInfo]
+        openWithApplications: [ApplicationInfo],
     ) -> EntryContextMenuSpec {
         let effectiveSelectedCount: Int = if !selectedIds.isEmpty {
             selectedIds.count
@@ -59,7 +59,7 @@ enum EntryContextMenuSpecFactory {
             isTrashFolder: isTrashFolder,
             openWithApplications: openWithApplications,
             showOpenWith: showOpenWith,
-            tags: resolveTags(selectedEntries: selectedEntries, favoriteTags: favoriteTags)
+            tags: resolveTags(selectedEntries: selectedEntries, favoriteTags: favoriteTags),
         )
     }
 
@@ -71,7 +71,7 @@ enum EntryContextMenuSpecFactory {
 
     private static func resolveTags(
         selectedEntries: [EntryModel],
-        favoriteTags: [Tag]
+        favoriteTags: [Tag],
     ) -> [EntryContextMenuTagSpec] {
         favoriteTags.map { favoriteTag in
             let tagName = favoriteTag.name
@@ -97,13 +97,13 @@ enum EntryContextMenuSpecFactory {
             let colorCode = TagColorFallbackResolver.resolvedColorCode(
                 tagName: tagName,
                 preferredColorCodes: Array(preferredColorCodes),
-                favoriteTags: favoriteTags
+                favoriteTags: favoriteTags,
             )
 
             return .init(
                 name: tagName,
                 colorCode: colorCode,
-                selection: selection
+                selection: selection,
             )
         }
     }

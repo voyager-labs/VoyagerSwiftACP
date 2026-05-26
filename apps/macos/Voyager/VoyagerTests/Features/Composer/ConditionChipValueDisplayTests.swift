@@ -4,8 +4,8 @@ import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesComposer
 import XCTest
 
-@MainActor
 /// 조건 칩 값 표시 — 날짜/숫자 범위 렌더링 포맷을 검증.
+@MainActor
 final class ConditionChipValueDisplayTests: XCTestCase {
     private func makeCondition(
         propertyKey: String,

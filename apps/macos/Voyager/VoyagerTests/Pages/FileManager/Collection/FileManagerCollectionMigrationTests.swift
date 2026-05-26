@@ -1,12 +1,12 @@
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// FileManager collection 마이그레이션이 schema/version/contracts를 보존하며 동작하는지 검증한다.
+@MainActor
 final class FileManagerCollectionMigrationTests: XCTestCase {
     /// testResolveCollectionFiltersMigratesLegacyConditions 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testResolveCollectionFiltersMigratesLegacyConditions() {
@@ -53,7 +53,8 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
         XCTAssertNil(CollectionSnapshotHydration.syntheticSearchResponse(for: file))
     }
 
-    /// testCompatibilityOwnerMigratesLegacyDefinitionOnlyPayloadToCurrentSemanticModel 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    /// testCompatibilityOwnerMigratesLegacyDefinitionOnlyPayloadToCurrentSemanticModel 시나리오가 FileManager 계약을 위반하지 않음을
+    /// 검증한다.
     func testCompatibilityOwnerMigratesLegacyDefinitionOnlyPayloadToCurrentSemanticModel() throws {
         struct LegacyDefinitionOnlyPayload: Codable {
             let schemaVersion: Int

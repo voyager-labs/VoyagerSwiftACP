@@ -5,8 +5,8 @@ import Foundation
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// Composer 피드백 리셋 — 타이핑/취소/stale 이벤트에 따른 피드백 보존/초기화를 검증.
+@MainActor
 final class ComposerFeedbackResetTests: XCTestCase {
     /// testTypingClearsFeedbackImmediately 테스트 동작을 검증한다.
     func testTypingClearsFeedbackImmediately() async {

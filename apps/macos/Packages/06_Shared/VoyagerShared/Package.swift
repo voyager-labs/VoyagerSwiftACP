@@ -1,7 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-let package = Package(
+let kPackage = Package(
     name: "VoyagerShared",
     platforms: [
         .macOS(.v13),
@@ -21,11 +21,11 @@ let package = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "Logging", package: "swift-log"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerSharedTests",
-            dependencies: ["VoyagerShared"]
+            dependencies: ["VoyagerShared"],
         ),
-    ]
+    ],
 )

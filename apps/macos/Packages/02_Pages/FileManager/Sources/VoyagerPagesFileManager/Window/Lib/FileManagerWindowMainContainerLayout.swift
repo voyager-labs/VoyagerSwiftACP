@@ -3,6 +3,7 @@ import ComposableArchitecture
 import SwiftUI
 import VoyagerShared
 
+@MainActor
 enum FileManagerWindowMainContainerLayout {
     struct Components {
         let containerView: NSView
@@ -27,7 +28,9 @@ enum FileManagerWindowMainContainerLayout {
         splitView.layer?.backgroundColor = NSColor.clear.cgColor
 
         let contentHosting = NSHostingController(rootView: contentRootView)
-        contentHosting.safeAreaRegions = []
+        if #available(macOS 13.3, *) {
+            contentHosting.safeAreaRegions = []
+        }
         applyContentPaneStyle(contentHosting.view)
 
         splitView.addArrangedSubview(contentHosting.view)
@@ -53,7 +56,9 @@ enum FileManagerWindowMainContainerLayout {
         isDark: Bool,
     ) -> NSHostingController<InspectorPaneView> {
         let hosting = NSHostingController(rootView: InspectorPaneView(store: store))
-        hosting.safeAreaRegions = []
+        if #available(macOS 13.3, *) {
+            hosting.safeAreaRegions = []
+        }
         applyInspectorPaneStyle(hosting.view, isDark: isDark)
         return hosting
     }

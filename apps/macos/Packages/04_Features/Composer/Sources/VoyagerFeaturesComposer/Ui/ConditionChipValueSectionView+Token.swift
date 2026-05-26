@@ -10,7 +10,7 @@ extension ConditionChipValueSectionView {
         operatorCode: String,
         valueUIKind: String,
         valueArity: Int,
-        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         let popoverBinding = Binding<Bool>(
             get: {
@@ -22,7 +22,7 @@ extension ConditionChipValueSectionView {
             set: { show in
                 guard !show else { return }
                 valuePickerStore.send(.setPresented(false))
-            }
+            },
         )
 
         return Button {
@@ -31,7 +31,7 @@ extension ConditionChipValueSectionView {
                 valueUIKind: valueUIKind,
                 valueArity: valueArity,
                 editingIndex: nil,
-                includeDisplayState: false
+                includeDisplayState: false,
             )
         } label: {
             Text(ValuePickerTokenUtils.tokenButtonText(values: condition.values ?? []))
@@ -46,8 +46,8 @@ extension ConditionChipValueSectionView {
                                 ?
                                 (isDark ? Color.white.opacity(hoverFillOpacity) : Color.black
                                     .opacity(hoverFillOpacity))
-                                : Color.white.opacity(0.0001)
-                        )
+                                : Color.white.opacity(0.0001),
+                        ),
                 )
         }
         .contentShape(Rectangle())
@@ -62,14 +62,14 @@ extension ConditionChipValueSectionView {
     }
 
     func tokenPopoverContent(
-        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         let tokens = ValueNormalizerUtils.deduplicatedTokenValues(valueViewStore.values)
         let finderTagOptions = valueViewStore.finderTagListState?.options ?? []
         let filteredFinderTags = ValuePickerTokenUtils.filteredFinderTags(
             selectedTokens: tokens,
             finderTagOptions: finderTagOptions,
-            query: valueViewStore.tokenInput
+            query: valueViewStore.tokenInput,
         )
         let hasError = valueViewStore.errorMessage != nil
 
@@ -81,8 +81,8 @@ extension ConditionChipValueSectionView {
                             hasError
                                 ? Color.red.opacity(0.85)
                                 : (isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.18)),
-                            lineWidth: 1
-                        )
+                            lineWidth: 1,
+                        ),
                 )
 
             if valueViewStore.finderTagListState != nil {
@@ -99,13 +99,13 @@ extension ConditionChipValueSectionView {
         .frame(width: 260)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(VoyagerDS.Surface.popoverBackground(for: isDark ? .dark : .light))
+                .fill(VoyagerDS.Surface.popoverBackground(for: isDark ? .dark : .light)),
         )
     }
 
     func tokenInputRow(
         tokens: [String],
-        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
@@ -117,8 +117,8 @@ extension ConditionChipValueSectionView {
                     "Value",
                     text: valueViewStore.binding(
                         get: \.tokenInput,
-                        send: ValuePickerFeature.Action.setTokenInput
-                    )
+                        send: ValuePickerFeature.Action.setTokenInput,
+                    ),
                 )
                 .textFieldStyle(.plain)
                 .font(.system(size: 11))
@@ -151,12 +151,12 @@ extension ConditionChipValueSectionView {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
-            Capsule().fill(isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.1))
+            Capsule().fill(isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.1)),
         )
     }
 
     func handleTokenSubmit(
-        _ valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>
+        _ valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) {
         let token = valueViewStore.tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
         if token.isEmpty {

@@ -4,8 +4,8 @@ import Foundation
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// Composer 쿼리 피드백 정책 — 중복 쿼리 no-op 및 실패 코드 매핑을 검증.
+@MainActor
 final class ComposerQueryFeedbackPolicyTests: XCTestCase {
     /// testIdenticalBaselineAndAppliedFiltersAreNoOp 테스트 동작을 검증한다.
     func testIdenticalBaselineAndAppliedFiltersAreNoOp() {

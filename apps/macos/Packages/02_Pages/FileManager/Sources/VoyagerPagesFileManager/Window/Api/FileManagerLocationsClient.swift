@@ -6,7 +6,7 @@ public struct FileManagerLocationsClient: Sendable {
     public var loadLocations: @Sendable (EntryLoadingClient) async -> [SidebarItems.LocationItem]
 
     public nonisolated init(
-        loadLocations: @escaping @Sendable (EntryLoadingClient) async -> [SidebarItems.LocationItem]
+        loadLocations: @escaping @Sendable (EntryLoadingClient) async -> [SidebarItems.LocationItem],
     ) {
         self.loadLocations = loadLocations
     }
@@ -21,7 +21,7 @@ extension FileManagerLocationsClient: DependencyKey {
 
                     if let mountedVolumes = entryLoadingClient.mountedVolumeURLs(
                         [.volumeIsRemovableKey, .volumeIsEjectableKey],
-                        []
+                        [],
                     ) {
                         for volumeURL in mountedVolumes {
                             let volumeName = volumeURL.lastPathComponent
@@ -52,7 +52,7 @@ extension FileManagerLocationsClient: DependencyKey {
                                 locations.append(SidebarItems.LocationItem(
                                     name: volumeName,
                                     url: volumeURL,
-                                    iconName: "externaldrive"
+                                    iconName: "externaldrive",
                                 ))
                             }
                         }
@@ -64,7 +64,7 @@ extension FileManagerLocationsClient: DependencyKey {
                         locations.append(SidebarItems.LocationItem(
                             name: "iCloud Drive",
                             url: URL(fileURLWithPath: iCloudDrivePath),
-                            iconName: "icloud"
+                            iconName: "icloud",
                         ))
                     }
 
@@ -74,7 +74,7 @@ extension FileManagerLocationsClient: DependencyKey {
                     if let cloudStorageContents = try? entryLoadingClient.contentsOfDirectory(
                         cloudStorageURL,
                         [.isDirectoryKey],
-                        [.skipsHiddenFiles]
+                        [.skipsHiddenFiles],
                     ) {
                         for itemURL in cloudStorageContents {
                             if let isDirectory = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory,
@@ -83,7 +83,7 @@ extension FileManagerLocationsClient: DependencyKey {
                                 locations.append(SidebarItems.LocationItem(
                                     name: itemURL.lastPathComponent,
                                     url: itemURL,
-                                    iconName: "folder"
+                                    iconName: "folder",
                                 ))
                             }
                         }
@@ -93,32 +93,32 @@ extension FileManagerLocationsClient: DependencyKey {
                     locations.append(SidebarItems.LocationItem(
                         name: NSUserName(),
                         url: homeURL,
-                        iconName: "house"
+                        iconName: "house",
                     ))
 
                     locations.append(SidebarItems.LocationItem(
                         name: entryLoadingClient.displayName("/"),
                         url: URL(fileURLWithPath: "/"),
-                        iconName: "internaldrive"
+                        iconName: "internaldrive",
                     ))
 
                     if let trashURL = entryLoadingClient.urlsForDirectory(.trashDirectory, .userDomainMask).first {
                         locations.append(SidebarItems.LocationItem(
                             name: "Trash",
                             url: trashURL,
-                            iconName: "trash"
+                            iconName: "trash",
                         ))
                     }
 
                     return locations
                 }
-            }
+            },
         )
     }
 
     public nonisolated static var testValue: FileManagerLocationsClient {
         FileManagerLocationsClient(
-            loadLocations: { _ in [] }
+            loadLocations: { _ in [] },
         )
     }
 

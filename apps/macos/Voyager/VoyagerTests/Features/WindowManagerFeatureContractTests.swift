@@ -6,8 +6,8 @@ import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 import XCTest
 
-@MainActor
 /// 윈도우 관리자 계약 — 포커스 윈도우로의 명령 팬아웃과 미사용 시 no-op를 검증.
+@MainActor
 final class WindowManagerFeatureContractTests: XCTestCase {
     /// testApplyAppPreferencesFansOutToAllWindows 테스트 동작을 검증한다.
     func testApplyAppPreferencesFansOutToAllWindows() async {

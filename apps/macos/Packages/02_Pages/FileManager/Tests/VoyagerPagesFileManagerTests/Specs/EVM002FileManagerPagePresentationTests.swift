@@ -1,6 +1,9 @@
 import ComposableArchitecture
 import IdentifiedCollections
+import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
@@ -13,14 +16,17 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     /// - 사전 조건: 기본 FileManagerContentState (mode 기본값)
     /// - 기대 결과: state.entryViewLayout.mode == .list, composer.syncCollectionState 수신
     func testChangeLayoutToListUpdatesMode() async {
-        let store = makeFileManagerContentStore()
+        var state = FileManagerContentState()
+        state.entryViewLayout.mode = .grid
+
+        let store = makeFileManagerContentStore(initialState: state)
 
         await store.send(.view(.changeLayout(.list))) {
             $0.entryViewLayout.mode = .list
         }
 
         // composer 동기화 수신 — 하위 composer 액션
-        await store.receive(\.composer.syncCollectionState)
+        await store.receive(\.composer.internal.syncCollectionState)
     }
 
     // MARK: - EVM-002-set_entries_view_as_icon_grid
@@ -37,7 +43,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             $0.entryViewLayout.mode = .grid
         }
 
-        await store.receive(\.composer.syncCollectionState)
+        await store.receive(\.composer.internal.syncCollectionState)
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: 레이아웃 변경 시 UserDefaults 영속성 검증
@@ -53,7 +59,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             $0.entryViewLayout.mode = .grid
         }
 
-        await store.receive(\.composer.syncCollectionState)
+        await store.receive(\.composer.internal.syncCollectionState)
 
         XCTAssertEqual(recorder.value(forKey: SettingsKeys.viewLayout), EntryViewLayoutState.Mode.grid.rawValue)
     }
@@ -69,13 +75,13 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         state.entryViewLayout.mode = .list
         state.entryViewLayout.entryOperations.renamingItemId = renamingId
 
-        let store = makeFileManagerContentStore(initialState: state)
+        let store = makeFileManagerContentFeatureStore(initialState: state)
 
         await store.send(.view(.changeLayout(.grid))) {
             $0.entryViewLayout.mode = .grid
         }
 
-        await store.receive(\.composer.syncCollectionState)
+        await store.receive(\.composer.internal.syncCollectionState)
         await store.receive(\.entryViewLayout.entryOperations.edit.cancelRename) {
             $0.entryViewLayout.entryOperations.renamingItemId = nil
         }
@@ -97,7 +103,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         // 같은 모드로 변경 → isModeChanging == false → 취소 없음
         await store.send(.view(.changeLayout(.list)))
 
-        await store.receive(\.composer.syncCollectionState)
+        await store.receive(\.composer.internal.syncCollectionState)
     }
 
     // MARK: - EVM-002-show_hide_hidden_entry (Page-level reload + navigation stability)
@@ -168,7 +174,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
             $0.entryViewLayout.mode = .list
         }
 
-        _ = await store.receive(\.composer.syncCollectionState)
+        _ = await store.receive(\.composer.internal.syncCollectionState)
 
         XCTAssertEqual(recorder.value(forKey: SettingsKeys.viewLayout), EntryViewLayoutState.Mode.list.rawValue)
         XCTAssertEqual(store.state.entryViewLayout.mode, .list)
@@ -193,12 +199,12 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     func testStatusTextSourceMatchesDisplayItemsAndSelectedIds() async {
         var state = FileManagerContentState()
         let entries: [EntryModel] = [
-            .init(id: "a", name: "file-a", path: "/seed/file-a", isFolder: false),
-            .init(id: "b", name: "file-b", path: "/seed/file-b", isFolder: false),
-            .init(id: "c", name: "file-c", path: "/seed/file-c", isFolder: false),
+            .temporaryFolder(id: "/seed/file-a", name: "file-a"),
+            .temporaryFolder(id: "/seed/file-b", name: "file-b"),
+            .temporaryFolder(id: "/seed/file-c", name: "file-c"),
         ]
         state.entryViewLayout.entryOperations.loadingContext.items = IdentifiedArrayOf(uniqueElements: entries)
-        state.entryViewLayout.selectedIds = ["a", "c"]
+        state.entryViewLayout.selectedIds = ["/seed/file-a", "/seed/file-c"]
 
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
@@ -218,8 +224,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     func testStatusTextSourceWithNoSelection() async {
         var state = FileManagerContentState()
         let entries: [EntryModel] = [
-            .init(id: "x", name: "file-x", path: "/seed/file-x", isFolder: false),
-            .init(id: "y", name: "file-y", path: "/seed/file-y", isFolder: false),
+            .temporaryFolder(id: "/seed/file-x", name: "file-x"),
+            .temporaryFolder(id: "/seed/file-y", name: "file-y"),
         ]
         state.entryViewLayout.entryOperations.loadingContext.items = IdentifiedArrayOf(uniqueElements: entries)
         state.entryViewLayout.selectedIds = []

@@ -1,16 +1,14 @@
 import ComposableArchitecture
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryThumbnail
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
 @MainActor
-/// FileManager 썸네일 액션이 엔트리 뷰레벨 소유권을 통해 전달되는지 검증한다.
-final class FileManagerContentThumbnailOwnershipTests: XCTestCase {
-    /// testEntryViewLayoutThumbnailActionUsesCanonicalThumbnailHost 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+final class ContentThumbnailOwnershipTests: XCTestCase {
     func testEntryViewLayoutThumbnailActionUsesCanonicalThumbnailHost() async {
         let store = TestStore(initialState: FileManagerContentState()) {
             FileManagerContentFeature()

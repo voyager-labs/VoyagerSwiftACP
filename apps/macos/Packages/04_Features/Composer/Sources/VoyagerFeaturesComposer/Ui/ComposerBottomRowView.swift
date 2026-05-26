@@ -42,13 +42,13 @@ struct ComposerBottomRowView: View {
                     secondRowContent(viewStore: viewStore, geometry: geometry)
                 }
                 .frame(height: calculatedHeight)
-            }
+            },
         )
     }
 
     private func secondRowContent(
         viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        geometry: GeometryProxy
+        geometry: GeometryProxy,
     ) -> some View {
         let isLocked = viewStore.isLoadingSearch || viewStore.isFilteringInFlight
         let availableWidth = geometry.size.width - chipHorizontalPadding * 2
@@ -63,7 +63,7 @@ struct ComposerBottomRowView: View {
             spacing: chipSpacing,
             chipSizes: chipSizes,
             conditionButtonWidth: conditionButtonWidth,
-            buttonSpacing: chipSpacing
+            buttonSpacing: chipSpacing,
         )
         let rows = calculateRowsWithButtons(chips: allChips, params: params)
 
@@ -72,7 +72,7 @@ struct ComposerBottomRowView: View {
             pickerStore: pickerStore,
             conditionDisplayByKey: viewStore.conditionDisplayByKey,
             operatorOptionsByKey: viewStore.operatorOptionsByKey,
-            historyPaths: historyPaths
+            historyPaths: historyPaths,
         )
         .allowsHitTesting(!isLocked)
         .onPreferenceChange(ChipSizePreferenceKey.self) { sizes in
@@ -90,7 +90,7 @@ struct ComposerBottomRowView: View {
         chip: ChipItemType,
         conditionDisplayByKey: [String: ConditionDisplayState],
         operatorOptionsByKey: [String: [String]],
-        historyPaths: [String]
+        historyPaths: [String],
     ) -> some View {
         switch chip {
         case let .scope(paths):
@@ -99,7 +99,7 @@ struct ComposerBottomRowView: View {
                 store: store,
                 favorites: favorites,
                 backHistory: historyPaths,
-                isComboBoxPresented: $isScopePickerPresented
+                isComboBoxPresented: $isScopePickerPresented,
             )
 
         case let .condition(condition):
@@ -122,7 +122,7 @@ struct ComposerBottomRowView: View {
                 },
                 onDisplayUnitChange: { propertyKey, unitCode in
                     store.send(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
-                }
+                },
             )
         }
     }
@@ -132,7 +132,7 @@ struct ComposerBottomRowView: View {
         pickerStore: StoreOf<ConditionPropertyPickerFeature>,
         conditionDisplayByKey: [String: ConditionDisplayState],
         operatorOptionsByKey: [String: [String]],
-        historyPaths: [String]
+        historyPaths: [String],
     ) -> some View {
         VStack(alignment: .leading, spacing: chipSpacing) {
             ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowChips in
@@ -144,15 +144,15 @@ struct ComposerBottomRowView: View {
                             chip: chip,
                             conditionDisplayByKey: conditionDisplayByKey,
                             operatorOptionsByKey: operatorOptionsByKey,
-                            historyPaths: historyPaths
+                            historyPaths: historyPaths,
                         )
                         .background(
                             GeometryReader { chipGeometry in
                                 Color.clear.preference(
                                     key: ChipSizePreferenceKey.self,
-                                    value: [AnyHashable(chip.id): chipGeometry.size]
+                                    value: [AnyHashable(chip.id): chipGeometry.size],
                                 )
-                            }
+                            },
                         )
                     }
 
@@ -179,7 +179,7 @@ struct ComposerBottomRowView: View {
                         .background(
                             RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
                                 .fill(isAddButtonHovering ? VoyagerDS.Interaction
-                                    .controlHoverFill(for: colorScheme) : .clear)
+                                    .controlHoverFill(for: colorScheme) : .clear),
                         )
                 }
                 .buttonStyle(.borderless)
@@ -189,20 +189,20 @@ struct ComposerBottomRowView: View {
                 .popover(
                     isPresented: viewStore.binding(
                         get: { $0.isPresented && $0.editingConditionKey == nil },
-                        send: ConditionPropertyPickerFeature.Action.setPresented
+                        send: ConditionPropertyPickerFeature.Action.setPresented,
                     ),
-                    arrowEdge: .bottom
+                    arrowEdge: .bottom,
                 ) {
                     ConditionPropertyPickerView(store: pickerStore)
                 }
-            }
+            },
         )
     }
 
     private func handleChipSizeChange(
         sizes: [AnyHashable: CGSize],
         allChips: [ChipItemType],
-        availableWidth: CGFloat
+        availableWidth: CGFloat,
     ) {
         for chip in allChips {
             let anyId = AnyHashable(chip.id)
@@ -219,7 +219,7 @@ struct ComposerBottomRowView: View {
             spacing: chipSpacing,
             chipSizes: chipSizes,
             conditionButtonWidth: conditionButtonWidth,
-            buttonSpacing: chipSpacing
+            buttonSpacing: chipSpacing,
         )
         let updatedRows = calculateRowsWithButtons(chips: chips, params: params)
         let contentHeight = calculateTotalHeight(rows: updatedRows, chipSizes: chipSizes, spacing: chipSpacing)
@@ -230,7 +230,7 @@ struct ComposerBottomRowView: View {
     private func calculateTotalHeight(
         rows: [[ChipItemType]],
         chipSizes: [String: CGSize],
-        spacing: CGFloat
+        spacing: CGFloat,
     ) -> CGFloat {
         guard !rows.isEmpty else { return 0 }
 
@@ -261,7 +261,7 @@ struct ComposerBottomRowView: View {
 
     private func calculateRowsWithButtons(
         chips: [ChipItemType],
-        params: RowCalculationParams
+        params: RowCalculationParams,
     ) -> [[ChipItemType]] {
         var rows: [[ChipItemType]] = []
         var currentRow: [ChipItemType] = []

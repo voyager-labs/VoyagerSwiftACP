@@ -44,14 +44,14 @@ public struct ValuePickerFeature {
 
                 let tokenMode = ValuePickerTokenUtils.isTokenMode(
                     isCategoricalProperty: state.isCategoricalProperty,
-                    valueUIKind: state.valueUIKind
+                    valueUIKind: state.valueUIKind,
                 )
 
                 let prepared = prepareValueInputs(
                     valueArity: state.valueArity,
                     existingValues: payload.existingValues,
                     currentValues: state.values,
-                    tokenMode: tokenMode
+                    tokenMode: tokenMode,
                 )
                 state.valueArity = prepared.valueArity
                 state.values = prepared.values
@@ -60,11 +60,11 @@ public struct ValuePickerFeature {
                     propertyKey: payload.propertyKey,
                     valueType: payload.valueType,
                     tokenMode: tokenMode,
-                    registryClient: registryClient
+                    registryClient: registryClient,
                 ) {
                     let unitValueState = UnitValuePresentationUtils.makeState(
                         spec: spec,
-                        preferredUnitCode: payload.preferredUnitCode
+                        preferredUnitCode: payload.preferredUnitCode,
                     )
                     let selectedUnitCode = unitValueState.selectedUnitCode
 
@@ -75,7 +75,7 @@ public struct ValuePickerFeature {
                             valueArity: state.valueArity,
                             existingValues: existingDisplayValues,
                             currentValues: state.values,
-                            tokenMode: false
+                            tokenMode: false,
                         )
                         state.valueArity = preparedDisplayValues.valueArity
                         state.values = preparedDisplayValues.values.map {
@@ -88,7 +88,7 @@ public struct ValuePickerFeature {
                             return UnitValueUtils.fromCanonical(
                                 canonicalText: trimmed,
                                 to: selectedUnitCode,
-                                spec: spec
+                                spec: spec,
                             ) ?? trimmed
                         }
                     }
@@ -111,7 +111,7 @@ public struct ValuePickerFeature {
                           propertyKey: propertyKey,
                           valueType: state.valueType,
                           tokenMode: false,
-                          registryClient: registryClient
+                          registryClient: registryClient,
                       ),
                       let unitValueState = state.unitValueState,
                       unitValueState.availableUnitCodes.contains(unitCode)
@@ -161,7 +161,7 @@ public struct ValuePickerFeature {
 
                 let tokenMode = ValuePickerTokenUtils.isTokenMode(
                     isCategoricalProperty: state.isCategoricalProperty,
-                    valueUIKind: state.valueUIKind
+                    valueUIKind: state.valueUIKind,
                 )
                 let expected = max(state.valueArity, ValueNormalizerUtils.expectedArity(for: state.valueUIKind))
                 var displayValues = state.values
@@ -188,12 +188,12 @@ public struct ValuePickerFeature {
                     propertyKey: propertyKey,
                     valueType: state.valueType,
                     tokenMode: tokenMode,
-                    registryClient: registryClient
+                    registryClient: registryClient,
                 ), let selectedUnitCode {
                     guard let canonicalValues = UnitValueUtils.toCanonicalValues(
                         displayValues: displayValues,
                         from: selectedUnitCode,
-                        spec: spec
+                        spec: spec,
                     ) else {
                         state.errorMessage = "Enter a valid number."
                         return .none
@@ -207,7 +207,7 @@ public struct ValuePickerFeature {
                 let result = ValueNormalizerUtils.normalize(
                     kind: state.valueUIKind,
                     rawValues: rawValues,
-                    editingIndex: state.editingIndex
+                    editingIndex: state.editingIndex,
                 )
 
                 if let error = result.errorMessage {
@@ -233,8 +233,8 @@ public struct ValuePickerFeature {
                         propertyKey: propertyKey,
                         values: committedValues,
                         displayValues: displayValues,
-                        selectedUnitCode: state.unitValueState?.selectedUnitCode
-                    )
+                        selectedUnitCode: state.unitValueState?.selectedUnitCode,
+                    ),
                 )
 
             case .commitResult:
@@ -270,7 +270,7 @@ private func prepareValueInputs(
     valueArity: Int,
     existingValues: [String]?,
     currentValues: [String],
-    tokenMode: Bool
+    tokenMode: Bool,
 ) -> (valueArity: Int, values: [String]) {
     let normalizedArity = max(0, valueArity)
     guard normalizedArity > 0 else { return (0, []) }
@@ -297,7 +297,7 @@ private func resolvedUnitSpec(
     propertyKey: String,
     valueType: String,
     tokenMode: Bool,
-    registryClient: RegistryClient
+    registryClient: RegistryClient,
 ) -> UnitValueUtils.UnitSpec? {
     guard !tokenMode,
           UnitValueUtils.supportsUnits(propertyKey: propertyKey, valueType: valueType, registryClient: registryClient)

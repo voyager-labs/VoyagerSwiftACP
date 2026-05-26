@@ -58,7 +58,7 @@ final class ComposerFeedbackResetTests: XCTestCase {
 
         await store.send(ComposerAction.searchResponse(
             requestID,
-            .failure(MockLocalizedError("HELPER_UNAVAILABLE: disconnected"))
+            .failure(MockLocalizedError("HELPER_UNAVAILABLE: disconnected")),
         )) {
             $0.isLoadingSearch = false
             $0.activeSearchRequestID = nil

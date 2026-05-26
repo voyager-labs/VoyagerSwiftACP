@@ -32,7 +32,7 @@ struct ConditionChipView: View {
                     operatorOptions: operatorOptions,
                     isDark: isDark,
                     hoverFillOpacity: hoverFillOpacity,
-                    onPropertyTap: onPropertyTap
+                    onPropertyTap: onPropertyTap,
                 )
 
                 ConditionChipValueSectionView(
@@ -41,7 +41,7 @@ struct ConditionChipView: View {
                     isDark: isDark,
                     hoverFillOpacity: hoverFillOpacity,
                     valuePickerStore: valuePickerStore,
-                    onDisplayUnitChange: onDisplayUnitChange
+                    onDisplayUnitChange: onDisplayUnitChange,
                 )
             }
             .allowsHitTesting(!isInactive)
@@ -51,7 +51,7 @@ struct ConditionChipView: View {
         .frame(height: defaultChipHeight)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
         )
         .overlay(alignment: .topTrailing) {
             Button(action: onRemove) {
@@ -63,7 +63,7 @@ struct ConditionChipView: View {
                             .fill(isRemoveHovering
                                 ? VoyagerDS.Interaction.controlHoverFill(for: isDark ? .dark : .light)
                                 : .clear)
-                            .frame(width: 14, height: 14)
+                            .frame(width: 14, height: 14),
                     )
             }
             .buttonStyle(.borderless)

@@ -4,8 +4,8 @@ import VoyagerEntitiesCollection
 @testable import VoyagerPagesFileManager
 import XCTest
 
-@MainActor
 /// 툴바 collection 상태 표시가 window/content 상태 계약을 어기지 않음을 검증한다.
+@MainActor
 final class ToolbarCollectionStatusViewStateTests: XCTestCase {
     /// testDirtyOnlyShowsUnsavedIndicator 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testDirtyOnlyShowsUnsavedIndicator() {

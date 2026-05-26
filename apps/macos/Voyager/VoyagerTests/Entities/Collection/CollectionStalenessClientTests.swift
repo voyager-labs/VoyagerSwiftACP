@@ -5,8 +5,8 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
-@MainActor
 /// 컬렉션 유효기간 클라이언트 — 무효화/소비, 범위 업데이트, 마이그레이션 호환성을 검증.
+@MainActor
 final class CollectionStalenessClientTests: XCTestCase {
     func testInvalidateAndConsumeClosedCollectionRecord() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)

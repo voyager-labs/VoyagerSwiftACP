@@ -6,8 +6,8 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import XCTest
 
-@MainActor
 /// 컬렉션 모드 상태 도출 — 디스플레이 아이템 소스 전환과 기본 정렬을 검증.
+@MainActor
 final class EntryViewLayoutCollectionModeStateTests: XCTestCase {
     /// testCollectionItemsDefaultEmpty 테스트 동작을 검증한다.
     func testCollectionItemsDefaultEmpty() {
