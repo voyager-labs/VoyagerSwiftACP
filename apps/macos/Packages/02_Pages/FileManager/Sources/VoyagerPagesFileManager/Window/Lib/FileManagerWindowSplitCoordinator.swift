@@ -16,6 +16,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     private var hasStarted = false
     private var hasTornDown = false
     private var isApplyingSidebarLayout = false
+    private var isTrackingUserSidebarDividerResize = false
 
     private var sidebarSync: FileManagerSidebarSync
     private var currentIsDark: Bool
@@ -97,7 +98,10 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     private func applySidebarLayout(_ operation: () -> Void) {
         guard !isApplyingSidebarLayout else { return }
         isApplyingSidebarLayout = true
-        defer { isApplyingSidebarLayout = false }
+        defer {
+            reconcileSidebarChromeWithActualLayout()
+            isApplyingSidebarLayout = false
+        }
         operation()
     }
 
@@ -111,6 +115,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         guard !hasTornDown else { return }
         hasTornDown = true
         cancellables.removeAll()
+        isTrackingUserSidebarDividerResize = false
 
         windowSplitView?.delegate = nil
 
@@ -193,6 +198,17 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         return index == 0
     }
 
+    func splitViewWillResizeSubviews(_ notification: Notification) {
+        guard let splitView = notification.object as? NSSplitView,
+              splitView === windowSplitView,
+              let sidebarView = sidebarHosting?.view
+        else { return }
+
+        if isCurrentEventOnSidebarDivider(splitView: splitView, sidebarView: sidebarView) {
+            isTrackingUserSidebarDividerResize = true
+        }
+    }
+
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard !isApplyingSidebarLayout else { return }
         guard let splitView = notification.object as? NSSplitView,
@@ -200,16 +216,39 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
               let sidebarView = sidebarHosting?.view
         else { return }
 
-        let restoreWidth = sidebarSync.handleSplitViewResize(
+        let isUserInitiatedCollapse = isCurrentEventOnSidebarDivider(
+            splitView: splitView,
+            sidebarView: sidebarView,
+        ) || (
+            isTrackingUserSidebarDividerResize
+                && isCurrentSidebarMouseEvent(in: splitView)
+        )
+        defer {
+            resetSidebarDividerTrackingIfNeeded()
+        }
+
+        let resizeDecision = sidebarSync.handleSplitViewResize(
             splitView: splitView,
             sidebarView: sidebarView,
             storeSidebarVisible: store.sidebar.sidebarVisible,
+            isUserInitiatedCollapse: isUserInitiatedCollapse,
             syncWidthToStore: { [weak self] width in
                 self?.syncSidebarWidthToStore(width)
             },
         )
-        if let restoreWidth {
-            applySidebarState(sidebarVisible: true, sidebarWidth: restoreWidth)
+
+        switch resizeDecision {
+        case .none:
+            break
+
+        case .hideSidebar:
+            syncSidebarVisibilityToStore(false)
+
+        case .restoreSidebar:
+            applySidebarState(
+                sidebarVisible: true,
+                sidebarWidth: store.sidebar.sidebarWidth,
+            )
         }
     }
 
@@ -242,11 +281,103 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         store.send(.sidebar(.view(.setSidebarWidth(clampedWidth))))
     }
 
+    private func syncSidebarVisibilityToStore(_ isVisible: Bool) {
+        guard store.sidebar.sidebarVisible != isVisible else { return }
+        store.send(.sidebar(.view(.setSidebarVisible(isVisible))))
+    }
+
+    private func resetSidebarDividerTrackingIfNeeded() {
+        guard isTrackingUserSidebarDividerResize else { return }
+
+        guard let splitView = windowSplitView,
+              isCurrentSidebarTrackingContinuation(in: splitView)
+        else {
+            isTrackingUserSidebarDividerResize = false
+            return
+        }
+    }
+
+    private func reconcileSidebarChromeWithActualLayout() {
+        guard let splitView = windowSplitView,
+              let sidebarView = sidebarHosting?.view,
+              splitView.bounds.width > 0
+        else { return }
+
+        if store.sidebar.sidebarVisible,
+           !FileManagerSidebarSync.isSidebarEffectivelyVisible(
+               splitView: splitView,
+               sidebarView: sidebarView,
+           )
+        {
+            splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth, ofDividerAt: 0)
+            splitView.adjustSubviews()
+        }
+
+        let isSidebarActuallyVisible = store.sidebar.sidebarVisible
+            && FileManagerSidebarSync.isSidebarEffectivelyVisible(
+                splitView: splitView,
+                sidebarView: sidebarView,
+            )
+        updateTrafficLightVisibility(isSidebarVisible: isSidebarActuallyVisible)
+    }
+
     private func updateTrafficLightVisibility(isSidebarVisible: Bool) {
         guard let window = view.window else { return }
         FileManagerWindowCoordinator.applyTrafficLightVisibility(
             to: window,
             isSidebarVisible: isSidebarVisible,
         )
+    }
+}
+
+private func isCurrentEventOnSidebarDivider(
+    splitView: NSSplitView,
+    sidebarView: NSView,
+) -> Bool {
+    guard let event = NSApp.currentEvent,
+          event.window === splitView.window
+    else { return false }
+
+    switch event.type {
+    case .leftMouseDown,
+         .leftMouseDragged,
+         .leftMouseUp:
+        break
+    default:
+        return false
+    }
+
+    let location = splitView.convert(event.locationInWindow, from: nil)
+    let dividerX = sidebarView.frame.maxX
+    let hitSlop = max(splitView.dividerThickness + 6, 12)
+    return abs(location.x - dividerX) <= hitSlop
+}
+
+private func isCurrentSidebarMouseEvent(in splitView: NSSplitView) -> Bool {
+    guard let event = NSApp.currentEvent,
+          event.window === splitView.window
+    else { return false }
+
+    switch event.type {
+    case .leftMouseDown,
+         .leftMouseDragged,
+         .leftMouseUp:
+        return true
+    default:
+        return false
+    }
+}
+
+private func isCurrentSidebarTrackingContinuation(in splitView: NSSplitView) -> Bool {
+    guard let event = NSApp.currentEvent,
+          event.window === splitView.window
+    else { return false }
+
+    switch event.type {
+    case .leftMouseDown,
+         .leftMouseDragged:
+        return true
+    default:
+        return false
     }
 }

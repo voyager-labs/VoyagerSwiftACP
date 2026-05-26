@@ -8,6 +8,11 @@ import VoyagerShared
 /// Extracts all NSWindow appearance/configuration concerns from FileManagerWindowCoordinator
 /// so the coordinator remains a thin wiring layer.
 enum FileManagerWindowChrome {
+    private enum Constants {
+        static let minimumWindowSize = NSSize(width: 600, height: 350)
+        static let defaultWindowSize = NSSize(width: 960, height: 510)
+    }
+
     // MARK: - Appearance Helpers
 
     static var currentIsDark: Bool {
@@ -20,7 +25,7 @@ enum FileManagerWindowChrome {
 
     static func configureWindowStyle(_ window: NSWindow) {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        window.minSize = NSSize(width: 600, height: 350)
+        window.minSize = Constants.minimumWindowSize
 
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -55,11 +60,17 @@ enum FileManagerWindowChrome {
     static func applyInitialFrame(
         _ window: NSWindow,
         initialWindowSizeProvider: (() -> NSSize?)?,
+        reservesSidebarWidth: Bool = false,
     ) {
         window.setFrameAutosaveName("VoyagerMainWindow")
+        let minimumInitialWidth = minimumInitialWidth(reservesSidebarWidth: reservesSidebarWidth)
 
         if !window.setFrameUsingName("VoyagerMainWindow") {
-            let desiredSize: NSSize = initialWindowSizeProvider?() ?? NSSize(width: 960, height: 510)
+            let desiredSize = constrainedInitialSize(
+                initialWindowSizeProvider?() ?? Constants.defaultWindowSize,
+                minimumWidth: minimumInitialWidth,
+                minimumHeight: window.minSize.height,
+            )
             let screenFrame = NSScreen.main?.visibleFrame ?? .zero
             let origin = NSPoint(
                 x: screenFrame.midX - desiredSize.width / 2,
@@ -67,6 +78,28 @@ enum FileManagerWindowChrome {
             )
             window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
         }
+
+        expandInitialFrameIfNeeded(
+            window,
+            minimumWidth: minimumInitialWidth,
+            minimumHeight: window.minSize.height,
+        )
+    }
+
+    static func minimumInitialWidth(reservesSidebarWidth: Bool) -> CGFloat {
+        Constants.minimumWindowSize.width
+            + (reservesSidebarWidth ? FileManagerSidebarSync.sidebarMinWidth : 0)
+    }
+
+    static func constrainedInitialSize(
+        _ size: NSSize,
+        minimumWidth: CGFloat,
+        minimumHeight: CGFloat,
+    ) -> NSSize {
+        NSSize(
+            width: max(size.width, minimumWidth),
+            height: max(size.height, minimumHeight),
+        )
     }
 
     // MARK: - Title Binding
@@ -118,6 +151,22 @@ enum FileManagerWindowChrome {
             return "New Collection"
         }
         return makeWindowTitle(titlePath)
+    }
+
+    private static func expandInitialFrameIfNeeded(
+        _ window: NSWindow,
+        minimumWidth: CGFloat,
+        minimumHeight: CGFloat,
+    ) {
+        let currentFrame = window.frame
+        let constrainedSize = constrainedInitialSize(
+            currentFrame.size,
+            minimumWidth: minimumWidth,
+            minimumHeight: minimumHeight,
+        )
+        guard constrainedSize != currentFrame.size else { return }
+
+        window.setFrame(NSRect(origin: currentFrame.origin, size: constrainedSize), display: false)
     }
 
     private static func makeWindowTitlePublisher(
