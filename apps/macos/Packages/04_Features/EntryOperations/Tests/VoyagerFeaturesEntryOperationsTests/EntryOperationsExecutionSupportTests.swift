@@ -116,9 +116,10 @@ private struct ExecutionSupportTestHarness {
                     operation: {
                         if let error { throw error }
                     },
-                ).map { action in
+                )
+                .map { action in
                     switch action {
-                    case let .lifecycle(l): .lifecycle(l)
+                    case let .lifecycle(lifecycle): .lifecycle(lifecycle)
                     default: .lifecycle(.emptyTrashCompleted)
                     }
                 }
@@ -128,9 +129,10 @@ private struct ExecutionSupportTestHarness {
                     paths: paths,
                     kind: kind,
                     operation: { _ in },
-                ).map { action in
+                )
+                .map { action in
                     switch action {
-                    case let .lifecycle(l): .lifecycle(l)
+                    case let .lifecycle(lifecycle): .lifecycle(lifecycle)
                     default: .lifecycle(.emptyTrashCompleted)
                     }
                 }
@@ -146,9 +148,10 @@ private struct ExecutionSupportTestHarness {
                             afterPath: url.path + "_renamed",
                         )
                     },
-                ).map { action in
+                )
+                .map { action in
                     switch action {
-                    case let .lifecycle(l): .lifecycle(l)
+                    case let .lifecycle(lifecycle): .lifecycle(lifecycle)
                     default: .lifecycle(.emptyTrashCompleted)
                     }
                 }

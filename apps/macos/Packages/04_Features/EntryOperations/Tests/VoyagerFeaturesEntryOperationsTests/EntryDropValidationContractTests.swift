@@ -92,9 +92,8 @@ final class EntryDropValidationContractTests: XCTestCase {
             1,
             "saveDragWithOption should be called when a drag session begins",
         )
-        XCTAssertEqual(
-            recorder.savedOptions.first,
-            false,
+        XCTAssertFalse(
+            recorder.savedOptions.first ?? true,
             "Option-key state should be captured as false (not pressed)",
         )
     }
@@ -136,9 +135,8 @@ final class EntryDropValidationContractTests: XCTestCase {
             2,
             "Each drag session should independently call saveDragWithOption",
         )
-        XCTAssertEqual(
-            recorder.savedOptions.last,
-            true,
+        XCTAssertTrue(
+            recorder.savedOptions.last ?? false,
             "Second session should capture its own option state, not inherit from first",
         )
     }
