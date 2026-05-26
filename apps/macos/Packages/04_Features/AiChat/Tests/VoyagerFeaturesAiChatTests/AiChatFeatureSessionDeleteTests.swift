@@ -150,6 +150,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         let requestID = AiChatRequestID(rawValue: makeUUID("99999999-9999-9999-9999-999999999999"))
         let runID = AiChatRunID(rawValue: makeUUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
         let prompt = "Summarize the deleted session"
+        let fixedMs: Int64 = 1_700_000_000_500
         let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: prompt)
         let lateStartSummary = makeDeleteTestSessionSummary(
             sessionID: sessionID,
@@ -196,6 +197,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         )) {
             AiChatFeature()
         } withDependencies: {
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { _ in },
@@ -203,7 +205,13 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
             )
         }
 
-        await store.send(.deleteSessionTapped(sessionID))
+        await store.send(.deleteSessionTapped(sessionID)) { state in
+            state.executionPhase = .cancelled(lock.recordingTerminal(
+                at: fixedMs,
+                failure: .cancelled,
+                wasCancelled: true
+            ))
+        }
 
         await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
             state.sessionList.allRows = []
@@ -221,6 +229,107 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         XCTAssertTrue(store.state.sessionList.rows.isEmpty)
         XCTAssertNil(store.state.sessionList.selectedSessionID)
         XCTAssertEqual(store.state.sessionList.deletedSessionIDs, [sessionID])
+    }
+
+    func testDeleteCurrentProcessingSessionCancelsRequestBeforeDelete() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
+        let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Processing chat")
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let fixedMs: Int64 = 1_700_000_000_000
+        let requestStarted = LockIsolated(false)
+        let requestCancelled = LockIsolated(false)
+        let capturedRequest = LockIsolated<AiChatRequest?>(nil)
+        let deletedIDs = LockIsolated<[AiChatSessionID]>([])
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: sessionID,
+            mode: .sessions,
+            sessionList: .init(allRows: [row], selectedSessionID: sessionID),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Current docs"),
+            draftText: "Delete while processing",
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: selectedHandle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                capturedRequest.setValue(request)
+                requestStarted.setValue(true)
+                return AsyncStream { continuation in
+                    continuation.onTermination = { termination in
+                        if case .cancelled = termination {
+                            requestCancelled.setValue(true)
+                        }
+                    }
+                }
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in savedSnapshots.withValue { $0.append(snapshot) } },
+                deleteSession: { id in deletedIDs.withValue { $0.append(id) } }
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { AIConnectionsFile.empty() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped)
+        await waitUntil { requestStarted.value }
+
+        guard let request = capturedRequest.value else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        )
+
+        await store.send(.deleteSessionTapped(sessionID)) { state in
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            state.lockedModelHandle = nil
+            state.streamingAssistantDraft = nil
+            state.executionPhase = .cancelled(lock.recordingTerminal(
+                at: fixedMs,
+                failure: .cancelled,
+                wasCancelled: true
+            ))
+        }
+
+        await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.sessionList.allRows = []
+            state.sessionList.rows = []
+            state.sessionList.deletedSessionIDs = [sessionID]
+        }
+
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "Late final"),
+            completedAtMs: fixedMs
+        ))))
+        await store.finish()
+
+        XCTAssertEqual(deletedIDs.value, [sessionID])
+        XCTAssertTrue(requestCancelled.value)
+        XCTAssertFalse(savedSnapshots.value.contains { snapshot in
+            snapshot.transcriptHistory.contains(AiChatMessage(role: .assistant, content: "Late final"))
+        })
     }
 
     func testRenameSessionSuccessPersistsCustomTitleAndUpdatesFilteredRows() async {
@@ -342,6 +451,19 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
 
 }
 
+
+@MainActor
+private func waitUntil(
+    _ condition: @MainActor () -> Bool,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    for _ in 0..<100 {
+        if condition() { return }
+        await Task.yield()
+    }
+    XCTFail("Condition was not fulfilled.", file: file, line: line)
+}
 
 private func makeDeleteTestSessionSummary(
     sessionID: AiChatSessionID,

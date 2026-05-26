@@ -87,17 +87,34 @@ public struct AiChatFeature {
                 if state.sessionList.renamingSessionID == sessionID {
                     state.sessionList.cancelRenaming()
                 }
+
+                var preDeleteEffects: [Effect<Action>] = []
                 if state.restoreSessionID == sessionID {
                     state.restoreSessionID = nil
                     state.restoreOutcome = nil
                     state.restoreFailure = nil
                     state.sessionList.selectedSessionID = nil
-                    return .concatenate(
-                        .cancel(id: CancelID.restore),
-                        deleteSession(sessionID)
-                    )
+                    preDeleteEffects.append(.cancel(id: CancelID.restore))
                 }
-                return deleteSession(sessionID)
+                if case let .processing(lock) = state.executionPhase,
+                   state.sessionID == sessionID
+                {
+                    state.lockedModelHandle = nil
+                    state.streamingAssistantDraft = nil
+                    state.executionPhase = .cancelled(lock.recordingTerminal(
+                        at: currentTimestampMs(),
+                        failure: .cancelled,
+                        wasCancelled: true
+                    ))
+                    preDeleteEffects.append(.cancel(id: CancelID.request))
+                }
+                guard !preDeleteEffects.isEmpty else {
+                    return deleteSession(sessionID)
+                }
+                return .concatenate(
+                    .merge(preDeleteEffects),
+                    deleteSession(sessionID)
+                )
 
             case let .renameSessionTapped(sessionID):
                 state.sessionList.errorMessage = nil
