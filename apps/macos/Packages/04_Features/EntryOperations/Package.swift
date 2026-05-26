@@ -1,7 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-let package = Package(
+let kPackage = Package(
     name: "VoyagerFeaturesEntryOperations",
     platforms: [
         .macOS(.v13),

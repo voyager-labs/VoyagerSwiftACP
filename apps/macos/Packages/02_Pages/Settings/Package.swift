@@ -1,8 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-// swiftlint:disable:next prefixed_toplevel_constant
-let package = Package(
+let kPackage = Package(
     name: "VoyagerPagesSettings",
     platforms: [
         .macOS(.v13),
