@@ -289,6 +289,108 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         XCTAssertEqual(store.state.catalogRows, catalogRows)
     }
 
+    func testTeardownRequestedCancelsInFlightNewChatSave() async {
+        await assertInFlightNewChatSaveCancelled(by: .teardown)
+    }
+
+    func testResetTappedCancelsInFlightNewChatSave() async {
+        await assertInFlightNewChatSaveCancelled(by: .reset)
+    }
+
+    private func assertInFlightNewChatSaveCancelled(by trigger: NewChatCancellationTrigger) async {
+        let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
+        let saveStarted = LockIsolated(false)
+        let saveCancelled = LockIsolated(false)
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(mode: .sessions)) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_000))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    savedSnapshots.withValue { $0.append(snapshot) }
+                    saveStarted.setValue(true)
+                    try await withTaskCancellationHandler {
+                        while true {
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 1_000_000_000)
+                        }
+                    } onCancel: {
+                        saveCancelled.setValue(true)
+                    }
+                },
+                deleteSession: { _ in }
+            )
+        }
+
+        await store.send(.newChatTapped) { state in
+            state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
+            state.sessionStatus = .idle
+            state.mode = .chat
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.errorMessage = nil
+            state.transcriptHistory = []
+            state.draftText = ""
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = nil
+            state.lastRequestContextModelHandle = nil
+            state.executionPhase = .idle
+            state.selectedModelHandle = nil
+            state.selectedThinking = nil
+            state.unavailableSelectedModelHandle = nil
+        }
+
+        await waitUntil { saveStarted.value }
+        switch trigger {
+        case .teardown:
+            await store.send(.teardownRequested)
+        case .reset:
+            await store.send(.resetTapped) { state in
+                state.emptyDraftSessionID = nil
+                state.restoreSessionID = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.draftText = ""
+                state.transcriptHistory = []
+                state.streamingAssistantDraft = nil
+                state.lastExecutionFailure = nil
+                state.lockedModelHandle = nil
+                state.executionPhase = .idle
+            }
+        }
+        await store.finish()
+
+        XCTAssertTrue(saveCancelled.value)
+        XCTAssertEqual(savedSnapshots.value.map(\.sessionID), [newSessionID])
+        XCTAssertNil(store.state.sessionList.selectedSessionID)
+    }
+}
+
+private enum NewChatCancellationTrigger {
+    case teardown
+    case reset
+}
+
+@MainActor
+private func waitUntil(
+    _ condition: @MainActor () -> Bool,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    for _ in 0..<100 {
+        if condition() { return }
+        await Task.yield()
+    }
+    XCTFail("Condition was not fulfilled.", file: file, line: line)
 }
 
 private func makeSessionSummary(

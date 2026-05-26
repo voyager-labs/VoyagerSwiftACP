@@ -460,7 +460,8 @@ public struct AiChatFeature {
             .cancel(id: CancelID.request),
             .cancel(id: CancelID.restore),
             .cancel(id: CancelID.persistenceRecovery),
-            .cancel(id: CancelID.modelList)
+            .cancel(id: CancelID.modelList),
+            .cancel(id: CancelID.newChat)
         )
     }
 }
@@ -924,6 +925,8 @@ private extension AiChatFeature {
             do {
                 try await aiChatSessionPersistenceClient.saveSession(snapshot)
                 await send(.newChatCreated(snapshot))
+            } catch is CancellationError {
+                return
             } catch {
                 await send(.newChatFailed(Self.newChatFailureMessage(for: error)))
             }
