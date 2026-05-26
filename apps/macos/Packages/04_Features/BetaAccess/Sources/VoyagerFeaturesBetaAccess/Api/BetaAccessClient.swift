@@ -49,6 +49,11 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
         return BetaAccessVerifyResponse(ok: true)
     }
 
+    let request = try makeBetaAccessRequest(email: email, token: token)
+    return try await performBetaAccessRequest(request)
+}
+
+private func makeBetaAccessRequest(email: String, token: String) throws -> URLRequest {
     guard let urlString = Dotenv["PUBLIC_GATEWAY_URL"]?.stringValue,
           !urlString.isEmpty,
           let baseURL = URL(string: urlString)
@@ -81,6 +86,10 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
         throw BetaAccessVerificationError.invalidRequest
     }
 
+    return request
+}
+
+private func performBetaAccessRequest(_ request: URLRequest) async throws -> BetaAccessVerifyResponse {
     do {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
