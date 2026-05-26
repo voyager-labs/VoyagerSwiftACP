@@ -79,7 +79,7 @@ final class AiChatSessionDisplayModelTests: XCTestCase {
         XCTAssertTrue(displayModel.isEmpty)
         XCTAssertEqual(displayModel.title, "Sessions")
         XCTAssertEqual(displayModel.newChatTitle, "New Chat")
-        XCTAssertEqual(displayModel.searchPlaceholder, "Search sessions")
+        XCTAssertEqual(displayModel.searchPlaceholder, "Search")
         XCTAssertEqual(displayModel.emptyTitle, "No sessions yet")
         XCTAssertEqual(displayModel.emptyDetail, "Start a new chat with the current context")
         XCTAssertTrue(displayModel.sections.isEmpty)
@@ -97,6 +97,50 @@ final class AiChatSessionDisplayModelTests: XCTestCase {
         XCTAssertEqual(displayModel.emptyTitle, "No matching sessions")
         XCTAssertEqual(displayModel.emptyDetail, "Try a different search term.")
         XCTAssertTrue(displayModel.sections.isEmpty)
+    }
+
+    func testRowActivityStatesPreferProcessingOverUnreadCompletion() {
+        let now = makeFixedDate(milliseconds: 1_700_000_000_000)
+        let processingID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111181"))
+        let unreadID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111182"))
+        let idleID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111183"))
+        let processing = makeSessionSummary(sessionID: processingID, title: "Processing", updatedAtMs: milliseconds(for: now))
+        let unread = makeSessionSummary(sessionID: unreadID, title: "Unread", updatedAtMs: milliseconds(for: now))
+        let idle = makeSessionSummary(sessionID: idleID, title: "Idle", updatedAtMs: milliseconds(for: now))
+
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [processing, unread, idle],
+            now: now,
+            processingSessionID: processingID,
+            unreadCompletedSessionIDs: [processingID, unreadID]
+        )
+        let rows = displayModel.sections.flatMap(\.rows)
+
+        XCTAssertEqual(rows.map(\.id), [processingID, unreadID, idleID])
+        XCTAssertEqual(rows.map(\.activityState), [.processing, .unreadCompleted, .idle])
+        XCTAssertNil(rows[0].detail)
+        XCTAssertEqual(rows[1].detail, "Preview")
+        XCTAssertEqual(rows[2].detail, "Preview")
+    }
+
+
+    func testHiddenEmptyDraftRowsAreExcludedFromSections() {
+        let now = makeFixedDate(milliseconds: 1_700_000_000_000)
+        let draftID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111184"))
+        let visibleID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111185"))
+        let draft = makeSessionSummary(sessionID: draftID, title: "New Chat", updatedAtMs: milliseconds(for: now))
+        let visible = makeSessionSummary(sessionID: visibleID, title: "Visible prompt", updatedAtMs: milliseconds(for: now))
+
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [draft, visible],
+            now: now,
+            totalRowCount: 2,
+            hiddenSessionIDs: [draftID]
+        )
+        let rows = displayModel.sections.flatMap(\.rows)
+
+        XCTAssertEqual(rows.map(\.id), [visibleID])
+        XCTAssertEqual(rows.map(\.title), ["Visible prompt"])
     }
 
     func testSearchQueryStillUsesNoSessionsCopyWhenThereAreNoSavedSessions() {

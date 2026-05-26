@@ -42,6 +42,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
     public var isLoading: Bool
     public var errorMessage: String?
     public var selectedSessionID: AiChatSessionID?
+    public var unreadCompletedSessionIDs: Set<AiChatSessionID>
     public var renamingSessionID: AiChatSessionID?
     public var renameDraftText: String
 
@@ -52,6 +53,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         isLoading: Bool = false,
         errorMessage: String? = nil,
         selectedSessionID: AiChatSessionID? = nil,
+        unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
         renamingSessionID: AiChatSessionID? = nil,
         renameDraftText: String = ""
     ) {
@@ -60,6 +62,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         self.isLoading = isLoading
         self.errorMessage = errorMessage
         self.selectedSessionID = selectedSessionID
+        self.unreadCompletedSessionIDs = unreadCompletedSessionIDs
         self.renamingSessionID = renamingSessionID
         self.renameDraftText = renameDraftText
         self.rows = rows ?? Self.filteredRows(from: allRows, query: query)
@@ -78,6 +81,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
     public mutating func removeRow(sessionID: AiChatSessionID) {
         allRows.removeAll { $0.sessionID == sessionID }
         rows = Self.filteredRows(from: allRows, query: query)
+        unreadCompletedSessionIDs.remove(sessionID)
         if selectedSessionID == sessionID {
             selectedSessionID = nil
         }
@@ -266,6 +270,20 @@ public struct AiChatState: Equatable, Sendable {
     }
 
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { displayModelBuilder.lockedModelDisplayModel }
+
+    public var hiddenEmptyDraftSessionIDs: Set<AiChatSessionID> {
+        guard let emptyDraftSessionID,
+              sessionID == emptyDraftSessionID,
+              sessionStatus == .idle,
+              transcriptHistory.isEmpty,
+              streamingAssistantDraft == nil,
+              lastRequestContext == nil,
+              !executionPhase.isProcessing
+        else { return [] }
+
+        return [emptyDraftSessionID]
+    }
+
     public var canSubmit: Bool { displayModelBuilder.canSubmit }
     public var canRegenerate: Bool { displayModelBuilder.canRegenerate }
     public var requestStatusText: String? { displayModelBuilder.requestStatusText }

@@ -75,17 +75,28 @@ public enum AiChatSessionDateBucket: Hashable, Sendable {
     }
 }
 
+public enum AiChatSessionRowActivityState: Equatable, Sendable {
+    case idle
+    case processing
+    case unreadCompleted
+}
+
 public struct AiChatSessionRowDisplayModel: Identifiable, Equatable, Sendable {
     public var id: AiChatSessionID { summary.sessionID }
 
     public let summary: AiChatSessionSummary
     public let title: String
     public let detail: String?
+    public let activityState: AiChatSessionRowActivityState
 
-    public init(summary: AiChatSessionSummary) {
+    public init(
+        summary: AiChatSessionSummary,
+        activityState: AiChatSessionRowActivityState = .idle
+    ) {
         self.summary = summary
         self.title = summary.title
-        self.detail = summary.preview ?? summary.contextTitle
+        self.detail = activityState == .processing ? nil : summary.preview ?? summary.contextTitle
+        self.activityState = activityState
     }
 }
 
@@ -116,11 +127,14 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
         now: Date,
         calendar: Calendar = .current,
         query: String = "",
-        totalRowCount: Int? = nil
+        totalRowCount: Int? = nil,
+        processingSessionID: AiChatSessionID? = nil,
+        unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
+        hiddenSessionIDs: Set<AiChatSessionID> = []
     ) {
         title = "Sessions"
         newChatTitle = "New Chat"
-        searchPlaceholder = "Search sessions"
+        searchPlaceholder = "Search"
 
         let hasActiveSearch = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasSessionsBeforeFiltering = (totalRowCount ?? rows.count) > 0
@@ -132,7 +146,14 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
             emptyDetail = "Start a new chat with the current context"
         }
 
-        sections = Self.makeSections(rows: rows, now: now, calendar: calendar)
+        sections = Self.makeSections(
+            rows: rows,
+            now: now,
+            calendar: calendar,
+            processingSessionID: processingSessionID,
+            unreadCompletedSessionIDs: unreadCompletedSessionIDs,
+            hiddenSessionIDs: hiddenSessionIDs
+        )
     }
 
     public var isEmpty: Bool {
@@ -142,9 +163,13 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
     public static func makeSections(
         rows: [AiChatSessionSummary],
         now: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        processingSessionID: AiChatSessionID? = nil,
+        unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
+        hiddenSessionIDs: Set<AiChatSessionID> = []
     ) -> [AiChatSessionSectionDisplayModel] {
-        let grouped = Dictionary(grouping: rows) { summary in
+        let visibleRows = rows.filter { !hiddenSessionIDs.contains($0.sessionID) }
+        let grouped = Dictionary(grouping: visibleRows) { summary in
             bucket(forUpdatedAtMs: summary.updatedAtMs, now: now, calendar: calendar)
         }
 
@@ -156,9 +181,32 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
                 guard let bucketRows = grouped[bucket], !bucketRows.isEmpty else { return nil }
                 return AiChatSessionSectionDisplayModel(
                     bucket: bucket,
-                    rows: bucketRows.map(AiChatSessionRowDisplayModel.init(summary:))
+                    rows: bucketRows.map { summary in
+                        AiChatSessionRowDisplayModel(
+                            summary: summary,
+                            activityState: Self.activityState(
+                                for: summary.sessionID,
+                                processingSessionID: processingSessionID,
+                                unreadCompletedSessionIDs: unreadCompletedSessionIDs
+                            )
+                        )
+                    }
                 )
             }
+    }
+
+    private static func activityState(
+        for sessionID: AiChatSessionID,
+        processingSessionID: AiChatSessionID?,
+        unreadCompletedSessionIDs: Set<AiChatSessionID>
+    ) -> AiChatSessionRowActivityState {
+        if processingSessionID == sessionID {
+            return .processing
+        }
+        if unreadCompletedSessionIDs.contains(sessionID) {
+            return .unreadCompleted
+        }
+        return .idle
     }
 
     public static func bucket(

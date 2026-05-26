@@ -33,7 +33,10 @@ public struct AiChatView: View {
                 rows: state.sessionList.rows,
                 now: Date(),
                 query: state.sessionList.query,
-                totalRowCount: state.sessionList.allRows.count
+                totalRowCount: state.sessionList.allRows.count,
+                processingSessionID: state.executionPhase.isProcessing ? state.sessionID : nil,
+                unreadCompletedSessionIDs: state.sessionList.unreadCompletedSessionIDs,
+                hiddenSessionIDs: state.hiddenEmptyDraftSessionIDs
             )
 
             Group {
