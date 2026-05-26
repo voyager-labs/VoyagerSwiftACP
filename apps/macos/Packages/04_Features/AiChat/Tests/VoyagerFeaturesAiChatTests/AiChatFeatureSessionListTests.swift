@@ -289,6 +289,162 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         XCTAssertEqual(store.state.catalogRows, catalogRows)
     }
 
+    // swiftlint:disable:next function_body_length
+    func testNewChatTappedCancelsInFlightRequestBeforeStartingDraft() async {
+        let oldSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111331"))
+        let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000002"))
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let fixedMs: Int64 = 1_700_000_001_331
+        let requestStarted = LockIsolated(false)
+        let requestCancelled = LockIsolated(false)
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(selectedSessionID: oldSessionID),
+            sessionID: oldSessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Current docs"),
+            draftText: "Question before new chat",
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: selectedHandle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { _ in
+                requestStarted.setValue(true)
+                return AsyncStream { continuation in
+                    continuation.onTermination = { termination in
+                        if case .cancelled = termination {
+                            requestCancelled.setValue(true)
+                        }
+                    }
+                }
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in [] },
+                loadSession: { _ in nil },
+                saveSession: { snapshot in savedSnapshots.withValue { $0.append(snapshot) } },
+                deleteSession: { _ in }
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { AIConnectionsFile.empty() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped)
+        await waitUntil { requestStarted.value }
+
+        await store.send(.newChatTapped)
+
+        let expectedSnapshot = AiChatSessionSnapshot(
+            sessionID: newSessionID,
+            status: .idle,
+            customTitle: nil,
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
+            updatedAtMs: fixedMs
+        )
+        await store.receive(.newChatCreated(expectedSnapshot))
+        await store.finish()
+
+        XCTAssertTrue(requestCancelled.value)
+        XCTAssertEqual(savedSnapshots.value.last, expectedSnapshot)
+        XCTAssertEqual(store.state.sessionID, newSessionID)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+    }
+
+    // swiftlint:disable:next function_body_length
+    func testTeardownRequestedCancelsSessionListDeleteAndRenameEffects() async {
+        let renameSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111441"))
+        let deleteSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222441"))
+        let listStarted = LockIsolated(false)
+        let listCancelled = LockIsolated(false)
+        let renameStarted = LockIsolated(false)
+        let renameCancelled = LockIsolated(false)
+        let deleteStarted = LockIsolated(false)
+        let deleteCancelled = LockIsolated(false)
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(
+                allRows: [
+                    makeSessionSummary(sessionID: renameSessionID, title: "Rename me"),
+                    makeSessionSummary(sessionID: deleteSessionID, title: "Delete me"),
+                ],
+                renamingSessionID: renameSessionID,
+                renameDraftText: "Renamed title"
+            )
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in
+                    listStarted.setValue(true)
+                    try await withTaskCancellationHandler {
+                        while true {
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 1_000_000_000)
+                        }
+                    } onCancel: {
+                        listCancelled.setValue(true)
+                    }
+                    return []
+                },
+                loadSession: { _ in
+                    renameStarted.setValue(true)
+                    try await withTaskCancellationHandler {
+                        while true {
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 1_000_000_000)
+                        }
+                    } onCancel: {
+                        renameCancelled.setValue(true)
+                    }
+                    return nil
+                },
+                saveSession: { _ in },
+                deleteSession: { _ in
+                    deleteStarted.setValue(true)
+                    try await withTaskCancellationHandler {
+                        while true {
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 1_000_000_000)
+                        }
+                    } onCancel: {
+                        deleteCancelled.setValue(true)
+                    }
+                }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.sessionsAppeared)
+        await store.send(.renameSessionConfirmed)
+        await store.send(.deleteSessionTapped(deleteSessionID))
+        await waitUntil { listStarted.value && renameStarted.value && deleteStarted.value }
+
+        await store.send(.teardownRequested)
+        await store.finish()
+
+        XCTAssertTrue(listCancelled.value)
+        XCTAssertTrue(renameCancelled.value)
+        XCTAssertTrue(deleteCancelled.value)
+    }
+
     func testTeardownRequestedCancelsInFlightNewChatSave() async {
         await assertInFlightNewChatSaveCancelled(by: .teardown)
     }

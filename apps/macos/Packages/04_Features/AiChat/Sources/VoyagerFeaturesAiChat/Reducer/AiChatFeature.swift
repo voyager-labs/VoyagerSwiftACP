@@ -53,11 +53,17 @@ public struct AiChatFeature {
 
             case .newChatTapped:
                 let snapshot = startNewUnselectedChat(state: &state)
-                return saveNewChat(snapshot)
+                return .concatenate(
+                    cancelRequestLifecycle(),
+                    saveNewChat(snapshot)
+                )
 
             case .startNewChatFromRebindTapped:
                 let snapshot = startNewUnselectedChat(state: &state)
-                return saveNewChat(snapshot)
+                return .concatenate(
+                    cancelRequestLifecycle(),
+                    saveNewChat(snapshot)
+                )
 
             case .rebindContextTapped:
                 state.sessionStatus = .active
@@ -501,7 +507,10 @@ public struct AiChatFeature {
             .cancel(id: CancelID.restore),
             .cancel(id: CancelID.persistenceRecovery),
             .cancel(id: CancelID.modelList),
-            .cancel(id: CancelID.newChat)
+            .cancel(id: CancelID.newChat),
+            .cancel(id: CancelID.sessionList),
+            .cancel(id: CancelID.sessionDelete),
+            .cancel(id: CancelID.sessionRename)
         )
     }
 }
@@ -913,6 +922,8 @@ private extension AiChatFeature {
             do {
                 let rows = try await aiChatSessionPersistenceClient.listSessions(nil, nil)
                 await send(.sessionListLoaded(rows))
+            } catch is CancellationError {
+                return
             } catch {
                 await send(.sessionListFailed(Self.sessionListFailureMessage(for: error)))
             }
@@ -988,6 +999,8 @@ private extension AiChatFeature {
                     AiChatSessionSummary(snapshot: renamedSnapshot),
                     customTitle: renamedSnapshot.customTitle
                 ))
+            } catch is CancellationError {
+                return
             } catch {
                 await send(.sessionRenameFailed(sessionID, Self.sessionRenameFailureMessage(for: error)))
             }
@@ -1022,6 +1035,8 @@ private extension AiChatFeature {
             do {
                 try await aiChatSessionPersistenceClient.deleteSession(sessionID)
                 await send(.sessionDeleteSucceeded(sessionID))
+            } catch is CancellationError {
+                return
             } catch {
                 await send(.sessionDeleteFailed(sessionID, Self.sessionDeleteFailureMessage(for: error)))
             }
