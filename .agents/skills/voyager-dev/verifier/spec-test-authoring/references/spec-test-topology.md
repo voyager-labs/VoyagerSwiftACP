@@ -13,7 +13,8 @@ Tests/<TestTargetName>/
 └── Support/
     ├── <Purpose>Fixtures.swift
     ├── <Purpose>Recorders.swift
-    └── <Purpose>Clients.swift
+    ├── <Purpose>Clients.swift
+    └── <Purpose>DependencyDoubles.swift
 ```
 
 Use this shape when creating a new test target area or when a task explicitly includes test topology cleanup. If an existing target is flat and the task is a small additive change, avoid broad churn; still apply the naming and ownership rules.
@@ -87,8 +88,10 @@ Use `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
 - Put fixtures, recorders, dependency doubles, builders, and helper assertions in `Support/`.
 - Keep `Support/` flat; do not create nested support directories.
 - Name support files by role/type, not by spec ID prefix. Good examples: `PermissionFixtures.swift`, `PathRecorder.swift`, `ProgressClient.swift`, `InMemoryStorage.swift`.
+- If a helper type name collides with a production type (via `@testable import`), append `Fixture` (e.g. `BetaAccessClientFixture`).
 - Support files must not contain executable product behavior test methods.
 - In SwiftPM packages, folders under the same test target compile together. In Xcode project targets, verify target membership when adding files.
+- After renaming a suite class, search for all references to the old class name and update them.
 
 ### Support file naming rule
 

@@ -509,3 +509,26 @@ The Voyager project (`apps/macos/Voyager/Voyager.xcodeproj`) uses `PBXFileSystem
 grep -c "DeletedFileName" apps/macos/Voyager/Voyager.xcodeproj/project.pbxproj
 # Should output 0
 ```
+
+## Package Build Blocker Evidence Matrix
+
+When a SwiftPM package build fails before changed tests compile, do NOT mark verification as passed.
+
+Record the following evidence:
+
+| Field              | Value                                     |
+| ------------------ | ----------------------------------------- |
+| Package path       | `apps/macos/Packages/...`                 |
+| Suite filter       | `--filter <SuiteName>`                    |
+| Exit code          | [code]                                    |
+| Failure phase      | compilation / test-execution              |
+| First failure path | [file:line]                               |
+| Blocker owner      | Source code (not test code) / Test code   |
+| Pre-existing?      | Yes / No                                  |
+| Proof gap          | Yes — changed tests NOT proven to compile |
+
+### Classification rules
+
+- **Pre-existing source blocker**: Build fails in package source code not modified by the current task. Record as BLOCKED, proof gap.
+- **Test-caused blocker**: Build fails in test code modified by the current task. Fix and re-run.
+- **Infrastructure blocker**: Build fails due to missing dependencies or toolchain issues. Record as BLOCKED, try to resolve.

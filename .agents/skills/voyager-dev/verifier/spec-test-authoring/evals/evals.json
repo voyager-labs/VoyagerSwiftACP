@@ -52,14 +52,27 @@
     {
       "id": 5,
       "prompt": "A spec test suite has 30+ tests with repeated dependency setup (same client instantiated 10+ times), 2 near-duplicate tests that verify the same behavior with slightly different fixture values, and one test using Task.sleep for async timing. Review this suite and produce a cleanup plan that preserves coverage while removing redundancy.",
-      "expected_output": "A targeted cleanup plan that extracts repeated setup into helpers under Support/<Feature>/ using an enum namespace pattern, maps which tests cover which ACs before deleting duplicates (removed → preserved by), replaces Task.sleep with deterministic synchronization via fulfillment or expectation-based waiting, and recommends running a focused --filter verification instead of the full suite.",
+      "expected_output": "A targeted cleanup plan that extracts repeated setup into feature/AC-local helpers under Support/<FeatureOrAC>/ using an enum namespace pattern, maps which tests cover which ACs before deleting duplicates (removed/merged → preserved by test/helper/assertion), replaces Task.sleep with deterministic synchronization via fulfillment, actor recorder, continuation, controlled clock, or TestStore.receive, and recommends running a focused --filter verification instead of the full suite.",
       "files": [],
       "assertions": [
-        "Output extracts repeated dependency setup into helpers under Support/<Feature>/, using an enum namespace pattern, not inline in the spec file.",
-        "Output maps coverage before deleting duplicates and states which removed test is preserved by which surviving test (removed → preserved by).",
-        "Output replaces Task.sleep with deterministic synchronization such as fulfillment, expectation, or continuation-based waiting, not timeouts.",
+        "Output extracts repeated dependency setup into feature/AC-local helpers under Support/<FeatureOrAC>/, using an enum namespace pattern, not Shared or production code.",
+        "Output maps coverage before deleting duplicates and states which removed or merged test is preserved by which surviving test, helper, or assertion (removed/merged → preserved by).",
+        "Output replaces Task.sleep with deterministic synchronization such as fulfillment, actor recorder, continuation, controlled clock, or TestStore.receive, not longer sleeps or unbounded polling.",
         "Output recommends running a focused test filter (--filter or equivalent) for the affected suite, not the full test suite.",
         "Output does NOT recommend a broad rewrite, generic refactoring without specifics, or deleting tests without coverage mapping."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "I updated Voyager verifier skill references in .agents and mirrored .claude, and added one eval case. What final verification evidence should I capture before closeout?",
+      "expected_output": "A closeout checklist that treats skill reflection as code: run mirror diff across .agents/.claude verifier trees, parse touched evals.json files with python3 -m json.tool, confirm .agents/rules did not change unless explicitly in scope, document any missing eval runner fallback, and record evidence paths.",
+      "files": [],
+      "assertions": [
+        "Output requires diff -rq or equivalent mirror parity check between .agents/skills/voyager-dev/verifier and .claude/skills/voyager-dev/verifier.",
+        "Output requires python3 -m json.tool or equivalent JSON validation for touched evals.json mirrors.",
+        "Output requires confirming .agents/rules/** did not change unless a rule update was explicitly authorized.",
+        "Output says to document missing eval runner discovery or fallback validation when no runner exists.",
+        "Output records the verification as evidence, not just an informal note."
       ]
     }
   ]

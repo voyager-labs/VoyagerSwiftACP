@@ -138,13 +138,33 @@ final class PAY002ConfirmPaymentTests: XCTestCase {
 
 When a review or refactor reveals duplicate or low-value tests, clean up with this workflow instead of ad-hoc deletion.
 
+Use this section whenever the request says "review feedback", "cleanup duplicate tests", "reduce repeated setup", "merge redundant specs", or similar. The output must prove coverage preservation before any test is deleted.
+
 ### Workflow
 
-1. **Inventory duplicates before deleting anything.** Map every candidate-for-removal to the test that preserves its coverage. Build a table: removed test name, preserved-by test name, reason (exact duplicate, subset, near-duplicate with narrower scope).
+1. **Inventory duplicates before deleting anything.** Map every candidate-for-removal to the test that preserves its coverage. Build a table: removed or merged test name, preserved-by test/helper/assertion, reason (exact duplicate, subset, near-duplicate with narrower scope).
 2. **Verify the mapping.** Read both tests side by side. Confirm the preserved-by test covers every assertion path the removed test exercised. If a removed test has even one unique assertion, keep it or merge that assertion.
 3. **Remove bottom-to-top in large files.** When removing multiple tests from one file, delete from the bottom of the file upward so line numbers stay valid for subsequent edits.
 4. **Run targeted verification.** Execute only the affected test class filter, not the full suite. Confirm the preserved-by tests pass after removal.
 5. **Record evidence.** Save the coverage mapping and removal rationale in evidence or notepad. Future reviewers need to see why coverage was not lost.
+
+### Required cleanup evidence
+
+Capture a compact table before implementation starts:
+
+| Removed/Merged test | Preserved by                     | Reason          | Unique assertions kept? |
+| ------------------- | -------------------------------- | --------------- | ----------------------- |
+| `testOldName`       | `testNewName` / helper assertion | exact duplicate | yes/no                  |
+
+The table is a guardrail, not documentation polish. If a row cannot identify the surviving assertion path, do not delete that test yet.
+
+### Do / Don't
+
+- Do extract repeated setup after the coverage map identifies stable patterns.
+- Do keep failure, retry, stale-response, cancellation, and idempotency scenarios explicit when those branches carry distinct behavior.
+- Do record the focused filter that proves the cleaned suite still passes.
+- Don't delete tests only because they look similar or because file length is high.
+- Don't use broad rewrites as a substitute for traceable removed → preserved-by mapping.
 
 ### When to stop
 
