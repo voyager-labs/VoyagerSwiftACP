@@ -1,4 +1,4 @@
-import AppKit
+@preconcurrency import AppKit
 import ComposableArchitecture
 import Foundation
 import SwiftUI
@@ -20,7 +20,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case externalFileSystemChanged([String])
 
     @CasePathable
-    enum View: Sendable {
+    public enum View: Sendable {
         case handleKeyCommand(KeyCommand)
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
@@ -30,7 +30,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     }
 
     @CasePathable
-    enum Internal: Sendable {
+    public enum Internal: Sendable {
         case applyNavigationState(ContentPageNavigationRoute)
         case performPendingNavigation(ContentPageNavigationPending)
         case requestNavigation(ContentPageNavigationAction)
@@ -44,8 +44,9 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case resetComposerAfterDirectoryNavigation
     }
 
+    // NSItemProvider가 Sendable을 준수하지 않아 @unchecked 필요. 드래그앤드롭은 @MainActor에서만 수행됨.
     @CasePathable
-    enum Delegate: Sendable {
+    public enum Delegate: @unchecked Sendable {
         case collectionChangesDiscarded
         case composerCollectionSearchSucceeded
         case composerCollectionSearchFailed

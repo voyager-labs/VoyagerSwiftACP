@@ -13,15 +13,13 @@ public struct FileManagerContentState: Equatable {
     var composer: ComposerFeature.State = .init()
     var collection: CollectionFeature.State = .init()
 
-    // Suppresses Swift 6 InferIsolatedConformances @MainActor-isolated Equatable synthesis.
-    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        MainActor.assumeIsolated {
-            lhs.navigation == rhs.navigation
-                && lhs.entryViewLayout == rhs.entryViewLayout
-                && lhs.composer == rhs.composer
-                && lhs.collection == rhs.collection
-                && lhs.resetComposerOnNextDirectoryNavigation == rhs.resetComposerOnNextDirectoryNavigation
-        }
+    // Swift 6 패키지 공개 API 요구사항에 맞춰 Equatable 구현을 명시한다.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.navigation == rhs.navigation
+            && lhs.entryViewLayout == rhs.entryViewLayout
+            && lhs.composer == rhs.composer
+            && lhs.collection == rhs.collection
+            && lhs.resetComposerOnNextDirectoryNavigation == rhs.resetComposerOnNextDirectoryNavigation
     }
 
     // 컴포저 관련
