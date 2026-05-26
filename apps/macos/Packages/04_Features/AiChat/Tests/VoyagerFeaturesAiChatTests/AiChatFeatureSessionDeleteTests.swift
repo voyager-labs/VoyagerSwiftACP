@@ -333,6 +333,95 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
     }
 
     // swiftlint:disable:next function_body_length
+    func testDeleteCurrentCompletedSessionCancelsFinalSnapshotSaveBeforeDelete() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("dddddddd-dddd-dddd-dddd-dddddddddddd"))
+        let requestID = AiChatRequestID(rawValue: makeUUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"))
+        let runID = AiChatRunID(rawValue: makeUUID("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+        let prompt = "Delete after final response"
+        let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: prompt)
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let fixedMs: Int64 = 1_700_000_000_200
+        let saveStarted = LockIsolated(false)
+        let saveCancelled = LockIsolated(false)
+        let completedSaves = LockIsolated<[AiChatSessionSnapshot]>([])
+        let deletedIDs = LockIsolated<[AiChatSessionID]>([])
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            model: selectedHandle,
+            selectedRow: catalogRows[0],
+            promptSummary: prompt
+        )
+        let request = AiChatRequest(
+            context: context,
+            messages: [AiChatMessage(role: .user, content: prompt)]
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [row], selectedSessionID: sessionID),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            transcriptHistory: [AiChatMessage(role: .user, content: prompt)],
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: selectedHandle,
+            executionPhase: .processing(lock)
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    saveStarted.setValue(true)
+                    try await withTaskCancellationHandler {
+                        while true {
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 10_000_000)
+                        }
+                    } onCancel: {
+                        saveCancelled.setValue(true)
+                    }
+                    completedSaves.withValue { $0.append(snapshot) }
+                },
+                deleteSession: { id in deletedIDs.withValue { $0.append(id) } }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "Final answer"),
+            completedAtMs: fixedMs
+        ))))
+        await waitUntil { saveStarted.value }
+
+        await store.send(.deleteSessionTapped(sessionID))
+
+        await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.sessionList.allRows = []
+            state.sessionList.rows = []
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.deletedSessionIDs = [sessionID]
+        }
+        await store.finish()
+
+        XCTAssertEqual(deletedIDs.value, [sessionID])
+        XCTAssertTrue(saveCancelled.value)
+        XCTAssertTrue(completedSaves.value.isEmpty)
+    }
+
+    // swiftlint:disable:next function_body_length
     func testDeleteCurrentProcessingSessionCancelsRequestStartSnapshotBeforeDelete() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("cccccccc-cccc-cccc-cccc-cccccccccccc"))
         let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Processing chat")

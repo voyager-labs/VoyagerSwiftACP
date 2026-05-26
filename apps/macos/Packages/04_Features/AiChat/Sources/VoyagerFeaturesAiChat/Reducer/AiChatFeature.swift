@@ -10,6 +10,7 @@ public struct AiChatFeature {
     enum CancelID: Hashable, Sendable {
         case request
         case requestStartPersistence
+        case requestFinalPersistence
         case restore
         case persistenceRecovery
         case modelList
@@ -118,16 +119,16 @@ public struct AiChatFeature {
                     state.sessionList.selectedSessionID = nil
                     preDeleteEffects.append(.cancel(id: CancelID.restore))
                 }
-                if case let .processing(lock) = state.executionPhase,
-                   state.sessionID == sessionID
-                {
-                    state.lockedModelHandle = nil
-                    state.streamingAssistantDraft = nil
-                    state.executionPhase = .cancelled(lock.recordingTerminal(
-                        at: currentTimestampMs(),
-                        failure: .cancelled,
-                        wasCancelled: true
-                    ))
+                if state.sessionID == sessionID {
+                    if case let .processing(lock) = state.executionPhase {
+                        state.lockedModelHandle = nil
+                        state.streamingAssistantDraft = nil
+                        state.executionPhase = .cancelled(lock.recordingTerminal(
+                            at: currentTimestampMs(),
+                            failure: .cancelled,
+                            wasCancelled: true
+                        ))
+                    }
                     preDeleteEffects.append(cancelRequestLifecycle())
                 }
                 guard !preDeleteEffects.isEmpty else {
@@ -497,7 +498,8 @@ public struct AiChatFeature {
     private func cancelRequestLifecycle() -> Effect<Action> {
         .merge(
             .cancel(id: CancelID.request),
-            .cancel(id: CancelID.requestStartPersistence)
+            .cancel(id: CancelID.requestStartPersistence),
+            .cancel(id: CancelID.requestFinalPersistence)
         )
     }
 

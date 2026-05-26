@@ -70,10 +70,13 @@ extension AiChatFeature {
                 do {
                     try await aiChatSessionPersistenceClient.saveSession(snapshot)
                     await send(.sessionSnapshotSaved(AiChatSessionSummary(snapshot: snapshot)))
+                } catch is CancellationError {
+                    return
                 } catch {
                     await send(.persistenceFailed(finalizedLock, .unknown))
                 }
-            },
+            }
+            .cancellable(id: CancelID.requestFinalPersistence, cancelInFlight: true),
             .cancel(id: CancelID.request),
         )
     }
