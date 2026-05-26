@@ -86,10 +86,13 @@ extension AiChatFeature {
                     requestID: lock.requestID,
                     runID: lock.runID
                 ))
+            } catch is CancellationError {
+                return
             } catch {
                 await send(.sessionSnapshotUpdateFailed(requestID: lock.requestID, runID: lock.runID))
             }
         }
+        .cancellable(id: CancelID.requestStartPersistence, cancelInFlight: true)
     }
 
     private func makeRequestStartSnapshot(state: State, lock: AiChatRequestLock) -> AiChatSessionSnapshot {

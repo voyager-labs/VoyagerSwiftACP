@@ -332,6 +332,102 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         })
     }
 
+    // swiftlint:disable:next function_body_length
+    func testDeleteCurrentProcessingSessionCancelsRequestStartSnapshotBeforeDelete() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("cccccccc-cccc-cccc-cccc-cccccccccccc"))
+        let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Processing chat")
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let fixedMs: Int64 = 1_700_000_000_100
+        let requestStarted = LockIsolated(false)
+        let saveStarted = LockIsolated(false)
+        let saveCancelled = LockIsolated(false)
+        let capturedRequest = LockIsolated<AiChatRequest?>(nil)
+        let deletedIDs = LockIsolated<[AiChatSessionID]>([])
+        let completedSaves = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [row], selectedSessionID: sessionID),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Current docs"),
+            draftText: "Delete while start snapshot is saving",
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: selectedHandle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                capturedRequest.setValue(request)
+                requestStarted.setValue(true)
+                return AsyncStream { _ in }
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    saveStarted.setValue(true)
+                    try await withTaskCancellationHandler {
+                        while true {
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 10_000_000)
+                        }
+                    } onCancel: {
+                        saveCancelled.setValue(true)
+                    }
+                    completedSaves.withValue { $0.append(snapshot) }
+                },
+                deleteSession: { id in deletedIDs.withValue { $0.append(id) } }
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { AIConnectionsFile.empty() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped)
+        await waitUntil { requestStarted.value && saveStarted.value }
+
+        guard let request = capturedRequest.value else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        )
+
+        await store.send(.deleteSessionTapped(sessionID)) { state in
+            state.lockedModelHandle = nil
+            state.streamingAssistantDraft = nil
+            state.executionPhase = .cancelled(lock.recordingTerminal(
+                at: fixedMs,
+                failure: .cancelled,
+                wasCancelled: true
+            ))
+        }
+
+        await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.sessionList.allRows = []
+            state.sessionList.rows = []
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.deletedSessionIDs = [sessionID]
+        }
+        await store.finish()
+
+        XCTAssertEqual(deletedIDs.value, [sessionID])
+        XCTAssertTrue(saveCancelled.value)
+        XCTAssertTrue(completedSaves.value.isEmpty)
+    }
+
     func testRenameSessionSuccessPersistsCustomTitleAndUpdatesFilteredRows() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555"))
         let originalRow = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Original derived title")

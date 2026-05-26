@@ -9,6 +9,121 @@ import XCTest
 final class AiChatFeatureExecutionContinuationTests: XCTestCase {
 
     // swiftlint:disable:next function_body_length
+    func testSwitchingToDifferentSessionCancelsCurrentRequestBeforeRestore() async {
+        let activeSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111221"))
+        let targetSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222221"))
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let fixedMs: Int64 = 1_700_000_001_221
+        let activeRow = AiChatSessionSummary(
+            sessionID: activeSessionID,
+            title: "Active request",
+            preview: "Question A",
+            messageCount: 1,
+            contextTitle: "Docs",
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            createdAtMs: fixedMs - 10,
+            updatedAtMs: fixedMs - 10,
+            status: .active
+        )
+        let targetSnapshot = AiChatSessionSnapshot(
+            sessionID: targetSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Earlier target chat")],
+            updatedAtMs: fixedMs - 1
+        )
+        let targetRow = AiChatSessionSummary(snapshot: targetSnapshot)
+        let requestStarted = LockIsolated(false)
+        let requestCancelled = LockIsolated(false)
+        let capturedRequest = LockIsolated<AiChatRequest?>(nil)
+        let persistence = AiChatSessionPersistenceSpy()
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [activeRow, targetRow], selectedSessionID: activeSessionID),
+            sessionID: activeSessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Current docs"),
+            draftText: "Question A",
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: selectedHandle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                capturedRequest.setValue(request)
+                requestStarted.setValue(true)
+                return AsyncStream { continuation in
+                    continuation.onTermination = { termination in
+                        if case .cancelled = termination {
+                            requestCancelled.setValue(true)
+                        }
+                    }
+                }
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in [] },
+                loadSession: { id in id == targetSessionID ? targetSnapshot : nil },
+                saveSession: { snapshot in await persistence.save(snapshot) },
+                deleteSession: { _ in }
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { AIConnectionsFile.empty() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped)
+        await waitUntil { requestStarted.value }
+
+        guard let request = capturedRequest.value else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        )
+
+        await store.send(.sessionRowTapped(targetSessionID)) { state in
+            state.mode = .sessions
+            state.sessionList.selectedSessionID = targetSessionID
+            state.restoreSessionID = targetSessionID
+            state.lockedModelHandle = nil
+            state.streamingAssistantDraft = nil
+            state.executionPhase = .cancelled(lock.recordingTerminal(
+                at: fixedMs,
+                failure: .cancelled,
+                wasCancelled: true
+            ))
+        }
+
+        await store.receive(.restoreOutcome(
+            requestedSessionID: targetSessionID,
+            .restored(snapshot: targetSnapshot),
+            restoreFailure: nil
+        ))
+        await store.finish()
+
+        XCTAssertTrue(requestCancelled.value)
+        XCTAssertEqual(store.state.sessionID, targetSessionID)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertEqual(store.state.transcriptHistory, targetSnapshot.transcriptHistory)
+    }
+
+    // swiftlint:disable:next function_body_length
     func testInFlightChatContinuesFromSessionHistoryAndUpdatesSessionRow() async {
         let stream = AiChatExecutionStreamDriver()
         let persistence = AiChatSessionPersistenceSpy()
@@ -676,4 +791,20 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello empty context")])
     }
 
+}
+
+@MainActor
+private func waitUntil(
+    _ condition: @MainActor () -> Bool,
+    timeout: TimeInterval = 1.0,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() && Date() < deadline {
+        await Task.yield()
+    }
+    if !condition() {
+        XCTFail("Timed out waiting for condition", file: file, line: line)
+    }
 }

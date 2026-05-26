@@ -9,6 +9,7 @@ public struct AiChatFeature {
 
     enum CancelID: Hashable, Sendable {
         case request
+        case requestStartPersistence
         case restore
         case persistenceRecovery
         case modelList
@@ -80,6 +81,21 @@ public struct AiChatFeature {
 
                 state.mode = .sessions
                 state.restoreSessionID = sessionID
+                if case let .processing(lock) = state.executionPhase,
+                   state.sessionID != sessionID
+                {
+                    state.lockedModelHandle = nil
+                    state.streamingAssistantDraft = nil
+                    state.executionPhase = .cancelled(lock.recordingTerminal(
+                        at: currentTimestampMs(),
+                        failure: .cancelled,
+                        wasCancelled: true
+                    ))
+                    return .concatenate(
+                        cancelRequestLifecycle(),
+                        restoreSession(sessionID: sessionID, state: state)
+                    )
+                }
                 return restoreSession(sessionID: sessionID, state: state)
 
             case let .deleteSessionTapped(sessionID):
@@ -106,7 +122,7 @@ public struct AiChatFeature {
                         failure: .cancelled,
                         wasCancelled: true
                     ))
-                    preDeleteEffects.append(.cancel(id: CancelID.request))
+                    preDeleteEffects.append(cancelRequestLifecycle())
                 }
                 guard !preDeleteEffects.isEmpty else {
                     return deleteSession(sessionID)
@@ -396,7 +412,7 @@ public struct AiChatFeature {
                     failure: .cancelled,
                     wasCancelled: true
                 ))
-                return .cancel(id: CancelID.request)
+                return cancelRequestLifecycle()
 
             case .resetTapped:
                 state.emptyDraftSessionID = nil
@@ -472,9 +488,16 @@ public struct AiChatFeature {
     }
 
 
-    private func cancelAllInFlightWork() -> Effect<Action> {
+    private func cancelRequestLifecycle() -> Effect<Action> {
         .merge(
             .cancel(id: CancelID.request),
+            .cancel(id: CancelID.requestStartPersistence)
+        )
+    }
+
+    private func cancelAllInFlightWork() -> Effect<Action> {
+        .merge(
+            cancelRequestLifecycle(),
             .cancel(id: CancelID.restore),
             .cancel(id: CancelID.persistenceRecovery),
             .cancel(id: CancelID.modelList),
