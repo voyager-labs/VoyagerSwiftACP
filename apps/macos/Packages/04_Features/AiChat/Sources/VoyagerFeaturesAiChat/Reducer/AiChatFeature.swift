@@ -69,9 +69,16 @@ public struct AiChatFeature {
             case let .sessionRowTapped(sessionID):
                 state.emptyDraftSessionID = nil
                 state.sessionList.cancelRenaming()
-                state.mode = .sessions
                 state.sessionList.selectedSessionID = sessionID
+                state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
                 state.sessionList.errorMessage = nil
+
+                if state.executionPhase.isProcessing, state.sessionID == sessionID {
+                    state.mode = .chat
+                    return .none
+                }
+
+                state.mode = .sessions
                 state.restoreSessionID = sessionID
                 return restoreSession(sessionID: sessionID, state: state)
 
@@ -123,6 +130,35 @@ public struct AiChatFeature {
 
             case let .sessionRenameFailed(_, message):
                 state.sessionList.errorMessage = message
+                return .none
+
+            case let .sessionSnapshotUpdated(summary, requestID, runID):
+                guard case let .processing(lock) = state.executionPhase,
+                      lock.requestID == requestID,
+                      lock.runID == runID
+                else { return .none }
+                state.sessionList.replaceRow(summary)
+                state.sessionList.selectedSessionID = summary.sessionID
+                state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+                state.sessionList.errorMessage = nil
+                return .none
+
+            case let .sessionSnapshotUpdateFailed(requestID, runID):
+                guard case let .processing(lock) = state.executionPhase,
+                      lock.requestID == requestID,
+                      lock.runID == runID
+                else { return .none }
+                return .none
+
+            case let .sessionSnapshotSaved(summary):
+                state.sessionList.replaceRow(summary)
+                state.sessionList.selectedSessionID = summary.sessionID
+                if state.mode == .chat, state.sessionID == summary.sessionID {
+                    state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+                } else {
+                    state.sessionList.unreadCompletedSessionIDs.insert(summary.sessionID)
+                }
+                state.sessionList.errorMessage = nil
                 return .none
 
             case .backToSessionsTapped:

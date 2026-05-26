@@ -211,6 +211,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
     func testBackToSessionsSurfacesEmptyDraftDeleteFailure() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555"))
         let summary = makeSessionSummary(sessionID: sessionID, status: .idle)
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
 
         let store = TestStore(initialState: AiChatFeature.State(
             restoreSessionID: sessionID,
@@ -228,7 +229,8 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { _ in },
-                deleteSession: { _ in
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
                     throw AiChatSessionPersistenceClientError.applicationSupportDirectoryUnavailable
                 }
             )
@@ -249,6 +251,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
             state.sessionList.errorMessage = "That chat could not be deleted right now."
         }
 
+        XCTAssertEqual(deletedSessionIDs.value, [sessionID])
         XCTAssertEqual(store.state.sessionList.allRows, [summary])
     }
 

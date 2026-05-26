@@ -442,11 +442,15 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         let expectedSnapshot = AiChatSessionSnapshot(
             sessionID: newSessionID,
             status: .idle,
+            customTitle: nil,
             provider: nil,
             model: nil,
             selectedModelRow: nil,
             selectedThinking: nil,
             transcriptHistory: [],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
             updatedAtMs: 1_700_000_000_000
         )
 

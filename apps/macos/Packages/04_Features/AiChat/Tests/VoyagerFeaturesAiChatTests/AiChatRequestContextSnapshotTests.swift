@@ -890,11 +890,15 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         let expectedNewChatSnapshot = AiChatSessionSnapshot(
             sessionID: newSessionID,
             status: .idle,
+            customTitle: nil,
             provider: nil,
             model: nil,
             selectedModelRow: nil,
             selectedThinking: nil,
             transcriptHistory: [],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
             updatedAtMs: fixedMs
         )
 
@@ -930,7 +934,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         await store.send(.submitTapped)
 
         let request = try XCTUnwrap(stream.requests.first)
-        XCTAssertEqual(savedSnapshots.value, [expectedNewChatSnapshot])
+        XCTAssertEqual(savedSnapshots.value.first, expectedNewChatSnapshot)
+        XCTAssertEqual(savedSnapshots.value.last?.transcriptHistory, [
+            AiChatMessage(role: .user, content: "Ask about the latest selection")
+        ])
+        XCTAssertEqual(savedSnapshots.value.last?.lastRequestContext?.currentContext, updatedContext)
         XCTAssertEqual(request.context.requestContext.currentContext, updatedContext)
         XCTAssertEqual(request.context.currentContext, updatedContext)
         XCTAssertNotEqual(request.context.requestContext.currentContext, originalContext)

@@ -140,13 +140,16 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertEqual(recorded.count, 1)
         XCTAssertEqual(recorded.first?.0.context.model, selectedHandle)
         XCTAssertEqual(recorded.first?.1, credential)
-        XCTAssertEqual(persistence.snapshots.count, 1)
+        XCTAssertEqual(persistence.snapshots.count, 2)
         XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, [
+            AiChatMessage(role: .user, content: "Hello")
+        ])
+        XCTAssertEqual(persistence.snapshots.last?.transcriptHistory, [
             AiChatMessage(role: .user, content: "Hello"),
             AiChatMessage(role: .assistant, content: expectedAssistantMessage)
         ])
-        XCTAssertEqual(persistence.snapshots.first?.lastRequestID, lock.request.context.requestID)
-        XCTAssertEqual(persistence.snapshots.first?.lastRunID, lock.request.context.runID)
+        XCTAssertEqual(persistence.snapshots.last?.lastRequestID, lock.request.context.requestID)
+        XCTAssertEqual(persistence.snapshots.last?.lastRunID, lock.request.context.runID)
         XCTAssertEqual(
             store.state.executionPhase,
             .completed(secondDeltaLock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)),

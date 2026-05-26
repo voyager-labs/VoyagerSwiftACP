@@ -69,6 +69,7 @@ extension AiChatFeature {
             .run { [aiChatSessionPersistenceClient] send in
                 do {
                     try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                    await send(.sessionSnapshotSaved(AiChatSessionSummary(snapshot: snapshot)))
                 } catch {
                     await send(.persistenceFailed(finalizedLock, .unknown))
                 }

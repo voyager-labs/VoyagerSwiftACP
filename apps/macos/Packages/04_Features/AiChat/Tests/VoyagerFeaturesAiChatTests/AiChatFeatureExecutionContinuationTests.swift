@@ -7,6 +7,179 @@ import XCTest
 @MainActor
 // swiftlint:disable:next type_body_length
 final class AiChatFeatureExecutionContinuationTests: XCTestCase {
+
+    // swiftlint:disable:next function_body_length
+    func testInFlightChatContinuesFromSessionHistoryAndUpdatesSessionRow() async {
+        let stream = AiChatExecutionStreamDriver()
+        let persistence = AiChatSessionPersistenceSpy()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111120"))
+        let fixedMs: Int64 = 1_700_000_001_200
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(selectedSessionID: sessionID, unreadCompletedSessionIDs: [sessionID]),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello while browsing history",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in
+                    persistence.snapshots.map(AiChatSessionSummary.init(snapshot:))
+                },
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    await persistence.save(snapshot)
+                },
+                deleteSession: { _ in }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello while browsing history")]
+            state.lockedModelHandle = selectedHandle
+            state.transcriptAutoScrollVersion = 1
+        }
+
+        guard let request = stream.requests.first else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil
+        )
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, sessionID)
+        XCTAssertEqual(store.state.sessionList.unreadCompletedSessionIDs, [])
+        XCTAssertEqual(store.state.sessionList.allRows.first?.sessionID, sessionID)
+        XCTAssertEqual(store.state.sessionList.allRows.first?.title, "Hello while browsing history")
+        XCTAssertEqual(store.state.sessionList.allRows.first?.status, .active)
+
+        let expectedStartSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Hello while browsing history")],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs
+        )
+        let expectedStartSummary = AiChatSessionSummary(snapshot: expectedStartSnapshot)
+        XCTAssertEqual(expectedStartSummary.title, "Hello while browsing history")
+        await store.receive(.sessionSnapshotUpdated(
+            expectedStartSummary,
+            requestID: lock.requestID,
+            runID: lock.runID
+        )) { state in
+            state.sessionList.allRows = [expectedStartSummary]
+            state.sessionList.rows = [expectedStartSummary]
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.send(.sessionsAppeared) { state in
+            state.mode = .sessions
+            state.sessionList.isLoading = true
+            state.sessionList.errorMessage = nil
+        }
+        await store.receive(.sessionListLoaded([expectedStartSummary])) { state in
+            state.sessionList.allRows = [expectedStartSummary]
+            state.sessionList.rows = [expectedStartSummary]
+            state.sessionList.isLoading = false
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+        }
+
+        await store.send(.sessionRowTapped(sessionID)) { state in
+            state.mode = .chat
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.sessionList.errorMessage = nil
+        }
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, sessionID)
+        XCTAssertEqual(store.state.sessionList.unreadCompletedSessionIDs, [])
+        XCTAssertEqual(store.state.sessionList.allRows.first?.sessionID, sessionID)
+        XCTAssertEqual(store.state.sessionList.allRows.first?.title, "Hello while browsing history")
+        XCTAssertEqual(store.state.sessionList.allRows.first?.status, .active)
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+        }
+
+        let finalResponse = AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "Still completed"),
+            completedAtMs: fixedMs
+        )
+        stream.yield(.final(response: finalResponse))
+        stream.finish()
+
+        let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        let expectedTranscript = [
+            AiChatMessage(role: .user, content: "Hello while browsing history"),
+            AiChatMessage(role: .assistant, content: "Still completed")
+        ]
+        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+            state.transcriptHistory = expectedTranscript
+            state.lockedModelHandle = nil
+            state.executionPhase = .completed(finalizedLock)
+            state.transcriptAutoScrollVersion = 2
+        }
+
+        let expectedSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: expectedTranscript,
+            lastRequestID: finalizedLock.requestID,
+            lastRunID: finalizedLock.runID,
+            lastRequestContext: finalizedLock.context.requestContext,
+            updatedAtMs: fixedMs
+        )
+        let expectedSummary = AiChatSessionSummary(snapshot: expectedSnapshot)
+        await store.receive(.sessionSnapshotSaved(expectedSummary)) { state in
+            state.sessionList.allRows = [expectedSummary]
+            state.sessionList.rows = [expectedSummary]
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = [sessionID]
+            state.sessionList.errorMessage = nil
+        }
+
+        XCTAssertEqual(persistence.snapshots.first, expectedStartSnapshot)
+        XCTAssertEqual(persistence.snapshots.last?.transcriptHistory, expectedTranscript)
+    }
+
     // swiftlint:disable:next function_body_length
     func testRegenerateReplacesAssistantWithoutDuplicatingUserTurn() async {
         let stream = AiChatExecutionStreamDriver()
