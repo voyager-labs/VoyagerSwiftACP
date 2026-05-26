@@ -15,6 +15,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     private var cancellables: Set<AnyCancellable> = []
     private var hasStarted = false
     private var hasTornDown = false
+    private var isApplyingSidebarLayout = false
 
     private var sidebarSync: FileManagerSidebarSync
     private var currentIsDark: Bool
@@ -69,15 +70,35 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        sidebarSync.applyInitialLayoutIfNeeded(
-            sidebarVisible: store.sidebar.sidebarVisible,
-            sidebarWidth: store.sidebar.sidebarWidth,
-            splitView: windowSplitView,
-            mainContainerLeading: mainContainerLeading,
-            contentVerticalMargin: Constants.contentVerticalMargin,
-        ) { [weak self] isSidebarVisible in
-            self?.updateTrafficLightVisibility(isSidebarVisible: isSidebarVisible)
+        applySidebarLayout {
+            sidebarSync.applyInitialLayoutIfNeeded(
+                sidebarVisible: store.sidebar.sidebarVisible,
+                sidebarWidth: store.sidebar.sidebarWidth,
+                splitView: windowSplitView,
+                mainContainerLeading: mainContainerLeading,
+                contentVerticalMargin: Constants.contentVerticalMargin,
+            ) { [weak self] isSidebarVisible in
+                self?.updateTrafficLightVisibility(isSidebarVisible: isSidebarVisible)
+            }
         }
+    }
+
+    private func applySidebarState(sidebarVisible: Bool, sidebarWidth: CGFloat) {
+        applySidebarLayout {
+            sidebarSync.applySidebarState(
+                sidebarVisible: sidebarVisible,
+                sidebarWidth: sidebarWidth,
+                layout: makeSidebarSyncLayout(),
+                callbacks: makeSidebarSyncCallbacks(),
+            )
+        }
+    }
+
+    private func applySidebarLayout(_ operation: () -> Void) {
+        guard !isApplyingSidebarLayout else { return }
+        isApplyingSidebarLayout = true
+        defer { isApplyingSidebarLayout = false }
+        operation()
     }
 
     func updateAppearance(isDark: Bool) {
@@ -105,19 +126,9 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         guard !hasStarted else { return }
         hasStarted = true
         observeSidebarState()
-        sidebarSync.applySidebarState(
+        applySidebarState(
             sidebarVisible: store.sidebar.sidebarVisible,
             sidebarWidth: store.sidebar.sidebarWidth,
-            splitView: windowSplitView,
-            sidebarView: sidebarHosting?.view,
-            mainContainerLeading: mainContainerLeading,
-            contentVerticalMargin: Constants.contentVerticalMargin,
-            onSidebarVisibilityChanged: { [weak self] _, width in
-                self?.syncSidebarWidthToStore(width)
-            },
-            onTrafficLightUpdate: { [weak self] isSidebarVisible in
-                self?.updateTrafficLightVisibility(isSidebarVisible: isSidebarVisible)
-            },
         )
         store.send(.onAppear)
     }
@@ -128,19 +139,9 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
             .receive(on: DispatchQueue.main)
             .sink { [weak self] sidebarState in
                 guard let self else { return }
-                sidebarSync.applySidebarState(
+                applySidebarState(
                     sidebarVisible: sidebarState.sidebarVisible,
                     sidebarWidth: sidebarState.sidebarWidth,
-                    splitView: windowSplitView,
-                    sidebarView: sidebarHosting?.view,
-                    mainContainerLeading: mainContainerLeading,
-                    contentVerticalMargin: Constants.contentVerticalMargin,
-                    onSidebarVisibilityChanged: { [weak self] _, width in
-                        self?.syncSidebarWidthToStore(width)
-                    },
-                    onTrafficLightUpdate: { [weak self] isSidebarVisible in
-                        self?.updateTrafficLightVisibility(isSidebarVisible: isSidebarVisible)
-                    },
                 )
             }
             .store(in: &cancellables)
@@ -161,7 +162,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     ) -> CGFloat {
         guard splitView === windowSplitView else { return proposedMinimumPosition }
         switch dividerIndex {
-        case 0: return sidebarSync.sidebarMinWidth
+        case 0: return FileManagerSidebarSync.sidebarMinWidth
         default: return proposedMinimumPosition
         }
     }
@@ -173,7 +174,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     ) -> CGFloat {
         guard splitView === windowSplitView else { return proposedMaximumPosition }
         switch dividerIndex {
-        case 0: return sidebarSync.sidebarMaxWidth
+        case 0: return FileManagerSidebarSync.sidebarMaxWidth
         default: return proposedMaximumPosition
         }
     }
@@ -193,42 +194,49 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     }
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
+        guard !isApplyingSidebarLayout else { return }
         guard let splitView = notification.object as? NSSplitView,
               splitView === windowSplitView,
               let sidebarView = sidebarHosting?.view
         else { return }
 
-        sidebarSync.handleSplitViewResize(
+        let restoreWidth = sidebarSync.handleSplitViewResize(
             splitView: splitView,
             sidebarView: sidebarView,
             storeSidebarVisible: store.sidebar.sidebarVisible,
             syncWidthToStore: { [weak self] width in
                 self?.syncSidebarWidthToStore(width)
             },
-            forceRestoreSidebar: { [weak self] _, width in
-                guard let self else { return }
-                sidebarSync.applySidebarState(
-                    sidebarVisible: true,
-                    sidebarWidth: width,
-                    splitView: windowSplitView,
-                    sidebarView: sidebarHosting?.view,
-                    mainContainerLeading: mainContainerLeading,
-                    contentVerticalMargin: Constants.contentVerticalMargin,
-                    onSidebarVisibilityChanged: { [weak self] _, w in
-                        self?.syncSidebarWidthToStore(w)
-                    },
-                    onTrafficLightUpdate: { [weak self] isSidebarVisible in
-                        self?.updateTrafficLightVisibility(isSidebarVisible: isSidebarVisible)
-                    },
-                )
+        )
+        if let restoreWidth {
+            applySidebarState(sidebarVisible: true, sidebarWidth: restoreWidth)
+        }
+    }
+
+    private func makeSidebarSyncLayout() -> FileManagerSidebarSync.Layout {
+        FileManagerSidebarSync.Layout(
+            splitView: windowSplitView,
+            sidebarView: sidebarHosting?.view,
+            mainContainerLeading: mainContainerLeading,
+            contentVerticalMargin: Constants.contentVerticalMargin,
+        )
+    }
+
+    private func makeSidebarSyncCallbacks() -> FileManagerSidebarSync.Callbacks {
+        FileManagerSidebarSync.Callbacks(
+            onSidebarVisibilityChanged: { [weak self] _, width in
+                self?.syncSidebarWidthToStore(width)
+            },
+            onTrafficLightUpdate: { [weak self] isSidebarVisible in
+                self?.updateTrafficLightVisibility(isSidebarVisible: isSidebarVisible)
             },
         )
     }
 
     private func syncSidebarWidthToStore(_ width: CGFloat) {
         let clampedWidth = max(
-            sidebarSync.sidebarMinWidth,
-            min(sidebarSync.sidebarMaxWidth, width),
+            FileManagerSidebarSync.sidebarMinWidth,
+            min(FileManagerSidebarSync.sidebarMaxWidth, width),
         )
         guard abs(store.sidebar.sidebarWidth - clampedWidth) > 0.5 else { return }
         store.send(.sidebar(.view(.setSidebarWidth(clampedWidth))))

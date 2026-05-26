@@ -163,7 +163,7 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
 
 // MARK: - NSWindowDelegate
 
-extension FileManagerWindowCoordinator {
+public extension FileManagerWindowCoordinator {
     func windowDidBecomeKey(_: Notification) {
         if let onBecameKey {
             onBecameKey(windowID)

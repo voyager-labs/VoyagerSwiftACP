@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+@MainActor
 enum FileManagerWindowSplitLayout {
     struct Components {
         let rootView: NSVisualEffectView
@@ -85,7 +86,9 @@ enum FileManagerWindowSplitLayout {
                 .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
         )
         let sidebarHosting = NSHostingController(rootView: rootView)
-        sidebarHosting.safeAreaRegions = []
+        if #available(macOS 13.3, *) {
+            sidebarHosting.safeAreaRegions = []
+        }
         sidebarHosting.view.wantsLayer = true
         sidebarHosting.view.layer?.backgroundColor = NSColor.clear.cgColor
 
@@ -106,7 +109,9 @@ enum FileManagerWindowSplitLayout {
         mainContainerWrapper.layer?.backgroundColor = NSColor.clear.cgColor
 
         let mainContainerHosting = NSHostingController(rootView: rootView)
-        mainContainerHosting.safeAreaRegions = []
+        if #available(macOS 13.3, *) {
+            mainContainerHosting.safeAreaRegions = []
+        }
         mainContainerHosting.view.wantsLayer = true
         mainContainerHosting.view.layer?.backgroundColor = NSColor.clear.cgColor
         mainContainerHosting.view.translatesAutoresizingMaskIntoConstraints = false
