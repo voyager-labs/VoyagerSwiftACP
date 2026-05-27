@@ -14,7 +14,7 @@ It activates only when the operator explicitly invokes it through the skill syst
 
 - Activate on file-save events, git hooks, CI signals, or timer-based schedules.
 - Self-invoke from within another skill's completion handler unless the operator explicitly requests it.
-- Chain automatically from `test-runner`, `pr-review`, `verify-implementation`, or any other skill.
+- Chain automatically from `pr-review`, `voyager-dev`, or any other Work-phase skill.
 
 **Rationale:** The review → compound workflow reads completed artifacts and synthesizes findings. It must run only after the operator has inspected the completed work and decided a compound review is warranted. Auto-triggering would bypass human judgment about whether the artifact set is ready.
 
@@ -27,7 +27,7 @@ The skill is **post-Work only**.
 It runs only after a Sisyphus Work cycle has completed for the target plan. Completion means:
 
 - All plan TODOs are checked or explicitly closed by the operator.
-- At least one evidence file exists under `.sisyphus/evidence/` matching the target plan's tasks.
+- At least one evidence file exists under `.sisyphus/evidence/{plan_slug}/` matching the target plan's tasks.
 - The operator has confirmed Work is done.
 
 The skill must not:
@@ -63,11 +63,11 @@ The skill is **read-mostly** over `.sisyphus` and **write-only** to approved out
 | Path                                          | Purpose                                                                       |
 | --------------------------------------------- | ----------------------------------------------------------------------------- |
 | `.sisyphus/plans/{plan-name}.md`              | Source plan. Read for compliance checking and scope fidelity. Never modified. |
-| `.sisyphus/evidence/task-{N}-{slug}.*`        | Per-task evidence. Read for finding extraction. Never modified.               |
-| `.sisyphus/evidence/f1-plan-compliance.md`    | Final review facet (stable filename).                                         |
-| `.sisyphus/evidence/f2-code-quality.md`       | Final review facet (stable filename).                                         |
-| `.sisyphus/evidence/f3-manual-qa.md`          | Final review facet (stable filename).                                         |
-| `.sisyphus/evidence/f4-scope-fidelity.md`     | Final review facet (stable filename).                                         |
+| `.sisyphus/evidence/{plan_slug}/task-{N}-*.*`        | Per-task evidence. Read for finding extraction. Never modified.               |
+| `.sisyphus/evidence/{plan_slug}/f1-plan-compliance.md`    | Final review facet (stable filename).                                         |
+| `.sisyphus/evidence/{plan_slug}/f2-code-quality.md`       | Final review facet (stable filename).                                         |
+| `.sisyphus/evidence/{plan_slug}/f3-manual-qa.md`          | Final review facet (stable filename).                                         |
+| `.sisyphus/evidence/{plan_slug}/f4-scope-fidelity.md`     | Final review facet (stable filename).                                         |
 | `.sisyphus/notepads/{plan-name}/learnings.md` | Notepad family member.                                                        |
 | `.sisyphus/notepads/{plan-name}/decisions.md` | Notepad family member.                                                        |
 | `.sisyphus/notepads/{plan-name}/issues.md`    | Notepad family member.                                                        |
@@ -82,12 +82,13 @@ The skill must not modify, rename, move, or delete any file it reads. If a read 
 | `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json` | Run manifest.                 | Created once per run.                          |
 | `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json` | Structured findings.          | Created once per run.                          |
 | `.sisyphus/reviews/{plan_slug}/{run_id}/FAILURE.md`    | Failure artifact.             | Created only on report-and-stop conditions.    |
-| `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`  | Compound learning document.   | Created once per run (not created on failure). |
-| `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md` | Skill/harness draft proposal. | Created once per run (not created on failure). |
+| `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`  | Compound learning document.   | Created once per run (not created on failure). |
+| `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md` | Skill/harness draft proposal. | Created once per run (not created on failure). |
+| `.sisyphus/reviews/{plan_slug}/{run_id}/run-summary.md`    | Run summary.                  | Created once per run (not created on failure). |
 
 The skill must not write anywhere else. Specifically, it must not:
 
-- Write to `.sisyphus/plans/`, `.sisyphus/evidence/`, or `.sisyphus/notepads/`.
+- Write to `.sisyphus/plans/`, `.sisyphus/evidence/{plan_slug}/`, or `.sisyphus/notepads/`.
 - Modify any product source file under `apps/`, `docs/`, or any other source directory.
 - Modify any rule or skill file under `.agents/`.
 - Create or modify files outside the `.sisyphus` directory.
@@ -119,7 +120,7 @@ Before the skill can execute its review + compound synthesis, all of the followi
 | ID  | Precondition                                                                             | Check Method                                                                    | Failure Action                        |
 | --- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------- |
 | P1  | A completed plan exists at `.sisyphus/plans/{plan-name}.md`.                             | File exists and is readable.                                                    | Report-and-stop.                      |
-| P2  | At least one evidence file matching `task-{N}-{slug}.*` exists in `.sisyphus/evidence/`. | Directory listing for files matching the pattern.                               | Report-and-stop.                      |
+| P2  | At least one evidence file matching `task-{N}-*.*` exists in `.sisyphus/evidence/{plan_slug}/`. | Directory listing for files matching the pattern.                               | Report-and-stop.                      |
 | P3  | The plan slug is unambiguous (see `target-selection.md`).                                | Exactly one candidate plan matches, or operator has specified the target.       | Report-and-stop with ambiguity error. |
 | P4  | No conflicting run exists for the same plan_slug and run_id.                             | Check if `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json` already exists. | Report-and-stop.                      |
 | P5  | The target plan has not been modified after Work completion evidence timestamps.         | Compare plan file mtime against the latest evidence file mtime for the plan.    | Report-and-stop (stale lineage).      |
@@ -129,7 +130,7 @@ Before the skill can execute its review + compound synthesis, all of the followi
 
 | ID  | Precondition                                                                | Check Method                                               | On Failure                                 |
 | --- | --------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------ |
-| OP1 | Final review facets (f1-f4) are present.                                    | Check for exact stable filenames in `.sisyphus/evidence/`. | Degrade-gracefully. Note `facets_missing`. |
+| OP1 | Final review facets (f1-f4) are present.                                    | Check for exact stable filenames in `.sisyphus/evidence/{plan_slug}/`. | Degrade-gracefully. Note `facets_missing`. |
 | OP2 | Notepad directory exists for the plan.                                      | Directory listing at `.sisyphus/notepads/{plan_slug}/`.    | Continue with warning in manifest.         |
 | OP3 | At least one of `learnings.md` or `decisions.md` exists in the notepad dir. | File existence check.                                      | Degrade-gracefully. Note in manifest.      |
 

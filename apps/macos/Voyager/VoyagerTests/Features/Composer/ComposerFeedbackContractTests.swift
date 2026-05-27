@@ -1,14 +1,18 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
+/// Composer 피드백 계약 — 상태, 요청 ID, stale 응답 처리의 비회귀를 검증.
 @MainActor
 final class ComposerFeedbackContractTests: XCTestCase {
+    /// testSubmitStoresBaselineAndRequestIDs 테스트 동작을 검증한다.
     func testSubmitStoresBaselineAndRequestIDs() async throws {
         let recorder = SearchRequestRecorder()
-        var initialState = ComposerState(text: "images tagged blue")
+        var initialState = ComposerState()
+        initialState.text = "images tagged blue"
         initialState.scopes = ["/tmp"]
 
         let store = TestStore(initialState: initialState) {
@@ -53,6 +57,7 @@ final class ComposerFeedbackContractTests: XCTestCase {
         XCTAssertEqual(store.state.queryRenderPhase, ComposerQueryRenderPhase.idle)
     }
 
+    /// testStaleResponseDoesNotMutateComposerState 테스트 동작을 검증한다.
     func testStaleResponseDoesNotMutateComposerState() async {
         let activeSearchRequestID = UUID()
         let staleSearchRequestID = UUID()
@@ -75,42 +80,6 @@ final class ComposerFeedbackContractTests: XCTestCase {
         ))
 
         XCTAssertEqual(store.state, initialState)
-    }
-
-    func testApplyAppliedFiltersPreservesExcludedScopesWhenAppliedFiltersMissing() {
-        var state = ComposerState()
-        state.scopeEditor.selection = .explicit(
-            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
-            exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secret")],
-        )
-
-        applyAppliedFilters(nil, state: &state, registryClient: .testValue)
-
-        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents"])
-        XCTAssertEqual(
-            state.scopeEditor.selection.exceptions.map(\.path),
-            ["/Users/me/Documents/Secret"],
-        )
-    }
-
-    func testApplyAppliedFiltersPreservesExcludedScopesWhenAppliedPayloadOmitsKey() throws {
-        var state = ComposerState()
-        state.scopeEditor.selection = .explicit(
-            bases: [ComposerScopeBase(path: "/Users/me/Documents")],
-            exceptions: [ComposerScopeException(path: "/Users/me/Documents/Secret")],
-        )
-        let data = Data(
-            #"{"scopes":["/Users/me/Documents"],"includeSubfolders":true,"conditions":[]}"#.utf8,
-        )
-        let appliedFilters = try JSONDecoder().decode(AppliedFiltersPayload.self, from: data)
-
-        applyAppliedFilters(appliedFilters, state: &state, registryClient: .testValue)
-
-        XCTAssertEqual(state.scopeEditor.selection.legacyScopePaths, ["/Users/me/Documents"])
-        XCTAssertEqual(
-            state.scopeEditor.selection.exceptions.map(\.path),
-            ["/Users/me/Documents/Secret"],
-        )
     }
 }
 

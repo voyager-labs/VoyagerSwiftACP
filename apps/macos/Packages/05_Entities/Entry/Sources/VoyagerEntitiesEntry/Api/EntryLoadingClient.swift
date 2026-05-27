@@ -3,6 +3,7 @@ import CoreServices
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+import VoyagerEntitiesTag
 import VoyagerShared
 
 public struct EntryLoadingClient: Sendable {
@@ -77,24 +78,14 @@ public struct EntryLoadingClient: Sendable {
 
 extension EntryLoadingClient: DependencyKey {
     public nonisolated static var liveValue: EntryLoadingClient {
-        let recentSearchClient = RecentSearchClient.liveValue
-        let tagSearchClient = TagSearchClient.liveValue
-
-        return EntryLoadingClient(
+        EntryLoadingClient(
             loadItems: EntryLoadingLive.loadItems,
             loadComputerItems: EntryLoadingLive.loadComputerItems,
             loadRecentItems: { showHidden, _ in
-                await EntryLoadingLive.loadRecentItemsViaSearch(
-                    showHidden: showHidden,
-                    recentSearchClient: recentSearchClient,
-                )
+                await EntryLoadingLive.loadRecentItemsViaSearch(showHidden: showHidden)
             },
             loadFilesWithTag: { tag, showHidden, _ in
-                await EntryLoadingLive.loadFilesWithTagViaSearch(
-                    tag: tag,
-                    showHidden: showHidden,
-                    tagSearchClient: tagSearchClient,
-                )
+                await EntryLoadingLive.loadFilesWithTagViaSearch(tag: tag, showHidden: showHidden)
             },
             fileExists: EntryLoadingLive.fileExists,
             fileExistsAtPath: EntryLoadingLive.fileExistsAtPath,
@@ -390,11 +381,13 @@ enum EntryLoadingLive {
 
     nonisolated static func loadRecentItemsViaSearch(
         showHidden: Bool,
-        recentSearchClient: RecentSearchClient,
+        search: @Sendable @escaping (RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload = {
+            try await SearchXPCTransport.recentSearch($0)
+        },
     ) async -> [EntryModel] {
         do {
             let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
-            let response = try await recentSearchClient.search(
+            let response = try await search(
                 .init(
                     scopeMode: .allIndexed,
                     scopes: [],
@@ -415,11 +408,13 @@ enum EntryLoadingLive {
     nonisolated static func loadFilesWithTagViaSearch(
         tag: String,
         showHidden: Bool,
-        tagSearchClient: TagSearchClient,
+        search: @Sendable @escaping (TagSearchRequestPayload) async throws -> TagSearchResponsePayload = {
+            try await SearchXPCTransport.tagSearch($0)
+        },
     ) async -> [EntryModel] {
         do {
             let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
-            let response = try await tagSearchClient.search(
+            let response = try await search(
                 .init(
                     requestedTag: tag,
                     scopeMode: .allIndexed,

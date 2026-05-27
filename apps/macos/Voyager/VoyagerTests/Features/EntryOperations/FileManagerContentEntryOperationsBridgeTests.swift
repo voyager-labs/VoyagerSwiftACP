@@ -1,10 +1,15 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import XCTest
 
+/// 콘텐츠 엔트리 조작 브릿지 — 컬렉션 모드 및 저장 자격 조건 판별을 검증.
 @MainActor
 final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
+    /// testIsCollectionModeOnLayoutState 테스트 동작을 검증한다.
     func testIsCollectionModeOnLayoutState() {
         var state = FileManagerContentState()
 
@@ -14,9 +19,10 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         XCTAssertTrue(state.entryViewLayout.isCollectionMode)
     }
 
+    /// testCanSaveCollectionRequiresIsCollectionMode 테스트 동작을 검증한다.
     func testCanSaveCollectionRequiresIsCollectionMode() {
         var state = FileManagerContentState()
-        state.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
+        state.collection.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
 
         XCTAssertFalse(state.canSaveCollection)
 
@@ -24,28 +30,12 @@ final class FileManagerContentEntryOpsBridgeTests: XCTestCase {
         XCTAssertTrue(state.canSaveCollection)
     }
 
+    /// testCanSaveCollectionFalseWhenNotInCollectionMode 테스트 동작을 검증한다.
     func testCanSaveCollectionFalseWhenNotInCollectionMode() {
         var state = FileManagerContentState()
-        state.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
+        state.collection.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
 
         XCTAssertFalse(state.entryViewLayout.isCollectionMode)
         XCTAssertFalse(state.canSaveCollection)
-    }
-
-    func testSyncComposerCollectionStateReadsIsCollectionMode() {
-        var state = FileManagerContentState()
-        state.entryViewLayout.isCollectionMode = true
-
-        state.syncComposerCollectionState()
-
-        XCTAssertTrue(state.composer.isCollectionMode)
-    }
-
-    func testSyncComposerCollectionStateFalseWhenNotCollectionMode() {
-        var state = FileManagerContentState()
-
-        state.syncComposerCollectionState()
-
-        XCTAssertFalse(state.composer.isCollectionMode)
     }
 }

@@ -1,11 +1,14 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+/// 컬렉션 파일 호환성 — 스키마/스냅샷 혼합 시 폴백 정책을 검증.
 @MainActor
 final class CollectionFileCompatibilityTests: XCTestCase {
-    private let fileManager = FileManager.default
+    let fileManager = FileManager.default
 
     func testCollectionFileCompatibilityMatrix() async throws {
         for matrixCase in makeCompatibilityCases() {
@@ -21,9 +24,9 @@ final class CollectionFileCompatibilityTests: XCTestCase {
                 data,
                 containerFormat: matrixCase.containerFormat,
             )
-            let loaded = try await CollectionFileClient.liveValue.load(url)
+            let loadResult = try await CollectionFileClient.liveValue.load(url)
 
-            matrixCase.assertLoaded(result, loaded)
+            matrixCase.assertLoaded(result, loadResult.file)
         }
     }
 
@@ -244,8 +247,9 @@ final class CollectionFileCompatibilityTests: XCTestCase {
 
         let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
 
-        XCTAssertEqual(result.compatibility.sourceSchemaVersion, .init(major: 1, minor: 0))
-        XCTAssertEqual(result.file.schemaVersion, .init(major: 1, minor: 0))
+        let expectedVersion: SchemaVersion = .init(major: 1, minor: 0)
+        XCTAssertEqual(result.compatibility.sourceSchemaVersion, expectedVersion)
+        XCTAssertEqual(result.file.schemaVersion, expectedVersion)
         XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1])
         XCTAssertFalse(result.compatibility.usedDefinitionFallback)
         XCTAssertFalse(result.compatibility.writeBackAllowed)
@@ -261,14 +265,15 @@ final class CollectionFileCompatibilityTests: XCTestCase {
 
         let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
 
-        XCTAssertEqual(result.compatibility.sourceSchemaVersion, .init(major: 1, minor: 0))
-        XCTAssertEqual(result.file.schemaVersion, .init(major: 1, minor: 0))
+        let expectedVersion: SchemaVersion = .init(major: 1, minor: 0)
+        XCTAssertEqual(result.compatibility.sourceSchemaVersion, expectedVersion)
+        XCTAssertEqual(result.file.schemaVersion, expectedVersion)
         XCTAssertEqual(result.compatibility.migrationPath, [.definitionOnlyV1])
         XCTAssertFalse(result.compatibility.writeBackAllowed)
         XCTAssertEqual(result.compatibility.writeBackReason, .blockedLegacyVersionUpgrade)
     }
 
-    private func makeBinaryPlist(_ value: some Encodable) throws -> Data {
+    func makeBinaryPlist(_ value: some Encodable) throws -> Data {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         return try encoder.encode(value)

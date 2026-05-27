@@ -1,5 +1,7 @@
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerShared
+import XCTest
 
 // swiftlint:disable multiline_arguments
 
@@ -254,7 +256,7 @@ extension CollectionFileCompatibilityTests {
 
     func makeInvalidSnapshotPayload() -> InvalidSnapshotPayload {
         InvalidSnapshotPayload(
-            schemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+            schemaVersion: 2,
             id: "corrupt-snapshot",
             name: "Corrupt Snapshot",
             createdAt: .distantPast,
@@ -275,7 +277,7 @@ extension CollectionFileCompatibilityTests {
 
     func makeSnapshotOnlyPayload() -> SnapshotOnlyPayload {
         SnapshotOnlyPayload(
-            schemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+            schemaVersion: 2,
             id: "snapshot-only",
             name: "Snapshot Only",
             createdAt: .distantPast,
@@ -290,7 +292,7 @@ extension CollectionFileCompatibilityTests {
 
     func makeSnapshotMetaOnlyPayload() -> SnapshotMetaOnlyPayload {
         SnapshotMetaOnlyPayload(
-            schemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+            schemaVersion: 2,
             id: "snapshot-meta-only",
             name: "Snapshot Meta Only",
             createdAt: .distantPast,

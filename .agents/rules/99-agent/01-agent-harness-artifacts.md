@@ -1,14 +1,9 @@
 ---
-alwaysApply: true
 description: "Keep local agent harness runtime artifacts visible but untracked."
+alwaysApply: true
 ---
 
 # Agent Harness Artifacts
-
-## Applies when
-
-- All tasks that run agent tooling in this repository.
-- Especially before staging, committing, or reviewing `git status`.
 
 ## Must
 

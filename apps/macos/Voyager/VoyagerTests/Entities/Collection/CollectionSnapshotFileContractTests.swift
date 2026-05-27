@@ -1,8 +1,11 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+/// 컬렉션 스냅샷 파일 계약 — 저장/로드, 스키마 버전, 인코딩 엣지 케이스를 검증.
 @MainActor
 final class CollectionSnapshotFileContractTests: XCTestCase {
     private let fileManager = FileManager.default
@@ -102,9 +105,10 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
-        await XCTAssertThrowsErrorAsync(
-            try CollectionFileClient.liveValue.load(url),
-        )
+        do {
+            _ = try await CollectionFileClient.liveValue.load(url)
+            XCTFail("Expected error to be thrown")
+        } catch {}
     }
 
     func testEncodeDecodeV2SnapshotFileRoundTrips() throws {
@@ -209,9 +213,10 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         XCTAssertNil(decoded.snapshot)
         XCTAssertNil(decoded.snapshotMeta)
-        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertEqual(decoded.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
     }
 
+    /// testDecodeDropsMalformedSnapshotInsteadOfFailingWholeFile 테스트 동작을 검증한다.
     func testDecodeDropsMalformedSnapshotInsteadOfFailingWholeFile() throws {
         struct InvalidFile: Codable {
             let schemaVersion: Int
@@ -254,6 +259,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertNil(decoded.snapshotMeta)
     }
 
+    /// testLoadMalformedSnapshotPackageFallsBackToDefinitionOnly 테스트 동작을 검증한다.
     func testLoadMalformedSnapshotPackageFallsBackToDefinitionOnly() async throws {
         struct InvalidFile: Codable {
             let schemaVersion: Int
@@ -302,6 +308,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertNil(loaded.file.snapshotMeta)
     }
 
+    /// testSaveNormalizesLegacyFileToCurrentSchemaVersion 테스트 동작을 검증한다.
     func testSaveNormalizesLegacyFileToCurrentSchemaVersion() async throws {
         let url = makeTemporaryCollectionURL(name: "normalize-save")
         defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
@@ -327,6 +334,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
     }
 
+    /// testSavePreservesCurrentSchemaVersionWithoutAdditionalMigration 테스트 동작을 검증한다.
     func testSavePreservesCurrentSchemaVersionWithoutAdditionalMigration() async throws {
         let url = makeTemporaryCollectionURL(name: "preserve-current-save")
         defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }

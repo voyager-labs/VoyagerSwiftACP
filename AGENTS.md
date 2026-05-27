@@ -5,35 +5,46 @@ This repository separates agent-facing instructions from human-facing documentat
 - **For AI Agents:** All coding standards, rules, and workflows are located in the `.agents/` directory (specifically `.agents/rules/`).
 - **Local Agent Artifacts:** Runtime directories such as `.omx/` and `.sisyphus/` are local-only and must never be staged or committed. See `.agents/rules/99-agent/01-agent-harness-artifacts.md`.
 - **For Humans:** Product and architecture documentation is located in `docs/index.md`.
+- **Product docs:** `docs/canonical/` — canonical Voyager product documentation (git submodule, `voyager-labs/voyager-documentation`).
 
-## Review guidelines
+## Onboarding
 
-This project uses AI-powered PR review. The reviewer is NOT a linter, formatter, or CI substitute. It should behave like a senior engineer who knows this project well.
+clone 후 스크립트 하나로 개발 환경을 구성한다:
 
-### Output language
+```bash
+bash scripts/setup.sh
+```
 
-- All review comments and explanations MUST be written in Korean (한국어).
-- Code symbols, file paths, API names, and commands remain in English.
+이 스크립트는 `just` 설치 → `just setup` 실행을 자동 처리한다.
 
-### Always check
+### 수동
 
-- Whether the change reuses existing functions, utilities, types, or patterns that already exist in the codebase instead of introducing new ones.
-- Whether the change respects the project's layer boundaries, ownership model, and FSD dependency direction.
-- Whether responsibilities are placed in the correct owner (reducer vs view vs service vs infra).
-- Whether the change introduces duplicate or near-duplicate abstractions when extending an existing one would suffice.
-- Whether failure, cancellation, teardown, and rollback paths are handled.
-- Whether the change follows established project conventions in both letter and intent — not just syntactically but structurally.
+```bash
+brew install just
+just setup
+```
 
-### Skip
+### 명령 목록
 
-- Formatting, import ordering, naming nits, or anything a linter/formatter already catches.
-- Type errors, build breaks, or test failures that CI would surface immediately.
-- Generic style observations that do not imply a correctness, maintenance, or architectural risk.
-- Low-confidence or speculative suggestions without concrete evidence from the diff or surrounding code.
+```bash
+just -l
+```
 
-### Severity and noise policy
+## Protected local files
 
-- Leave only P0 (blocker) and P1 (high-confidence structural or runtime risk) findings.
-- P2/nit-level comments are prohibited unless they directly imply correctness, data-loss, security, or architectural drift.
-- When several local symptoms share one root cause, leave ONE consolidated finding at the strongest representative location — do not scatter related comments.
-- Each comment must explain WHY this matters for this specific project, not just what looks off.
+- Treat `opencode.json` as a user-managed local file.
+- Never automatically reset, revert, or discard changes in `opencode.json`.
+- Never include `opencode.json` in commits unless the user explicitly asks for it.
+
+## Commit attribution
+
+- Agents must **never** add `Co-authored-by: Sisyphus`, `Co-authored-by: Sisyphus <...>`, `Ultraworked with Sisyphus`, or any similar AI/Sisyphus co-author trailer to commit messages.
+- This applies to commit subjects, bodies, and footers alike.
+- The only exception is when the user explicitly requests such a trailer.
+
+## PR review rules
+
+Codex and other agents read `AGENTS.md`, but PR review policy must stay centralized in Greptile rules.
+
+- For AI-powered PR reviews, read and follow `.greptile/rules.md`.
+- Do not duplicate PR review language, severity, noise, architecture, or reuse rules in this file.

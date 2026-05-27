@@ -4,10 +4,11 @@ import Foundation
 import Logging
 import SwiftUI
 import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
-import VoyagerShared
 
 @main
 struct VoyagerApp: App {
@@ -23,6 +24,23 @@ struct VoyagerApp: App {
         appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
         } withDependencies: {
+            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
+                let appLevel: MetricLogLevel = switch level {
+                case .trace: .trace
+                case .debug: .debug
+                case .info: .info
+                case .warn: .warn
+                case .error: .error
+                }
+                MainActor.assumeIsolated {
+                    VoyagerSentryMetricLogger.logMetric(
+                        name,
+                        value: value,
+                        tags: tags,
+                        level: appLevel,
+                    )
+                }
+            }
             $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { request in
                 await MainActor.run {
                     let resolvedPath: String = switch request {
@@ -42,6 +60,32 @@ struct VoyagerApp: App {
                     resolveFileManagerUndoManager(windowID: windowID)
                 }
             })
+            $0.metricsClient = .init(
+                logMetric: { name, value, tags in
+                    Task { @MainActor in
+                        VoyagerSentryMetricLogger.logMetric(name, value: value, tags: tags)
+                    }
+                },
+                logDAUNavigation: { kind in
+                    Task { @MainActor in
+                        switch kind {
+                        case .folder: VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
+                        case .collection: VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
+                        }
+                    }
+                },
+                logDAUEntryAction: { actionKind, entryKind in
+                    let sentryActionKind = DAUEntryActionKind(rawValue: actionKind.rawValue)
+                    let sentryEntryKind = DAUEntryKind(rawValue: entryKind.rawValue)
+                    Task { @MainActor in
+                        guard let sentryActionKind, let sentryEntryKind else { return }
+                        VoyagerSentryMetricLogger.logDAUEntryAction(
+                            actionKind: sentryActionKind,
+                            entryKind: sentryEntryKind,
+                        )
+                    }
+                },
+            )
         }
 
         configureFileManagerWindowClientLive(

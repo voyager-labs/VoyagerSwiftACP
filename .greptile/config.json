@@ -1,0 +1,121 @@
+{
+  "strictness": 3,
+  "commentTypes": [
+    "logic",
+    "style"
+  ],
+  "triggerOnUpdates": true,
+  "statusCheck": true,
+  "updateExistingSummaryComment": true,
+  "includeConfidenceScore": true,
+  "summarySection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "issuesTableSection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": true
+  },
+  "ignorePatterns": "docs/canonical/**",
+  "instructions": "Review this repository like a senior Voyager engineer, not like a linter. Prioritize repository architecture fit, ownership boundaries, reuse of existing modules/utilities, duplicate abstraction detection, lifecycle/cancellation correctness, and FSD/TCA dependency direction. All review comments and explanations must be written in Korean. Keep code symbols, file paths, type names, API names, and commands in English. Do not comment on formatting, import ordering, naming nits, obvious type errors, or issues that CI/lint/formatters would catch. Leave only high-confidence P0/P1 findings with concrete evidence from the diff and surrounding code.",
+  "rules": [
+    {
+      "id": "review-output-korean",
+      "rule": "All review comments, summaries, and explanations must be written in Korean. Keep code symbols, file paths, type names, API names, and commands in English.",
+      "severity": "high"
+    },
+    {
+      "id": "no-lint-or-nit-comments",
+      "rule": "Do not leave comments about formatting, import ordering, naming nits, trivial style preferences, obvious type errors, or build failures that CI would surface. Only comment when there is a concrete correctness, architectural, data-loss, security, lifecycle, or maintainability risk.",
+      "severity": "high"
+    },
+    {
+      "id": "reuse-before-new-abstraction",
+      "rule": "Before accepting a new helper, reducer, service, model, client, view, or utility, check whether an existing function, type, module, dependency client, or pattern in this repository already solves the same problem. Flag duplicate or near-duplicate abstractions when the existing one could be extended or reused.",
+      "severity": "high"
+    },
+    {
+      "id": "single-canonical-owner",
+      "rule": "Each cross-layer concern must have one canonical owner. Flag changes that split cleanup, teardown, cancellation, persistence, command routing, or state ownership across multiple reducers, views, services, callbacks, or lifecycle hooks without a clear owner.",
+      "severity": "high"
+    },
+    {
+      "id": "fsd-dependency-direction",
+      "rule": "Respect Voyager's FSD dependency direction: App -> Pages -> Widgets/Features/Entities/Shared; Widgets -> Features/Entities/Shared; Features -> Entities/Shared; Entities -> Shared. Flag reverse imports, same-layer slice coupling, or lower layers depending on page/app-specific types.",
+      "scope": [
+        "apps/macos/Voyager/**/*.swift",
+        "apps/macos/Packages/**/*.swift"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "tca-view-reducer-boundary",
+      "rule": "SwiftUI views should render state and send user/lifecycle actions. Side effects, filesystem/network/system SDK calls, long-lived observation, command orchestration, and cancellation ownership should live in reducers, coordinators, or dependency clients. Flag direct side effects or ownership leakage in Ui files.",
+      "scope": [
+        "apps/macos/**/*.swift"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "dependency-client-boundary",
+      "rule": "External services, filesystem access, network calls, provider snapshots, credentials, and system APIs must be behind dependency clients or explicit coordinator boundaries. Flag new global singletons, direct service construction, or untestable access from reducers/views.",
+      "scope": [
+        "apps/macos/**/*.swift"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "coordinator-physical-state-sync",
+      "rule": "For AppKit/SwiftUI coordinators, distinguish logical reducer intent from physical AppKit state. If UI state depends on actual view hierarchy, window focus, split-view mount, first responder, or delegate state, verify the coordinator owns that synchronization and sends semantic actions back to the reducer.",
+      "scope": [
+        "apps/macos/**/Lib/**/*Coordinator.swift",
+        "apps/macos/**/Lib/**/*.swift"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "cancellation-and-late-events",
+      "rule": "Async effects and callback chains must handle cancellation, teardown, late events, and rollback paths. Flag flows where closing/resetting a feature can be undone by an in-flight effect, delayed callback, or stale resolved context.",
+      "scope": [
+        "apps/macos/**/*.swift"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "file-backed-storage-invariants",
+      "rule": "When changing file-backed credential, provider, OAuth, settings, or token storage, verify atomic replace writes, file locking when concurrent access is possible, 0600 permissions for sensitive files, and corrupted-file quarantine instead of silent overwrite or discard.",
+      "scope": [
+        "apps/macos/**/*.swift"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "agent-local-artifacts",
+      "rule": "Flag any tracked or staged local agent artifacts under .omx/** or .sisyphus/**. These are local-only runtime artifacts and must not be included in PRs.",
+      "scope": [
+        ".omx/**",
+        ".sisyphus/**"
+      ],
+      "severity": "high"
+    }
+  ],
+  "disabledRules": [],
+  "excludeBranches": [
+    "revert-*",
+    "*revert-*",
+    "revert/**",
+    "**/revert-*",
+    "**/*revert-*",
+    "**/revert/**",
+    "automation/voyager-docs-sync-*"
+  ],
+  "disabledLabels": [
+    "skip-greptile",
+    "no-greptile",
+    "duplicate-diff",
+    "duplicate-pr"
+  ],
+  "ignoreKeywords": "This reverts commit\nskip-greptile\nno-greptile\nduplicate-diff\nduplicate-pr"
+}

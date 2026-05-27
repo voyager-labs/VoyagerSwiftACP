@@ -1,10 +1,13 @@
 import Foundation
 @testable import Voyager
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
+/// Composer 쿼리 피드백 정책 — 중복 쿼리 no-op 및 실패 코드 매핑을 검증.
 @MainActor
 final class ComposerQueryFeedbackPolicyTests: XCTestCase {
+    /// testIdenticalBaselineAndAppliedFiltersAreNoOp 테스트 동작을 검증한다.
     func testIdenticalBaselineAndAppliedFiltersAreNoOp() {
         let baseline = VoyagerShared.SearchFiltersPayload(
             scopes: ["/tmp"],
@@ -31,6 +34,7 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
         XCTAssertTrue(ComposerQueryFeedbackPolicy.isNoOp(baseline: baseline, appliedFilters: applied))
     }
 
+    /// testFailureCodesMapToDistinctMessages 테스트 동작을 검증한다.
     func testFailureCodesMapToDistinctMessages() {
         XCTAssertEqual(
             ComposerQueryFeedbackPolicy

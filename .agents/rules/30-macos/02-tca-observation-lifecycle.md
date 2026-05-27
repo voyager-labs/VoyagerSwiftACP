@@ -1,15 +1,9 @@
 ---
-globs: apps/macos/**/*.swift
 description: "Reducer-owned external observation lifecycle for SwiftUI + TCA views."
+globs: "apps/macos/**/*.swift"
 ---
 
 # TCA Observation Lifecycle
-
-## Applies when
-
-- Moving system/app observation out of SwiftUI views under `apps/macos/**`.
-- Editing code that reacts to `NotificationCenter`, async streams, timers, menu tracking, app lifecycle, pasteboard change counts, or similar external signals.
-- A view starts to accumulate `@State`, `.onReceive`, singleton calls, or observer tokens for non-visual behavior.
 
 ## Must
 
@@ -20,7 +14,7 @@ description: "Reducer-owned external observation lifecycle for SwiftUI + TCA vie
 - Keep views limited to rendering, UI-only local state, and sending lifecycle/user actions.
 - Translate raw external events into semantic feature actions before mutating state or forwarding to child reducers.
 - Add or update focused reducer tests for observation start, cancellation, and event routing.
-- For migration-heavy refactors, load `.agents/skills/voyager-dev/SKILL.md` and apply its reducer-owned observation playbook.
+- For migration-heavy refactors, load the `voyager-dev` orchestrator entry at `.agents/skills/voyager-dev/orchestrator/SKILL.md` and apply its reducer-owned observation playbook.
 
 ## Must not
 

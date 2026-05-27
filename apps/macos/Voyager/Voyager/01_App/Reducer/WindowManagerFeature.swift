@@ -1,7 +1,10 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
+import VoyagerWidgetsEntryViewLayout
 
 typealias FileManagerWindowFeature = FileManagerFeature
 
@@ -44,9 +47,10 @@ struct WindowManagerFeature {
 
             case let .lifecycle(.applyAppPreferences(preferences)):
                 state.appPreferences = preferences
+                let packagePreferences = preferences.toPackageState()
                 return .merge(
                     state.windows.ids.map { id in
-                        .send(.windows(.element(id: id, action: .window(.applyAppPreferences(preferences)))))
+                        .send(.windows(.element(id: id, action: .window(.applyAppPreferences(packagePreferences)))))
                     },
                 )
 
@@ -172,52 +176,14 @@ struct WindowManagerFeature {
     private func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
         case let .file(.newWindow(path)):
-            if onboardingWindowClient.showIfNeeded() {
-                return .none
+            return openWindowSession(path: path, state: &state) { id in
+                await fileManagerWindowClient.open(id)
             }
-            let windowSession = makeWindowSession(path: path)
-
-            state.windows.append(windowSession)
-            state.focusedWindowID = windowSession.id
-
-            return .concatenate(
-                .send(.windows(.element(
-                    id: windowSession.id,
-                    action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowSession
-                            .id)))))),
-                ))),
-                .send(.windows(.element(
-                    id: windowSession.id,
-                    action: .window(.applyAppPreferences(state.appPreferences)),
-                ))),
-                .run { [id = windowSession.id] _ in
-                    await fileManagerWindowClient.open(id)
-                },
-            )
 
         case let .file(.newTab(path)):
-            if onboardingWindowClient.showIfNeeded() {
-                return .none
+            return openWindowSession(path: path, state: &state) { id in
+                await fileManagerWindowClient.openTab(id)
             }
-            let windowSession = makeWindowSession(path: path)
-
-            state.windows.append(windowSession)
-            state.focusedWindowID = windowSession.id
-
-            return .concatenate(
-                .send(.windows(.element(
-                    id: windowSession.id,
-                    action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowSession
-                            .id)))))),
-                ))),
-                .send(.windows(.element(
-                    id: windowSession.id,
-                    action: .window(.applyAppPreferences(state.appPreferences)),
-                ))),
-                .run { [id = windowSession.id] _ in
-                    await fileManagerWindowClient.openTab(id)
-                },
-            )
 
         case .window(.closeFocusedWindow):
             guard let id = state.focusedWindowID else { return .none }
@@ -235,6 +201,45 @@ struct WindowManagerFeature {
         default:
             return .none
         }
+    }
+
+    private func openWindowSession(
+        path: String?,
+        state: inout State,
+        open: @escaping @Sendable (UUID) async -> Void,
+    ) -> Effect<Action> {
+        if onboardingWindowClient.showIfNeeded() {
+            return .none
+        }
+        let windowSession = makeWindowSession(path: path)
+
+        state.windows.append(windowSession)
+        state.focusedWindowID = windowSession.id
+
+        return .concatenate(
+            windowIDChangedEffect(for: windowSession.id),
+            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
+            .run { [id = windowSession.id] _ in
+                await open(id)
+            },
+        )
+    }
+
+    private func windowIDChangedEffect(for id: UUID) -> Effect<Action> {
+        .send(.windows(.element(
+            id: id,
+            action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(id)))))),
+        )))
+    }
+
+    private func appPreferencesEffect(
+        for id: UUID,
+        preferences: AppPreferencesFeature.State,
+    ) -> Effect<Action> {
+        .send(.windows(.element(
+            id: id,
+            action: .window(.applyAppPreferences(preferences.toPackageState())),
+        )))
     }
 
     private func sendCommandToFocusedWindow(

@@ -1,10 +1,15 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
+@testable import VoyagerFeaturesComposer
 import XCTest
 
+/// ValuePicker 기능 — 태그 토큰 중복 제거, 단위 선택/변환 상태를 검증.
 @MainActor
 final class ValuePickerFeatureTests: XCTestCase {
+    /// testPrepareForTagNamesLoadsDeduplicatedFinderTags 테스트 동작을 검증한다.
     func testPrepareForTagNamesLoadsDeduplicatedFinderTags() async {
         let store = makeStore(
             favoriteTags: [
@@ -46,6 +51,7 @@ final class ValuePickerFeatureTests: XCTestCase {
         }
     }
 
+    /// testAppendTokenDeduplicatesCaseInsensitively 테스트 동작을 검증한다.
     func testAppendTokenDeduplicatesCaseInsensitively() async {
         let store = makeStore()
 
@@ -86,6 +92,7 @@ final class ValuePickerFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.values, ["Work", "Personal"])
     }
 
+    /// testDeduplicatedTokenValuesTrimsAndDeduplicates 테스트 동작을 검증한다.
     func testDeduplicatedTokenValuesTrimsAndDeduplicates() {
         let values = ValueNormalizerUtils.deduplicatedTokenValues([
             " Work ",
@@ -98,6 +105,7 @@ final class ValuePickerFeatureTests: XCTestCase {
         XCTAssertEqual(values, ["Work", "Personal"])
     }
 
+    /// testPrepareForSizeUsesPreferredUnitAndConvertedDisplayValue 테스트 동작을 검증한다.
     func testPrepareForSizeUsesPreferredUnitAndConvertedDisplayValue() async {
         let store = makeStore()
 
@@ -132,6 +140,7 @@ final class ValuePickerFeatureTests: XCTestCase {
         }
     }
 
+    /// testSelectUnitUpdatesUnitStateWithoutChangingTypedValue 테스트 동작을 검증한다.
     func testSelectUnitUpdatesUnitStateWithoutChangingTypedValue() async {
         let store = makeStore()
 
@@ -189,11 +198,11 @@ private func makeStore(
             key == "tag_names" ? "categorical" : RegistryTestSupport.propertyTypeString(for: key)
         }
         $0.registryClient = registryClient
-        $0[Voyager.FinderFavoritesTagClient.self] = Voyager.FinderFavoritesTagClient(
-            favoriteTagNames: { [] as [String] },
+        $0[FinderFavoritesTagClient.self] = VoyagerEntitiesTag.FinderFavoritesTagClient(
+            favoriteTagNames: { [] },
             favoriteTags: { favoriteTags },
         )
     }
-    store.exhaustivity = Exhaustivity.off
+    store.exhaustivity = ComposableArchitecture.Exhaustivity.off
     return store
 }

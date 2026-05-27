@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesTag
 import VoyagerShared
 
 public enum EntryModelConverterLive {

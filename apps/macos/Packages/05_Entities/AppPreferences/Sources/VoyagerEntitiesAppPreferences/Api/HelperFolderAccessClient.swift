@@ -8,7 +8,7 @@ public struct HelperFolderAccessClient: Sendable {
 
     public nonisolated init(
         checkAccess: @escaping @Sendable () async -> FolderAccessResult,
-        requestAccess: @escaping @Sendable () async -> FolderAccessResult
+        requestAccess: @escaping @Sendable () async -> FolderAccessResult,
     ) {
         self.checkAccess = checkAccess
         self.requestAccess = requestAccess
@@ -24,7 +24,7 @@ extension HelperFolderAccessClient: DependencyKey {
             },
             requestAccess: {
                 await resolver.resolve(mode: .request)
-            }
+            },
         )
     }
 
@@ -32,11 +32,11 @@ extension HelperFolderAccessClient: DependencyKey {
         let fallback = FolderAccessResult(
             desktop: .notGranted,
             documents: .notGranted,
-            downloads: .notGranted
+            downloads: .notGranted,
         )
         return HelperFolderAccessClient(
             checkAccess: { fallback },
-            requestAccess: { fallback }
+            requestAccess: { fallback },
         )
     }
 
@@ -61,7 +61,7 @@ private actor HelperFolderAccessResolver {
     private let fallbackResult = FolderAccessResult(
         desktop: .notGranted,
         documents: .notGranted,
-        downloads: .notGranted
+        downloads: .notGranted,
     )
 
     private var waiters: [CheckedContinuation<FolderAccessResult, Never>] = []
@@ -99,7 +99,7 @@ private actor HelperFolderAccessResolver {
             let token = DistributedNotificationCenter.default().addObserver(
                 forName: HelperFolderAccessContract.responseName,
                 object: nil,
-                queue: .main
+                queue: .main,
             ) { [weak self] notification in
                 guard let self else { return }
                 let result = Self.parseResult(from: notification.userInfo)
@@ -107,7 +107,7 @@ private actor HelperFolderAccessResolver {
                 Task {
                     await self.handleResponse(
                         result: result ?? self.fallbackResult,
-                        mode: mode
+                        mode: mode,
                     )
                 }
             }
@@ -125,7 +125,7 @@ private actor HelperFolderAccessResolver {
                 userInfo: [
                     HelperFolderAccessUserInfoKey.schemaVersion: 1,
                     HelperFolderAccessUserInfoKey.mode: mode.rawValue,
-                ]
+                ],
             )
         }
     }
@@ -137,7 +137,7 @@ private actor HelperFolderAccessResolver {
             await self?.resolveAll(with: self?.fallbackResult ?? FolderAccessResult(
                 desktop: .notGranted,
                 documents: .notGranted,
-                downloads: .notGranted
+                downloads: .notGranted,
             ))
         }
     }

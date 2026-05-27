@@ -1,14 +1,16 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
+/// 컬렉션 유효기간 클라이언트 — 무효화/소비, 범위 업데이트, 마이그레이션 호환성을 검증.
 @MainActor
 final class CollectionStalenessClientTests: XCTestCase {
     func testInvalidateAndConsumeClosedCollectionRecord() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"], [], true)
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
 
         client.invalidateRecords(["/tmp/voyager/sub/a.txt"])
         XCTAssertTrue(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
@@ -24,20 +26,18 @@ final class CollectionStalenessClientTests: XCTestCase {
             .init(
                 definitionFingerprint: "fp",
                 relevanceRoots: ["/tmp/voyager"],
-                excludedScopes: [],
-                includeSubfolders: true,
                 lastInvalidatedAt: .distantPast,
             ),
         )
 
-        client.registerCollection(path, ["/tmp/voyager"], [], true)
+        client.registerCollection(path, ["/tmp/voyager"])
 
         XCTAssertNil(client.record(path)?.lastInvalidatedAt)
     }
 
     func testUnrelatedPathDoesNotInvalidateClosedCollectionRecord() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"], [], true)
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
 
         client.invalidateRecords(["/tmp/other/a.txt"])
         XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
@@ -45,7 +45,7 @@ final class CollectionStalenessClientTests: XCTestCase {
 
     func testCollectionDocumentPathDoesNotInvalidateClosedCollectionRecord() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"], [], true)
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
 
         client.invalidateRecords(["/tmp/voyager/sample.voycoll"])
         XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
@@ -53,7 +53,7 @@ final class CollectionStalenessClientTests: XCTestCase {
 
     func testCollectionPackagePayloadWriteDoesNotInvalidateClosedCollectionRecord() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"], [], true)
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
 
         client.invalidateRecords(["/tmp/voyager/sample.voycoll/collection.plist"])
         XCTAssertFalse(client.consumeInvalidation("/tmp/voyager/sample.voycoll"))
@@ -61,7 +61,7 @@ final class CollectionStalenessClientTests: XCTestCase {
 
     func testSuppressedParentDirectoryPathDoesNotInvalidateClosedCollectionRecord() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"], [], true)
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
         client.suppressPaths(["/tmp/voyager"])
 
         client.invalidateRecords(["/tmp/voyager"])
@@ -71,7 +71,7 @@ final class CollectionStalenessClientTests: XCTestCase {
 
     func testSuppressedParentDirectoryPathIgnoresRepeatedEvents() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"], [], true)
+        client.registerCollection("/tmp/voyager/sample.voycoll", ["/tmp/voyager"])
         client.suppressPaths(["/tmp/voyager"])
 
         client.invalidateRecords(["/tmp/voyager"])
@@ -87,8 +87,6 @@ final class CollectionStalenessClientTests: XCTestCase {
         let record = CollectionStalenessRecord(
             definitionFingerprint: "fp",
             relevanceRoots: ["/tmp/root"],
-            excludedScopes: [],
-            includeSubfolders: true,
             lastInvalidatedAt: nil,
         )
 
@@ -102,23 +100,11 @@ final class CollectionStalenessClientTests: XCTestCase {
 
         client.upsertRecord(
             "/tmp/a.voycoll",
-            .init(
-                definitionFingerprint: "a",
-                relevanceRoots: ["/tmp/root-a"],
-                excludedScopes: [],
-                includeSubfolders: true,
-                lastInvalidatedAt: nil,
-            ),
+            .init(definitionFingerprint: "a", relevanceRoots: ["/tmp/root-a"], lastInvalidatedAt: nil),
         )
         client.upsertRecord(
             "/tmp/b.voycoll",
-            .init(
-                definitionFingerprint: "b",
-                relevanceRoots: ["/tmp/root-b"],
-                excludedScopes: [],
-                includeSubfolders: true,
-                lastInvalidatedAt: nil,
-            ),
+            .init(definitionFingerprint: "b", relevanceRoots: ["/tmp/root-b"], lastInvalidatedAt: nil),
         )
 
         client.invalidateRecords(["/tmp/root-a/child/file.txt"])
@@ -127,72 +113,12 @@ final class CollectionStalenessClientTests: XCTestCase {
         XCTAssertNil(client.record("/tmp/b.voycoll")?.lastInvalidatedAt)
     }
 
-    func testCollectionChangeIsRelevantKeepsRootAndDirectChildrenWhenIncludeSubfoldersDisabled() {
-        XCTAssertFalse(
-            collectionChangeIsRelevant(
-                changedPaths: ["/tmp/root/child/file.txt"],
-                scopes: ["/tmp/root"],
-                includeSubfolders: false,
-            ),
-        )
-
-        XCTAssertTrue(
-            collectionChangeIsRelevant(
-                changedPaths: ["/tmp/root/file.txt"],
-                scopes: ["/tmp/root"],
-                includeSubfolders: false,
-            ),
-        )
-
-        XCTAssertTrue(
-            collectionChangeIsRelevant(
-                changedPaths: ["/tmp/root"],
-                scopes: ["/tmp/root"],
-                includeSubfolders: false,
-            ),
-        )
-
-        XCTAssertTrue(
-            collectionChangeIsRelevant(
-                changedPaths: ["/tmp/root/.metadata"],
-                scopes: ["/tmp/root"],
-                includeSubfolders: false,
-            ),
-        )
-    }
-
-    func testCollectionChangeIsRelevantIgnoresExcludedSubtree() {
-        XCTAssertFalse(
-            collectionChangeIsRelevant(
-                changedPaths: ["/tmp/root/excluded/file.txt"],
-                scopes: ["/tmp/root"],
-                excludedScopes: ["/tmp/root/excluded"],
-                includeSubfolders: true,
-            ),
-        )
-
-        XCTAssertTrue(
-            collectionChangeIsRelevant(
-                changedPaths: ["/tmp/root/other/file.txt"],
-                scopes: ["/tmp/root"],
-                excludedScopes: ["/tmp/root/excluded"],
-                includeSubfolders: true,
-            ),
-        )
-    }
-
     func testClearRecordRemovesStoredValue() {
         let client = CollectionStalenessClient.live(userDefaultsClient: .testValue)
         let path = "/tmp/test.voycoll"
         client.upsertRecord(
             path,
-            .init(
-                definitionFingerprint: "fp",
-                relevanceRoots: ["/tmp/root"],
-                excludedScopes: [],
-                includeSubfolders: true,
-                lastInvalidatedAt: nil,
-            ),
+            .init(definitionFingerprint: "fp", relevanceRoots: ["/tmp/root"], lastInvalidatedAt: nil),
         )
 
         client.clearRecord(path)
@@ -200,6 +126,7 @@ final class CollectionStalenessClientTests: XCTestCase {
         XCTAssertNil(client.record(path))
     }
 
+    /// testLegacyJSONStorageMigratesAndPreservesInvalidatedState 테스트 동작을 검증한다.
     func testLegacyJSONStorageMigratesAndPreservesInvalidatedState() throws {
         let userDefaultsClient = UserDefaultsClient.testValue
         let client = CollectionStalenessClient.live(userDefaultsClient: userDefaultsClient)
@@ -217,13 +144,13 @@ final class CollectionStalenessClientTests: XCTestCase {
         XCTAssertEqual(record?.relevanceRoots, ["/tmp/legacy"])
         XCTAssertNotNil(record?.lastInvalidatedAt)
 
-        let migratedObject = userDefaultsClient.object(CollectionKeys.stalenessRecords) as? Data
-        let migratedData = try XCTUnwrap(migratedObject)
+        let migratedData = try XCTUnwrap(userDefaultsClient.object(CollectionKeys.stalenessRecords) as? Data)
         let migrated = try PropertyListDecoder().decode([String: CollectionStalenessRecord].self, from: migratedData)
         XCTAssertEqual(migrated[path]?.relevanceRoots, ["/tmp/legacy"])
         XCTAssertNotNil(migrated[path]?.lastInvalidatedAt)
     }
 
+    /// testConsumeInvalidationStillWorksAfterLegacyMigration 테스트 동작을 검증한다.
     func testConsumeInvalidationStillWorksAfterLegacyMigration() throws {
         let userDefaultsClient = UserDefaultsClient.testValue
         let client = CollectionStalenessClient.live(userDefaultsClient: userDefaultsClient)

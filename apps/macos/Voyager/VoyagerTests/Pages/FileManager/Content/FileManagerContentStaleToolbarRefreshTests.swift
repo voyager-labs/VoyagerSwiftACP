@@ -1,10 +1,15 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
+@testable import VoyagerPagesFileManager
 import XCTest
 
+/// FileManager content stale 상태에서 툴바 리프레시 라우팅 계약을 검증한다.
 @MainActor
 final class FileManagerToolbarRefreshTests: XCTestCase {
+    /// testRefreshStaleCollectionDispatchesSubmitForQueryCollections 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDispatchesSubmitForQueryCollections() async {
         let store = TestStore(initialState: makeState(query: "report", isDirty: false)) {
             FileManagerContentFeature()
@@ -13,9 +18,17 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        XCTAssertNil(store.state.refreshBlockingReason)
+        XCTAssertNil(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ))
         await store.send(.view(.refreshStaleCollection)) {
-            $0.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .refreshingHydratedSnapshot)
+            $0.collection.collectionSession.phase = .opened(
+                kind: .definition,
+                base: .stale,
+                inflight: .refreshingHydratedSnapshot,
+            )
         }
         await store.receive { action in
             guard case .composer(.view(.setText("report"))) = action else {
@@ -31,6 +44,7 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
     }
 
+    /// testRefreshStaleCollectionDispatchesApplyFiltersForEmptyQueryCollections 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDispatchesApplyFiltersForEmptyQueryCollections() async {
         let store = TestStore(initialState: makeState(query: "", isDirty: false)) {
             FileManagerContentFeature()
@@ -39,9 +53,17 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        XCTAssertNil(store.state.refreshBlockingReason)
+        XCTAssertNil(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ))
         await store.send(.view(.refreshStaleCollection)) {
-            $0.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .refreshingHydratedSnapshot)
+            $0.collection.collectionSession.phase = .opened(
+                kind: .definition,
+                base: .stale,
+                inflight: .refreshingHydratedSnapshot,
+            )
         }
         await store.receive { action in
             guard case .composer(.view(.applyFilters)) = action else {
@@ -51,6 +73,7 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
     }
 
+    /// testRefreshStaleCollectionDoesNothingWhenCollectionIsDirty 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDoesNothingWhenCollectionIsDirty() async {
         let store = TestStore(initialState: makeState(query: "report", isDirty: true)) {
             FileManagerContentFeature()
@@ -61,11 +84,16 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
 
         await store.send(.view(.refreshStaleCollection))
 
-        XCTAssertEqual(store.state.refreshBlockingReason, .dirtyCollection)
-        XCTAssertNotEqual(store.state.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .dirtyCollection)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
+    /// testRefreshStaleCollectionDoesNothingWithoutSavedCollectionPrerequisites 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDoesNothingWithoutSavedCollectionPrerequisites() async {
         let store = TestStore(initialState: makeState(
             query: "report",
@@ -80,9 +108,13 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
 
         await store.send(.view(.refreshStaleCollection))
 
-        XCTAssertEqual(store.state.refreshBlockingReason, .missingOpenedURL)
-        XCTAssertNotEqual(store.state.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .missingOpenedURL)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 }
 
@@ -94,23 +126,22 @@ private func makeState(
 ) -> FileManagerContentState {
     var state = FileManagerContentState()
     state.entryViewLayout.isCollectionMode = true
-    state.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
-    let baseline = CollectionContext(query: query, scopes: ["/tmp"], includeSubfolders: true, conditions: [])
-    state.collectionSession.metadata.baseline = hasCollectionPrerequisites ? .init(context: baseline) : nil
-    state.collectionSession.document = hasCollectionPrerequisites
-        ? .init(
+    state.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
+    let baseline = CollectionContext(query: query, scopes: ["/tmp"], conditions: [])
+    state.collection.collectionSession.metadata.baseline = hasCollectionPrerequisites ? .init(context: baseline) : nil
+    if hasCollectionPrerequisites {
+        state.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/demo.voycoll"),
             name: "demo",
             compatibility: nil,
         )
-        : nil
-    state.collectionContext = hasCollectionPrerequisites
+    }
+    state.collection.collectionContext = hasCollectionPrerequisites
         ? (isDirty
-            ? CollectionContext(query: query + "-dirty", scopes: ["/tmp"], includeSubfolders: true, conditions: [])
+            ? CollectionContext(query: query + "-dirty", scopes: ["/tmp"], conditions: [])
             : baseline)
         : nil
-    state.composer.collectionContext = state.collectionContext
-    state.composer.isCollectionMode = true
+    state.syncComposerCollectionState()
     state.composer.pendingSearchQuery = query.isEmpty ? nil : query
     return state
 }

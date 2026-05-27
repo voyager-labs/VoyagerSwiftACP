@@ -1,7 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-let package = Package(
+let kPackage = Package(
     name: "VoyagerEntitiesAppPreferences",
     platforms: [
         .macOS(.v13),
@@ -21,7 +21,7 @@ let package = Package(
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
-            ]
+            ],
         ),
-    ]
+    ],
 )

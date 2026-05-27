@@ -1,10 +1,15 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerPagesOnboarding
 import XCTest
 
+/// 윈도우 관리자 계약 — 포커스 윈도우로의 명령 팬아웃과 미사용 시 no-op를 검증.
 @MainActor
 final class WindowManagerFeatureContractTests: XCTestCase {
+    /// testApplyAppPreferencesFansOutToAllWindows 테스트 동작을 검증한다.
     func testApplyAppPreferencesFansOutToAllWindows() async {
         let firstID = UUID()
         let secondID = UUID()
@@ -33,6 +38,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
     }
 
+    /// testQuickLookRoutesToFocusedWindowCommandBus 테스트 동작을 검증한다.
     func testQuickLookRoutesToFocusedWindowCommandBus() async {
         let focusedID = UUID()
 
@@ -50,6 +56,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.file(.quickLook))
     }
 
+    /// testNewFolderRoutesToFocusedWindow 테스트 동작을 검증한다.
     func testNewFolderRoutesToFocusedWindow() async {
         let focusedID = UUID()
 
@@ -69,6 +76,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.file(.newFolder))
     }
 
+    /// testCopyRoutesToFocusedWindow 테스트 동작을 검증한다.
     func testCopyRoutesToFocusedWindow() async {
         let focusedID = UUID()
 
@@ -86,6 +94,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.edit(.copy))
     }
 
+    /// testToggleSidebarRoutesToFocusedWindow 테스트 동작을 검증한다.
     func testToggleSidebarRoutesToFocusedWindow() async {
         let focusedID = UUID()
 
@@ -103,6 +112,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.window(.toggleSidebar))
     }
 
+    /// testNoCommandSentWhenNoFocusedWindow 테스트 동작을 검증한다.
     func testNoCommandSentWhenNoFocusedWindow() async {
         let store = TestStore(initialState: WindowManagerFeature.State()) {
             WindowManagerFeature()

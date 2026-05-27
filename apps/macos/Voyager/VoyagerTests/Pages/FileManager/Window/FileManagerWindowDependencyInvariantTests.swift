@@ -1,10 +1,13 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import XCTest
 
 @MainActor
 final class WindowDependencyInvariantTests: XCTestCase {
+    /// testCreateInitialStateSeedsPathForFreshWindow 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCreateInitialStateSeedsPathForFreshWindow() {
         let state = FileManagerWindowCoordinator.createInitialState(
             path: "/tmp/voyager",
@@ -15,6 +18,7 @@ final class WindowDependencyInvariantTests: XCTestCase {
         XCTAssertEqual(state.content.navigation.currentPath, "/tmp/voyager")
     }
 
+    /// testCreateInitialStatePreservesDuplicateStateAndOverridesPath 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCreateInitialStatePreservesDuplicateStateAndOverridesPath() {
         let originalID = UUID()
         var duplicateState = FileManagerFeature.State.makeInitial(path: "/tmp/original")

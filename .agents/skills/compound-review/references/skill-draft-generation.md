@@ -120,7 +120,7 @@ Format: `.agents/rules/{group}/{rule-name}.md` or `.agents/rules/{rule-name}.md`
 
 If the proposed target path already exists:
 
-1. The draft must note this explicitly: `Proposed Target: .agents/skills/existing-skill/SKILL.md (extend existing skill)`
+1. The draft must note this explicitly: `Proposed Target: .agents/skills/{existing-skill-name}/SKILL.md (extend existing skill)`
 2. The `Proposed Scope` must describe what to **add** to the existing skill, not replace it
 3. The `Non-Goals` must state: "Does not replace or restructure the existing skill — only adds the proposed scope"
 
@@ -209,7 +209,7 @@ Every finding listed in `Source Findings` (the bulleted section) must appear in 
 
 Before writing a skill-draft document, check for prior drafts for the same `plan_slug`:
 
-1. Scan `.sisyphus/drafts/{plan_slug}/` for existing `skill-draft.md` files (different `run_id` directories).
+1. Scan `.sisyphus/reviews/{plan_slug}/` for existing `skill-draft.md` files (different `run_id` directories).
 2. If prior drafts exist, read their proposed targets and source findings.
 
 ### Overlap Handling
@@ -230,7 +230,7 @@ The document must include an `## Overlap/Deduplication Note` section when prior 
 
 This skill-draft was generated against prior draft artifacts for the same `plan_slug`:
 
-- `.sisyphus/drafts/{plan_slug}/{prior-run_id}/skill-draft.md`
+- `.sisyphus/reviews/{plan_slug}/{prior-run_id}/skill-draft.md`
 
 Prior proposals are preserved. This draft may extend or contradict them; contradictions are flagged inline. Merge by consulting both linkage tables and resolving contradictions manually.
 ```
@@ -261,9 +261,9 @@ The skill follows this sequence to produce the skill-draft document:
 8. **Synthesize rationale** from finding descriptions and notepad context
 9. **Bound scope** with concrete read/verify/enforce actions and explicit exclusions
 10. **Build linkage table** from all qualifying findings
-11. **Check prior drafts** in `.sisyphus/drafts/{plan_slug}/`
+11. **Check prior drafts** in `.sisyphus/reviews/{plan_slug}/`
 12. **Apply overlap/deduplication** against prior draft artifacts
-13. **Write** to `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`
+13. **Write** to `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`
 
 ### Empty Output
 

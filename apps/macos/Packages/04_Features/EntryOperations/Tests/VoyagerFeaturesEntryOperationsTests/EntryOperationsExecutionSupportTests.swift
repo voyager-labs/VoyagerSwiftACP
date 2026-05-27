@@ -1,11 +1,13 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
 final class EntryOperationsExecutionSupportTests: XCTestCase {
+    /// 단일 작업 실행이 시작/종료 라이프사이클 액션을 순서대로 내보내는지 검증
     func testRunEmitsOperationStartedThenFinished() async {
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
             ExecutionSupportTestHarness()
@@ -21,6 +23,7 @@ final class EntryOperationsExecutionSupportTests: XCTestCase {
         await store.finish()
     }
 
+    /// 작업 중 오류가 나면 failure를 담은 종료 액션으로 매핑되는지 검증
     func testRunEmitsOperationFinishedWithFailureOnError() async {
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
             ExecutionSupportTestHarness()
@@ -49,6 +52,7 @@ final class EntryOperationsExecutionSupportTests: XCTestCase {
         await store.finish()
     }
 
+    /// 병렬 실행이 각 경로에 대해 시작/종료 순서를 유지하는지 검증
     func testRunParallelEmitsCorrectOrdering() async {
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
             ExecutionSupportTestHarness()
@@ -68,6 +72,7 @@ final class EntryOperationsExecutionSupportTests: XCTestCase {
         await store.finish()
     }
 
+    /// targets가 있는 병렬 rename이 entryActionCompleted까지 이어지는지 검증
     func testRunParallelWithTargetsEmitsEntryActionCompleted() async {
         let store = TestStore(initialState: EntryOperationsFeature.State()) {
             ExecutionSupportTestHarness()
@@ -111,9 +116,10 @@ private struct ExecutionSupportTestHarness {
                     operation: {
                         if let error { throw error }
                     },
-                ).map { action in
+                )
+                .map { action in
                     switch action {
-                    case let .lifecycle(l): .lifecycle(l)
+                    case let .lifecycle(lifecycle): .lifecycle(lifecycle)
                     default: .lifecycle(.emptyTrashCompleted)
                     }
                 }
@@ -123,9 +129,10 @@ private struct ExecutionSupportTestHarness {
                     paths: paths,
                     kind: kind,
                     operation: { _ in },
-                ).map { action in
+                )
+                .map { action in
                     switch action {
-                    case let .lifecycle(l): .lifecycle(l)
+                    case let .lifecycle(lifecycle): .lifecycle(lifecycle)
                     default: .lifecycle(.emptyTrashCompleted)
                     }
                 }
@@ -141,9 +148,10 @@ private struct ExecutionSupportTestHarness {
                             afterPath: url.path + "_renamed",
                         )
                     },
-                ).map { action in
+                )
+                .map { action in
                     switch action {
-                    case let .lifecycle(l): .lifecycle(l)
+                    case let .lifecycle(lifecycle): .lifecycle(lifecycle)
                     default: .lifecycle(.emptyTrashCompleted)
                     }
                 }

@@ -1,10 +1,14 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
+/// 속성→연산자 DSL 매핑 — 모든 비-NSURL 속성에 대한 완전성을 검증.
 @MainActor
 final class PropertyDslMappingExhaustiveTests: XCTestCase {
+    /// testAllNonNSURLPropertiesHaveValidOperatorMapping 테스트 동작을 검증한다.
     func testAllNonNSURLPropertiesHaveValidOperatorMapping() {
         let snapshot = RegistrySnapshot.load()
         let registry = RegistryClient.live(snapshot: snapshot)
@@ -15,7 +19,9 @@ final class PropertyDslMappingExhaustiveTests: XCTestCase {
         var failures: [String] = []
 
         for property in properties {
-            guard let typeKey = SystemPropertyTypeKey.operatorKeyOrNil(from: property.definition.type) else {
+            guard let typeKey = VoyagerEntitiesCollection.SystemPropertyTypeKey
+                .operatorKeyOrNil(from: property.definition.type)
+            else {
                 failures.append("\(property.key): unsupported type \(property.definition.type)")
                 continue
             }
@@ -47,6 +53,7 @@ final class PropertyDslMappingExhaustiveTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
+    /// testAllNonNSURLPropertiesEncodeDslAcrossSupportedOperators 테스트 동작을 검증한다.
     func testAllNonNSURLPropertiesEncodeDslAcrossSupportedOperators() {
         let snapshot = RegistrySnapshot.load()
         let registry = RegistryClient.live(snapshot: snapshot)
@@ -57,7 +64,9 @@ final class PropertyDslMappingExhaustiveTests: XCTestCase {
         var failures: [String] = []
 
         for property in properties {
-            guard let typeKey = SystemPropertyTypeKey.operatorKeyOrNil(from: property.definition.type) else {
+            guard let typeKey = VoyagerEntitiesCollection.SystemPropertyTypeKey
+                .operatorKeyOrNil(from: property.definition.type)
+            else {
                 failures.append("\(property.key): unsupported type \(property.definition.type)")
                 continue
             }

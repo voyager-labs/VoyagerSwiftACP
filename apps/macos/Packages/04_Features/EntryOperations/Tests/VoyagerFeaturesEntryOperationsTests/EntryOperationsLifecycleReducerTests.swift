@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 
@@ -21,6 +22,7 @@ final class EntryOperationsLifecycleReducerTests: XCTestCase {
         }
     }
 
+    /// 작업 시작 시 항목 상태가 busy로 바뀌는지 검증
     func testOperationStartedSetsIsBusyTrue() async {
         let store = makeStore()
 
@@ -31,6 +33,7 @@ final class EntryOperationsLifecycleReducerTests: XCTestCase {
         await store.finish()
     }
 
+    /// 성공 종료 시 busy 해제와 오류 초기화, rename 상태 정리가 함께 일어나는지 검증
     func testOperationFinishedSetsIsBusyFalseOnSuccess() async {
         let store = makeStore(initialState: {
             var state = EntryOperationsFeature.State()
@@ -52,6 +55,7 @@ final class EntryOperationsLifecycleReducerTests: XCTestCase {
         await store.finish()
     }
 
+    /// 실패 종료 시 busy 해제와 lastError 기록이 함께 반영되는지 검증
     func testOperationFinishedSetsErrorOnFailure() async {
         let store = makeStore(initialState: {
             var state = EntryOperationsFeature.State()
@@ -73,6 +77,7 @@ final class EntryOperationsLifecycleReducerTests: XCTestCase {
         await store.finish()
     }
 
+    /// 경로 변경 후 썸네일 캐시 무효화가 정확히 한 번 발생하는지 검증
     func testPathsMutatedTriggersThumbnailInvalidation() async {
         let removedPaths = RemovedPathsRecorder()
 
@@ -86,12 +91,13 @@ final class EntryOperationsLifecycleReducerTests: XCTestCase {
         await store.finish()
 
         let snapshot = removedPaths.snapshot()
-        XCTAssertEqual(snapshot.count, 1, "thumbnail eviction should fire once")
+        XCTAssertEqual(snapshot.count, 1, "썸네일 제거는 한 번만 실행되어야 합니다")
         if let paths = snapshot.first {
             XCTAssertEqual(Set(paths), Set(["/tmp/a.txt", "/tmp/b.txt"]))
         }
     }
 
+    /// 완료된 작업 기록이 undo 스택에 누적되고 redo 스택은 초기화되는지 검증
     func testEntryActionCompletedAppendsUndoRecord() async {
         let store = makeStore()
 

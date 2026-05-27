@@ -11,7 +11,7 @@ Read completed `.sisyphus` artifacts from a finished Work cycle, synthesize stru
 
 ## What This Skill Is Not
 
-This skill does not replace `pr-review`, `test-runner`, or `verify-implementation`. Those run during Work. This runs after Work, reading what they (and the operator) produced. It also does not replace `skill-creator`. Draft proposals from this skill are inputs for `skill-creator`, not auto-applied.
+This skill does not replace Work-phase verification skills (`pr-review`, `voyager-dev`, etc.). Those run during Work. This runs after Work, reading what they (and the operator) produced. It also does not replace `skill-creator`. Draft proposals from this skill are inputs for `skill-creator`, not auto-applied.
 
 ---
 
@@ -24,8 +24,8 @@ These boundaries are non-negotiable. They are defined in full at `references/wor
 | **Trigger**           | Manual only. No auto-trigger from hooks, CI, or skills.                                                                                                  |
 | **Temporal**          | Post-Work only. Plan must be completed with evidence.                                                                                                    |
 | **Scope**             | Local-repo only. No network, no remote artifacts.                                                                                                        |
-| **Read**              | `.sisyphus/plans/`, `.sisyphus/evidence/`, `.sisyphus/notepads/` — never modify.                                                                         |
-| **Write**             | `.sisyphus/reviews/`, `.sisyphus/compound/`, `.sisyphus/drafts/` — nowhere else.                                                                         |
+| **Read**              | `.sisyphus/plans/`, `.sisyphus/evidence/{plan_slug}/`, `.sisyphus/notepads/` — never modify.                                                                         |
+| **Write**             | `.sisyphus/reviews/` — nowhere else. Learning, draft, run summary, findings, manifest, and failures all live under the review run root. |                                                                         |
 | **Hard prohibitions** | No re-planning, code mutation, commits, PRs, auto-Work loops, inference on missing artifacts, silent degradation, branch mutation, environment mutation. |
 
 ---
@@ -43,7 +43,7 @@ Read `references/target-selection.md` for the full target resolution algorithm. 
 1. **Resolve the target plan.** If the operator specified a plan slug, use it. Otherwise, use automatic detection: git branch match → single completed plan → most recently modified completed plan → report ambiguity and stop.
 2. **Check required preconditions (P1–P6).** These are defined in `references/workflow-boundaries.md` §6. Quick summary:
     - P1: Plan file exists at `.sisyphus/plans/{slug}.md`
-    - P2: At least one evidence file matching `task-{N}-{slug}.*` exists
+    - P2: At least one evidence file matching `.sisyphus/evidence/{plan_slug}/task-{N}-*.*` exists
     - P3: Plan slug is unambiguous
     - P4: No conflicting run already exists for this plan_slug + run_id
     - P5: Plan file not modified after evidence timestamps
@@ -64,14 +64,14 @@ Read `references/target-selection.md` for the full target resolution algorithm. 
 **Goal:** Read all available input artifacts and build the full input enumeration for the manifest.
 
 1. **Read the plan file** at `.sisyphus/plans/{slug}.md`.
-2. **Collect evidence files.** List all files matching `task-{N}-{slug}.*` in `.sisyphus/evidence/`. Sort alphabetically. These are associated with the target plan per `references/target-selection.md` §5.
-3. **Detect final review facets.** Check for exact stable filenames in `.sisyphus/evidence/`:
+2. **Collect evidence files.** List all files matching `task-{N}-*.*` in `.sisyphus/evidence/{plan_slug}/`. Sort alphabetically. These are associated with the target plan per `references/target-selection.md` §5.
+3. **Detect final review facets.** Check for exact stable filenames in `.sisyphus/evidence/{plan_slug}/`:
     - `f1-plan-compliance.md`
     - `f2-code-quality.md`
     - `f3-manual-qa.md`
     - `f4-scope-fidelity.md`
 
-    Facets are slug-independent. Detect by exact filename match, not by slug interpolation.
+    Facets are slug-independent. Detect by exact filename match, not by slug interpolation. Each facet file MUST follow the format defined in `references/artifact-contract.md` §Facet File Requirements (Reviewer, Session, Verdict, Findings, Evidence fields).
 
 4. **Collect notepad files.** Look in `.sisyphus/notepads/{plan_slug}/` for `learnings.md`, `decisions.md`, `issues.md`, `problems.md`.
 
@@ -106,7 +106,7 @@ Read `references/target-selection.md` for the full target resolution algorithm. 
 
 #### 4a. Compound Learning Document
 
-Write to `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`.
+Write to `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`.
 
 For each cluster of related findings (grouped by `category`), produce a learning entry with:
 
@@ -127,7 +127,7 @@ The `type` distinction matters:
 
 #### 4b. Skill / Harness Draft Proposal
 
-Write to `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`.
+Write to `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`.
 
 A draft is emitted when at least one finding meets the threshold (non-APPROVE verdict, or APPROVE with `test-coverage`/`design` action class, AND severity medium or higher). If no findings meet the threshold, write a minimal draft noting "No findings met the draft threshold."
 
@@ -143,8 +143,9 @@ Write these files in order:
 
 1. **Manifest** → `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json`
 2. **Findings** → `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json`
-3. **Learning** → `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`
-4. **Draft** → `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`
+3. **Learning** → `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`
+4. **Draft** → `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`
+5. **Run summary** → `.sisyphus/reviews/{plan_slug}/{run_id}/run-summary.md`
 
 All schemas are in `references/`:
 
@@ -152,12 +153,13 @@ All schemas are in `references/`:
 - `references/findings-schema.md` for findings.json
 - `references/learning-schema.md` for learning.md
 - `references/skill-draft-schema.md` for skill-draft.md
+- `references/artifact-contract.md` for run-summary.md
 
 After writing, report to the operator:
 
 - Total findings count, grouped by severity
 - Missing inputs (facets, notepads) that triggered degraded confidence
-- Exact output paths for all four artifacts
+- Exact output paths for all five artifacts
 - Whether any draft proposals met the threshold
 
 **Then stop.** The skill exits after this report. It does not loop, retry, or chain into Work.
@@ -195,13 +197,12 @@ No silent inference. Every degradation is explicitly noted.
 
 ## Relationship to Other Skills
 
-| Skill                   | Relationship                                                                                                    |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `pr-review`             | Runs during Work. Produces review comments. Compound-review reads those outputs post-Work.                      |
-| `test-runner`           | Runs during Work. Produces test evidence. Compound-review reads that evidence post-Work.                        |
-| `verify-implementation` | Runs during Work. Produces verification evidence. Compound-review reads that evidence post-Work.                |
-| `skill-creator`         | Consumes compound-review draft proposals. Compound-review drafts are input for skill-creator, not auto-applied. |
-| `manage-skills`         | Maintains skill registry. Compound-review does not modify the registry.                                         |
+| Skill                          | Relationship                                                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `pr-review`                    | Runs during Work. Produces review comments. Compound-review reads those outputs post-Work.                              |
+| `voyager-dev`                  | Runs during Work for Voyager/macOS implementation and test verification. Compound-review reads its evidence post-Work.  |
+| Work-phase verification skills | Run during Work (`pr-review`, `voyager-dev`, etc.). Produce verification evidence that compound-review reads post-Work. |
+| `skill-creator`                | Consumes compound-review draft proposals. Compound-review drafts are input for skill-creator, not auto-applied.         |
 
 ---
 
@@ -216,8 +217,8 @@ Trigger this skill when:
 
 Do NOT trigger this skill when:
 
-- Work is still in progress (use `pr-review`, `test-runner`, `verify-implementation` instead)
+- Work is still in progress (use Work-phase verification skills instead)
 - You want to create a PR (use `pr-execution`)
-- You want to run tests (use `test-runner`)
+- You want to run Voyager/macOS tests (use `voyager-dev`)
 - You want to create or modify a skill (use `skill-creator`)
 - You want to commit code or modify product files

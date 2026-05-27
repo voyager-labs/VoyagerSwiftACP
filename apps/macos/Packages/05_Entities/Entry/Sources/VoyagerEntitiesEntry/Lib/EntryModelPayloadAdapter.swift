@@ -1,3 +1,4 @@
+import VoyagerEntitiesTag
 import VoyagerShared
 
 enum EntryModelPayloadAdapter {
