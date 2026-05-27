@@ -85,8 +85,8 @@ public struct ComposerState: Equatable {
             FilterSnapshot(
                 scopes: scopes,
                 conditions: conditions,
-                conditionDisplayByKey: conditionDisplayByKey
-            )
+                conditionDisplayByKey: conditionDisplayByKey,
+            ),
         )
         if history.count > 100 {
             history.removeFirst(history.count - 100)
@@ -129,7 +129,7 @@ public struct ComposerState: Equatable {
 
     public mutating func applyCollectionOpenRestorationComposerPayload(
         _ payload: CollectionOpenRestorationPayload,
-        registryClient: RegistryClient
+        registryClient: RegistryClient,
     ) {
         pendingSearchQuery = payload.context.query.isEmpty ? nil : payload.context.query
         text = payload.context.query
@@ -143,7 +143,7 @@ public struct ComposerState: Equatable {
         applyAppliedFilters(
             .init(scopes: filters.scopes, conditions: filters.conditions),
             state: &self,
-            registryClient: registryClient
+            registryClient: registryClient,
         )
         lastFiltersResponse = nil
         lastSearchResponse = nil
@@ -151,7 +151,7 @@ public struct ComposerState: Equatable {
 
     public mutating func applyHydratedCollectionOpenComposerPayload(
         _ payload: CollectionHydratedOpenPayload,
-        isNavigationQueryEmpty: Bool
+        isNavigationQueryEmpty: Bool,
     ) {
         lastFiltersResponse = payload.lastFiltersResponse
         lastSearchResponse = payload

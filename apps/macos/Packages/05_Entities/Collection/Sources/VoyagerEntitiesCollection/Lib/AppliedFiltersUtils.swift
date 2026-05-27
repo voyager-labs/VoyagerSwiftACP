@@ -23,13 +23,13 @@ public enum AppliedFiltersUtils {
         _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],
-        registryClient: RegistryClient
+        registryClient: RegistryClient,
     ) -> (scopes: [String], conditions: [Condition]) {
         let resolved = resolveDetailed(
             appliedFilters,
             fallbackScopes: fallbackScopes,
             fallbackConditions: fallbackConditions,
-            registryClient: registryClient
+            registryClient: registryClient,
         )
         return (resolved.scopes, resolved.conditions)
     }
@@ -38,7 +38,7 @@ public enum AppliedFiltersUtils {
         _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
         fallbackScopes: [String],
         fallbackConditions: [Condition],
-        registryClient: RegistryClient
+        registryClient: RegistryClient,
     ) -> ResolutionResult {
         let scopes = appliedFilters?.scopes ?? fallbackScopes
         if let appliedConditions = appliedFilters?.conditions {
@@ -46,24 +46,24 @@ public enum AppliedFiltersUtils {
                 makeResolvedCondition(from: $0, registryClient: registryClient)
             }
             let unknownKeys = Array(
-                Set(resolved.compactMap(\.unknownKey))
+                Set(resolved.compactMap(\.unknownKey)),
             ).sorted()
             return ResolutionResult(
                 scopes: scopes,
                 conditions: resolved.map(\.condition),
-                unknownKeys: unknownKeys
+                unknownKeys: unknownKeys,
             )
         }
         return ResolutionResult(
             scopes: scopes,
             conditions: fallbackConditions,
-            unknownKeys: []
+            unknownKeys: [],
         )
     }
 
     private static func makeResolvedCondition(
         from payload: VoyagerShared.SearchConditionPayload,
-        registryClient: RegistryClient
+        registryClient: RegistryClient,
     ) -> ResolvedCondition {
         switch registryClient.resolveKey(payload.propertyKey) {
         case let .canonical(propertyKey):
@@ -71,9 +71,9 @@ public enum AppliedFiltersUtils {
                 condition: makeCondition(
                     from: payload,
                     propertyKey: propertyKey,
-                    registryClient: registryClient
+                    registryClient: registryClient,
                 ),
-                unknownKey: nil
+                unknownKey: nil,
             )
 
         case let .legacy(_, normalized):
@@ -81,9 +81,9 @@ public enum AppliedFiltersUtils {
                 condition: makeCondition(
                     from: payload,
                     propertyKey: normalized,
-                    registryClient: registryClient
+                    registryClient: registryClient,
                 ),
-                unknownKey: nil
+                unknownKey: nil,
             )
 
         case let .unknown(rawKey):
@@ -99,9 +99,9 @@ public enum AppliedFiltersUtils {
                     operatorValueUIKind: nil,
                     valueType: "unknown",
                     values: values,
-                    isActive: false
+                    isActive: false,
                 ),
-                unknownKey: rawKey
+                unknownKey: rawKey,
             )
         }
     }
@@ -109,7 +109,7 @@ public enum AppliedFiltersUtils {
     private static func makeCondition(
         from payload: VoyagerShared.SearchConditionPayload,
         propertyKey: String,
-        registryClient: RegistryClient
+        registryClient: RegistryClient,
     ) -> Condition {
         let propertyLabel = registryClient.label(for: propertyKey)
         let propertyType = registryClient.propertyTypeString(for: propertyKey)
@@ -129,7 +129,7 @@ public enum AppliedFiltersUtils {
             operatorValueUIKind: valueUIKind,
             valueType: valueType,
             values: AppliedFilterValueUtils.stringValues(from: payload.value, valueUIKind: valueUIKind),
-            isActive: true
+            isActive: true,
         )
     }
 }

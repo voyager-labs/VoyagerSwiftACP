@@ -48,7 +48,7 @@ public struct HoverIconButtonLabel: View {
             systemName: systemName,
             isEnabled: isEnabled,
             isHovered: isHovered,
-            style: style
+            style: style,
         )
         .onHover { hovering in
             isHovered = hovering
@@ -70,7 +70,7 @@ public struct IconButtonStyle: Sendable {
         cornerRadius: CGFloat,
         enabledColor: Color,
         disabledColor: Color,
-        hoverBackground: @escaping @Sendable (ColorScheme) -> Color
+        hoverBackground: @escaping @Sendable (ColorScheme) -> Color,
     ) {
         self.size = size
         self.font = font
@@ -91,7 +91,7 @@ public struct IconButtonStyle: Sendable {
             disabledColor: Color(nsColor: .tertiaryLabelColor),
             hoverBackground: { scheme in
                 VoyagerDS.Surface.sidebarSelectionBackground(for: scheme)
-            }
+            },
         )
     }
 
@@ -103,6 +103,6 @@ public struct IconButtonStyle: Sendable {
         disabledColor: Color(nsColor: .tertiaryLabelColor),
         hoverBackground: { scheme in
             VoyagerDS.Surface.sidebarSelectionBackground(for: scheme)
-        }
+        },
     )
 }

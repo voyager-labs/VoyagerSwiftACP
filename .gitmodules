@@ -1,0 +1,3 @@
+[submodule "docs/canonical"]
+	path = docs/canonical
+	url = https://github.com/voyager-labs/voyager-documentation.git

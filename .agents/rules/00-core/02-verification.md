@@ -1,34 +1,41 @@
 ---
+description: "Verification requirements by change scope."
 alwaysApply: true
-description: 'Verification requirements by change scope.'
 ---
 
 # Verification Requirements
 
-## Applies when
-- Any file change.
-
 ## Must
+
 - Run checks that match the changed surface area.
 - Prefer fast targeted checks first, then broader checks when needed.
 - Report exact commands and pass/fail status.
 
 ## Execution steps
+
 1. Determine scope: docs-only, backend, macOS, or mixed.
 2. Run required checks for that scope.
 3. Fix failures or clearly document pre-existing failures.
 
 ## Verification matrix
+
 - Docs-only:
-  - Confirm links/paths updated where references changed.
+    - Confirm links/paths updated where references changed.
 - Backend (`apps/backend/**`):
-  - `cd apps/backend && uv run pytest`
-  - If config/migrations changed, run relevant Alembic command checks.
+    - `cd apps/backend && uv run pytest`
+    - If config/migrations changed, run relevant Alembic command checks.
 - macOS (`apps/macos/**`):
-  - `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
+    - Tier 1 (targeted): Run SwiftPM package tests for the affected package.
+      Example: `swift test` or `xcodebuild test -only-testing:<PackageTests>` for the changed package.
+    - Tier 2 (affected targets): Build and test Xcode targets that directly depend on the changed code.
+      Example: `xcodebuild build -scheme Voyager-Dev` for compilation check.
+    - Tier 3 (broad): Full scheme test. Required only for PR gates, release validation, or cross-cutting changes.
+    - For Tier 1/2, document any pre-existing failures in evidence before reporting outcome.
+    - Tier 3 failures from code NOT touched by the current task must be documented as pre-existing, not task failures.
 - Mixed changes:
-  - Run both backend and macOS checks relevant to touched code.
+    - Run both backend and macOS checks relevant to touched code.
 
 ## Must not
+
 - Skip verification for non-trivial changes.
 - Claim success without command evidence.

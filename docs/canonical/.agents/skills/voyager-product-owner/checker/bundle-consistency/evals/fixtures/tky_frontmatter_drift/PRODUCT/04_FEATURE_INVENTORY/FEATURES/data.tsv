@@ -1,2 +1,0 @@
-feature_category	category_key	feature_title	feature_id	release_phase	description	related_ui
-Test Key Checks	TKY	Manage Keyed Regions	TKY-001	MVP	키 관련 정합성 검사용 기능	test_window.inspector_pane

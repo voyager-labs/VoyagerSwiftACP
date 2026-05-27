@@ -144,7 +144,9 @@ apps/macos/Voyager/Voyager/
 │     ├─ Reducer/
 │     └─ Api/
 ├─ 03_Widgets/                  # 위젯 레이어 (재사용 UI 섹션)
-│  └─ .gitkeep                  # 현재 비어있음
+│  └─ EntryViewLayout/          # 엔트리 뷰 레이아웃 위젯
+│     ├─ Ui/                    # 뷰
+│     └─ Reducer/               # 리듀서
 ├─ 04_Features/                 # 기능 레이어 (유즈케이스)
 │  ├─ Composer/                 # 컴포저 기능
 │  │  ├─ Reducer/

@@ -10,7 +10,7 @@ public struct KeyCommand: Equatable, Sendable {
         keyCode: UInt16,
         modifiers: KeyModifiers,
         characters: String?,
-        charactersIgnoringModifiers: String?
+        charactersIgnoringModifiers: String?,
     ) {
         self.keyCode = keyCode
         self.modifiers = modifiers

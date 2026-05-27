@@ -26,14 +26,14 @@ struct ComposerFeedbackToastView: View {
                 .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme))
                 .overlay(
                     RoundedRectangle(cornerRadius: VoyagerDS.Radius.overlayCard, style: .continuous)
-                        .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1)
-                )
+                        .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
+                ),
         )
         .shadow(
             color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
             radius: VoyagerDS.Shadow.popoverRadius,
             x: 0,
-            y: VoyagerDS.Shadow.popoverYOffset
+            y: VoyagerDS.Shadow.popoverYOffset,
         )
         .accessibilityIdentifier("composer.feedback.toast")
         .fixedSize(horizontal: false, vertical: true)

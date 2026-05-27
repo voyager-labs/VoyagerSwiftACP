@@ -22,7 +22,7 @@ public struct KeyCommandView: NSViewRepresentable {
 
     public init(
         onViewCreated: ((KeyCommandHostingView) -> Void)? = nil,
-        onKeyDown: @escaping (NSEvent) -> Void
+        onKeyDown: @escaping (NSEvent) -> Void,
     ) {
         self.onViewCreated = onViewCreated
         self.onKeyDown = onKeyDown

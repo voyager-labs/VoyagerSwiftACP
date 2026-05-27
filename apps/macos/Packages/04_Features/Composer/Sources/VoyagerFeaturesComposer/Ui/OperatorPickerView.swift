@@ -31,7 +31,7 @@ struct OperatorPickerView: View {
                                 .contentShape(Rectangle())
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear)
+                                        .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
                                 )
                             }
                             .buttonStyle(.plain)
@@ -45,7 +45,7 @@ struct OperatorPickerView: View {
             .frame(width: 180)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme))
+                    .fill(VoyagerDS.Surface.popoverBackground(for: colorScheme)),
             )
         })
     }

@@ -40,7 +40,11 @@ public struct CollectionSessionMetadata: Equatable, Sendable {
     public var baseline: CollectionBaseline?
     public var reopenContext: CollectionContext?
 
-    public init(lastRefreshAt: Date? = nil, baseline: CollectionBaseline? = nil, reopenContext: CollectionContext? = nil) {
+    public init(
+        lastRefreshAt: Date? = nil,
+        baseline: CollectionBaseline? = nil,
+        reopenContext: CollectionContext? = nil,
+    ) {
         self.lastRefreshAt = lastRefreshAt
         self.baseline = baseline
         self.reopenContext = reopenContext
@@ -55,7 +59,7 @@ public struct CollectionDocumentSessionState: Equatable, Sendable {
     public init(
         phase: CollectionSessionPhase = .idle,
         document: CollectionOpenedDocumentState? = nil,
-        metadata: CollectionSessionMetadata = .init()
+        metadata: CollectionSessionMetadata = .init(),
     ) {
         self.phase = phase
         self.document = document
@@ -79,7 +83,7 @@ public struct CollectionDocumentSessionState: Equatable, Sendable {
         document = .init(
             url: url,
             name: url.deletingPathExtension().lastPathComponent,
-            compatibility: nil
+            compatibility: nil,
         )
         metadata.baseline = nil
     }
@@ -87,7 +91,7 @@ public struct CollectionDocumentSessionState: Equatable, Sendable {
     mutating func completeOpen(
         kind: CollectionSessionPhase.OpenKind,
         isStale: Bool,
-        compatibility: CollectionFileCompatibilityMetadata?
+        compatibility: CollectionFileCompatibilityMetadata?,
     ) {
         phase = .opened(kind: kind, base: isStale ? .stale : .ready, inflight: .none)
         document?.compatibility = compatibility

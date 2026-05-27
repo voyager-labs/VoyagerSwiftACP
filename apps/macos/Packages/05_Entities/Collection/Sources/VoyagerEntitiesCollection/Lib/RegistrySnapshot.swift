@@ -52,7 +52,7 @@ public struct RegistrySnapshot: Sendable {
                 }
 
                 properties.append(
-                    PropertyEntry(key: key, category: categoryKey, definition: definition)
+                    PropertyEntry(key: key, category: categoryKey, definition: definition),
                 )
                 labels[key] = label
                 types[key] = definition.type
@@ -78,13 +78,13 @@ public struct RegistrySnapshot: Sendable {
             labels: labels,
             types: types,
             unitSpecs: unitSpecs,
-            legacyKeyMap: legacyKeyMap
+            legacyKeyMap: legacyKeyMap,
         )
     }
 
     private static func buildOperatorMap(
         properties: [PropertyEntry],
-        conditionRegistry: PropertyConditionRegistry
+        conditionRegistry: PropertyConditionRegistry,
     ) -> [String: [String]] {
         var operatorMap: [String: [String]] = [:]
         for property in properties {
@@ -108,7 +108,7 @@ public struct RegistrySnapshot: Sendable {
 
     private static func isValidOperator(
         definition: OperatorDefinition,
-        typeKey: String
+        typeKey: String,
     ) -> Bool {
         guard let label = definition.uiLabel, !label.isEmpty else {
             return false
@@ -123,13 +123,13 @@ public struct RegistrySnapshot: Sendable {
     public static func load() -> RegistrySnapshot {
         let systemRegistry: SystemPropertyRegistry = loadRegistry(resourceName: "system_property_registry")
         let conditionRegistry: PropertyConditionRegistry = loadRegistry(
-            resourceName: "property_condition_registry"
+            resourceName: "property_condition_registry",
         )
 
         let propertyBuild = buildProperties(from: systemRegistry)
         let operatorMap = buildOperatorMap(
             properties: propertyBuild.properties,
-            conditionRegistry: conditionRegistry
+            conditionRegistry: conditionRegistry,
         )
 
         return RegistrySnapshot(
@@ -140,7 +140,7 @@ public struct RegistrySnapshot: Sendable {
             legacyKeyMap: propertyBuild.legacyKeyMap,
             operatorCodesByKey: operatorMap,
             operatorDefinitions: conditionRegistry.operators,
-            propertyTypes: conditionRegistry.propertyTypes
+            propertyTypes: conditionRegistry.propertyTypes,
         )
     }
 }

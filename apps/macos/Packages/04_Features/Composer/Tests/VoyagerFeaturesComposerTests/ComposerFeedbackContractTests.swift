@@ -31,7 +31,7 @@ final class ComposerFeedbackContractTests: XCTestCase {
 
         XCTAssertEqual(
             store.state.submittedSearchFilters,
-            VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: [])
+            VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: []),
         )
         XCTAssertNotNil(store.state.activeSearchRequestID)
         XCTAssertNil(store.state.activeFiltersRequestID)
@@ -48,7 +48,7 @@ final class ComposerFeedbackContractTests: XCTestCase {
         XCTAssertNil(store.state.activeSearchRequestID)
         XCTAssertEqual(
             store.state.submittedSearchFilters,
-            VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: [])
+            VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: []),
         )
         XCTAssertFalse(store.state.isLoadingSearch)
         XCTAssertEqual(store.state.queryRenderPhase, ComposerQueryRenderPhase.idle)
@@ -72,7 +72,7 @@ final class ComposerFeedbackContractTests: XCTestCase {
 
         await store.send(ComposerAction.searchResponse(
             staleSearchRequestID,
-            .success(VoyagerShared.SearchResponsePayload(itemCount: 1, appliedFilters: nil, items: nil, error: nil))
+            .success(VoyagerShared.SearchResponsePayload(itemCount: 1, appliedFilters: nil, items: nil, error: nil)),
         ))
 
         XCTAssertEqual(store.state, initialState)

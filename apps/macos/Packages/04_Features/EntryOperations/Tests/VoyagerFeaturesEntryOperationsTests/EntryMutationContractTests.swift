@@ -4,6 +4,7 @@ import XCTest
 
 @MainActor
 final class EntryMutationContractTests: XCTestCase {
+    /// cut-paste가 같은 부모에서 수행되더라도 클립보드 상태가 유지되는지 검증
     func testCutPasteIntoSameParentKeepsClipboardState() async {
         let store = TestStore(initialState: {
             var state = EntryOperationsFeature.State()
@@ -41,6 +42,7 @@ final class EntryMutationContractTests: XCTestCase {
         XCTAssertNotNil(store.state.cutClearSession)
     }
 
+    /// 이동 성공 후 클립보드에서 이동된 경로만 제거되는지 검증
     func testCutPasteMoveSuccessRemovesOnlyMovedPathFromClipboard() async {
         let session = EntryOperationsCutClearHeuristic().makeInitialSession(
             cutSessionId: "cut-session",
@@ -75,6 +77,7 @@ final class EntryMutationContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// 마지막 경로가 이동되면 cut 클립보드를 비우고 copy로 전환하는지 검증
     func testCutPasteMoveSuccessClearsClipboardWhenLastPathMoves() async {
         let session = EntryOperationsCutClearHeuristic().makeInitialSession(
             cutSessionId: "cut-session",

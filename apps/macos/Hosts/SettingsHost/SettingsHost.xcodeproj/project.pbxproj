@@ -8,10 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		B20000000000000000000016 /* VoyagerPagesSettings in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000018 /* VoyagerPagesSettings */; };
-		B20000000000000000000017 /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000019 /* VoyagerEntitiesAppPreferences */; };
-		B20000000000000000000022 /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000023 /* VoyagerEntitiesAi */; };
-		B20000000000000000000024 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000025 /* VoyagerShared */; };
-		B20000000000000000000026 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000027 /* ComposableArchitecture */; };
+		B20000000000000000000017 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000019 /* VoyagerShared */; };
+		B20000000000000000000022 /* VoyagerEntitiesAppPreferences in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000023 /* VoyagerEntitiesAppPreferences */; };
+		B20000000000000000000032 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000031 /* ComposableArchitecture */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,10 +31,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				B20000000000000000000016 /* VoyagerPagesSettings in Frameworks */,
-				B20000000000000000000017 /* VoyagerEntitiesAppPreferences in Frameworks */,
-				B20000000000000000000022 /* VoyagerEntitiesAi in Frameworks */,
-				B20000000000000000000024 /* VoyagerShared in Frameworks */,
-				B20000000000000000000026 /* ComposableArchitecture in Frameworks */,
+				B20000000000000000000017 /* VoyagerShared in Frameworks */,
+				B20000000000000000000022 /* VoyagerEntitiesAppPreferences in Frameworks */,
+				B20000000000000000000032 /* ComposableArchitecture in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,10 +77,9 @@
 			name = SettingsHost;
 			packageProductDependencies = (
 				B20000000000000000000018 /* VoyagerPagesSettings */,
-				B20000000000000000000019 /* VoyagerEntitiesAppPreferences */,
-				B20000000000000000000023 /* VoyagerEntitiesAi */,
-				B20000000000000000000025 /* VoyagerShared */,
-				B20000000000000000000027 /* ComposableArchitecture */,
+				B20000000000000000000019 /* VoyagerShared */,
+				B20000000000000000000023 /* VoyagerEntitiesAppPreferences */,
+				B20000000000000000000031 /* ComposableArchitecture */,
 			);
 			productName = SettingsHost;
 			productReference = B20000000000000000000004 /* SettingsHost.app */;
@@ -114,9 +111,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B20000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesSettings" */,
-				B20000000000000000000021 /* XCLocalSwiftPackageReference "VoyagerEntitiesAppPreferences" */,
-				B20000000000000000000028 /* XCLocalSwiftPackageReference "VoyagerEntitiesAi" */,
-				B20000000000000000000029 /* XCLocalSwiftPackageReference "VoyagerShared" */,
+				B20000000000000000000021 /* XCLocalSwiftPackageReference "VoyagerShared" */,
+				B20000000000000000000024 /* XCLocalSwiftPackageReference "VoyagerEntitiesAppPreferences" */,
 				B20000000000000000000030 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -372,20 +368,38 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../Packages/02_Pages/Settings;
 		};
-		B20000000000000000000021 /* XCLocalSwiftPackageReference "VoyagerEntitiesAppPreferences" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../Packages/05_Entities/AppPreferences;
-		};
-		B20000000000000000000028 /* XCLocalSwiftPackageReference "VoyagerEntitiesAi" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../Packages/05_Entities/Ai;
-		};
-		B20000000000000000000029 /* XCLocalSwiftPackageReference "VoyagerShared" */ = {
+		B20000000000000000000021 /* XCLocalSwiftPackageReference "VoyagerShared" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../Packages/06_Shared/VoyagerShared;
 		};
+		B20000000000000000000024 /* XCLocalSwiftPackageReference "VoyagerEntitiesAppPreferences" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../Packages/05_Entities/AppPreferences;
+		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCSwiftPackageProductDependency section */
+		B20000000000000000000018 /* VoyagerPagesSettings */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesSettings" */;
+			productName = VoyagerPagesSettings;
+		};
+		B20000000000000000000019 /* VoyagerShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000021 /* XCLocalSwiftPackageReference "VoyagerShared" */;
+			productName = VoyagerShared;
+		};
+		B20000000000000000000023 /* VoyagerEntitiesAppPreferences */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000024 /* XCLocalSwiftPackageReference "VoyagerEntitiesAppPreferences" */;
+			productName = VoyagerEntitiesAppPreferences;
+		};
+		B20000000000000000000031 /* ComposableArchitecture */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000030 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */;
+			productName = ComposableArchitecture;
+		};
+/* End XCSwiftPackageProductDependency section */
 /* Begin XCRemoteSwiftPackageReference section */
 		B20000000000000000000030 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -396,34 +410,6 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		B20000000000000000000018 /* VoyagerPagesSettings */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = B20000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesSettings" */;
-			productName = VoyagerPagesSettings;
-		};
-		B20000000000000000000019 /* VoyagerEntitiesAppPreferences */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = B20000000000000000000021 /* XCLocalSwiftPackageReference "VoyagerEntitiesAppPreferences" */;
-			productName = VoyagerEntitiesAppPreferences;
-		};
-		B20000000000000000000023 /* VoyagerEntitiesAi */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = B20000000000000000000028 /* XCLocalSwiftPackageReference "VoyagerEntitiesAi" */;
-			productName = VoyagerEntitiesAi;
-		};
-		B20000000000000000000025 /* VoyagerShared */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = B20000000000000000000029 /* XCLocalSwiftPackageReference "VoyagerShared" */;
-			productName = VoyagerShared;
-		};
-		B20000000000000000000027 /* ComposableArchitecture */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = B20000000000000000000030 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */;
-			productName = ComposableArchitecture;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B20000000000000000000001 /* Project object */;
 }

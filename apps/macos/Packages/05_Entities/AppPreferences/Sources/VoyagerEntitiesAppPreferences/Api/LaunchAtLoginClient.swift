@@ -7,7 +7,7 @@ public struct LaunchAtLoginClient: Sendable {
 
     public nonisolated init(
         isEnabled: @escaping @Sendable () -> Bool,
-        setEnabled: @escaping @Sendable (Bool) throws -> Void
+        setEnabled: @escaping @Sendable (Bool) throws -> Void,
     ) {
         self.isEnabled = isEnabled
         self.setEnabled = setEnabled
@@ -28,21 +28,21 @@ extension LaunchAtLoginClient: DependencyKey {
                 } else {
                     try appService.unregister()
                 }
-            }
+            },
         )
     }
 
     public nonisolated static var testValue: LaunchAtLoginClient {
         LaunchAtLoginClient(
             isEnabled: { false },
-            setEnabled: { _ in }
+            setEnabled: { _ in },
         )
     }
 
     public nonisolated static var previewValue: LaunchAtLoginClient {
         LaunchAtLoginClient(
             isEnabled: { false },
-            setEnabled: { _ in }
+            setEnabled: { _ in },
         )
     }
 }

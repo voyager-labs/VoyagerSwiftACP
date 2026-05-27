@@ -1,2 +1,0 @@
-feature_category	category_key	feature_title	feature_id	release_phase	description	related_ui
-Test Chat Workflows	TCW	Manage Test Requests	TCW-001	MVP	테스트용 request 상태 계약과 관련된 기능	test_window.chat_panel

@@ -16,7 +16,7 @@ public enum EntryArrangementMenuItems {
     public static let sortItems: [EntryArrangementSortMenuItem] = SortKey.menuKeys.map { key in
         .init(
             key: key,
-            title: labelClient.labelForPropertyKey(key.systemPropertyKey)
+            title: labelClient.labelForPropertyKey(key.systemPropertyKey),
         )
     }
 
@@ -26,7 +26,7 @@ public enum EntryArrangementMenuItems {
         }
         return .init(
             key: key,
-            title: labelClient.labelForPropertyKey(propertyKey)
+            title: labelClient.labelForPropertyKey(propertyKey),
         )
     }
 

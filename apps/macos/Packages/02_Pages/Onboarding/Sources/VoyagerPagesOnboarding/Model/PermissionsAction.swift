@@ -8,6 +8,8 @@ enum PermissionsAction: CasePathable, Sendable {
     case appDidBecomeActive
     case fullDiskAccessStatusResponse(FullDiskAccessStatus)
     case helperFolderAccessStatusLoaded(FolderAccessResult)
+    case fullDiskAccessRefreshResponse(Int, FullDiskAccessStatus)
+    case helperFolderAccessRefreshLoaded(Int, FolderAccessResult)
     case requestHelperFolderAccessTapped
     case helperFolderAccessResponse(FolderAccessResult)
     case openSystemSettingsTapped

@@ -5,8 +5,10 @@ import Foundation
 import VoyagerShared
 import XCTest
 
+/// Composer 쿼리 피드백 생명주기 — 필터 유효/변경 없음/실패/stale 전이를 검증.
 @MainActor
 final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
+    /// testChangedFiltersContinueToApplyFiltersWithoutShowingToast 테스트 동작을 검증한다.
     func testChangedFiltersContinueToApplyFiltersWithoutShowingToast() async {
         let applyRecorder = ApplyFiltersRecorder()
         let activeRequestID = UUID()
@@ -56,6 +58,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertTrue(store.state.isLoadingFilters)
     }
 
+    /// testNoOpSearchSkipsApplyFiltersWithoutShowingFeedback 테스트 동작을 검증한다.
     func testNoOpSearchSkipsApplyFiltersWithoutShowingFeedback() async {
         let applyRecorder = ApplyFiltersRecorder()
         let activeRequestID = UUID()
@@ -95,6 +98,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertNil(store.state.transientFeedback)
     }
 
+    /// testSearchFailureShowsPolicyErrorFeedback 테스트 동작을 검증한다.
     func testSearchFailureShowsPolicyErrorFeedback() async {
         let activeRequestID = UUID()
         var initialState = ComposerState()
@@ -118,6 +122,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertEqual(store.state.queryRenderPhase, .failed)
     }
 
+    /// testStaleFilterResponseDoesNotMutateFeedbackOrPhase 테스트 동작을 검증한다.
     func testStaleFilterResponseDoesNotMutateFeedbackOrPhase() async {
         let activeRequestID = UUID()
         let staleRequestID = UUID()

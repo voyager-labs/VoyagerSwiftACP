@@ -14,10 +14,6 @@ public struct ValueNormalizeResult: Equatable {
 }
 
 public enum ValueNormalizerUtils {
-    static func formatDate(_ date: Date) -> String {
-        DateNormalizerUtils.formatDate(date)
-    }
-
     public static func formatDateOnly(_ date: Date) -> String {
         DateNormalizerUtils.formatDateOnly(date)
     }
@@ -29,28 +25,6 @@ public enum ValueNormalizerUtils {
 
     public static func parseDate(_ text: String) -> Date? {
         DateNormalizerUtils.parseDate(text)
-    }
-
-    static func startOfDayString(for date: Date) -> String {
-        let calendar = Calendar(identifier: .gregorian)
-        let utc = TimeZone(secondsFromGMT: 0) ?? .current
-        var components = calendar.dateComponents(in: utc, from: date)
-        components.hour = 0
-        components.minute = 0
-        components.second = 0
-        let start = calendar.date(from: components) ?? date
-        return formatDate(start)
-    }
-
-    static func endOfDayString(for date: Date) -> String {
-        let calendar = Calendar(identifier: .gregorian)
-        let utc = TimeZone(secondsFromGMT: 0) ?? .current
-        var components = calendar.dateComponents(in: utc, from: date)
-        components.hour = 23
-        components.minute = 59
-        components.second = 59
-        let end = calendar.date(from: components) ?? date
-        return formatDate(end)
     }
 
     public static func expectedArity(for kind: String) -> Int {
@@ -67,7 +41,7 @@ public enum ValueNormalizerUtils {
     public static func normalize(
         kind: String,
         rawValues: [String],
-        editingIndex: Int?
+        editingIndex: Int?,
     ) -> ValueNormalizeResult {
         switch kind {
         case "none":
@@ -118,6 +92,32 @@ public enum ValueNormalizerUtils {
         return result
     }
 
+    static func formatDate(_ date: Date) -> String {
+        DateNormalizerUtils.formatDate(date)
+    }
+
+    static func startOfDayString(for date: Date) -> String {
+        let calendar = Calendar(identifier: .gregorian)
+        let utc = TimeZone(secondsFromGMT: 0) ?? .current
+        var components = calendar.dateComponents(in: utc, from: date)
+        components.hour = 0
+        components.minute = 0
+        components.second = 0
+        let start = calendar.date(from: components) ?? date
+        return formatDate(start)
+    }
+
+    static func endOfDayString(for date: Date) -> String {
+        let calendar = Calendar(identifier: .gregorian)
+        let utc = TimeZone(secondsFromGMT: 0) ?? .current
+        var components = calendar.dateComponents(in: utc, from: date)
+        components.hour = 23
+        components.minute = 59
+        components.second = 59
+        let end = calendar.date(from: components) ?? date
+        return formatDate(end)
+    }
+
     private static func requireNonEmpty(_ texts: [String]) -> [String]? {
         let trimmed = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         return trimmed.contains(where: \.isEmpty) ? nil : trimmed
@@ -147,7 +147,7 @@ public enum ValueNormalizerUtils {
             return .init(
                 values: nil,
                 errorMessage: "Value is required.",
-                resetIndices: empties.isEmpty ? [0] : empties
+                resetIndices: empties.isEmpty ? [0] : empties,
             )
         }
         return .init(values: parts, errorMessage: nil, resetIndices: [])
@@ -165,7 +165,7 @@ public enum ValueNormalizerUtils {
 
     private static func normalizeRangeNumber(
         rawValues: [String],
-        editingIndex: Int?
+        editingIndex: Int?,
     ) -> ValueNormalizeResult {
         let values = rawValues + Array(repeating: "", count: max(0, 2 - rawValues.count))
         let trimmed = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -223,7 +223,7 @@ public enum ValueNormalizerUtils {
 
     private static func normalizeRangeDate(
         rawValues: [String],
-        editingIndex: Int?
+        editingIndex: Int?,
     ) -> ValueNormalizeResult {
         let values = rawValues + Array(repeating: "", count: max(0, 2 - rawValues.count))
         let trimmed = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

@@ -7,7 +7,7 @@ public struct ThumbnailGeneratorClient: Sendable {
     public var generateThumbnail: @Sendable (_ url: URL, _ size: CGSize, _ scale: CGFloat) async -> NSImage?
 
     public nonisolated init(
-        generateThumbnail: @escaping @Sendable (_ url: URL, _ size: CGSize, _ scale: CGFloat) async -> NSImage?
+        generateThumbnail: @escaping @Sendable (_ url: URL, _ size: CGSize, _ scale: CGFloat) async -> NSImage?,
     ) {
         self.generateThumbnail = generateThumbnail
     }
@@ -15,7 +15,7 @@ public struct ThumbnailGeneratorClient: Sendable {
     public func generateThumbnail(
         for url: URL,
         size: CGSize,
-        scale: CGFloat = 2.0
+        scale: CGFloat = 2.0,
     ) async -> NSImage? {
         await generateThumbnail(url, size, scale)
     }
@@ -29,12 +29,12 @@ extension ThumbnailGeneratorClient: DependencyKey {
                     fileAt: url,
                     size: size,
                     scale: scale,
-                    representationTypes: .thumbnail
+                    representationTypes: .thumbnail,
                 )
 
                 let representation = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
                 return representation?.nsImage
-            }
+            },
         )
     }
 

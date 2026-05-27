@@ -5,6 +5,7 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+/// 컬렉션 파일 호환성 — 스키마/스냅샷 혼합 시 폴백 정책을 검증.
 @MainActor
 final class CollectionFileCompatibilityTests: XCTestCase {
     let fileManager = FileManager.default

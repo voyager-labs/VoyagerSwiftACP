@@ -22,7 +22,7 @@ extension CollectionStalenessClient: DependencyKey {
         suppressPaths: { _ in },
         clearRecord: { _ in },
         registerCollection: { _, _ in },
-        consumeInvalidation: { _ in false }
+        consumeInvalidation: { _ in false },
     )
 }
 
@@ -49,7 +49,7 @@ public struct CollectionStalenessRecord: Codable, Equatable, Sendable {
     public nonisolated init(
         definitionFingerprint: String,
         relevanceRoots: [String],
-        lastInvalidatedAt: Date?
+        lastInvalidatedAt: Date?,
     ) {
         self.definitionFingerprint = definitionFingerprint
         self.relevanceRoots = relevanceRoots
@@ -116,17 +116,17 @@ public extension CollectionStalenessClient {
             upsertRecord: makeUpsertRecord(userDefaultsClient: userDefaultsClient),
             invalidateRecords: makeInvalidateRecords(
                 userDefaultsClient: userDefaultsClient,
-                suppressionStore: suppressionStore
+                suppressionStore: suppressionStore,
             ),
             suppressPaths: makeSuppressPaths(suppressionStore: suppressionStore),
             clearRecord: makeClearRecord(userDefaultsClient: userDefaultsClient),
             registerCollection: makeRegisterCollection(userDefaultsClient: userDefaultsClient),
-            consumeInvalidation: makeConsumeInvalidation(userDefaultsClient: userDefaultsClient)
+            consumeInvalidation: makeConsumeInvalidation(userDefaultsClient: userDefaultsClient),
         )
     }
 
     private nonisolated static func makeRecord(
-        userDefaultsClient: UserDefaultsClient
+        userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String) -> CollectionStalenessRecord? {
         { path in
             loadStorage(userDefaultsClient: userDefaultsClient)[normalizePath(path)]
@@ -134,7 +134,7 @@ public extension CollectionStalenessClient {
     }
 
     private nonisolated static func makeUpsertRecord(
-        userDefaultsClient: UserDefaultsClient
+        userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String, CollectionStalenessRecord) -> Void {
         { path, record in
             var storage = loadStorage(userDefaultsClient: userDefaultsClient)
@@ -145,7 +145,7 @@ public extension CollectionStalenessClient {
 
     private nonisolated static func makeInvalidateRecords(
         userDefaultsClient: UserDefaultsClient,
-        suppressionStore: CollectionStalenessSuppressionStore
+        suppressionStore: CollectionStalenessSuppressionStore,
     ) -> @Sendable ([String]) -> Void {
         { affectedPaths in
             let normalizedAffectedPaths = affectedPaths.map(normalizePath).filter {
@@ -168,7 +168,7 @@ public extension CollectionStalenessClient {
                 storage[path] = .init(
                     definitionFingerprint: record.definitionFingerprint,
                     relevanceRoots: record.relevanceRoots,
-                    lastInvalidatedAt: invalidatedAt
+                    lastInvalidatedAt: invalidatedAt,
                 )
             }
 
@@ -177,7 +177,7 @@ public extension CollectionStalenessClient {
     }
 
     private nonisolated static func makeSuppressPaths(
-        suppressionStore: CollectionStalenessSuppressionStore
+        suppressionStore: CollectionStalenessSuppressionStore,
     ) -> @Sendable ([String]) -> Void {
         { paths in
             suppressionStore.insert(paths.map(normalizePath))
@@ -185,7 +185,7 @@ public extension CollectionStalenessClient {
     }
 
     private nonisolated static func makeClearRecord(
-        userDefaultsClient: UserDefaultsClient
+        userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String) -> Void {
         { path in
             var storage = loadStorage(userDefaultsClient: userDefaultsClient)
@@ -195,7 +195,7 @@ public extension CollectionStalenessClient {
     }
 
     private nonisolated static func makeRegisterCollection(
-        userDefaultsClient: UserDefaultsClient
+        userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String, [String]) -> Void {
         { path, relevanceRoots in
             let normalizedPath = normalizePath(path)
@@ -205,14 +205,14 @@ public extension CollectionStalenessClient {
             storage[normalizedPath] = .init(
                 definitionFingerprint: existing?.definitionFingerprint ?? "",
                 relevanceRoots: normalizedRoots(relevanceRoots),
-                lastInvalidatedAt: nil
+                lastInvalidatedAt: nil,
             )
             saveStorage(storage, userDefaultsClient: userDefaultsClient)
         }
     }
 
     private nonisolated static func makeConsumeInvalidation(
-        userDefaultsClient: UserDefaultsClient
+        userDefaultsClient: UserDefaultsClient,
     ) -> @Sendable (String) -> Bool {
         { path in
             let normalizedPath = normalizePath(path)
@@ -224,7 +224,7 @@ public extension CollectionStalenessClient {
             storage[normalizedPath] = .init(
                 definitionFingerprint: existing.definitionFingerprint,
                 relevanceRoots: existing.relevanceRoots,
-                lastInvalidatedAt: nil
+                lastInvalidatedAt: nil,
             )
             saveStorage(storage, userDefaultsClient: userDefaultsClient)
             return true
@@ -236,7 +236,7 @@ public extension CollectionStalenessClient {
     }
 
     private nonisolated static func loadStorage(
-        userDefaultsClient: UserDefaultsClient
+        userDefaultsClient: UserDefaultsClient,
     ) -> [String: CollectionStalenessRecord] {
         guard let data = userDefaultsClient.object(storageKey()) as? Data else { return [:] }
 
@@ -251,7 +251,7 @@ public extension CollectionStalenessClient {
 
         if let legacyJSONStorage = try? JSONDecoder().decode(
             [String: LegacyCollectionStalenessRecord].self,
-            from: data
+            from: data,
         ) {
             let migratedStorage = legacyJSONStorage
                 .reduce(into: [String: CollectionStalenessRecord]()) { result, entry in
@@ -268,7 +268,7 @@ public extension CollectionStalenessClient {
 
     private nonisolated static func saveStorage(
         _ storage: [String: CollectionStalenessRecord],
-        userDefaultsClient: UserDefaultsClient
+        userDefaultsClient: UserDefaultsClient,
     ) {
         let data = try? PropertyListEncoder().encode(storage)
         userDefaultsClient.setObject(data, storageKey())
@@ -278,7 +278,7 @@ public extension CollectionStalenessClient {
         .init(
             definitionFingerprint: record.definitionFingerprint,
             relevanceRoots: normalizedRoots(record.relevanceRoots),
-            lastInvalidatedAt: record.lastInvalidatedAt
+            lastInvalidatedAt: record.lastInvalidatedAt,
         )
     }
 
@@ -288,7 +288,7 @@ public extension CollectionStalenessClient {
         .init(
             definitionFingerprint: "",
             relevanceRoots: normalizedRoots(legacyRecord.scopes),
-            lastInvalidatedAt: legacyRecord.isInvalidated ? .distantPast : nil
+            lastInvalidatedAt: legacyRecord.isInvalidated ? .distantPast : nil,
         )
     }
 
@@ -318,7 +318,7 @@ public extension CollectionStalenessClient {
     private nonisolated static func decodeLegacyPlistStorage(_ data: Data) -> [String: CollectionStalenessRecord]? {
         guard let legacyStorage = try? PropertyListDecoder().decode(
             [String: LegacyCollectionStalenessRecord].self,
-            from: data
+            from: data,
         ) else {
             return nil
         }
@@ -337,7 +337,7 @@ public extension CollectionStalenessClient {
         let relevanceRoots = normalizedRoots(
             (dictionary["relevanceRoots"] as? [String])
                 ?? (dictionary["scopes"] as? [String])
-                ?? []
+                ?? [],
         )
 
         let invalidatedAt = dictionary["lastInvalidatedAt"] as? Date
@@ -345,7 +345,7 @@ public extension CollectionStalenessClient {
         let record = CollectionStalenessRecord(
             definitionFingerprint: definitionFingerprint,
             relevanceRoots: relevanceRoots,
-            lastInvalidatedAt: invalidatedAt ?? (legacyInvalidated ? .distantPast : nil)
+            lastInvalidatedAt: invalidatedAt ?? (legacyInvalidated ? .distantPast : nil),
         )
 
         return isMeaningful(record) ? record : nil

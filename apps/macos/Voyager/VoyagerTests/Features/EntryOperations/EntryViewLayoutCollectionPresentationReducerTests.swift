@@ -6,6 +6,7 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import XCTest
 
+/// 컬렉션 모드 리듀서 — 토글/항목 업데이트/재적용/정리 전이를 검증.
 @MainActor
 final class EntryViewLayoutCollectionReducerTests: XCTestCase {
     private func makeTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
@@ -45,6 +46,7 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
         )
     }
 
+    /// testSetCollectionModeUpdatesStateAndReapplies 테스트 동작을 검증한다.
     func testSetCollectionModeUpdatesStateAndReapplies() async {
         let store = makeTestStore()
 
@@ -84,6 +86,7 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
         )
     }
 
+    /// testSetCollectionItemsUpdatesStateAndReapplies 테스트 동작을 검증한다.
     func testSetCollectionItemsUpdatesStateAndReapplies() async {
         let store = makeTestStore()
 
@@ -101,6 +104,7 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
         )
     }
 
+    /// testSetCollectionItemsWithCollectionModeOn 테스트 동작을 검증한다.
     func testSetCollectionItemsWithCollectionModeOn() async {
         let store = makeTestStore()
 
@@ -128,6 +132,7 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
         )
     }
 
+    /// testClearCollectionPresentationFallsBackToRegularSource 테스트 동작을 검증한다.
     func testClearCollectionPresentationFallsBackToRegularSource() async {
         let store = makeTestStore()
 
@@ -179,6 +184,7 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
         )
     }
 
+    /// testReapplyUsesDisplayOrderItemsSnapshot 테스트 동작을 검증한다.
     func testReapplyUsesDisplayOrderItemsSnapshot() async {
         let store = makeTestStore()
 
@@ -210,6 +216,7 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
         XCTAssertEqual(state.entries.map(\.id), [item.id])
     }
 
+    /// testEntryOperationsItemsLoadedReusesSameHelperPath 테스트 동작을 검증한다.
     func testEntryOperationsItemsLoadedReusesSameHelperPath() async {
         let store = makeTestStore()
 
@@ -231,6 +238,7 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
         XCTAssertEqual(state.entries.map(\.id), [item.id])
     }
 
+    /// testRemoveCollectionPathsPrunesItemsAndSelection 테스트 동작을 검증한다.
     func testRemoveCollectionPathsPrunesItemsAndSelection() async {
         let store = makeTestStore()
 
@@ -286,6 +294,7 @@ final class EntryViewLayoutCollectionReducerTests: XCTestCase {
         )
     }
 
+    /// testAddCollectionPathsRestoresItemsWithoutDuplicatingExistingOnes 테스트 동작을 검증한다.
     func testAddCollectionPathsRestoresItemsWithoutDuplicatingExistingOnes() async {
         let store = makeTestStore()
 

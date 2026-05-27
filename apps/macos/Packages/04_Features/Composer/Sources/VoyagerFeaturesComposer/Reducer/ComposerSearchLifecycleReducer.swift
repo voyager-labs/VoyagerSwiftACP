@@ -23,7 +23,11 @@ struct ComposerSearchLifecycleReducer {
         Reduce { state, action in
             switch action {
             case .view(.submit):
-                return handleSubmit(state: &state, searchClient: searchClient, composerMetricClient: composerMetricClient)
+                return handleSubmit(
+                    state: &state,
+                    searchClient: searchClient,
+                    composerMetricClient: composerMetricClient,
+                )
 
             case .view(.cancelSearch):
                 return handleCancelSearch(state: &state, composerMetricClient: composerMetricClient)
@@ -32,7 +36,11 @@ struct ComposerSearchLifecycleReducer {
                 return handleCancelFilters(state: &state, composerMetricClient: composerMetricClient)
 
             case .view(.applyFilters):
-                return handleApplyFilters(state: &state, searchClient: searchClient, composerMetricClient: composerMetricClient)
+                return handleApplyFilters(
+                    state: &state,
+                    searchClient: searchClient,
+                    composerMetricClient: composerMetricClient,
+                )
 
             case let .internal(.searchResponse(requestID, response)):
                 guard state.activeSearchRequestID == requestID else {
@@ -44,11 +52,11 @@ struct ComposerSearchLifecycleReducer {
                     let baselineFilters = feedbackBaseline(from: state)
                     let normalizedAppliedFilters = feedbackAppliedFilters(
                         appliedFilters: response.appliedFilters,
-                        baseline: baselineFilters
+                        baseline: baselineFilters,
                     )
                     let isNoOpResponse = ComposerQueryFeedbackPolicy.isNoOp(
                         baseline: baselineFilters,
-                        appliedFilters: response.appliedFilters
+                        appliedFilters: response.appliedFilters,
                     )
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
@@ -59,13 +67,13 @@ struct ComposerSearchLifecycleReducer {
                     if let startedAt = state.searchStartedAt {
                         composerMetricClient.logMetric(
                             "voyager_search_roundtrip_duration_ms",
-                            value: round((Date().timeIntervalSince(startedAt)) * 1000)
+                            value: round((Date().timeIntervalSince(startedAt)) * 1000),
                         )
                     }
                     composerMetricClient.logMetric(
                         "voyager_search_result",
                         value: 1,
-                        tags: ["result": response.itemCount > 0 ? "success" : "empty"]
+                        tags: ["result": response.itemCount > 0 ? "success" : "empty"],
                     )
                     state.searchStartedAt = nil
                     if isNoOpResponse, state.openedCollectionURL == nil {
@@ -87,7 +95,7 @@ struct ComposerSearchLifecycleReducer {
                     return .run { send in
                         do {
                             let executionResponse = try await searchClient.applyFilters(
-                                .init(filters: executionFilters)
+                                .init(filters: executionFilters),
                             )
                             await send(.filtersResponse(filtersRequestID, .success(executionResponse)))
                         } catch is CancellationError {
@@ -106,18 +114,18 @@ struct ComposerSearchLifecycleReducer {
                         kind: .error,
                         message: feedbackFailureMessage(for: error),
                         state: &state,
-                        clock: clock
+                        clock: clock,
                     )
                     applyQueryPhaseTransition(.searchFailed, state: &state)
                     composerMetricClient.logMetric(
                         "voyager_search_result",
                         value: 1,
                         tags: ["result": "error"],
-                        level: .warn
+                        level: .warn,
                     )
                     state.searchStartedAt = nil
                     kComposerSearchLifecycleLogger.warning(
-                        "Composer query search failed: \(feedbackFailureMessage(for: error))"
+                        "Composer query search failed: \(feedbackFailureMessage(for: error))",
                     )
                     return feedbackEffect
                 }
@@ -137,7 +145,7 @@ struct ComposerSearchLifecycleReducer {
                     if let startedAt = state.filtersStartedAt {
                         composerMetricClient.logMetric(
                             "voyager_filters_roundtrip_duration_ms",
-                            value: round((Date().timeIntervalSince(startedAt)) * 1000)
+                            value: round((Date().timeIntervalSince(startedAt)) * 1000),
                         )
                     }
                     state.filtersStartedAt = nil
@@ -153,10 +161,10 @@ struct ComposerSearchLifecycleReducer {
                         kind: .error,
                         message: feedbackFailureMessage(for: error),
                         state: &state,
-                        clock: clock
+                        clock: clock,
                     )
                     kComposerSearchLifecycleLogger.warning(
-                        "Composer filter application failed: \(feedbackFailureMessage(for: error))"
+                        "Composer filter application failed: \(feedbackFailureMessage(for: error))",
                     )
                     return feedbackEffect
                 }
@@ -175,7 +183,7 @@ struct ComposerSearchLifecycleReducer {
 private func handleSubmit(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
-    composerMetricClient: ComposerMetricClient
+    composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return .none }
@@ -183,16 +191,16 @@ private func handleSubmit(
     let searchRequestID = UUID()
     composerMetricClient.logMetric(
         "voyager_composer_submit",
-        value: 1
+        value: 1,
     )
     composerMetricClient.logMetric(
         "voyager_search_submit",
-        value: 1
+        value: 1,
     )
     if state.hasSubmittedInSession {
         composerMetricClient.logMetric(
             "voyager_search_resubmit",
-            value: 1
+            value: 1,
         )
     }
     state.hasSubmittedInSession = true
@@ -211,7 +219,7 @@ private func handleSubmit(
     let searchEffect: Effect<ComposerFeature.Action> = .run { send in
         do {
             let response = try await searchClient.search(
-                .init(query: query, filters: filters)
+                .init(query: query, filters: filters),
             )
             await send(.searchResponse(searchRequestID, .success(response)))
         } catch is CancellationError {
@@ -225,13 +233,13 @@ private func handleSubmit(
 
     return .concatenate(
         .cancel(id: ComposerFeature.CancelID.filters),
-        searchEffect
+        searchEffect,
     )
 }
 
 private func handleCancelSearch(
     state: inout ComposerFeature.State,
-    composerMetricClient: ComposerMetricClient
+    composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
     state.activeSearchRequestID = nil
@@ -239,14 +247,14 @@ private func handleCancelSearch(
     composerMetricClient.logMetric(
         "voyager_search_cancel",
         value: 1,
-        tags: ["type": "search"]
+        tags: ["type": "search"],
     )
     return .cancel(id: ComposerFeature.CancelID.search)
 }
 
 private func handleCancelFilters(
     state: inout ComposerFeature.State,
-    composerMetricClient: ComposerMetricClient
+    composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
@@ -256,7 +264,7 @@ private func handleCancelFilters(
     composerMetricClient.logMetric(
         "voyager_search_cancel",
         value: 1,
-        tags: ["type": "filters"]
+        tags: ["type": "filters"],
     )
     return .cancel(id: ComposerFeature.CancelID.filters)
 }
@@ -264,7 +272,7 @@ private func handleCancelFilters(
 private func handleApplyFilters(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
-    composerMetricClient: ComposerMetricClient
+    composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
     let filtersRequestID = UUID()
@@ -277,33 +285,33 @@ private func handleApplyFilters(
     applyQueryPhaseTransition(.reset, state: &state)
     composerMetricClient.logMetric(
         "voyager_composer_filters_apply",
-        value: 1
+        value: 1,
     )
     state.filtersStartedAt = Date()
     return .concatenate(
         .cancel(id: ComposerFeature.CancelID.search),
-        applyFiltersIfNeeded(state: &state, searchClient: searchClient, requestID: filtersRequestID)
+        applyFiltersIfNeeded(state: &state, searchClient: searchClient, requestID: filtersRequestID),
     )
 }
 
 private func feedbackBaseline(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
     state.submittedSearchFilters ?? VoyagerShared.SearchFiltersPayload(
         scopes: state.scopes,
-        conditions: buildFilters(from: state).conditions
+        conditions: buildFilters(from: state).conditions,
     )
 }
 
 private func feedbackAppliedFilters(
     appliedFilters: VoyagerShared.AppliedFiltersPayload?,
-    baseline: VoyagerShared.SearchFiltersPayload
+    baseline: VoyagerShared.SearchFiltersPayload,
 ) -> VoyagerShared.AppliedFiltersPayload {
     let normalizedFilters = ComposerQueryFeedbackPolicy.normalizedFilters(
         appliedFilters: appliedFilters,
-        fallback: baseline
+        fallback: baseline,
     )
     return VoyagerShared.AppliedFiltersPayload(
         scopes: normalizedFilters.scopes,
-        conditions: normalizedFilters.conditions
+        conditions: normalizedFilters.conditions,
     )
 }
 
@@ -315,7 +323,7 @@ private func presentTransientFeedback(
     kind: ComposerTransientFeedbackKind,
     message: String,
     state: inout ComposerFeature.State,
-    clock: any Clock<Duration>
+    clock: any Clock<Duration>,
 ) -> Effect<ComposerFeature.Action> {
     if let currentFeedback = state.transientFeedback,
        currentFeedback.kind == kind,
@@ -327,7 +335,7 @@ private func presentTransientFeedback(
     let feedback = ComposerTransientFeedback(
         id: UUID(),
         kind: kind,
-        message: message
+        message: message,
     )
     state.transientFeedback = feedback
 
@@ -337,6 +345,6 @@ private func presentTransientFeedback(
             try await clock.sleep(for: .seconds(4))
             await send(.dismissTransientFeedback(id: feedback.id))
         }
-        .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true)
+        .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true),
     )
 }

@@ -2,6 +2,7 @@ import ComposableArchitecture
 import VoyagerEntitiesAi
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @CasePathable
 enum WindowManagerAction: CasePathable, Sendable {

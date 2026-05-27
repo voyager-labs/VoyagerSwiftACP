@@ -1,0 +1,13 @@
+# SwiftLint settings for Voyager macOS test sources.
+# Test suites keep regular lint coverage but skip metrics and naming checks that are noisy for AC matrices.
+parent_config: .swiftlint.yml
+
+disabled_rules:
+  - todo
+  - opening_brace
+  - closure_body_length
+  - trailing_comma
+  - file_name
+  - file_length
+  - type_body_length
+  - type_name

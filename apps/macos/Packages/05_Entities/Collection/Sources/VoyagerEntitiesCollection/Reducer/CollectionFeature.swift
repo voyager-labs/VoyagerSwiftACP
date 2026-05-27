@@ -27,7 +27,7 @@ public struct CollectionFeature {
                 state.collectionContext = baseline.context
                 return .send(.delegate(.draftRestorePrepared(.init(
                     context: baseline.context,
-                    openedURL: state.collectionSession.document?.url
+                    openedURL: state.collectionSession.document?.url,
                 ))))
 
             case .refreshRequested:
@@ -48,7 +48,7 @@ public struct CollectionFeature {
 
             case let .refreshResponseReceived(_, wasDirtyBeforeApplyingResponse):
                 _ = state.applyRefreshResponse(
-                    wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse
+                    wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
                 )
                 return .none
 
@@ -82,7 +82,7 @@ public struct CollectionFeature {
                     navigation: state.makeNavigationPresentationPayload(context: context),
                     shouldAppendHistory: !wasOpeningCollectionFile && nextNavigationDiffers &&
                         !previousNavigationIsCollection,
-                    shouldLogDAU: !wasOpeningCollectionFile && !previousNavigationIsCollection
+                    shouldLogDAU: !wasOpeningCollectionFile && !previousNavigationIsCollection,
                 ))))
 
             case .searchFailed:

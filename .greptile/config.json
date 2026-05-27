@@ -108,7 +108,8 @@
     "revert/**",
     "**/revert-*",
     "**/*revert-*",
-    "**/revert/**"
+    "**/revert/**",
+    "automation/voyager-docs-sync-*"
   ],
   "disabledLabels": [
     "skip-greptile",

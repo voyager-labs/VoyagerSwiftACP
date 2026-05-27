@@ -267,7 +267,7 @@ These conditions unconditionally block promotion regardless of score or recurren
 - No dedupe_key match, no tag overlap with existing rules.
 - **No conflict** → CREATE NEW.
 
-**Decision:** CREATE NEW → `.agents/rules/00-core/05-scope-diff-isolation.md` ✅
+**Decision:** CREATE NEW → `.agents/rules/99-agent/04-scope-diff-isolation.md` ✅
 
 ### 9.2 Exemplar 2: Xcode Test-Plan Visibility → Adopted as `04-xcode-test-plan-visibility.md`
 

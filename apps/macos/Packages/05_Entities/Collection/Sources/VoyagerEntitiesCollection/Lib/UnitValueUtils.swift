@@ -21,7 +21,7 @@ public enum UnitValueUtils {
             canonicalUnit: String,
             units: [UnitOption],
             defaultDisplayUnit: String,
-            factorsToCanonical: [String: Decimal]
+            factorsToCanonical: [String: Decimal],
         ) {
             self.canonicalUnit = canonicalUnit
             self.units = units
@@ -39,7 +39,7 @@ public enum UnitValueUtils {
             guard let factor = Decimal(string: option.factorToCanonical, locale: Locale(identifier: "en_US_POSIX"))
             else {
                 preconditionFailure(
-                    "Invalid unit factor: \(propertyKey) / \(option.code) / \(option.factorToCanonical)"
+                    "Invalid unit factor: \(propertyKey) / \(option.code) / \(option.factorToCanonical)",
                 )
             }
             return (option.code, factor)
@@ -49,7 +49,7 @@ public enum UnitValueUtils {
             canonicalUnit: registrySpec.canonicalUnit,
             units: registrySpec.units.map { .init(code: $0.code, label: $0.label) },
             defaultDisplayUnit: registrySpec.defaultDisplayUnit,
-            factorsToCanonical: factorsToCanonical
+            factorsToCanonical: factorsToCanonical,
         )
     }
 
@@ -77,7 +77,7 @@ public enum UnitValueUtils {
     public static func toCanonical(
         displayValueText: String,
         from unit: String,
-        spec: UnitSpec
+        spec: UnitSpec,
     ) -> String? {
         guard let value = parseDecimal(displayValueText),
               let factor = spec.factorsToCanonical[unit]
@@ -90,7 +90,7 @@ public enum UnitValueUtils {
     public static func fromCanonical(
         canonicalText: String,
         to unit: String,
-        spec: UnitSpec
+        spec: UnitSpec,
     ) -> String? {
         guard let value = parseDecimal(canonicalText),
               let factor = spec.factorsToCanonical[unit],
@@ -125,7 +125,7 @@ public enum UnitValueUtils {
     public static func toCanonicalValues(
         displayValues: [String],
         from unit: String,
-        spec: UnitSpec
+        spec: UnitSpec,
     ) -> [String]? {
         var canonicalValues: [String] = []
         canonicalValues.reserveCapacity(displayValues.count)

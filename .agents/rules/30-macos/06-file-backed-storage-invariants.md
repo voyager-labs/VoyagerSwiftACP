@@ -1,14 +1,9 @@
 ---
-alwaysApply: true
 description: "Invariants for file-backed credential/auth storage in Voyager macOS."
+globs: "apps/macos/**/*.swift"
 ---
 
 # File-Backed Storage Invariants
-
-## Applies when
-
-- Writing or modifying file-backed credential, token, or auth storage under `apps/macos/**`.
-- Any code that persists sensitive data to the local filesystem.
 
 ## Must
 

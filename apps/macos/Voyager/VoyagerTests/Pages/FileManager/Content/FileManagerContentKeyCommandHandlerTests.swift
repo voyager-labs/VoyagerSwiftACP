@@ -1,15 +1,17 @@
-// swiftlint:disable type_body_length
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
+/// FileManager 키 커맨드 처리에서 page/content 경계와 액션 라우팅 계약을 검증한다.
 @MainActor
 final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
+    /// testOpenAndQuickLookShortcutsUseSharedCommandContextInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenAndQuickLookShortcutsUseSharedCommandContextInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             await assertShortcutRoutesThroughSharedCommandContext(
@@ -32,6 +34,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testEditShortcutsUseSharedCommandContextInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testEditShortcutsUseSharedCommandContextInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             await assertShortcutRoutesThroughSharedCommandContext(
@@ -72,7 +75,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
+    /// testToggleHiddenFilesShortcutHasListAndGridParity 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testToggleHiddenFilesShortcutHasListAndGridParity() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             var initialState = FileManagerContentState()
@@ -99,32 +102,19 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
                 return true
             }
             await store.receive { action in
-                switch action {
-                case let .entryViewLayout(entryViewLayoutAction):
-                    switch entryViewLayoutAction {
-                    case let .entryOperations(entryOperationsAction):
-                        switch entryOperationsAction {
-                        case let .loading(loadingAction):
-                            switch loadingAction {
-                            case let .loadItems(path, showHidden):
-                                path == "/tmp/voyager" && showHidden
-                            default:
-                                false
-                            }
-                        default:
-                            false
-                        }
-                    default:
-                        false
-                    }
-                default:
-                    false
-                }
+                guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(
+                    path: path,
+                    showHidden: showHidden,
+                )))) =
+                    action
+                else { return false }
+                return path == "/tmp/voyager" && showHidden
             }
             await store.finish()
         }
     }
 
+    /// testOpenAndQuickLookShortcutsWithNoSelectionDoNothingInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenAndQuickLookShortcutsWithNoSelectionDoNothingInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             var initialState = FileManagerContentState()
@@ -151,7 +141,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
-    // swiftlint:disable:next function_body_length
+    /// testOpenSelectedItemRoutesVoycollPackageToCollectionNavigation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenSelectedItemRoutesVoycollPackageToCollectionNavigation() async {
         let selected = makeEntry(
             name: "Sample.voycoll",
@@ -166,21 +156,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         initialState.entryViewLayout.entryOperations.items = [selected]
         initialState.entryViewLayout.selectedIds = [selected.id]
 
-        let store = TestStore(initialState: initialState) {
-            FileManagerContentFeature()
-        } withDependencies: {
-            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
-            $0.entryFileOpsClient = .previewValue
-            $0.entryOpenClient = .previewValue
-            $0.entryQuickLookClient = .previewValue
-            $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
-            )
-            $0.uuid = UUIDGenerator.incrementing
-        }
-        store.exhaustivity = .off
+        let store = makeContentTestStore(initialState: initialState)
 
         await store.send(.entryViewLayout(.delegate(.executeCommand(.navigation(.openSelectedItem)))))
         await store.receive { action in
@@ -263,6 +239,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         await store.finish()
     }
 
+    /// testRenameShortcutStartsRenameForSingleSelectionInListAndGrid 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRenameShortcutStartsRenameForSingleSelectionInListAndGrid() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             for keyCode in [UInt16(36), UInt16(76)] {
@@ -294,6 +271,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testRenameShortcutDoesNothingWhenRenameAlreadyActive 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRenameShortcutDoesNothingWhenRenameAlreadyActive() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             for keyCode in [UInt16(36), UInt16(76)] {
@@ -319,6 +297,7 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    /// testRenameShortcutDoesNothingForZeroOrMultipleSelection 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRenameShortcutDoesNothingForZeroOrMultipleSelection() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
             for keyCode in [UInt16(36), UInt16(76)] {
@@ -359,6 +338,27 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         }
     }
 
+    private func makeContentTestStore(
+        initialState: FileManagerContentState,
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 0) }
+            $0.entryFileOpsClient = .previewValue
+            $0.entryOpenClient = .previewValue
+            $0.entryQuickLookClient = .previewValue
+            $0.undoManagerClient = .init(
+                registerUndo: { _, _, _, _ in },
+                undo: { _ in },
+                redo: { _ in },
+            )
+            $0.uuid = UUIDGenerator.incrementing
+        }
+        store.exhaustivity = .off
+        return store
+    }
+
     private func makeEntry(
         name: String,
         fullPath: String,
@@ -386,5 +386,3 @@ final class FileManagerContentKeyCommandHandlerTests: XCTestCase {
         )
     }
 }
-
-// swiftlint:enable type_body_length

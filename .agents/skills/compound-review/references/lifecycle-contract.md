@@ -37,10 +37,10 @@ The lifecycle applies to any change that targets `.agents/` governance artifacts
 
 | Output                                              | Destination              | Persistence                                  |
 | --------------------------------------------------- | ------------------------ | -------------------------------------------- |
-| Test results (pass/fail, coverage)                  | Console / evidence files | `.sisyphus/evidence/task-{N}-{slug}.*`       |
-| Review findings (PR comments, code quality)         | Review artifacts         | `.sisyphus/evidence/`                        |
-| Verification evidence (intent parity, scope checks) | Evidence files           | `.sisyphus/evidence/task-{N}-{slug}.*`       |
-| Build status (success/failure, warnings)            | Console / evidence files | `.sisyphus/evidence/task-{N}-{slug}.*`       |
+| Test results (pass/fail, coverage)                  | Console / evidence files | `.sisyphus/evidence/{plan_slug}/task-{N}-*.*`       |
+| Review findings (PR comments, code quality)         | Review artifacts         | `.sisyphus/evidence/{plan_slug}/`                        |
+| Verification evidence (intent parity, scope checks) | Evidence files           | `.sisyphus/evidence/{plan_slug}/task-{N}-*.*`       |
+| Build status (success/failure, warnings)            | Console / evidence files | `.sisyphus/evidence/{plan_slug}/task-{N}-*.*`       |
 | LSP diagnostics (errors, warnings)                  | Console                  | Transient — captured in evidence if relevant |
 
 **Obligations:**
@@ -55,7 +55,7 @@ The lifecycle applies to any change that targets `.agents/` governance artifacts
 All of the following must hold before Work-time Verification is considered complete:
 
 - All plan tasks are checked or explicitly closed by the operator.
-- At least one evidence file exists under `.sisyphus/evidence/` matching the completed plan's tasks.
+- At least one evidence file exists under `.sisyphus/evidence/{plan_slug}/` matching the completed plan's tasks.
 - The operator has confirmed Work is done.
 
 **What Stage 1 must NOT do:**
@@ -77,8 +77,8 @@ All of the following must hold before Work-time Verification is considered compl
 | Input                       | Source                                 | Required            |
 | --------------------------- | -------------------------------------- | ------------------- |
 | Completed plan file         | `.sisyphus/plans/{plan-name}.md`       | Yes (P1)            |
-| Task evidence files         | `.sisyphus/evidence/task-{N}-{slug}.*` | Yes (P2)            |
-| Final review facets (f1–f4) | `.sisyphus/evidence/f{1-4}-*.md`       | Optional (OP1)      |
+| Task evidence files         | `.sisyphus/evidence/{plan_slug}/task-{N}-*.*` | Yes (P2)            |
+| Final review facets (f1–f4) | `.sisyphus/evidence/{plan_slug}/f{1-4}-*.md`       | Optional (OP1)      |
 | Notepad files               | `.sisyphus/notepads/{plan-name}/*.md`  | Optional (OP2, OP3) |
 
 **Expected outputs:**
@@ -87,8 +87,9 @@ All of the following must hold before Work-time Verification is considered compl
 | ---------------------------------------- | ------------------------------------------------------ |
 | Run manifest (lineage anchor)            | `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json` |
 | Structured findings                      | `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json` |
-| Compound learning document               | `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`  |
-| Skill/harness draft proposal             | `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md` |
+| Compound learning document               | `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`  |
+| Skill/harness draft proposal             | `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md` |
+| Run summary                               | `.sisyphus/reviews/{plan_slug}/{run_id}/run-summary.md` |
 | Failure artifact (if preconditions fail) | `.sisyphus/reviews/{plan_slug}/{run_id}/FAILURE.md`    |
 
 **Obligations:**
@@ -96,7 +97,7 @@ All of the following must hold before Work-time Verification is considered compl
 1. Validate all preconditions (P1–P6, OP1–OP3) before reading artifacts per `workflow-boundaries.md` §6.
 2. Classify outputs according to `evidence-trust-taxonomy.md` (authoritative, reference-only, invalid).
 3. Degrade gracefully on missing optional inputs — never silently infer content.
-4. Produce a governance bundle: manifest + findings + learning + draft (if threshold met).
+4. Produce a governance bundle: manifest + findings + learning + draft (if threshold met) + run summary.
 5. Stop after emitting outputs. Do not loop, retry, or chain into Work.
 
 **Handoff condition (Stage 2 → Stage 3):**
@@ -105,12 +106,12 @@ All of the following must hold:
 
 - The compound-review run completed without writing a `FAILURE.md`.
 - A `manifest.json` exists at the expected path with valid lineage.
-- A `skill-draft.md` exists at `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md` with `readiness` of `Needs human review` or `Ready for adoption` (or `Draft only` if no findings met the threshold).
+- A `skill-draft.md` exists at `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md` with `readiness` of `Needs human review` or `Ready for adoption` (or `Draft only` if no findings met the threshold).
 - The operator has reviewed the output summary and decided to act on it.
 
 **What the human operator receives:**
 
-The governance bundle from Stage 2. The primary artifact for adoption decisions is the patch spec at `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`, which contains:
+The governance bundle from Stage 2. The primary artifact for adoption decisions is the patch spec at `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`, which contains:
 
 | Field                     | What the operator reviews                                                 |
 | ------------------------- | ------------------------------------------------------------------------- |
@@ -140,7 +141,7 @@ The full adoption sequence is defined in `04-adoption-and-rollback.md`. Summary:
 **What happens after adoption:**
 
 - The patch spec's `readiness` field is updated to `Adopted (commit {hash})`.
-- The commit hash is recorded in task evidence (`.sisyphus/evidence/`).
+- The commit hash is recorded in task evidence (`.sisyphus/evidence/{plan_slug}/`).
 - The adopted files are now governed by normal rule maintenance.
 - The `.sisyphus/` artifacts remain as local-only historical record and are NOT deleted.
 
@@ -164,8 +165,8 @@ The full adoption sequence is defined in `04-adoption-and-rollback.md`. Summary:
 
 | Input                                      | Source                                                 |
 | ------------------------------------------ | ------------------------------------------------------ |
-| Skill/harness draft proposals from Stage 2 | `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md` |
-| Compound learning documents from Stage 2   | `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`  |
+| Skill/harness draft proposals from Stage 2 | `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md` |
+| Compound learning documents from Stage 2   | `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`  |
 | Structured findings from Stage 2           | `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json` |
 | Run manifest (lineage anchor)              | `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json` |
 | Operator judgment                          | Human decision                                         |
@@ -176,7 +177,7 @@ The full adoption sequence is defined in `04-adoption-and-rollback.md`. Summary:
 | -------------------------------- | ------------------------------------- |
 | New or modified rule/skill files | `.agents/rules/` or `.agents/skills/` |
 | Commit with governance bundle    | Git history                           |
-| Commit hash recorded in evidence | `.sisyphus/evidence/`                 |
+| Commit hash recorded in evidence | `.sisyphus/evidence/{plan_slug}/`                 |
 
 | Output (Rollback path)              | Destination                                       |
 | ----------------------------------- | ------------------------------------------------- |

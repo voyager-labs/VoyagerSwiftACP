@@ -32,7 +32,7 @@ struct ContentPageNavigationStateReducer {
     }
 
     private func rollbackBackHistoryOnce(
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         if !state.backHistory.isEmpty {
             state.backHistory.removeLast()
@@ -42,14 +42,14 @@ struct ContentPageNavigationStateReducer {
 
     private func appendBackHistory(
         _ entry: ContentPageNavigationHistorySnapshot,
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         state.appendBackHistory(entry)
         return .none
     }
 
     private func clearForwardHistory(
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         state.forwardHistory = []
         return .none
@@ -57,7 +57,7 @@ struct ContentPageNavigationStateReducer {
 
     private func setNavigationState(
         _ navigationState: ContentPageNavigationRoute,
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         state.navigationState = navigationState
         return .none
@@ -65,7 +65,7 @@ struct ContentPageNavigationStateReducer {
 
     private func setPendingNavigation(
         _ pending: ContentPageNavigationPending?,
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         state.pendingNavigation = pending
         return .none
