@@ -1,4 +1,3 @@
-// swiftlint:disable type_name nesting
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -7,43 +6,17 @@ import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
 @MainActor
-final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
+final class ContentCollectionNavBridgeTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
-
-    @MainActor
-    struct EntryOperationsBridgeHarness: Reducer {
-        @MainActor
-        struct State: Equatable {
-            var content: FileManagerContentState
-        }
-
-        enum Action: Sendable {
-            case bridge(EntryOperationsAction)
-            case forwarded(FileManagerContentAction)
-        }
-
-        var body: some Reducer<State, Action> {
-            Reduce { state, action in
-                switch action {
-                case let .bridge(entryAction):
-                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
-                        entryAction,
-                        state: &state.content,
-                    )
-                    .map(Action.forwarded)
-                case .forwarded:
-                    .none
-                }
-            }
-        }
-    }
 
     // MARK: - Non-Collection Navigation: clearCollectionPresentation + Load
 
+    /// testFolderNavigationSendsClearCollectionPresentationThenLoadItems 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFolderNavigationSendsClearCollectionPresentationThenLoadItems() async {
         let store = TestStore(initialState: makeInitialState()) {
             reducer
@@ -61,30 +34,13 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            switch action {
-            case let .entryViewLayout(entryViewLayoutAction):
-                switch entryViewLayoutAction {
-                case let .entryOperations(entryOperationsAction):
-                    switch entryOperationsAction {
-                    case let .loading(loadingAction):
-                        switch loadingAction {
-                        case let .loadItems(path, showHidden):
-                            path == "/tmp/voyager" && showHidden == false
-                        default:
-                            false
-                        }
-                    default:
-                        false
-                    }
-                default:
-                    false
-                }
-            default:
-                false
-            }
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden)))) = action
+            else { return false }
+            return path == "/tmp/voyager" && showHidden == false
         }
     }
 
+    /// testRecentsNavigationSendsClearCollectionPresentationThenLoadRecents 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRecentsNavigationSendsClearCollectionPresentationThenLoadRecents() async {
         let store = TestStore(initialState: makeInitialState()) {
             reducer
@@ -102,30 +58,13 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            switch action {
-            case let .entryViewLayout(entryViewLayoutAction):
-                switch entryViewLayoutAction {
-                case let .entryOperations(entryOperationsAction):
-                    switch entryOperationsAction {
-                    case let .loading(loadingAction):
-                        switch loadingAction {
-                        case let .loadRecentItems(showHidden):
-                            showHidden == false
-                        default:
-                            false
-                        }
-                    default:
-                        false
-                    }
-                default:
-                    false
-                }
-            default:
-                false
-            }
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden)))) = action
+            else { return false }
+            return showHidden == false
         }
     }
 
+    /// testTagsNavigationSendsClearCollectionPresentationThenLoadTagItems 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testTagsNavigationSendsClearCollectionPresentationThenLoadTagItems() async {
         let store = TestStore(initialState: makeInitialState()) {
             reducer
@@ -143,30 +82,13 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            switch action {
-            case let .entryViewLayout(entryViewLayoutAction):
-                switch entryViewLayoutAction {
-                case let .entryOperations(entryOperationsAction):
-                    switch entryOperationsAction {
-                    case let .loading(loadingAction):
-                        switch loadingAction {
-                        case let .loadTagItems(tagName: tagName, showHidden: showHidden):
-                            tagName == "Work" && showHidden == false
-                        default:
-                            false
-                        }
-                    default:
-                        false
-                    }
-                default:
-                    false
-                }
-            default:
-                false
-            }
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadTagItems(tagName, showHidden)))) = action
+            else { return false }
+            return tagName == "Work" && showHidden == false
         }
     }
 
+    /// testComputerNavigationSendsClearCollectionPresentationThenLoadComputerItems 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testComputerNavigationSendsClearCollectionPresentationThenLoadComputerItems() async {
         let store = TestStore(initialState: makeInitialState()) {
             reducer
@@ -189,8 +111,9 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         }
     }
 
-    // MARK: - Collection Navigation: setCollectionMode Only
+    // MARK: - 컬렉션 내비게이션: setCollectionMode만
 
+    /// testCollectionNavigationSendsSetCollectionModeTrueOnly 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCollectionNavigationSendsSetCollectionModeTrueOnly() async {
         let store = TestStore(initialState: makeInitialState()) {
             reducer
@@ -217,8 +140,9 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         }
     }
 
-    // MARK: - handleEntryOperationsAction: Returns None for Loading Actions
+    // MARK: - handleEntryOperationsAction: 로딩 액션에 대해 None 반환
 
+    /// testItemsLoadedReturnsNoneFromPageLevelHandler 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testItemsLoadedReturnsNoneFromPageLevelHandler() async {
         let store = TestStore(initialState: EntryOperationsBridgeHarness.State(content: .init())) {
             EntryOperationsBridgeHarness()
@@ -229,8 +153,9 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - operationFinished: Reload Only, No Reapply
+    // MARK: - operationFinished: 리로드만, 재적용 없음
 
+    /// testOperationFinishedTriggersReloadWithoutReapply 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOperationFinishedTriggersReloadWithoutReapply() async {
         var initialState = EntryOperationsBridgeHarness.State(content: .init())
         initialState.content.navigation.seedInitialFolderPath("/tmp/voyager")
@@ -247,38 +172,16 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
             Result<Void, FileOpError>.success(()),
         ))))
         await store.receive { action in
-            switch action {
-            case let .forwarded(forwardedAction):
-                switch forwardedAction {
-                case let .entryViewLayout(entryViewLayoutAction):
-                    switch entryViewLayoutAction {
-                    case let .entryOperations(entryOperationsAction):
-                        switch entryOperationsAction {
-                        case let .loading(loadingAction):
-                            switch loadingAction {
-                            case let .loadItems(path, showHidden):
-                                path == "/tmp/voyager" && showHidden == false
-                            default:
-                                false
-                            }
-                        default:
-                            false
-                        }
-                    default:
-                        false
-                    }
-                default:
-                    false
-                }
-            default:
-                false
-            }
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden))))) =
+                action else { return false }
+            return path == "/tmp/voyager" && showHidden == false
         }
         await store.finish()
     }
 
-    // MARK: - makeEntryOperationsCommandContext: Uses entryViewLayout.entries
+    // MARK: - makeEntryOperationsCommandContext: entryViewLayout.entries 사용
 
+    /// testCommandContextUsesEntryViewLayoutEntries 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCommandContextUsesEntryViewLayoutEntries() {
         let entry = EntryModel.temporaryFolder(id: "/tmp/file.txt", name: "file.txt")
         var state = makeInitialState()
@@ -295,7 +198,7 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
         XCTAssertEqual(context.selectedIds, [entry.id])
     }
 
-    // MARK: - Helpers
+    // MARK: - 도우미 메서드
 
     private func makeInitialState() -> FileManagerContentState {
         var state = FileManagerContentState()
@@ -304,4 +207,32 @@ final class FileManagerContentCollectionNavigationBridgeTests: XCTestCase {
     }
 }
 
-// swiftlint:enable type_name nesting
+// MARK: - Test Harnesses
+
+@MainActor
+private struct EntryOperationsBridgeHarness: Reducer {
+    @MainActor
+    struct State: Equatable {
+        var content: FileManagerContentState
+    }
+
+    enum Action: Sendable {
+        case bridge(EntryOperationsAction)
+        case forwarded(FileManagerContentAction)
+    }
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .bridge(entryAction):
+                FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                    entryAction,
+                    state: &state.content,
+                )
+                .map(Action.forwarded)
+            case .forwarded:
+                .none
+            }
+        }
+    }
+}

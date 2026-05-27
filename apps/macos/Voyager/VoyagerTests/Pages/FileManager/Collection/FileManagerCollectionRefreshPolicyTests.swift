@@ -4,11 +4,14 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
+/// FileManager collection refresh/write-back 정책이 content/page 계약을 지키는지 검증한다.
 @MainActor
 final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
+    /// testRefreshSuccessStartsWriteBackWhenCollectionIsClean 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshSuccessStartsWriteBackWhenCollectionIsClean() async {
         let recorder = SavedCollectionsRecorder()
         let requestID = UUID()
@@ -47,6 +50,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
     }
 
+    /// testRefreshWriteBackUsesComposerStateSyncedFromAppliedFilters 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshWriteBackUsesComposerStateSyncedFromAppliedFilters() async {
         let recorder = SavedCollectionsRecorder()
         let requestID = UUID()
@@ -86,6 +90,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         XCTAssertEqual(store.state.collection.collectionContext?.scopes, ["/tmp/applied"])
     }
 
+    /// testRefreshFailureKeepsStaleAndClearsRefreshFlag 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshFailureKeepsStaleAndClearsRefreshFlag() async {
         struct RefreshError: Error {}
 
@@ -117,6 +122,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         ), .missingBaseline)
     }
 
+    /// testRefreshSuccessSkipsWriteBackWhenCollectionIsDirty 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshSuccessSkipsWriteBackWhenCollectionIsDirty() async {
         let requestID = UUID()
         let response = makeFiltersResponse(paths: ["/tmp/report.txt"])
@@ -157,6 +163,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         ))
     }
 
+    /// testRefreshSuccessSkipsWriteBackWhenCompatibilityBlocksWriteBack 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshSuccessSkipsWriteBackWhenCompatibilityBlocksWriteBack() async {
         let requestID = UUID()
         let response = makeFiltersResponse(paths: ["/tmp/report.txt"])
@@ -197,6 +204,7 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
     }
 
+    /// testCompleteWriteBackUpdatesCompatibilityForDefinitionOnlyCollection 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCompleteWriteBackUpdatesCompatibilityForDefinitionOnlyCollection() {
         let url = URL(fileURLWithPath: "/tmp/definition-only.voycoll")
         let completion = CollectionSaveCompletion(

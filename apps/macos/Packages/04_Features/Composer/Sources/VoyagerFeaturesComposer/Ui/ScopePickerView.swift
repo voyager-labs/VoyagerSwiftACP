@@ -25,7 +25,7 @@ public struct ScopePickerView: View {
         onSelect: @escaping (String) -> Void,
         favorites: [ScopeFavoriteItem],
         backHistory: [String],
-        entryLoadingClient: EntryLoadingClient
+        entryLoadingClient: EntryLoadingClient,
     ) {
         _isPresented = isPresented
         self.oldPath = oldPath
@@ -36,8 +36,8 @@ public struct ScopePickerView: View {
             wrappedValue: ScopePickerSearchCoordinator(
                 entryLoadingClient: entryLoadingClient,
                 favorites: favorites,
-                backHistory: backHistory
-            )
+                backHistory: backHistory,
+            ),
         )
     }
 
@@ -102,12 +102,12 @@ public struct ScopePickerView: View {
         .background(VoyagerDS.Surface.popoverBackground(for: colorScheme))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1)
+                .stroke(VoyagerDS.Surface.popoverBorder, lineWidth: 1),
         )
         .shadow(
             color: VoyagerDS.Shadow.popoverColor(for: colorScheme),
             radius: VoyagerDS.Shadow.popoverRadius,
-            y: VoyagerDS.Shadow.popoverYOffset
+            y: VoyagerDS.Shadow.popoverYOffset,
         )
         .onAppear {
             isSearchFocused = true
@@ -154,7 +154,7 @@ public struct ScopePickerView: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear)
+                    .fill(isHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
             )
         }
         .buttonStyle(.plain)
@@ -165,7 +165,7 @@ public struct ScopePickerView: View {
 
     private func applicationsIcon() -> NSImage? {
         let appIcon = NSImage(
-            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns"
+            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
         )
         appIcon?.isTemplate = true
         return appIcon

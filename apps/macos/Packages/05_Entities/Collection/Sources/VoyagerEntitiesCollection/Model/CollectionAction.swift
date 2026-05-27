@@ -19,7 +19,7 @@ public enum CollectionAction: CasePathable, Sendable {
         context: CollectionContext,
         items: [VoyagerShared.JSONValue],
         previousNavigationIsCollection: Bool,
-        nextNavigationDiffers: Bool
+        nextNavigationDiffers: Bool,
     )
     case searchFailed
     case sessionResetRequested
@@ -57,7 +57,7 @@ public struct SaveRequestPayload: Equatable, Sendable {
         definitionFingerprint: String,
         capturedAt: Date,
         relevanceRoots: [String],
-        openedCompatibility: CollectionFileCompatibilityMetadata?
+        openedCompatibility: CollectionFileCompatibilityMetadata?,
     ) {
         self.context = context
         self.isSearchLoading = isSearchLoading

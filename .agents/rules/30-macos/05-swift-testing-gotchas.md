@@ -1,15 +1,9 @@
 ---
-alwaysApply: true
 description: "Swift testing gotchas for Voyager macOS test code."
+globs: "apps/macos/**/*.swift"
 ---
 
 # Swift Testing Gotchas
-
-## Applies when
-
-- Writing Swift test assertions under `apps/macos/**`.
-- Using XCTest or Swift Testing with enums that have a `.none` case.
-- Attempting to use `Set<T>` for exhaustive distinctness proofs.
 
 ## Must
 

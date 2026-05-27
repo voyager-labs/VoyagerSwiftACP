@@ -7,7 +7,7 @@ public enum TagColorFallbackResolver {
         }
 
         let favoriteColorCodeByName = Dictionary(
-            uniqueKeysWithValues: favoriteTags.map { (normalizedName($0.name), $0.colorCode) }
+            uniqueKeysWithValues: favoriteTags.map { (normalizedName($0.name), $0.colorCode) },
         )
 
         return tags.map { tag in
@@ -25,7 +25,7 @@ public enum TagColorFallbackResolver {
     public nonisolated static func resolvedColorCode(
         tagName: String,
         preferredColorCodes: [Int],
-        favoriteTags: [Tag]
+        favoriteTags: [Tag],
     ) -> Int {
         if let preferredColorCode = preferredColorCodes.first(where: { $0 != 0 }) {
             return preferredColorCode

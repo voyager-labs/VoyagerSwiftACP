@@ -3,13 +3,13 @@ import ComposableArchitecture
 import VoyagerShared
 import XCTest
 
-// VOY-202 Task 11: Updater Feature Regression Anchor
-// UpdaterFeature is a REGRESSION ANCHOR - not a direct refactoring target for VOY-202.
-// These tests lock the state/action contracts to prevent accidental changes.
+// VOY-202 작업 11: Updater 기능 회귀 앵커
+// UpdaterFeature는 회귀 앵커입니다 - VOY-202의 직접적인 리팩토링 대상이 아닙니다.
+// 이 테스트들은 우발적인 변경을 방지하기 위해 state/action 계약을 고정합니다.
 
 @MainActor
 final class UpdaterFeatureContractTests: XCTestCase {
-    // MARK: State Contract Tests
+    // MARK: - State 계약 테스트
 
     func testInitialStateHasCorrectDefaults() {
         let state = UpdaterState()
@@ -27,7 +27,7 @@ final class UpdaterFeatureContractTests: XCTestCase {
         XCTAssertEqual(state3, state4)
     }
 
-    // MARK: Action Contract Tests
+    // MARK: - Action 계약 테스트
 
     func testActionsHaveProperStructure() {
         let configureAction = UpdaterAction.configureAtLaunch
@@ -43,7 +43,7 @@ final class UpdaterFeatureContractTests: XCTestCase {
         XCTAssertTrue(setAutoAction.is(\.setAutomaticUpdate))
     }
 
-    // MARK: Feature Behavior Tests
+    // MARK: - 기능 동작 테스트
 
     func testConfigureAtLaunchSetsDidConfigureTrue() async {
         let store = TestStore(initialState: UpdaterState()) {

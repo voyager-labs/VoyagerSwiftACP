@@ -8,7 +8,7 @@ public struct BetaAccessClient: Sendable {
     public var verify: @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse
 
     public nonisolated init(
-        verify: @escaping @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse
+        verify: @escaping @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse,
     ) {
         self.verify = verify
     }
@@ -49,6 +49,11 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
         return BetaAccessVerifyResponse(ok: true)
     }
 
+    let request = try makeBetaAccessRequest(email: email, token: token)
+    return try await performBetaAccessRequest(request)
+}
+
+private func makeBetaAccessRequest(email: String, token: String) throws -> URLRequest {
     guard let urlString = Dotenv["PUBLIC_GATEWAY_URL"]?.stringValue,
           !urlString.isEmpty,
           let baseURL = URL(string: urlString)
@@ -72,7 +77,7 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
         email: email,
         deviceId: deviceId,
         appVersion: AppVersionInfo.shortVersion,
-        osVersion: ProcessInfo.processInfo.operatingSystemVersionString
+        osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
     )
 
     do {
@@ -81,6 +86,10 @@ private func verifyBetaAccess(email: String, token: String) async throws -> Beta
         throw BetaAccessVerificationError.invalidRequest
     }
 
+    return request
+}
+
+private func performBetaAccessRequest(_ request: URLRequest) async throws -> BetaAccessVerifyResponse {
     do {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -125,7 +134,7 @@ private enum DeviceIdentifier {
             service,
             kIOPlatformUUIDKey as CFString,
             kCFAllocatorDefault,
-            0
+            0,
         )?.takeRetainedValue() as? String else {
             return nil
         }

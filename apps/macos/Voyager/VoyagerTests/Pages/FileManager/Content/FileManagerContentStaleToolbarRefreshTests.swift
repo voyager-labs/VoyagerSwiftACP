@@ -3,10 +3,13 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
+@testable import VoyagerPagesFileManager
 import XCTest
 
+/// FileManager content stale 상태에서 툴바 리프레시 라우팅 계약을 검증한다.
 @MainActor
 final class FileManagerToolbarRefreshTests: XCTestCase {
+    /// testRefreshStaleCollectionDispatchesSubmitForQueryCollections 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDispatchesSubmitForQueryCollections() async {
         let store = TestStore(initialState: makeState(query: "report", isDirty: false)) {
             FileManagerContentFeature()
@@ -41,6 +44,7 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
     }
 
+    /// testRefreshStaleCollectionDispatchesApplyFiltersForEmptyQueryCollections 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDispatchesApplyFiltersForEmptyQueryCollections() async {
         let store = TestStore(initialState: makeState(query: "", isDirty: false)) {
             FileManagerContentFeature()
@@ -69,6 +73,7 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         }
     }
 
+    /// testRefreshStaleCollectionDoesNothingWhenCollectionIsDirty 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDoesNothingWhenCollectionIsDirty() async {
         let store = TestStore(initialState: makeState(query: "report", isDirty: true)) {
             FileManagerContentFeature()
@@ -88,6 +93,7 @@ final class FileManagerToolbarRefreshTests: XCTestCase {
         XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
+    /// testRefreshStaleCollectionDoesNothingWithoutSavedCollectionPrerequisites 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshStaleCollectionDoesNothingWithoutSavedCollectionPrerequisites() async {
         let store = TestStore(initialState: makeState(
             query: "report",

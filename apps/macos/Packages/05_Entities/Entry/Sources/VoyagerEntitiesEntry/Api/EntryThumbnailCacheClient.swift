@@ -11,7 +11,7 @@ public struct EntryThumbnailCacheClient: Sendable {
         getThumbnail: @escaping @Sendable (_ path: String) -> NSImage?,
         saveThumbnail: @escaping @Sendable (_ image: NSImage, _ path: String) -> Void,
         removeThumbnails: @escaping @Sendable (_ paths: [String]) -> Void,
-        clearCache: @escaping @Sendable () -> Void
+        clearCache: @escaping @Sendable () -> Void,
     ) {
         self.getThumbnail = getThumbnail
         self.saveThumbnail = saveThumbnail
@@ -54,7 +54,7 @@ extension EntryThumbnailCacheClient: DependencyKey {
             },
             clearCache: {
                 thumbnailCache.removeAllObjects()
-            }
+            },
         )
     }
 
@@ -63,7 +63,7 @@ extension EntryThumbnailCacheClient: DependencyKey {
             getThumbnail: { _ in nil },
             saveThumbnail: { _, _ in },
             removeThumbnails: { _ in },
-            clearCache: {}
+            clearCache: {},
         )
     }
 

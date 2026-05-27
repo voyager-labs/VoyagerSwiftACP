@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F20000000000000000000046 /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001F /* VoyagerEntitiesAi */; };
 		11884BDAA11DD6217EEF5014 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
 		3B378A28A482423D9B847800 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
@@ -49,8 +48,6 @@
 		F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */; };
 		F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
 		F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
-		F20000000000000000000044 /* VoyagerFeaturesAiChat in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001E /* VoyagerFeaturesAiChat */; };
-		F20000000000000000000045 /* VoyagerFeaturesAiChat in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001E /* VoyagerFeaturesAiChat */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -214,7 +211,6 @@
 				F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */,
 				F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */,
-				F20000000000000000000044 /* VoyagerFeaturesAiChat in Frameworks */,
 				F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */,
 				F2000000000000000000003C /* Dependencies in Frameworks */,
 				F2000000000000000000003D /* Clocks in Frameworks */,
@@ -250,8 +246,6 @@
 				F2000000000000000000003A /* Dependencies in Frameworks */,
 				F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */,
-				F20000000000000000000045 /* VoyagerFeaturesAiChat in Frameworks */,
-				F20000000000000000000046 /* VoyagerEntitiesAi in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -383,8 +377,8 @@
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
-				F2000000000000000000001E /* VoyagerFeaturesAiChat */,
-				F2000000000000000000001F /* VoyagerEntitiesAi */,
+				F2000000000000000000001E /* VoyagerPagesFileManager */,
+				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
@@ -419,6 +413,7 @@
 			name = VoyagerTests;
 			packageProductDependencies = (
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
+				F2000000000000000000001E /* VoyagerPagesFileManager */,
 				F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */,
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
@@ -435,7 +430,6 @@
 				F21000000000000000000012 /* OrderedCollections */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
-				F2000000000000000000001E /* VoyagerFeaturesAiChat */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;
@@ -605,8 +599,8 @@
 				F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */,
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
-				F2000000000000000000000E /* XCLocalSwiftPackageReference "04_Features/AiChat" */,
-				F2000000000000000000000F /* XCLocalSwiftPackageReference "05_Entities/Ai" */,
+				F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */,
+				F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -714,7 +708,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
+			shellScript = "#!/bin/bash\nset -euo pipefail\n\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nbash \"$REPO_ROOT/scripts/lint-and-format-macos.sh\" \"$SRCROOT\"\n";
 		};
 		7EC6B03F2E8CE43B00379B56 /* Run Lint and Format */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -732,7 +726,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\nset -euo pipefail\n\nROOT=\"$SRCROOT\"\n\necho \"================================\"\necho \"🔍 SwiftLint: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftLint 사용\nif command -v swiftlint >/dev/null 2>&1; then\n  echo \"✓ Running SwiftLint at: $(which swiftlint)\"\n  swiftlint --config \"$ROOT/.swiftlint.yml\" --reporter xcode\n  echo \"✓ SwiftLint completed\"\nelse\n  echo \"⚠️ SwiftLint not found in PATH\"\nfi\n\necho \"================================\"\necho \"🔧 SwiftFormat: using system installation...\"\necho \"================================\"\n\n# 시스템에 설치된 SwiftFormat 사용\nif command -v swiftformat >/dev/null 2>&1; then\n  echo \"✓ Running SwiftFormat at: $(which swiftformat)\"\n  swiftformat --config \"$ROOT/.swiftformat\" \"$ROOT\" --verbose || true\n  echo \"✓ SwiftFormat completed\"\nelse\n  echo \"⚠️ SwiftFormat not found in PATH\"\nfi\n\necho \"================================\"\n";
+			shellScript = "#!/bin/bash\nset -euo pipefail\n\nREPO_ROOT=\"$(cd \"$SRCROOT/../../..\" && pwd)\"\nbash \"$REPO_ROOT/scripts/lint-and-format-macos.sh\" \"$SRCROOT\"\n";
 		};
 		AFB0BEF033B7C0F100A1F901 /* Copy Bundled Env */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -1527,13 +1521,13 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/Composer;
 		};
-		F2000000000000000000000E /* XCLocalSwiftPackageReference "04_Features/AiChat" */ = {
+		F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../Packages/04_Features/AiChat;
+			relativePath = ../Packages/02_Pages/FileManager;
 		};
-		F2000000000000000000000F /* XCLocalSwiftPackageReference "05_Entities/Ai" */ = {
+		F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../Packages/05_Entities/Ai;
+			relativePath = ../Packages/03_Widgets/EntryViewLayout;
 		};
 		/* End XCLocalSwiftPackageReference section */
 
@@ -1803,15 +1797,15 @@
 			package = F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */;
 			productName = VoyagerFeaturesComposer;
 		};
-		F2000000000000000000001E /* VoyagerFeaturesAiChat */ = {
+		F2000000000000000000001E /* VoyagerPagesFileManager */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F2000000000000000000000E /* XCLocalSwiftPackageReference "04_Features/AiChat" */;
-			productName = VoyagerFeaturesAiChat;
+			package = F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */;
+			productName = VoyagerPagesFileManager;
 		};
-		F2000000000000000000001F /* VoyagerEntitiesAi */ = {
+		F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F2000000000000000000000F /* XCLocalSwiftPackageReference "05_Entities/Ai" */;
-			productName = VoyagerEntitiesAi;
+			package = F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */;
+			productName = VoyagerWidgetsEntryViewLayout;
 		};
 		/* End XCSwiftPackageProductDependency section */
 	};

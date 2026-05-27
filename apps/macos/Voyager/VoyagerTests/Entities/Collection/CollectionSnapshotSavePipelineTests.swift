@@ -6,21 +6,15 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
+/// 컬렉션 스냅샷 저장 파이프라인 — 정상/취소/실패 경로를 검증.
 @MainActor
 final class CollectionSnapshotSavePipelineTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
+    /// testSaveToExistingPersistsSnapshotAndClearsInvalidationState 테스트 동작을 검증한다.
     func testSaveToExistingPersistsSnapshotAndClearsInvalidationState() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
         let url = URL(fileURLWithPath: "/tmp/collection.voycoll")
-        stalenessClient.upsertRecord(
-            url.path,
-            .init(
-                definitionFingerprint: "old-fingerprint",
-                relevanceRoots: ["/tmp"],
-                lastInvalidatedAt: .distantPast,
-            ),
-        )
+        seedStalenessRecord(stalenessClient: stalenessClient, url: url)
 
         let payload = SaveRequestPayload(
             context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: []),
@@ -67,6 +61,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
+    /// testDefinitionOnlySaveLeavesSnapshotNil 테스트 동작을 검증한다.
     func testDefinitionOnlySaveLeavesSnapshotNil() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -117,6 +112,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
+    /// testEmptySnapshotSavePersistsEmptySnapshotArray 테스트 동작을 검증한다.
     func testEmptySnapshotSavePersistsEmptySnapshotArray() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -167,6 +163,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         assertRecordUpdated(stalenessClient: stalenessClient, url: url)
     }
 
+    /// testSavePipelinePersistsCanonicalCurrentSchemaVersionForConstructedPayload 테스트 동작을 검증한다.
     func testSavePipelinePersistsCanonicalCurrentSchemaVersionForConstructedPayload() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -216,6 +213,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         XCTAssertNil(saved?.file.snapshotMeta)
     }
 
+    /// testSaveToExistingIsBlockedForFutureMinorCompatibility 테스트 동작을 검증한다.
     func testSaveToExistingIsBlockedForFutureMinorCompatibility() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
@@ -286,138 +284,18 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
     }
 }
 
-@MainActor
-final class CollectionSavePanelClientTests: XCTestCase {
-    func testSaveRequestedHappyPathProceedsThroughPanelToSaveCompleted() async {
-        let recorder = SavedCollectionsRecorder()
-        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-        let selectedURL = URL(fileURLWithPath: "/tmp/test-happy.voycoll")
-
-        let payload = makeValidSaveRequestPayload()
-
-        let store = TestStore(initialState: CollectionFeature.State()) {
-            CollectionFeature()
-        } withDependencies: {
-            $0.collectionFileClient = CollectionFileClient(
-                save: { file, url in
-                    await recorder.append(file: file, url: url)
-                },
-                load: { _ in
-                    makeCollectionLoadResult(
-                        kEmptyCollectionFile,
-                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
-                    )
-                },
-            )
-            $0.collectionSavePanelClient = CollectionSavePanelClient(
-                presentSavePanel: { _ in selectedURL },
-                defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.collectionStalenessClient = stalenessClient
-        }
-        store.exhaustivity = .off
-
-        await store.send(.saveRequested(payload))
-        await store.receive(\.savePanelResponse)
-        await store.receive(\.saveCompleted)
-        await store.finish()
-
-        let saved = await recorder.last()
-        XCTAssertNotNil(saved)
-        XCTAssertEqual(saved?.url.pathExtension, "voycoll")
-        XCTAssertEqual(saved?.file.snapshot?.items, [.string("/tmp/report.txt")])
-    }
-
-    func testSaveRequestedCancelPathClearsPendingSaveWithoutWriting() async {
-        let recorder = SavedCollectionsRecorder()
-        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-
-        let payload = makeValidSaveRequestPayload()
-
-        let store = TestStore(initialState: CollectionFeature.State()) {
-            CollectionFeature()
-        } withDependencies: {
-            $0.collectionFileClient = CollectionFileClient(
-                save: { file, url in
-                    await recorder.append(file: file, url: url)
-                },
-                load: { _ in
-                    makeCollectionLoadResult(
-                        kEmptyCollectionFile,
-                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
-                    )
-                },
-            )
-            $0.collectionSavePanelClient = CollectionSavePanelClient(
-                presentSavePanel: { _ in nil },
-                defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.collectionStalenessClient = stalenessClient
-        }
-        store.exhaustivity = .off
-
-        await store.send(.saveRequested(payload))
-        await store.receive(\.savePanelResponse)
-        await store.finish()
-
-        let saved = await recorder.last()
-        XCTAssertNil(saved, "No file should be saved when panel is cancelled")
-    }
-
-    func testSaveRequestedFailurePathEmitsSaveCompletedFailure() async {
-        let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)
-        let selectedURL = URL(fileURLWithPath: "/tmp/test-fail.voycoll")
-
-        let payload = makeValidSaveRequestPayload()
-
-        let store = TestStore(initialState: CollectionFeature.State()) {
-            CollectionFeature()
-        } withDependencies: {
-            $0.collectionFileClient = CollectionFileClient(
-                save: { _, _ in
-                    throw NSError(domain: "test", code: 1, userInfo: [
-                        NSLocalizedDescriptionKey: "Disk write failed",
-                    ])
-                },
-                load: { _ in
-                    makeCollectionLoadResult(
-                        kEmptyCollectionFile,
-                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
-                    )
-                },
-            )
-            $0.collectionSavePanelClient = CollectionSavePanelClient(
-                presentSavePanel: { _ in selectedURL },
-                defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.collectionStalenessClient = stalenessClient
-        }
-        store.exhaustivity = .off
-
-        await store.send(.saveRequested(payload))
-        await store.receive(\.savePanelResponse)
-        await store.receive(\.saveCompleted)
-        await store.finish()
-    }
-}
-
-private func makeValidSaveRequestPayload() -> SaveRequestPayload {
-    SaveRequestPayload(
-        context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: []),
-        isSearchLoading: false,
-        isFiltersLoading: false,
-        snapshotItems: [.string("/tmp/report.txt")],
-        definitionFingerprint: "fingerprint",
-        capturedAt: .distantFuture,
-        relevanceRoots: ["/tmp"],
-        openedCompatibility: nil,
+private func seedStalenessRecord(stalenessClient: CollectionStalenessClient, url: URL) {
+    stalenessClient.upsertRecord(
+        url.path,
+        .init(
+            definitionFingerprint: "old-fingerprint",
+            relevanceRoots: ["/tmp"],
+            lastInvalidatedAt: .distantPast,
+        ),
     )
 }
 
-private let kEmptyCollectionFile = VoyagerCollectionFile(
+let kEmptyCollectionFile = VoyagerCollectionFile(
     id: "",
     name: "",
     createdAt: .distantPast,
@@ -430,7 +308,7 @@ private let kEmptyCollectionFile = VoyagerCollectionFile(
     appVersion: nil,
 )
 
-private func makeCollectionLoadResult(
+func makeCollectionLoadResult(
     _ file: VoyagerCollectionFile,
     sourceSchemaVersion: SchemaVersion?,
 ) -> CollectionFileLoadResult {
@@ -443,7 +321,7 @@ private func makeCollectionLoadResult(
     )
 }
 
-private actor SavedCollectionsRecorder {
+actor SavedCollectionsRecorder {
     struct Entry {
         let file: VoyagerCollectionFile
         let url: URL

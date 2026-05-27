@@ -8,6 +8,7 @@ import XCTest
 
 @MainActor
 final class EntryOperationsRecentTagTests: XCTestCase {
+    /// 최근 항목 로드 성공 시 항목이 채워지고 로딩 상태가 해제되는지 검증
     func testLoadRecentItemsSuccessLoadsItemsAndResetsLoading() async {
         let item = makeEntry(path: "/tmp/recent.txt")
 
@@ -28,6 +29,7 @@ final class EntryOperationsRecentTagTests: XCTestCase {
         }
     }
 
+    /// 태그 항목이 비어 있어도 결과가 결정적으로 빈 배열로 정리되는지 검증
     func testLoadTagItemsEmptyResultIsDeterministic() async {
         let store = TestStore(initialState: EntryOperationsState()) {
             EntryOperationsLoadingReducer()

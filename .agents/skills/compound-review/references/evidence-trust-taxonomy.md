@@ -53,8 +53,8 @@ An `authoritative` artifact is a complete, validated output from a compound-revi
 
 - `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json`
 - `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json`
-- `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`
-- `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`
+- `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`
+- `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`
 
 ---
 
@@ -69,7 +69,7 @@ A `reference-only` artifact carries useful context but cannot serve as proof of 
 | Confidence-reduced run               | The manifest has `confidence_reduced: true` AND two or more facets are missing (`facets_missing` has length >= 2). Single missing facet is still `authoritative` if all other criteria pass.                                                                                   |
 | Prior-run overlap                    | The artifact is from an earlier run_id for the same `plan_slug`, and a newer run exists that is `authoritative`. The earlier run is demoted to `reference-only`.                                                                                                               |
 | Notepad-only enrichment              | The artifact is a notepad file (learnings, decisions, issues, problems) that was consumed by a run but is not itself a review output. Notepads are `reference-only` inputs.                                                                                                    |
-| Evidence file without review context | A `task-{N}-{slug}.*` evidence file that exists but has not been through a compound-review run. Raw evidence is supporting material, not synthesized finding.                                                                                                                  |
+| Evidence file without review context | A `task-{N}-*.*` evidence file that exists but has not been through a compound-review run. Raw evidence is supporting material, not synthesized finding.                                                                                                                  |
 | Partial manifest                     | The manifest exists but is missing one or more optional output paths (e.g., `learning.md` was not generated because no findings met the draft threshold). The manifest itself is `reference-only` for the missing outputs but `authoritative` for the outputs it does contain. |
 | Cross-run deduplication source       | An older learning.md referenced in an Overlap/Deduplication Note. It provides context for the current run's deduplicated entries.                                                                                                                                              |
 
@@ -87,8 +87,8 @@ A `reference-only` artifact carries useful context but cannot serve as proof of 
 
 - Any path listed under `authoritative` that has been superseded by a newer `authoritative` run for the same `plan_slug`.
 - `.sisyphus/notepads/{plan_slug}/*.md` (all notepad family files).
-- `.sisyphus/evidence/task-{N}-{slug}.*` (raw evidence files).
-- `.sisyphus/evidence/f{1-4}-*.md` (raw facet files).
+- `.sisyphus/evidence/{plan_slug}/task-{N}-*.*` (raw evidence files).
+- `.sisyphus/evidence/{plan_slug}/f{1-4}-*.md` (raw facet files).
 
 ---
 
@@ -359,7 +359,7 @@ These rules are recommendations. The human operator always has final say on gove
 | Check              | Result                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------- |
 | FAILURE.md exists? | Yes                                                                                   |
-| Failure reason     | P2: no evidence files matching `task-{N}-{slug}.*` found                              |
+| Failure reason     | P2: no evidence files matching `task-{N}-*.*` found                              |
 | Additional context | This is a governance/sequencing plan, not an execution plan. It has no task evidence. |
 
 **Downstream:** This run cannot produce findings. The plan type (governance plan without task evidence) is structurally incompatible with compound-review synthesis. Not a bug, just a mismatch between plan type and workflow requirements.

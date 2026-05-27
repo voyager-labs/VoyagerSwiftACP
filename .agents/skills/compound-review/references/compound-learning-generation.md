@@ -180,7 +180,7 @@ The format is: finding IDs first, then notepad references with dates, then facet
 
 Before writing a compound learning document, the generation rules require checking for prior compound outputs for the same `plan_slug`:
 
-1. Scan `.sisyphus/compound/{plan_slug}/` for existing `learning.md` files (different `run_id` directories).
+1. Scan `.sisyphus/reviews/{plan_slug}/` for existing `learning.md` files (different `run_id` directories).
 2. If prior artifacts exist, read their category structure and guidance entries.
 
 ### Overlap Handling
@@ -203,7 +203,7 @@ The document footer must include an `## Overlap/Deduplication Note` section when
 
 This learning document was generated from findings that were deduplicated against prior compound artifacts using the `dedupe_key` field. Prior compound artifacts for the same `plan_slug` are stored at:
 
-- `.sisyphus/compound/{plan_slug}/{prior-run_id}/learning.md`
+- `.sisyphus/reviews/{plan_slug}/{prior-run_id}/learning.md`
 
 Merge by `category` when consulting multiple runs. Note which `run_id` each guidance entry came from. Contradictions (if any) are flagged inline.
 ```
@@ -221,14 +221,14 @@ The skill follows this sequence to produce the compound learning document:
 3. **Read notepads** from `.sisyphus/notepads/{plan_slug}/learnings.md` and `decisions.md`
 4. **Filter** notepad entries by qualification criteria
 5. **Match** findings to notepad entries by semantic overlap (dedupe_key, category, domain)
-6. **Check prior artifacts** in `.sisyphus/compound/{plan_slug}/`
+6. **Check prior artifacts** in `.sisyphus/reviews/{plan_slug}/`
 7. **Assign types** (`bug-resolution` or `harness-guidance`)
 8. **Group by category** and order by severity
 9. **Extract applicability** from finding descriptions and notepad context
 10. **Synthesize guidance** from fix patterns and decision rationale
 11. **Ground lineage** in source finding IDs and notepad references
 12. **Apply overlap/deduplication** against prior compound artifacts
-13. **Write** to `.sisyphus/compound/{plan_slug}/{run_id}/learning.md`
+13. **Write** to `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`
 
 ### Empty Output
 

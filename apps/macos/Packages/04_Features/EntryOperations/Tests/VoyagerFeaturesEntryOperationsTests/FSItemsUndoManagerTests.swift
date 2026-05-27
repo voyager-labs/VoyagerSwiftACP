@@ -4,6 +4,7 @@ import XCTest
 
 @MainActor
 final class FSItemsUndoManagerTests: XCTestCase {
+    /// 완료된 작업이 등록되면 undo가 쌓이고 redo는 비워지는지 검증
     func testEntryActionCompletedRegistersUndoAndClearsRedo() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
         let redoRecordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
@@ -44,6 +45,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
         XCTAssertEqual(recorded, [record])
     }
 
+    /// undo 요청이 실제 undoManager 호출로 이어지는지 검증
     func testRequestUndoTriggersUndoManager() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000010"))
         let record = EntryActionRecord(
@@ -74,6 +76,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
+    /// busy 상태의 항목은 undo 대상이 아니므로 요청을 무시하는지 검증
     func testRequestUndoSkipsWhenBusy() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000011"))
         let record = EntryActionRecord(
@@ -105,6 +108,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    /// undo 시 실제 파일명이 되돌아가고 redo 기록이 쌓이는지 검증
     func testUndoEntryActionRenamesAndRegistersRedo() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000012"))
         let record = EntryActionRecord(
@@ -133,7 +137,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
             )
         }
 
-        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
+        // 핵심 상태 변화만 확인하고 중간 액션은 생략해 테스트 의도를 명확히 유지한다.
         store.exhaustivity = .off
 
         await store.send(.undoRedo(.undoEntryAction(record)))
@@ -145,6 +149,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
         XCTAssertEqual(store.state.redoRecords, [record])
     }
 
+    /// redo 시 원래 방향으로 다시 이름이 바뀌고 undo 기록이 복원되는지 검증
     func testRedoEntryActionRenamesAndRegistersUndo() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
         let record = EntryActionRecord(
@@ -173,7 +178,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
             )
         }
 
-        // Non-exhaustive: focus on the key delegate/state change; intermediate actions are noisy.
+        // 핵심 상태 변화만 확인하고 중간 액션은 생략해 테스트 의도를 명확히 유지한다.
         store.exhaustivity = .off
 
         await store.send(.undoRedo(.redoEntryAction(record)))
@@ -185,6 +190,7 @@ final class FSItemsUndoManagerTests: XCTestCase {
         XCTAssertEqual(store.state.redoRecords, [])
     }
 
+    /// windowID에 맞는 UndoManager가 해석되어 실제 undo 가능 상태가 되는지 검증
     func testResolverBackedUndoManagerClientRegistersUndoForWindowID() async throws {
         let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000014"))
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000015"))

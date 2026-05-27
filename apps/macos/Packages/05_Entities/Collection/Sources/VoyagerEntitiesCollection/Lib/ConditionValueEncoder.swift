@@ -6,7 +6,7 @@ public enum ConditionValueEncoder {
             values: values,
             valueType: condition.valueType,
             operatorCode: condition.operatorCode,
-            operatorValueUIKind: condition.operatorValueUIKind
+            operatorValueUIKind: condition.operatorValueUIKind,
         )
     }
 
@@ -14,7 +14,7 @@ public enum ConditionValueEncoder {
         values: [String],
         valueType: String,
         operatorCode: String?,
-        operatorValueUIKind: String?
+        operatorValueUIKind: String?,
     ) -> VoyagerShared.JSONValue? {
         if let kind = operatorValueUIKind {
             if let listValue = encodeListValue(kind: kind, values: values) {
@@ -25,7 +25,7 @@ public enum ConditionValueEncoder {
         return encodeValueByType(
             values: values,
             valueType: valueType,
-            operatorCode: operatorCode
+            operatorCode: operatorCode,
         )
     }
 
@@ -45,7 +45,7 @@ public enum ConditionValueEncoder {
     private static func encodeValueByType(
         values: [String],
         valueType: String,
-        operatorCode: String?
+        operatorCode: String?,
     ) -> VoyagerShared.JSONValue? {
         switch valueType {
         case "number":
@@ -97,7 +97,7 @@ public enum ConditionValueEncoder {
 
     private static func encodeStringValues(
         _ values: [String],
-        operatorCode: String?
+        operatorCode: String?,
     ) -> VoyagerShared.JSONValue? {
         let op = operatorCode?.lowercased()
         if op == "in" || op == "anyof" {

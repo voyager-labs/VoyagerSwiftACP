@@ -1,4 +1,3 @@
-// swiftlint:disable type_body_length
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -6,12 +5,14 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
+/// FileManager에서 staleness 복구/재오픈 시 페이지 상태 계약이 유지되는지 검증한다.
 @MainActor
 final class CollectionReopenStaleTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
+    /// testOpenCollectionFileRestoresStaleStateFromStalenessClient 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenCollectionFileRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -54,27 +55,12 @@ final class CollectionReopenStaleTests: XCTestCase {
         }
         await assertCollectionModeNavigation(store: store)
 
-        XCTAssertEqual(
-            store.state.content.composer.openedCollectionURL,
-            store.state.content.collection.collectionSession.document?.url,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.collectionContext,
-            store.state.content.collection.collectionContext,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.openedCollectionCompatibility,
-            store.state.content.collection.collectionSession.document?.compatibility,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.isCollectionMode,
-            store.state.content.isCollectionMode,
-        )
+        assertComposerSyncedWithCollectionState(store.state)
 
         await store.finish()
     }
 
-    // swiftlint:disable:next function_body_length
+    /// testCollectionFileLoadedRestoresStaleStateFromStalenessClient 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCollectionFileLoadedRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -125,27 +111,12 @@ final class CollectionReopenStaleTests: XCTestCase {
         await assertCollectionModeNavigation(store: store)
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
 
-        XCTAssertEqual(
-            store.state.content.composer.openedCollectionURL,
-            store.state.content.collection.collectionSession.document?.url,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.collectionContext,
-            store.state.content.collection.collectionContext,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.openedCollectionCompatibility,
-            store.state.content.collection.collectionSession.document?.compatibility,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.isCollectionMode,
-            store.state.content.isCollectionMode,
-        )
+        assertComposerSyncedWithCollectionState(store.state)
 
         await store.finish()
     }
 
-    // swiftlint:disable:next function_body_length
+    /// testOpenStaleCollectionDoesNotAutoSearch 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenStaleCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -190,27 +161,12 @@ final class CollectionReopenStaleTests: XCTestCase {
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
 
-        XCTAssertEqual(
-            store.state.content.composer.openedCollectionURL,
-            store.state.content.collection.collectionSession.document?.url,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.collectionContext,
-            store.state.content.collection.collectionContext,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.openedCollectionCompatibility,
-            store.state.content.collection.collectionSession.document?.compatibility,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.isCollectionMode,
-            store.state.content.isCollectionMode,
-        )
+        assertComposerSyncedWithCollectionState(store.state)
 
         await store.finish()
     }
 
-    // swiftlint:disable:next function_body_length
+    /// testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = makeDefinitionOnlyCollectionFile(query: "needle")
@@ -257,56 +213,16 @@ final class CollectionReopenStaleTests: XCTestCase {
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
 
-        XCTAssertEqual(
-            store.state.content.composer.openedCollectionURL,
-            store.state.content.collection.collectionSession.document?.url,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.collectionContext,
-            store.state.content.collection.collectionContext,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.openedCollectionCompatibility,
-            store.state.content.collection.collectionSession.document?.compatibility,
-        )
-        XCTAssertEqual(
-            store.state.content.composer.isCollectionMode,
-            store.state.content.isCollectionMode,
-        )
+        assertComposerSyncedWithCollectionState(store.state)
 
         await store.finish()
     }
 
-    // swiftlint:disable:next function_body_length
+    /// testNavigateToCollectionRestoresOpenedCompatibilityFromHistoryNavigation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testNavigateToCollectionRestoresOpenedCompatibilityFromHistoryNavigation() async {
-        let compatibility = CollectionFileCompatibilityMetadata(
-            sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
-            migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
-            warnings: [.droppedMalformedSnapshot],
-            usedDefinitionFallback: true,
-            writeBackAllowed: false,
-            writeBackReason: .blockedDefinitionFallback,
-        )
-        let navigation = ContentPageCollectionNavigation(
-            kind: .file(url: URL(fileURLWithPath: "/tmp/history.voycoll"), name: "history"),
-            context: .init(query: "report", scopes: ["/tmp"], conditions: []),
-            sortKey: .name,
-            sortOrder: .ascending,
-            viewLayout: .list,
-            compatibility: compatibility,
-        )
-
-        let store = TestStore(initialState: FileManagerWindowState()) {
-            FileManagerFeature()
-        } withDependencies: {
-            $0.collectionAlertClient = .init(
-                showUnsavedNavigationAlert: { .save },
-                showCollectionOpenErrorAlert: { _, _ in },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.date = .constant(.distantFuture)
-        }
-        store.exhaustivity = .off
+        let compatibility = makeHistoryCompatibility()
+        let navigation = makeHistoryNavigation(compatibility: compatibility)
+        let store = makeHistoryNavigationStore()
 
         await store.send(.navigation(.internal(.navigateToCollection(navigation))))
         await store.receive { action in
@@ -344,9 +260,7 @@ final class CollectionReopenStaleTests: XCTestCase {
             return true
         }
 
-        XCTAssertEqual(store.state.content.collection.collectionSession.document?.compatibility, compatibility)
-        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
-        XCTAssertEqual(store.state.content.composer.openedCollectionCompatibility, compatibility)
+        assertHistoryNavigationState(store.state, compatibility: compatibility)
     }
 }
 
@@ -362,6 +276,100 @@ private func makeDefinitionOnlyCollectionFile(query: String) -> VoyagerCollectio
         snapshot: nil,
         snapshotMeta: nil,
         appVersion: nil,
+    )
+}
+
+private func makeHistoryCompatibility() -> CollectionFileCompatibilityMetadata {
+    CollectionFileCompatibilityMetadata(
+        sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+        migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
+        warnings: [.droppedMalformedSnapshot],
+        usedDefinitionFallback: true,
+        writeBackAllowed: false,
+        writeBackReason: .blockedDefinitionFallback,
+    )
+}
+
+private func makeHistoryNavigation(
+    compatibility: CollectionFileCompatibilityMetadata,
+) -> ContentPageCollectionNavigation {
+    ContentPageCollectionNavigation(
+        kind: .file(url: URL(fileURLWithPath: "/tmp/history.voycoll"), name: "history"),
+        context: .init(query: "report", scopes: ["/tmp"], conditions: []),
+        sortKey: .name,
+        sortOrder: .ascending,
+        viewLayout: .list,
+        compatibility: compatibility,
+    )
+}
+
+@MainActor
+private func makeHistoryNavigationStore() -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
+    let store = TestStore(initialState: FileManagerWindowState()) {
+        FileManagerFeature()
+    } withDependencies: {
+        $0.collectionAlertClient = .init(
+            showUnsavedNavigationAlert: { .save },
+            showCollectionOpenErrorAlert: { _, _ in },
+        )
+        $0.userDefaultsClient = .testValue
+        $0.date = .constant(.distantFuture)
+    }
+    store.exhaustivity = .off
+    return store
+}
+
+@MainActor
+private func assertHistoryNavigationState(
+    _ state: FileManagerWindowState,
+    compatibility: CollectionFileCompatibilityMetadata,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+) {
+    XCTAssertEqual(
+        state.content.collection.collectionSession.document?.compatibility,
+        compatibility,
+        file: file,
+        line: line,
+    )
+    XCTAssertTrue(state.content.entryViewLayout.isCollectionMode, file: file, line: line)
+    XCTAssertEqual(
+        state.content.composer.openedCollectionCompatibility,
+        compatibility,
+        file: file,
+        line: line,
+    )
+}
+
+@MainActor
+private func assertComposerSyncedWithCollectionState(
+    _ state: FileManagerWindowState,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+) {
+    XCTAssertEqual(
+        state.content.composer.openedCollectionURL,
+        state.content.collection.collectionSession.document?.url,
+        file: file,
+        line: line,
+    )
+    XCTAssertEqual(
+        state.content.composer.collectionContext,
+        state.content.collection.collectionContext,
+        file: file,
+        line: line,
+    )
+    XCTAssertEqual(
+        state.content.composer.openedCollectionCompatibility,
+        state.content.collection.collectionSession.document?.compatibility,
+        file: file,
+        line: line,
+    )
+    XCTAssertEqual(
+        state.content.composer.isCollectionMode,
+        state.content.isCollectionMode,
+        file: file,
+        line: line,
     )
 }
 
@@ -482,5 +490,3 @@ private func assertCollectionModeNavigation(
         return true
     }
 }
-
-// swiftlint:enable type_body_length

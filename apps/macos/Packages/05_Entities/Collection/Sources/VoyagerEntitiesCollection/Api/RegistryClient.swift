@@ -19,7 +19,7 @@ public struct RegistryClient: Sendable {
         operatorCodes: @escaping @Sendable (_ key: String) -> [String],
         operatorDefinition: @escaping @Sendable (_ code: String) -> OperatorDefinition,
         operatorValueUIKind: @escaping @Sendable (_ code: String, _ typeKey: String) -> String,
-        resolvePropertyKey: @escaping @Sendable (_ key: String) -> PropertyKeyResolution
+        resolvePropertyKey: @escaping @Sendable (_ key: String) -> PropertyKeyResolution,
     ) {
         self.allProperties = allProperties
         self.labelForKey = labelForKey
@@ -116,7 +116,7 @@ extension RegistryClient: DependencyKey, TestDependencyKey {
         operatorValueUIKind: { _, _ in
             preconditionFailure("operator ui_value_kind 누락")
         },
-        resolvePropertyKey: { .canonical($0) }
+        resolvePropertyKey: { .canonical($0) },
     )
 }
 
@@ -131,7 +131,7 @@ public extension RegistryClient {
     private nonisolated static func requiredValue<T>(
         from dictionary: [String: T],
         key: String,
-        missingMessage: String
+        missingMessage: String,
     ) -> T {
         guard let value = dictionary[key] else {
             preconditionFailure("\(missingMessage): \(key)")
@@ -142,7 +142,7 @@ public extension RegistryClient {
     private nonisolated static func resolveKey(
         _ key: String,
         labels: [String: String],
-        legacyKeyMap: [String: String]
+        legacyKeyMap: [String: String],
     ) -> PropertyKeyResolution {
         if labels[key] != nil {
             return .canonical(key)
@@ -177,7 +177,7 @@ public extension RegistryClient {
                 }
                 return uiValueKind
             },
-            resolvePropertyKey: { resolveKey($0, labels: labels, legacyKeyMap: legacyKeyMap) }
+            resolvePropertyKey: { resolveKey($0, labels: labels, legacyKeyMap: legacyKeyMap) },
         )
     }
 }

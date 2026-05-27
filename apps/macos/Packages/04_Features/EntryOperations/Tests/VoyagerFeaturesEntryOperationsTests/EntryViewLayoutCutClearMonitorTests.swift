@@ -4,6 +4,7 @@ import XCTest
 
 @MainActor
 final class EntryViewLayoutCutClearMonitorTests: XCTestCase {
+    /// 앱 활성화 시 source path 중 하나라도 없으면 cut 클립보드를 지워야 하는지 검증
     func testAppActiveClearsCutWhenAnySourcePathIsMissing() {
         let heuristic = EntryOperationsCutClearHeuristic(backoffSchedule: [0.5, 1, 2])
         let monitor = EntryClipboardOperationsCutClearMonitor(heuristic: heuristic)
@@ -33,6 +34,7 @@ final class EntryViewLayoutCutClearMonitorTests: XCTestCase {
         XCTAssertEqual(decision, .clear)
     }
 
+    /// 활성화 이벤트가 오면 cut 상태를 copy로 되돌리고 세션을 초기화하는지 검증
     func testAppDidBecomeActiveActionClearsClipboardOperationToCopy() async {
         let heuristic = EntryOperationsCutClearHeuristic(backoffSchedule: [0.5, 1, 2])
         let session = heuristic.makeInitialSession(

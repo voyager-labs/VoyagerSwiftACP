@@ -9,11 +9,11 @@ public enum RegistryLoader {
     public static func load<T: Decodable>(
         resourceName: String,
         fileExtension: String = "json",
-        bundle: Bundle = .main
+        bundle: Bundle = .main,
     ) throws -> T {
         guard let bundleURL = bundle.url(
             forResource: resourceName,
-            withExtension: fileExtension
+            withExtension: fileExtension,
         ) else {
             throw LoadError.resourceURLNotFound(name: resourceName, fileExtension: fileExtension)
         }

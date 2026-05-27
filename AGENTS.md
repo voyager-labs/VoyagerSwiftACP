@@ -5,6 +5,30 @@ This repository separates agent-facing instructions from human-facing documentat
 - **For AI Agents:** All coding standards, rules, and workflows are located in the `.agents/` directory (specifically `.agents/rules/`).
 - **Local Agent Artifacts:** Runtime directories such as `.omx/` and `.sisyphus/` are local-only and must never be staged or committed. See `.agents/rules/99-agent/01-agent-harness-artifacts.md`.
 - **For Humans:** Product and architecture documentation is located in `docs/index.md`.
+- **Product docs:** `docs/canonical/` — canonical Voyager product documentation (git submodule, `voyager-labs/voyager-documentation`).
+
+## Onboarding
+
+clone 후 스크립트 하나로 개발 환경을 구성한다:
+
+```bash
+bash scripts/setup.sh
+```
+
+이 스크립트는 `just` 설치 → `just setup` 실행을 자동 처리한다.
+
+### 수동
+
+```bash
+brew install just
+just setup
+```
+
+### 명령 목록
+
+```bash
+just -l
+```
 
 ## Protected local files
 

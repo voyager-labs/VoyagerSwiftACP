@@ -33,7 +33,7 @@ public struct ComposerView: View {
         canSaveCollection: Bool,
         isTemporaryCollection: Bool,
         onDiscardCollectionChanges: @escaping () -> Void,
-        onExitComposer: @escaping () -> Void
+        onExitComposer: @escaping () -> Void,
     ) {
         self.store = store
         self.favorites = favorites
@@ -51,7 +51,7 @@ public struct ComposerView: View {
             observe: { state in
                 ViewState(
                     isPresented: state.isPresented,
-                    transientFeedback: state.transientFeedback
+                    transientFeedback: state.transientFeedback,
                 )
             },
             content: { viewStore in
@@ -64,7 +64,7 @@ public struct ComposerView: View {
                             canSaveCollection: canSaveCollection,
                             isTemporaryCollection: isTemporaryCollection,
                             isOptionKeyPressed: keyboardMonitor.isOptionKeyPressed,
-                            onDiscardCollectionChanges: onDiscardCollectionChanges
+                            onDiscardCollectionChanges: onDiscardCollectionChanges,
                         )
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -78,7 +78,7 @@ public struct ComposerView: View {
                             favorites: favorites,
                             historyPaths: historyPaths,
                             colorScheme: colorScheme,
-                            isScopePickerPresented: $isScopePickerPresented
+                            isScopePickerPresented: $isScopePickerPresented,
                         )
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -96,20 +96,20 @@ public struct ComposerView: View {
                         material: .popover,
                         blendingMode: .withinWindow,
                         tintColor: NSColor(VoyagerDS.Interaction.composerBackground(for: colorScheme)),
-                        tintOpacity: 0.15
+                        tintOpacity: 0.15,
                     )
                     .clipShape(RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer))
                     .overlay(
                         RoundedRectangle(cornerRadius: VoyagerDS.Radius.composer)
-                            .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.12), lineWidth: 1)
+                            .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.12), lineWidth: 1),
                     )
                     .shadow(
                         color: Color.black.opacity(isDark ? 0.45 : 0.18),
                         radius: isDark ? 18 : 12,
                         x: 0,
-                        y: isDark ? 10 : 6
+                        y: isDark ? 10 : 6,
                     )
-                    .allowsHitTesting(false)
+                    .allowsHitTesting(false),
                 )
                 .allowsHitTesting(true)
                 .onAppear {
@@ -123,7 +123,7 @@ public struct ComposerView: View {
                         keyboardMonitor.stop()
                     }
                 }
-            }
+            },
         )
     }
 
@@ -158,7 +158,7 @@ public struct ComposerView: View {
                 if store.canRedo {
                     store.send(.redo)
                 }
-            }
+            },
         )
     }
 }

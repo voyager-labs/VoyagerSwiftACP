@@ -68,6 +68,20 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `OnboardingHost Dev: Launch (Debug)` - 온보딩 호스트 Debug 모드로 빌드 및 실행
                 - `OnboardingHost Dev: Launch (Release)` - 온보딩 호스트 Release 모드로 빌드 및 실행
             - 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
+    - Zed에서 LSP context/검증 태스크 실행:
+        - `cmd-shift-p`로 Command Palette를 열고 `task: spawn`을 실행합니다.
+        - `.zed/tasks.json`에는 아래 Voyager 전용 태스크가 정의되어 있습니다.
+        - LSP context 전환 태스크:
+            - `Voyager LSP: Current File` - 현재 파일 경로로 적절한 SourceKit-LSP build context를 추론해 `buildServer.json`을 갱신
+            - `Voyager LSP: App` - `Voyager-Dev` 기준 app context로 전환
+            - `Voyager LSP: Helper` - `VoyagerHelper-Dev` 기준 helper context로 전환
+            - `Voyager LSP: OnboardingHost` - `OnboardingHost-Dev` 기준 onboarding host context로 전환
+        - Affected verification 태스크:
+            - `Voyager Checks: Current File (Plan)` - 현재 파일 기준으로 실행할 검증 명령을 JSON으로 출력
+            - `Voyager Checks: Current File (Run)` - 현재 파일 기준 검증 명령을 실제 실행
+            - `Voyager Checks: Changed Files (Plan)` - Git 변경 파일 기준으로 실행할 검증 명령을 JSON으로 출력
+            - `Voyager Checks: Changed Files (Run)` - Git 변경 파일 기준 검증 명령을 실제 실행
+        - Zed는 프로젝트 루트의 `buildServer.json`을 자동 탐지합니다. 별도 `.zed/settings.json`은 두지 않으며, LSP context 전환은 위 태스크 또는 `python3 scripts/dev/lsp_context.py ...` 명령으로 수행합니다.
     - Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
     - Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
     - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
@@ -76,7 +90,13 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 ### Xcode 버전 관리
 
 이 레포에서는 루트 디렉터리의 `.xcode-version` 파일로 **공식 Xcode 버전**을 고정해서 사용합니다.
+현재 기준 버전은 Xcode 26.1이며, 이 Xcode가 제공하는 Swift 6.2.1을 사용합니다.
+Swift 기대 버전은 루트 `.swift-toolchain-version`에 별도로 명시합니다.
 모든 로컬 개발 환경과 CI는 이 버전에 맞추는 것을 원칙으로 합니다.
+
+`swiftly`를 사용하는 환경을 위해 루트 `.swift-version`은 `xcode`로 고정합니다.
+`.swift-version`은 swiftly가 읽는 toolchain 선택 파일이고, `.swift-toolchain-version`은 이 레포가 기대하는 Swift 버전을 검증하기 위한 파일입니다.
+따라서 `swiftly`가 PATH에서 먼저 잡히더라도 레포 안에서는 현재 선택된 Xcode toolchain을 사용하고, 그 결과가 Swift 6.2.1인지 `just swift-version`으로 확인합니다.
 
 #### 사전 준비
 
@@ -99,6 +119,15 @@ chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 �
 2. `xcodes` CLI가 설치되어 있지 않으면 Homebrew로 설치합니다.
 3. `xcodes install <버전>`으로 해당 Xcode 버전을 설치합니다. (이미 설치되어 있다면 건너뜁니다)
 4. `xcodes select <버전>`으로 해당 버전을 현재 macOS의 활성 Xcode로 설정합니다.
+
+`swiftly`를 별도로 쓰는 경우에는 아래 명령으로 레포 기준 Swift toolchain도 확인할 수 있습니다.
+
+```bash
+swiftly use
+just swift-version
+```
+
+정상이라면 `swiftly use`는 `xcode`, `just swift-version`은 `.swift-toolchain-version`과 일치하는 Swift 6.2.1을 출력합니다.
 
 설정이 제대로 되었는지 확인하려면:
 

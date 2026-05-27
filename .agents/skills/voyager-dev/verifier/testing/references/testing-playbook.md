@@ -35,6 +35,23 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
 
 ## Test selection rules
 
+### Split-target spec suites
+
+When a spec owns suites in two targets (app and package), run focused filters against each target separately. Do not rely on a single filter that only hits one target.
+
+```bash
+# Package target
+xcrun swift test --package-path <package-path> --filter <SpecID><PascalCaseSpecTitle>Tests
+
+# App target (xcodebuild)
+xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj \
+  -only-testing:VoyagerTests/<SpecID><PascalCaseSpecTitle>Tests
+```
+
+If the spec ID is the same in both targets, a grep for the spec ID should find tests in both locations. Report pass/fail per target; do not merge results.
+
+### Task-shape rules
+
 - `scaffold`
     - Add at least one focused reducer test when new behavior is introduced.
 - `decompose`
@@ -80,6 +97,73 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
 - Could an in-flight effect be silently left running at test end?
 - Does at least one test prove the real downstream execution path for the highest-risk routed flow?
 - Do tests distinguish routing-only assertions from execution-chain assertions where both matter?
+
+## Helper Extraction for Test Maintenance
+
+When test files grow large with repeated dependency setup, extract helpers to reduce duplication and improve readability.
+
+### When to extract
+
+Extract when the same dependency construction block appears **3 or more times** across tests. Two occurrences are tolerable. Three or more means a named helper pays for itself in readability and maintenance.
+
+### Where to place helpers
+
+- Test-target-local by default: `Tests/<TestTargetName>/Support/<FeatureOrAC>/` when the helper is owned by one feature, spec, or acceptance-criteria slice.
+- Use flat `Tests/<TestTargetName>/Support/` only for helpers intentionally shared by several suites in that test target.
+- Use `Support/Shared/` only after multiple feature/AC folders prove a concrete shared need.
+- Helpers must not be `public` or leak into production targets.
+- File names should describe the dependency or role (e.g. `ProgressClient.swift`, `PermissionFixtures.swift`) inside the owning feature/AC folder.
+- If a helper type name collides with a production type (via `@testable import`), append `Fixture` (e.g. `BetaAccessClientFixture`).
+
+### Enum namespace pattern
+
+Use an enum with no cases as a namespace for related helpers. This prevents accidental instantiation and groups variants logically.
+
+```swift
+enum FeatureClient {
+    static var success: SomeDependencyClient {
+        SomeDependencyClient(perform: { _, _ in .ok })
+    }
+    static func throwing(_ error: SomeError) -> SomeDependencyClient {
+        SomeDependencyClient(perform: { _, _ in throw error })
+    }
+}
+```
+
+Variants should cover the common cases: success, failure by error type, and parameterized responses.
+
+### Composite helpers
+
+When multiple dependencies always appear together (e.g. permission checks that grant or deny a set of related capabilities), create a composite helper that configures all of them at once.
+
+```swift
+enum PermissionClients {
+    static func allGranted(_ deps: inout DependencyValues) {
+        deps.fullDiskAccess = .init(status: { .granted })
+        deps.helperFolder = .init(checkAccess: { kGranted }, requestAccess: { kGranted })
+    }
+}
+```
+
+Usage inside `withDependencies`:
+
+```swift
+withDependencies { PermissionClients.allGranted(&$0) }
+```
+
+Composite helpers eliminate the most duplication when N tests need the same multi-dependency setup.
+
+### What not to extract
+
+- Assertion-based verify closures that inspect arguments with `XCTAssertEqual`. These are unique per test and lose their value when generalized.
+- Attempt-counter or retry-counting closures that branch on invocation number. The branching logic is test-specific.
+- Single-use dependency setups. A helper used once adds indirection without benefit.
+- Helpers that would need production visibility widening (`public`/`open`) just to compile.
+- Feature-specific helpers promoted to `Shared` before at least two independent suites need them.
+
+### Cleanup evidence pairing
+
+When helper extraction happens as part of duplicate-test cleanup, pair it with the spec-test-authoring coverage map: each removed or merged test must point to the surviving test/helper/assertion that preserves behavior. Helper extraction alone is not evidence that coverage remained intact.
 
 ## SPM Package Test Guidance
 
@@ -136,3 +220,30 @@ xcrun swift test --package-path apps/macos/Packages/05_Entities/Ai \
 
 - **Bad:** A callback-heavy feature gets one happy-path test even though failure, cancel, and teardown branches have different semantics.
   **Good:** Add focused tests for the meaningful branch variants where state is supposed to diverge.
+
+## Verification Evidence Requirements
+
+When recording focused test verification results, always include:
+
+- **Command**: The exact `xcrun swift test` command used
+- **Exit code**: The numeric exit code
+- **Suite filter**: The `--filter` value used
+- **Executed test count**: How many tests ran (from XCTest output)
+- **Result**: PASS, FAIL, or BLOCKED
+- **Failure phase**: `compilation`, `test-execution`, or `N/A`
+
+For packages where source-level build errors prevent test compilation:
+
+- Record as **BLOCKED** (not PASS or FAIL)
+- Include the **first failure path** (file and line)
+- Classify as **pre-existing source build blocker** or **test-caused blocker**
+- Mark as a **proof gap** — changed tests were NOT proven to compile/execute
+- Never claim verification passed if tests did not compile
+
+Example evidence matrix:
+
+| Spec    | Result  | Tests | Proof Gap                         |
+| ------- | ------- | ----- | --------------------------------- |
+| EVM-001 | PASS    | 10    | No                                |
+| EVM-002 | BLOCKED | N/A   | Yes (pre-existing source blocker) |
+| EVM-004 | PASS    | 10    | No                                |

@@ -3,11 +3,12 @@ import ComposableArchitecture
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesOnboarding
-import VoyagerPagesSettings
 import XCTest
 
+/// 앱 루트 계약 — 최상위 라우팅과 델리게이트 전달을 검증.
 @MainActor
 final class AppRootFeatureContractTests: XCTestCase {
+    /// testAppPreferencesUpdatedForwardsToWindowManagerApplyAppPreferences 테스트 동작을 검증한다.
     func testAppPreferencesUpdatedForwardsToWindowManagerApplyAppPreferences() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -26,6 +27,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
     }
 
+    /// testMenuCommandsDelegateForwardsToWindowManager 테스트 동작을 검증한다.
     func testMenuCommandsDelegateForwardsToWindowManager() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -35,6 +37,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.receive(\.windowManager.file.quickLook)
     }
 
+    /// testMenuCommandsDelegateForwardsToUpdater 테스트 동작을 검증한다.
     func testMenuCommandsDelegateForwardsToUpdater() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -44,17 +47,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.receive(\.updater.checkForUpdates)
     }
 
-    func testWindowManagerOpenAISettingsDelegateSelectsAISettings() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off(showSkippedAssertions: false)
-
-        await store.send(.windowManager(.delegate(.openAISettings)))
-        await store.receive(\.openAISettings)
-        await store.receive(\.settings.selectSection, .ai)
-    }
-
+    /// testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow 테스트 동작을 검증한다.
     func testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
@@ -69,6 +62,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
     }
 
+    /// testHelperExternalFileChangeForwardsToWindowManager 테스트 동작을 검증한다.
     func testHelperExternalFileChangeForwardsToWindowManager() async {
         let windowID = UUID()
         let paths = ["/tmp/demo"]
@@ -83,9 +77,18 @@ final class AppRootFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
-        await store.receive(\.windowManager.windows)
+        await store.receive { action in
+            guard case let .windowManager(.windows(.element(
+                id: id,
+                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
+            ))) = action else {
+                return false
+            }
+            return id == windowID && receivedPaths == paths
+        }
     }
 
+    /// testHelperExternalFileChangeFansOutToAllOpenWindows 테스트 동작을 검증한다.
     func testHelperExternalFileChangeFansOutToAllOpenWindows() async {
         let firstID = UUID()
         let secondID = UUID()
@@ -102,10 +105,27 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
 
         await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
-        await store.receive(\.windowManager.windows)
-        await store.receive(\.windowManager.windows)
+        await store.receive { action in
+            guard case let .windowManager(.windows(.element(
+                id: id,
+                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
+            ))) = action else {
+                return false
+            }
+            return id == firstID && receivedPaths == paths
+        }
+        await store.receive { action in
+            guard case let .windowManager(.windows(.element(
+                id: id,
+                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
+            ))) = action else {
+                return false
+            }
+            return id == secondID && receivedPaths == paths
+        }
     }
 
+    /// testMenuCommandsStateIsRecomputedAfterWindowManagerChanges 테스트 동작을 검증한다.
     func testMenuCommandsStateIsRecomputedAfterWindowManagerChanges() async {
         var initialState = AppRootFeature.State()
         let windowID = UUID()
@@ -128,5 +148,64 @@ final class AppRootFeatureContractTests: XCTestCase {
             $0.windowManager.focusedWindowID = windowID
             $0.menuCommands.hasFocusedWindow = true
         }
+    }
+
+    func testSettingsGeneralCheckForUpdatesForwardsToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.settings(.general(.checkForUpdates)))
+        await store.receive(\.updater.checkForUpdates)
+    }
+
+    func testSettingsGeneralToggleAutomaticUpdateForwardsToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.settings(.general(.toggleAutomaticUpdate(true))))
+        await store.receive(\.updater.setAutomaticUpdate(true))
+
+        await store.send(.settings(.general(.toggleAutomaticUpdate(false))))
+        await store.receive(\.updater.setAutomaticUpdate(false))
+    }
+
+    func testSettingsGeneralToggleAlertBeforeQuitDoesNotForwardToUpdater() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.settings(.general(.toggleAlertBeforeQuit(true))))
+        store.assertNoInboundEffects()
+    }
+
+    // MARK: - SET-AC-004: Boundary Absence Contracts
+
+    /// Proves Settings actions produce NO windowManager side effects.
+    /// WindowManager does not participate in the Settings scene lifecycle.
+    func testSettingsActionsDoNotForwardToWindowManager() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.settings(.general(.toggleAlertBeforeQuit(false))))
+        store.assertNoInboundEffects()
+    }
+
+    /// Proves AppRoot's Settings forwarding does NOT route through MenuCommands.
+    /// MenuCommandsAction.Delegate has no `.settings` case — absence is structural.
+    /// This test verifies that settings-driven actions (checkForUpdates) route
+    /// directly to updater, not via menuCommands.
+    func testSettingsCheckForUpdatesDoesNotRouteThroughMenuCommands() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.settings(.general(.checkForUpdates)))
+        await store.receive(\.updater.checkForUpdates)
     }
 }

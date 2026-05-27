@@ -7,14 +7,15 @@ import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
 @MainActor
-final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
+final class ContentEntryOpsLifecycleTests: XCTestCase {
     private let reducer = FileManagerContentFeature()
 
-    // MARK: - Harness
+    // MARK: - 하네스
 
     @MainActor
     struct LifecycleBridgeHarness: Reducer {
@@ -45,7 +46,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - 도우미
 
     private func makeInitialState() -> LifecycleBridgeHarness.State {
         LifecycleBridgeHarness.State(content: FileManagerContentState())
@@ -58,8 +59,9 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         return state
     }
 
-    // MARK: - .lifecycle(.operationFinished) triggers content reload
+    // MARK: - .lifecycle(.operationFinished)가 콘텐츠 리로드를 트리거
 
+    /// testOperationFinishedTriggersContentReload 테스트 동작을 검증한다.
     func testOperationFinishedTriggersContentReload() async {
         let folderPath = "/tmp/voyager"
         let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
@@ -81,6 +83,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
+    /// testOperationFinishedTriggersContentReloadForRecents 테스트 동작을 검증한다.
     func testOperationFinishedTriggersContentReloadForRecents() async {
         var initialState = makeInitialState()
         initialState.content.navigation.navigationState = .recents
@@ -104,6 +107,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
+    /// testOperationFinishedTriggersContentReloadForTags 테스트 동작을 검증한다.
     func testOperationFinishedTriggersContentReloadForTags() async {
         var initialState = makeInitialState()
         initialState.content.navigation.navigationState = .tags("Work")
@@ -130,6 +134,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
+    /// testOperationFinishedOnCollectionNavigationReturnsNone 테스트 동작을 검증한다.
     func testOperationFinishedOnCollectionNavigationReturnsNone() async {
         var initialState = makeInitialState()
         initialState.content.navigation.navigationState = .collection(
@@ -155,8 +160,9 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - .lifecycle(.emptyTrashCompleted) triggers closeWindow delegate
+    // MARK: - .lifecycle(.emptyTrashCompleted)가 closeWindow 델리게이트를 트리거
 
+    /// testEmptyTrashCompletedTriggersCloseWindow 테스트 동작을 검증한다.
     func testEmptyTrashCompletedTriggersCloseWindow() async {
         let store = TestStore(initialState: makeInitialState()) {
             LifecycleBridgeHarness()
@@ -172,8 +178,9 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - .lifecycle(.entryActionCompleted) returns none (metric logging only)
+    // MARK: - .lifecycle(.entryActionCompleted)는 none 반환 (메트릭 로깅만)
 
+    /// testEntryActionCompletedReturnsNoneWithoutReload 테스트 동작을 검증한다.
     func testEntryActionCompletedReturnsNoneWithoutReload() async {
         let folderPath = "/tmp/voyager"
         let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
@@ -190,6 +197,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
+    /// testPutBackEntryActionCompletedOnCollectionNavigationRestoresCollectionPresentation 테스트 동작을 검증한다.
     func testPutBackEntryActionCompletedOnCollectionNavigationRestoresCollectionPresentation() async {
         var initialState = makeInitialState()
         initialState.content.navigation.navigationState = .collection(
@@ -221,6 +229,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
+    /// testUndoAppliedMoveToTrashOnCollectionNavigationRestoresCollectionPresentation 테스트 동작을 검증한다.
     func testUndoAppliedMoveToTrashOnCollectionNavigationRestoresCollectionPresentation() async {
         var initialState = makeInitialState()
         initialState.content.navigation.navigationState = .collection(
@@ -252,8 +261,9 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - Non-lifecycle entry operations do not trigger bridge side effects
+    // MARK: - 비수명주기 항목 연산은 브릿지 부수효과를 트리거하지 않음
 
+    /// testLoadingItemsLoadedReturnsNone 테스트 동작을 검증한다.
     func testLoadingItemsLoadedReturnsNone() async {
         let store = TestStore(initialState: makeInitialState()) {
             LifecycleBridgeHarness()
@@ -264,6 +274,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
+    /// testWindowIDChangedDoesNotTriggerReloadOrCloseWindow 테스트 동작을 검증한다.
     func testWindowIDChangedDoesNotTriggerReloadOrCloseWindow() async {
         let store = TestStore(initialState: makeInitialState()) {
             LifecycleBridgeHarness()
@@ -274,6 +285,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
+    /// testPathsMutatedDoesNotTriggerReloadOrCloseWindow 테스트 동작을 검증한다.
     func testPathsMutatedDoesNotTriggerReloadOrCloseWindow() async {
         let folderPath = "/tmp/voyager"
         let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
@@ -285,6 +297,7 @@ final class FileManagerContentEntryOpsLifecycleBridgeTests: XCTestCase {
         await store.finish()
     }
 
+    /// testPathsMutatedOnCollectionNavigationPrunesCollectionPresentation 테스트 동작을 검증한다.
     func testPathsMutatedOnCollectionNavigationPrunesCollectionPresentation() async {
         var initialState = makeInitialState()
         let collectionItem = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")

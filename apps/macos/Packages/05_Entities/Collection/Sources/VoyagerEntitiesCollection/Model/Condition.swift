@@ -25,7 +25,7 @@ public struct Condition: Equatable, Identifiable, Hashable, Sendable {
         operatorValueUIKind: String? = nil,
         valueType: String = "unknown",
         values: [String]? = nil,
-        isActive: Bool = true
+        isActive: Bool = true,
     ) {
         self.propertyKey = propertyKey
         self.propertyLabel = propertyLabel

@@ -3,7 +3,9 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerPagesFileManager
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 struct MenuCommandsState: Equatable {
     var hasFocusedWindow: Bool
@@ -64,25 +66,23 @@ struct MenuCommandsState: Equatable {
         let windowState = window.window
 
         hasFocusedWindow = true
-        let selectedIds = windowState.content.entryViewLayout.selectedIds
-        canOpen = !selectedIds.isEmpty
-        canQuickLook = !selectedIds.isEmpty
-        canGoBack = windowState.content.navigation.canGoBack
-        canGoForward = windowState.content.navigation.canGoForward
-        canGoToEnclosingDirectory = windowState.content.navigation.canGoToEnclosingDirectory
-        canSaveCollection = windowState.content.canSaveCollection
-        sidebarVisible = windowState.sidebar.sidebarVisible
-        showHiddenFiles = windowState.content.entryViewLayout.showHiddenFiles
-        viewLayout = windowState.content.entryViewLayout.mode
-        groupKey = windowState.content.entryViewLayout.entryArrangements.groupKey
-        sortKey = windowState.content.entryViewLayout.entryArrangements.sortKey
-        sortOrder = windowState.content.entryViewLayout.entryArrangements.sortOrder
-        canUndo = windowState.content.entryViewLayout.entryOperations.canUndoEntryAction
-        canRedo = windowState.content.entryViewLayout.entryOperations.canRedoEntryAction
-        selectedItemCount = selectedIds.count
-        isComposerPresented = windowState.content.composer.isPresented
-        isContextualAiChatPresented = windowState.inspector.inspectorVisible
-            && windowState.inspector.inspectorPaneExists
-            && windowState.inspector.activeMode == .chat
+let projection = windowState.menuCommandProjection
+        canOpen = projection.canOpen
+        canQuickLook = projection.canQuickLook
+        canGoBack = projection.canGoBack
+        canGoForward = projection.canGoForward
+        canGoToEnclosingDirectory = projection.canGoToEnclosingDirectory
+        canSaveCollection = projection.canSaveCollection
+        sidebarVisible = projection.sidebarVisible
+        showHiddenFiles = projection.showHiddenFiles
+        viewLayout = projection.viewLayout
+        groupKey = projection.groupKey
+        sortKey = projection.sortKey
+        sortOrder = projection.sortOrder
+        canUndo = projection.canUndo
+        canRedo = projection.canRedo
+        selectedItemCount = projection.selectedItemCount
+        isComposerPresented = projection.isComposerPresented
+        isContextualAiChatPresented = projection.isContextualAiChatPresented
     }
 }

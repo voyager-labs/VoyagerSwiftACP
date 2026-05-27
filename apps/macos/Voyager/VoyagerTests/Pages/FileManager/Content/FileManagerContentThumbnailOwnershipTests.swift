@@ -4,11 +4,12 @@ import ComposableArchitecture
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryThumbnail
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
 @MainActor
-final class FileManagerContentThumbnailOwnershipTests: XCTestCase {
+final class ContentThumbnailOwnershipTests: XCTestCase {
     func testEntryViewLayoutThumbnailActionUsesCanonicalThumbnailHost() async {
         let store = TestStore(initialState: FileManagerContentState()) {
             FileManagerContentFeature()

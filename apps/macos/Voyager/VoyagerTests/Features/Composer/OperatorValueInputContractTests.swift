@@ -5,8 +5,10 @@ import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesComposer
 import XCTest
 
+/// 연산자 값 입력 계약 — 연산자 전환 시 인자 수 업데이트와 페이로드 리셋을 검증.
 @MainActor
 final class OperatorValueInputContractTests: XCTestCase {
+    /// testSetOperatorExistsConfiguresNoValueInput 테스트 동작을 검증한다.
     func testSetOperatorExistsConfiguresNoValueInput() async {
         let store = TestStore(initialState: makeState()) {
             ComposerFeature()
@@ -44,6 +46,7 @@ final class OperatorValueInputContractTests: XCTestCase {
         }
     }
 
+    /// testSetOperatorBetweenConfiguresRangeDateInputs 테스트 동작을 검증한다.
     func testSetOperatorBetweenConfiguresRangeDateInputs() async {
         let store = TestStore(initialState: makeState()) {
             ComposerFeature()
@@ -80,6 +83,7 @@ final class OperatorValueInputContractTests: XCTestCase {
         }
     }
 
+    /// testSetOperatorResetsValuePickerPayloadForSameProperty 테스트 동작을 검증한다.
     func testSetOperatorResetsValuePickerPayloadForSameProperty() async {
         var initial = makeState()
         initial.valuePicker = .init()

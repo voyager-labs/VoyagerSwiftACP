@@ -4,11 +4,12 @@ import XCTest
 
 @MainActor
 final class AppLifecycleFeatureTests: XCTestCase {
+    /// 정상 종료 시 헬퍼가 정리 경로에서 중단되지 않는지 확인.
     func testStartTerminationCleanupDoesNotStopHelperOnNormalQuit() async {
         await VoyagerTerminationCoordinator.shared.end()
         let attemptID = UUID()
 
-        // Use actor-isolated storage class to avoid concurrent mutation issues
+        // 동시 변경 문제를 피하기 위해 actor 격리 저장소 클래스 사용
         let state = TestState()
 
         let store = TestStore(

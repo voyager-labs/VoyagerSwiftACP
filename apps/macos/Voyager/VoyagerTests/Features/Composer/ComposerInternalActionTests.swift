@@ -10,6 +10,7 @@ import XCTest
 final class ComposerInternalActionTests: XCTestCase {
     // MARK: - applyCollectionDraftRestore
 
+    /// testApplyCollectionDraftRestoreSetsFieldsFromPayload 테스트 동작을 검증한다.
     func testApplyCollectionDraftRestoreSetsFieldsFromPayload() async {
         let context = CollectionContext(query: "test query", scopes: ["/tmp"], conditions: [])
         let payload = CollectionDraftRestorePayload(context: context, openedURL: nil)
@@ -26,6 +27,7 @@ final class ComposerInternalActionTests: XCTestCase {
         }
     }
 
+    /// testApplyCollectionDraftRestoreWithOpenedURLClearsText 테스트 동작을 검증한다.
     func testApplyCollectionDraftRestoreWithOpenedURLClearsText() async {
         let context = CollectionContext(query: "saved search", scopes: ["/Users"], conditions: [])
         let payload = CollectionDraftRestorePayload(
@@ -45,6 +47,7 @@ final class ComposerInternalActionTests: XCTestCase {
         }
     }
 
+    /// testApplyCollectionDraftRestoreClearsHistory 테스트 동작을 검증한다.
     func testApplyCollectionDraftRestoreClearsHistory() async {
         var initialState = ComposerState()
         initialState.history = [FilterSnapshot(scopes: ["/old"], conditions: [], conditionDisplayByKey: [:])]
@@ -69,6 +72,7 @@ final class ComposerInternalActionTests: XCTestCase {
 
     // MARK: - applyCollectionNavigationComposer
 
+    /// testApplyCollectionNavigationComposerSetsFieldsFromPayload 테스트 동작을 검증한다.
     func testApplyCollectionNavigationComposerSetsFieldsFromPayload() async {
         let context = CollectionContext(query: "nav query", scopes: ["/nav"], conditions: [])
         let payload = CollectionNavigationStatePayload(
@@ -94,6 +98,7 @@ final class ComposerInternalActionTests: XCTestCase {
 
     // MARK: - syncCollectionState
 
+    /// testSyncCollectionStateSetsComposerFields 테스트 동작을 검증한다.
     func testSyncCollectionStateSetsComposerFields() async {
         let context = CollectionContext(query: "sync", scopes: [], conditions: [])
         let url = URL(fileURLWithPath: "/test.collection")
@@ -125,6 +130,7 @@ final class ComposerInternalActionTests: XCTestCase {
 
     // MARK: - updateLastFiltersResponse
 
+    /// testUpdateLastFiltersResponseSetsResponse 테스트 동작을 검증한다.
     func testUpdateLastFiltersResponseSetsResponse() async {
         let response = VoyagerShared.SearchResponsePayload(
             itemCount: 42,
@@ -144,6 +150,7 @@ final class ComposerInternalActionTests: XCTestCase {
 
     // MARK: - clearPendingSearchQuery
 
+    /// testClearPendingSearchQueryClearsQuery 테스트 동작을 검증한다.
     func testClearPendingSearchQueryClearsQuery() async {
         var initialState = ComposerState()
         initialState.pendingSearchQuery = "some pending query"
@@ -159,6 +166,7 @@ final class ComposerInternalActionTests: XCTestCase {
 
     // MARK: - setPendingSearchQuery
 
+    /// testSetPendingSearchQuerySetsValue 테스트 동작을 검증한다.
     func testSetPendingSearchQuerySetsValue() async {
         let store = TestStore(initialState: ComposerState()) {
             ComposerFeature()
@@ -169,6 +177,7 @@ final class ComposerInternalActionTests: XCTestCase {
         }
     }
 
+    /// testSetPendingSearchQueryClearsWithNil 테스트 동작을 검증한다.
     func testSetPendingSearchQueryClearsWithNil() async {
         var initialState = ComposerState()
         initialState.pendingSearchQuery = "existing query"
@@ -184,6 +193,7 @@ final class ComposerInternalActionTests: XCTestCase {
 
     // MARK: - setLoadingFilters
 
+    /// testSetLoadingFiltersTrue 테스트 동작을 검증한다.
     func testSetLoadingFiltersTrue() async {
         let store = TestStore(initialState: ComposerState()) {
             ComposerFeature()
@@ -194,6 +204,7 @@ final class ComposerInternalActionTests: XCTestCase {
         }
     }
 
+    /// testSetLoadingFiltersFalse 테스트 동작을 검증한다.
     func testSetLoadingFiltersFalse() async {
         var initialState = ComposerState()
         initialState.isLoadingFilters = true
@@ -209,6 +220,7 @@ final class ComposerInternalActionTests: XCTestCase {
 
     // MARK: - setInitialScope
 
+    /// testSetInitialScopeSetsSingleScope 테스트 동작을 검증한다.
     func testSetInitialScopeSetsSingleScope() async {
         var initialState = ComposerState()
         initialState.scopes = ["/old1", "/old2"]
@@ -224,6 +236,7 @@ final class ComposerInternalActionTests: XCTestCase {
 
     // MARK: - resetComposerAndSync
 
+    /// testResetComposerAndSyncResetsStateAndAppliesSync 테스트 동작을 검증한다.
     func testResetComposerAndSyncResetsStateAndAppliesSync() async {
         var initialState = ComposerState()
         initialState.text = "old query"
@@ -260,8 +273,9 @@ final class ComposerInternalActionTests: XCTestCase {
         }
     }
 
-    // MARK: - searchListApplied (existing action, verify passthrough)
+    // MARK: - searchListApplied (기존 액션, 통과 확인)
 
+    /// testSearchListAppliedTransitionsPhase 테스트 동작을 검증한다.
     func testSearchListAppliedTransitionsPhase() async {
         var initialState = ComposerState()
         initialState.queryRenderPhase = .chipsAppliedPendingList

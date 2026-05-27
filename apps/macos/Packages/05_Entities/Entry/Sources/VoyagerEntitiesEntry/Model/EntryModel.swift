@@ -23,7 +23,7 @@ public struct EntryFacets: Equatable, Sendable {
         kind: String,
         creatorApplication: String?,
         tags: [Tag]?,
-        supplementaryMetadata: EntrySupplementaryMetadata?
+        supplementaryMetadata: EntrySupplementaryMetadata?,
     ) {
         self.createdDate = createdDate
         self.addedDate = addedDate
@@ -36,8 +36,6 @@ public struct EntryFacets: Equatable, Sendable {
 }
 
 public struct EntryModel: Identifiable, Sendable {
-    public typealias ID = String
-
     public let name: String
     public let fullPath: String
     public let isFolder: Bool
@@ -55,7 +53,7 @@ public struct EntryModel: Identifiable, Sendable {
         size: Int64,
         modifiedDate: Date,
         fileExtension: String,
-        facets: EntryFacets
+        facets: EntryFacets,
     ) {
         self.name = name
         self.fullPath = fullPath
@@ -67,7 +65,7 @@ public struct EntryModel: Identifiable, Sendable {
         self.facets = facets
     }
 
-    public var id: ID { fullPath }
+    public var id: String { fullPath }
 }
 
 extension EntryModel: Equatable {
@@ -94,8 +92,8 @@ extension EntryModel: Equatable {
                 kind: "Folder",
                 creatorApplication: nil,
                 tags: nil,
-                supplementaryMetadata: nil
-            )
+                supplementaryMetadata: nil,
+            ),
         )
     }
 }

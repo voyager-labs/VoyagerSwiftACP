@@ -1,21 +1,19 @@
 ---
-globs: apps/macos/**/*.swift
 description: "macOS SwiftUI + TCA structure and dependency rules."
+globs: "apps/macos/**/*.swift"
 ---
 
 # macOS Rules
 
-## Applies when
-
-- Editing Swift code under `apps/macos/**`.
-
 ## Must
 
 - Follow FSD dependency direction:
-    - `App -> Pages -> (Widgets|Features|Entities|Shared)`
-    - `Widgets -> (Features|Entities|Shared)`
-    - `Features -> (Entities|Shared)`
-    - `Entities -> Shared`
+    - `App (01_App) -> Pages (02_Pages) -> (Widgets (03_Widgets) | Features (Packages/04_Features/*) | Entities (Packages/05_Entities/*) | Shared (Packages/06_Shared/*))`
+    - `Widgets (03_Widgets) -> (Features | Entities | Shared)`
+    - `Features (Packages/04_Features/*) -> (Features (sibling) | Entities | Shared)`
+    - Feature-to-feature (sibling) dependencies are allowed but must be declared in Package.swift and justified (e.g., shared UI components, shared state models).
+    - `Entities (Packages/05_Entities/*) -> Shared (Packages/06_Shared/*)`
+- Before adding a feature-to-feature dependency, verify no shared entity or shared utility promotion would eliminate the coupling.
 - Keep TCA dependencies injected (`@Dependency`) and testable.
 - Keep reducers focused (`@Reducer`, effect routing in reducer, no side effects in views).
 - Keep each cross-layer concern owned by one canonical type or module.
@@ -52,6 +50,7 @@ description: "macOS SwiftUI + TCA structure and dependency rules."
 ## Verification
 
 - Confirm the changed code still follows FSD dependency direction and does not add reverse imports.
+- Confirm feature-to-feature dependencies in Package.swift files are justified and not bypassable via entity/shared promotion.
 - Confirm system or service access remains behind dependencies/reducers rather than SwiftUI views.
 - Confirm each touched concept has one canonical owner after the change.
 - Confirm cross-feature or window-level commands are routed through actions, delegate events, or dedicated handlers.

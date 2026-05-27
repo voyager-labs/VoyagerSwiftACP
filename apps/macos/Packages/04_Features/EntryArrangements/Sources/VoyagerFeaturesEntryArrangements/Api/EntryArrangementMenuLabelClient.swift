@@ -11,7 +11,7 @@ public extension EntryArrangementMenuLabelClient {
         return EntryArrangementMenuLabelClient(
             labelForPropertyKey: { propertyKey in
                 registryClient.label(for: propertyKey)
-            }
+            },
         )
     }()
 }

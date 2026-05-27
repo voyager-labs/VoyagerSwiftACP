@@ -1,5 +1,6 @@
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 struct MenuCommandItem: Identifiable, Equatable {
     let id: String

@@ -8,7 +8,7 @@ public struct CollectionFileClient: Sendable {
 
     public init(
         save: @escaping @Sendable (_ file: VoyagerCollectionFile, _ url: URL) async throws -> Void,
-        load: @escaping @Sendable (_ url: URL) async throws -> CollectionFileLoadResult
+        load: @escaping @Sendable (_ url: URL) async throws -> CollectionFileLoadResult,
     ) {
         self.save = save
         self.load = load
@@ -62,7 +62,7 @@ extension CollectionFileClient: DependencyKey {
             return try await MainActor.run {
                 try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .legacySingleFile)
             }
-        }
+        },
     )
 
     public nonisolated(unsafe) static var testValue: CollectionFileClient = .init(
@@ -79,14 +79,14 @@ extension CollectionFileClient: DependencyKey {
                     conditions: [],
                     snapshot: nil,
                     snapshotMeta: nil,
-                    appVersion: nil
+                    appVersion: nil,
                 ),
                 containerFormat: .package,
                 sourceSchemaVersion: CollectionFileSchemaVersion.current,
                 warning: nil,
-                usedDefinitionFallback: false
+                usedDefinitionFallback: false,
             )
-        }
+        },
     )
 }
 

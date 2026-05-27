@@ -59,7 +59,7 @@ When the operator does not specify a target, the skill follows these steps in or
 ### Step 2: Single Completed Plan
 
 1. List all `.md` files in `.sisyphus/plans/`.
-2. For each, check completion: does it have evidence files in `.sisyphus/evidence/` with matching task patterns?
+2. For each, check completion: does it have evidence files in `.sisyphus/evidence/{plan_slug}/` with matching task patterns?
 3. If exactly one completed plan exists → use it.
 4. If zero → report-and-stop: no completed plans found.
 5. If two or more → proceed to Step 3.
@@ -112,9 +112,13 @@ If prior runs exist for the same plan_slug (different run_ids), the new run proc
 
 The skill associates evidence files with the target plan using these rules:
 
-### Direct Pattern Match
+### Plan-Scoped Directory Match (primary)
 
-Evidence files matching `task-{N}-{slug}.*` are associated with the plan if:
+Evidence files located inside `.sisyphus/evidence/{plan_slug}/` are **unconditionally associated** with that plan. The plan-scoped directory itself is the association boundary — no additional slug matching or filename inspection is required.
+
+### Filename Pattern Match (fallback for flat evidence layouts)
+
+When evidence files are NOT inside a plan-scoped directory (flat `.sisyphus/evidence/` layout), files matching `task-{N}-*.*` are associated with the plan if:
 
 1. The evidence file's slug portion contains or matches a substring of the plan slug, OR
 2. The plan file itself references the evidence file name in its task descriptions.
@@ -159,7 +163,7 @@ Prior runs are optional inputs. If they exist:
 
 1. Read the prior `manifest.json` for lineage and confidence metadata.
 2. Read the prior `findings.json` for `dedupe_key` comparison with current findings.
-3. Read the prior `learning.md` (in `.sisyphus/compound/{plan_slug}/{prior_run_id}/`) for overlap detection.
+3. Read the prior `learning.md` (in `.sisyphus/reviews/{plan_slug}/{prior_run_id}/`) for overlap detection.
 4. The most recent prior run that is `authoritative` (per `evidence-trust-taxonomy.md`) is the primary cross-run baseline.
 
 If no prior runs exist, the skill proceeds without cross-run context. This is normal for first-time reviews and carries no degradation penalty.

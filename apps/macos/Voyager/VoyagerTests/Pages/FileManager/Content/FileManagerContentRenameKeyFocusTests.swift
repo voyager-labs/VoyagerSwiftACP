@@ -4,23 +4,24 @@ import Foundation
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
-/// Tests for key command focus restoration policy in list and grid modes.
+/// 리스트 및 그리드 모드에서 키 커맨드 포커스 복원 정책을 테스트합니다.
 ///
-/// These tests verify the reducer-level key command handling for the rename action.
-/// View-level focus is not directly testable in XCTest, so we verify the key command
-/// routing logic works correctly in both list and grid layouts.
+/// 이 테스트는 이름 변경 액션의 리듀서 수준 키 커맨드 처리를 검증합니다.
+/// XCTest에서는 뷰 레벨 포커스를 직접 검증할 수 없으므로 키 커맨드
+/// 라우팅 로직이 리스트 및 그리드 레이아웃에서 올바르게 동작하는지 확인합니다.
 @MainActor
 final class FileManagerContentRenameKeyFocusTests: XCTestCase {
-    // MARK: - Key Command Focus Restore Policy Tests
+    // MARK: - 키 커맨드 포커스 복원 정책 테스트
 
-    /// Verifies that selection changes do not interfere with an active rename session.
-    /// When renamingItemId is non-nil, the key command handler should not start a new rename.
+    /// 선택 변경이 진행 중인 이름 변경 세션에 영향을 주지 않음을 검증합니다.
+    /// renamingItemId가 non-nil일 때 키 커맨드 핸들러는 새 이름 변경을 시작하지 않아야 합니다.
     func testSelectionChangeDoesNotInterfereWithActiveRename() async {
         for layout in [EntryViewLayoutState.Mode.list, .grid] {
-            for keyCode in [36, 76] { // Return and Keypad Enter
+            for keyCode in [36, 76] { // Return 및 Keypad Enter
                 let selected = makeEntry(name: "selected.txt", fullPath: "/tmp/voyager/selected.txt")
 
                 var initialState = FileManagerContentState()
@@ -29,14 +30,14 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
                 initialState.entryViewLayout.entries = [selected]
                 initialState.entryViewLayout.entryOperations.items = [selected]
                 initialState.entryViewLayout.selectedIds = [selected.id]
-                // Simulate an active rename session
+                // 활성 이름 변경 세션 시뮬레이션
                 initialState.entryViewLayout.entryOperations.renamingItemId = selected.id
 
                 let store = TestStore(initialState: initialState) {
                     FileManagerContentFeature()
                 }
 
-                // When pressing Return/Enter during an active rename, nothing should happen
+                // 활성 이름 변경 중 Return/Enter를 누르면 아무 일도 일어나지 않아야 함
                 await store.send(.view(.handleKeyCommand(
                     KeyCommand(
                         keyCode: UInt16(keyCode),
@@ -50,10 +51,10 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
         }
     }
 
-    /// Verifies that Return and Keypad Enter key commands reach the rename path in list mode.
-    /// This test confirms that the reducer-level handling works for list layout.
+    /// 리스트 모드에서 Return 및 Keypad Enter 키 명령이 이름 변경 경로에 도달하는지 검증합니다.
+    /// 이 테스트는 리스트 레이아웃에서 리듀서 수준 처리가 제대로 작동함을 확인합니다.
     func testListModeReturnAndKeypadEnterReachRenamePath() async {
-        for keyCode in [36, 76] { // Return and Keypad Enter
+        for keyCode in [36, 76] { // Return 및 Keypad Enter
             let selected = makeEntry(name: "document", fullPath: "/tmp/voyager/document.txt", fileExtension: "txt")
 
             var initialState = FileManagerContentState()
@@ -81,10 +82,10 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
         }
     }
 
-    /// Verifies that Return and Keypad Enter key commands reach the rename path in grid mode.
-    /// This test confirms the grid layout continues to work as before.
+    /// 그리드 모드에서 Return 및 Keypad Enter 키 명령이 이름 변경 경로에 도달하는지 검증합니다.
+    /// 이 테스트는 그리드 레이아웃이 이전과 동일하게 계속 작동하는지 확인합니다.
     func testGridModeReturnAndKeypadEnterReachRenamePath() async {
-        for keyCode in [36, 76] { // Return and Keypad Enter
+        for keyCode in [36, 76] { // Return 및 Keypad Enter
             let selected = makeEntry(
                 name: "spreadsheet",
                 fullPath: "/tmp/voyager/spreadsheet.xlsx",
@@ -116,8 +117,8 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
         }
     }
 
-    /// Verifies that layout change during an active rename cancels the rename.
-    /// This ensures the focus policy doesn't leave stale rename state.
+    /// 진행 중인 이름 변경 상태에서 레이아웃 변경이 이름 변경을 취소하는지 검증합니다.
+    /// 이를 통해 포커스 정책이 오래된 이름 변경 상태를 남기지 않음을 보장합니다.
     func testLayoutChangeDuringActiveRenameCancelsRename() async {
         let selected = makeEntry(name: "file.txt", fullPath: "/tmp/voyager/file.txt")
 
@@ -136,7 +137,7 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
 
         await store.send(.view(.changeLayout(.grid)))
 
-        // The layout change should cancel the active rename
+        // 레이아웃 변경이 활성 이름 변경을 취소해야 함
         await store.receive { action in
             guard case .entryViewLayout(.entryOperations(.edit(.cancelRename))) = action else { return false }
             return true
@@ -145,7 +146,7 @@ final class FileManagerContentRenameKeyFocusTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - Helper Methods
+    // MARK: - 도우미 메서드
 
     private func makeEntry(
         name: String,
