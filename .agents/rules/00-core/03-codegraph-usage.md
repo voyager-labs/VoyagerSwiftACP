@@ -11,7 +11,8 @@ CodeGraph는 tree-sitter 기반 코드 인텔리전스 도구로, 에이전트�
 
 선택적 MCP 사이드카다. 설치하지 않아도 기본 작업에 영향이 없다.
 
-- 실행: `npx -y @colbymchenry/codegraph@0.9.6` (글로벌 설치 불필요, XcodeBuildMCP와 동일 패턴)
+- 설치: `just setup` 또는 `npm install` (package.json devDependency)
+- 실행: `npx codegraph` (node_modules/.bin에서 실행)
 - 편의 명령: `just codegraph-status`, `just codegraph-init`, `just codegraph-reindex`
 
 ## 언제 CodeGraph를 쓰는가
