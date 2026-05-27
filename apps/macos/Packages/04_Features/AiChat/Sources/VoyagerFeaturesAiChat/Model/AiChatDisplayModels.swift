@@ -390,7 +390,10 @@ func aiChatRequestContextDisplayModel(
     if let lockedRequestContext {
         return AiChatRequestContextDisplayModel(
             source: .locked,
-            currentContext: aiChatCurrentContextChipDisplayModel(for: lockedRequestContext.currentContext),
+            currentContext: aiChatCurrentContextChipDisplayModel(
+                for: lockedRequestContext.currentContext,
+                matchingParts: lockedRequestContext.parts.filter { $0.source == .currentContext }
+            ),
             addedAttachments: lockedRequestContext.addedAttachments.map { attachment in
                 aiChatAddedAttachmentChipDisplayModel(
                     for: attachment,
@@ -411,7 +414,8 @@ func aiChatRequestContextDisplayModel(
 }
 
 private func aiChatCurrentContextChipDisplayModel(
-    for snapshot: AiChatCurrentContextSnapshot
+    for snapshot: AiChatCurrentContextSnapshot,
+    matchingParts: [AiChatLockedContextPartSnapshot] = []
 ) -> AiChatCurrentContextChipDisplayModel? {
     let summary = aiChatContextSummaryDisplayModel(for: snapshot)
     guard !summary.isEmpty else { return nil }
@@ -427,16 +431,80 @@ private func aiChatCurrentContextChipDisplayModel(
         aiChatCurrentContextDisplayTitle(summary.title, snapshot: snapshot)
     }
     let iconSystemName = aiChatCurrentContextIconSystemName(for: snapshot)
+        ?? aiChatCurrentContextIconSystemName(from: matchingParts)
     let iconAssetName = aiChatCurrentContextIconAssetName(for: snapshot)
     let iconFilePath = aiChatCurrentContextIconFilePath(for: snapshot)
+        ?? aiChatCurrentContextIconFilePath(from: matchingParts)
+    let supportsFolderStructureMode = aiChatSupportsFolderStructureMode(for: snapshot)
+        || aiChatSupportsFolderStructureMode(from: matchingParts)
+    let folderStructureMode = supportsFolderStructureMode
+        ? (aiChatFolderStructureMode(for: snapshot) ?? aiChatFolderStructureMode(from: matchingParts))
+        : nil
 
     return AiChatCurrentContextChipDisplayModel(
         title: title,
         detail: summary.detail,
         iconSystemName: iconSystemName,
         iconAssetName: iconAssetName,
-        iconFilePath: iconFilePath
+        iconFilePath: iconFilePath,
+        folderStructureMode: folderStructureMode,
+        supportsFolderStructureMode: supportsFolderStructureMode
     )
+}
+
+
+private func aiChatSupportsFolderStructureMode(for snapshot: AiChatCurrentContextSnapshot) -> Bool {
+    snapshot.references.contains(where: aiChatSupportsFolderStructureMode)
+        || snapshot.items.contains(where: { item in
+            aiChatSupportsFolderStructureMode(item)
+                || item.references.contains(where: aiChatSupportsFolderStructureMode)
+        })
+        || snapshot.attachments.contains(where: aiChatSupportsFolderStructureMode)
+}
+
+private func aiChatSupportsFolderStructureMode(from parts: [AiChatLockedContextPartSnapshot]) -> Bool {
+    parts.contains { part in
+        part.fileKind == .folder
+            || aiChatMetadataDescribesFolder(aiChatContextPartMetadata(part.resolution))
+            || part.canonicalPath.map(aiChatPathIsDirectory) == true
+    }
+}
+
+private func aiChatSupportsFolderStructureMode(_ reference: AiChatContextReference) -> Bool {
+    reference.kind == .folder
+        || aiChatMetadataDescribesFolder(reference.metadata)
+        || aiChatPathIsDirectory(reference.metadata["path"])
+        || aiChatPathIsDirectory(reference.metadata["filePath"])
+        || aiChatPathIsDirectory(reference.subtitle)
+        || aiChatPathIsDirectory(reference.identifier)
+}
+
+private func aiChatSupportsFolderStructureMode(_ item: AiChatContextItem) -> Bool {
+    item.kind == .folder
+        || aiChatMetadataDescribesFolder(item.metadata)
+        || aiChatPathIsDirectory(item.metadata["path"])
+        || aiChatPathIsDirectory(item.metadata["filePath"])
+        || aiChatPathIsDirectory(item.subtitle)
+        || aiChatPathIsDirectory(item.identifier)
+}
+
+private func aiChatSupportsFolderStructureMode(_ attachment: AiChatContextAttachment) -> Bool {
+    attachment.kind == .folder
+        || aiChatMetadataDescribesFolder(attachment.metadata)
+        || aiChatPathIsDirectory(attachment.metadata["path"])
+        || aiChatPathIsDirectory(attachment.metadata["filePath"])
+        || aiChatPathIsDirectory(attachment.subtitle)
+        || aiChatPathIsDirectory(attachment.identifier)
+}
+
+private func aiChatMetadataDescribesFolder(_ metadata: [String: String]) -> Bool {
+    metadata["route"] == "folder" || metadata["kind"] == "folder" || metadata["fileKind"] == "folder"
+}
+
+private func aiChatPathIsDirectory(_ path: String?) -> Bool {
+    guard let path, path.hasPrefix("/") else { return false }
+    var isDirectory: ObjCBool = false
+    return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
 }
 
 private func aiChatAddedAttachmentChipDisplayModel(
@@ -454,11 +522,14 @@ private func aiChatAddedAttachmentChipDisplayModel(
         statusLabel: status.label,
         statusDetail: aiChatAttachmentChipDetail(for: attachment.currentStatus),
         isRemovable: true,
+        source: attachment.source,
         iconSystemName: aiChatAttachmentIconSystemName(for: attachment.source),
         iconAssetName: aiChatAttachmentIconAssetName(for: attachment.source),
-        iconFilePath: aiChatAttachmentIconFilePath(for: attachment)
+        iconFilePath: aiChatAttachmentIconFilePath(for: attachment),
+        folderStructureMode: aiChatFolderStructureMode(from: attachment.metadata)
     )
 }
+
 
 private func aiChatAddedAttachmentChipDisplayModel(
     for attachment: AiChatAttachmentSnapshot,
@@ -479,13 +550,56 @@ private func aiChatAddedAttachmentChipDisplayModel(
         statusLabel: statusLabel,
         statusDetail: statusDetail,
         isRemovable: false,
+        source: attachment.source,
         iconSystemName: aiChatAttachmentIconSystemName(for: attachment.source),
         iconAssetName: aiChatAttachmentIconAssetName(for: attachment.source),
         iconFilePath: aiChatAttachmentIconFilePath(
             source: attachment.source,
             sourceLocation: attachment.sourceLocation
+        ),
+        folderStructureMode: aiChatFolderStructureMode(
+            from: matchingPart.map { aiChatContextPartMetadata($0.resolution) } ?? attachment.metadata
         )
     )
+}
+
+private func aiChatFolderStructureMode(from metadata: [String: String]) -> AiChatFolderStructureMode? {
+    guard let rawValue = metadata["folderStructureMode"] else { return nil }
+    return AiChatFolderStructureMode(rawValue: rawValue)
+}
+
+
+private func aiChatFolderStructureMode(from parts: [AiChatLockedContextPartSnapshot]) -> AiChatFolderStructureMode? {
+    for part in parts {
+        if let mode = aiChatFolderStructureMode(from: aiChatContextPartMetadata(part.resolution)) {
+            return mode
+        }
+    }
+    return nil
+}
+
+private func aiChatFolderStructureMode(for snapshot: AiChatCurrentContextSnapshot) -> AiChatFolderStructureMode? {
+    for reference in snapshot.references {
+        if let mode = aiChatFolderStructureMode(from: reference.metadata) {
+            return mode
+        }
+    }
+    for item in snapshot.items {
+        if let mode = aiChatFolderStructureMode(from: item.metadata) {
+            return mode
+        }
+        for reference in item.references {
+            if let mode = aiChatFolderStructureMode(from: reference.metadata) {
+                return mode
+            }
+        }
+    }
+    for attachment in snapshot.attachments {
+        if let mode = aiChatFolderStructureMode(from: attachment.metadata) {
+            return mode
+        }
+    }
+    return nil
 }
 
 private func aiChatAttachmentChipStatus(for status: AiChatAttachmentDraftStatus) -> AiChatRequestContextChipStatus {
@@ -678,18 +792,37 @@ private func aiChatCurrentContextIconSystemName(for snapshot: AiChatCurrentConte
     }
 }
 
+
+private func aiChatCurrentContextIconSystemName(from parts: [AiChatLockedContextPartSnapshot]) -> String? {
+    parts.contains { $0.fileKind == .folder } ? "folder" : nil
+}
+
 private func aiChatCurrentContextIconFilePath(for snapshot: AiChatCurrentContextSnapshot) -> String? {
     if snapshot.items.count == 1 {
         let item = snapshot.items[0]
         guard item.kind == .folder else { return nil }
-        return aiChatNormalizedDisplayValue(item.metadata["path"])
+        return aiChatAbsoluteIconFilePath(item.metadata["path"])
     }
 
     guard snapshot.items.isEmpty,
           let reference = snapshot.references.first,
           reference.metadata["route"] == "folder"
     else { return nil }
-    return aiChatNormalizedDisplayValue(reference.metadata["path"])
+    return aiChatAbsoluteIconFilePath(reference.metadata["path"])
+}
+
+private func aiChatAbsoluteIconFilePath(_ value: String?) -> String? {
+    guard let path = aiChatNormalizedDisplayValue(value), path.hasPrefix("/") else { return nil }
+    return path
+}
+
+private func aiChatCurrentContextIconFilePath(from parts: [AiChatLockedContextPartSnapshot]) -> String? {
+    for part in parts where part.fileKind == .folder {
+        if let canonicalPath = aiChatNormalizedDisplayValue(part.canonicalPath) {
+            return canonicalPath
+        }
+    }
+    return nil
 }
 
 private func aiChatCurrentContextIconAssetName(for snapshot: AiChatCurrentContextSnapshot) -> String? {

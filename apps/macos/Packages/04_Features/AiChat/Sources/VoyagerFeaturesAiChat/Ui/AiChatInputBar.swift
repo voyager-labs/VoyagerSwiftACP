@@ -160,51 +160,19 @@ struct AiChatInputBar: View {
     }
 
     private func handleAttachmentDrop(_ providers: [NSItemProvider]) -> Bool {
-        var didScheduleLoad = false
-        for provider in providers {
-            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                didScheduleLoad = true
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    guard let url = Self.droppedFileURL(from: item) else { return }
-                    Task { @MainActor in
-                        acceptDroppedAttachments([url])
-                    }
-                }
-            } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                didScheduleLoad = true
-                provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, _ in
-                    guard let url = Self.droppedFileURL(from: item) else { return }
-                    Task { @MainActor in
-                        acceptDroppedAttachments([url])
-                    }
-                }
-            }
+        let supportedProviders = providers.filter { provider in
+            provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+                || provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
         }
-        return didScheduleLoad
+        guard !supportedProviders.isEmpty else { return false }
+        store.send(.attachmentDrop(supportedProviders.map(AiChatAttachmentDropProvider.init(provider:))))
+        restoreChatInputFocus()
+        return true
     }
 
     private func acceptDroppedAttachments(_ urls: [URL]) {
         store.send(.attachmentDropSelection(urls))
         restoreChatInputFocus()
-    }
-
-    private nonisolated static func droppedFileURL(from item: (any NSSecureCoding)?) -> URL? {
-        if let url = item as? URL, url.isFileURL {
-            return url
-        }
-        if let data = item as? Data,
-           let url = URL(dataRepresentation: data, relativeTo: nil),
-           url.isFileURL
-        {
-            return url
-        }
-        if let string = item as? String,
-           let url = URL(string: string),
-           url.isFileURL
-        {
-            return url
-        }
-        return nil
     }
 
     private func restoreChatInputFocus() {
@@ -257,7 +225,7 @@ private struct AiChatRequestContextRow: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .center, spacing: 8) {
                         groupLabel("Current context")
-                        currentContextChip(currentContext)
+                        currentContextChip(currentContext, isEditable: displayModel.source == .draft)
                     }
                 }
             }
@@ -267,7 +235,7 @@ private struct AiChatRequestContextRow: View {
                     HStack(alignment: .center, spacing: 8) {
                         groupLabel("Attachments")
                         ForEach(displayModel.addedAttachments) { attachment in
-                            attachmentChip(attachment)
+                            attachmentChip(attachment, isEditable: displayModel.source == .draft)
                         }
                     }
                 }
@@ -281,7 +249,8 @@ private struct AiChatRequestContextRow: View {
             .foregroundStyle(.secondary)
     }
 
-    private func currentContextChip(_ chip: AiChatCurrentContextChipDisplayModel) -> some View {
+    @ViewBuilder
+    private func currentContextChip(_ chip: AiChatCurrentContextChipDisplayModel, isEditable: Bool) -> some View {
         let statusLabel = aiChatCurrentContextStatusLabel(
             for: currentContextSnapshot,
             destinationProvider: destinationProvider
@@ -290,8 +259,9 @@ private struct AiChatRequestContextRow: View {
             for: currentContextSnapshot,
             destinationProvider: destinationProvider
         )
-        let detail = [chip.detail, statusDetail].compactMap { $0 }.joined(separator: " · ")
-        return removableChip(
+        let modeDetail = chip.folderStructureMode == .includeSubfolders ? "Includes subfolders · names and paths only" : nil
+        let detail = [chip.detail, statusDetail, modeDetail].compactMap { $0 }.joined(separator: " · ")
+        let view = chipView(
             title: chip.title,
             help: aiChatRequestContextTooltipText(
                 sourceLabel: "Current context",
@@ -302,38 +272,59 @@ private struct AiChatRequestContextRow: View {
             iconSystemName: chip.iconSystemName,
             iconAssetName: chip.iconAssetName,
             iconFilePath: chip.iconFilePath,
+            trailingAccessorySystemName: chip.folderStructureMode == .includeSubfolders ? "square.stack.3d.down.right" : nil,
+            folderStructureMode: chip.folderStructureMode,
+            isFolderStructureMenuEnabled: isEditable && chip.supportsFolderStructureMode,
+            selectFolderStructureMode: { mode in
+                store.send(.folderStructureModeChanged(.currentContext, mode))
+            },
             isRemovable: false,
-            accessibilityLabel: "Current context"
-        ) {}
+            accessibilityLabel: "Current context",
+            remove: {}
+        )
+        view
     }
 
-    private func attachmentChip(_ chip: AiChatAddedAttachmentChipDisplayModel) -> some View {
-        removableChip(
+    @ViewBuilder
+    private func attachmentChip(_ chip: AiChatAddedAttachmentChipDisplayModel, isEditable: Bool) -> some View {
+        let modeDetail = chip.folderStructureMode == .includeSubfolders ? "Includes subfolders · names and paths only" : nil
+        let view = chipView(
             title: chip.title,
             help: aiChatRequestContextTooltipText(
                 sourceLabel: "Attachments",
                 destinationLabel: destinationLabel,
                 statusLabel: chip.statusLabel,
-                statusDetail: chip.statusDetail
+                statusDetail: [chip.statusDetail, modeDetail].compactMap { $0 }.joined(separator: " · ")
             ),
             iconSystemName: chip.iconSystemName,
             iconAssetName: chip.iconAssetName,
             iconFilePath: chip.iconFilePath,
             statusLabel: chip.statusLabel,
+            trailingAccessorySystemName: chip.folderStructureMode == .includeSubfolders ? "square.stack.3d.down.right" : nil,
+            folderStructureMode: chip.folderStructureMode,
+            isFolderStructureMenuEnabled: isEditable && chip.source == .folder,
+            selectFolderStructureMode: { mode in
+                store.send(.folderStructureModeChanged(.attachment(chip.attachmentID), mode))
+            },
             isRemovable: chip.isRemovable,
             accessibilityLabel: "Remove attachment"
         ) {
             store.send(.removeAddedAttachment(chip.attachmentID))
         }
+        view
     }
 
-    private func removableChip(
+    private func chipView(
         title: String,
         help: String,
         iconSystemName: String?,
         iconAssetName: String?,
         iconFilePath: String?,
         statusLabel: String? = nil,
+        trailingAccessorySystemName: String? = nil,
+        folderStructureMode: AiChatFolderStructureMode? = nil,
+        isFolderStructureMenuEnabled: Bool = false,
+        selectFolderStructureMode: @escaping (AiChatFolderStructureMode) -> Void = { _ in },
         isRemovable: Bool,
         accessibilityLabel: String,
         remove: @escaping () -> Void
@@ -345,10 +336,26 @@ private struct AiChatRequestContextRow: View {
             iconAssetName: iconAssetName,
             iconFilePath: iconFilePath,
             statusLabel: statusLabel,
+            trailingAccessorySystemName: trailingAccessorySystemName,
+            folderStructureMode: folderStructureMode,
+            isFolderStructureMenuEnabled: isFolderStructureMenuEnabled,
+            selectFolderStructureMode: selectFolderStructureMode,
             isRemovable: isRemovable,
             accessibilityLabel: accessibilityLabel,
             remove: remove
         )
+    }
+
+    private func chipIconSystemName(_ systemName: String) -> String {
+        systemName == "folder" ? "folder.fill" : systemName
+    }
+
+    private func chipIconSystemSize(for systemName: String) -> CGFloat {
+        systemName == "folder" ? 10 : 9
+    }
+
+    private func chipIconForegroundStyle(for systemName: String) -> Color {
+        systemName == "folder" ? Color(nsColor: .systemBlue) : .secondary
     }
 
     private var chipTitleFont: Font { .system(size: 11, weight: .medium) }
@@ -361,11 +368,18 @@ private struct AiChatRemovableRequestContextChip: View {
     let iconAssetName: String?
     let iconFilePath: String?
     let statusLabel: String?
+    let trailingAccessorySystemName: String?
+    let folderStructureMode: AiChatFolderStructureMode?
+    let isFolderStructureMenuEnabled: Bool
+    let selectFolderStructureMode: (AiChatFolderStructureMode) -> Void
     let isRemovable: Bool
     let accessibilityLabel: String
     let remove: () -> Void
 
     @State private var isHovering = false
+    @State private var isFolderMenuPresented = false
+    @State private var isFolderMenuHovering = false
+    @State private var isRemoveHovering = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -389,19 +403,16 @@ private struct AiChatRemovableRequestContextChip: View {
                     )
             }
 
-            if isRemovable {
-                Button(action: remove) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(isHovering ? .primary : .secondary)
-                        .frame(width: 14, height: 14)
-                        .background(
-                            Circle()
-                                .fill(isHovering ? Color.primary.opacity(0.08) : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(accessibilityLabel)
+            if let trailingAccessorySystemName {
+                Image(systemName: trailingAccessorySystemName)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12, height: 12)
+                    .accessibilityHidden(true)
+            }
+
+            if showsChipActions {
+                chipActions
             }
         }
         .padding(.horizontal, chipHorizontalPadding)
@@ -410,7 +421,110 @@ private struct AiChatRemovableRequestContextChip: View {
         .overlay(chipBorder)
         .clipShape(Capsule(style: .continuous))
         .help(help)
-        .onHover { isHovering = $0 }
+        .onHover { hovering in
+            isHovering = hovering
+            if !hovering {
+                isFolderMenuHovering = false
+                isRemoveHovering = false
+            }
+        }
+    }
+
+    private var showsChipActions: Bool { isFolderStructureMenuEnabled || isRemovable }
+
+    private var chipActions: some View {
+        HStack(spacing: 2) {
+            if isFolderStructureMenuEnabled {
+                folderStructureModeMenuButton
+            }
+
+            if isRemovable {
+                removeButton
+            }
+        }
+    }
+
+    private var folderStructureModeMenuButton: some View {
+        Button {
+            isFolderMenuPresented.toggle()
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 6.5, weight: .bold))
+                .foregroundStyle(isFolderMenuHovering || isFolderMenuPresented ? .primary : .secondary)
+                .frame(width: 12, height: 12)
+                .contentShape(Rectangle())
+                .background(actionButtonBackground(isHighlighted: isFolderMenuHovering || isFolderMenuPresented))
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isFolderMenuPresented, arrowEdge: .bottom) {
+            folderStructureModeMenuContent
+        }
+        .onHover { isFolderMenuHovering = $0 }
+        .accessibilityLabel("Folder structure mode")
+    }
+
+    private var removeButton: some View {
+        Button(action: remove) {
+            Image(systemName: "xmark")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(isRemoveHovering ? .primary : .secondary)
+                .frame(width: 12, height: 12)
+                .contentShape(Rectangle())
+                .background(actionButtonBackground(isHighlighted: isRemoveHovering))
+        }
+        .buttonStyle(.plain)
+        .onHover { isRemoveHovering = $0 }
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func actionButtonBackground(isHighlighted: Bool) -> some View {
+        Circle()
+            .fill(isHighlighted ? Color.primary.opacity(0.08) : Color.clear)
+    }
+
+    private var folderStructureModeMenuContent: some View {
+        let selectedMode = folderStructureMode ?? .currentFolderOnly
+
+        return VStack(alignment: .leading, spacing: 2) {
+            folderStructureModeButton(
+                title: "Current folder only",
+                mode: .currentFolderOnly,
+                selectedMode: selectedMode
+            )
+            folderStructureModeButton(
+                title: "Include subfolders",
+                mode: .includeSubfolders,
+                selectedMode: selectedMode
+            )
+        }
+        .padding(6)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func folderStructureModeButton(
+        title: String,
+        mode: AiChatFolderStructureMode,
+        selectedMode: AiChatFolderStructureMode
+    ) -> some View {
+        Button {
+            selectFolderStructureMode(mode)
+            isFolderMenuPresented = false
+        } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 12))
+                if selectedMode == mode {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder private var chipIcon: some View {
@@ -425,10 +539,22 @@ private struct AiChatRemovableRequestContextChip: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 11, height: 11)
         } else if let iconSystemName {
-            Image(systemName: iconSystemName)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.secondary)
+            Image(systemName: chipIconSystemName(iconSystemName))
+                .font(.system(size: chipIconSystemSize(for: iconSystemName), weight: .medium))
+                .foregroundStyle(chipIconForegroundStyle(for: iconSystemName))
         }
+    }
+
+    private func chipIconSystemName(_ systemName: String) -> String {
+        systemName == "folder" ? "folder.fill" : systemName
+    }
+
+    private func chipIconSystemSize(for systemName: String) -> CGFloat {
+        systemName == "folder" ? 10 : 9
+    }
+
+    private func chipIconForegroundStyle(for systemName: String) -> Color {
+        systemName == "folder" ? Color(nsColor: .systemBlue) : .secondary
     }
 
     private var chipTitleFont: Font { .system(size: 11, weight: .medium) }
