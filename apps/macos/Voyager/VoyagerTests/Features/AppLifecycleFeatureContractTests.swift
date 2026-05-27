@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesAccess
 import VoyagerFeaturesEntryArrangements
 import XCTest
 
@@ -11,13 +12,28 @@ final class AppLifecycleFeatureContractTests: XCTestCase {
         let state = AppLifecycleState()
         XCTAssertFalse(state.didStartHelper)
         XCTAssertNil(state.terminationAttemptID)
+        XCTAssertFalse(state.isCheckingAccess)
+        XCTAssertNil(state.lastAccessStatus)
+        XCTAssertFalse(state.accessGateResolved)
     }
 
     /// testStateIsEquatable 테스트 동작을 검증한다.
     func testStateIsEquatable() {
         let id = UUID()
-        let state1 = AppLifecycleState(didStartHelper: true, terminationAttemptID: id)
-        let state2 = AppLifecycleState(didStartHelper: true, terminationAttemptID: id)
+        let state1 = AppLifecycleState(
+            didStartHelper: true,
+            terminationAttemptID: id,
+            isCheckingAccess: true,
+            lastAccessStatus: .coreLicenseActive,
+            accessGateResolved: true,
+        )
+        let state2 = AppLifecycleState(
+            didStartHelper: true,
+            terminationAttemptID: id,
+            isCheckingAccess: true,
+            lastAccessStatus: .coreLicenseActive,
+            accessGateResolved: true,
+        )
         XCTAssertEqual(state1, state2)
     }
 
@@ -31,6 +47,22 @@ final class AppLifecycleFeatureContractTests: XCTestCase {
     func testReopenActionHasProperStructure() {
         let reopenAction = AppLifecycleAction.launch(.appReopen(hasVisibleWindows: true))
         XCTAssertTrue(reopenAction.is(\.launch.appReopen))
+    }
+
+    func testAccessGateActionsHaveProperStructure() {
+        XCTAssertTrue(AppLifecycleAction.accessGate(.checkAccessStatus).is(\.accessGate.checkAccessStatus))
+        XCTAssertTrue(AppLifecycleAction.accessGate(.showUnlockSurface).is(\.accessGate.showUnlockSurface))
+
+        let responseAction = AppLifecycleAction.accessGate(.accessStatusResponse(.success(
+            AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense]),
+        )))
+        XCTAssertTrue(responseAction.is(\.accessGate.accessStatusResponse))
+
+        let grantedAction = AppLifecycleAction.accessGate(.accessGranted(snapshot: AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            entitlements: [.coreLicense],
+        )))
+        XCTAssertTrue(grantedAction.is(\.accessGate.accessGranted))
     }
 
     /// testTerminationActionsHaveProperStructure 테스트 동작을 검증한다.
@@ -65,5 +97,8 @@ final class AppLifecycleFeatureContractTests: XCTestCase {
 
         let reopenAction = AppLifecycleAction.delegate(.reopenWindowIfNeeded(hasVisibleWindows: true))
         XCTAssertTrue(reopenAction.is(\.delegate))
+
+        let startHelperAction = AppLifecycleAction.delegate(.startHelperIfNeeded)
+        XCTAssertTrue(startHelperAction.is(\.delegate))
     }
 }

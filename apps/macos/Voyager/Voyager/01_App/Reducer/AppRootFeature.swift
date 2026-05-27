@@ -96,6 +96,9 @@ struct AppRootFeature {
 
             case let .reopenWindowIfNeeded(hasVisibleWindows):
                 return .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
+
+            case .startHelperIfNeeded:
+                return .none
             }
 
         case .lifecycle(.termination(.willTerminate)):

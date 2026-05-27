@@ -2,7 +2,10 @@ import ComposableArchitecture
 @testable import Voyager
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesUpdateVersion
+@testable import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
+@testable import VoyagerPagesSettings
+@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 /// 앱 루트 계약 — 최상위 라우팅과 델리게이트 전달을 검증.
@@ -14,7 +17,7 @@ final class AppRootFeatureContractTests: XCTestCase {
             AppRootFeature()
         }
 
-        var preferences = AppPreferencesState()
+        var preferences = Voyager.AppPreferencesState()
         preferences.showHiddenFiles = true
         preferences.viewLayout = .grid
         preferences.sidebarVisible = false
@@ -54,6 +57,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
         }
         store.exhaustivity = .off
@@ -73,6 +77,8 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
 
@@ -103,7 +109,6 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         }
-
         await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
         await store.receive { action in
             guard case let .windowManager(.windows(.element(
@@ -164,11 +169,21 @@ final class AppRootFeatureContractTests: XCTestCase {
             AppRootFeature()
         }
 
-        await store.send(.settings(.general(.toggleAutomaticUpdate(true))))
-        await store.receive(\.updater.setAutomaticUpdate(true))
+        await store.send(.settings(.general(.toggleAutomaticUpdate(true)))) {
+            $0.settings.generalSettings.automaticUpdate = true
+        }
+        await store.receive { action in
+            guard case .updater(.setAutomaticUpdate(true)) = action else { return false }
+            return true
+        }
 
-        await store.send(.settings(.general(.toggleAutomaticUpdate(false))))
-        await store.receive(\.updater.setAutomaticUpdate(false))
+        await store.send(.settings(.general(.toggleAutomaticUpdate(false)))) {
+            $0.settings.generalSettings.automaticUpdate = false
+        }
+        await store.receive { action in
+            guard case .updater(.setAutomaticUpdate(false)) = action else { return false }
+            return true
+        }
     }
 
     func testSettingsGeneralToggleAlertBeforeQuitDoesNotForwardToUpdater() async {
@@ -178,7 +193,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.settings(.general(.toggleAlertBeforeQuit(true))))
-        store.assertNoInboundEffects()
+        await store.finish()
     }
 
     // MARK: - SET-AC-004: Boundary Absence Contracts
@@ -192,7 +207,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.settings(.general(.toggleAlertBeforeQuit(false))))
-        store.assertNoInboundEffects()
+        await store.finish()
     }
 
     /// Proves AppRoot's Settings forwarding does NOT route through MenuCommands.

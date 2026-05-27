@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesAccess
 import VoyagerPagesOnboarding
 import VoyagerShared
 
@@ -26,14 +27,28 @@ struct AppLifecycleFeature {
     var appTerminationReplyClient
     @Dependency(\.uuid)
     var uuid
+    @Dependency(\.accessClient)
+    var accessClient
+    @Dependency(\.accessStatusSnapshotClient)
+    var snapshotClient
+    @Dependency(\.unlockSurfaceWindowClient)
+    var unlockSurfaceWindowClient
+    @Dependency(\.date)
+    var date
+    @Dependency(\.continuousClock)
+    var clock
 
     private enum CancelID {
         static let helperMonitor = "helperMonitor"
+        static let accessCheck = "accessCheck"
+        static let terminationCleanupTimeout = "terminationCleanupTimeout"
     }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            // MARK: - Launch
+
             case .launch(.willFinishLaunching):
                 let theme = appearanceSettingsClient.loadTheme()
                 appearanceSettingsClient.applyThemeSync(theme)
@@ -51,92 +66,113 @@ struct AppLifecycleFeature {
                     component: "app",
                 )
                 VoyagerSentryMetricLogger.setUserId(userId)
-
-                if state.didStartHelper {
-                    return .none
-                }
-                state.didStartHelper = true
-                let helperClient = helperAppClient
-                let stateClient = helperStateClient
-
-                return .run { _ in
-                    let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
-
-                    async let monitor: Void = {
-                        var policy = HelperSupervisionPolicy()
-
-                        for await _ in helperClient.terminationEvents() {
-                            if await VoyagerTerminationCoordinator.shared.isTerminating() {
-                                continue
-                            }
-
-                            let decision = policy.recordRestartAttempt()
-
-                            switch decision {
-                            case .allowed:
-                                await helperClient.ensureRunning()
-
-                            case let .cooldown(activeUntil):
-                                let delay = activeUntil.timeIntervalSinceNow
-                                if delay > 0 {
-                                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                                    let isRunning = await helperClient.isRunning()
-                                    if !isRunning {
-                                        let newDecision = policy.recordRestartAttempt()
-                                        switch newDecision {
-                                        case .allowed:
-                                            await helperClient.ensureRunning()
-                                        default:
-                                            break
-                                        }
-                                    }
-                                }
-
-                            case let .graceWindow(activeUntil):
-                                let delay = activeUntil.timeIntervalSinceNow
-                                if delay > 0 {
-                                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                                    let isRunning = await helperClient.isRunning()
-                                    if !isRunning {
-                                        let newDecision = policy.recordRestartAttempt()
-                                        switch newDecision {
-                                        case .allowed:
-                                            await helperClient.ensureRunning()
-                                        default:
-                                            break
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }()
-
-                    let initialState = await helperClient.resolveAlignedState(
-                        stateClient: stateClient,
-                        mainBundleVersion: currentBundleVersion,
-                    )
-                    _ = initialState
-                    _ = await monitor
-                }
-                .cancellable(id: CancelID.helperMonitor, cancelInFlight: true)
+                return .none
 
             case .launch(.didFinishLaunching):
-                if isRunningXCTest() {
-                    return .none
-                }
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
-                return .send(.delegate(.openInitialWindowIfNeeded))
+                return .send(.accessGate(.checkAccessStatus))
 
             case let .launch(.appReopen(hasVisibleWindows: flag)):
-                if isRunningXCTest() {
+                if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
-                if onboardingWindowClient.showIfNeeded() {
+                if !state.accessGateResolved {
+                    return .none
+                }
+                guard state.lastAccessStatus?.isActive == true else {
                     return .none
                 }
                 return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
+
+            // MARK: - Access Gate
+
+            case .accessGate(.checkAccessStatus):
+                state.isCheckingAccess = true
+                let accessClient = accessClient
+                return .run { send in
+                    do {
+                        let response = try await accessClient.fetchAccessStatus()
+                        await send(.accessGate(.accessStatusResponse(.success(response))))
+                    } catch let error as AccessError {
+                        await send(.accessGate(.accessStatusResponse(.failure(error))))
+                    } catch {
+                        await send(.accessGate(.accessStatusResponse(.failure(.networkFailure))))
+                    }
+                }
+                .cancellable(id: CancelID.accessCheck, cancelInFlight: true)
+
+            case let .accessGate(.accessStatusResponse(.success(response))):
+                state.isCheckingAccess = false
+                state.lastAccessStatus = response.status
+                state.accessGateResolved = true
+
+                if response.status.isActive {
+                    let now = date.now
+                    let snapshot = AccessStatusSnapshot(
+                        status: response.status,
+                        expiresAt: response.expiresAt,
+                        entitlements: response.entitlements,
+                        fetchedAt: now,
+                    )
+                    return .send(.accessGate(.accessGranted(snapshot: snapshot)))
+                } else {
+                    return .send(.accessGate(.showUnlockSurface))
+                }
+
+            case let .accessGate(.accessStatusResponse(.failure(error))):
+                guard error == .networkFailure else {
+                    return .send(.accessGate(.showUnlockSurface))
+                }
+                let snapshotClient = snapshotClient
+                let dateNow = date.now
+                return .run { send in
+                    guard let cached = await snapshotClient.load(),
+                          cached.isActive,
+                          dateNow.timeIntervalSince(cached.fetchedAt) <= 24 * 3600,
+                          cached.expiresAt.map({ dateNow < $0 }) ?? true
+                    else {
+                        await send(.accessGate(.showUnlockSurface))
+                        return
+                    }
+                    await send(.accessGate(.accessGranted(snapshot: cached)))
+                }
+
+            case .accessGate(.showUnlockSurface):
+                state.isCheckingAccess = false
+                state.accessGateResolved = true
+                let unlockSurfaceClient = unlockSurfaceWindowClient
+                return .run { _ in
+                    await unlockSurfaceClient.showWindow()
+                }
+
+            case let .accessGate(.accessGranted(snapshot)):
+                let snapshotClient = snapshotClient
+
+                let saveEffect: Effect<Action> = .run { _ in
+                    await snapshotClient.save(snapshot)
+                }
+
+                state.lastAccessStatus = snapshot.status
+                state.accessGateResolved = true
+                state.isCheckingAccess = false
+
+                var effects: [Effect<Action>] = [saveEffect]
+
+                if !state.didStartHelper {
+                    state.didStartHelper = true
+                    effects.append(helperMonitorEffect(
+                        helperClient: helperAppClient,
+                        stateClient: helperStateClient,
+                    ))
+                }
+
+                effects.append(.send(.delegate(.openInitialWindowIfNeeded)))
+
+                return .merge(effects)
+
+            // MARK: - Termination
 
             case .termination(.requestTermination):
                 guard state.terminationAttemptID == nil else {
@@ -181,6 +217,8 @@ struct AppLifecycleFeature {
                     return .none
                 }
 
+                let clock = clock
+
                 return .merge(
                     .run { send in
                         await VoyagerTerminationCoordinator.shared.begin(.userQuit)
@@ -191,12 +229,13 @@ struct AppLifecycleFeature {
                         )))
                     },
                     .run { send in
-                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        try await clock.sleep(for: .seconds(5))
                         await send(.termination(.completeTerminationAttempt(
                             attemptID: attemptID,
                             shouldTerminate: true,
                         )))
-                    },
+                    }
+                    .cancellable(id: CancelID.terminationCleanupTimeout, cancelInFlight: true),
                 )
 
             case let .termination(.completeTerminationAttempt(attemptID: attemptID, shouldTerminate: shouldTerminate)):
@@ -207,18 +246,92 @@ struct AppLifecycleFeature {
                 state.terminationAttemptID = nil
 
                 let appTerminationReplyClient = appTerminationReplyClient
-                return .run { _ in
-                    await appTerminationReplyClient.reply(shouldTerminate)
-                }
+                return .merge(
+                    .cancel(id: CancelID.terminationCleanupTimeout),
+                    .run { _ in
+                        await appTerminationReplyClient.reply(shouldTerminate)
+                    },
+                )
 
             case .termination(.willTerminate):
                 return .cancel(id: CancelID.helperMonitor)
+
+            case .delegate(.startHelperIfNeeded):
+                return .none
 
             case .delegate:
                 return .none
             }
         }
     }
+}
+
+private func helperMonitorEffect(
+    helperClient: HelperAppClient,
+    stateClient: HelperStateClient,
+) -> Effect<AppLifecycleAction> {
+    .run { _ in
+        let currentBundleVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+
+        async let monitor: Void = {
+            var policy = HelperSupervisionPolicy()
+
+            for await _ in helperClient.terminationEvents() {
+                if await VoyagerTerminationCoordinator.shared.isTerminating() {
+                    continue
+                }
+
+                let decision = policy.recordRestartAttempt()
+
+                switch decision {
+                case .allowed:
+                    await helperClient.ensureRunning()
+
+                case let .cooldown(activeUntil):
+                    policy = await waitAndRetryIfNeeded(
+                        policy: policy,
+                        helperClient: helperClient,
+                        activeUntil: activeUntil,
+                    )
+
+                case let .graceWindow(activeUntil):
+                    policy = await waitAndRetryIfNeeded(
+                        policy: policy,
+                        helperClient: helperClient,
+                        activeUntil: activeUntil,
+                    )
+                }
+            }
+        }()
+
+        let initialState = await helperClient.resolveAlignedState(
+            stateClient: stateClient,
+            mainBundleVersion: currentBundleVersion,
+        )
+        _ = initialState
+        _ = await monitor
+    }
+    .cancellable(id: "helperMonitor", cancelInFlight: true)
+}
+
+private func waitAndRetryIfNeeded(
+    policy: HelperSupervisionPolicy,
+    helperClient: HelperAppClient,
+    activeUntil: Date,
+) async -> HelperSupervisionPolicy {
+    var policy = policy
+    let delay = activeUntil.timeIntervalSinceNow
+    if delay > 0 {
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        let isRunning = await helperClient.isRunning()
+        if !isRunning {
+            let newDecision = policy.recordRestartAttempt()
+            if case .allowed = newDecision {
+                await helperClient.ensureRunning()
+            }
+        }
+    }
+    return policy
 }
 
 private func isRunningXCTest() -> Bool {

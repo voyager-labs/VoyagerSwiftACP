@@ -51,6 +51,8 @@
 		F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */; };
 		F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
 		F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
+		F20000000000000000000044 /* VoyagerFeaturesAccess in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000020 /* VoyagerFeaturesAccess */; };
+		F20000000000000000000045 /* VoyagerFeaturesAccess in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000020 /* VoyagerFeaturesAccess */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -210,6 +212,7 @@
 				F20000000000000000000021 /* VoyagerPagesOnboarding in Frameworks */,
 				F20000000000000000000022 /* VoyagerPagesSettings in Frameworks */,
 				F20000000000000000000023 /* VoyagerShared in Frameworks */,
+				F20000000000000000000044 /* VoyagerFeaturesAccess in Frameworks */,
 				F20000000000000000000026 /* VoyagerFeaturesEntryOperations in Frameworks */,
 				F20000000000000000000027 /* VoyagerEntitiesAppPreferences in Frameworks */,
 				F20000000000000000000044 /* VoyagerEntitiesTag in Frameworks */,
@@ -243,6 +246,7 @@
 				F21000000000000000000024 /* OrderedCollections in Frameworks */,
 				F20000000000000000000024 /* VoyagerPagesOnboarding in Frameworks */,
 				F20000000000000000000025 /* VoyagerShared in Frameworks */,
+				F20000000000000000000045 /* VoyagerFeaturesAccess in Frameworks */,
 				F20000000000000000000031 /* VoyagerFeaturesEntryArrangements in Frameworks */,
 				F20000000000000000000033 /* VoyagerFeaturesEntryThumbnail in Frameworks */,
 				F20000000000000000000034 /* ComposableArchitecture in Frameworks */,
@@ -383,6 +387,7 @@
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
 				F20000000000000000000012 /* VoyagerPagesSettings */,
 				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000020 /* VoyagerFeaturesAccess */,
 				F20000000000000000000014 /* VoyagerFeaturesEntryOperations */,
 				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
 				F20000000000000000000016 /* VoyagerEntitiesTag */,
@@ -434,6 +439,7 @@
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000020 /* VoyagerFeaturesAccess */,
 				F20000000000000000000014 /* VoyagerFeaturesEntryOperations */,
 				F20000000000000000000015 /* VoyagerEntitiesAppPreferences */,
 				F20000000000000000000016 /* VoyagerEntitiesTag */,
@@ -446,6 +452,7 @@
 				F21000000000000000000012 /* OrderedCollections */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
+				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;
@@ -613,6 +620,7 @@
 				F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */,
 				F20000000000000000000002 /* XCLocalSwiftPackageReference "02_Pages/Settings" */,
 				F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */,
+				F20000000000000000000010 /* XCLocalSwiftPackageReference "04_Features/Access" */,
 				F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */,
 				F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */,
 				F20000000000000000000046 /* XCLocalSwiftPackageReference "05_Entities/Ai" */,
@@ -1503,6 +1511,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/EntryOperations;
 		};
+		F20000000000000000000010 /* XCLocalSwiftPackageReference "04_Features/Access" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/Access;
+		};
 		F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/06_Shared/VoyagerShared;
@@ -1782,6 +1794,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */;
 			productName = VoyagerFeaturesEntryOperations;
+		};
+		F20000000000000000000020 /* VoyagerFeaturesAccess */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000010 /* XCLocalSwiftPackageReference "04_Features/Access" */;
+			productName = VoyagerFeaturesAccess;
 		};
 		F20000000000000000000015 /* VoyagerEntitiesAppPreferences */ = {
 			isa = XCSwiftPackageProductDependency;
