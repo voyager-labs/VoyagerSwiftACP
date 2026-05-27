@@ -377,7 +377,7 @@ extension AiChatFeature {
 
         return AiChatLockedRequestContextSnapshot(
             currentContext: resolvedContext.currentContext,
-            addedAttachments: resolvedContext.addedAttachments,
+            addedAttachments: resolvedContext.addedAttachments.map(requestSummaryAttachmentSnapshot),
             parts: resolvedContext.parts.map { part in
                 AiChatLockedContextPartSnapshot(
                     source: part.source == .attachment ? .attachment : .currentContext,
@@ -413,7 +413,7 @@ extension AiChatFeature {
 
         return AiChatLockedRequestContextSnapshot(
             currentContext: resolvedContext.currentContext,
-            addedAttachments: resolvedContext.addedAttachments,
+            addedAttachments: resolvedContext.addedAttachments.map(requestSummaryAttachmentSnapshot),
             parts: resolvedContext.parts.map { part in
                 AiChatLockedContextPartSnapshot(
                     source: part.source == .attachment ? .attachment : .currentContext,
@@ -486,6 +486,21 @@ extension AiChatFeature {
         )
     }
 
+    private func requestSummaryAttachmentSnapshot(
+        _ snapshot: AiChatAttachmentSnapshot
+    ) -> AiChatAttachmentSnapshot {
+        AiChatAttachmentSnapshot(
+            id: snapshot.id,
+            source: snapshot.source,
+            displayTitle: snapshot.displayTitle,
+            subtitle: snapshot.subtitle,
+            kind: snapshot.kind,
+            sourceLocation: snapshot.sourceLocation,
+            metadata: snapshot.metadata,
+            resolutionResult: strippingFolderStructureTreeMetadata(from: snapshot.resolutionResult)
+        )
+    }
+
     private func persistenceSafeAttachmentSnapshot(
         _ snapshot: AiChatAttachmentSnapshot
     ) -> AiChatAttachmentSnapshot {
@@ -497,7 +512,7 @@ extension AiChatFeature {
             kind: snapshot.kind,
             sourceLocation: snapshot.sourceLocation,
             metadata: persistenceSafeMetadata(snapshot.metadata),
-            resolutionResult: persistenceSafeResolutionResult(snapshot.resolutionResult)
+            resolutionResult: persistenceSafeResolutionResult(strippingFolderStructureTreeMetadata(from: snapshot.resolutionResult))
         )
     }
 
@@ -528,6 +543,27 @@ extension AiChatFeature {
             return .resolvedPartial(text: text, truncated: truncated, metadata: persistenceSafeMetadata(metadata))
         case let .failure(reason, metadata):
             return .failure(reason: reason, metadata: persistenceSafeMetadata(metadata))
+        }
+    }
+
+    private func strippingFolderStructureTreeMetadata(
+        from resolution: AiChatAttachmentResolutionResult
+    ) -> AiChatAttachmentResolutionResult {
+        switch resolution {
+        case let .resolvedText(text, metadata):
+            return .resolvedText(text: text, metadata: strippingFolderStructureTreeMetadata(from: metadata))
+        case let .resolvedReference(metadata):
+            return .resolvedReference(metadata: strippingFolderStructureTreeMetadata(from: metadata))
+        case let .resolvedPartial(text, truncated, metadata):
+            return .resolvedPartial(text: text, truncated: truncated, metadata: strippingFolderStructureTreeMetadata(from: metadata))
+        case let .failure(reason, metadata):
+            return .failure(reason: reason, metadata: strippingFolderStructureTreeMetadata(from: metadata))
+        }
+    }
+
+    private func strippingFolderStructureTreeMetadata(from metadata: [String: String]) -> [String: String] {
+        metadata.filter { key, _ in
+            !key.hasPrefix("folderStructure") || key == "folderStructureMode"
         }
     }
 

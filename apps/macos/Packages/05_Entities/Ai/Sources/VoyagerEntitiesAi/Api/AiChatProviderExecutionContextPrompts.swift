@@ -33,19 +33,25 @@ private enum SharedContextPromptBuilder {
     static func makePrompt(from requestContext: AiChatLockedRequestContextSnapshot) -> String? {
         guard !isEmpty(requestContext.currentContext)
             || !requestContext.addedAttachments.isEmpty
-            || requestContext.parts.contains(where: { $0.source == .attachment })
+            || !requestContext.parts.isEmpty
         else {
             return nil
         }
 
         return [
-            makeCurrentContextSection(from: requestContext.currentContext),
+            makeCurrentContextSection(
+                from: requestContext.currentContext,
+                resolvedParts: requestContext.parts.filter { $0.source == .currentContext }
+            ),
             makeAddedAttachmentsSection(from: requestContext.addedAttachments),
             makeAttachmentTransmissionSection(from: requestContext.parts),
         ].joined(separator: "\n\n")
     }
 
-    private static func makeCurrentContextSection(from context: AiChatCurrentContextSnapshot) -> String {
+    private static func makeCurrentContextSection(
+        from context: AiChatCurrentContextSnapshot,
+        resolvedParts: [AiChatLockedContextPartSnapshot]
+    ) -> String {
         var lines = ["current_context:"]
 
         if let summary = normalized(context.summary) {
@@ -62,6 +68,10 @@ private enum SharedContextPromptBuilder {
         if !context.attachments.isEmpty {
             lines.append("  attachments:")
             lines.append(contentsOf: context.attachments.flatMap(makeContextAttachmentLines))
+        }
+        if !resolvedParts.isEmpty {
+            lines.append("  resolved_parts:")
+            lines.append(contentsOf: resolvedParts.flatMap { makeResolvedContextPartLines($0, indent: "    ") })
         }
         if lines.count == 1 {
             lines.append("  - none")
@@ -150,8 +160,44 @@ private enum SharedContextPromptBuilder {
         if let displayPath = normalized(part.displayPath ?? contextPartMetadata(part.resolution)["displayPath"]) {
             lines.append("    display_path: \(displayPath)")
         }
-        lines.append(contentsOf: collectionItemLines(from: contextPartMetadata(part.resolution), indent: "    "))
+        lines.append(contentsOf: referenceResolutionMetadataLines(from: part.resolution, indent: "    "))
         return lines
+    }
+
+    private static func makeResolvedContextPartLines(
+        _ part: AiChatLockedContextPartSnapshot,
+        indent: String
+    ) -> [String] {
+        let transmission = transmissionDescriptor(for: part.resolution)
+        var lines = [
+            "\(indent)- \(displayAttachmentTitle(part))",
+            "\(indent)  state: \(transmission.state)",
+            "\(indent)  status: \(transmission.status)",
+            "\(indent)  note: \(transmission.note)",
+            "\(indent)  kind: \(part.fileKind.rawValue)",
+        ]
+        if let displayPath = normalized(part.displayPath ?? contextPartMetadata(part.resolution)["displayPath"]) {
+            lines.append("\(indent)  display_path: \(displayPath)")
+        }
+        lines.append(contentsOf: referenceResolutionMetadataLines(from: part.resolution, indent: "\(indent)  "))
+        return lines
+    }
+
+    private static func referenceResolutionMetadataLines(
+        from resolution: AiChatContextPartResolution,
+        indent: String
+    ) -> [String] {
+        switch resolution {
+        case let .referenceOnly(metadata),
+             let .collectionPathList(_, metadata):
+            return metadataLines(metadata, indent: indent)
+                + collectionItemLines(from: metadata, indent: indent)
+                + folderStructureLines(from: metadata, indent: indent)
+        case let .failure(_, metadata):
+            return metadataLines(metadata, indent: indent)
+        case .inlineText, .partialText, .providerNativeFile:
+            return []
+        }
     }
 
     private static func makeAddedAttachmentLines(_ attachment: AiChatAttachmentSnapshot) -> [String] {
@@ -177,6 +223,7 @@ private enum SharedContextPromptBuilder {
             let mergedMetadata = mergedMetadata(attachment.metadata, metadata)
             lines.append(contentsOf: metadataLines(mergedMetadata, indent: "    "))
             lines.append(contentsOf: collectionItemLines(from: mergedMetadata, indent: "    "))
+            lines.append(contentsOf: folderStructureLines(from: mergedMetadata, indent: "    "))
             lines.append(collectionItemPaths(from: mergedMetadata).isEmpty
                 ? "    note: reference included; content not expanded."
                 : "    note: collection references included; content not expanded.")
@@ -286,6 +333,19 @@ private enum SharedContextPromptBuilder {
         "nativeBase64Data",
         "fileDataBase64",
         "collectionItemPaths",
+        "attachmentID",
+        "folderStructurePathStyle",
+        "folderStructureRootName",
+        "folderStructureMaxDepth",
+        "folderStructureMaxEntries",
+        "folderStructureUTF8ByteBudget",
+        "folderStructureEntriesIncluded",
+        "folderStructureEntriesTruncated",
+        "folderStructureSkippedCount",
+        "folderStructureSymlinkEscapes",
+        "folderStructureReadFailures",
+        "folderStructureEntries",
+        "folderStructureDirectoryFilePaths",
     ]
 
     private static func metadataLines(_ metadata: [String: String], indent: String) -> [String] {
@@ -321,6 +381,59 @@ private enum SharedContextPromptBuilder {
     private static func collectionItemPaths(from metadata: [String: String]) -> [String] {
         guard let rawPaths = metadata["collectionItemPaths"] else { return [] }
         return rawPaths
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func folderStructureLines(from metadata: [String: String], indent: String) -> [String] {
+        guard normalized(metadata["folderStructureEntries"]) != nil
+            || normalized(metadata["folderStructureDirectoryFilePaths"]) != nil
+        else { return [] }
+
+        var lines = ["\(indent)folder_structure:"]
+        if let mode = normalized(metadata["folderStructureMode"]) {
+            lines.append("\(indent)  mode: \(mode)")
+        }
+        if let pathStyle = normalized(metadata["folderStructurePathStyle"]) {
+            lines.append("\(indent)  path_style: \(pathStyle)")
+        }
+        if let rootName = normalized(metadata["folderStructureRootName"]) {
+            lines.append("\(indent)  root_name: \(rootName)")
+        }
+        if let included = normalized(metadata["folderStructureEntriesIncluded"]) {
+            lines.append("\(indent)  entries_included: \(included)")
+        }
+        if let truncated = normalized(metadata["folderStructureEntriesTruncated"]) {
+            lines.append("\(indent)  entries_truncated: \(truncated)")
+        }
+        if let skippedCount = normalized(metadata["folderStructureSkippedCount"]) {
+            lines.append("\(indent)  skipped_count: \(skippedCount)")
+        }
+        if let symlinkEscapes = normalized(metadata["folderStructureSymlinkEscapes"]) {
+            lines.append("\(indent)  symlink_escapes: \(symlinkEscapes)")
+        }
+        if let readFailures = normalized(metadata["folderStructureReadFailures"]) {
+            lines.append("\(indent)  read_failures: \(readFailures)")
+        }
+
+        let entries = lineValues(from: metadata["folderStructureEntries"])
+        if !entries.isEmpty {
+            lines.append("\(indent)  entries:")
+            lines.append(contentsOf: entries.map { "\(indent)    - \($0)" })
+        }
+
+        let directoryFilePaths = lineValues(from: metadata["folderStructureDirectoryFilePaths"])
+        if !directoryFilePaths.isEmpty {
+            lines.append("\(indent)  directory_file_paths:")
+            lines.append(contentsOf: directoryFilePaths.map { "\(indent)    - \($0)" })
+        }
+        return lines
+    }
+
+    private static func lineValues(from value: String?) -> [String] {
+        guard let value else { return [] }
+        return value
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
