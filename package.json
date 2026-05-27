@@ -1,8 +1,0 @@
-{
-  "name": "voyager-app",
-  "private": true,
-  "description": "Voyager App — agent tooling dependencies",
-  "devDependencies": {
-    "@colbymchenry/codegraph": "0.9.6"
-  }
-}
