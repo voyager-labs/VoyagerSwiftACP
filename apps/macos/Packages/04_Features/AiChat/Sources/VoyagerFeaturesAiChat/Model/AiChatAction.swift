@@ -6,6 +6,27 @@ import VoyagerEntitiesAi
 public enum AiChatAction: CasePathable, Equatable, Sendable {
     case delegate(Delegate)
     case onAppear
+    case sessionsAppeared
+    case newChatTapped
+    case sessionRowTapped(AiChatSessionID)
+    case deleteSessionTapped(AiChatSessionID)
+    case renameSessionTapped(AiChatSessionID)
+    case renameSessionTitleChanged(String)
+    case renameSessionConfirmed
+    case renameSessionCancelled
+    case backToSessionsTapped
+    case sessionSearchQueryChanged(String)
+    case sessionListLoaded([AiChatSessionSummary])
+    case sessionListFailed(String)
+    case sessionDeleteSucceeded(AiChatSessionID)
+    case sessionDeleteFailed(AiChatSessionID, String)
+    case sessionRenameSucceeded(AiChatSessionSummary, customTitle: String?)
+    case sessionRenameFailed(AiChatSessionID, String)
+    case sessionSnapshotUpdated(AiChatSessionSummary, requestID: AiChatRequestID, runID: AiChatRunID)
+    case sessionSnapshotUpdateFailed(requestID: AiChatRequestID, runID: AiChatRunID)
+    case sessionSnapshotSaved(AiChatSessionSummary)
+    case newChatCreated(AiChatSessionSnapshot)
+    case newChatFailed(String)
     case setup(AiChatSetupState)
     case providerConnectionsUpdated(AIConnectionsFile)
     case modelListLoading(requestID: UUID, provider: AiProvider, credential: StoredCredentialPayload?)
@@ -23,6 +44,8 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case removeAddedAttachment(AiChatAttachmentID)
     case openSettingsTapped
     case errorRecoveryTapped
+    case rebindContextTapped
+    case startNewChatFromRebindTapped
     case submitTapped
     case regenerateTapped
     case cancelTapped

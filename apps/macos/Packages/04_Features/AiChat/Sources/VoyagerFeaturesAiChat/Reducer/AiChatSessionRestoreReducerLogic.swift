@@ -30,10 +30,14 @@ extension AiChatFeature {
         context: AiChatRestoreContext,
         uuid: UUIDGenerator,
     ) -> Action {
-        if snapshot.status == .rebindRequired {
-            return rebindRequiredRestoreAction(context: context, uuid: uuid)
-        }
         let normalizedSnapshot = normalizeRestoredSnapshot(snapshot, catalogRows: context.catalogRows)
+        if snapshot.status == .rebindRequired {
+            return .restoreOutcome(
+                requestedSessionID: context.sessionID,
+                .rebindRequired(snapshot: normalizedSnapshot),
+                restoreFailure: .contextMismatch,
+            )
+        }
         return .restoreOutcome(
             requestedSessionID: context.sessionID,
             .restored(snapshot: normalizedSnapshot),
@@ -119,6 +123,7 @@ extension AiChatFeature {
         state.restoreFailure = nil
         state.sessionID = setup.sessionID
         state.sessionStatus = setup.sessionStatus
+        state.currentSessionCustomTitle = nil
         state.currentContext = setup.currentContext
         state.lastRequestContext = nil
         state.lastRequestContextModelHandle = nil
@@ -164,8 +169,9 @@ extension AiChatFeature {
             state.restoreFailure = restoreFailure
 
         case let .rebindRequired(snapshot):
-            applyNewSessionSnapshot(snapshot, state: &state)
-            state.restoreOutcome = .newSession(snapshot: snapshot)
+            applyRestoredSnapshot(snapshot, state: &state)
+            state.sessionStatus = .rebindRequired
+            state.restoreOutcome = result
             state.restoreFailure = restoreFailure ?? .contextMismatch
 
         case let .failed(reason):
@@ -180,6 +186,7 @@ extension AiChatFeature {
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
+        state.currentSessionCustomTitle = snapshot.customTitle
         state.transcriptHistory = snapshot.transcriptHistory
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
@@ -194,6 +201,7 @@ extension AiChatFeature {
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
+        state.currentSessionCustomTitle = snapshot.customTitle
         state.transcriptHistory = []
         state.streamingAssistantDraft = nil
         state.lockedModelHandle = nil
@@ -209,10 +217,11 @@ extension AiChatFeature {
         _ snapshot: AiChatSessionSnapshot,
         catalogRows: [AiModelCatalogRow],
     ) -> AiChatSessionSnapshot {
-        let selectedRow = catalogRows.first(where: { $0.handle == snapshot.model })
+        let selectedRow = snapshot.model.flatMap { model in catalogRows.first(where: { $0.handle == model }) }
         return AiChatSessionSnapshot(
             sessionID: snapshot.sessionID,
             status: .active,
+            customTitle: snapshot.customTitle,
             provider: snapshot.provider,
             model: snapshot.model,
             selectedModelRow: selectedRow,
@@ -231,19 +240,16 @@ extension AiChatFeature {
         selectedHandle: AiModelHandle?,
         selectedThinking: AiThinkingSelection?,
     ) -> AiChatSessionSnapshot? {
-        guard let selectedHandle,
-              let selectedRow = catalogRows.first(where: { $0.handle == selectedHandle })
-        else {
-            return nil
-        }
+        let selectedRow = selectedHandle.flatMap { handle in catalogRows.first(where: { $0.handle == handle }) }
 
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .idle,
-            provider: selectedHandle.provider,
+            customTitle: nil,
+            provider: selectedHandle?.provider,
             model: selectedHandle,
             selectedModelRow: selectedRow,
-            selectedThinking: selectedThinking,
+            selectedThinking: selectedHandle == nil ? nil : selectedThinking,
             transcriptHistory: [],
             updatedAtMs: 0,
         )

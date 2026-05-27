@@ -12,6 +12,8 @@ enum FileManagerInspectorAction: CasePathable, Sendable {
     case setInspectorPaneExists(Bool)
     case setInspectorWidth(CGFloat)
     case closeChat
+    case sessionHeaderNewChatTapped
+    case sessionHeaderBackTapped
     case openChat(AiChatSetupState, AIConnectionsFile)
     case aiChat(AiChatFeature.Action)
 

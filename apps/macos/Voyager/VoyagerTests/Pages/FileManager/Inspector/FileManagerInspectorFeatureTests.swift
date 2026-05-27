@@ -7,11 +7,8 @@ import XCTest
 
 @MainActor
 final class FileManagerInspectorFeatureTests: XCTestCase {
-    func testOpenChatShowsInspectorAndAppliesSetup() async {
-        let setup = makeSetup(
-            sessionID: makeSessionID("00000000-0000-0000-0000-000000000001"),
-            summary: "Documents · 2 selected",
-        )
+    func testOpenChatShowsInspectorAndSeedsSessionsFirstSetup() async {
+        let setup = makeSetup(sessionID: nil, summary: "Documents · 2 selected")
 
         let store = TestStore(initialState: FileManagerInspectorFeature.State()) {
             FileManagerInspectorFeature()
@@ -23,7 +20,7 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
         }
 
         await store.receive(\.aiChat.setup) {
-            $0.aiChat.sessionID = setup.sessionID
+            $0.aiChat.sessionID = nil
             $0.aiChat.sessionStatus = setup.sessionStatus
             $0.aiChat.currentContext = setup.currentContext
             $0.aiChat.transcriptHistory = setup.transcriptHistory
@@ -46,7 +43,89 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
 
         XCTAssertTrue(store.state.inspectorVisible)
         XCTAssertEqual(store.state.activeMode, .chat)
+        XCTAssertEqual(store.state.aiChat.mode, .sessions)
+        XCTAssertNil(store.state.aiChat.sessionID)
         XCTAssertEqual(store.state.aiChat.currentContext.summary, "Documents · 2 selected")
+    }
+
+    func testOpenChatWithRestoreSessionIDPreservesExplicitRestoreFlow() async {
+        let restoreSessionID = makeSessionID("00000000-0000-0000-0000-000000000060")
+        let setup = AiChatSetupState(
+            restoreSessionID: restoreSessionID,
+            sessionID: nil,
+            sessionStatus: .idle,
+            currentContext: AiChatCurrentContextSnapshot(summary: "Documents · restore requested"),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        )
+
+        let store = TestStore(initialState: FileManagerInspectorFeature.State()) {
+            FileManagerInspectorFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
+        }
+
+        await store.send(.openChat(setup, .empty())) {
+            $0.inspectorVisible = true
+            $0.activeMode = .chat
+        }
+
+        await store.receive(\.aiChat.setup) {
+            $0.aiChat.restoreSessionID = restoreSessionID
+            $0.aiChat.sessionStatus = .restoring
+            $0.aiChat.currentContext = setup.currentContext
+            $0.aiChat.catalogRows = setup.catalogRows
+            $0.aiChat.modelListState = .empty
+            $0.aiChat.selectedModelHandle = setup.selectedModelHandle
+            $0.aiChat.lockedModelHandle = setup.lockedModelHandle
+            $0.aiChat.lastExecutionFailure = setup.lastExecutionFailure
+            $0.aiChat.executionPhase = .idle
+        }
+
+        await store.receive(\.aiChat.providerConnectionsUpdated) {
+            $0.aiChat.providerConnectionSnapshot = .known([])
+        }
+
+        let fallbackSessionID = makeSessionID("00000000-0000-0000-0000-000000000000")
+        let fallbackSnapshot = AiChatSessionSnapshot(
+            sessionID: fallbackSessionID,
+            status: .idle,
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [],
+            updatedAtMs: 0,
+        )
+
+        await store.receive(\.aiChat.restoreOutcome) {
+            $0.aiChat.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
+            $0.aiChat.restoreFailure = .missingRecord
+            $0.aiChat.sessionID = fallbackSessionID
+            $0.aiChat.sessionStatus = .idle
+            $0.aiChat.transcriptHistory = []
+            $0.aiChat.draftText = ""
+            $0.aiChat.selectedModelHandle = nil
+            $0.aiChat.selectedThinking = nil
+            $0.aiChat.unavailableSelectedModelHandle = nil
+            $0.aiChat.lockedModelHandle = nil
+            $0.aiChat.lastExecutionFailure = nil
+            $0.aiChat.executionPhase = .idle
+        }
+
+        XCTAssertEqual(store.state.aiChat.restoreSessionID, restoreSessionID)
+        XCTAssertEqual(store.state.aiChat.sessionStatus, .idle)
+        XCTAssertEqual(store.state.aiChat.mode, .sessions)
     }
 
     func testCloseChatHidesInspectorPaneAndRequestsAiChatTeardown() async {
@@ -76,6 +155,22 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
 
         XCTAssertEqual(store.state.activeMode, .chat)
         XCTAssertTrue(store.state.inspectorPaneExists)
+    }
+
+    func testSessionHeaderBackButtonRoutesToAiChatSessions() async {
+        let store = TestStore(initialState: FileManagerInspectorFeature.State(
+            inspectorVisible: true,
+            inspectorPaneExists: true,
+            activeMode: .chat,
+            aiChat: AiChatFeature.State(mode: .chat),
+        )) {
+            FileManagerInspectorFeature()
+        }
+
+        await store.send(.sessionHeaderBackTapped)
+        await store.receive(\.aiChat.backToSessionsTapped) {
+            $0.aiChat.mode = .sessions
+        }
     }
 
     func testOpenChatAfterClosePreservesExistingConversationAndSelection() async {
@@ -236,7 +331,7 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
         ), inFlightLock)
     }
 
-    private func makeSetup(sessionID: AiChatSessionID, summary: String) -> AiChatSetupState {
+    private func makeSetup(sessionID: AiChatSessionID?, summary: String) -> AiChatSetupState {
         let catalogRows = makeCatalogRows()
         return AiChatSetupState(
             sessionID: sessionID,

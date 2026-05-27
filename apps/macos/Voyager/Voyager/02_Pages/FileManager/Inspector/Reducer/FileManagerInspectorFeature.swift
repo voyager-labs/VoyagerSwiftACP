@@ -44,6 +44,12 @@ struct FileManagerInspectorFeature {
                 state.inspectorVisible = false
                 return .send(.aiChat(.teardownRequested))
 
+            case .sessionHeaderNewChatTapped:
+                return .send(.aiChat(.newChatTapped))
+
+            case .sessionHeaderBackTapped:
+                return .send(.aiChat(.backToSessionsTapped))
+
             case let .openChat(setup, connectionsFile):
                 state.inspectorVisible = true
                 state.activeMode = .chat

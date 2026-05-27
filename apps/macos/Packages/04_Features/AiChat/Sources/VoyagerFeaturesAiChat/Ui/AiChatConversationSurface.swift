@@ -6,9 +6,18 @@ struct AiChatConversationSurface: View {
     let skeleton: AiChatSkeletonDisplayModel
     let onOpenSettings: () -> Void
     let onErrorRecovery: () -> Void
+    let onRebindContext: () -> Void
+    let onStartNewChatFromRebind: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if state.sessionStatus == .rebindRequired {
+                AiChatRebindRecoveryBanner(
+                    onRebindContext: onRebindContext,
+                    onStartNewChat: onStartNewChatFromRebind
+                )
+            }
+
             switch skeleton.surface {
             case let .unconnected(connection):
                 AiChatStatusBanner(
@@ -42,6 +51,68 @@ struct AiChatConversationSurface: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+
+private struct AiChatRebindRecoveryBanner: View {
+    let onRebindContext: () -> Void
+    let onStartNewChat: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.2.circlepath.circle")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Session needs rebind")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Reconnect this chat to the current context, or start a clean chat.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button(action: onRebindContext) {
+                    recoveryActionLabel("Rebind context")
+                }
+                .buttonStyle(.plain)
+
+                Button(action: onStartNewChat) {
+                    recoveryActionLabel("Start new chat")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor)),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1),
+        )
+    }
+
+    private func recoveryActionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor)),
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
+            )
     }
 }
 

@@ -37,6 +37,7 @@ extension AiChatFeature {
         }
         state.streamingAssistantDraft = (state.streamingAssistantDraft ?? "") + text
         state.executionPhase = .processing(lock.recordingDelta(at: currentTimestampMs()))
+        state.transcriptAutoScrollVersion += 1
         return .none
     }
 
@@ -68,10 +69,14 @@ extension AiChatFeature {
             .run { [aiChatSessionPersistenceClient] send in
                 do {
                     try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                    await send(.sessionSnapshotSaved(AiChatSessionSummary(snapshot: snapshot)))
+                } catch is CancellationError {
+                    return
                 } catch {
                     await send(.persistenceFailed(finalizedLock, .unknown))
                 }
-            },
+            }
+            .cancellable(id: CancelID.requestFinalPersistence, cancelInFlight: true),
             .cancel(id: CancelID.request),
         )
     }
@@ -94,6 +99,7 @@ extension AiChatFeature {
             lock.recordingTerminal(at: currentTimestampMs(), failure: reason, wasCancelled: false),
             reason,
         )
+        state.transcriptAutoScrollVersion += 1
         return .cancel(id: CancelID.request)
     }
 

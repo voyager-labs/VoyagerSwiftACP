@@ -91,6 +91,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             state.lockedModelHandle = selectedHandle
             state.lastExecutionFailure = nil
             state.streamingAssistantDraft = nil
+            state.transcriptAutoScrollVersion = 1
             XCTAssertEqual(state.sessionID, sessionID)
             XCTAssertFalse(state.canSubmit)
         }
@@ -112,10 +113,12 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.receive(.executionEvent(.delta(context: lock.request.context, text: "Hel"))) { state in
             state.streamingAssistantDraft = "Hel"
             state.executionPhase = .processing(firstDeltaLock)
+            state.transcriptAutoScrollVersion = 2
         }
         await store.receive(.executionEvent(.delta(context: lock.request.context, text: "lo"))) { state in
             state.streamingAssistantDraft = "Hello"
             state.executionPhase = .processing(secondDeltaLock)
+            state.transcriptAutoScrollVersion = 3
         }
         await store.receive(.executionEvent(.final(response: rawResponse))) { state in
             state.transcriptHistory = [
@@ -129,6 +132,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
                 failure: nil,
                 wasCancelled: false,
             ))
+            state.transcriptAutoScrollVersion = 4
         }
         await store.finish()
 
@@ -136,13 +140,16 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertEqual(recorded.count, 1)
         XCTAssertEqual(recorded.first?.0.context.model, selectedHandle)
         XCTAssertEqual(recorded.first?.1, credential)
-        XCTAssertEqual(persistence.snapshots.count, 1)
+        XCTAssertEqual(persistence.snapshots.count, 2)
         XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, [
+            AiChatMessage(role: .user, content: "Hello")
+        ])
+        XCTAssertEqual(persistence.snapshots.last?.transcriptHistory, [
             AiChatMessage(role: .user, content: "Hello"),
             AiChatMessage(role: .assistant, content: expectedAssistantMessage)
         ])
-        XCTAssertEqual(persistence.snapshots.first?.lastRequestID, lock.request.context.requestID)
-        XCTAssertEqual(persistence.snapshots.first?.lastRunID, lock.request.context.runID)
+        XCTAssertEqual(persistence.snapshots.last?.lastRequestID, lock.request.context.requestID)
+        XCTAssertEqual(persistence.snapshots.last?.lastRunID, lock.request.context.runID)
         XCTAssertEqual(
             store.state.executionPhase,
             .completed(secondDeltaLock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)),

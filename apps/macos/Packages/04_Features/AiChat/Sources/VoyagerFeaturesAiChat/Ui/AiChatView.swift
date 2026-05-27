@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Perception
+import AppKit
 import SwiftUI
 import VoyagerEntitiesAi
 
@@ -9,75 +10,119 @@ public struct AiChatView: View {
     @Environment(\.colorScheme)
     var colorScheme
 
-    @State var isChatInputFocused = false
-    @State var chatInputTextHeight = Self.chatInputMinTextHeight
-    @State var isModelSelectorPopoverPresented = false
-    @State var isThinkingSelectorPresented = false
+    @State private var isChatInputFocused = false
+    @State private var chatInputTextHeight = Self.chatInputMinTextHeight
+    @State private var isModelSelectorPopoverPresented = false
+    @State private var isThinkingSelectorPresented = false
+    @State private var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
+    @State private var transcriptScrollRestoreRequest: AiChatTranscriptScrollRestoreRequest?
+    @State private var transcriptScrollRestoreSequence = 0
 
     public init(store: StoreOf<AiChatFeature>) {
         self.store = store
+        _transcriptScrollOffsets = State(initialValue: Self.loadTranscriptScrollOffsets())
     }
 
     public var body: some View {
         WithPerceptionTracking {
             let state = store.state
+            let builder = AiChatStateDisplayModelBuilder(state: state)
             let skeleton = state.skeletonDisplayModel
-            let requestContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel
+            let requestContext = builder.requestContextDisplayModel
+            let sessions = AiChatSessionsDisplayModel(
+                rows: state.sessionList.rows,
+                now: Date(),
+                query: state.sessionList.query,
+                totalRowCount: state.sessionList.allRows.count,
+                processingSessionID: state.executionPhase.isProcessing ? state.sessionID : nil,
+                unreadCompletedSessionIDs: state.sessionList.unreadCompletedSessionIDs,
+                hiddenSessionIDs: state.hiddenEmptyDraftSessionIDs
+            )
 
-            ScrollViewReader { scrollProxy in
-                VStack(spacing: 0) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            AiChatConversationSurface(
+            Group {
+                if state.mode == .sessions {
+                    AiChatSessionsView(store: store, state: state, displayModel: sessions)
+                } else {
+                    ScrollViewReader { scrollProxy in
+                        VStack(spacing: 0) {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    AiChatConversationSurface(
+                                        state: state,
+                                        skeleton: skeleton,
+                                        onOpenSettings: { store.send(.openSettingsTapped) },
+                                        onErrorRecovery: { store.send(.errorRecoveryTapped) },
+                                        onRebindContext: { store.send(.rebindContextTapped) },
+                                        onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) }
+                                    )
+                                    Color.clear
+                                        .frame(height: 0)
+                                        .background(
+                                            AiChatTranscriptScrollObserver(
+                                                sessionID: state.sessionID,
+                                                restoreRequest: transcriptScrollRestoreRequest,
+                                                onScrollOffsetChanged: rememberTranscriptScrollOffset
+                                            )
+                                        )
+
+                                    Color.clear
+                                        .frame(height: 1)
+                                        .id(Self.transcriptBottomAnchorID)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.top, 10)
+                                .padding(.bottom, 8)
+                            }
+                            .onAppear {
+                                requestTranscriptScrollOffsetRestore(for: state)
+                            }
+                            .onChange(of: state.sessionID) { _ in
+                                requestTranscriptScrollOffsetRestore(for: state)
+                            }
+                            .onChange(of: state.transcriptAutoScrollVersion) { _ in
+                                scrollTranscriptToBottom(scrollProxy)
+                            }
+
+                            AiChatInputBar(
+                                store: store,
                                 state: state,
-                                skeleton: skeleton,
-                                onOpenSettings: { store.send(.openSettingsTapped) },
-                                onErrorRecovery: { store.send(.errorRecoveryTapped) }
+                                input: skeleton.chatInput,
+                                requestContext: requestContext,
+                                colorScheme: colorScheme,
+                                isChatInputFocused: $isChatInputFocused,
+                                chatInputTextHeight: $chatInputTextHeight,
+                                isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
+                                isThinkingSelectorPresented: $isThinkingSelectorPresented
                             )
-                            Color.clear
-                                .frame(height: 1)
-                                .id(Self.transcriptBottomAnchorID)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 8)
+                            .padding(.bottom, 10)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 10)
-                        .padding(.bottom, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
-                    .onChange(of: transcriptScrollSignature(state: state)) { _ in
-                        scrollTranscriptToBottom(scrollProxy)
-                    }
-
-                    AiChatInputBar(
-                        store: store,
-                        state: state,
-                        input: skeleton.chatInput,
-                        requestContext: requestContext,
-                        colorScheme: colorScheme,
-                        isChatInputFocused: $isChatInputFocused,
-                        chatInputTextHeight: $chatInputTextHeight,
-                        isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
-                        isThinkingSelectorPresented: $isThinkingSelectorPresented
-                    )
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-                    .padding(.bottom, 10)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
     }
 
-    private func transcriptScrollSignature(state: AiChatState) -> String {
-        let lastMessage = state.transcriptHistory.last
-        return [
-            String(state.transcriptHistory.count),
-            lastMessage?.role.rawValue ?? "none",
-            lastMessage?.content ?? "",
-            state.streamingAssistantDisplayModel?.content ?? "",
-            state.streamingAssistantDisplayModel?.failure?.displayMessage ?? "",
-            String(state.isProcessing),
-            state.requestStatusText ?? ""
-        ].joined(separator: "|")
+    private func rememberTranscriptScrollOffset(_ offsetY: CGFloat, for sessionID: AiChatSessionID?) {
+        guard let sessionID else { return }
+        transcriptScrollOffsets[sessionID] = max(0, offsetY)
+        Self.saveTranscriptScrollOffsets(transcriptScrollOffsets)
+    }
+
+    private func requestTranscriptScrollOffsetRestore(for state: AiChatState) {
+        guard let sessionID = state.sessionID,
+              let offsetY = transcriptScrollOffsets[sessionID]
+        else { return }
+
+        transcriptScrollRestoreSequence += 1
+        transcriptScrollRestoreRequest = AiChatTranscriptScrollRestoreRequest(
+            sessionID: sessionID,
+            offsetY: offsetY,
+            sequence: transcriptScrollRestoreSequence
+        )
     }
 
     private func scrollTranscriptToBottom(_ proxy: ScrollViewProxy) {
@@ -91,4 +136,150 @@ public struct AiChatView: View {
     static let transcriptBottomAnchorID = "ai-chat-transcript-bottom"
     static let chatInputMinTextHeight: CGFloat = 34
     static let chatInputMaxTextHeight: CGFloat = 96
+    static let transcriptScrollOffsetsKey = "voyager.aiChat.transcriptScrollOffsets"
+
+    static func loadTranscriptScrollOffsets() -> [AiChatSessionID: CGFloat] {
+        guard let storedOffsets = UserDefaults.standard.dictionary(forKey: transcriptScrollOffsetsKey) as? [String: Double]
+        else { return [:] }
+
+        return storedOffsets.reduce(into: [AiChatSessionID: CGFloat]()) { result, element in
+            guard let uuid = UUID(uuidString: element.key) else { return }
+            result[AiChatSessionID(rawValue: uuid)] = CGFloat(max(0, element.value))
+        }
+    }
+
+    static func saveTranscriptScrollOffsets(_ offsets: [AiChatSessionID: CGFloat]) {
+        let storedOffsets = offsets.reduce(into: [String: Double]()) { result, element in
+            result[element.key.rawValue.uuidString] = Double(max(0, element.value))
+        }
+        UserDefaults.standard.set(storedOffsets, forKey: transcriptScrollOffsetsKey)
+    }
+}
+
+private struct AiChatTranscriptScrollRestoreRequest: Equatable {
+    let sessionID: AiChatSessionID
+    let offsetY: CGFloat
+    let sequence: Int
+}
+
+private struct AiChatTranscriptScrollObserver: NSViewRepresentable {
+    let sessionID: AiChatSessionID?
+    let restoreRequest: AiChatTranscriptScrollRestoreRequest?
+    let onScrollOffsetChanged: (CGFloat, AiChatSessionID?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            context.coordinator.attachScrollView(from: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.sessionID = sessionID
+        context.coordinator.onScrollOffsetChanged = onScrollOffsetChanged
+
+        DispatchQueue.main.async {
+            context.coordinator.attachScrollView(from: view)
+            context.coordinator.applyRestoreRequestIfNeeded(restoreRequest)
+            DispatchQueue.main.async {
+                context.coordinator.attachScrollView(from: view)
+                context.coordinator.applyRestoreRequestIfNeeded(restoreRequest)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var sessionID: AiChatSessionID?
+        var onScrollOffsetChanged: ((CGFloat, AiChatSessionID?) -> Void)?
+
+        private weak var scrollView: NSScrollView?
+        private weak var observedClipView: NSClipView?
+        private var appliedRestoreSequence: Int?
+        private var isApplyingRestore = false
+
+        deinit {
+            if let observedClipView {
+                NotificationCenter.default.removeObserver(
+                    self,
+                    name: NSView.boundsDidChangeNotification,
+                    object: observedClipView
+                )
+            }
+        }
+
+        func attachScrollView(from view: NSView) {
+            guard scrollView == nil else { return }
+            guard let scrollView = view.enclosingScrollView ?? view.firstEnclosingScrollViewInSuperviewChain() else { return }
+
+            self.scrollView = scrollView
+            let clipView = scrollView.contentView
+            observedClipView = clipView
+            clipView.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(boundsDidChange(_:)),
+                name: NSView.boundsDidChangeNotification,
+                object: clipView
+            )
+
+            onScrollOffsetChanged?(clipView.bounds.origin.y, sessionID)
+        }
+
+        func applyRestoreRequestIfNeeded(_ request: AiChatTranscriptScrollRestoreRequest?) {
+            guard let request, appliedRestoreSequence != request.sequence else { return }
+            appliedRestoreSequence = request.sequence
+
+            DispatchQueue.main.async { [weak self] in
+                self?.restore(to: request.offsetY)
+                DispatchQueue.main.async { [weak self] in
+                    self?.restore(to: request.offsetY)
+                }
+            }
+        }
+
+        private func restore(to requestedOffsetY: CGFloat) {
+            guard let scrollView else { return }
+
+            let clipView = scrollView.contentView
+            let documentHeight = scrollView.documentView?.bounds.height ?? 0
+            let maxOffsetY = max(0, documentHeight - clipView.bounds.height)
+            let offsetY = min(max(0, requestedOffsetY), maxOffsetY)
+
+            isApplyingRestore = true
+            clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: offsetY))
+            scrollView.reflectScrolledClipView(clipView)
+            onScrollOffsetChanged?(offsetY, sessionID)
+
+            DispatchQueue.main.async { [weak self] in
+                self?.isApplyingRestore = false
+            }
+        }
+
+        @objc private func boundsDidChange(_ notification: Notification) {
+            guard !isApplyingRestore,
+                  let clipView = notification.object as? NSClipView
+            else { return }
+
+            onScrollOffsetChanged?(clipView.bounds.origin.y, sessionID)
+        }
+    }
+}
+
+private extension NSView {
+    func firstEnclosingScrollViewInSuperviewChain() -> NSScrollView? {
+        var current = superview
+        while let view = current {
+            if let scrollView = view as? NSScrollView {
+                return scrollView
+            }
+            current = view.superview
+        }
+        return nil
+    }
 }

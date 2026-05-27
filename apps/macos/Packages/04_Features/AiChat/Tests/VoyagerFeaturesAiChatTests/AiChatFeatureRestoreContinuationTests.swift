@@ -98,20 +98,20 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.executionPhase = .idle
         }
 
-        await store.receive(.restoreOutcome(
+        await store.receive(AiChatAction.restoreOutcome(
             requestedSessionID: targetSessionID,
-            .restored(snapshot: restoredSnapshot),
+            AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
             restoreFailure: nil
         )) { state in
             state.sessionID = targetSessionID
-            state.sessionStatus = .active
+            state.sessionStatus = AiChatSessionStatus.active
             state.transcriptHistory = restoredSnapshot.transcriptHistory
             state.lockedModelHandle = nil
             state.lastExecutionFailure = nil
             state.executionPhase = .idle
             state.selectedModelHandle = restoredSnapshot.model
             state.selectedThinking = restoredSnapshot.selectedThinking
-            state.restoreOutcome = .restored(snapshot: restoredSnapshot)
+            state.restoreOutcome = AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot)
             state.restoreFailure = nil
         }
 
@@ -277,9 +277,9 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.executionPhase = .idle
         }
 
-        await store.receive(.restoreOutcome(
+        await store.receive(AiChatAction.restoreOutcome(
             requestedSessionID: targetSessionID,
-            .restored(snapshot: restoredSnapshot),
+            AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
             restoreFailure: nil
         )) { state in
             state.sessionID = targetSessionID
@@ -290,7 +290,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.executionPhase = .idle
             state.selectedModelHandle = nil
             state.unavailableSelectedModelHandle = restoredSnapshot.model
-            state.restoreOutcome = .restored(snapshot: restoredSnapshot)
+            state.restoreOutcome = AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot)
             state.restoreFailure = nil
         }
 
@@ -366,9 +366,9 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.executionPhase = .idle
         }
 
-        await store.receive(.restoreOutcome(
+        await store.receive(AiChatAction.restoreOutcome(
             requestedSessionID: targetSessionID,
-            .restored(snapshot: restoredSnapshot),
+            AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
             restoreFailure: nil
         )) { state in
             state.sessionID = targetSessionID
@@ -379,7 +379,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.executionPhase = .idle
             state.selectedModelHandle = restoredSnapshot.model
             state.selectedThinking = restoredSnapshot.selectedThinking
-            state.restoreOutcome = .restored(snapshot: restoredSnapshot)
+            state.restoreOutcome = AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot)
             state.restoreFailure = nil
         }
 
@@ -425,4 +425,101 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertNil(store.state.selectedThinking)
         XCTAssertNil(store.state.unavailableSelectedModelHandle)
     }
+
+    // swiftlint:disable:next function_body_length
+    func testSessionRowRestoreKeepsLiveCurrentContextWhileHydratingPersistedRequestContext() async {
+        let catalogRows = makeCatalogRows()
+        let targetSessionID = AiChatSessionID(rawValue: makeUUID("34343434-3434-3434-3434-343434343434"))
+        let liveCurrentContext = makeContextSnapshot(summary: "Live FileManager selection")
+        let restoredLockedContext = AiChatLockedRequestContextSnapshot(
+            currentContext: makeContextSnapshot(summary: "Restored request context"),
+            addedAttachments: [
+                AiChatAttachmentSnapshot(
+                    id: AiChatAttachmentID(rawValue: "restored-attachment"),
+                    source: .file,
+                    displayTitle: "Restored.txt",
+                    sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Restored.txt"),
+                    resolutionResult: .resolvedText(text: "Restored content", metadata: [:])
+                )
+            ]
+        )
+        let restoredSnapshot = AiChatSessionSnapshot(
+            sessionID: targetSessionID,
+            status: .active,
+            provider: catalogRows[1].handle.provider,
+            model: catalogRows[1].handle,
+            selectedModelRow: catalogRows[1],
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "Restored answer")
+            ],
+            lastRequestContext: restoredLockedContext,
+            updatedAtMs: 0
+        )
+        let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(rows: [AiChatSessionSummary(
+                sessionID: targetSessionID,
+                title: "Restored session",
+                preview: "Restored answer",
+                messageCount: restoredSnapshot.transcriptHistory.count,
+                contextTitle: restoredLockedContext.currentContext.summary,
+                provider: restoredSnapshot.provider,
+                model: restoredSnapshot.model,
+                createdAtMs: 0,
+                updatedAtMs: restoredSnapshot.updatedAtMs,
+                status: restoredSnapshot.status
+            )]),
+            currentContext: liveCurrentContext,
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeProviderModels()),
+            selectedModelHandle: catalogRows[0].handle
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in [] },
+                loadSession: { id in try await persistence.loadSession(id) },
+                saveSession: { _ in },
+                deleteSession: { _ in }
+            )
+        }
+
+        await store.send(AiChatAction.sessionRowTapped(targetSessionID)) { state in
+            state.mode = AiChatMode.sessions
+            state.sessionList.selectedSessionID = targetSessionID
+            state.sessionList.errorMessage = nil
+            state.restoreSessionID = targetSessionID
+        }
+
+        await store.receive(AiChatAction.restoreOutcome(
+            requestedSessionID: targetSessionID,
+            AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
+            restoreFailure: nil
+        )) { state in
+            state.sessionID = targetSessionID
+            state.sessionStatus = .active
+            state.transcriptHistory = restoredSnapshot.transcriptHistory
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = restoredLockedContext
+            state.lastRequestContextModelHandle = restoredSnapshot.model
+            state.executionPhase = .idle
+            state.selectedModelHandle = restoredSnapshot.model
+            state.selectedThinking = restoredSnapshot.selectedThinking
+            state.restoreOutcome = AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot)
+            state.restoreFailure = nil
+            state.mode = AiChatMode.chat
+            state.sessionList.errorMessage = nil
+        }
+
+        XCTAssertEqual(store.state.currentContext, liveCurrentContext)
+        XCTAssertEqual(store.state.lastRequestContext, restoredLockedContext)
+        XCTAssertEqual(store.state.currentContext.summary, "Live FileManager selection")
+        XCTAssertEqual(store.state.lastRequestContext?.currentContext.summary, "Restored request context")
+    }
+
 }

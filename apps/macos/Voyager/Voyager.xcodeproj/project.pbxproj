@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F20000000000000000000046 /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001F /* VoyagerEntitiesAi */; };
 		11884BDAA11DD6217EEF5014 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
 		3B378A28A482423D9B847800 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
@@ -250,6 +251,7 @@
 				F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */,
 				F20000000000000000000045 /* VoyagerFeaturesAiChat in Frameworks */,
+				F20000000000000000000046 /* VoyagerEntitiesAi in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -382,6 +384,7 @@
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
 				F2000000000000000000001E /* VoyagerFeaturesAiChat */,
+				F2000000000000000000001F /* VoyagerEntitiesAi */,
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
 				7E6AF6AC2E8BABD8005DC7D3 /* Inject */,
@@ -603,6 +606,7 @@
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
 				F2000000000000000000000E /* XCLocalSwiftPackageReference "04_Features/AiChat" */,
+				F2000000000000000000000F /* XCLocalSwiftPackageReference "05_Entities/Ai" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
@@ -1527,6 +1531,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/AiChat;
 		};
+		F2000000000000000000000F /* XCLocalSwiftPackageReference "05_Entities/Ai" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/05_Entities/Ai;
+		};
 		/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1799,6 +1807,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F2000000000000000000000E /* XCLocalSwiftPackageReference "04_Features/AiChat" */;
 			productName = VoyagerFeaturesAiChat;
+		};
+		F2000000000000000000001F /* VoyagerEntitiesAi */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F2000000000000000000000F /* XCLocalSwiftPackageReference "05_Entities/Ai" */;
+			productName = VoyagerEntitiesAi;
 		};
 		/* End XCSwiftPackageProductDependency section */
 	};

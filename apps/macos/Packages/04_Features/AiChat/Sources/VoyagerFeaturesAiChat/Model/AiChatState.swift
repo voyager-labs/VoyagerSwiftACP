@@ -30,18 +30,127 @@ public enum AiChatModelListState: Equatable, Sendable {
     case failed(AiModelListFailure)
 }
 
+public enum AiChatMode: Equatable, Sendable {
+    case sessions
+    case chat
+}
+
+public struct AiChatSessionListState: Equatable, Sendable {
+    public var allRows: [AiChatSessionSummary]
+    public var rows: [AiChatSessionSummary]
+    public var query: String
+    public var isLoading: Bool
+    public var errorMessage: String?
+    public var selectedSessionID: AiChatSessionID?
+    public var unreadCompletedSessionIDs: Set<AiChatSessionID>
+    public var deletedSessionIDs: Set<AiChatSessionID>
+    public var renamingSessionID: AiChatSessionID?
+    public var renameDraftText: String
+
+    public init(
+        allRows: [AiChatSessionSummary] = [],
+        rows: [AiChatSessionSummary]? = nil,
+        query: String = "",
+        isLoading: Bool = false,
+        errorMessage: String? = nil,
+        selectedSessionID: AiChatSessionID? = nil,
+        unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
+        deletedSessionIDs: Set<AiChatSessionID> = [],
+        renamingSessionID: AiChatSessionID? = nil,
+        renameDraftText: String = ""
+    ) {
+        self.allRows = allRows
+        self.query = query
+        self.isLoading = isLoading
+        self.errorMessage = errorMessage
+        self.selectedSessionID = selectedSessionID
+        self.unreadCompletedSessionIDs = unreadCompletedSessionIDs
+        self.deletedSessionIDs = deletedSessionIDs
+        self.renamingSessionID = renamingSessionID
+        self.renameDraftText = renameDraftText
+        self.rows = rows ?? Self.filteredRows(from: allRows, query: query)
+    }
+
+    public mutating func setLoadedRows(_ rows: [AiChatSessionSummary]) {
+        let visibleRows = rows.filter { !deletedSessionIDs.contains($0.sessionID) }
+        allRows = visibleRows
+        self.rows = Self.filteredRows(from: visibleRows, query: query)
+    }
+
+    public mutating func updateQuery(_ query: String) {
+        self.query = query
+        rows = Self.filteredRows(from: allRows, query: query)
+    }
+
+    public mutating func removeRow(sessionID: AiChatSessionID) {
+        deletedSessionIDs.insert(sessionID)
+        allRows.removeAll { $0.sessionID == sessionID }
+        rows = Self.filteredRows(from: allRows, query: query)
+        unreadCompletedSessionIDs.remove(sessionID)
+        if selectedSessionID == sessionID {
+            selectedSessionID = nil
+        }
+        if renamingSessionID == sessionID {
+            renamingSessionID = nil
+            renameDraftText = ""
+        }
+    }
+
+    public mutating func replaceRow(_ row: AiChatSessionSummary) {
+        guard !deletedSessionIDs.contains(row.sessionID) else { return }
+        if let index = allRows.firstIndex(where: { $0.sessionID == row.sessionID }) {
+            allRows[index] = row
+        } else {
+            allRows.append(row)
+        }
+        allRows.sort { lhs, rhs in
+            if lhs.updatedAtMs == rhs.updatedAtMs {
+                return lhs.sessionID.rawValue.uuidString < rhs.sessionID.rawValue.uuidString
+            }
+            return lhs.updatedAtMs > rhs.updatedAtMs
+        }
+        rows = Self.filteredRows(from: allRows, query: query)
+    }
+
+    public mutating func beginRenaming(sessionID: AiChatSessionID) {
+        renamingSessionID = sessionID
+        renameDraftText = allRows.first(where: { $0.sessionID == sessionID })?.title ?? ""
+    }
+
+    public mutating func cancelRenaming() {
+        renamingSessionID = nil
+        renameDraftText = ""
+    }
+
+    static func filteredRows(from rows: [AiChatSessionSummary], query: String) -> [AiChatSessionSummary] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return rows }
+        let normalizedQuery = trimmedQuery.localizedLowercase
+        return rows.filter { row in
+            [row.title, row.preview, row.contextTitle, row.searchText]
+                .compactMap { $0?.localizedLowercase }
+                .contains { $0.contains(normalizedQuery) }
+        }
+    }
+}
+
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     public var restoreSessionID: AiChatSessionID?
     public var restoreOutcome: AiChatSessionRestoreResult?
     public var restoreFailure: AiChatSessionRestoreFailure?
+    public var mode: AiChatMode
+    public var sessionList: AiChatSessionListState
     public var sessionID: AiChatSessionID?
+    public var emptyDraftSessionID: AiChatSessionID?
+    public var currentSessionCustomTitle: String?
     public var sessionStatus: AiChatSessionStatus
     public var currentContext: AiChatCurrentContextSnapshot
     public var addedAttachments: [AiChatAttachmentDraft]
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
     public var streamingAssistantDraft: String?
+    public var transcriptAutoScrollVersion: Int
     public var catalogRows: [AiModelCatalogRow]
     public var modelListState: AiChatModelListState
     public var isModelSelectorPresented: Bool
@@ -66,13 +175,18 @@ public struct AiChatState: Equatable, Sendable {
         restoreSessionID: AiChatSessionID? = nil,
         restoreOutcome: AiChatSessionRestoreResult? = nil,
         restoreFailure: AiChatSessionRestoreFailure? = nil,
+        mode: AiChatMode = .sessions,
+        sessionList: AiChatSessionListState = .init(),
         sessionID: AiChatSessionID? = nil,
+        emptyDraftSessionID: AiChatSessionID? = nil,
+        currentSessionCustomTitle: String? = nil,
         sessionStatus: AiChatSessionStatus = .idle,
         currentContext: AiChatCurrentContextSnapshot = .init(),
         addedAttachments: [AiChatAttachmentDraft] = [],
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
         streamingAssistantDraft: String? = nil,
+        transcriptAutoScrollVersion: Int = 0,
         catalogRows: [AiModelCatalogRow] = [],
         modelListState: AiChatModelListState? = nil,
         isModelSelectorPresented: Bool = false,
@@ -96,13 +210,18 @@ public struct AiChatState: Equatable, Sendable {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
         self.restoreFailure = restoreFailure
+        self.mode = mode
+        self.sessionList = sessionList
         self.sessionID = sessionID
+        self.emptyDraftSessionID = emptyDraftSessionID
+        self.currentSessionCustomTitle = currentSessionCustomTitle
         self.sessionStatus = sessionStatus
         self.currentContext = currentContext
         self.addedAttachments = addedAttachments
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
         self.streamingAssistantDraft = streamingAssistantDraft
+        self.transcriptAutoScrollVersion = transcriptAutoScrollVersion
         let resolvedModelListState = modelListState ?? Self.modelListState(from: catalogRows)
         self.catalogRows = catalogRows.isEmpty ? Self.makeCatalogRows(for: resolvedModelListState) : catalogRows
         self.modelListState = resolvedModelListState
@@ -157,6 +276,20 @@ public struct AiChatState: Equatable, Sendable {
     }
 
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { displayModelBuilder.lockedModelDisplayModel }
+
+    public var hiddenEmptyDraftSessionIDs: Set<AiChatSessionID> {
+        guard let emptyDraftSessionID,
+              sessionID == emptyDraftSessionID,
+              sessionStatus == .idle,
+              transcriptHistory.isEmpty,
+              streamingAssistantDraft == nil,
+              lastRequestContext == nil,
+              !executionPhase.isProcessing
+        else { return [] }
+
+        return [emptyDraftSessionID]
+    }
+
     public var canSubmit: Bool { displayModelBuilder.canSubmit }
     public var canRegenerate: Bool { displayModelBuilder.canRegenerate }
     public var requestStatusText: String? { displayModelBuilder.requestStatusText }

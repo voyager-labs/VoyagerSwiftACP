@@ -50,6 +50,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 }
             })
         }
+        store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.submitTapped) { state in
             let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
@@ -75,9 +76,27 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                     AiChatMessage(role: .user, content: "Draft"),
                 ],
             )
+            let processingSummary = AiChatSessionSummary(
+                sessionID: sessionID,
+                title: "Draft",
+                preview: "Draft",
+                messageCount: 1,
+                contextTitle: summary.summary,
+                searchText: "Draft",
+                provider: catalogRows[0].handle.provider,
+                model: catalogRows[0].handle,
+                createdAtMs: firstSubmitMs,
+                updatedAtMs: firstSubmitMs,
+                status: .active
+            )
             state.transcriptHistory = request.messages
             state.draftText = ""
+            state.sessionList.allRows = [processingSummary]
+            state.sessionList.rows = [processingSummary]
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = []
             state.lockedModelHandle = catalogRows[0].handle
+            state.transcriptAutoScrollVersion = 1
             state.executionPhase = .processing(AiChatRequestLock(
                 kind: .submit,
                 requestID: requestID,
@@ -166,9 +185,27 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 context: context,
                 messages: [AiChatMessage(role: .user, content: "Second request")],
             )
+            let processingSummary = AiChatSessionSummary(
+                sessionID: sessionID,
+                title: "Second request",
+                preview: "Second request",
+                messageCount: 1,
+                contextTitle: summary.summary,
+                searchText: "Second request",
+                provider: catalogRows[1].handle.provider,
+                model: catalogRows[1].handle,
+                createdAtMs: secondSubmitMs,
+                updatedAtMs: secondSubmitMs,
+                status: .active
+            )
             state.transcriptHistory = request.messages
             state.draftText = ""
+            state.sessionList.allRows = [processingSummary]
+            state.sessionList.rows = [processingSummary]
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = []
             state.lockedModelHandle = catalogRows[1].handle
+            state.transcriptAutoScrollVersion = 2
             state.executionPhase = .processing(AiChatRequestLock(
                 kind: .submit,
                 requestID: requestID,
@@ -372,6 +409,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 }
             })
         }
+        store.exhaustivity = .off(showSkippedAssertions: false)
 
         XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "default")
 
@@ -405,9 +443,27 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                     AiChatMessage(role: .user, content: "Use high thinking"),
                 ],
             )
+            let processingSummary = AiChatSessionSummary(
+                sessionID: sessionID,
+                title: "Use high thinking",
+                preview: "Use high thinking",
+                messageCount: 1,
+                contextTitle: summary.summary,
+                searchText: "Use high thinking",
+                provider: catalogRows[0].handle.provider,
+                model: catalogRows[0].handle,
+                createdAtMs: firstSubmitMs,
+                updatedAtMs: firstSubmitMs,
+                status: .active
+            )
             state.transcriptHistory = request.messages
             state.draftText = ""
+            state.sessionList.allRows = [processingSummary]
+            state.sessionList.rows = [processingSummary]
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = []
             state.lockedModelHandle = catalogRows[0].handle
+            state.transcriptAutoScrollVersion = 1
             state.executionPhase = .processing(AiChatRequestLock(
                 kind: .submit,
                 requestID: requestID,

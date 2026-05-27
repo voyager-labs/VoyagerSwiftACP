@@ -66,7 +66,54 @@ extension AiChatFeature {
             lock: lock,
             state: &state,
         )
-        return execute(request: lock.request)
+        let startSnapshotEffect = saveRequestStartSnapshotIfNeeded(kind: kind, state: state, lock: lock)
+        return .merge(startSnapshotEffect, execute(request: lock.request))
+    }
+
+
+    private func saveRequestStartSnapshotIfNeeded(
+        kind: AiChatRequestKind,
+        state: State,
+        lock: AiChatRequestLock
+    ) -> Effect<Action> {
+        guard kind == .submit else { return .none }
+        let snapshot = makeRequestStartSnapshot(state: state, lock: lock)
+        return .run { [aiChatSessionPersistenceClient] send in
+            do {
+                try await aiChatSessionPersistenceClient.saveSession(snapshot)
+                await send(.sessionSnapshotUpdated(
+                    AiChatSessionSummary(snapshot: snapshot),
+                    requestID: lock.requestID,
+                    runID: lock.runID
+                ))
+            } catch is CancellationError {
+                return
+            } catch {
+                await send(.sessionSnapshotUpdateFailed(requestID: lock.requestID, runID: lock.runID))
+            }
+        }
+        .cancellable(id: CancelID.requestStartPersistence, cancelInFlight: true)
+    }
+
+    private func makeRequestStartSnapshot(state: State, lock: AiChatRequestLock) -> AiChatSessionSnapshot {
+        guard let sessionID = lock.context.sessionID ?? state.sessionID else {
+            preconditionFailure("Missing session ID for request-start snapshot")
+        }
+
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            customTitle: state.currentSessionCustomTitle,
+            provider: lock.context.provider,
+            model: lock.context.model,
+            selectedModelRow: lock.selectedModelRow,
+            selectedThinking: lock.context.selectedThinking,
+            transcriptHistory: state.transcriptHistory,
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: persistenceSafeRequestContext(lock.context.requestContext),
+            updatedAtMs: lock.context.submittedAtMs ?? currentTimestampMs()
+        )
     }
 
     private func prepareRequest(kind: AiChatRequestKind, state: State) -> AiChatPreparedRequest? {
@@ -181,8 +228,38 @@ extension AiChatFeature {
         if kind == .submit {
             state.transcriptHistory.append(AiChatMessage(role: .user, content: prompt))
             state.draftText = ""
+            state.emptyDraftSessionID = nil
+            if let sessionID = lock.context.sessionID ?? state.sessionID {
+                state.sessionList.selectedSessionID = sessionID
+                state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
+                state.sessionList.replaceRow(processingSessionSummary(prompt: prompt, lock: lock, sessionID: sessionID))
+            }
+            state.transcriptAutoScrollVersion += 1
         }
     }
+
+
+    private func processingSessionSummary(
+        prompt: String,
+        lock: AiChatRequestLock,
+        sessionID: AiChatSessionID
+    ) -> AiChatSessionSummary {
+        let timestamp = lock.context.submittedAtMs ?? currentTimestampMs()
+        return AiChatSessionSummary(
+            sessionID: sessionID,
+            title: AiChatSessionSummary.automaticTitle(from: prompt),
+            preview: prompt,
+            messageCount: 1,
+            contextTitle: lock.context.currentContext.summary,
+            searchText: prompt,
+            provider: lock.context.provider,
+            model: lock.context.model,
+            createdAtMs: timestamp,
+            updatedAtMs: timestamp,
+            status: .active
+        )
+    }
+
 
     private func execute(request: AiChatRequest) -> Effect<Action> {
         .run { [aiChatExecutionClient, aiConnectionsFileClient] send in
@@ -217,6 +294,7 @@ extension AiChatFeature {
         state.lastRequestContext = persistenceSafeRequestContext(lock.context.requestContext)
         state.lastRequestContextModelHandle = lock.context.model
         state.executionPhase = .completed(lock)
+        state.transcriptAutoScrollVersion += 1
     }
 
     func makeSessionSnapshot(
@@ -231,6 +309,7 @@ extension AiChatFeature {
         return AiChatSessionSnapshot(
             sessionID: sessionID,
             status: state.sessionStatus,
+            customTitle: state.currentSessionCustomTitle,
             provider: lock.context.provider,
             model: lock.context.model,
             selectedModelRow: lock.selectedModelRow,

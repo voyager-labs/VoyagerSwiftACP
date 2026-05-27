@@ -18,9 +18,6 @@ struct FileManagerFeature {
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
 
-    @Dependency(\.uuid)
-    private var uuid
-
     @Dependency(\.aiConnectionsFileClient)
     private var aiConnectionsFileClient
 
@@ -285,11 +282,9 @@ struct FileManagerFeature {
 
     private func openContextualAiChatEffect(state: State) -> Effect<Action> {
         let content = state.content
-        let sessionID = AiChatSessionID(rawValue: uuid())
-        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(
-            content: content,
-            sessionID: sessionID,
-        )
+        // Entry opens the inspector with seeded context only so AiChat starts on Sessions.
+        // Session creation/restoration stays inside AiChat via New Chat or explicit restoreSessionID.
+        let setup = FileManagerAiChatContextAdapter.makeAiChatSetupState(content: content)
         return .run { [aiConnectionsFileClient, setup] send in
             let connectionsFile: AIConnectionsFile
             do {
