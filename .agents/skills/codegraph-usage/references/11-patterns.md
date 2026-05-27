@@ -1,5 +1,14 @@
 # Query Patterns & Workflows
 
+## Contents
+
+- [Pattern 1: Find Who Calls a Symbol](#pattern-1-find-who-calls-a-symbol)
+- [Pattern 2: Trace a Call Path from A to B](#pattern-2-trace-a-call-path-from-a-to-b)
+- [Pattern 3: Impact Analysis](#pattern-3-impact-analysis)
+- [Pattern 4: Explore Module Structure](#pattern-4-explore-module-structure)
+- [Pattern 5: Cross-Language Tracing](#pattern-5-cross-language-tracing)
+- [Quick Reference Table](#quick-reference-table)
+
 Five patterns that cover the most common CodeGraph use cases. Each pattern names the right tool, shows a concrete query, and explains when it beats grep or manual file reading.
 
 ## Pattern 1: Find Who Calls a Symbol

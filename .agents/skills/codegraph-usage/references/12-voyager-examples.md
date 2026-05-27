@@ -1,5 +1,13 @@
 # Voyager-Specific Query Examples
 
+## Contents
+
+- [TCA Reducer Call Chain](#tca-reducer-call-chain)
+- [FastAPI Route Tracing](#fastapi-route-tracing)
+- [Package Dependency Analysis](#package-dependency-analysis)
+- [Cross-Language Tracing (Swift to Python)](#cross-language-tracing-swift-to-python)
+- [Common Follow-Up Queries](#common-follow-up-queries)
+
 Real-world queries you can run against the Voyager codebase. Each example shows the question, the exact query, and what you should expect to see in the result.
 
 ## TCA Reducer Call Chain

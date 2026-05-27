@@ -1,5 +1,12 @@
 # Evaluation Framework (Go/No-Go)
 
+## Contents
+
+- [Evaluation Angles](#evaluation-angles)
+- [Go/No-Go Criteria](#go-no-go-criteria)
+- [Measurement Record Template](#measurement-record-template)
+- [If No-Go](#if-no-go)
+
 A structured framework for deciding whether CodeGraph provides enough value to keep as a permanent part of the Voyager development toolchain. Run this evaluation after at least 2 weeks of real usage across multiple development tasks.
 
 ## Evaluation Angles
@@ -95,28 +102,6 @@ Copy this template for each angle you evaluate. Fill in the measured values, cal
 - Notes: Most of the savings came from not needing to read 5 separate files to find the module entry points.
 ```
 
-## Removal Procedure
+## If No-Go
 
-If the evaluation result is No-Go, follow these steps in order:
-
-1. **Delete the index:**
-
-    ```
-    just codegraph-clean
-    ```
-
-2. **Remove the MCP entry** from `opencode.json`:
-   Delete the `codegraph` entry in the `mcpServers` section.
-
-3. **Remove justfile commands:**
-   Delete the `codegraph-*` recipes from the `justfile`.
-
-4. **Remove the lefthook hook:**
-   Delete the `codegraph` entry under `post-checkout` in `lefthook.yml`.
-
-5. **Delete the skill directory:**
-    ```
-    rm -rf .agents/skills/codegraph-usage/
-    ```
-
-No other files reference CodeGraph outside these locations.
+Follow the removal procedure in `references/15-removal.md`.

@@ -1,19 +1,16 @@
 ---
 name: codegraph-usage
 description: Guides effective use of the CodeGraph MCP sidecar for call flow tracing, impact analysis, symbol exploration, and cross-language queries. Use when needing to answer "who calls this?", "call path from A to B", "impact of changing this symbol", or exploring module/package structure. Prefer over grep+read for call chain and dependency questions.
-compatibility: opencode
 ---
 
 # CodeGraph Usage
 
-## When to use this skill
+## Quick Workflow
 
-- You need to trace call chains ("who calls this reducer?", "call path from A to B")
-- You need impact analysis for a symbol change ("what breaks if I change this?")
-- You need to explore module/package structure without reading files
-- You need cross-language tracing (Swift ↔ Python)
-- You need to find all callers/callees of a function, type, or endpoint
-- `.codegraph/` index exists (check with `just codegraph-status`)
+1. **Index ready?** `just codegraph-status`
+2. **Find a symbol:** `codegraph_search` → see `references/01-search.md`
+3. **Trace call flow:** `codegraph_trace` or `codegraph_callers` → see `references/11-patterns.md`
+4. **Check impact:** `codegraph_impact` → see `references/11-patterns.md`
 
 ## MCP Tools Reference
 
@@ -32,13 +29,6 @@ See `references/` directory for deep-dive usage guides per tool.
 | `codegraph_files`   | List indexed files                               | `references/09-files.md`   |
 | `codegraph_status`  | Check index status                               | `references/10-status.md`  |
 
-## Prerequisites
-
-- `.codegraph/` index must exist in the project root.
-- If missing, run `just codegraph-init` or it auto-initializes on `git checkout`/`git worktree add`.
-- Check status: `just codegraph-status`
-- Rebuild if stale: `just codegraph-reindex`
-
 ## Additional References
 
 | Topic                           | File                                |
@@ -47,11 +37,26 @@ See `references/` directory for deep-dive usage guides per tool.
 | Voyager-specific examples       | `references/12-voyager-examples.md` |
 | Limitations & gotchas           | `references/13-limitations.md`      |
 | Evaluation framework (Go/No-Go) | `references/14-evaluation.md`       |
+| Removal procedure               | `references/15-removal.md`          |
 
-## Removal Procedure
+## Reading References
 
-1. `just codegraph-clean` — delete index
-2. Remove codegraph MCP entry from `opencode.json`
-3. Remove codegraph commands from `justfile`
-4. Remove `lefthook.yml` codegraph entry from post-checkout
-5. Delete this skill directory
+Do NOT read all reference files at once. Load only what the current task needs:
+
+| Task type                   | Read these                            | Skip these            |
+| --------------------------- | ------------------------------------- | --------------------- |
+| "Find callers/callees"      | `04-callers.md` or `05-callees.md`    | All others            |
+| "Trace A to B"              | `03-trace.md`                         | All others            |
+| "What breaks if I change X" | `06-impact.md`                        | All others            |
+| "Explore a module"          | `07-explore.md`, `02-context.md`      | All others            |
+| "First time / onboarding"   | `11-patterns.md`, `13-limitations.md` | Tool-specific (01-10) |
+| "Voyager-specific examples" | `12-voyager-examples.md`              | All others            |
+| "Removing CodeGraph"        | `15-removal.md`                       | All others            |
+| Need tool parameter details | Specific tool file (01-10)            | Others in 01-10       |
+
+## Prerequisites
+
+- `.codegraph/` index must exist in the project root.
+- If missing, run `just codegraph-init` or it auto-initializes on `git checkout`/`git worktree add`.
+- Check status: `just codegraph-status`
+- Rebuild if stale: `just codegraph-reindex`
