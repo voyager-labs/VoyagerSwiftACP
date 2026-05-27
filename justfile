@@ -5,7 +5,7 @@
 default: setup
 
 # 온보딩: clone 후 한 번 실행
-setup: brew-install xcode hooks submodules npm-install
+setup: brew-install xcode hooks submodules
 
 # Homebrew 의존성 설치
 brew-install:
@@ -22,10 +22,6 @@ hooks:
 # Submodule 초기화
 submodules:
     git submodule update --init --recursive
-
-# npm 의존성 설치 (codegraph 등)
-npm-install:
-    npm install
 
 # SourceKit-LSP용 buildServer.json 생성
 lsp:
@@ -57,15 +53,15 @@ reinstall-hooks:
 
 # CodeGraph 인덱스 초기화 (최초 1회)
 codegraph-init:
-    npx codegraph init -i
+    npx -y @colbymchenry/codegraph@0.9.6 init -i
 
 # CodeGraph MCP 서버 실행
 codegraph-serve:
-    npx codegraph serve --mcp
+    npx -y @colbymchenry/codegraph@0.9.6 serve --mcp
 
 # CodeGraph 인덱스 재구축
 codegraph-reindex:
-    npx codegraph index
+    npx -y @colbymchenry/codegraph@0.9.6 index
 
 # CodeGraph 인덱스/캐시 삭제
 codegraph-clean:
@@ -73,4 +69,4 @@ codegraph-clean:
 
 # CodeGraph 인덱스 상태 확인
 codegraph-status:
-    npx codegraph status
+    npx -y @colbymchenry/codegraph@0.9.6 status
