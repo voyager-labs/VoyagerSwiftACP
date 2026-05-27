@@ -24,7 +24,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
                         fileURL: normalizedURL,
                         filePath: normalizedURL.path(percentEncoded: false)
                     )
-                )
+                ),
             ]
         }
     }
@@ -48,7 +48,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
                         fileURL: normalizedURL,
                         filePath: normalizedURL.path(percentEncoded: false)
                     )
-                )
+                ),
             ]
         }
 
@@ -82,7 +82,8 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
                     sourceLocation: AiChatAttachmentSourceLocation(
                         fileURL: folderURL.standardizedFileURL,
                         filePath: folderURL.standardizedFileURL.path(percentEncoded: false)
-                    )
+                    ),
+                    metadata: ["folderStructureMode": AiChatFolderStructureMode.currentFolderOnly.rawValue]
                 ),
             ]
         }
@@ -157,11 +158,18 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
                         fileURL: normalizedURL,
                         filePath: normalizedPath
                     )
-                )
+                ),
             ]
+            $0.currentContextFolderStructureModesByCanonicalPath = [folderKey(.reference, "/tmp"): .currentFolderOnly]
             $0.currentContext = AiChatCurrentContextSnapshot(
                 summary: "Desktop",
-                references: [makeContextReference(title: "Desktop", path: "/tmp")],
+                references: [
+                    makeContextReference(
+                        title: "Desktop",
+                        path: "/tmp",
+                        metadata: ["path": "/tmp", "folderStructureMode": AiChatFolderStructureMode.currentFolderOnly.rawValue]
+                    ),
+                ],
                 items: [],
                 attachments: []
             )
@@ -190,7 +198,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
                         fileURL: normalizedDroppedURL,
                         filePath: droppedPath
                     )
-                )
+                ),
             ]
         }
         await store.receive(.delegate(.clearCurrentContextSelection))
@@ -202,7 +210,27 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
             attachments: []
         )
         await store.send(.currentContextChanged(nextCurrentContext)) {
-            $0.currentContext = nextCurrentContext
+            $0.currentContextFolderStructureModesByCanonicalPath = [
+                folderKey(.reference, "/tmp"): .currentFolderOnly,
+            ]
+            $0.currentContext = AiChatCurrentContextSnapshot(
+                summary: "Desktop · 1 selected",
+                references: [
+                    makeContextReference(
+                        title: "Desktop",
+                        path: "/tmp",
+                        metadata: ["path": "/tmp", "folderStructureMode": AiChatFolderStructureMode.currentFolderOnly.rawValue]
+                    ),
+                ],
+                items: [
+                    makeContextItem(
+                        title: "Other.txt",
+                        path: nextSelectionPath,
+                        metadata: ["path": nextSelectionPath]
+                    ),
+                ],
+                attachments: []
+            )
         }
 
         XCTAssertEqual(store.state.addedAttachments.map(\.id.rawValue), [droppedPath])
@@ -232,9 +260,16 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
         }
 
         await store.send(.currentContextChanged(currentContext)) {
+            $0.currentContextFolderStructureModesByCanonicalPath = [folderKey(.reference, "/tmp"): .currentFolderOnly]
             $0.currentContext = AiChatCurrentContextSnapshot(
                 summary: "Desktop",
-                references: [makeContextReference(title: "Desktop", path: "/tmp")],
+                references: [
+                    makeContextReference(
+                        title: "Desktop",
+                        path: "/tmp",
+                        metadata: ["path": "/tmp", "folderStructureMode": AiChatFolderStructureMode.currentFolderOnly.rawValue]
+                    ),
+                ],
                 items: [],
                 attachments: []
             )
@@ -267,6 +302,108 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
         XCTAssertEqual(store.state.currentContext, .init())
     }
 
+    func testFolderStructureModeCurrentContextPersistsAcrossCurrentContextRefresh() async {
+        let folderURL = URL(filePath: "/tmp/Projects", directoryHint: .isDirectory).standardizedFileURL
+        let folderPath = folderURL.path(percentEncoded: false)
+        let childPath = folderURL.appending(path: "Inside.md").standardizedFileURL.path(percentEncoded: false)
+
+        let initialContext = AiChatCurrentContextSnapshot(
+            summary: "Projects",
+            references: [makeContextReference(title: "Projects", path: folderPath, kind: .folder)],
+            items: [],
+            attachments: []
+        )
+        let refreshedContext = AiChatCurrentContextSnapshot(
+            summary: "Projects · 1 selected",
+            references: [makeContextReference(title: "Projects", path: folderPath, kind: .folder)],
+            items: [makeContextItem(title: "Inside.md", path: childPath)],
+            attachments: []
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(currentContext: initialContext)) {
+            AiChatFeature()
+        }
+
+        await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders)) {
+            $0.currentContextFolderStructureModesByCanonicalPath = [folderKey(.reference, folderPath): .includeSubfolders]
+            $0.currentContext = AiChatCurrentContextSnapshot(
+                summary: "Projects",
+                references: [
+                    makeContextReference(
+                        title: "Projects",
+                        path: folderPath,
+                        kind: .folder,
+                        metadata: ["path": folderPath, "folderStructureMode": AiChatFolderStructureMode.includeSubfolders.rawValue]
+                    ),
+                ],
+                items: [],
+                attachments: []
+            )
+        }
+        XCTAssertEqual(store.state.currentContextFolderStructureModesByCanonicalPath[folderKey(.reference, folderPath)], .includeSubfolders)
+        XCTAssertEqual(
+            AiChatStateDisplayModelBuilder(state: store.state).requestContextDisplayModel.currentContext?.folderStructureMode,
+            .includeSubfolders
+        )
+
+        await store.send(.currentContextChanged(refreshedContext)) {
+            $0.currentContext = AiChatCurrentContextSnapshot(
+                summary: "Projects · 1 selected",
+                references: [
+                    makeContextReference(
+                        title: "Projects",
+                        path: folderPath,
+                        kind: .folder,
+                        metadata: ["path": folderPath, "folderStructureMode": AiChatFolderStructureMode.includeSubfolders.rawValue]
+                    ),
+                ],
+                items: [makeContextItem(title: "Inside.md", path: childPath)],
+                attachments: []
+            )
+        }
+
+        XCTAssertEqual(store.state.currentContextFolderStructureModesByCanonicalPath[folderKey(.reference, folderPath)], .includeSubfolders)
+        XCTAssertEqual(
+            AiChatStateDisplayModelBuilder(state: store.state).requestContextDisplayModel.currentContext?.folderStructureMode,
+            .includeSubfolders
+        )
+    }
+
+
+    func testFolderStructureModeCurrentContextIgnoresNonFolderItems() async {
+        let filePath = URL(fileURLWithPath: "/tmp/Notes.txt").standardizedFileURL.path(percentEncoded: false)
+        let collectionPath = URL(fileURLWithPath: "/tmp/Workspace.voycoll").standardizedFileURL.path(percentEncoded: false)
+        let currentContext = AiChatCurrentContextSnapshot(
+            summary: "Mixed files",
+            references: [
+                makeContextReference(
+                    title: "Workspace.voycoll",
+                    path: collectionPath,
+                    metadata: ["route": "collection", "path": collectionPath]
+                ),
+            ],
+            items: [
+                makeContextItem(title: "Notes.txt", path: filePath),
+                makeContextItem(title: "Pinned note", path: "note://pinned", kind: .note, metadata: ["path": "note://pinned"]),
+            ],
+            attachments: []
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(currentContext: currentContext)) {
+            AiChatFeature()
+        }
+
+        await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders))
+
+        XCTAssertTrue(store.state.currentContextFolderStructureModesByCanonicalPath.isEmpty)
+        XCTAssertEqual(store.state.currentContext, currentContext)
+        XCTAssertNil(AiChatStateDisplayModelBuilder(state: store.state).requestContextDisplayModel.currentContext?.folderStructureMode)
+        XCTAssertEqual(
+            AiChatStateDisplayModelBuilder(state: store.state).requestContextDisplayModel.currentContext?.supportsFolderStructureMode,
+            false
+        )
+    }
+
     func testAttachmentDropSelectionAddsDraftAndRequestsContextSelectionClear() async {
         let url = URL(fileURLWithPath: "/tmp/Dropped.txt")
         let normalizedURL = url.standardizedFileURL
@@ -285,21 +422,21 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
                         fileURL: normalizedURL,
                         filePath: normalizedURL.path(percentEncoded: false)
                     )
-                )
+                ),
             ]
         }
         await store.receive(.delegate(.clearCurrentContextSelection))
     }
 }
 
-
 private func makeContextReference(
     title: String,
     path: String,
+    kind: AiChatContextItemKind = .reference,
     metadata: [String: String]? = nil
 ) -> AiChatContextReference {
     AiChatContextReference(
-        kind: .reference,
+        kind: kind,
         identifier: path,
         title: title,
         subtitle: path,
@@ -307,12 +444,31 @@ private func makeContextReference(
     )
 }
 
-private func makeContextItem(title: String, path: String) -> AiChatContextItem {
+private func makeContextItem(
+    title: String,
+    path: String,
+    kind: AiChatContextItemKind = .file,
+    metadata: [String: String]? = nil
+) -> AiChatContextItem {
     AiChatContextItem(
-        kind: .file,
+        kind: kind,
         identifier: path,
         title: title,
         subtitle: path,
-        metadata: ["path": path]
+        metadata: metadata ?? ["path": path]
+    )
+}
+
+
+private func folderKey(
+    _ source: AiChatCurrentContextFolderStructureSource,
+    _ path: String
+) -> AiChatCurrentContextFolderStructureKey {
+    AiChatCurrentContextFolderStructureKey(
+        source: source,
+        canonicalPath: URL(fileURLWithPath: path)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path(percentEncoded: false)
     )
 }

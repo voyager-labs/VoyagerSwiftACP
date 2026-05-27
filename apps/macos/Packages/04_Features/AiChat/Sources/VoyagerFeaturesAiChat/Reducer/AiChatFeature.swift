@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import UniformTypeIdentifiers
 import VoyagerEntitiesAi
 
 @Reducer
@@ -80,6 +81,9 @@ public struct AiChatFeature {
                 state.sessionList.selectedSessionID = sessionID
                 state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
                 state.sessionList.errorMessage = nil
+                if state.sessionID != sessionID {
+                    state.currentContextFolderStructureModesByCanonicalPath = [:]
+                }
 
                 if state.executionPhase.isProcessing, state.sessionID == sessionID {
                     state.mode = .chat
@@ -217,6 +221,7 @@ public struct AiChatFeature {
                 guard let emptyDraftSessionID = cleanupEligibleEmptyDraftSessionID(for: state) else {
                     return .none
                 }
+                state.pendingEmptyDraftDeletionSessionIDs.insert(emptyDraftSessionID)
                 state.emptyDraftSessionID = nil
                 state.sessionID = nil
                 state.restoreSessionID = nil
@@ -243,6 +248,7 @@ public struct AiChatFeature {
                 return .none
 
             case let .sessionDeleteSucceeded(sessionID):
+                state.pendingEmptyDraftDeletionSessionIDs.remove(sessionID)
                 state.sessionList.removeRow(sessionID: sessionID)
                 if state.restoreSessionID == sessionID {
                     state.restoreSessionID = nil
@@ -251,7 +257,8 @@ public struct AiChatFeature {
                 }
                 return .none
 
-            case let .sessionDeleteFailed(_, message):
+            case let .sessionDeleteFailed(sessionID, message):
+                state.pendingEmptyDraftDeletionSessionIDs.remove(sessionID)
                 state.sessionList.errorMessage = message
                 return .none
 
@@ -371,7 +378,19 @@ public struct AiChatFeature {
                 return .none
 
             case let .currentContextChanged(snapshot):
-                state.currentContext = currentContextSnapshot(snapshot, excluding: state.addedAttachments)
+                let currentContext = currentContextSnapshot(
+                    snapshot,
+                    excluding: state.addedAttachments,
+                    applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath
+                )
+                ensureCurrentFolderStructureModeDefaults(
+                    for: currentContext,
+                    in: &state.currentContextFolderStructureModesByCanonicalPath
+                )
+                state.currentContext = applyFolderStructureModes(
+                    state.currentContextFolderStructureModesByCanonicalPath,
+                    to: currentContext
+                )
                 return .none
 
             case let .draftTextChanged(text):
@@ -386,6 +405,9 @@ public struct AiChatFeature {
                 _ = addAttachmentDrafts(from: urls, skippingCurrentContextDuplicates: true, state: &state)
                 return .none
 
+            case let .attachmentDrop(providers):
+                return loadDroppedAttachmentURLs(from: providers)
+
             case let .attachmentDropSelection(urls):
                 let didAddAttachments = addAttachmentDrafts(
                     from: urls,
@@ -398,6 +420,30 @@ public struct AiChatFeature {
 
             case let .removeAddedAttachment(id):
                 removeAddedAttachment(id, state: &state)
+                return .none
+
+            case let .folderStructureModeChanged(target, mode):
+                switch target {
+                case .currentContext:
+                    let currentContextKeys = currentContextFolderStructureKeys(for: state.currentContext)
+                    for key in currentContextKeys {
+                        state.currentContextFolderStructureModesByCanonicalPath[key] = mode
+                    }
+                    state.currentContext = currentContextSnapshot(
+                        state.currentContext,
+                        excluding: state.addedAttachments,
+                        applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath
+                    )
+                case let .attachment(attachmentID):
+                    guard let index = state.addedAttachments.firstIndex(where: { $0.id == attachmentID }) else {
+                        return .none
+                    }
+                    guard state.addedAttachments[index].source == .folder else { return .none }
+                    state.addedAttachments[index] = updateAttachmentFolderStructureMode(
+                        mode,
+                        for: state.addedAttachments[index]
+                    )
+                }
                 return .none
 
             case .openSettingsTapped:
@@ -500,7 +546,6 @@ public struct AiChatFeature {
             }
         }
     }
-
 
     private func cancelRequestLifecycle() -> Effect<Action> {
         .merge(
@@ -710,54 +755,287 @@ private extension AiChatFeature {
 
 private extension AiChatFeature {
     func removeCurrentContextDuplicates(state: inout State) {
-        state.currentContext = currentContextSnapshot(state.currentContext, excluding: state.addedAttachments)
+        let currentContext = currentContextSnapshot(
+            state.currentContext,
+            excluding: state.addedAttachments,
+            applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath
+        )
+        ensureCurrentFolderStructureModeDefaults(
+            for: currentContext,
+            in: &state.currentContextFolderStructureModesByCanonicalPath
+        )
+        state.currentContext = applyFolderStructureModes(
+            state.currentContextFolderStructureModesByCanonicalPath,
+            to: currentContext
+        )
+    }
+
+    func ensureCurrentFolderStructureModeDefaults(
+        for snapshot: AiChatCurrentContextSnapshot,
+        in folderStructureModes: inout [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode]
+    ) {
+        for key in currentContextFolderStructureKeys(for: snapshot) where folderStructureModes[key] == nil {
+            let isCoveredByRecursiveFolder = folderStructureModes.contains { parentKey, mode in
+                let parentPath = parentKey.canonicalPath
+                let normalizedParentPath = parentPath.hasSuffix("/") ? String(parentPath.dropLast()) : parentPath
+                return mode == .includeSubfolders
+                    && (key.canonicalPath.hasPrefix(parentPath + "/") || key.canonicalPath.hasPrefix(normalizedParentPath + "/"))
+            }
+            guard !isCoveredByRecursiveFolder else { continue }
+            folderStructureModes[key] = .currentFolderOnly
+        }
     }
 
     func currentContextSnapshot(
         _ snapshot: AiChatCurrentContextSnapshot,
-        excluding attachments: [AiChatAttachmentDraft]
+        excluding attachments: [AiChatAttachmentDraft],
+        applyingFolderStructureModes folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode]
     ) -> AiChatCurrentContextSnapshot {
         let attachmentPaths = Set(attachments.compactMap(normalizedAttachmentPath(for:)))
-        guard !attachmentPaths.isEmpty else { return snapshot }
-
-        let references = snapshot.references.filter { reference in
-            !currentContextPaths(for: reference).contains(where: { attachmentPaths.contains($0) })
-        }
-        let items = snapshot.items.compactMap { item -> AiChatContextItem? in
-            guard !currentContextPaths(for: item).contains(where: { attachmentPaths.contains($0) }) else {
-                return nil
-            }
-            let itemReferences = item.references.filter { reference in
+        let references = attachmentPaths.isEmpty
+            ? snapshot.references
+            : snapshot.references.filter { reference in
                 !currentContextPaths(for: reference).contains(where: { attachmentPaths.contains($0) })
             }
-            return AiChatContextItem(
-                kind: item.kind,
-                identifier: item.identifier,
-                title: item.title,
-                subtitle: item.subtitle,
-                metadata: item.metadata,
-                references: itemReferences
+        let items = attachmentPaths.isEmpty
+            ? snapshot.items
+            : snapshot.items.compactMap { item -> AiChatContextItem? in
+                guard !currentContextPaths(for: item).contains(where: { attachmentPaths.contains($0) }) else {
+                    return nil
+                }
+                let itemReferences = item.references.filter { reference in
+                    !currentContextPaths(for: reference).contains(where: { attachmentPaths.contains($0) })
+                }
+                return AiChatContextItem(
+                    kind: item.kind,
+                    identifier: item.identifier,
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    metadata: item.metadata,
+                    references: itemReferences
+                )
+            }
+        let contextAttachments = attachmentPaths.isEmpty
+            ? snapshot.attachments
+            : snapshot.attachments.filter { attachment in
+                !currentContextPaths(for: attachment).contains(where: { attachmentPaths.contains($0) })
+            }
+
+        let filteredSnapshot = references.count == snapshot.references.count
+            && items.count == snapshot.items.count
+            && contextAttachments.count == snapshot.attachments.count
+            ? snapshot
+            : AiChatCurrentContextSnapshot(
+                summary: currentContextSummary(references: references, items: items, attachments: contextAttachments),
+                references: references,
+                items: items,
+                attachments: contextAttachments
             )
-        }
-        let contextAttachments = snapshot.attachments.filter { attachment in
-            !currentContextPaths(for: attachment).contains(where: { attachmentPaths.contains($0) })
+        return applyFolderStructureModes(folderStructureModes, to: filteredSnapshot)
+    }
+
+    func applyFolderStructureModes(
+        _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
+        to snapshot: AiChatCurrentContextSnapshot
+    ) -> AiChatCurrentContextSnapshot {
+        guard !folderStructureModes.isEmpty else {
+            return clearFolderStructureModeMetadata(from: snapshot)
         }
 
-        guard references.count != snapshot.references.count
-            || items.count != snapshot.items.count
-            || contextAttachments.count != snapshot.attachments.count
-        else { return snapshot }
-
-        let summary = currentContextSummary(
-            references: references,
-            items: items,
-            attachments: contextAttachments
-        )
+        let references = snapshot.references.map { reference in
+            applyFolderStructureMode(folderStructureModes, to: reference)
+        }
+        let items = snapshot.items.map { item in
+            applyFolderStructureMode(folderStructureModes, to: item)
+        }
+        let attachments = snapshot.attachments.map { attachment in
+            applyFolderStructureMode(folderStructureModes, to: attachment)
+        }
         return AiChatCurrentContextSnapshot(
-            summary: summary,
+            summary: snapshot.summary,
             references: references,
             items: items,
-            attachments: contextAttachments
+            attachments: attachments
+        )
+    }
+
+    func clearFolderStructureModeMetadata(from snapshot: AiChatCurrentContextSnapshot) -> AiChatCurrentContextSnapshot {
+        let references = snapshot.references.map { reference in
+            removeFolderStructureModeMetadata(from: reference)
+        }
+        let items = snapshot.items.map { item in
+            removeFolderStructureModeMetadata(from: item)
+        }
+        let attachments = snapshot.attachments.map { attachment in
+            removeFolderStructureModeMetadata(from: attachment)
+        }
+        return AiChatCurrentContextSnapshot(
+            summary: snapshot.summary,
+            references: references,
+            items: items,
+            attachments: attachments
+        )
+    }
+
+    func applyFolderStructureMode(
+        _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
+        to reference: AiChatContextReference
+    ) -> AiChatContextReference {
+        let metadata = applyingFolderStructureModeMetadata(
+            folderStructureModes,
+            source: .reference,
+            kind: reference.kind,
+            metadata: reference.metadata,
+            identifier: reference.identifier,
+            subtitle: reference.subtitle
+        )
+        return AiChatContextReference(
+            kind: reference.kind,
+            identifier: reference.identifier,
+            title: reference.title,
+            subtitle: reference.subtitle,
+            metadata: metadata
+        )
+    }
+
+    func applyFolderStructureMode(
+        _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
+        to item: AiChatContextItem
+    ) -> AiChatContextItem {
+        let metadata = applyingFolderStructureModeMetadata(
+            folderStructureModes,
+            source: .item,
+            kind: item.kind,
+            metadata: item.metadata,
+            identifier: item.identifier,
+            subtitle: item.subtitle
+        )
+        return AiChatContextItem(
+            kind: item.kind,
+            identifier: item.identifier,
+            title: item.title,
+            subtitle: item.subtitle,
+            metadata: metadata,
+            references: item.references.map { reference in
+                let metadata = applyingFolderStructureModeMetadata(
+                    folderStructureModes,
+                    source: .itemReference,
+                    kind: reference.kind,
+                    metadata: reference.metadata,
+                    identifier: reference.identifier,
+                    subtitle: reference.subtitle
+                )
+                return AiChatContextReference(
+                    kind: reference.kind,
+                    identifier: reference.identifier,
+                    title: reference.title,
+                    subtitle: reference.subtitle,
+                    metadata: metadata
+                )
+            }
+        )
+    }
+
+    func applyFolderStructureMode(
+        _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
+        to attachment: AiChatContextAttachment
+    ) -> AiChatContextAttachment {
+        let metadata = applyingFolderStructureModeMetadata(
+            folderStructureModes,
+            source: .attachment,
+            kind: attachment.kind,
+            metadata: attachment.metadata,
+            identifier: attachment.identifier,
+            subtitle: attachment.subtitle
+        )
+        return AiChatContextAttachment(
+            identifier: attachment.identifier,
+            title: attachment.title,
+            subtitle: attachment.subtitle,
+            kind: attachment.kind,
+            metadata: metadata
+        )
+    }
+
+    func removeFolderStructureModeMetadata(from reference: AiChatContextReference) -> AiChatContextReference {
+        AiChatContextReference(
+            kind: reference.kind,
+            identifier: reference.identifier,
+            title: reference.title,
+            subtitle: reference.subtitle,
+            metadata: removingFolderStructureModeMetadata(from: reference.metadata)
+        )
+    }
+
+    func removeFolderStructureModeMetadata(from item: AiChatContextItem) -> AiChatContextItem {
+        AiChatContextItem(
+            kind: item.kind,
+            identifier: item.identifier,
+            title: item.title,
+            subtitle: item.subtitle,
+            metadata: removingFolderStructureModeMetadata(from: item.metadata),
+            references: item.references.map(removeFolderStructureModeMetadata)
+        )
+    }
+
+    func removeFolderStructureModeMetadata(from attachment: AiChatContextAttachment) -> AiChatContextAttachment {
+        AiChatContextAttachment(
+            identifier: attachment.identifier,
+            title: attachment.title,
+            subtitle: attachment.subtitle,
+            kind: attachment.kind,
+            metadata: removingFolderStructureModeMetadata(from: attachment.metadata)
+        )
+    }
+
+    func applyingFolderStructureModeMetadata(
+        _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
+        source: AiChatCurrentContextFolderStructureSource,
+        kind: AiChatContextItemKind,
+        metadata: [String: String],
+        identifier: String,
+        subtitle: String?
+    ) -> [String: String] {
+        var metadata = removingFolderStructureModeMetadata(from: metadata)
+        let keys = currentContextFolderStructureKeys(
+            source: source,
+            kind: kind,
+            metadata: metadata,
+            identifier: identifier,
+            subtitle: subtitle
+        )
+        let mode = folderStructureModes.first(where: { key, _ in keys.contains(key) })?.value
+        if let mode {
+            metadata["folderStructureMode"] = mode.rawValue
+        }
+        return metadata
+    }
+
+    func removingFolderStructureModeMetadata(from metadata: [String: String]) -> [String: String] {
+        var metadata = metadata
+        metadata.removeValue(forKey: "folderStructureMode")
+        return metadata
+    }
+
+    func currentContextPaths(from metadata: [String: String], identifier: String, subtitle: String?) -> [String] {
+        normalizedCurrentContextPaths(metadata: metadata, identifier: identifier, subtitle: subtitle)
+    }
+
+    func updateAttachmentFolderStructureMode(
+        _ mode: AiChatFolderStructureMode,
+        for attachment: AiChatAttachmentDraft
+    ) -> AiChatAttachmentDraft {
+        var metadata = attachment.metadata
+        metadata["folderStructureMode"] = mode.rawValue
+        return AiChatAttachmentDraft(
+            id: attachment.id,
+            source: attachment.source,
+            displayTitle: attachment.displayTitle,
+            subtitle: attachment.subtitle,
+            kind: attachment.kind,
+            sourceLocation: attachment.sourceLocation,
+            metadata: metadata,
+            currentStatus: attachment.currentStatus
         )
     }
 
@@ -830,6 +1108,58 @@ private extension AiChatFeature {
         return lastPathComponent.isEmpty ? path : lastPathComponent
     }
 
+    func loadDroppedAttachmentURLs(from providers: [AiChatAttachmentDropProvider]) -> Effect<Action> {
+        .run { send in
+            var urls: [URL] = []
+            for droppedProvider in providers {
+                if droppedProvider.provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
+                   let url = await Self.droppedFileURL(
+                    from: droppedProvider.provider,
+                    typeIdentifier: UTType.fileURL.identifier
+                   )
+                {
+                    urls.append(url)
+                } else if droppedProvider.provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
+                          let url = await Self.droppedFileURL(
+                            from: droppedProvider.provider,
+                            typeIdentifier: UTType.url.identifier
+                          )
+                {
+                    urls.append(url)
+                }
+            }
+            guard !urls.isEmpty else { return }
+            await send(.attachmentDropSelection(urls))
+        }
+    }
+
+    static func droppedFileURL(from provider: NSItemProvider, typeIdentifier: String) async -> URL? {
+        await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
+                continuation.resume(returning: Self.droppedFileURL(from: item))
+            }
+        }
+    }
+
+    nonisolated static func droppedFileURL(from item: (any NSSecureCoding)?) -> URL? {
+        if let url = item as? URL, url.isFileURL {
+            return url
+        }
+        if let data = item as? Data,
+           let url = URL(dataRepresentation: data, relativeTo: nil),
+           url.isFileURL
+        {
+            return url
+        }
+        if let string = item as? String,
+           let url = URL(string: string),
+           url.isFileURL
+        {
+            return url
+        }
+        return nil
+    }
+
     @discardableResult
     func addAttachmentDrafts(
         from urls: [URL],
@@ -870,6 +1200,90 @@ private extension AiChatFeature {
         return paths
     }
 
+    func currentContextFolderStructureKeys(for snapshot: AiChatCurrentContextSnapshot) -> [AiChatCurrentContextFolderStructureKey] {
+        var keys: [AiChatCurrentContextFolderStructureKey] = []
+        for reference in snapshot.references {
+            appendUnique(currentContextFolderStructureKeys(
+                source: .reference,
+                kind: reference.kind,
+                metadata: reference.metadata,
+                identifier: reference.identifier,
+                subtitle: reference.subtitle
+            ), to: &keys)
+        }
+        for item in snapshot.items {
+            appendUnique(currentContextFolderStructureKeys(
+                source: .item,
+                kind: item.kind,
+                metadata: item.metadata,
+                identifier: item.identifier,
+                subtitle: item.subtitle
+            ), to: &keys)
+            for reference in item.references {
+                appendUnique(currentContextFolderStructureKeys(
+                    source: .itemReference,
+                    kind: reference.kind,
+                    metadata: reference.metadata,
+                    identifier: reference.identifier,
+                    subtitle: reference.subtitle
+                ), to: &keys)
+            }
+        }
+        for attachment in snapshot.attachments {
+            appendUnique(currentContextFolderStructureKeys(
+                source: .attachment,
+                kind: attachment.kind,
+                metadata: attachment.metadata,
+                identifier: attachment.identifier,
+                subtitle: attachment.subtitle
+            ), to: &keys)
+        }
+        return keys
+    }
+
+    func currentContextFolderStructureKeys(
+        source: AiChatCurrentContextFolderStructureSource,
+        kind: AiChatContextItemKind,
+        metadata: [String: String],
+        identifier: String,
+        subtitle: String?
+    ) -> [AiChatCurrentContextFolderStructureKey] {
+        guard supportsFolderStructureMode(kind: kind, metadata: metadata, identifier: identifier, subtitle: subtitle) else {
+            return []
+        }
+        return normalizedCurrentContextPaths(metadata: metadata, identifier: identifier, subtitle: subtitle).map { path in
+            AiChatCurrentContextFolderStructureKey(source: source, canonicalPath: path)
+        }
+    }
+
+    func supportsFolderStructureMode(
+        kind: AiChatContextItemKind,
+        metadata: [String: String],
+        identifier: String,
+        subtitle: String?
+    ) -> Bool {
+        kind == .folder
+            || metadata["route"] == "folder"
+            || metadata["kind"] == "folder"
+            || metadata["fileKind"] == "folder"
+            || normalizedCurrentContextPaths(metadata: metadata, identifier: identifier, subtitle: subtitle)
+                .contains(where: pathIsDirectory)
+    }
+
+    func pathIsDirectory(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    func appendUnique(
+        _ newKeys: [AiChatCurrentContextFolderStructureKey],
+        to keys: inout [AiChatCurrentContextFolderStructureKey]
+    ) {
+        for key in newKeys where !keys.contains(key) {
+            keys.append(key)
+        }
+    }
+
     func appendUnique(_ newPaths: [String], to paths: inout [String]) {
         for path in newPaths where !paths.contains(path) {
             paths.append(path)
@@ -885,11 +1299,17 @@ private extension AiChatFeature {
         let normalizedPath = normalizedURL.path(percentEncoded: false)
         guard !normalizedPath.isEmpty else { return nil }
 
+        var metadata: [String: String] = [:]
+        if attachmentSource(for: normalizedURL) == .folder {
+            metadata["folderStructureMode"] = AiChatFolderStructureMode.currentFolderOnly.rawValue
+        }
+
         return AiChatAttachmentDraft(
             id: AiChatAttachmentID(rawValue: normalizedPath),
             source: attachmentSource(for: normalizedURL),
             displayTitle: normalizedURL.lastPathComponent.isEmpty ? nil : normalizedURL.lastPathComponent,
-            sourceLocation: AiChatAttachmentSourceLocation(fileURL: normalizedURL, filePath: normalizedPath)
+            sourceLocation: AiChatAttachmentSourceLocation(fileURL: normalizedURL, filePath: normalizedPath),
+            metadata: metadata
         )
     }
 
@@ -909,9 +1329,8 @@ private extension AiChatFeature {
 
     func normalizedFileURL(from url: URL) -> URL? {
         guard url.isFileURL else { return nil }
-        return url.standardizedFileURL
+        return url.resolvingSymlinksInPath().standardizedFileURL
     }
-
 
     func cleanupEligibleEmptyDraftSessionID(for state: State) -> AiChatSessionID? {
         guard let emptyDraftSessionID = state.emptyDraftSessionID,
@@ -959,6 +1378,8 @@ private extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lastRequestContext = nil
         state.lastRequestContextModelHandle = nil
+        state.addedAttachments = []
+        state.currentContextFolderStructureModesByCanonicalPath = [:]
         state.executionPhase = .idle
         state.selectedModelHandle = nil
         state.selectedThinking = nil
@@ -993,7 +1414,6 @@ private extension AiChatFeature {
         }
         .cancellable(id: CancelID.newChat, cancelInFlight: true)
     }
-
 
     func renameSession(sessionID: AiChatSessionID, title: String) -> Effect<Action> {
         .run { [aiChatSessionPersistenceClient] send in

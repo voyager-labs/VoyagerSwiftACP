@@ -64,6 +64,94 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         XCTAssertEqual(store.state.sessionList.selectedSessionID, selectedSessionID)
     }
 
+    func testNewChatTappedClearsStaleAddedAttachments() async {
+        let staleAttachment = AiChatAttachmentDraft(
+            id: AiChatAttachmentID(rawValue: "/tmp/Stale.pdf"),
+            source: .file,
+            displayTitle: "Stale.pdf",
+            sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Stale.pdf")
+        )
+        let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            currentContextFolderStructureModesByCanonicalPath: [AiChatCurrentContextFolderStructureKey(source: .reference, canonicalPath: "/tmp/StaleFolder"): .includeSubfolders],
+            addedAttachments: [staleAttachment]
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_000))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in }
+            )
+        }
+
+        await store.send(.newChatTapped) { state in
+            state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
+            state.sessionStatus = .idle
+            state.mode = .chat
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.errorMessage = nil
+            state.transcriptHistory = []
+            state.draftText = ""
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = nil
+            state.lastRequestContextModelHandle = nil
+            state.addedAttachments = []
+            state.currentContextFolderStructureModesByCanonicalPath = [:]
+            state.executionPhase = .idle
+            state.selectedModelHandle = nil
+            state.selectedThinking = nil
+            state.unavailableSelectedModelHandle = nil
+        }
+
+        let expectedSnapshot = AiChatSessionSnapshot(
+            sessionID: newSessionID,
+            status: .idle,
+            customTitle: nil,
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [],
+            lastRequestID: nil,
+            lastRunID: nil,
+            lastRequestContext: nil,
+            updatedAtMs: 1_700_000_000_000
+        )
+
+        await store.receive(.newChatCreated(expectedSnapshot)) { state in
+            state.sessionID = newSessionID
+            state.emptyDraftSessionID = newSessionID
+            state.sessionStatus = .idle
+            state.transcriptHistory = []
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = nil
+            state.lastRequestContextModelHandle = nil
+            state.addedAttachments = []
+            state.executionPhase = .idle
+            state.selectedModelHandle = nil
+            state.selectedThinking = nil
+            state.restoreSessionID = newSessionID
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.selectedSessionID = newSessionID
+            state.sessionList.errorMessage = nil
+        }
+    }
+
     func testBackToSessionsDeletesUntouchedNewChatDraft() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333"))
         let summary = makeSessionSummary(sessionID: sessionID, status: .idle)
@@ -93,6 +181,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
 
         await store.send(.backToSessionsTapped) { state in
             state.mode = .sessions
+            state.pendingEmptyDraftDeletionSessionIDs = [sessionID]
             state.emptyDraftSessionID = nil
             state.sessionID = nil
             state.restoreSessionID = nil
@@ -102,7 +191,10 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
             state.sessionList.errorMessage = nil
         }
 
+        XCTAssertEqual(store.state.hiddenEmptyDraftSessionIDs, [sessionID])
+
         await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.pendingEmptyDraftDeletionSessionIDs = []
             state.sessionList.allRows = []
             state.sessionList.rows = []
             state.sessionList.deletedSessionIDs = [sessionID]
@@ -144,6 +236,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
 
         await store.send(.backToSessionsTapped) { state in
             state.mode = .sessions
+            state.pendingEmptyDraftDeletionSessionIDs = [sessionID]
             state.emptyDraftSessionID = nil
             state.sessionID = nil
             state.restoreSessionID = nil
@@ -154,6 +247,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         }
 
         await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.pendingEmptyDraftDeletionSessionIDs = []
             state.sessionList.allRows = []
             state.sessionList.rows = []
             state.sessionList.deletedSessionIDs = [sessionID]
@@ -193,6 +287,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
 
         await store.send(.backToSessionsTapped) { state in
             state.mode = .sessions
+            state.pendingEmptyDraftDeletionSessionIDs = [sessionID]
             state.emptyDraftSessionID = nil
             state.sessionID = nil
             state.restoreSessionID = nil
@@ -203,6 +298,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         }
 
         await store.receive(.sessionDeleteSucceeded(sessionID)) { state in
+            state.pendingEmptyDraftDeletionSessionIDs = []
             state.sessionList.allRows = []
             state.sessionList.rows = []
             state.sessionList.deletedSessionIDs = [sessionID]
@@ -241,6 +337,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
 
         await store.send(.backToSessionsTapped) { state in
             state.mode = .sessions
+            state.pendingEmptyDraftDeletionSessionIDs = [sessionID]
             state.emptyDraftSessionID = nil
             state.sessionID = nil
             state.restoreSessionID = nil
@@ -251,6 +348,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         }
 
         await store.receive(.sessionDeleteFailed(sessionID, "That chat could not be deleted right now.")) { state in
+            state.pendingEmptyDraftDeletionSessionIDs = []
             state.sessionList.errorMessage = "That chat could not be deleted right now."
         }
 

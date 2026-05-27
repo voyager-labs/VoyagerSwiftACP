@@ -134,6 +134,24 @@ public struct AiChatSessionListState: Equatable, Sendable {
     }
 }
 
+
+public enum AiChatCurrentContextFolderStructureSource: String, Codable, Equatable, Hashable, Sendable {
+    case reference
+    case item
+    case itemReference
+    case attachment
+}
+
+public struct AiChatCurrentContextFolderStructureKey: Codable, Equatable, Hashable, Sendable {
+    public let source: AiChatCurrentContextFolderStructureSource
+    public let canonicalPath: String
+
+    public init(source: AiChatCurrentContextFolderStructureSource, canonicalPath: String) {
+        self.source = source
+        self.canonicalPath = canonicalPath
+    }
+}
+
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     public var restoreSessionID: AiChatSessionID?
@@ -143,9 +161,11 @@ public struct AiChatState: Equatable, Sendable {
     public var sessionList: AiChatSessionListState
     public var sessionID: AiChatSessionID?
     public var emptyDraftSessionID: AiChatSessionID?
+    public var pendingEmptyDraftDeletionSessionIDs: Set<AiChatSessionID>
     public var currentSessionCustomTitle: String?
     public var sessionStatus: AiChatSessionStatus
     public var currentContext: AiChatCurrentContextSnapshot
+    public var currentContextFolderStructureModesByCanonicalPath: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode]
     public var addedAttachments: [AiChatAttachmentDraft]
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
@@ -179,9 +199,11 @@ public struct AiChatState: Equatable, Sendable {
         sessionList: AiChatSessionListState = .init(),
         sessionID: AiChatSessionID? = nil,
         emptyDraftSessionID: AiChatSessionID? = nil,
+        pendingEmptyDraftDeletionSessionIDs: Set<AiChatSessionID> = [],
         currentSessionCustomTitle: String? = nil,
         sessionStatus: AiChatSessionStatus = .idle,
         currentContext: AiChatCurrentContextSnapshot = .init(),
+        currentContextFolderStructureModesByCanonicalPath: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode] = [:],
         addedAttachments: [AiChatAttachmentDraft] = [],
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
@@ -205,7 +227,7 @@ public struct AiChatState: Equatable, Sendable {
         modelListLoadedModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
         modelListFailedProviders: [AiProvider: AiModelListFailure] = [:],
         providerConnectionSnapshot: AiChatProviderConnectionSnapshot = .unknown,
-        availableModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
+        availableModelsByProvider: [AiProvider: [AiProviderModel]] = [:]
     ) {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
@@ -214,9 +236,11 @@ public struct AiChatState: Equatable, Sendable {
         self.sessionList = sessionList
         self.sessionID = sessionID
         self.emptyDraftSessionID = emptyDraftSessionID
+        self.pendingEmptyDraftDeletionSessionIDs = pendingEmptyDraftDeletionSessionIDs
         self.currentSessionCustomTitle = currentSessionCustomTitle
         self.sessionStatus = sessionStatus
         self.currentContext = currentContext
+        self.currentContextFolderStructureModesByCanonicalPath = currentContextFolderStructureModesByCanonicalPath
         self.addedAttachments = addedAttachments
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
@@ -278,16 +302,18 @@ public struct AiChatState: Equatable, Sendable {
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { displayModelBuilder.lockedModelDisplayModel }
 
     public var hiddenEmptyDraftSessionIDs: Set<AiChatSessionID> {
-        guard let emptyDraftSessionID,
-              sessionID == emptyDraftSessionID,
-              sessionStatus == .idle,
-              transcriptHistory.isEmpty,
-              streamingAssistantDraft == nil,
-              lastRequestContext == nil,
-              !executionPhase.isProcessing
-        else { return [] }
-
-        return [emptyDraftSessionID]
+        var hiddenSessionIDs = pendingEmptyDraftDeletionSessionIDs
+        if let emptyDraftSessionID,
+           sessionID == emptyDraftSessionID,
+           sessionStatus == .idle,
+           transcriptHistory.isEmpty,
+           streamingAssistantDraft == nil,
+           lastRequestContext == nil,
+           !executionPhase.isProcessing
+        {
+            hiddenSessionIDs.insert(emptyDraftSessionID)
+        }
+        return hiddenSessionIDs
     }
 
     public var canSubmit: Bool { displayModelBuilder.canSubmit }
@@ -307,14 +333,14 @@ public struct AiChatState: Equatable, Sendable {
 
     func normalizedSelectionHandle(
         _ preferredHandle: AiModelHandle?,
-        in models: [AiProviderModel]? = nil,
+        in models: [AiProviderModel]? = nil
     ) -> AiModelHandle? {
         resolvedModel(for: preferredHandle, in: models)?.id
     }
 
     func normalizedSelectionHandlePreservingCurrentSelection(
         in models: [AiProviderModel],
-        preferredHandle: AiModelHandle?,
+        preferredHandle: AiModelHandle?
     ) -> AiModelHandle? {
         if let currentHandle = resolvedSelectedModelHandle,
            Self.containsModelHandle(currentHandle, in: models)
@@ -334,7 +360,7 @@ public struct AiChatState: Equatable, Sendable {
 
     static func normalizedSelectionHandle(
         _ preferredHandle: AiModelHandle?,
-        in models: [AiProviderModel],
+        in models: [AiProviderModel]
     ) -> AiModelHandle? {
         AiChatStateSelection.normalizedSelectionHandle(preferredHandle, in: models)
     }
@@ -357,7 +383,7 @@ public struct AiChatState: Equatable, Sendable {
 
     static func normalizeSelectedThinking(
         _ selectedThinking: AiThinkingSelection?,
-        for model: AiProviderModel?,
+        for model: AiProviderModel?
     ) -> AiThinkingSelection? {
         AiChatStateSelection.normalizeSelectedThinking(selectedThinking, for: model)
     }
@@ -368,7 +394,7 @@ public struct AiChatState: Equatable, Sendable {
 
     static func makeCatalogRows(
         for models: [AiProviderModel],
-        preserving existingRows: [AiModelCatalogRow] = [],
+        preserving existingRows: [AiModelCatalogRow] = []
     ) -> [AiModelCatalogRow] {
         AiChatStateSelection.makeCatalogRows(for: models, preserving: existingRows)
     }

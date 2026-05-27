@@ -431,6 +431,12 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         let catalogRows = makeCatalogRows()
         let targetSessionID = AiChatSessionID(rawValue: makeUUID("34343434-3434-3434-3434-343434343434"))
         let liveCurrentContext = makeContextSnapshot(summary: "Live FileManager selection")
+        let staleAttachment = AiChatAttachmentDraft(
+            id: AiChatAttachmentID(rawValue: "/tmp/StaleLiveAttachment.txt"),
+            source: .file,
+            displayTitle: "StaleLiveAttachment.txt",
+            sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/StaleLiveAttachment.txt")
+        )
         let restoredLockedContext = AiChatLockedRequestContextSnapshot(
             currentContext: makeContextSnapshot(summary: "Restored request context"),
             addedAttachments: [
@@ -472,6 +478,8 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
                 status: restoredSnapshot.status
             )]),
             currentContext: liveCurrentContext,
+            currentContextFolderStructureModesByCanonicalPath: [AiChatCurrentContextFolderStructureKey(source: .reference, canonicalPath: "/tmp/StaleFolder"): .includeSubfolders],
+            addedAttachments: [staleAttachment],
             catalogRows: catalogRows,
             modelListState: .loaded(makeProviderModels()),
             selectedModelHandle: catalogRows[0].handle
@@ -491,6 +499,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.mode = AiChatMode.sessions
             state.sessionList.selectedSessionID = targetSessionID
             state.sessionList.errorMessage = nil
+            state.currentContextFolderStructureModesByCanonicalPath = [:]
             state.restoreSessionID = targetSessionID
         }
 
@@ -507,6 +516,8 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.lastExecutionFailure = nil
             state.lastRequestContext = restoredLockedContext
             state.lastRequestContextModelHandle = restoredSnapshot.model
+            state.addedAttachments = []
+            state.currentContextFolderStructureModesByCanonicalPath = [:]
             state.executionPhase = .idle
             state.selectedModelHandle = restoredSnapshot.model
             state.selectedThinking = restoredSnapshot.selectedThinking
@@ -518,6 +529,8 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
 
         XCTAssertEqual(store.state.currentContext, liveCurrentContext)
         XCTAssertEqual(store.state.lastRequestContext, restoredLockedContext)
+        XCTAssertTrue(store.state.addedAttachments.isEmpty)
+        XCTAssertTrue(store.state.currentContextFolderStructureModesByCanonicalPath.isEmpty)
         XCTAssertEqual(store.state.currentContext.summary, "Live FileManager selection")
         XCTAssertEqual(store.state.lastRequestContext?.currentContext.summary, "Restored request context")
     }
