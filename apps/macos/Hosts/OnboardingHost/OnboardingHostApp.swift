@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import VoyagerFeaturesAccess
 import VoyagerPagesOnboarding
 
 // MARK: - Deterministic smoke mode (env-toggle, host-only)
@@ -137,12 +138,15 @@ struct OnboardingHostApp: App {
 
 @MainActor
 final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
-    private let onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { _ in
-        await MainActor.run {
-            NSApp.terminate(nil)
-        }
-        return true
-    })
+    private let onboardingWindowClient = OnboardingWindowClient.makeLive(
+        openMainWindow: { _ in
+            await MainActor.run {
+                NSApp.terminate(nil)
+            }
+            return true
+        },
+        accessClient: .mock,
+    )
 
     func applicationDidFinishLaunching(_: Notification) {
         resetOnboardingProgress()
