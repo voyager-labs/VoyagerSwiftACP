@@ -2,8 +2,8 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
-import VoyagerShared
 @testable import VoyagerFeaturesAiChat
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -21,6 +21,13 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
         try "Folder file body".write(
             to: folderURL.appendingPathComponent("Inside.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let subfolderURL = folderURL.appendingPathComponent("Subfolder", isDirectory: true)
+        try FileManager.default.createDirectory(at: subfolderURL, withIntermediateDirectories: true)
+        try "Nested folder file body".write(
+            to: subfolderURL.appendingPathComponent("Nested.md"),
             atomically: true,
             encoding: .utf8
         )
@@ -46,7 +53,16 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             currentContext: makeContextSnapshot(summary: "Current folder"),
             addedAttachments: [
                 makeDraftAttachment(url: fileURL, source: .file),
-                makeDraftAttachment(url: folderURL, source: .folder),
+                AiChatAttachmentDraft(
+                    id: AiChatAttachmentID(rawValue: folderURL.standardizedFileURL.path(percentEncoded: false)),
+                    source: .folder,
+                    displayTitle: folderURL.standardizedFileURL.lastPathComponent,
+                    sourceLocation: AiChatAttachmentSourceLocation(
+                        fileURL: folderURL.standardizedFileURL,
+                        filePath: folderURL.standardizedFileURL.path(percentEncoded: false)
+                    ),
+                    metadata: ["folderStructureMode": "includeSubfolders"]
+                ),
                 makeDraftAttachment(url: collectionURL, source: .collectionDocument),
             ],
             draftText: "Summarize these",
@@ -81,12 +97,15 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(attachments.map(\.displayTitle), ["Notes.txt", "Folder", "Workspace.voycoll"])
 
         XCTAssertResolvedText(attachments[0].resolutionResult, contains: "File note body")
-        XCTAssertResolvedReference(
-            attachments[1].resolutionResult,
-            collectionPaths: ["Inside.md"],
-            included: 1,
-            truncated: false
-        )
+        guard case let .resolvedReference(folderMetadata) = attachments[1].resolutionResult else {
+            XCTFail("Expected folder attachment to resolve as reference")
+            return
+        }
+        XCTAssertEqual(folderMetadata["folderStructureMode"], AiChatFolderStructureMode.includeSubfolders.rawValue)
+        XCTAssertTrue(folderMetadata["collectionItemPaths"]?.contains("Inside.md") ?? false)
+        XCTAssertNil(folderMetadata["folderStructurePathStyle"])
+        XCTAssertNil(folderMetadata["folderStructureEntries"])
+        XCTAssertNil(folderMetadata["folderStructureDirectoryFilePaths"])
         XCTAssertResolvedReference(
             attachments[2].resolutionResult,
             collectionPaths: ["README.md", "design.pdf"],
@@ -95,6 +114,14 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         )
         XCTAssertEqual(request.context.requestContext.parts.map(\.source), [.attachment, .attachment, .attachment])
         XCTAssertEqual(request.context.requestContext.parts.map(\.displayTitle), ["Notes.txt", "Folder", "Workspace.voycoll"])
+        let folderPart = try XCTUnwrap(request.context.requestContext.parts.first { $0.displayTitle == "Folder" })
+        let folderPartMetadata = aiChatContextPartMetadata(folderPart.resolution)
+        XCTAssertEqual(folderPartMetadata["folderStructurePathStyle"], "relativeToSelectedFolder")
+        XCTAssertEqual(folderPartMetadata["folderStructureEntriesIncluded"], "4")
+        XCTAssertEqual(folderPartMetadata["folderStructureEntriesTruncated"], "false")
+        XCTAssertTrue(folderPartMetadata["folderStructureEntries"]?.contains("Folder/Subfolder/Nested.md") ?? false)
+        XCTAssertTrue(folderPartMetadata["folderStructureDirectoryFilePaths"]?.contains("Folder\tFolder/Inside.md") ?? false)
+        XCTAssertTrue(folderPartMetadata["folderStructureDirectoryFilePaths"]?.contains("Folder/Subfolder\tFolder/Subfolder/Nested.md") ?? false)
     }
 
     func testSubmitKeepsUnreadableCollectionReferenceWithoutItemPaths() async throws {
@@ -117,7 +144,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: sandbox) }
 
-        let paths = (0..<2_000).map { index in
+        let paths = (0 ..< 2000).map { index in
             let filename = "VeryLongCollectionReferencePath_\(index)_"
                 + String(repeating: "x", count: 80)
                 + ".swift"
@@ -150,7 +177,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         let fileURL = sandbox.appendingPathComponent("LargeNotes.txt")
         try String(repeating: "a", count: 80 * 1024).write(to: fileURL, atomically: true, encoding: .utf8)
 
-        let paths = (0..<2_000).map { index in
+        let paths = (0 ..< 2000).map { index in
             let filename = "TotalBudgetCollectionReferencePath_\(index)_"
                 + String(repeating: "x", count: 80)
                 + ".swift"
@@ -178,7 +205,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             utf8Bytes: redactedDisplayPaths(expectedPaths).joined(separator: "\n").utf8.count
         )
     }
-
 
     func testSubmitTruncatedUTF8AttachmentBacksUpToValidScalarBoundary() async throws {
         let sandbox = FileManager.default.temporaryDirectory
@@ -247,7 +273,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
                     title: "Alias.txt",
                     subtitle: nil,
                     metadata: ["path": symlinkURL.path(percentEncoded: false)]
-                )
+                ),
             ],
             attachments: []
         )
@@ -290,7 +316,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
                     title: "Workspace.voycoll",
                     subtitle: collectionURL.path(percentEncoded: false),
                     metadata: ["path": collectionURL.path(percentEncoded: false)]
-                )
+                ),
             ],
             attachments: []
         )
@@ -320,7 +346,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         )
     }
 
-    func testRemoteCurrentContextFolderRedactsCollectionItemPathsForNonCodexProvider() async throws {
+    func testCurrentContextFolderDefaultKeepsDirectFileListMetadata() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
@@ -328,8 +354,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
 
         let folderURL = sandbox.appendingPathComponent("Workspace", isDirectory: true)
         try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
-        let insideURL = folderURL.appendingPathComponent("Inside.md")
-        try "folder note".write(to: insideURL, atomically: true, encoding: .utf8)
+        try "folder note".write(
+            to: folderURL.appendingPathComponent("Inside.md"),
+            atomically: true,
+            encoding: .utf8
+        )
 
         let currentContext = makeContextSnapshot(
             summary: "Current folder",
@@ -341,7 +370,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
                     title: "Workspace",
                     subtitle: folderURL.path(percentEncoded: false),
                     metadata: ["path": folderURL.path(percentEncoded: false)]
-                )
+                ),
             ],
             attachments: []
         )
@@ -362,8 +391,66 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(metadata["collectionItemPaths"]?.split(separator: "\n").map(String.init), ["Inside.md"])
-        XCTAssertFalse(metadata["collectionItemPaths"]?.contains(sandbox.path(percentEncoded: false)) ?? false)
+        XCTAssertEqual(metadata["folderStructureMode"], AiChatFolderStructureMode.currentFolderOnly.rawValue)
+        XCTAssertEqual(metadata["collectionItemCount"], "1")
+        XCTAssertEqual(metadata["collectionItemsIncluded"], "1")
+        XCTAssertEqual(metadata["collectionItemsTruncated"], "false")
+        XCTAssertEqual(metadata["collectionItemPaths"], "Inside.md")
+        XCTAssertNil(metadata["folderStructureEntries"])
+        XCTAssertEqual(metadata["path"], "Workspace")
+    }
+
+    func testRemoteCurrentContextFolderRedactsCollectionItemPathsForNonCodexProvider() async throws {
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let folderURL = sandbox.appendingPathComponent("Workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let insideURL = folderURL.appendingPathComponent("Inside.md")
+        try "folder note".write(to: insideURL, atomically: true, encoding: .utf8)
+
+        let currentContext = makeContextSnapshot(
+            summary: "Current folder",
+            references: [],
+            items: [
+                AiChatContextItem(
+                    kind: .folder,
+                    identifier: folderURL.path(percentEncoded: false),
+                    title: "Workspace",
+                    subtitle: folderURL.path(percentEncoded: false),
+                    metadata: [
+                        "path": folderURL.path(percentEncoded: false),
+                        "folderStructureMode": AiChatFolderStructureMode.includeSubfolders.rawValue,
+                    ]
+                ),
+            ],
+            attachments: []
+        )
+
+        let result = AiChatContextPartResolverClient.live().resolve(
+            AiChatContextPartResolverInput(
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                requestFamily: .openAIResponses,
+                currentContext: currentContext,
+                attachments: []
+            )
+        )
+
+        XCTAssertEqual(result.parts.count, 1)
+        guard case let .referenceOnly(metadata) = result.parts[0].resolution else {
+            XCTFail("Expected current context folder to resolve as referenceOnly")
+            return
+        }
+
+        XCTAssertEqual(metadata["folderStructureMode"], AiChatFolderStructureMode.includeSubfolders.rawValue)
+        XCTAssertEqual(metadata["folderStructurePathStyle"], "relativeToSelectedFolder")
+        XCTAssertEqual(metadata["collectionItemPaths"], "Inside.md")
+        XCTAssertTrue(metadata["folderStructureEntries"]?.contains("Inside.md") ?? false)
+        XCTAssertTrue(metadata["folderStructureDirectoryFilePaths"]?.contains("Workspace\tWorkspace/Inside.md") ?? false)
+        XCTAssertFalse(metadata["folderStructureEntries"]?.contains(sandbox.path(percentEncoded: false)) ?? false)
         XCTAssertEqual(metadata["path"], "Workspace")
     }
 
@@ -386,7 +473,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
                     title: "Notes.txt",
                     subtitle: fileURL.path(percentEncoded: false),
                     metadata: ["path": fileURL.path(percentEncoded: false)]
-                )
+                ),
             ],
             attachments: []
         )
@@ -446,7 +533,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             XCTAssertEqual(lockedMetadata["displayPath"], "Notes.txt")
         }
     }
-
 
     func testRemoteProviderAttachmentPartsUseProviderNativeBase64ForSupportedFiles() async throws {
         let sandbox = FileManager.default.temporaryDirectory
@@ -529,7 +615,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
                     displayTitle: "Original.txt",
                     sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Original.txt"),
                     resolutionResult: .resolvedText(text: "Original content", metadata: [:])
-                )
+                ),
             ]
         )
         let originalRequestContext = AiChatRequestContextSnapshot(
@@ -669,7 +755,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
                         filePath: fileURL.path(percentEncoded: false)
                     ),
                     resolutionResult: .resolvedText(text: "provider-specific regenerate body", metadata: [:])
-                )
+                ),
             ],
             parts: [
                 AiChatLockedContextPartSnapshot(
@@ -681,7 +767,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
                     ),
                     fileKind: .attachment,
                     displayTitle: "RegenerateNotes.txt"
-                )
+                ),
             ]
         )
         let originalRequestContext = AiChatRequestContextSnapshot(
@@ -778,7 +864,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
                     displayTitle: "Restored.txt",
                     sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Restored.txt"),
                     resolutionResult: .resolvedText(text: "Restored content", metadata: [:])
-                )
+                ),
             ]
         )
 
@@ -821,7 +907,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(request.context.currentContext.summary, "Restored original context")
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Restored.txt"])
     }
-
 
     func testSubmitAfterNewChatUsesLatestCurrentContextInsteadOfSeedSnapshot() async throws {
         let stream = AiChatExecutionStreamDriver()
@@ -936,16 +1021,14 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         let request = try XCTUnwrap(stream.requests.first)
         XCTAssertEqual(savedSnapshots.value.first, expectedNewChatSnapshot)
         XCTAssertEqual(savedSnapshots.value.last?.transcriptHistory, [
-            AiChatMessage(role: .user, content: "Ask about the latest selection")
+            AiChatMessage(role: .user, content: "Ask about the latest selection"),
         ])
         XCTAssertEqual(savedSnapshots.value.last?.lastRequestContext?.currentContext, updatedContext)
         XCTAssertEqual(request.context.requestContext.currentContext, updatedContext)
         XCTAssertEqual(request.context.currentContext, updatedContext)
         XCTAssertNotEqual(request.context.requestContext.currentContext, originalContext)
     }
-
 }
-
 
 @MainActor
 private func submitRequest(
@@ -1063,7 +1146,6 @@ private func XCTAssertResolvedText(
     }
 }
 
-
 private func XCTAssertResolvedPartial(
     _ result: AiChatAttachmentResolutionResult,
     file: StaticString = #filePath,
@@ -1135,4 +1217,16 @@ private func collectionPathsWithinUTF8Budget(_ paths: [String], budget: Int) -> 
     }
 
     return includedPaths
+}
+
+private func aiChatContextPartMetadata(_ resolution: AiChatContextPartResolution) -> [String: String] {
+    switch resolution {
+    case let .inlineText(_, metadata),
+         let .partialText(_, _, metadata),
+         let .referenceOnly(metadata),
+         let .collectionPathList(_, metadata),
+         let .providerNativeFile(_, _, metadata),
+         let .failure(_, metadata):
+        metadata
+    }
 }

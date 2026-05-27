@@ -59,7 +59,7 @@ public struct AiModelCatalogRow: Codable, Equatable, Sendable {
         subtitle: String? = nil,
         sortOrder: Int,
         isDefault: Bool = false,
-        isRecommended: Bool = false,
+        isRecommended: Bool = false
     ) {
         self.handle = handle
         self.displayName = displayName
@@ -83,6 +83,11 @@ public enum AiChatContextItemKind: String, Codable, Sendable, Equatable, CaseIte
     case other
 }
 
+public enum AiChatFolderStructureMode: String, Codable, Equatable, Sendable, CaseIterable {
+    case currentFolderOnly
+    case includeSubfolders
+}
+
 public struct AiChatContextReference: Codable, Equatable, Sendable {
     public let kind: AiChatContextItemKind
     public let identifier: String
@@ -95,7 +100,7 @@ public struct AiChatContextReference: Codable, Equatable, Sendable {
         identifier: String,
         title: String? = nil,
         subtitle: String? = nil,
-        metadata: [String: String] = [:],
+        metadata: [String: String] = [:]
     ) {
         self.kind = kind
         self.identifier = identifier
@@ -119,7 +124,7 @@ public struct AiChatContextItem: Codable, Equatable, Sendable {
         title: String? = nil,
         subtitle: String? = nil,
         metadata: [String: String] = [:],
-        references: [AiChatContextReference] = [],
+        references: [AiChatContextReference] = []
     ) {
         self.kind = kind
         self.identifier = identifier
@@ -142,7 +147,7 @@ public struct AiChatContextAttachment: Codable, Equatable, Sendable {
         title: String? = nil,
         subtitle: String? = nil,
         kind: AiChatContextItemKind = .attachment,
-        metadata: [String: String] = [:],
+        metadata: [String: String] = [:]
     ) {
         self.identifier = identifier
         self.title = title
@@ -162,7 +167,7 @@ public struct AiChatCurrentContextSnapshot: Codable, Equatable, Sendable {
         summary: String? = nil,
         references: [AiChatContextReference] = [],
         items: [AiChatContextItem] = [],
-        attachments: [AiChatContextAttachment] = [],
+        attachments: [AiChatContextAttachment] = []
     ) {
         self.summary = summary
         self.references = references
@@ -185,7 +190,7 @@ public struct AiChatRequestContextBudget: Codable, Equatable, Sendable {
     public static let `default` = AiChatRequestContextBudget(
         historyCharacters: historyCharacterBudget,
         perAttachmentUTF8Bytes: perAttachmentUTF8ByteBudget,
-        totalAttachmentTextUTF8Bytes: totalAttachmentTextUTF8ByteBudget,
+        totalAttachmentTextUTF8Bytes: totalAttachmentTextUTF8ByteBudget
     )
 
     public let historyCharacters: Int
@@ -195,7 +200,7 @@ public struct AiChatRequestContextBudget: Codable, Equatable, Sendable {
     public init(
         historyCharacters: Int = AiChatRequestContextBudget.historyCharacterBudget,
         perAttachmentUTF8Bytes: Int = AiChatRequestContextBudget.perAttachmentUTF8ByteBudget,
-        totalAttachmentTextUTF8Bytes: Int = AiChatRequestContextBudget.totalAttachmentTextUTF8ByteBudget,
+        totalAttachmentTextUTF8Bytes: Int = AiChatRequestContextBudget.totalAttachmentTextUTF8ByteBudget
     ) {
         self.historyCharacters = historyCharacters
         self.perAttachmentUTF8Bytes = perAttachmentUTF8Bytes
@@ -266,7 +271,7 @@ public enum AiChatAttachmentResolutionResult: Codable, Equatable, Sendable {
             }
             return AiChatContextPartResolution.collectionPathList(
                 paths: paths,
-                metadata: Self.collectionPathMetadata(from: metadata),
+                metadata: Self.collectionPathMetadata(from: metadata)
             )
         case let .resolvedPartial(text, truncated, metadata):
             return AiChatContextPartResolution.partialText(text: text, truncated: truncated, metadata: metadata)
@@ -311,7 +316,7 @@ public struct AiChatAttachmentDraft: Codable, Equatable, Sendable {
         kind: AiChatContextItemKind = .attachment,
         sourceLocation: AiChatAttachmentSourceLocation = .init(),
         metadata: [String: String] = [:],
-        currentStatus: AiChatAttachmentDraftStatus = .pending,
+        currentStatus: AiChatAttachmentDraftStatus = .pending
     ) {
         self.id = id
         self.source = source
@@ -343,7 +348,7 @@ public struct AiChatAttachmentSnapshot: Codable, Equatable, Sendable {
         kind: AiChatContextItemKind = .attachment,
         sourceLocation: AiChatAttachmentSourceLocation = .init(),
         metadata: [String: String] = [:],
-        resolutionResult: AiChatAttachmentResolutionResult,
+        resolutionResult: AiChatAttachmentResolutionResult
     ) {
         self.id = id
         self.source = source
@@ -365,19 +370,19 @@ public struct AiChatRequestContextDraft: Codable, Equatable, Sendable {
     public init(
         currentContext: AiChatCurrentContextSnapshot = .init(),
         addedAttachments: [AiChatAttachmentDraft] = [],
-        status: AiChatRequestContextStatus? = nil,
+        status: AiChatRequestContextStatus? = nil
     ) {
         self.currentContext = currentContext
         self.addedAttachments = addedAttachments
         self.status = status ?? Self.deriveStatus(
             currentContext: currentContext,
-            addedAttachments: addedAttachments,
+            addedAttachments: addedAttachments
         )
     }
 
     private static func deriveStatus(
         currentContext: AiChatCurrentContextSnapshot,
-        addedAttachments: [AiChatAttachmentDraft],
+        addedAttachments: [AiChatAttachmentDraft]
     ) -> AiChatRequestContextStatus {
         if addedAttachments.contains(where: \.containsBrokenReference) {
             return .brokenReference
@@ -412,7 +417,7 @@ public struct AiChatLockedContextPartSnapshot: Codable, Equatable, Sendable {
         fileKind: AiChatContextItemKind,
         displayTitle: String? = nil,
         byteCount: Int64? = nil,
-        mimeType: String? = nil,
+        mimeType: String? = nil
     ) {
         self.source = source
         self.resolution = resolution
@@ -435,7 +440,7 @@ public struct AiChatLockedRequestContextSnapshot: Codable, Equatable, Sendable {
         currentContext: AiChatCurrentContextSnapshot = .init(),
         addedAttachments: [AiChatAttachmentSnapshot] = [],
         parts: [AiChatLockedContextPartSnapshot] = [],
-        status: AiChatRequestContextStatus = .requestContextLocked,
+        status: AiChatRequestContextStatus = .requestContextLocked
     ) {
         self.currentContext = currentContext
         self.addedAttachments = addedAttachments
@@ -490,7 +495,7 @@ public struct AiChatRequestContextSnapshot: Codable, Equatable, Sendable {
         currentContext: AiChatCurrentContextSnapshot = .init(),
         requestContext: AiChatLockedRequestContextSnapshot? = nil,
         promptSummary: String? = nil,
-        submittedAtMs: Int64? = nil,
+        submittedAtMs: Int64? = nil
     ) {
         self.sessionID = sessionID
         self.requestID = requestID
@@ -538,7 +543,7 @@ public struct AiChatSessionSnapshot: Codable, Equatable, Sendable {
         lastRequestID: AiChatRequestID? = nil,
         lastRunID: AiChatRunID? = nil,
         lastRequestContext: AiChatLockedRequestContextSnapshot? = nil,
-        updatedAtMs: Int64,
+        updatedAtMs: Int64
     ) {
         self.sessionID = sessionID
         self.status = status
@@ -587,7 +592,7 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
         model: AiModelHandle?,
         createdAtMs: Int64,
         updatedAtMs: Int64,
-        status: AiChatSessionStatus,
+        status: AiChatSessionStatus
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -601,6 +606,7 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
         self.updatedAtMs = updatedAtMs
         self.status = status
     }
+
     // swiftlint:enable function_default_parameter_at_end
 
     fileprivate static func normalizedSummaryText(_ value: String, limit: Int = 120) -> String {
@@ -622,7 +628,6 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
         return String(value[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-
     public init(snapshot: AiChatSessionSnapshot) {
         self.init(
             sessionID: snapshot.sessionID,
@@ -635,7 +640,7 @@ public struct AiChatSessionSummary: Codable, Equatable, Sendable {
             model: snapshot.model,
             createdAtMs: snapshot.createdAtMs,
             updatedAtMs: snapshot.updatedAtMs,
-            status: snapshot.status,
+            status: snapshot.status
         )
     }
 }

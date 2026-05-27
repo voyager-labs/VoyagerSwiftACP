@@ -32,7 +32,7 @@ extension AiChatExecutionClient: DependencyKey {
 
 public extension AiChatExecutionClient {
     nonisolated static func live(
-        providerExecutionClient: VoyagerEntitiesAi.AiChatProviderExecutionClient = .liveValue,
+        providerExecutionClient: VoyagerEntitiesAi.AiChatProviderExecutionClient = .liveValue
     ) -> AiChatExecutionClient {
         AiChatExecutionClient(execute: { request, credential in
             let providerStream: AsyncThrowingStream<VoyagerEntitiesAi.AiChatProviderExecutionEvent, Error>
@@ -82,7 +82,7 @@ public extension AiChatExecutionClient {
 private extension AiChatExecutionClient {
     static func immediateFailureStream(
         context: AiChatRequestContextSnapshot,
-        error: Error,
+        error: Error
     ) -> AsyncStream<AiChatEvent> {
         AsyncStream { continuation in
             continuation.yield(.failed(context: context, reason: mapExecutionError(error)))
@@ -114,7 +114,6 @@ public extension DependencyValues {
         set { self[AiChatExecutionClient.self] = newValue }
     }
 }
-
 
 public enum AiChatContextPartResolverRequestFamily: String, Codable, Equatable, Sendable {
     case openAIResponses
@@ -325,9 +324,10 @@ private extension AiChatAttachmentResolverClient {
         }
 
         if attachment.source == .folder {
-            let metadata = directoryReferenceMetadata(
+            let metadata = folderStructureMetadata(
                 base: attachmentResolutionMetadata(for: attachment),
-                directoryURL: attachmentResolutionURL(for: attachment)
+                directoryURL: attachmentResolutionURL(for: attachment),
+                mode: folderStructureMode(from: attachment.metadata)
             )
             return .resolvedReference(metadata: metadata)
         }
@@ -342,9 +342,10 @@ private extension AiChatAttachmentResolverClient {
 
         let resourceValues = try? fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
         if resourceValues?.isDirectory == true {
-            let metadata = directoryReferenceMetadata(
+            let metadata = folderStructureMetadata(
                 base: attachmentResolutionMetadata(for: attachment),
-                directoryURL: fileURL
+                directoryURL: fileURL,
+                mode: folderStructureMode(from: attachment.metadata)
             )
             return .resolvedReference(metadata: metadata)
         }
@@ -360,7 +361,6 @@ private extension AiChatAttachmentResolverClient {
             remainingTotalBudget: &remainingTotalBudget
         )
     }
-
 
     static func resolveCollectionAttachment(
         _ attachment: AiChatAttachmentDraft,
@@ -488,7 +488,6 @@ private extension AiChatAttachmentResolverClient {
         }
     }
 
-
     static func directoryReferenceMetadata(base: [String: String], directoryURL: URL?) -> [String: String] {
         var metadata = base
         guard let directoryURL else { return metadata }
@@ -511,6 +510,250 @@ private extension AiChatAttachmentResolverClient {
             metadata["collectionSnapshotStatus"] = CollectionFileReferenceSnapshotStatus.missing.rawValue
         }
         return metadata
+    }
+
+    static func folderStructureMetadata(
+        base: [String: String],
+        directoryURL: URL?,
+        mode: AiChatFolderStructureMode
+    ) -> [String: String] {
+        var metadata = directoryReferenceMetadata(base: base, directoryURL: directoryURL)
+        metadata["folderStructureMode"] = mode.rawValue
+        guard mode == .includeSubfolders else {
+            return metadata
+        }
+        guard let directoryURL else {
+            metadata["collectionSnapshotStatus"] = CollectionFileReferenceSnapshotStatus.missing.rawValue
+            return metadata
+        }
+
+        let snapshot = folderStructureSnapshot(rootURL: directoryURL)
+        metadata["folderStructurePathStyle"] = "relativeToSelectedFolder"
+        metadata["folderStructureRootName"] = directoryURL.lastPathComponent.isEmpty ? directoryURL.path(percentEncoded: false) : directoryURL.lastPathComponent
+        metadata["folderStructureMaxDepth"] = "8"
+        metadata["folderStructureMaxEntries"] = "1000"
+        metadata["folderStructureUTF8ByteBudget"] = "65536"
+        metadata["folderStructureEntriesIncluded"] = "\(snapshot.includedCount)"
+        metadata["folderStructureEntriesTruncated"] = snapshot.truncated ? "true" : "false"
+        metadata["folderStructureSkippedCount"] = "\(snapshot.skippedCount)"
+        metadata["folderStructureSymlinkEscapes"] = "\(snapshot.symlinkEscapes)"
+        metadata["folderStructureReadFailures"] = "\(snapshot.readFailures)"
+        if !snapshot.entries.isEmpty {
+            metadata["folderStructureEntries"] = snapshot.entries.joined(separator: "\n")
+        }
+        if !snapshot.directoryFilePaths.isEmpty {
+            metadata["folderStructureDirectoryFilePaths"] = snapshot.directoryFilePaths.joined(separator: "\n")
+        }
+        return metadata
+    }
+
+    static func folderStructureMode(from metadata: [String: String]) -> AiChatFolderStructureMode {
+        AiChatFolderStructureMode(rawValue: metadata["folderStructureMode"] ?? "") ?? .currentFolderOnly
+    }
+
+    static func folderStructureSnapshot(rootURL: URL) -> FolderStructureSnapshot {
+        let rootURL = rootURL.standardizedFileURL
+        let rootCanonicalURL = rootURL.resolvingSymlinksInPath().standardizedFileURL
+        let rootCanonicalPath = rootCanonicalURL.path(percentEncoded: false)
+        let rootRelativePath = rootCanonicalURL.lastPathComponent.isEmpty ? rootCanonicalPath : rootCanonicalURL.lastPathComponent
+        var snapshot = FolderStructureSnapshot(rootPath: rootCanonicalPath)
+
+        guard let resourceValues = try? rootCanonicalURL.resourceValues(forKeys: [.isDirectoryKey]) else {
+            snapshot.readFailures += 1
+            snapshot.truncated = true
+            return snapshot
+        }
+        guard resourceValues.isDirectory == true else {
+            snapshot.readFailures += 1
+            snapshot.truncated = true
+            return snapshot
+        }
+
+        snapshot.entries.append("directory\t0\t\(rootRelativePath)")
+        snapshot.includedCount += 1
+        snapshot.bytesUsed += snapshot.entries.last?.utf8.count ?? 0
+
+        collectFolderStructureEntries(
+            at: rootCanonicalURL,
+            relativePath: rootRelativePath,
+            depth: 0,
+            rootCanonicalPath: rootCanonicalPath,
+            snapshot: &snapshot
+        )
+        return snapshot
+    }
+
+    static func collectFolderStructureEntries(
+        at directoryURL: URL,
+        relativePath: String,
+        depth: Int,
+        rootCanonicalPath: String,
+        snapshot: inout FolderStructureSnapshot
+    ) {
+        guard !snapshot.truncated, snapshot.includedCount < 1000, depth < 8 else {
+            snapshot.truncated = true
+            return
+        }
+
+        let children: [URL]
+        do {
+            children = try FileManager.default.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: [
+                    .isDirectoryKey,
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey,
+                    .isHiddenKey,
+                ],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            snapshot.readFailures += 1
+            return
+        }
+
+        let sortedChildren = children.sorted { lhs, rhs in
+            lhs.lastPathComponent.localizedStandardCompare(rhs.lastPathComponent) == .orderedAscending
+        }
+        appendDirectoryFilePaths(
+            directoryRelativePath: relativePath,
+            children: sortedChildren,
+            rootCanonicalPath: rootCanonicalPath,
+            snapshot: &snapshot
+        )
+
+        for child in sortedChildren {
+            guard !snapshot.truncated, snapshot.includedCount < 1000 else {
+                snapshot.truncated = true
+                return
+            }
+
+            let childRelativePath = relativePath.isEmpty
+                ? child.lastPathComponent
+                : relativePath + "/" + child.lastPathComponent
+            let resourceValues = try? child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isHiddenKey])
+            if resourceValues?.isHidden == true || child.lastPathComponent.hasPrefix(".") || isHeavyFolder(name: child.lastPathComponent) {
+                snapshot.skippedCount += 1
+                continue
+            }
+
+            if resourceValues?.isSymbolicLink == true {
+                let childCanonicalURL = child.resolvingSymlinksInPath().standardizedFileURL
+                let childCanonicalPath = childCanonicalURL.path(percentEncoded: false)
+                let isWithinRoot = childCanonicalPath == rootCanonicalPath
+                    || childCanonicalPath.hasPrefix(rootCanonicalPath + "/")
+                snapshot.symlinkEscapes += 1
+                appendFolderStructureEntry(
+                    kind: isWithinRoot ? "symlink-skipped" : "symlink-escape-skipped",
+                    depth: depth + 1,
+                    relativePath: childRelativePath,
+                    snapshot: &snapshot
+                )
+                continue
+            }
+
+            if isPackageDirectory(child) {
+                appendFolderStructureEntry(
+                    kind: "package",
+                    depth: depth + 1,
+                    relativePath: childRelativePath,
+                    snapshot: &snapshot
+                )
+                continue
+            }
+
+            if resourceValues?.isDirectory == true {
+                appendFolderStructureEntry(
+                    kind: "directory",
+                    depth: depth + 1,
+                    relativePath: childRelativePath,
+                    snapshot: &snapshot
+                )
+                collectFolderStructureEntries(
+                    at: child.standardizedFileURL,
+                    relativePath: childRelativePath,
+                    depth: depth + 1,
+                    rootCanonicalPath: rootCanonicalPath,
+                    snapshot: &snapshot
+                )
+            } else if resourceValues?.isRegularFile == true {
+                appendFolderStructureEntry(
+                    kind: "file",
+                    depth: depth + 1,
+                    relativePath: childRelativePath,
+                    snapshot: &snapshot
+                )
+            } else {
+                snapshot.skippedCount += 1
+            }
+        }
+    }
+
+    static func appendDirectoryFilePaths(
+        directoryRelativePath: String,
+        children: [URL],
+        rootCanonicalPath: String,
+        snapshot: inout FolderStructureSnapshot
+    ) {
+        for child in children {
+            let resourceValues = try? child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isHiddenKey])
+            guard resourceValues?.isRegularFile == true,
+                  resourceValues?.isHidden != true,
+                  resourceValues?.isSymbolicLink != true,
+                  !child.lastPathComponent.hasPrefix(".")
+            else { continue }
+
+            let fileRelativePath = directoryRelativePath.isEmpty
+                ? child.lastPathComponent
+                : directoryRelativePath + "/" + child.lastPathComponent
+            snapshot.directoryFilePaths.append("\(directoryRelativePath)\t\(fileRelativePath)")
+        }
+    }
+
+    static func appendFolderStructureEntry(
+        kind: String,
+        depth: Int,
+        relativePath: String,
+        snapshot: inout FolderStructureSnapshot
+    ) {
+        guard !snapshot.truncated else { return }
+        let line = "\(kind)\t\(depth)\t\(relativePath)"
+        let lineBytes = line.utf8.count + (snapshot.entries.isEmpty ? 0 : 1)
+        guard snapshot.bytesUsed + lineBytes <= 64 * 1024 else {
+            snapshot.truncated = true
+            return
+        }
+        guard snapshot.includedCount < 1000 else {
+            snapshot.truncated = true
+            return
+        }
+        snapshot.entries.append(line)
+        snapshot.includedCount += 1
+        snapshot.bytesUsed += lineBytes
+    }
+
+    static func isPackageDirectory(_ url: URL) -> Bool {
+        let extensionSet: Set<String> = ["app", "framework", "xcarchive", "playground", "xcodeproj"]
+        return extensionSet.contains(url.pathExtension.lowercased())
+    }
+
+    static func isHeavyFolder(name: String) -> Bool {
+        let heavyNames: Set<String> = [
+            "node_modules", ".build", ".swiftpm", "DerivedData", "build", "dist", ".next", ".turbo", ".cache", "Pods", "Carthage",
+        ]
+        return heavyNames.contains(name)
+    }
+
+    struct FolderStructureSnapshot {
+        var rootPath: String
+        var entries: [String] = []
+        var directoryFilePaths: [String] = []
+        var includedCount: Int = 0
+        var skippedCount: Int = 0
+        var symlinkEscapes: Int = 0
+        var readFailures: Int = 0
+        var bytesUsed: Int = 0
+        var truncated: Bool = false
     }
 
     static func attachmentResolutionURL(for attachment: AiChatAttachmentDraft) -> URL? {
@@ -901,29 +1144,26 @@ private extension AiChatContextPartResolverClient {
             mimeType: fileIdentity.mimeType,
             provider: provider
         )
+        var remainingBudget = AiChatAttachmentResolverClient.collectionItemPathUTF8ByteBudget
 
         if fileIdentity.isDirectory || kind == .folder || fileIdentity.fileExtension == "voycoll" {
-            var remainingBudget = AiChatAttachmentResolverClient.collectionItemPathUTF8ByteBudget
-            let metadata: [String: String]
             if fileIdentity.fileExtension == "voycoll" {
-                metadata = sanitizeContextMetadata(
+                return .referenceOnly(metadata: sanitizeContextMetadata(
                     AiChatAttachmentResolverClient.collectionReferenceMetadata(
                         base: baseMetadata,
                         fileURL: fileIdentity.canonicalURL,
                         remainingTotalBudget: &remainingBudget
                     ),
                     provider: provider
-                )
-            } else {
-                metadata = sanitizeContextMetadata(
-                    AiChatAttachmentResolverClient.directoryReferenceMetadata(
-                        base: baseMetadata,
-                        directoryURL: fileIdentity.canonicalURL
-                    ),
-                    provider: provider
-                )
+                ))
             }
-            return .referenceOnly(metadata: metadata)
+
+            let metadata = AiChatAttachmentResolverClient.folderStructureMetadata(
+                base: baseMetadata,
+                directoryURL: fileIdentity.canonicalURL,
+                mode: AiChatAttachmentResolverClient.folderStructureMode(from: metadata)
+            )
+            return .referenceOnly(metadata: sanitizeContextMetadata(metadata, provider: provider))
         }
 
         if provider == .chatgptCodex {
@@ -1064,8 +1304,8 @@ private extension AiChatContextPartResolverClient {
 
     static func sanitizeSourceLocation(
         _ sourceLocation: AiChatAttachmentSourceLocation,
-        provider: AiProvider,
-        displayPath redactedPath: String?
+        provider _: AiProvider,
+        displayPath _: String?
     ) -> AiChatAttachmentSourceLocation {
         sourceLocation
     }
@@ -1237,7 +1477,7 @@ public struct AiChatSessionPersistenceClient: Sendable {
         listSessions: @escaping @Sendable (Int?, String?) async throws -> [AiChatSessionSummary] = { _, _ in [] },
         loadSession: @escaping @Sendable (AiChatSessionID) async throws -> AiChatSessionSnapshot?,
         saveSession: @escaping @Sendable (AiChatSessionSnapshot) async throws -> Void,
-        deleteSession: @escaping @Sendable (AiChatSessionID) async throws -> Void,
+        deleteSession: @escaping @Sendable (AiChatSessionID) async throws -> Void
     ) {
         self.listSessions = listSessions
         self.loadSession = loadSession
@@ -1262,7 +1502,7 @@ public extension AiChatSessionPersistenceClient {
             },
             deleteSession: { id in
                 try await persistenceClient.deleteSession(id: id)
-            },
+            }
         )
     }
 
@@ -1273,7 +1513,7 @@ public extension AiChatSessionPersistenceClient {
             listSessions: { _, _ in throw error },
             loadSession: { _ in throw error },
             saveSession: { _ in throw error },
-            deleteSession: { _ in throw error },
+            deleteSession: { _ in throw error }
         )
     }
 }
@@ -1281,7 +1521,7 @@ public extension AiChatSessionPersistenceClient {
 extension AiChatSessionPersistenceClient: DependencyKey {
     public nonisolated static var liveValue: AiChatSessionPersistenceClient {
         do {
-            return .live(persistenceClient: try VoyagerEntitiesAi.AiChatSessionFileStore())
+            return try .live(persistenceClient: VoyagerEntitiesAi.AiChatSessionFileStore())
         } catch let error as VoyagerEntitiesAi.AiChatSessionPersistenceClientError {
             return .unavailable(error: error)
         } catch {
@@ -1293,7 +1533,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },
-            deleteSession: { _ in },
+            deleteSession: { _ in }
         )
     }
 
@@ -1301,7 +1541,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },
-            deleteSession: { _ in },
+            deleteSession: { _ in }
         )
     }
 }
@@ -1312,6 +1552,7 @@ public extension DependencyValues {
         set { self[AiChatSessionPersistenceClient.self] = newValue }
     }
 }
+
 private func decodeUTF8Prefix(_ data: Data) -> (text: String, byteCount: Int)? {
     var selectedData = data
     while !selectedData.isEmpty {
