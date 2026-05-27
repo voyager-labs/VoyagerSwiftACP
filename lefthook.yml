@@ -5,6 +5,8 @@ post-checkout:
   commands:
     submodules:
       run: git submodule update --init --recursive
+    codegraph:
+      run: test -d .codegraph || npx -y @colbymchenry/codegraph@0.9.6 init -i
 
 post-merge:
   commands:
