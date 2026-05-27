@@ -81,6 +81,15 @@ Prefer running formatting/lint before the final test pass so style-only churn do
 - For multi-step async flows, search for durable writes or persistence calls that can execute after cancellation, supersession, or failed verification.
 - When tests reveal spec/implementation mismatches, document gaps in `.sisyphus/evidence/{plan_slug}/` files with source, spec reference, current behavior, and rationale for deferral. Confirm zero canonical spec changes needed.
 
+## Skill reflection checks
+
+When a task updates verifier skills, references, or evals under `.agents/skills/**`, verify the reflection as code:
+
+- Mirror parity: `diff -rq .agents/skills/voyager-dev/verifier .claude/skills/voyager-dev/verifier` must have no unexpected output.
+- Eval validity: parse every touched `evals.json` mirror with `python3 -m json.tool`.
+- Scope guardrail: confirm `.agents/rules/**` did not change unless the plan explicitly authorized a rule update.
+- Evidence: record the mirror diff result, JSON parse result, and any missing eval runner discovery in `.sisyphus/evidence/`.
+
 ## Layer checks
 
 - Load `../../../reviewer/boundary/references/layer-and-segment-rules.md` only when layer choice, segment placement, or dependency direction changed.
@@ -99,6 +108,16 @@ Prefer running formatting/lint before the final test pass so style-only churn do
 - When coordinator or adapter code changes, verify at least one focused test covers the real callback → reducer → effect chain instead of routing-only interception.
 - When semantics depend on branch kind or lifecycle outcome, verify the distinct success, failure, cancel, reload, and teardown paths separately.
 - When persistence follows verification or another async precondition, verify that failure, cancellation, and superseded completions do not commit success state.
+
+## Split-target spec verification
+
+When a spec spans two test targets (app and package), apply these additional gates:
+
+- Confirm both targets have a suite with the same spec ID and consistent `// MARK:` / traceability comment structure.
+- Confirm each suite only asserts behavior within its own target ownership scope.
+- Run focused tests per target (see `../../testing/references/testing-playbook.md` for filter commands). Report pass/fail per target, not merged.
+- Verify no support files cross target boundaries (no symlinks, no shared file paths between targets).
+- When the split-target spec docs or filter commands change, confirm `.agents/skills` and `.claude/skills` mirrors are byte-identical via `cmp`.
 
 ## Few-shot examples
 

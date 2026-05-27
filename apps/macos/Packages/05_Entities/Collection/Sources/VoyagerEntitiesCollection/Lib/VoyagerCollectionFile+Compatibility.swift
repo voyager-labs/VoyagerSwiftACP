@@ -9,7 +9,7 @@ public enum CollectionFileSchemaVersion {
 
     public nonisolated static func inferred(
         snapshot: CollectionPersistedSnapshot?,
-        snapshotMeta: CollectionSnapshotMeta?
+        snapshotMeta: CollectionSnapshotMeta?,
     ) -> SchemaVersion {
         if snapshot != nil, snapshotMeta != nil {
             return snapshotBearingCurrent
@@ -63,7 +63,7 @@ public struct CollectionFileCompatibilityMetadata: Sendable, Equatable {
         warnings: [CollectionFileCompatibilityWarning],
         usedDefinitionFallback: Bool,
         writeBackAllowed: Bool,
-        writeBackReason: CollectionWriteBackEligibility
+        writeBackReason: CollectionWriteBackEligibility,
     ) {
         self.sourceSchemaVersion = sourceSchemaVersion
         self.migrationPath = migrationPath
@@ -79,7 +79,11 @@ public struct CollectionFileLoadResult: Sendable, Equatable {
     public let containerFormat: CollectionFileContainerFormat
     public let compatibility: CollectionFileCompatibilityMetadata
 
-    public init(file: VoyagerCollectionFile, containerFormat: CollectionFileContainerFormat, compatibility: CollectionFileCompatibilityMetadata) {
+    public init(
+        file: VoyagerCollectionFile,
+        containerFormat: CollectionFileContainerFormat,
+        compatibility: CollectionFileCompatibilityMetadata,
+    ) {
         self.file = file
         self.containerFormat = containerFormat
         self.compatibility = compatibility
@@ -155,14 +159,14 @@ public enum VoyagerCollectionFileCompatibilityOwner {
 
     public static func decode(
         _ data: Data,
-        containerFormat: CollectionFileContainerFormat
+        containerFormat: CollectionFileContainerFormat,
     ) throws -> CollectionFileLoadResult {
         let schemaProbe = try rawSchemaVersion(from: data, containerFormat: containerFormat)
 
         if schemaProbe.effectiveSchemaVersion.major > CollectionFileSchemaVersion.current.major {
             throw CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(
                 found: schemaProbe.effectiveSchemaVersion,
-                current: CollectionFileSchemaVersion.current
+                current: CollectionFileSchemaVersion.current,
             )
         }
 
@@ -170,7 +174,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             return try decodeDroppingSnapshotIfPossible(
                 data,
                 schemaProbe: schemaProbe,
-                containerFormat: containerFormat
+                containerFormat: containerFormat,
             )
         }
 
@@ -183,13 +187,13 @@ public enum VoyagerCollectionFileCompatibilityOwner {
                 containerFormat: containerFormat,
                 sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
                 warning: snapshotDecision.warning,
-                usedDefinitionFallback: snapshotDecision.usedDefinitionFallback
+                usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
             )
         } catch {
             let fallback = try decodeDroppingSnapshotIfPossible(
                 data,
                 schemaProbe: schemaProbe,
-                containerFormat: containerFormat
+                containerFormat: containerFormat,
             )
             return fallback
         }
@@ -198,7 +202,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
     public static func normalizeForSave(_ file: VoyagerCollectionFile) -> VoyagerCollectionFile {
         let canonicalVersion = CollectionFileSchemaVersion.inferred(
             snapshot: file.snapshot,
-            snapshotMeta: file.snapshotMeta
+            snapshotMeta: file.snapshotMeta,
         )
 
         if file.schemaVersion == canonicalVersion {
@@ -218,7 +222,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             conditions: file.conditions,
             snapshot: file.snapshot,
             snapshotMeta: file.snapshotMeta,
-            appVersion: file.appVersion
+            appVersion: file.appVersion,
         )
     }
 
@@ -228,29 +232,17 @@ public enum VoyagerCollectionFileCompatibilityOwner {
         return try encoder.encode(normalizeForSave(file))
     }
 
-    static func compatibilityForCurrentFile(_ file: VoyagerCollectionFile) -> CollectionFileCompatibilityMetadata {
-        let snapshotDecision = evaluateDecodedSnapshotPair(file)
-        let normalized = snapshotDecision.file
-        return makeLoadResult(
-            file: normalized,
-            containerFormat: .package,
-            sourceSchemaVersion: normalized.schemaVersion,
-            warning: snapshotDecision.warning,
-            usedDefinitionFallback: snapshotDecision.usedDefinitionFallback
-        ).compatibility
-    }
-
     public nonisolated static func makeLoadResult(
         file: VoyagerCollectionFile,
         containerFormat: CollectionFileContainerFormat,
         sourceSchemaVersion: SchemaVersion?,
         warning: CollectionFileCompatibilityWarning?,
-        usedDefinitionFallback: Bool
+        usedDefinitionFallback: Bool,
     ) -> CollectionFileLoadResult {
         let effectiveSchemaVersion = sourceSchemaVersion ?? SchemaVersion(major: 1, minor: 0)
         let schemaProbe = SchemaProbe(
             sourceSchemaVersion: sourceSchemaVersion,
-            effectiveSchemaVersion: effectiveSchemaVersion
+            effectiveSchemaVersion: effectiveSchemaVersion,
         )
         let warnings = warning.map { [$0] } ?? []
         let futureMinorWarning = isFutureMinorVersion(sourceSchemaVersion)
@@ -276,7 +268,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
                 migrationPath: migrationPath(
                     schemaProbe: schemaProbe,
                     warning: warning,
-                    currentSemanticMeaning: semanticMeaning
+                    currentSemanticMeaning: semanticMeaning,
                 ),
                 warnings: combinedWarnings,
                 usedDefinitionFallback: usedDefinitionFallback,
@@ -285,15 +277,27 @@ public enum VoyagerCollectionFileCompatibilityOwner {
                     schemaVersion: effectiveSchemaVersion,
                     fileSchemaVersion: file.schemaVersion,
                     sourceSchemaVersion: sourceSchemaVersion,
-                    usedDefinitionFallback: usedDefinitionFallback
-                )
-            )
+                    usedDefinitionFallback: usedDefinitionFallback,
+                ),
+            ),
         )
+    }
+
+    static func compatibilityForCurrentFile(_ file: VoyagerCollectionFile) -> CollectionFileCompatibilityMetadata {
+        let snapshotDecision = evaluateDecodedSnapshotPair(file)
+        let normalized = snapshotDecision.file
+        return makeLoadResult(
+            file: normalized,
+            containerFormat: .package,
+            sourceSchemaVersion: normalized.schemaVersion,
+            warning: snapshotDecision.warning,
+            usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
+        ).compatibility
     }
 
     private static func rawSchemaVersion(
         from data: Data,
-        containerFormat: CollectionFileContainerFormat
+        containerFormat: CollectionFileContainerFormat,
     ) throws -> SchemaProbe {
         let header: VoyagerCollectionFileHeader
         do {
@@ -325,7 +329,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
     private static func decodeDroppingSnapshotIfPossible(
         _ data: Data,
         schemaProbe: SchemaProbe,
-        containerFormat: CollectionFileContainerFormat
+        containerFormat: CollectionFileContainerFormat,
     ) throws -> CollectionFileLoadResult {
         let payload: CompatibilityPayload
         do {
@@ -351,7 +355,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             conditions: payload.conditions,
             snapshot: snapshotPair.snapshot,
             snapshotMeta: snapshotPair.snapshotMeta,
-            appVersion: payload.appVersion
+            appVersion: payload.appVersion,
         ), schemaProbe: schemaProbe)
 
         return makeLoadResult(
@@ -359,7 +363,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             containerFormat: containerFormat,
             sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
             warning: snapshotPair.warnings.first,
-            usedDefinitionFallback: snapshotPair.usedDefinitionFallback
+            usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
         )
     }
 
@@ -367,7 +371,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
         schemaVersion _: SchemaVersion,
         fileSchemaVersion: SchemaVersion,
         sourceSchemaVersion: SchemaVersion?,
-        usedDefinitionFallback: Bool
+        usedDefinitionFallback: Bool,
     ) -> CollectionWriteBackEligibility {
         if usedDefinitionFallback {
             return .blockedDefinitionFallback
@@ -387,7 +391,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
     private nonisolated static func migrationPath(
         schemaProbe: SchemaProbe,
         warning: CollectionFileCompatibilityWarning?,
-        currentSemanticMeaning: CurrentSemanticMeaning
+        currentSemanticMeaning: CurrentSemanticMeaning,
     ) -> [CollectionFileMigrationStep] {
         var path: [CollectionFileMigrationStep] = []
 
@@ -419,7 +423,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
     // Policy reads semantic meaning first (definition-only current vs snapshot-bearing current),
     // rather than branching directly on ad-hoc numeric cases at each call site.
     private nonisolated static func currentSemanticMeaning(
-        for schemaProbe: SchemaProbe
+        for schemaProbe: SchemaProbe,
     ) -> CurrentSemanticMeaning {
         if schemaProbe.effectiveSchemaVersion == CollectionFileSchemaVersion.definitionOnlyCurrent {
             return .definitionOnlyCurrent
@@ -429,7 +433,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
 
     private static func normalizeForRead(
         _ file: VoyagerCollectionFile,
-        schemaProbe: SchemaProbe
+        schemaProbe: SchemaProbe,
     ) -> VoyagerCollectionFile {
         guard schemaProbe.sourceSchemaVersion == nil else {
             return file
@@ -472,12 +476,12 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             conditions: file.conditions,
             snapshot: nil,
             snapshotMeta: nil,
-            appVersion: file.appVersion
+            appVersion: file.appVersion,
         )
         return .init(
             file: normalized,
             warning: .droppedIncompleteSnapshotPair,
-            usedDefinitionFallback: true
+            usedDefinitionFallback: true,
         )
     }
 
@@ -488,7 +492,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
                 snapshot: snapshot,
                 snapshotMeta: snapshotMeta,
                 warnings: [],
-                usedDefinitionFallback: false
+                usedDefinitionFallback: false,
             )
         case (.none, .none):
             if payload.snapshot.wasPresent || payload.snapshotMeta.wasPresent {
@@ -496,21 +500,21 @@ public enum VoyagerCollectionFileCompatibilityOwner {
                     snapshot: nil,
                     snapshotMeta: nil,
                     warnings: [.droppedMalformedSnapshot],
-                    usedDefinitionFallback: true
+                    usedDefinitionFallback: true,
                 )
             }
             return .init(
                 snapshot: nil,
                 snapshotMeta: nil,
                 warnings: [],
-                usedDefinitionFallback: false
+                usedDefinitionFallback: false,
             )
         default:
             return .init(
                 snapshot: nil,
                 snapshotMeta: nil,
                 warnings: [.droppedIncompleteSnapshotPair],
-                usedDefinitionFallback: true
+                usedDefinitionFallback: true,
             )
         }
     }
@@ -563,12 +567,12 @@ private nonisolated struct CompatibilityPayload: Decodable {
         conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
         snapshot = try container.decodeIfPresent(
             LossyOptionalField<CollectionPersistedSnapshot>.self,
-            forKey: .snapshot
+            forKey: .snapshot,
         )
             ?? .missing
         snapshotMeta = try container.decodeIfPresent(
             LossyOptionalField<CollectionSnapshotMeta>.self,
-            forKey: .snapshotMeta
+            forKey: .snapshotMeta,
         )
             ?? .missing
         appVersion = try container.decodeIfPresent(String.self, forKey: .appVersion)

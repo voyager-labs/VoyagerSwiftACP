@@ -7,7 +7,7 @@ public struct FinderFavoritesTagClient: Sendable {
 
     public nonisolated init(
         favoriteTagNames: @escaping @Sendable () -> [String],
-        favoriteTags: @escaping @Sendable () -> [Tag]
+        favoriteTags: @escaping @Sendable () -> [Tag],
     ) {
         self.favoriteTagNames = favoriteTagNames
         self.favoriteTags = favoriteTags
@@ -38,21 +38,21 @@ extension FinderFavoritesTagClient: DependencyKey {
 
                 return Tag(
                     name: name,
-                    colorCode: TagColor(finderFavoriteSlotIndex: finderFavoriteSlotIndex).rawValue
+                    colorCode: TagColor(finderFavoriteSlotIndex: finderFavoriteSlotIndex).rawValue,
                 )
             }
         }
 
         return FinderFavoritesTagClient(
             favoriteTagNames: { favoriteTagsLoader().map(\.name) },
-            favoriteTags: favoriteTagsLoader
+            favoriteTags: favoriteTagsLoader,
         )
     }
 
     public nonisolated static var testValue: FinderFavoritesTagClient {
         FinderFavoritesTagClient(
             favoriteTagNames: { [] },
-            favoriteTags: { [] }
+            favoriteTags: { [] },
         )
     }
 

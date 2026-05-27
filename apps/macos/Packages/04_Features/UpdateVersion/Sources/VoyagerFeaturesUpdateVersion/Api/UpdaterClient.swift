@@ -15,7 +15,7 @@ public struct UpdaterClient: Sendable {
         configure: @escaping @Sendable () async -> Void,
         startAtLaunch: @escaping @Sendable () async -> Void,
         checkForUpdates: @escaping @Sendable () async -> Void,
-        setAutomaticUpdate: @escaping @Sendable (Bool) async -> Void
+        setAutomaticUpdate: @escaping @Sendable (Bool) async -> Void,
     ) {
         self.configure = configure
         self.startAtLaunch = startAtLaunch
@@ -38,7 +38,7 @@ extension UpdaterClient: DependencyKey {
             },
             setAutomaticUpdate: { enabled in
                 await UpdaterCoordinator.shared.setAutomaticUpdate(enabled)
-            }
+            },
         )
     }
 
@@ -47,7 +47,7 @@ extension UpdaterClient: DependencyKey {
             configure: {},
             startAtLaunch: {},
             checkForUpdates: {},
-            setAutomaticUpdate: { _ in }
+            setAutomaticUpdate: { _ in },
         )
     }
 
@@ -56,7 +56,7 @@ extension UpdaterClient: DependencyKey {
             configure: {},
             startAtLaunch: {},
             checkForUpdates: {},
-            setAutomaticUpdate: { _ in }
+            setAutomaticUpdate: { _ in },
         )
     }
 }
@@ -87,7 +87,7 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
         controller = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: self,
-            userDriverDelegate: nil
+            userDriverDelegate: nil,
         )
     }
 
@@ -108,7 +108,7 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
         let notificationCenterClient = NotificationCenterClient.liveValue
         let notifications = notificationCenterClient.notifications(
             NSWindow.didBecomeMainNotification,
-            nil
+            nil,
         )
 
         if NSApp.keyWindow != nil {
@@ -133,7 +133,7 @@ private final class UpdaterCoordinator: NSObject, @preconcurrency SPUUpdaterDele
     func updater(
         _: SPUUpdater,
         shouldPostponeRelaunchForUpdate _: SUAppcastItem,
-        untilInvokingBlock installHandler: @escaping () -> Void
+        untilInvokingBlock installHandler: @escaping () -> Void,
     ) -> Bool {
         let logger = Logger(label: "Voyager")
         logger.info("sparkle_postpone_relaunch_begin")
@@ -176,7 +176,7 @@ public extension UpdaterClient {
     @MainActor
     static func registerRelaunchHandlers(
         prepareForRelaunch: @escaping @Sendable () async -> Void,
-        stopHelperApp: @escaping @Sendable () async -> Void
+        stopHelperApp: @escaping @Sendable () async -> Void,
     ) {
         UpdaterCoordinator.shared.prepareForRelaunchAction = prepareForRelaunch
         UpdaterCoordinator.shared.stopHelperAppAction = stopHelperApp

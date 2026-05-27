@@ -78,7 +78,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
 
         iconView.image = configuration.workspaceClient.entryIcon(
             for: configuration.entry,
-            thumbnail: configuration.thumbnail
+            thumbnail: configuration.thumbnail,
         )
         iconView.imageScaling = .scaleProportionallyUpOrDown
 
@@ -117,7 +117,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         {
             let range = EntryInlineRenameEditorRules.initialSelectionRange(
                 for: entry.name,
-                isFolder: entry.isFolder
+                isFolder: entry.isFolder,
             )
             editor.setSelectedRange(range)
         }
@@ -249,7 +249,7 @@ final class EntryGridCollectionViewItem: NSCollectionViewItem {
         // Finder-like rounded thumbnail background behind the icon area
         if highlighted {
             iconBackgroundView.layer?.backgroundColor = NSColor(
-                white: 1.0, alpha: 0.08
+                white: 1.0, alpha: 0.08,
             ).cgColor
         } else {
             iconBackgroundView.layer?.backgroundColor = nil

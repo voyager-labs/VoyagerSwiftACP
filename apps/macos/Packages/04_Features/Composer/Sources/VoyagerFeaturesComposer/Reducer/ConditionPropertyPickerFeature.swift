@@ -33,18 +33,18 @@ public struct ConditionPropertyPickerFeature {
                 let visibleEntries = entries.filter { !($0.definition.uiHidden ?? false) }
                 state.properties = visibleEntries.map(\.key)
                 state.propertyLabels = Dictionary(
-                    uniqueKeysWithValues: entries.map { ($0.key, $0.definition.uiLabel ?? $0.key) }
+                    uniqueKeysWithValues: entries.map { ($0.key, $0.definition.uiLabel ?? $0.key) },
                 )
                 state.propertyCategories = Dictionary(
-                    uniqueKeysWithValues: entries.map { ($0.key, $0.category) }
+                    uniqueKeysWithValues: entries.map { ($0.key, $0.category) },
                 )
                 state.propertyTypes = Dictionary(
-                    uniqueKeysWithValues: entries.map { ($0.key, $0.definition.type) }
+                    uniqueKeysWithValues: entries.map { ($0.key, $0.definition.type) },
                 )
                 state.propertyDefaults = Set(
                     visibleEntries
                         .filter { $0.definition.uiPinned ?? false }
-                        .map(\.key)
+                        .map(\.key),
                 )
                 return .none
 

@@ -17,12 +17,12 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
                     VoyagerShared.SearchConditionPayload(
                         propertyKey: "name",
                         operator: "contains",
-                        value: .string("draft")
+                        value: .string("draft"),
                     ),
-                ]
+                ],
             ),
             items: nil,
-            error: nil
+            error: nil,
         )
 
         var initialState = ComposerState()
@@ -36,7 +36,10 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         withDependencies {
             $0.registryClient = makeRegistryClient()
         } operation: {
-            _ = ComposerFeature().reduce(into: &state, action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)))
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)),
+            )
         }
 
         XCTAssertNil(state.transientFeedback)
@@ -52,7 +55,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
             itemCount: 0,
             appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: ["/tmp"], conditions: []),
             items: nil,
-            error: nil
+            error: nil,
         )
 
         var initialState = ComposerState()
@@ -63,7 +66,10 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         initialState.activeSearchRequestID = activeRequestID
 
         var state = initialState
-        _ = ComposerFeature().reduce(into: &state, action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)))
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)),
+        )
 
         XCTAssertEqual(state.queryRenderPhase, .idle)
         XCTAssertNil(state.transientFeedback)
@@ -82,7 +88,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         var state = initialState
         _ = ComposerFeature().reduce(into: &state, action: ComposerAction.searchResponse(
             activeRequestID,
-            .failure(MockLocalizedError("LLM_CONVERSION_FAILED: timeout"))
+            .failure(MockLocalizedError("LLM_CONVERSION_FAILED: timeout")),
         ))
 
         XCTAssertEqual(state.transientFeedback?.kind, .error)
@@ -109,7 +115,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
 
         await store.send(ComposerAction.filtersResponse(
             staleRequestID,
-            .failure(MockLocalizedError("HELPER_UNAVAILABLE: xpc disconnected"))
+            .failure(MockLocalizedError("HELPER_UNAVAILABLE: xpc disconnected")),
         ))
 
         XCTAssertEqual(store.state.queryRenderPhase, ComposerQueryRenderPhase.chipsAppliedPendingList)
@@ -146,11 +152,11 @@ private func makeRegistryClient() -> RegistryClient {
                 allowedTypes: ["string"],
                 inverseOf: nil,
                 aliases: nil,
-                uiValueKind: ["string": "singleText"]
+                uiValueKind: ["string": "singleText"],
             )
         },
         operatorValueUIKind: { _, _ in "singleText" },
-        resolvePropertyKey: { .canonical($0) }
+        resolvePropertyKey: { .canonical($0) },
     )
 }
 

@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 
+@MainActor
 enum FileManagerWindowSplitLayout {
     struct Components {
         let rootView: NSVisualEffectView

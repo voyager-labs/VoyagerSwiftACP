@@ -27,8 +27,8 @@ public enum EntryModelTagColorNormalizer {
                 kind: entry.facets.kind,
                 creatorApplication: entry.facets.creatorApplication,
                 tags: normalizedTags,
-                supplementaryMetadata: entry.facets.supplementaryMetadata
-            )
+                supplementaryMetadata: entry.facets.supplementaryMetadata,
+            ),
         )
     }
 }

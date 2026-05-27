@@ -6,19 +6,49 @@ import ComposableArchitecture
 /// Uses a callback pattern (not Combine) so the owning coordinator controls observation lifecycle.
 /// The coordinator calls ``applySidebarState(sidebarVisible:sidebarWidth:)`` when store state changes,
 /// and ``handleSplitViewResize()`` when the user drags the divider.
+@MainActor
 struct FileManagerSidebarSync {
+    struct Layout {
+        let splitView: NSSplitView?
+        let sidebarView: NSView?
+        let mainContainerLeading: NSLayoutConstraint?
+        let contentVerticalMargin: CGFloat
+    }
+
+    struct Callbacks {
+        let onSidebarVisibilityChanged: (Bool, CGFloat) -> Void
+        let onTrafficLightUpdate: (Bool) -> Void
+    }
+
+    enum ResizeDecision: Equatable {
+        case none
+        case hideSidebar
+        case restoreSidebar
+    }
+
     private enum Constants {
         static let sidebarMinWidth: CGFloat = 150
         static let sidebarMaxWidth: CGFloat = 280
-        static let sidebarCollapseThreshold: CGFloat = 2
     }
 
     private(set) var currentSidebarWidth: CGFloat
     private(set) var currentSidebarVisible: Bool?
     private var hasSetInitialLayout = false
 
-    var sidebarMinWidth: CGFloat { Constants.sidebarMinWidth }
-    var sidebarMaxWidth: CGFloat { Constants.sidebarMaxWidth }
+    nonisolated static var sidebarMinWidth: CGFloat { Constants.sidebarMinWidth }
+    nonisolated static var sidebarMaxWidth: CGFloat { Constants.sidebarMaxWidth }
+
+    static func isSidebarEffectivelyVisible(
+        splitView: NSSplitView?,
+        sidebarView: NSView?,
+    ) -> Bool {
+        guard let splitView,
+              let sidebarView
+        else { return false }
+
+        return !splitView.isSubviewCollapsed(sidebarView)
+            && sidebarView.frame.width >= Constants.sidebarMinWidth
+    }
 
     init(storeSidebarWidth: CGFloat) {
         currentSidebarWidth = Self.clampedWidth(storeSidebarWidth)
@@ -29,12 +59,8 @@ struct FileManagerSidebarSync {
     mutating func applySidebarState(
         sidebarVisible: Bool,
         sidebarWidth: CGFloat,
-        splitView: NSSplitView?,
-        sidebarView: NSView?,
-        mainContainerLeading: NSLayoutConstraint?,
-        contentVerticalMargin: CGFloat,
-        onSidebarVisibilityChanged: (Bool, CGFloat) -> Void,
-        onTrafficLightUpdate: (Bool) -> Void,
+        layout: Layout,
+        callbacks: Callbacks,
     ) {
         let clamped = Self.clampedWidth(sidebarWidth)
         let sidebarWidthChanged = abs(currentSidebarWidth - clamped) > 0.5
@@ -43,26 +69,28 @@ struct FileManagerSidebarSync {
         applyInitialLayoutIfNeeded(
             sidebarVisible: sidebarVisible,
             sidebarWidth: clamped,
-            splitView: splitView,
-            mainContainerLeading: mainContainerLeading,
-            contentVerticalMargin: contentVerticalMargin,
-            onTrafficLightUpdate: onTrafficLightUpdate,
+            splitView: layout.splitView,
+            mainContainerLeading: layout.mainContainerLeading,
+            contentVerticalMargin: layout.contentVerticalMargin,
+            onTrafficLightUpdate: callbacks.onTrafficLightUpdate,
         )
+
+        let needsVisibleLayoutRestore = sidebarVisible
+            && !Self.isSidebarEffectivelyVisible(
+                splitView: layout.splitView,
+                sidebarView: layout.sidebarView,
+            )
 
         if currentSidebarVisible != sidebarVisible {
             updateSidebarVisibility(
                 isVisible: sidebarVisible,
                 sidebarWidth: clamped,
-                splitView: splitView,
-                sidebarView: sidebarView,
-                mainContainerLeading: mainContainerLeading,
-                contentVerticalMargin: contentVerticalMargin,
-                onSidebarVisibilityChanged: onSidebarVisibilityChanged,
-                onTrafficLightUpdate: onTrafficLightUpdate,
+                layout: layout,
+                callbacks: callbacks,
             )
-        } else if sidebarVisible, sidebarWidthChanged {
-            splitView?.setPosition(clamped, ofDividerAt: 0)
-            splitView?.adjustSubviews()
+        } else if sidebarVisible, sidebarWidthChanged || needsVisibleLayoutRestore {
+            layout.splitView?.setPosition(clamped, ofDividerAt: 0)
+            layout.splitView?.adjustSubviews()
         }
 
         currentSidebarVisible = sidebarVisible
@@ -83,8 +111,10 @@ struct FileManagerSidebarSync {
               splitView.bounds.width > 0
         else { return }
 
+        let clampedSidebarWidth = Self.clampedWidth(sidebarWidth)
+
         if sidebarVisible {
-            splitView.setPosition(sidebarWidth, ofDividerAt: 0)
+            splitView.setPosition(clampedSidebarWidth, ofDividerAt: 0)
             FileManagerWindowSplitLayout.updateMainContainerLeading(
                 mainContainerLeading,
                 isSidebarVisible: true,
@@ -101,31 +131,30 @@ struct FileManagerSidebarSync {
 
         splitView.adjustSubviews()
         hasSetInitialLayout = true
+        currentSidebarVisible = sidebarVisible
         onTrafficLightUpdate(sidebarVisible)
     }
 
     // MARK: - Split View Resize Handling (called from splitViewDidResizeSubviews)
 
-    mutating func handleSplitViewResize(
+    func handleSplitViewResize(
         splitView: NSSplitView,
         sidebarView: NSView,
         storeSidebarVisible: Bool,
+        isUserInitiatedCollapse: Bool,
         syncWidthToStore: (CGFloat) -> Void,
-        forceRestoreSidebar: (Bool, CGFloat) -> Void,
-    ) {
-        guard hasSetInitialLayout else { return }
+    ) -> ResizeDecision {
+        guard hasSetInitialLayout else { return .none }
 
         let sidebarWidth = sidebarView.frame.width
-        let isCollapsed = splitView.isSubviewCollapsed(sidebarView)
 
-        if !isCollapsed, sidebarWidth > Constants.sidebarCollapseThreshold {
+        if Self.isSidebarEffectivelyVisible(splitView: splitView, sidebarView: sidebarView) {
             syncWidthToStore(sidebarWidth)
+            return .none
         }
 
-        if storeSidebarVisible, isCollapsed {
-            let width = currentSidebarWidth
-            forceRestoreSidebar(true, width)
-        }
+        guard storeSidebarVisible else { return .none }
+        return isUserInitiatedCollapse ? .hideSidebar : .restoreSidebar
     }
 
     // MARK: - Private Helpers
@@ -133,39 +162,35 @@ struct FileManagerSidebarSync {
     private mutating func updateSidebarVisibility(
         isVisible: Bool,
         sidebarWidth: CGFloat,
-        splitView: NSSplitView?,
-        sidebarView: NSView?,
-        mainContainerLeading: NSLayoutConstraint?,
-        contentVerticalMargin: CGFloat,
-        onSidebarVisibilityChanged: (Bool, CGFloat) -> Void,
-        onTrafficLightUpdate: (Bool) -> Void,
+        layout: Layout,
+        callbacks: Callbacks,
     ) {
-        guard let splitView,
-              let sidebarView,
+        guard let splitView = layout.splitView,
+              let sidebarView = layout.sidebarView,
               splitView.bounds.width > 0
         else { return }
 
         if isVisible {
             splitView.setPosition(sidebarWidth, ofDividerAt: 0)
             FileManagerWindowSplitLayout.updateMainContainerLeading(
-                mainContainerLeading,
+                layout.mainContainerLeading,
                 isSidebarVisible: true,
-                contentVerticalMargin: contentVerticalMargin,
+                contentVerticalMargin: layout.contentVerticalMargin,
             )
         } else {
             let currentWidth = sidebarView.frame.width
-            if currentWidth > Constants.sidebarCollapseThreshold {
-                onSidebarVisibilityChanged(false, currentWidth)
+            if currentWidth >= Constants.sidebarMinWidth {
+                callbacks.onSidebarVisibilityChanged(false, currentWidth)
             }
             splitView.setPosition(0, ofDividerAt: 0)
             FileManagerWindowSplitLayout.updateMainContainerLeading(
-                mainContainerLeading,
+                layout.mainContainerLeading,
                 isSidebarVisible: false,
-                contentVerticalMargin: contentVerticalMargin,
+                contentVerticalMargin: layout.contentVerticalMargin,
             )
         }
 
-        onTrafficLightUpdate(isVisible)
+        callbacks.onTrafficLightUpdate(isVisible)
     }
 
     private static func clampedWidth(_ width: CGFloat) -> CGFloat {

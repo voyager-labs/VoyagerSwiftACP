@@ -10,7 +10,7 @@ public struct CollectionSavePanelClient: Sendable {
 
     public init(
         presentSavePanel: @escaping @Sendable (_ initialDirectory: URL?) async -> URL?,
-        defaultSaveDirectory: @escaping @Sendable (_ preferredScopes: [String]) async -> URL?
+        defaultSaveDirectory: @escaping @Sendable (_ preferredScopes: [String]) async -> URL?,
     ) {
         self.presentSavePanel = presentSavePanel
         self.defaultSaveDirectory = defaultSaveDirectory
@@ -63,21 +63,21 @@ extension CollectionSavePanelClient: DependencyKey {
 
                     return URL(fileURLWithPath: NSHomeDirectory())
                 }
-            }
+            },
         )
     }
 
     public nonisolated(unsafe) static var testValue: CollectionSavePanelClient {
         CollectionSavePanelClient(
             presentSavePanel: { _ in nil },
-            defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") }
+            defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") },
         )
     }
 
     public nonisolated static var previewValue: CollectionSavePanelClient {
         CollectionSavePanelClient(
             presentSavePanel: { _ in nil },
-            defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") }
+            defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") },
         )
     }
 }

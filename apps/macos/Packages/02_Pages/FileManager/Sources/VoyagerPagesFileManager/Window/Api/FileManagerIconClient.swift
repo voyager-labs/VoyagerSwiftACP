@@ -6,7 +6,7 @@ public struct FileManagerIconClient: Sendable {
     public var iconNameForURL: @Sendable (URL, Bool, EntryLoadingClient) -> String
 
     public nonisolated init(
-        iconNameForURL: @escaping @Sendable (URL, Bool, EntryLoadingClient) -> String
+        iconNameForURL: @escaping @Sendable (URL, Bool, EntryLoadingClient) -> String,
     ) {
         self.iconNameForURL = iconNameForURL
     }
@@ -15,37 +15,37 @@ public struct FileManagerIconClient: Sendable {
 extension FileManagerIconClient: DependencyKey {
     private typealias IconLocation = (
         directory: FileManager.SearchPathDirectory,
-        domain: FileManager.SearchPathDomainMask
+        domain: FileManager.SearchPathDomainMask,
     )
 
     private nonisolated(unsafe) static let iconMappings: [(location: IconLocation, iconName: String)] = [
         (
             location: (
                 directory: .applicationDirectory,
-                domain: .localDomainMask
+                domain: .localDomainMask,
             ),
-            iconName: "folder.badge.gearshape"
+            iconName: "folder.badge.gearshape",
         ),
         (
             location: (
                 directory: .desktopDirectory,
-                domain: .userDomainMask
+                domain: .userDomainMask,
             ),
-            iconName: "menubar.dock.rectangle"
+            iconName: "menubar.dock.rectangle",
         ),
         (
             location: (
                 directory: .documentDirectory,
-                domain: .userDomainMask
+                domain: .userDomainMask,
             ),
-            iconName: "doc.text"
+            iconName: "doc.text",
         ),
         (
             location: (
                 directory: .downloadsDirectory,
-                domain: .userDomainMask
+                domain: .userDomainMask,
             ),
-            iconName: "arrow.down.circle"
+            iconName: "arrow.down.circle",
         ),
         (location: (directory: .moviesDirectory, domain: .userDomainMask), iconName: "film"),
         (location: (directory: .musicDirectory, domain: .userDomainMask), iconName: "music.note"),
@@ -56,7 +56,7 @@ extension FileManagerIconClient: DependencyKey {
     public nonisolated static func resolveIconName(
         for url: URL,
         isDirectory: Bool,
-        entryLoadingClient: EntryLoadingClient
+        entryLoadingClient: EntryLoadingClient,
     ) -> String {
         guard isDirectory else { return "doc" }
 
@@ -69,7 +69,7 @@ extension FileManagerIconClient: DependencyKey {
         for mapping in Self.iconMappings
             where entryLoadingClient.urlsForDirectory(
                 mapping.location.directory,
-                mapping.location.domain
+                mapping.location.domain,
             ).first?.path == path
         {
             return mapping.iconName
@@ -82,13 +82,13 @@ extension FileManagerIconClient: DependencyKey {
         FileManagerIconClient(
             iconNameForURL: { url, isDirectory, entryLoadingClient in
                 resolveIconName(for: url, isDirectory: isDirectory, entryLoadingClient: entryLoadingClient)
-            }
+            },
         )
     }
 
     public nonisolated static var testValue: FileManagerIconClient {
         FileManagerIconClient(
-            iconNameForURL: { _, _, _ in "folder" }
+            iconNameForURL: { _, _, _ in "folder" },
         )
     }
 

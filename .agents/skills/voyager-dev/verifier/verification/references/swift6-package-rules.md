@@ -147,7 +147,19 @@ public struct LegacyWrapper: Sendable {
 
 This is debt. Not a solution.
 
-### 5. Verification after any package change
+### 5. @unchecked Sendable — documented safety invariant
+
+When a type contains non-Sendable associated values from AppKit (e.g., `NSItemProvider`, `NSDraggingItem`) that are always used within a specific isolation domain:
+
+- Add `@unchecked Sendable` to the type.
+- Add a Korean comment documenting the safety invariant.
+- Example: `// NSItemProvider가 Sendable을 준수하지 않아 @unchecked 필요. 드래그앤드롭은 @MainActor에서만 수행됨.`
+- No follow-up issue required when the root cause is an AppKit framework limitation.
+- File a follow-up issue only when the non-Sendable payload comes from code you control and could fix.
+
+This differs from `nonisolated(unsafe)` which is for stored properties. `@unchecked Sendable` is for types where the non-Sendable payload is guaranteed safe by isolation domain.
+
+### 6. Verification after any package change
 
 After creating, editing, or adding files to a package:
 
@@ -170,7 +182,7 @@ Code goes into a SwiftPM package
   ├─ New type? → Make it Sendable
   |    ├─ All Sendable properties? → Add `: Sendable`. Done.
   |    ├─ Has closures? → `@Sendable` on property AND init param.
-  |    ├─ Has non-Sendable deps? → Refactor, or `nonisolated(unsafe)` + follow-up.
+  |    ├─ Has non-Sendable deps? → Refactor, `@unchecked Sendable` + Korean comment (AppKit limitation), or `nonisolated(unsafe)` + follow-up.
   |    ├─ Has statics? → `: Sendable` on the type.
   |    └─ Protocol? → `: Sendable` on the protocol.
   |
@@ -183,4 +195,5 @@ Code goes into a SwiftPM package
 - **Forgetting @Sendable on closure init parameters.** The property gets the annotation, but the init parameter does not. Both need it.
 - **Trusting the app target build.** It runs in Swift 5 mode and will not catch strict concurrency errors. Always build the package directly.
 - **Using `nonisolated(unsafe)` without a follow-up.** Every use must have a code comment and a filed issue.
+- **Using `@unchecked Sendable` without a safety invariant comment.** Every use must have a Korean comment explaining why the non-Sendable payload is safe. Example: AppKit types used only within `@MainActor` isolation.
 - **Adding `Sendable` to types with mutable stored properties.** `Sendable` requires thread-safe immutability. Mutable properties need an actor or removal of `Sendable`.

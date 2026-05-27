@@ -7,7 +7,7 @@ extension EntryListCoordinator {
         entry: EntryModel,
         columnId: String,
         columnWidth: CGFloat,
-        thumbnail: NSImage?
+        thumbnail: NSImage?,
     ) -> EntryListEntryCellViewConfiguration {
         let isCut = state.entryOperations.clipboardItems.contains(entry.fullPath)
             && state.entryOperations.clipboardOperation == .cut
@@ -39,8 +39,8 @@ extension EntryListCoordinator {
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
                     sendEntryOperations(.edit(.cancelRename))
-                }
-            )
+                },
+            ),
         )
     }
 }

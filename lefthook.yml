@@ -19,4 +19,8 @@ pre-commit:
       run: swiftformat --config apps/macos/.swiftformat --lint {staged_files}
     swiftlint:
       glob: "apps/macos/**/*.swift"
+      exclude: "apps/macos/**/*Tests/**/*.swift"
       run: swiftlint lint --config apps/macos/.swiftlint.yml --strict {staged_files}
+    swiftlint-tests:
+      glob: "apps/macos/**/*Tests/**/*.swift"
+      run: swiftlint lint --config apps/macos/.swiftlint-tests.yml --strict {staged_files}

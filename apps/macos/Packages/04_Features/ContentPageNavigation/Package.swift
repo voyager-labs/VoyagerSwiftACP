@@ -1,7 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-let package = Package(
+let kPackage = Package(
     name: "VoyagerFeaturesContentPageNavigation",
     platforms: [
         .macOS(.v13),
@@ -31,7 +31,7 @@ let package = Package(
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerFeaturesContentPageNavigationTests",
@@ -43,7 +43,7 @@ let package = Package(
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
-    ]
+    ],
 )

@@ -25,14 +25,14 @@ final class EntryListHeaderView: NSTableHeaderView {
             let menuItem = NSMenuItem(
                 title: item.title,
                 action: #selector(handleToggleColumn(_:)),
-                keyEquivalent: ""
+                keyEquivalent: "",
             )
             menuItem.target = self
             menuItem.state = item.isChecked ? .on : .off
             menuItem.isEnabled = item.isEnabled
             menuItem.representedObject = TogglePayload(
                 column: item.column,
-                nextIsVisible: !item.isChecked
+                nextIsVisible: !item.isChecked,
             )
             menu.addItem(menuItem)
         }
@@ -42,7 +42,7 @@ final class EntryListHeaderView: NSTableHeaderView {
         let resetItem = NSMenuItem(
             title: model.resetItem.title,
             action: #selector(handleResetColumns(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "",
         )
         resetItem.target = self
         resetItem.isEnabled = model.resetItem.isEnabled

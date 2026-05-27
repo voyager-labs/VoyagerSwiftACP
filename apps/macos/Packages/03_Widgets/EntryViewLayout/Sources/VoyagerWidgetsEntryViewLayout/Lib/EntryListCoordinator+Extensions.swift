@@ -58,7 +58,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         _: NSOutlineView,
         draggingSession _: NSDraggingSession,
         willBeginAt _: NSPoint,
-        forItems items: [Any]
+        forItems items: [Any],
     ) {
         let paths = items.compactMap { item -> String? in
             guard let outlineItem = item as? OutlineItem else { return nil }
@@ -73,7 +73,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         _: NSOutlineView,
         draggingSession _: NSDraggingSession,
         endedAt _: NSPoint,
-        operation: NSDragOperation
+        operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
         sendEntryOperations(.routing(.saveDragPaths([])))
@@ -89,7 +89,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         let needed = EntryListCoordinatorSortDescriptorMapper.actionsNeeded(
             currentSortKey: state.entryArrangements.sortKey,
             currentSortOrder: state.entryArrangements.sortOrder,
-            change: change
+            change: change,
         )
         if let sortKey = needed.sortKey { sendEntryArrangements(.setSortKey(sortKey)) }
         if let sortOrder = needed.sortOrder { sendEntryArrangements(.setSortOrder(sortOrder)) }
@@ -153,7 +153,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
                 outlineView: outlineView,
                 tableColumn: tableColumn,
                 title: title,
-                colorCode: colorCode
+                colorCode: colorCode,
             )
         case let .entry(entry):
             let resolvedTableColumn = tableColumn ?? outlineView.outlineTableColumn
@@ -165,7 +165,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
     private func makeEntryCell(
         outlineView: NSOutlineView,
         columnId: String,
-        entry: EntryModel
+        entry: EntryModel,
     ) -> EntryListEntryCellView {
         let entryIdentifier = NSUserInterfaceItemIdentifier("entry-cell-\(columnId)")
         let view = (outlineView.makeView(withIdentifier: entryIdentifier, owner: self) as? EntryListEntryCellView)
@@ -180,7 +180,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             entry: entry,
             columnId: columnId,
             columnWidth: columnWidth,
-            thumbnail: thumbnail
+            thumbnail: thumbnail,
         )
         view.configure(configuration)
         return view
@@ -217,7 +217,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             ids: selectedIds,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,
-            shouldScrollToSelection: false
+            shouldScrollToSelection: false,
         )))
     }
 
@@ -438,7 +438,7 @@ public extension EntryListCoordinator {
                 entry: entry,
                 columnId: EntryListColumn.name.rawValue,
                 columnWidth: dateModifiedWidth,
-                thumbnail: thumbnail
+                thumbnail: thumbnail,
             )
             cell.configure(configuration)
         }

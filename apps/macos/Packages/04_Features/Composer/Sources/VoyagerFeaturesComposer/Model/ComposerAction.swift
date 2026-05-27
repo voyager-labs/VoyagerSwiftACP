@@ -156,7 +156,7 @@ public extension ComposerAction {
 
     static func searchResponse(
         _ requestID: UUID,
-        _ result: Result<VoyagerShared.SearchResponsePayload, Error>
+        _ result: Result<VoyagerShared.SearchResponsePayload, Error>,
     ) -> Self {
         .internal(.searchResponse(requestID, result))
     }
@@ -174,7 +174,7 @@ public extension ComposerAction {
 
     static func filtersResponse(
         _ requestID: UUID,
-        _ result: Result<VoyagerShared.SearchResponsePayload, Error>
+        _ result: Result<VoyagerShared.SearchResponsePayload, Error>,
     ) -> Self {
         .internal(.filtersResponse(requestID, result))
     }

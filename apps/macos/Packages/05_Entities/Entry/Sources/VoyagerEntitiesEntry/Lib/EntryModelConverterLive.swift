@@ -6,7 +6,7 @@ public enum EntryModelConverterLive {
     public nonisolated static func convertURLToEntry(
         _ itemURL: URL,
         entryLoadingClient: EntryLoadingClient,
-        workspaceClient: WorkspaceClient
+        workspaceClient: WorkspaceClient,
     ) -> EntryModel? {
         var isDirectory: ObjCBool = false
         guard entryLoadingClient.fileExistsAtPath(itemURL.path, &isDirectory) else {
@@ -38,7 +38,7 @@ public enum EntryModelConverterLive {
         let supplementaryMetadata = entrySupplementaryMetadata(
             url: itemURL,
             isDirectory: isDirectory.boolValue,
-            entryLoadingClient: entryLoadingClient
+            entryLoadingClient: entryLoadingClient,
         )
 
         return EntryModel(
@@ -56,8 +56,8 @@ public enum EntryModelConverterLive {
                 kind: metadata.kind,
                 creatorApplication: metadata.creatorApplication,
                 tags: tags,
-                supplementaryMetadata: supplementaryMetadata
-            )
+                supplementaryMetadata: supplementaryMetadata,
+            ),
         )
     }
 
@@ -79,7 +79,7 @@ public enum EntryModelConverterLive {
     private nonisolated static func entrySupplementaryMetadata(
         url: URL,
         isDirectory: Bool,
-        entryLoadingClient: EntryLoadingClient
+        entryLoadingClient: EntryLoadingClient,
     ) -> EntrySupplementaryMetadata? {
         if isDirectory {
             if entryLoadingClient.isPackageDirectory(url) {

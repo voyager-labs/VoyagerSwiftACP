@@ -8,8 +8,10 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import XCTest
 
+/// 저장되지 않은 변경사항이 있을 때 내비게이션 동작 — 취소/폐기/저장을 검증.
 @MainActor
 final class FileManagerNavigationUnsavedTests: XCTestCase {
+    /// testUnsavedPromptCancelDoesNotPerformNavigationForHistoryActions 테스트 동작을 검증한다.
     func testUnsavedPromptCancelDoesNotPerformNavigationForHistoryActions() async {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .cancel)
@@ -38,6 +40,7 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
         }
     }
 
+    /// testUnsavedPromptDiscardPerformsNavigationAndResetsComposerForHistoryActions 테스트 동작을 검증한다.
     func testUnsavedPromptDiscardPerformsNavigationAndResetsComposerForHistoryActions() async {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .discard, composerText: "dirty")
@@ -74,6 +77,7 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
         }
     }
 
+    /// testUnsavedPromptSaveSetsPendingNavigationAndStartsSaveForHistoryActions 테스트 동작을 검증한다.
     func testUnsavedPromptSaveSetsPendingNavigationAndStartsSaveForHistoryActions() async {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .save)

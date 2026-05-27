@@ -7,6 +7,7 @@ import XCTest
 
 @MainActor
 final class CollectionStalenessCompatTests: XCTestCase {
+    /// testLegacyPropertyListStorageMigratesAndPreservesInvalidatedState 테스트 동작을 검증한다.
     func testLegacyPropertyListStorageMigratesAndPreservesInvalidatedState() throws {
         let userDefaultsClient = UserDefaultsClient.testValue
         let client = CollectionStalenessClient.live(userDefaultsClient: userDefaultsClient)
@@ -30,6 +31,7 @@ final class CollectionStalenessCompatTests: XCTestCase {
         XCTAssertNotNil(migrated[path]?.lastInvalidatedAt)
     }
 
+    /// testMissingFieldCurrentRecordDecodesWithDefaults 테스트 동작을 검증한다.
     func testMissingFieldCurrentRecordDecodesWithDefaults() throws {
         let userDefaultsClient = UserDefaultsClient.testValue
         let client = CollectionStalenessClient.live(userDefaultsClient: userDefaultsClient)
@@ -49,6 +51,7 @@ final class CollectionStalenessCompatTests: XCTestCase {
         XCTAssertNil(record?.lastInvalidatedAt)
     }
 
+    /// testMixedShapePayloadKeepsValidRecordAndDropsMalformedEntry 테스트 동작을 검증한다.
     func testMixedShapePayloadKeepsValidRecordAndDropsMalformedEntry() throws {
         let userDefaultsClient = UserDefaultsClient.testValue
         let client = CollectionStalenessClient.live(userDefaultsClient: userDefaultsClient)

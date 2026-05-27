@@ -41,7 +41,7 @@ public nonisolated struct SchemaVersion: Codable, Equatable, Comparable, Sendabl
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
             major: container.decode(Int.self, forKey: .major),
-            minor: container.decode(Int.self, forKey: .minor)
+            minor: container.decode(Int.self, forKey: .minor),
         )
     }
 
@@ -130,7 +130,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         conditions: [CollectionCondition],
         snapshot: CollectionPersistedSnapshot?,
         snapshotMeta: CollectionSnapshotMeta?,
-        appVersion: String?
+        appVersion: String?,
     ) {
         self.schemaVersion = schemaVersion
         self.id = id
@@ -159,12 +159,12 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         conditions: [CollectionCondition],
         snapshot: CollectionPersistedSnapshot?,
         snapshotMeta: CollectionSnapshotMeta?,
-        appVersion: String?
+        appVersion: String?,
     ) {
         self.init(
             schemaVersion: CollectionFileSchemaVersion.inferred(
                 snapshot: snapshot,
-                snapshotMeta: snapshotMeta
+                snapshotMeta: snapshotMeta,
             ),
             id: id,
             name: name,
@@ -177,7 +177,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
             conditions: conditions,
             snapshot: snapshot,
             snapshotMeta: snapshotMeta,
-            appVersion: appVersion
+            appVersion: appVersion,
         )
     }
 }
@@ -203,7 +203,7 @@ public nonisolated struct CollectionPersistedSnapshot: Codable, Equatable, Senda
             throw DecodingError.dataCorruptedError(
                 forKey: .items,
                 in: container,
-                debugDescription: "Collection snapshot items must be path strings only"
+                debugDescription: "Collection snapshot items must be path strings only",
             )
         }
         self.items = items
@@ -218,8 +218,8 @@ public nonisolated struct CollectionPersistedSnapshot: Codable, Equatable, Senda
                 items,
                 .init(
                     codingPath: [CodingKeys.items],
-                    debugDescription: "Collection snapshot items must be path strings only"
-                )
+                    debugDescription: "Collection snapshot items must be path strings only",
+                ),
             )
         }
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -237,7 +237,7 @@ public nonisolated struct CollectionSnapshotMeta: Codable, Equatable, Sendable {
         definitionFingerprint: String,
         capturedAt: Date,
         itemCount: Int,
-        relevanceRoots: [String]
+        relevanceRoots: [String],
     ) {
         self.definitionFingerprint = definitionFingerprint
         self.capturedAt = capturedAt

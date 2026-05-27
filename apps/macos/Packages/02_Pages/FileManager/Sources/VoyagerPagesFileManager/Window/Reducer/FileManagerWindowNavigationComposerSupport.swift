@@ -7,7 +7,7 @@ func handleNavigationDelegate(
     _ delegateAction: ContentPageNavigationAction.Delegate,
     state: inout FileManagerWindowState,
     computerName: String,
-    metricsClient: MetricsClient
+    metricsClient: MetricsClient,
 ) -> Effect<FileManagerWindowAction> {
     switch delegateAction {
     case let .navigateToState(navigationState):
@@ -26,7 +26,7 @@ func handleNavigationDelegate(
     case .resetComposer:
         return .concatenate(
             .send(.content(.internal(.resetComposer))),
-            .send(.content(.internal(.exitCollectionMode)))
+            .send(.content(.internal(.exitCollectionMode))),
         )
     }
 }

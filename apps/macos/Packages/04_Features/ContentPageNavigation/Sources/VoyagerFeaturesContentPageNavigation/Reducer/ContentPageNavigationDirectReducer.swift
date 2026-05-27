@@ -34,7 +34,7 @@ struct ContentPageNavigationDirectReducer {
 
     private func performNavigateToPath(
         _ path: String,
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
         let previousNavigationState = state.navigationState
@@ -50,12 +50,12 @@ struct ContentPageNavigationDirectReducer {
         return directNavigationEffect(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
-            shouldResetComposer: shouldRecordHistory
+            shouldResetComposer: shouldRecordHistory,
         )
     }
 
     private func performShowRecents(
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         if case .recents = state.navigationState {
             return .none
@@ -70,12 +70,12 @@ struct ContentPageNavigationDirectReducer {
         return directNavigationEffect(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
-            shouldResetComposer: true
+            shouldResetComposer: true,
         )
     }
 
     private func performShowComputer(
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         if case .computer = state.navigationState {
             return .none
@@ -90,13 +90,13 @@ struct ContentPageNavigationDirectReducer {
         return directNavigationEffect(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
-            shouldResetComposer: true
+            shouldResetComposer: true,
         )
     }
 
     private func performShowTag(
         _ tagName: String,
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         if case let .tags(currentTagName) = state.navigationState,
            currentTagName == tagName
@@ -113,13 +113,13 @@ struct ContentPageNavigationDirectReducer {
         return directNavigationEffect(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
-            shouldResetComposer: true
+            shouldResetComposer: true,
         )
     }
 
     private func performPrepareCollectionFileOpen(
         _: URL,
-        state: inout State
+        state: inout State,
     ) -> Effect<Action> {
         if case .collection = state.navigationState {
             return .none
@@ -134,7 +134,7 @@ struct ContentPageNavigationDirectReducer {
     private func directNavigationEffect(
         previousNavigationState: ContentPageNavigationRoute,
         nextNavigationState: ContentPageNavigationRoute,
-        shouldResetComposer: Bool
+        shouldResetComposer: Bool,
     ) -> Effect<Action> {
         var effects: [Effect<Action>] = []
 
@@ -143,7 +143,7 @@ struct ContentPageNavigationDirectReducer {
         }
 
         effects.append(
-            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState)))
+            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState))),
         )
         effects.append(.send(.delegate(.navigateToState(nextNavigationState))))
 

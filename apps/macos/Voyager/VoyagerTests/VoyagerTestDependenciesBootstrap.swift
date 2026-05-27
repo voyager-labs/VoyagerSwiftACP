@@ -12,8 +12,8 @@ private final class VoyagerTestDependencyObserver: NSObject, XCTestObservation {
     }
 }
 
-private let voyagerTestDependencyObserverRegistration: Void = {
+private let kObserverRegistration: Void = {
     XCTestObservationCenter.shared.addTestObserver(VoyagerTestDependencyObserver())
 }()
 
-private let _voyagerTestDependencyObserverBootstrap = voyagerTestDependencyObserverRegistration
+private let kObserverBootstrap = kObserverRegistration

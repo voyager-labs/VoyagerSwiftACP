@@ -59,7 +59,7 @@ enum EntryListCoordinatorSortDescriptorMapper {
     static func actionsNeeded(
         currentSortKey: SortKey,
         currentSortOrder: VoyagerShared.SortOrder,
-        change: EntryListCoordinatorSortDescriptorChange
+        change: EntryListCoordinatorSortDescriptorChange,
     ) -> (sortKey: SortKey?, sortOrder: VoyagerShared.SortOrder?) {
         let setKey: SortKey? = currentSortKey == change.sortKey ? nil : change.sortKey
         let setOrder: VoyagerShared.SortOrder? = currentSortOrder == change.sortOrder ? nil : change
@@ -96,13 +96,13 @@ enum EntryListCoordinatorDateFormatting {
         _ date: Date,
         width: CGFloat,
         locale: Locale = .current,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
     ) -> String {
         let template = template(forWidth: width)
         let key = CacheKey(
             template: template,
             localeIdentifier: locale.identifier,
-            timeZoneIdentifier: timeZone.identifier
+            timeZoneIdentifier: timeZone.identifier,
         )
 
         lock.lock()
@@ -262,7 +262,7 @@ public final class EntryListCoordinator: NSObject {
         if let boundsDidChangeObserver { notificationCenterClient.removeObserver(boundsDidChangeObserver) }
         boundsDidChangeObserver = notificationCenterClient.addObserver(
             NSView.boundsDidChangeNotification,
-            scrollView.contentView
+            scrollView.contentView,
         ) { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
                 self?.visibleRowsPrefetchThrottler.schedule { [weak self] in
@@ -274,7 +274,7 @@ public final class EntryListCoordinator: NSObject {
 
     func reloadVisibleDateModifiedCells() {
         let dateModifiedColumnIndex = tableView.column(
-            withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.dateModified.rawValue)
+            withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.dateModified.rawValue),
         )
         guard dateModifiedColumnIndex >= 0 else { return }
         let visibleRange = tableView.rows(in: tableView.visibleRect)
@@ -410,7 +410,7 @@ public final class EntryListCoordinator: NSObject {
                 let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
                 let groupItem = OutlineItem(
                     kind: .group(name: group.groupName, colorCode: group.colorCode, isCollapsed: isCollapsed),
-                    children: items
+                    children: items,
                 )
                 result.append(groupItem)
             } else {

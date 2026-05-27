@@ -19,6 +19,7 @@ struct VoyagerOSLogHandler: LogHandler {
         set { metadata[metadataKey] = newValue }
     }
 
+    // swiftlint:disable:next function_parameter_count
     func log(
         level: Logging.Logger.Level,
         message: Logging.Logger.Message,

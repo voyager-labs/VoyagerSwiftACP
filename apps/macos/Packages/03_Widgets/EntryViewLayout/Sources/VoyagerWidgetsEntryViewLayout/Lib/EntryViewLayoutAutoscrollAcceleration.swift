@@ -9,7 +9,7 @@ enum EntryViewLayoutAutoscrollAcceleration {
 
     static func delta(
         distanceOutsideBounds: CGFloat,
-        axisSize _: CGFloat
+        axisSize _: CGFloat,
     ) -> CGFloat {
         guard distanceOutsideBounds.isFinite else { return 0 }
 
@@ -37,7 +37,7 @@ enum EntryViewLayoutAutoscrollAcceleration {
         pointerY: CGFloat,
         visibleRect: CGRect,
         currentOriginY: CGFloat,
-        documentHeight: CGFloat
+        documentHeight: CGFloat,
     ) -> CGFloat? {
         let distanceOutside = distanceOutsideBounds(pointerY: pointerY, visibleRect: visibleRect)
         guard distanceOutside != 0 else { return nil }
@@ -75,7 +75,7 @@ final class EntryGridLassoAutoscrollController {
         pointerProvider: @escaping PointerProvider,
         geometryProvider: @escaping GeometryProvider,
         scrollApplier: @escaping ScrollApplier,
-        selectionUpdater: @escaping SelectionUpdater
+        selectionUpdater: @escaping SelectionUpdater,
     ) {
         self.pointerProvider = pointerProvider
         self.geometryProvider = geometryProvider
@@ -88,7 +88,7 @@ final class EntryGridLassoAutoscrollController {
 
         let timer = Timer(
             timeInterval: TimeInterval(EntryViewLayoutAutoscrollAcceleration.tickInterval),
-            repeats: true
+            repeats: true,
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.tick()
@@ -116,7 +116,7 @@ final class EntryGridLassoAutoscrollController {
             pointerY: pointer.y,
             visibleRect: geometry.visibleRect,
             currentOriginY: geometry.currentOrigin.y,
-            documentHeight: geometry.documentSize.height
+            documentHeight: geometry.documentSize.height,
         ) else {
             return
         }
@@ -138,7 +138,7 @@ enum EntryViewLayoutDragStateClearRuleSet {
 
     nonisolated static func clearedDragPaths(
         afterSessionEndWith operation: NSDragOperation,
-        currentPaths: [String]
+        currentPaths: [String],
     ) -> [String] {
         guard shouldClearAfterSessionEnd(operation: operation) else { return currentPaths }
         return []

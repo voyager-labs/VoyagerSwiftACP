@@ -167,7 +167,8 @@ private final class UndoManagerHandlerStore: @unchecked Sendable {
 
     static func store(for undoManager: UndoManager) -> UndoManagerHandlerStore {
         if let store = objc_getAssociatedObject(undoManager, &UndoManagerHandlerStoreKey.value)
-            as? UndoManagerHandlerStore {
+            as? UndoManagerHandlerStore
+        {
             return store
         }
         let store = UndoManagerHandlerStore()

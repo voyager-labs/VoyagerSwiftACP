@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import VoyagerShared
 
@@ -53,7 +54,7 @@ struct ToolbarHoverButtonLabel: View {
             font: font,
             isHovered: isHovered,
         )
-        .background(HoverTrackingOverlay(isHovered: hoverBinding))
+        .background(ToolbarHoverTrackingOverlay(isHovered: hoverBinding))
     }
 
     private var hoverBinding: Binding<Bool> {
@@ -79,7 +80,7 @@ struct ToolbarMenuButton<Content: View>: View {
     let menuContent: () -> Content
 
     // Menu is backed by NSMenuButton which swallows SwiftUI .onHover tracking.
-    // Use AppKit-level NSTrackingArea instead (HoverTrackingOverlay).
+    // Use AppKit-level NSTrackingArea instead.
     @State private var isHovered: Bool = false
 
     init(
@@ -106,7 +107,7 @@ struct ToolbarMenuButton<Content: View>: View {
             isHovered: isHovered,
         )
         .overlay(menuView())
-        .overlay(HoverTrackingOverlay(isHovered: hoverBinding))
+        .overlay(ToolbarHoverTrackingOverlay(isHovered: hoverBinding))
         .id(menuID ?? 0)
     }
 
@@ -147,6 +148,50 @@ struct ToolbarMenuButton<Content: View>: View {
             .menuIndicator(.hidden)
             .buttonStyle(.borderless)
             .disabled(!isEnabled)
+        }
+    }
+}
+
+private struct ToolbarHoverTrackingOverlay: NSViewRepresentable {
+    @Binding var isHovered: Bool
+
+    func makeNSView(context _: Context) -> TrackingView {
+        let view = TrackingView()
+        view.onHover = { isHovered = $0 }
+        return view
+    }
+
+    func updateNSView(_ nsView: TrackingView, context _: Context) {
+        nsView.onHover = { isHovered = $0 }
+    }
+
+    final class TrackingView: NSView {
+        var onHover: ((Bool) -> Void)?
+        private var trackingArea: NSTrackingArea?
+
+        override func updateTrackingAreas() {
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+
+            let options: NSTrackingArea.Options = [.activeAlways, .mouseEnteredAndExited, .inVisibleRect]
+            let area = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+            addTrackingArea(area)
+            trackingArea = area
+
+            super.updateTrackingAreas()
+        }
+
+        override func mouseEntered(with _: NSEvent) {
+            onHover?(true)
+        }
+
+        override func mouseExited(with _: NSEvent) {
+            onHover?(false)
+        }
+
+        override func hitTest(_: NSPoint) -> NSView? {
+            nil
         }
     }
 }

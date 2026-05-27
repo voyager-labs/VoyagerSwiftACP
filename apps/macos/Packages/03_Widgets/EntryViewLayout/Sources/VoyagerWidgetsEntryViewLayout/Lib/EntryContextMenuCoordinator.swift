@@ -127,7 +127,7 @@ final class EntryContextMenuCoordinator: NSObject {
     func contextMenuOpenWithOther() {
         store.send(.delegate(.executeCommand(.navigation(.openWithSelectedItem(
             bundleID: nil,
-            shouldSetAsDefault: false
+            shouldSetAsDefault: false,
         )))))
     }
 
@@ -136,7 +136,7 @@ final class EntryContextMenuCoordinator: NSObject {
         let bundleID = sender.representedObject as? String
         store.send(.delegate(.executeCommand(.navigation(.openWithSelectedItem(
             bundleID: bundleID,
-            shouldSetAsDefault: false
+            shouldSetAsDefault: false,
         )))))
     }
 
@@ -152,14 +152,14 @@ extension EntryContextMenuCoordinator {
         _ item: EntryModel,
         selectedIds: Set<EntryModel.ID>,
         entryViewLayoutStore: StoreOf<EntryViewLayoutFeature>,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
     ) {
         if !selectedIds.contains(item.id) {
             entryViewLayoutStore.send(.internal(.setSelectionState(
                 ids: [item.id],
                 lastSelectedId: item.id,
                 rangeAnchorId: item.id,
-                shouldScrollToSelection: false
+                shouldScrollToSelection: false,
             )))
         }
         action()

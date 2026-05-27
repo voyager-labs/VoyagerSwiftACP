@@ -22,24 +22,24 @@ struct FileManagerWindowLifecycleReducer {
                     metricsClient.logMetric(
                         "voyager_file_manager_first_open",
                         1,
-                        ["date": currentDateKey()]
+                        ["date": currentDateKey()],
                     )
                 }
 
                 return .merge(
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortKey(
-                        state.content.entryViewLayout.entryArrangements.sortKey
+                        state.content.entryViewLayout.entryArrangements.sortKey,
                     ))))),
                     .send(.content(.entryViewLayout(.entryArrangements(.setSortOrder(
-                        state.content.entryViewLayout.entryArrangements.sortOrder
+                        state.content.entryViewLayout.entryArrangements.sortOrder,
                     ))))),
                     .send(.content(.entryViewLayout(.entryArrangements(.setGroupKey(
-                        state.content.entryViewLayout.entryArrangements.groupKey
+                        state.content.entryViewLayout.entryArrangements.groupKey,
                     ))))),
                     .send(.content(.internal(.applyNavigationState(state.content.navigation.navigationState)))),
                     .send(.sidebar(.internal(.loadFavorites))),
                     .send(.sidebar(.internal(.loadLocations))),
-                    .send(.sidebar(.internal(.loadTags)))
+                    .send(.sidebar(.internal(.loadTags))),
                 )
 
             case .onDisappear:

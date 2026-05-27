@@ -1,12 +1,14 @@
 import Foundation
 @testable import Voyager
-@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
+@testable import VoyagerPagesFileManager
 import XCTest
 
+/// FileManager content의 collection 상태(dirty/stale/refresh) 계약을 검증한다.
 @MainActor
 final class FileManagerContentCollectionStateTests: XCTestCase {
+    /// testDirtyAndStaleStayIndependent 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testDirtyAndStaleStayIndependent() {
         var state = FileManagerContentState()
         state.entryViewLayout.isCollectionMode = true
@@ -29,6 +31,7 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertEqual(state.collection.collectionSession.metadata.lastRefreshAt, .distantFuture)
     }
 
+    /// testCanSaveCollectionTracksDirtyOnly 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCanSaveCollectionTracksDirtyOnly() {
         var state = FileManagerContentState()
         state.entryViewLayout.isCollectionMode = true
@@ -43,6 +46,7 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertTrue(state.isCollectionMode && state.collection.collectionSession.phase.isStale)
     }
 
+    /// testHydratedStaleSessionRefreshBoundaryUsesPhaseAndTimestamp 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testHydratedStaleSessionRefreshBoundaryUsesPhaseAndTimestamp() {
         var state = FileManagerContentState()
 
@@ -62,6 +66,7 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertFalse(shouldRefreshOnOpen(state.collection.collectionSession))
     }
 
+    /// testRefreshBlockingReasonRequiresCleanSavedCollectionAndNoInflightWork 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshBlockingReasonRequiresCleanSavedCollectionAndNoInflightWork() {
         var state = FileManagerContentState()
         state.entryViewLayout.isCollectionMode = true
@@ -76,77 +81,39 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         )
         state.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
 
-        XCTAssertNil(state.collection.refreshBlockingReason(
-            isCollectionMode: state.isCollectionMode,
-            isDirty: state.isOpenedCollectionDirty,
-            isSearching: state.composer.isCollectionSearching,
-        ))
+        assertRefreshBlockingReason(state, nil)
 
         state.collection.collectionSession.phase = .opened(
             kind: .definition,
             base: .stale,
             inflight: .refreshingHydratedSnapshot,
         )
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .refreshInFlight,
-        )
+        assertRefreshBlockingReason(state, .refreshInFlight)
 
         state.collection.collectionSession.phase = .opened(
             kind: .definition,
             base: .stale,
             inflight: .writingBackRefreshedSnapshot,
         )
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .writeBackInFlight,
-        )
+        assertRefreshBlockingReason(state, .writeBackInFlight)
 
         state.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
         state.collection.collectionContext = .init(query: "updated", scopes: ["/tmp"], conditions: [])
-        XCTAssertEqual(state.collection.refreshBlockingReason(
-            isCollectionMode: state.isCollectionMode,
-            isDirty: state.isOpenedCollectionDirty,
-            isSearching: state.composer.isCollectionSearching,
-        ), .dirtyCollection)
+        assertRefreshBlockingReason(state, .dirtyCollection)
     }
 
+    /// testRefreshBlockingReasonUsesPriorityOrder 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshBlockingReasonUsesPriorityOrder() {
         var state = FileManagerContentState()
 
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .notInCollectionMode,
-        )
+        assertRefreshBlockingReason(state, .notInCollectionMode)
 
         state.entryViewLayout.isCollectionMode = true
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .notStale,
-        )
+        assertRefreshBlockingReason(state, .notStale)
 
         let baseline = CollectionContext(query: "report", scopes: ["/tmp"], conditions: [])
-        state.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
-        state.collection.collectionSession.document = .init(
-            url: URL(fileURLWithPath: "/tmp/report.voycoll"),
-            name: "report",
-            compatibility: nil,
-        )
-        state.collection.collectionSession.metadata.baseline = .init(context: baseline)
-        state.collection.collectionContext = baseline
-        XCTAssertNil(state.collection.refreshBlockingReason(
-            isCollectionMode: state.isCollectionMode,
-            isDirty: state.isOpenedCollectionDirty,
-            isSearching: state.composer.isCollectionSearching,
-        ))
+        configureRefreshableCollectionState(&state, baseline: baseline)
+        assertRefreshBlockingReason(state, nil)
 
         state.collection.collectionContext = .init(query: "updated", scopes: ["/tmp"], conditions: [])
         state.collection.collectionSession.phase = .opened(
@@ -155,22 +122,12 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
             inflight: .writingBackRefreshedSnapshot,
         )
         state.collection.collectionSession.document = nil
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .dirtyCollection,
-        )
+        assertRefreshBlockingReason(state, .dirtyCollection)
 
         state.collection.collectionContext = baseline
         state.composer.isCollectionMode = true
         state.composer.isLoadingFilters = true
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .searchInFlight,
-        )
+        assertRefreshBlockingReason(state, .searchInFlight)
 
         state.composer.isLoadingFilters = false
         state.collection.collectionSession.phase = .opened(
@@ -178,31 +135,17 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
             base: .stale,
             inflight: .refreshingHydratedSnapshot,
         )
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .refreshInFlight,
-        )
+        assertRefreshBlockingReason(state, .refreshInFlight)
 
         state.collection.collectionSession.phase = .opened(
             kind: .definition,
             base: .stale,
             inflight: .writingBackRefreshedSnapshot,
         )
-        XCTAssertEqual(state.collection.refreshBlockingReason(
-            isCollectionMode: state.isCollectionMode,
-            isDirty: state.isOpenedCollectionDirty,
-            isSearching: state.composer.isCollectionSearching,
-        ), .writeBackInFlight)
+        assertRefreshBlockingReason(state, .writeBackInFlight)
 
         state.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .missingOpenedURL,
-        )
+        assertRefreshBlockingReason(state, .missingOpenedURL)
 
         state.collection.collectionSession.document = .init(
             url: URL(fileURLWithPath: "/tmp/report.voycoll"),
@@ -210,28 +153,20 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
             compatibility: nil,
         )
         state.collection.collectionContext = nil
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .missingCollectionContext,
-        )
+        assertRefreshBlockingReason(state, .missingCollectionContext)
 
         state.collection.collectionContext = baseline
         state.collection.collectionSession.metadata.baseline = nil
-        XCTAssertEqual(
-            state.collection
-                .refreshBlockingReason(isCollectionMode: state.isCollectionMode, isDirty: state.isOpenedCollectionDirty,
-                                       isSearching: state.composer.isCollectionSearching),
-            .missingBaseline,
-        )
+        assertRefreshBlockingReason(state, .missingBaseline)
     }
 
+    /// testResetComposerOnNextDirectoryNavigationDefaultsFalse 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testResetComposerOnNextDirectoryNavigationDefaultsFalse() {
         let state = FileManagerContentState()
         XCTAssertFalse(state.resetComposerOnNextDirectoryNavigation)
     }
 
+    /// testResetComposerOnNextDirectoryNavigationRoundTrips 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testResetComposerOnNextDirectoryNavigationRoundTrips() {
         var state = FileManagerContentState()
         state.resetComposerOnNextDirectoryNavigation = true
@@ -240,6 +175,8 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
         XCTAssertFalse(state.resetComposerOnNextDirectoryNavigation)
     }
 
+    /// testResetComposerOnNextDirectoryNavigationToleratesCollectionSessionMutation 시나리오가 FileManager 계약을 위반하지 않음을
+    /// 검증한다.
     func testResetComposerOnNextDirectoryNavigationToleratesCollectionSessionMutation() {
         var state = FileManagerContentState()
         state.resetComposerOnNextDirectoryNavigation = true
@@ -264,4 +201,38 @@ final class FileManagerContentCollectionStateTests: XCTestCase {
 @MainActor
 private func shouldRefreshOnOpen(_ session: CollectionDocumentSessionState) -> Bool {
     session.phase.openKind == .hydratedSnapshot && session.phase.isStale && session.metadata.lastRefreshAt == nil
+}
+
+@MainActor
+private func configureRefreshableCollectionState(
+    _ state: inout FileManagerContentState,
+    baseline: CollectionContext,
+) {
+    state.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
+    state.collection.collectionSession.document = .init(
+        url: URL(fileURLWithPath: "/tmp/report.voycoll"),
+        name: "report",
+        compatibility: nil,
+    )
+    state.collection.collectionSession.metadata.baseline = .init(context: baseline)
+    state.collection.collectionContext = baseline
+}
+
+@MainActor
+private func assertRefreshBlockingReason(
+    _ state: FileManagerContentState,
+    _ expected: CollectionSessionRefreshBlockingReason?,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+) {
+    XCTAssertEqual(
+        state.collection.refreshBlockingReason(
+            isCollectionMode: state.isCollectionMode,
+            isDirty: state.isOpenedCollectionDirty,
+            isSearching: state.composer.isCollectionSearching,
+        ),
+        expected,
+        file: file,
+        line: line,
+    )
 }
