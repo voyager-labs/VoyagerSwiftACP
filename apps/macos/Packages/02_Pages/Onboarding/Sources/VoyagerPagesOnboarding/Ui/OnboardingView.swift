@@ -136,14 +136,14 @@ struct OnboardingView: View {
             } else {
                 let isRetry = viewStore.betaAccess.showsRetry
                 Button {
-                    viewStore.send(isRetry ? .betaAccess(.retryTapped) : .betaAccess(.checkTapped))
+                    viewStore.send(isRetry ? .betaAccess(.retryTapped) : .betaAccess(.submitTapped))
                 } label: {
-                    topBarLabel(isRetry ? "Retry (Enter)" : "Check (Enter)")
+                    topBarLabel(isRetry ? "Retry (Enter)" : "Activate (Enter)")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(accentColor)
                 .keyboardShortcut(.return, modifiers: [])
-                .disabled(!viewStore.betaAccess.canSubmit || viewStore.betaAccess.isVerifying)
+                .disabled(!viewStore.betaAccess.canSubmit || viewStore.betaAccess.isSubmitting)
             }
         case .complete:
             Button {
@@ -226,7 +226,7 @@ struct OnboardingView: View {
         case .welcome:
             WelcomeStepView(store: store.scope(state: \.welcome, action: \.welcome))
         case .betaAccess:
-            BetaAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
+            UnlockAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
         case .aiProviderSetup:

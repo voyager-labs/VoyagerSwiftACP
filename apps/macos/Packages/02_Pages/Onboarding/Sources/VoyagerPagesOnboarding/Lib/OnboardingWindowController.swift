@@ -2,14 +2,18 @@ import AppKit
 import ComposableArchitecture
 import QuartzCore
 import SwiftUI
+import VoyagerFeaturesAccess
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let store: StoreOf<OnboardingFeature>
     private var shouldTerminateOnClose = true
 
-    init(openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
-        false
-    }) {
+    init(
+        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
+            false
+        },
+        accessClient: AccessClient? = nil,
+    ) {
         store = Store(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
@@ -22,6 +26,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                 openMainWindow: openMainWindow,
                 resetStoredProgress: base.resetStoredProgress,
             )
+            if let accessClient {
+                $0.accessClient = accessClient
+            }
         }
 
         let rootView = OnboardingView(store: store)

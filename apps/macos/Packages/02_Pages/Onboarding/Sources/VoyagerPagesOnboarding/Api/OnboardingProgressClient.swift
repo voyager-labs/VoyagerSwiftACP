@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccess
 import VoyagerShared
 
 struct OnboardingProgressClient {
@@ -24,6 +25,7 @@ extension OnboardingProgressClient: DependencyKey {
         static let version = "onboardingProgressVersion"
         static let currentStep = "onboardingCurrentStep"
         static let stepState = "onboardingStepState"
+        static let accessSnapshot = "onboardingAccessSnapshot"
     }
 
     nonisolated static let currentVersion = 1.2
@@ -59,12 +61,16 @@ extension OnboardingProgressClient: DependencyKey {
                 guard let stepState = try? JSONDecoder().decode(OnboardingStepState.self, from: data) else {
                     return .resetRequired
                 }
+                let accessSnapshot = (userDefaultsClient.object(Keys.accessSnapshot) as? Data).flatMap { data in
+                    try? JSONDecoder().decode(AccessStatusSnapshot.self, from: data)
+                }
 
                 if version != currentVersion {
                     guard let snapshot = Self.migratedSnapshot(
                         version: version,
                         currentStep: step,
                         stepState: stepState,
+                        accessSnapshot: accessSnapshot,
                     ) else { return .resetRequired }
                     guard Self.persist(snapshot, userDefaultsClient: userDefaultsClient) == .success else {
                         return .resetRequired
@@ -72,7 +78,11 @@ extension OnboardingProgressClient: DependencyKey {
                     return .success(snapshot)
                 }
 
-                return .success(OnboardingProgressSnapshot(currentStep: step, stepState: stepState))
+                return .success(OnboardingProgressSnapshot(
+                    currentStep: step,
+                    stepState: stepState,
+                    accessSnapshot: accessSnapshot,
+                ))
             },
             save: { snapshot in
                 @Dependency(\.userDefaultsClient)
@@ -86,6 +96,7 @@ extension OnboardingProgressClient: DependencyKey {
                 userDefaultsClient.setObject(nil, Keys.version)
                 userDefaultsClient.setObject(nil, Keys.currentStep)
                 userDefaultsClient.setObject(nil, Keys.stepState)
+                userDefaultsClient.setObject(nil, Keys.accessSnapshot)
             },
         )
     }
@@ -94,6 +105,7 @@ extension OnboardingProgressClient: DependencyKey {
         version: Double,
         currentStep: OnboardingStep,
         stepState: OnboardingStepState,
+        accessSnapshot: AccessStatusSnapshot?,
     ) -> OnboardingProgressSnapshot? {
         guard version == 1.1 else { return nil }
 
@@ -105,7 +117,11 @@ extension OnboardingProgressClient: DependencyKey {
             migratedStepState.aiProviderSetupStatus = .skipped
         }
 
-        return OnboardingProgressSnapshot(currentStep: currentStep, stepState: migratedStepState)
+        return OnboardingProgressSnapshot(
+            currentStep: currentStep,
+            stepState: migratedStepState,
+            accessSnapshot: accessSnapshot,
+        )
     }
 
     nonisolated private static func persist(
@@ -119,6 +135,13 @@ extension OnboardingProgressClient: DependencyKey {
         userDefaultsClient.setObject(currentVersion, Keys.version)
         userDefaultsClient.setObject(snapshot.currentStep.rawValue, Keys.currentStep)
         userDefaultsClient.setObject(data, Keys.stepState)
+        if let accessSnapshot = snapshot.accessSnapshot,
+           let data = try? JSONEncoder().encode(accessSnapshot)
+        {
+            userDefaultsClient.setObject(data, Keys.accessSnapshot)
+        } else {
+            userDefaultsClient.setObject(nil, Keys.accessSnapshot)
+        }
         return .success
     }
 

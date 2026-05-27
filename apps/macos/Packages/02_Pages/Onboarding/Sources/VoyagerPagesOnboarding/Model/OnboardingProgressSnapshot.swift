@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerFeaturesAccess
 
 nonisolated struct OnboardingStepState: Codable, Equatable {
     var welcomeComplete: Bool
@@ -9,8 +10,6 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
     var aiProviderSetupChoice: AiProviderSetupChoice
     var aiProviderSetupStatus: AiProviderSetupStatus
     var completeComplete: Bool
-    var betaAccessEmail: String?
-    var betaAccessToken: String?
 
     init(
         welcomeComplete: Bool = true,
@@ -21,8 +20,6 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
         aiProviderSetupChoice: AiProviderSetupChoice = .none,
         aiProviderSetupStatus: AiProviderSetupStatus = .blocked,
         completeComplete: Bool = false,
-        betaAccessEmail: String? = nil,
-        betaAccessToken: String? = nil,
     ) {
         self.welcomeComplete = welcomeComplete
         self.betaAccessComplete = betaAccessComplete
@@ -32,8 +29,6 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
         self.aiProviderSetupChoice = aiProviderSetupChoice
         self.aiProviderSetupStatus = aiProviderSetupStatus
         self.completeComplete = completeComplete
-        self.betaAccessEmail = betaAccessEmail
-        self.betaAccessToken = betaAccessToken
     }
 
     nonisolated init(from decoder: Decoder) throws {
@@ -53,8 +48,6 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
                 forKey: .aiProviderSetupStatus,
             ) ?? .blocked,
             completeComplete: container.decodeIfPresent(Bool.self, forKey: .completeComplete) ?? false,
-            betaAccessEmail: container.decodeIfPresent(String.self, forKey: .betaAccessEmail),
-            betaAccessToken: container.decodeIfPresent(String.self, forKey: .betaAccessToken),
         )
     }
 
@@ -67,12 +60,21 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
         case aiProviderSetupChoice
         case aiProviderSetupStatus
         case completeComplete
-        case betaAccessEmail
-        case betaAccessToken
     }
 }
 
 nonisolated struct OnboardingProgressSnapshot: Equatable {
     var currentStep: OnboardingStep
     var stepState: OnboardingStepState
+    var accessSnapshot: AccessStatusSnapshot?
+
+    init(
+        currentStep: OnboardingStep,
+        stepState: OnboardingStepState,
+        accessSnapshot: AccessStatusSnapshot? = nil,
+    ) {
+        self.currentStep = currentStep
+        self.stepState = stepState
+        self.accessSnapshot = accessSnapshot
+    }
 }

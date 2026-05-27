@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesBetaAccess
+import VoyagerFeaturesAccess
 
 @Reducer
 struct OnboardingFeature {
@@ -18,7 +18,7 @@ struct OnboardingFeature {
             WelcomeFeature()
         }
         Scope(state: \.betaAccess, action: \.betaAccess) {
-            BetaAccessFeature()
+            UnlockAccessFeature()
         }
         Scope(state: \.permissions, action: \.permissions) {
             PermissionsFeature()
@@ -51,9 +51,30 @@ struct OnboardingFeature {
 
                 case let .success(snapshot):
                     state.applyStepState(snapshot.stepState)
+                    if snapshot.stepState.betaAccessComplete, snapshot.accessSnapshot == nil {
+                        state.betaAccess = UnlockAccessFeature.State()
+                        state.currentStep = .betaAccess
+                        let updatedSnapshot = state.progressSnapshot
+                        return .run { _ in
+                            _ = progressClient.save(updatedSnapshot)
+                        }
+                    }
+                    if let accessSnapshot = snapshot.accessSnapshot {
+                        state.betaAccess.snapshot = accessSnapshot
+                        state.betaAccess.status = accessSnapshot.status
+                    }
                     state.currentStep = state.lastValidStep(from: snapshot.currentStep)
                     let updatedSnapshot = state.progressSnapshot
-                    return Self.saveEffect(updatedSnapshot, progressClient: progressClient)
+                    let saveEffect: Effect<Action> = .run { _ in
+                        _ = progressClient.save(updatedSnapshot)
+                    }
+                    guard snapshot.accessSnapshot != nil, state.betaAccess.isComplete else {
+                        return saveEffect
+                    }
+                    return .concatenate(
+                        saveEffect,
+                        .send(.betaAccess(.onAppear)),
+                    )
                 }
 
             case .backTapped:
@@ -103,6 +124,13 @@ struct OnboardingFeature {
                     state.aiProviderSetup.refreshStatus()
                 }
                 return .none
+
+            case let .betaAccess(.accessStatusResponse(.success(response))):
+                if !response.status.isActive {
+                    state.currentStep = .betaAccess
+                }
+                let snapshot = state.progressSnapshot
+                return Self.saveEffect(snapshot, progressClient: progressClient)
 
             case .welcome, .betaAccess, .permissions, .aiProviderSetup, .complete:
                 let snapshot = state.progressSnapshot

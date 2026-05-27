@@ -509,8 +509,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
         initialState.welcome.isComplete = true
-        initialState.betaAccess.isComplete = true
-        initialState.betaAccess.status = .active
+        StateMutation.applyPersistedCompletedAccessStep(state: &initialState)
         initialState.permissions.isComplete = true
         initialState.aiProviderSetup.choice = .providerConnected
         initialState.aiProviderSetup.status = .complete
