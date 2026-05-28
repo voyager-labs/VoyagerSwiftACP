@@ -9,6 +9,12 @@ final class ComposerScopeOverlayCoordinator {
     private var content: (() -> AnyView)?
     private weak var parentWindow: NSWindow?
 
+    deinit {
+        MainActor.assumeIsolated {
+            dismiss()
+        }
+    }
+
     func updateAnchorScreenFrame(_ frame: CGRect) {
         anchorScreenFrame = frame
         updatePanelFrame()
