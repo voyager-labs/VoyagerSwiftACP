@@ -42,10 +42,10 @@
   "evenBetterToml.taplo.configFile.path": ".taplo.toml",
   "sweetpad.build.xcodeWorkspacePath": "apps/macos/Voyager/Voyager.xcworkspace",
   "sweetpad.build.autoGenerateBuildServerConfig": false,
-  "sweetpad.build.derivedDataPath": "${workspaceFolder}/build/dev/DerivedData",
+  "sweetpad.build.derivedDataPath": "build/dev/DerivedData",
   "sweetpad.build.args": [
     "-clonedSourcePackagesDirPath",
-    "${workspaceFolder}/build/dev/SourcePackages",
+    "build/dev/SourcePackages",
     "-skipPackagePluginValidation",
     "-skipMacroValidation"
   ],
