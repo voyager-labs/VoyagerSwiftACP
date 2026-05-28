@@ -64,3 +64,19 @@ extension ComposerScopeEditorListState {
         return nil
     }
 }
+
+extension ScopePickerView {
+    func handleCandidateSelection(
+        _ path: String,
+        scopeEditor: ComposerScopeEditorState,
+    ) {
+        switch scopeEditor.candidateSelectionIntent(for: path) {
+        case let .add(path):
+            store.send(.candidateScope(.add(path: path)))
+        case let .replace(oldPath, newPath):
+            store.send(.currentScope(.replace(oldPath: oldPath, newPath: newPath)))
+        case let .exclude(path):
+            store.send(.exceptionScope(.exclude(path: path)))
+        }
+    }
+}

@@ -487,7 +487,7 @@ private extension ScopePickerView {
     ) {
         switch viewStore.scopeEditor.treeActionIntent(rowPath: row.path, action: action) {
         case let .addBase(path):
-            store.send(.candidateScope(.add(path: path)))
+            handleCandidateSelection(path, scopeEditor: viewStore.scopeEditor)
         case let .exclude(path):
             store.send(.exceptionScope(.exclude(path: path)))
         case let .removeBase(path):
