@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
@@ -32,7 +33,7 @@ extension AiChatExecutionClient: DependencyKey {
 
 public extension AiChatExecutionClient {
     nonisolated static func live(
-        providerExecutionClient: VoyagerEntitiesAi.AiChatProviderExecutionClient = .liveValue
+        providerExecutionClient: VoyagerEntitiesAi.AiChatProviderExecutionClient = .liveValue,
     ) -> AiChatExecutionClient {
         AiChatExecutionClient(execute: { request, credential in
             let providerStream: AsyncThrowingStream<VoyagerEntitiesAi.AiChatProviderExecutionEvent, Error>
@@ -82,7 +83,7 @@ public extension AiChatExecutionClient {
 private extension AiChatExecutionClient {
     static func immediateFailureStream(
         context: AiChatRequestContextSnapshot,
-        error: Error
+        error: Error,
     ) -> AsyncStream<AiChatEvent> {
         AsyncStream { continuation in
             continuation.yield(.failed(context: context, reason: mapExecutionError(error)))
@@ -133,7 +134,7 @@ public struct AiChatContextPartResolverInput: Equatable, Sendable {
         rawModelID: String,
         requestFamily: AiChatContextPartResolverRequestFamily,
         currentContext: AiChatCurrentContextSnapshot,
-        attachments: [AiChatAttachmentDraft]
+        attachments: [AiChatAttachmentDraft],
     ) {
         self.provider = provider
         self.rawModelID = rawModelID
@@ -158,6 +159,7 @@ public struct AiChatResolvedContextPart: Equatable, Sendable {
     public let byteCount: Int64?
     public let mimeType: String?
 
+    // swiftlint:disable function_default_parameter_at_end
     public init(
         source: AiChatResolvedContextPartSource,
         resolution: AiChatContextPartResolution,
@@ -166,7 +168,7 @@ public struct AiChatResolvedContextPart: Equatable, Sendable {
         fileKind: AiChatContextItemKind,
         displayTitle: String? = nil,
         byteCount: Int64? = nil,
-        mimeType: String? = nil
+        mimeType: String? = nil,
     ) {
         self.source = source
         self.resolution = resolution
@@ -177,6 +179,7 @@ public struct AiChatResolvedContextPart: Equatable, Sendable {
         self.byteCount = byteCount
         self.mimeType = mimeType
     }
+    // swiftlint:enable function_default_parameter_at_end
 }
 
 public struct AiChatResolvedRequestContext: Equatable, Sendable {
@@ -187,7 +190,7 @@ public struct AiChatResolvedRequestContext: Equatable, Sendable {
     public init(
         currentContext: AiChatCurrentContextSnapshot,
         addedAttachments: [AiChatAttachmentSnapshot],
-        parts: [AiChatResolvedContextPart]
+        parts: [AiChatResolvedContextPart],
     ) {
         self.currentContext = currentContext
         self.addedAttachments = addedAttachments
@@ -224,7 +227,7 @@ public extension AiChatContextPartResolverClient {
             let resolvedAttachments = input.attachments.map { attachment in
                 let result = AiChatAttachmentResolverClient.resolveAttachment(
                     attachment,
-                    remainingTotalBudget: &remainingTotalBudget
+                    remainingTotalBudget: &remainingTotalBudget,
                 )
                 return AiChatAttachmentSnapshot(
                     id: attachment.id,
@@ -234,7 +237,7 @@ public extension AiChatContextPartResolverClient {
                     kind: attachment.kind,
                     sourceLocation: attachment.sourceLocation,
                     metadata: attachment.metadata,
-                    resolutionResult: result
+                    resolutionResult: result,
                 )
             }
 
@@ -244,7 +247,7 @@ public extension AiChatContextPartResolverClient {
                     snapshot: $0.1,
                     provider: input.provider,
                     rawModelID: input.rawModelID,
-                    requestFamily: input.requestFamily
+                    requestFamily: input.requestFamily,
                 )
             }
             let attachmentCanonicalPaths = Set(attachmentDescriptors.compactMap(\.part.canonicalPath))
@@ -254,15 +257,15 @@ public extension AiChatContextPartResolverClient {
                 provider: input.provider,
                 rawModelID: input.rawModelID,
                 requestFamily: input.requestFamily,
-                attachmentCanonicalPaths: attachmentCanonicalPaths
+                attachmentCanonicalPaths: attachmentCanonicalPaths,
             )
 
-            let sanitizedAttachments = attachmentDescriptors.map { $0.snapshot }
-            let parts = attachmentDescriptors.map { $0.part } + currentContextResolution.parts
+            let sanitizedAttachments = attachmentDescriptors.map(\.snapshot)
+            let parts = attachmentDescriptors.map(\.part) + currentContextResolution.parts
             return AiChatResolvedRequestContext(
                 currentContext: currentContextResolution.snapshot,
                 addedAttachments: sanitizedAttachments,
-                parts: parts
+                parts: parts,
             )
         }
     }
@@ -306,8 +309,8 @@ public extension AiChatAttachmentResolverClient {
                     rawModelID: "",
                     requestFamily: .openAIResponses,
                     currentContext: AiChatCurrentContextSnapshot(),
-                    attachments: attachments
-                )
+                    attachments: attachments,
+                ),
             )
             return result.addedAttachments
         }
@@ -317,7 +320,7 @@ public extension AiChatAttachmentResolverClient {
 private extension AiChatAttachmentResolverClient {
     static func resolveAttachment(
         _ attachment: AiChatAttachmentDraft,
-        remainingTotalBudget: inout Int
+        remainingTotalBudget: inout Int,
     ) -> AiChatAttachmentResolutionResult {
         guard remainingTotalBudget > 0 else {
             return .failure(reason: .tooLarge, metadata: attachmentResolutionMetadata(for: attachment))
@@ -327,7 +330,7 @@ private extension AiChatAttachmentResolverClient {
             let metadata = folderStructureMetadata(
                 base: attachmentResolutionMetadata(for: attachment),
                 directoryURL: attachmentResolutionURL(for: attachment),
-                mode: folderStructureMode(from: attachment.metadata)
+                mode: folderStructureMode(from: attachment.metadata),
             )
             return .resolvedReference(metadata: metadata)
         }
@@ -345,7 +348,7 @@ private extension AiChatAttachmentResolverClient {
             let metadata = folderStructureMetadata(
                 base: attachmentResolutionMetadata(for: attachment),
                 directoryURL: fileURL,
-                mode: folderStructureMode(from: attachment.metadata)
+                mode: folderStructureMode(from: attachment.metadata),
             )
             return .resolvedReference(metadata: metadata)
         }
@@ -358,18 +361,18 @@ private extension AiChatAttachmentResolverClient {
             attachment,
             fileURL: fileURL,
             relativePath: fileURL.lastPathComponent,
-            remainingTotalBudget: &remainingTotalBudget
+            remainingTotalBudget: &remainingTotalBudget,
         )
     }
 
     static func resolveCollectionAttachment(
         _ attachment: AiChatAttachmentDraft,
-        remainingTotalBudget: inout Int
+        remainingTotalBudget: inout Int,
     ) -> AiChatAttachmentResolutionResult {
         let metadata = collectionReferenceMetadata(
             base: attachmentResolutionMetadata(for: attachment),
             fileURL: attachmentResolutionURL(for: attachment),
-            remainingTotalBudget: &remainingTotalBudget
+            remainingTotalBudget: &remainingTotalBudget,
         )
         return .resolvedReference(metadata: metadata)
     }
@@ -377,7 +380,7 @@ private extension AiChatAttachmentResolverClient {
     static func collectionReferenceMetadata(
         base: [String: String],
         fileURL: URL?,
-        remainingTotalBudget: inout Int
+        remainingTotalBudget: inout Int,
     ) -> [String: String] {
         var metadata = base
         guard let fileURL else {
@@ -394,7 +397,7 @@ private extension AiChatAttachmentResolverClient {
         if !snapshot.itemPaths.isEmpty {
             let resolvedPaths = collectionItemPathsWithinBudget(
                 snapshot.itemPaths,
-                budget: min(collectionItemPathUTF8ByteBudget, remainingTotalBudget)
+                budget: min(collectionItemPathUTF8ByteBudget, remainingTotalBudget),
             )
             metadata["collectionItemsIncluded"] = "\(resolvedPaths.paths.count)"
             metadata["collectionItemsTruncated"] = resolvedPaths.truncated ? "true" : "false"
@@ -414,8 +417,8 @@ private extension AiChatAttachmentResolverClient {
 
     static func collectionItemPathsWithinBudget(
         _ paths: [String],
-        budget: Int
-    ) -> (paths: [String], utf8Bytes: Int, truncated: Bool) {
+        budget: Int,
+    ) -> (paths: [String], utf8Bytes: Int, truncated: Bool) { // swiftlint:disable:this large_tuple
         var includedPaths: [String] = []
         var usedBytes = 0
 
@@ -436,7 +439,7 @@ private extension AiChatAttachmentResolverClient {
         _ attachment: AiChatAttachmentDraft,
         fileURL: URL,
         relativePath: String,
-        remainingTotalBudget: inout Int
+        remainingTotalBudget: inout Int,
     ) -> AiChatAttachmentResolutionResult {
         var metadata = attachmentResolutionMetadata(for: attachment)
         metadata["relativePath"] = relativePath
@@ -458,7 +461,7 @@ private extension AiChatAttachmentResolverClient {
 
     static func resolveFileText(
         fileURL: URL,
-        remainingTotalBudget: inout Int
+        remainingTotalBudget: inout Int,
     ) -> ResolvedAttachmentText {
         let allowedBytes = min(perAttachmentUTF8ByteBudget, remainingTotalBudget)
         guard allowedBytes > 0 else { return .failure(.tooLarge) }
@@ -495,9 +498,10 @@ private extension AiChatAttachmentResolverClient {
             let urls = try FileManager.default.contentsOfDirectory(
                 at: directoryURL,
                 includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
-                options: [.skipsHiddenFiles]
+                options: [.skipsHiddenFiles],
             )
-            let sorted = urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            let sorted = urls
+                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             let limit = 80
             let paths = sorted.prefix(limit).map { $0.path(percentEncoded: false) }
             metadata["collectionItemCount"] = "\(urls.count)"
@@ -515,7 +519,7 @@ private extension AiChatAttachmentResolverClient {
     static func folderStructureMetadata(
         base: [String: String],
         directoryURL: URL?,
-        mode: AiChatFolderStructureMode
+        mode: AiChatFolderStructureMode,
     ) -> [String: String] {
         var metadata = directoryReferenceMetadata(base: base, directoryURL: directoryURL)
         metadata["folderStructureMode"] = mode.rawValue
@@ -529,7 +533,8 @@ private extension AiChatAttachmentResolverClient {
 
         let snapshot = folderStructureSnapshot(rootURL: directoryURL)
         metadata["folderStructurePathStyle"] = "relativeToSelectedFolder"
-        metadata["folderStructureRootName"] = directoryURL.lastPathComponent.isEmpty ? directoryURL.path(percentEncoded: false) : directoryURL.lastPathComponent
+        metadata["folderStructureRootName"] = directoryURL.lastPathComponent.isEmpty ? directoryURL
+            .path(percentEncoded: false) : directoryURL.lastPathComponent
         metadata["folderStructureMaxDepth"] = "8"
         metadata["folderStructureMaxEntries"] = "1000"
         metadata["folderStructureUTF8ByteBudget"] = "65536"
@@ -555,7 +560,8 @@ private extension AiChatAttachmentResolverClient {
         let rootURL = rootURL.standardizedFileURL
         let rootCanonicalURL = rootURL.resolvingSymlinksInPath().standardizedFileURL
         let rootCanonicalPath = rootCanonicalURL.path(percentEncoded: false)
-        let rootRelativePath = rootCanonicalURL.lastPathComponent.isEmpty ? rootCanonicalPath : rootCanonicalURL.lastPathComponent
+        let rootRelativePath = rootCanonicalURL.lastPathComponent.isEmpty ? rootCanonicalPath : rootCanonicalURL
+            .lastPathComponent
         var snapshot = FolderStructureSnapshot(rootPath: rootCanonicalPath)
 
         guard let resourceValues = try? rootCanonicalURL.resourceValues(forKeys: [.isDirectoryKey]) else {
@@ -578,17 +584,18 @@ private extension AiChatAttachmentResolverClient {
             relativePath: rootRelativePath,
             depth: 0,
             rootCanonicalPath: rootCanonicalPath,
-            snapshot: &snapshot
+            snapshot: &snapshot,
         )
         return snapshot
     }
 
+    // swiftlint:disable:next function_body_length
     static func collectFolderStructureEntries(
         at directoryURL: URL,
         relativePath: String,
         depth: Int,
         rootCanonicalPath: String,
-        snapshot: inout FolderStructureSnapshot
+        snapshot: inout FolderStructureSnapshot,
     ) {
         guard !snapshot.truncated, snapshot.includedCount < 1000, depth < 8 else {
             snapshot.truncated = true
@@ -605,7 +612,7 @@ private extension AiChatAttachmentResolverClient {
                     .isSymbolicLinkKey,
                     .isHiddenKey,
                 ],
-                options: [.skipsHiddenFiles]
+                options: [.skipsHiddenFiles],
             )
         } catch {
             snapshot.readFailures += 1
@@ -618,8 +625,7 @@ private extension AiChatAttachmentResolverClient {
         appendDirectoryFilePaths(
             directoryRelativePath: relativePath,
             children: sortedChildren,
-            rootCanonicalPath: rootCanonicalPath,
-            snapshot: &snapshot
+            snapshot: &snapshot,
         )
 
         for child in sortedChildren {
@@ -631,8 +637,15 @@ private extension AiChatAttachmentResolverClient {
             let childRelativePath = relativePath.isEmpty
                 ? child.lastPathComponent
                 : relativePath + "/" + child.lastPathComponent
-            let resourceValues = try? child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isHiddenKey])
-            if resourceValues?.isHidden == true || child.lastPathComponent.hasPrefix(".") || isHeavyFolder(name: child.lastPathComponent) {
+            let resourceValues = try? child.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .isHiddenKey,
+            ])
+            if resourceValues?.isHidden == true || child.lastPathComponent
+                .hasPrefix(".") || isHeavyFolder(name: child.lastPathComponent)
+            {
                 snapshot.skippedCount += 1
                 continue
             }
@@ -647,7 +660,7 @@ private extension AiChatAttachmentResolverClient {
                     kind: isWithinRoot ? "symlink-skipped" : "symlink-escape-skipped",
                     depth: depth + 1,
                     relativePath: childRelativePath,
-                    snapshot: &snapshot
+                    snapshot: &snapshot,
                 )
                 continue
             }
@@ -657,7 +670,7 @@ private extension AiChatAttachmentResolverClient {
                     kind: "package",
                     depth: depth + 1,
                     relativePath: childRelativePath,
-                    snapshot: &snapshot
+                    snapshot: &snapshot,
                 )
                 continue
             }
@@ -667,21 +680,21 @@ private extension AiChatAttachmentResolverClient {
                     kind: "directory",
                     depth: depth + 1,
                     relativePath: childRelativePath,
-                    snapshot: &snapshot
+                    snapshot: &snapshot,
                 )
                 collectFolderStructureEntries(
                     at: child.standardizedFileURL,
                     relativePath: childRelativePath,
                     depth: depth + 1,
                     rootCanonicalPath: rootCanonicalPath,
-                    snapshot: &snapshot
+                    snapshot: &snapshot,
                 )
             } else if resourceValues?.isRegularFile == true {
                 appendFolderStructureEntry(
                     kind: "file",
                     depth: depth + 1,
                     relativePath: childRelativePath,
-                    snapshot: &snapshot
+                    snapshot: &snapshot,
                 )
             } else {
                 snapshot.skippedCount += 1
@@ -692,11 +705,15 @@ private extension AiChatAttachmentResolverClient {
     static func appendDirectoryFilePaths(
         directoryRelativePath: String,
         children: [URL],
-        rootCanonicalPath: String,
-        snapshot: inout FolderStructureSnapshot
+        snapshot: inout FolderStructureSnapshot,
     ) {
         for child in children {
-            let resourceValues = try? child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isHiddenKey])
+            let resourceValues = try? child.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .isHiddenKey,
+            ])
             guard resourceValues?.isRegularFile == true,
                   resourceValues?.isHidden != true,
                   resourceValues?.isSymbolicLink != true,
@@ -706,7 +723,9 @@ private extension AiChatAttachmentResolverClient {
             let fileRelativePath = directoryRelativePath.isEmpty
                 ? child.lastPathComponent
                 : directoryRelativePath + "/" + child.lastPathComponent
-            snapshot.directoryFilePaths.append("\(directoryRelativePath)\t\(fileRelativePath)")
+            let line = "\(directoryRelativePath)\t\(fileRelativePath)"
+            guard consumeFolderStructureMetadataBudget(for: line, snapshot: &snapshot) else { return }
+            snapshot.directoryFilePaths.append(line)
         }
     }
 
@@ -714,22 +733,31 @@ private extension AiChatAttachmentResolverClient {
         kind: String,
         depth: Int,
         relativePath: String,
-        snapshot: inout FolderStructureSnapshot
+        snapshot: inout FolderStructureSnapshot,
     ) {
-        guard !snapshot.truncated else { return }
         let line = "\(kind)\t\(depth)\t\(relativePath)"
-        let lineBytes = line.utf8.count + (snapshot.entries.isEmpty ? 0 : 1)
-        guard snapshot.bytesUsed + lineBytes <= 64 * 1024 else {
-            snapshot.truncated = true
-            return
-        }
-        guard snapshot.includedCount < 1000 else {
-            snapshot.truncated = true
-            return
-        }
+        guard consumeFolderStructureMetadataBudget(for: line, snapshot: &snapshot) else { return }
         snapshot.entries.append(line)
         snapshot.includedCount += 1
+    }
+
+    static func consumeFolderStructureMetadataBudget(
+        for line: String,
+        snapshot: inout FolderStructureSnapshot,
+    ) -> Bool {
+        guard !snapshot.truncated else { return false }
+        let lineBytes = line.utf8.count + (snapshot.metadataLineCount == 0 ? 0 : 1)
+        guard snapshot.bytesUsed + lineBytes <= 64 * 1024 else {
+            snapshot.truncated = true
+            return false
+        }
+        guard snapshot.metadataLineCount < 1000 else {
+            snapshot.truncated = true
+            return false
+        }
+        snapshot.metadataLineCount += 1
         snapshot.bytesUsed += lineBytes
+        return true
     }
 
     static func isPackageDirectory(_ url: URL) -> Bool {
@@ -739,7 +767,8 @@ private extension AiChatAttachmentResolverClient {
 
     static func isHeavyFolder(name: String) -> Bool {
         let heavyNames: Set<String> = [
-            "node_modules", ".build", ".swiftpm", "DerivedData", "build", "dist", ".next", ".turbo", ".cache", "Pods", "Carthage",
+            "node_modules", ".build", ".swiftpm", "DerivedData", "build", "dist", ".next", ".turbo", ".cache", "Pods",
+            "Carthage",
         ]
         return heavyNames.contains(name)
     }
@@ -749,6 +778,7 @@ private extension AiChatAttachmentResolverClient {
         var entries: [String] = []
         var directoryFilePaths: [String] = []
         var includedCount: Int = 0
+        var metadataLineCount: Int = 0
         var skippedCount: Int = 0
         var symlinkEscapes: Int = 0
         var readFailures: Int = 0
@@ -809,10 +839,15 @@ private extension AiChatContextPartResolverClient {
         snapshot: AiChatAttachmentSnapshot,
         provider: AiProvider,
         rawModelID: String,
-        requestFamily: AiChatContextPartResolverRequestFamily
+        requestFamily: AiChatContextPartResolverRequestFamily,
     ) -> AiChatResolvedAttachmentDescriptor {
-        let fileIdentity = AiChatAttachmentResolverClient.attachmentResolutionURL(for: draft).flatMap(resolveFileIdentity)
-        let sanitizedSnapshot = sanitizeAttachmentSnapshot(snapshot, provider: provider, displayPath: fileIdentity?.displayPath)
+        let fileIdentity = AiChatAttachmentResolverClient.attachmentResolutionURL(for: draft)
+            .flatMap(resolveFileIdentity)
+        let sanitizedSnapshot = sanitizeAttachmentSnapshot(
+            snapshot,
+            provider: provider,
+            displayPath: fileIdentity?.displayPath,
+        )
         let part = AiChatResolvedContextPart(
             source: .attachment,
             resolution: attachmentPartResolution(
@@ -821,32 +856,33 @@ private extension AiChatContextPartResolverClient {
                 fileIdentity: fileIdentity,
                 provider: provider,
                 rawModelID: rawModelID,
-                requestFamily: requestFamily
+                requestFamily: requestFamily,
             ),
             canonicalPath: fileIdentity?.canonicalURL.path(percentEncoded: false),
             displayPath: fileIdentity?.displayPath,
             fileKind: draft.kind,
             displayTitle: sanitizedSnapshot.displayTitle,
             byteCount: fileIdentity?.sizeBytes,
-            mimeType: fileIdentity?.mimeType
+            mimeType: fileIdentity?.mimeType,
         )
         return AiChatResolvedAttachmentDescriptor(snapshot: sanitizedSnapshot, part: part)
     }
 
+    // swiftlint:disable:next function_body_length
     static func attachmentPartResolution(
         draft: AiChatAttachmentDraft,
         snapshot: AiChatAttachmentSnapshot,
         fileIdentity: AiChatResolvedFileIdentity?,
         provider: AiProvider,
         rawModelID: String,
-        requestFamily: AiChatContextPartResolverRequestFamily
+        requestFamily: AiChatContextPartResolverRequestFamily,
     ) -> AiChatContextPartResolution {
         let fallbackResolution = addingAttachmentID(
             to: Self.sanitizeContextPartResolution(
                 from: snapshot.resolutionResult.contextPartResolution,
-                provider: provider
+                provider: provider,
             ),
-            attachmentID: draft.id.rawValue
+            attachmentID: draft.id.rawValue,
         )
         guard draft.source == .file,
               let fileIdentity,
@@ -865,10 +901,10 @@ private extension AiChatContextPartResolverClient {
                         snapshot.metadata,
                         displayPath: fileIdentity.displayPath,
                         mimeType: fileIdentity.mimeType,
-                        provider: provider
-                    )
+                        provider: provider,
+                    ),
                 ),
-                attachmentID: draft.id.rawValue
+                attachmentID: draft.id.rawValue,
             )
         }
 
@@ -879,14 +915,17 @@ private extension AiChatContextPartResolverClient {
             fileExtension: fileIdentity.fileExtension,
             detectedMIMEType: fileIdentity.mimeType,
             detectedContentTypeIdentifier: fileIdentity.contentTypeIdentifier,
-            sizeBytes: fileIdentity.sizeBytes ?? 0
+            sizeBytes: fileIdentity.sizeBytes ?? 0,
         ))
         guard case let .providerNativeUpload(kind, normalizedMIMEType) = capability.disposition,
               let sizeBytes = fileIdentity.sizeBytes,
               sizeBytes > 0,
               sizeBytes <= AiChatProviderFileCapability.nativeUploadSafeLimitBytes,
               let fileURL = AiChatAttachmentResolverClient.attachmentResolutionURL(for: draft),
-              let fileData = nativeUploadData(fileURL: fileURL, safeLimitBytes: AiChatProviderFileCapability.nativeUploadSafeLimitBytes)
+              let fileData = nativeUploadData(
+                  fileURL: fileURL,
+                  safeLimitBytes: AiChatProviderFileCapability.nativeUploadSafeLimitBytes,
+              )
         else {
             return fallbackResolution
         }
@@ -901,7 +940,8 @@ private extension AiChatContextPartResolverClient {
         metadata["nativeBase64Data"] = base64Data
         metadata["nativeUploadMode"] = "requestBase64"
         metadata["filename"] = fileIdentity.originalURL.lastPathComponent
-        metadata["fileExtension"] = normalizedNonEmpty(fileIdentity.fileExtension) ?? fileIdentity.originalURL.pathExtension.lowercased()
+        metadata["fileExtension"] = normalizedNonEmpty(fileIdentity.fileExtension) ?? fileIdentity.originalURL
+            .pathExtension.lowercased()
         metadata["byteCount"] = "\(sizeBytes)"
         if let contentTypeIdentifier = normalizedNonEmpty(fileIdentity.contentTypeIdentifier) {
             metadata["contentTypeIdentifier"] = contentTypeIdentifier
@@ -914,8 +954,8 @@ private extension AiChatContextPartResolverClient {
                 metadata,
                 displayPath: fileIdentity.displayPath,
                 mimeType: normalizedMIMEType,
-                provider: provider
-            )
+                provider: provider,
+            ),
         )
     }
 
@@ -924,7 +964,7 @@ private extension AiChatContextPartResolverClient {
         provider: AiProvider,
         rawModelID: String,
         requestFamily: AiChatContextPartResolverRequestFamily,
-        attachmentCanonicalPaths: Set<String>
+        attachmentCanonicalPaths: Set<String>,
     ) -> AiChatResolvedCurrentContext {
         let references = snapshot.references.compactMap {
             resolveCurrentContextReference(
@@ -932,7 +972,7 @@ private extension AiChatContextPartResolverClient {
                 provider: provider,
                 rawModelID: rawModelID,
                 requestFamily: requestFamily,
-                attachmentCanonicalPaths: attachmentCanonicalPaths
+                attachmentCanonicalPaths: attachmentCanonicalPaths,
             )
         }
         let items = snapshot.items.compactMap {
@@ -941,7 +981,7 @@ private extension AiChatContextPartResolverClient {
                 provider: provider,
                 rawModelID: rawModelID,
                 requestFamily: requestFamily,
-                attachmentCanonicalPaths: attachmentCanonicalPaths
+                attachmentCanonicalPaths: attachmentCanonicalPaths,
             )
         }
         let attachments = snapshot.attachments.compactMap {
@@ -950,18 +990,18 @@ private extension AiChatContextPartResolverClient {
                 provider: provider,
                 rawModelID: rawModelID,
                 requestFamily: requestFamily,
-                attachmentCanonicalPaths: attachmentCanonicalPaths
+                attachmentCanonicalPaths: attachmentCanonicalPaths,
             )
         }
 
         return AiChatResolvedCurrentContext(
             snapshot: AiChatCurrentContextSnapshot(
                 summary: snapshot.summary,
-                references: references.map { $0.snapshotElement },
-                items: items.map { $0.snapshotElement },
-                attachments: attachments.map { $0.snapshotElement }
+                references: references.map(\.snapshotElement),
+                items: items.map(\.snapshotElement),
+                attachments: attachments.map(\.snapshotElement),
             ),
-            parts: references.compactMap { $0.part } + items.compactMap { $0.part } + attachments.compactMap { $0.part }
+            parts: references.compactMap(\.part) + items.compactMap(\.part) + attachments.compactMap(\.part),
         )
     }
 
@@ -970,7 +1010,7 @@ private extension AiChatContextPartResolverClient {
         provider: AiProvider,
         rawModelID: String,
         requestFamily: AiChatContextPartResolverRequestFamily,
-        attachmentCanonicalPaths: Set<String>
+        attachmentCanonicalPaths: Set<String>,
     ) -> AiChatCurrentContextElementDescriptor<AiChatContextReference>? {
         resolveCurrentContextElement(
             kind: reference.kind,
@@ -981,14 +1021,14 @@ private extension AiChatContextPartResolverClient {
             provider: provider,
             rawModelID: rawModelID,
             requestFamily: requestFamily,
-            attachmentCanonicalPaths: attachmentCanonicalPaths
+            attachmentCanonicalPaths: attachmentCanonicalPaths,
         ) { identifier, subtitle, metadata in
             AiChatContextReference(
                 kind: reference.kind,
                 identifier: identifier,
                 title: reference.title,
                 subtitle: subtitle,
-                metadata: metadata
+                metadata: metadata,
             )
         }
     }
@@ -998,7 +1038,7 @@ private extension AiChatContextPartResolverClient {
         provider: AiProvider,
         rawModelID: String,
         requestFamily: AiChatContextPartResolverRequestFamily,
-        attachmentCanonicalPaths: Set<String>
+        attachmentCanonicalPaths: Set<String>,
     ) -> AiChatCurrentContextElementDescriptor<AiChatContextItem>? {
         resolveCurrentContextElement(
             kind: item.kind,
@@ -1009,7 +1049,7 @@ private extension AiChatContextPartResolverClient {
             provider: provider,
             rawModelID: rawModelID,
             requestFamily: requestFamily,
-            attachmentCanonicalPaths: attachmentCanonicalPaths
+            attachmentCanonicalPaths: attachmentCanonicalPaths,
         ) { identifier, subtitle, metadata in
             AiChatContextItem(
                 kind: item.kind,
@@ -1024,9 +1064,9 @@ private extension AiChatContextPartResolverClient {
                         identifier: sanitizeContextScalar($0.identifier, provider: provider) ?? $0.identifier,
                         title: $0.title,
                         subtitle: sanitizeContextScalar($0.subtitle, provider: provider),
-                        metadata: sanitizedMetadata
+                        metadata: sanitizedMetadata,
                     )
-                }
+                },
             )
         }
     }
@@ -1036,7 +1076,7 @@ private extension AiChatContextPartResolverClient {
         provider: AiProvider,
         rawModelID: String,
         requestFamily: AiChatContextPartResolverRequestFamily,
-        attachmentCanonicalPaths: Set<String>
+        attachmentCanonicalPaths: Set<String>,
     ) -> AiChatCurrentContextElementDescriptor<AiChatContextAttachment>? {
         resolveCurrentContextElement(
             kind: attachment.kind,
@@ -1047,18 +1087,19 @@ private extension AiChatContextPartResolverClient {
             provider: provider,
             rawModelID: rawModelID,
             requestFamily: requestFamily,
-            attachmentCanonicalPaths: attachmentCanonicalPaths
+            attachmentCanonicalPaths: attachmentCanonicalPaths,
         ) { identifier, subtitle, metadata in
             AiChatContextAttachment(
                 identifier: identifier,
                 title: attachment.title,
                 subtitle: subtitle,
                 kind: attachment.kind,
-                metadata: metadata
+                metadata: metadata,
             )
         }
     }
 
+    // swiftlint:disable:next function_parameter_count
     static func resolveCurrentContextElement<Element>(
         kind: AiChatContextItemKind,
         identifier: String,
@@ -1069,12 +1110,12 @@ private extension AiChatContextPartResolverClient {
         rawModelID: String,
         requestFamily: AiChatContextPartResolverRequestFamily,
         attachmentCanonicalPaths: Set<String>,
-        builder: (String, String?, [String: String]) -> Element
+        builder: (String, String?, [String: String]) -> Element,
     ) -> AiChatCurrentContextElementDescriptor<Element>? {
         let fileIdentity = currentContextFileIdentity(
             identifier: identifier,
             subtitle: subtitle,
-            metadata: metadata
+            metadata: metadata,
         )
         if let canonicalPath = fileIdentity?.canonicalURL.path(percentEncoded: false),
            attachmentCanonicalPaths.contains(canonicalPath)
@@ -1093,11 +1134,12 @@ private extension AiChatContextPartResolverClient {
             provider: provider,
             rawModelID: rawModelID,
             requestFamily: requestFamily,
-            fileIdentity: fileIdentity
+            fileIdentity: fileIdentity,
         )
         return AiChatCurrentContextElementDescriptor(snapshotElement: snapshotElement, part: part)
     }
 
+    // swiftlint:disable:next function_parameter_count
     static func makeCurrentContextPart(
         kind: AiChatContextItemKind,
         title: String?,
@@ -1105,7 +1147,7 @@ private extension AiChatContextPartResolverClient {
         provider: AiProvider,
         rawModelID: String,
         requestFamily: AiChatContextPartResolverRequestFamily,
-        fileIdentity: AiChatResolvedFileIdentity?
+        fileIdentity: AiChatResolvedFileIdentity?,
     ) -> AiChatResolvedContextPart? {
         guard let fileIdentity else { return nil }
 
@@ -1115,7 +1157,7 @@ private extension AiChatContextPartResolverClient {
             provider: provider,
             rawModelID: rawModelID,
             requestFamily: requestFamily,
-            fileIdentity: fileIdentity
+            fileIdentity: fileIdentity,
         )
         let displayTitle = title ?? fileIdentity.originalURL.lastPathComponent
         return AiChatResolvedContextPart(
@@ -1126,23 +1168,24 @@ private extension AiChatContextPartResolverClient {
             fileKind: kind,
             displayTitle: displayTitle,
             byteCount: fileIdentity.sizeBytes,
-            mimeType: fileIdentity.mimeType
+            mimeType: fileIdentity.mimeType,
         )
     }
 
+    // swiftlint:disable:next function_body_length
     static func currentContextResolution(
         kind: AiChatContextItemKind,
         metadata: [String: String],
         provider: AiProvider,
         rawModelID: String,
         requestFamily: AiChatContextPartResolverRequestFamily,
-        fileIdentity: AiChatResolvedFileIdentity
+        fileIdentity: AiChatResolvedFileIdentity,
     ) -> AiChatContextPartResolution {
         let baseMetadata = mergedResolutionMetadata(
             metadata,
             displayPath: fileIdentity.displayPath,
             mimeType: fileIdentity.mimeType,
-            provider: provider
+            provider: provider,
         )
         var remainingBudget = AiChatAttachmentResolverClient.collectionItemPathUTF8ByteBudget
 
@@ -1152,16 +1195,16 @@ private extension AiChatContextPartResolverClient {
                     AiChatAttachmentResolverClient.collectionReferenceMetadata(
                         base: baseMetadata,
                         fileURL: fileIdentity.canonicalURL,
-                        remainingTotalBudget: &remainingBudget
+                        remainingTotalBudget: &remainingBudget,
                     ),
-                    provider: provider
+                    provider: provider,
                 ))
             }
 
             let metadata = AiChatAttachmentResolverClient.folderStructureMetadata(
                 base: baseMetadata,
                 directoryURL: fileIdentity.canonicalURL,
-                mode: AiChatAttachmentResolverClient.folderStructureMode(from: metadata)
+                mode: AiChatAttachmentResolverClient.folderStructureMode(from: metadata),
             )
             return .referenceOnly(metadata: sanitizeContextMetadata(metadata, provider: provider))
         }
@@ -1170,7 +1213,7 @@ private extension AiChatContextPartResolverClient {
             return .providerNativeFile(
                 kind: .codexPathScope,
                 mimeType: fileIdentity.mimeType,
-                metadata: baseMetadata
+                metadata: baseMetadata,
             )
         }
 
@@ -1181,13 +1224,16 @@ private extension AiChatContextPartResolverClient {
             fileExtension: fileIdentity.fileExtension,
             detectedMIMEType: fileIdentity.mimeType,
             detectedContentTypeIdentifier: fileIdentity.contentTypeIdentifier,
-            sizeBytes: fileIdentity.sizeBytes ?? 0
+            sizeBytes: fileIdentity.sizeBytes ?? 0,
         ))
         guard case let .providerNativeUpload(kind, normalizedMIMEType) = capability.disposition,
               let sizeBytes = fileIdentity.sizeBytes,
               sizeBytes > 0,
               sizeBytes <= AiChatProviderFileCapability.nativeUploadSafeLimitBytes,
-              let fileData = nativeUploadData(fileURL: fileIdentity.originalURL, safeLimitBytes: AiChatProviderFileCapability.nativeUploadSafeLimitBytes)
+              let fileData = nativeUploadData(
+                  fileURL: fileIdentity.originalURL,
+                  safeLimitBytes: AiChatProviderFileCapability.nativeUploadSafeLimitBytes,
+              )
         else {
             return .referenceOnly(metadata: baseMetadata)
         }
@@ -1198,7 +1244,8 @@ private extension AiChatContextPartResolverClient {
         nativeMetadata["nativeBase64Data"] = base64Data
         nativeMetadata["nativeUploadMode"] = "requestBase64"
         nativeMetadata["filename"] = fileIdentity.originalURL.lastPathComponent
-        nativeMetadata["fileExtension"] = normalizedNonEmpty(fileIdentity.fileExtension) ?? fileIdentity.originalURL.pathExtension.lowercased()
+        nativeMetadata["fileExtension"] = normalizedNonEmpty(fileIdentity.fileExtension) ?? fileIdentity.originalURL
+            .pathExtension.lowercased()
         nativeMetadata["byteCount"] = "\(sizeBytes)"
         if let contentTypeIdentifier = normalizedNonEmpty(fileIdentity.contentTypeIdentifier) {
             nativeMetadata["contentTypeIdentifier"] = contentTypeIdentifier
@@ -1211,15 +1258,15 @@ private extension AiChatContextPartResolverClient {
                 nativeMetadata,
                 displayPath: fileIdentity.displayPath,
                 mimeType: normalizedMIMEType,
-                provider: provider
-            )
+                provider: provider,
+            ),
         )
     }
 
     static func currentContextFileIdentity(
         identifier: String,
         subtitle: String?,
-        metadata: [String: String]
+        metadata: [String: String],
     ) -> AiChatResolvedFileIdentity? {
         for value in [metadata["path"], metadata["filePath"], subtitle, identifier].compactMap(\.self) {
             guard let trimmed = normalizedNonEmpty(value), trimmed.hasPrefix("/") else { continue }
@@ -1256,19 +1303,19 @@ private extension AiChatContextPartResolverClient {
             sizeBytes: resourceValues.totalFileAllocatedSize.map(Int64.init) ?? resourceValues.fileSize.map(Int64.init),
             mimeType: mimeType,
             contentTypeIdentifier: contentType?.identifier,
-            fileExtension: canonicalURL.pathExtension
+            fileExtension: canonicalURL.pathExtension,
         )
     }
 
     static func sanitizeAttachmentSnapshot(
         _ snapshot: AiChatAttachmentSnapshot,
         provider: AiProvider,
-        displayPath: String?
+        displayPath: String?,
     ) -> AiChatAttachmentSnapshot {
         let sanitizedLocation = sanitizeSourceLocation(
             snapshot.sourceLocation,
             provider: provider,
-            displayPath: displayPath
+            displayPath: displayPath,
         )
         return AiChatAttachmentSnapshot(
             id: snapshot.id,
@@ -1278,34 +1325,34 @@ private extension AiChatContextPartResolverClient {
             kind: snapshot.kind,
             sourceLocation: sanitizedLocation,
             metadata: sanitizeContextMetadata(snapshot.metadata, provider: provider),
-            resolutionResult: sanitizeResolutionResult(snapshot.resolutionResult, provider: provider)
+            resolutionResult: sanitizeResolutionResult(snapshot.resolutionResult, provider: provider),
         )
     }
 
     static func sanitizeResolutionResult(
         _ resolutionResult: AiChatAttachmentResolutionResult,
-        provider: AiProvider
+        provider: AiProvider,
     ) -> AiChatAttachmentResolutionResult {
         switch resolutionResult {
         case let .resolvedText(text, metadata):
-            return .resolvedText(text: text, metadata: sanitizeContextMetadata(metadata, provider: provider))
+            .resolvedText(text: text, metadata: sanitizeContextMetadata(metadata, provider: provider))
         case let .resolvedReference(metadata):
-            return .resolvedReference(metadata: sanitizeContextMetadata(metadata, provider: provider))
+            .resolvedReference(metadata: sanitizeContextMetadata(metadata, provider: provider))
         case let .resolvedPartial(text, truncated, metadata):
-            return .resolvedPartial(
+            .resolvedPartial(
                 text: text,
                 truncated: truncated,
-                metadata: sanitizeContextMetadata(metadata, provider: provider)
+                metadata: sanitizeContextMetadata(metadata, provider: provider),
             )
         case let .failure(reason, metadata):
-            return .failure(reason: reason, metadata: sanitizeContextMetadata(metadata, provider: provider))
+            .failure(reason: reason, metadata: sanitizeContextMetadata(metadata, provider: provider))
         }
     }
 
     static func sanitizeSourceLocation(
         _ sourceLocation: AiChatAttachmentSourceLocation,
         provider _: AiProvider,
-        displayPath _: String?
+        displayPath _: String?,
     ) -> AiChatAttachmentSourceLocation {
         sourceLocation
     }
@@ -1334,15 +1381,15 @@ private extension AiChatContextPartResolverClient {
     }
 
     static func providerRequestFamily(
-        for requestFamily: AiChatContextPartResolverRequestFamily
+        for requestFamily: AiChatContextPartResolverRequestFamily,
     ) -> AiChatProviderRequestFamily {
         switch requestFamily {
         case .openAIResponses:
-            return .openAIResponses
+            .openAIResponses
         case .anthropicMessages:
-            return .anthropicMessages
+            .anthropicMessages
         case .codexCLI:
-            return .codexCLI
+            .codexCLI
         }
     }
 
@@ -1354,13 +1401,13 @@ private extension AiChatContextPartResolverClient {
              let .collectionPathList(_, metadata),
              let .providerNativeFile(_, _, metadata),
              let .failure(_, metadata):
-            return metadata
+            metadata
         }
     }
 
     static func addingAttachmentID(
         to resolution: AiChatContextPartResolution,
-        attachmentID: String
+        attachmentID: String,
     ) -> AiChatContextPartResolution {
         func metadataWithAttachmentID(_ metadata: [String: String]) -> [String: String] {
             var metadata = metadata
@@ -1386,20 +1433,35 @@ private extension AiChatContextPartResolverClient {
 
     static func sanitizeContextPartResolution(
         from resolution: AiChatContextPartResolution,
-        provider: AiProvider
+        provider: AiProvider,
     ) -> AiChatContextPartResolution {
         switch resolution {
         case let .inlineText(text, metadata):
             return .inlineText(text: text, metadata: sanitizeContextMetadata(metadata, provider: provider))
         case let .partialText(text, truncated, metadata):
-            return .partialText(text: text, truncated: truncated, metadata: sanitizeContextMetadata(metadata, provider: provider))
+            return .partialText(
+                text: text,
+                truncated: truncated,
+                metadata: sanitizeContextMetadata(metadata, provider: provider),
+            )
         case let .referenceOnly(metadata):
             return .referenceOnly(metadata: sanitizeContextMetadata(metadata, provider: provider))
         case let .collectionPathList(paths, metadata):
-            let sanitizedPaths = provider == .chatgptCodex ? paths : paths.compactMap { sanitizeContextScalar($0, provider: provider) }
-            return .collectionPathList(paths: sanitizedPaths, metadata: sanitizeContextMetadata(metadata, provider: provider))
+            let sanitizedPaths = provider == .chatgptCodex
+                ? paths
+                : paths.compactMap { path in
+                    sanitizeContextScalar(path, provider: provider)
+                }
+            return .collectionPathList(
+                paths: sanitizedPaths,
+                metadata: sanitizeContextMetadata(metadata, provider: provider),
+            )
         case let .providerNativeFile(kind, mimeType, metadata):
-            return .providerNativeFile(kind: kind, mimeType: mimeType, metadata: sanitizeContextMetadata(metadata, provider: provider))
+            return .providerNativeFile(
+                kind: kind,
+                mimeType: mimeType,
+                metadata: sanitizeContextMetadata(metadata, provider: provider),
+            )
         case let .failure(reason, metadata):
             return .failure(reason: reason, metadata: sanitizeContextMetadata(metadata, provider: provider))
         }
@@ -1409,7 +1471,7 @@ private extension AiChatContextPartResolverClient {
         _ metadata: [String: String],
         displayPath: String?,
         mimeType: String?,
-        provider: AiProvider
+        provider: AiProvider,
     ) -> [String: String] {
         var merged = sanitizeContextMetadata(metadata, provider: provider)
         if let displayPath {
@@ -1442,7 +1504,7 @@ private extension AiChatContextPartResolverClient {
     }
 
     static func sanitizeContextScalar(_ value: String?, provider: AiProvider) -> String? {
-        guard let value = value else { return nil }
+        guard let value else { return nil }
         return displayPath(for: value, provider: provider)
     }
 
@@ -1477,7 +1539,7 @@ public struct AiChatSessionPersistenceClient: Sendable {
         listSessions: @escaping @Sendable (Int?, String?) async throws -> [AiChatSessionSummary] = { _, _ in [] },
         loadSession: @escaping @Sendable (AiChatSessionID) async throws -> AiChatSessionSnapshot?,
         saveSession: @escaping @Sendable (AiChatSessionSnapshot) async throws -> Void,
-        deleteSession: @escaping @Sendable (AiChatSessionID) async throws -> Void
+        deleteSession: @escaping @Sendable (AiChatSessionID) async throws -> Void,
     ) {
         self.listSessions = listSessions
         self.loadSession = loadSession
@@ -1488,7 +1550,7 @@ public struct AiChatSessionPersistenceClient: Sendable {
 
 public extension AiChatSessionPersistenceClient {
     nonisolated static func live(
-        persistenceClient: any VoyagerEntitiesAi.AiChatSessionPersistenceClientProtocol
+        persistenceClient: any VoyagerEntitiesAi.AiChatSessionPersistenceClientProtocol,
     ) -> AiChatSessionPersistenceClient {
         AiChatSessionPersistenceClient(
             listSessions: { limit, query in
@@ -1502,18 +1564,18 @@ public extension AiChatSessionPersistenceClient {
             },
             deleteSession: { id in
                 try await persistenceClient.deleteSession(id: id)
-            }
+            },
         )
     }
 
     nonisolated static func unavailable(
-        error: VoyagerEntitiesAi.AiChatSessionPersistenceClientError = .applicationSupportDirectoryUnavailable
+        error: VoyagerEntitiesAi.AiChatSessionPersistenceClientError = .applicationSupportDirectoryUnavailable,
     ) -> AiChatSessionPersistenceClient {
         AiChatSessionPersistenceClient(
             listSessions: { _, _ in throw error },
             loadSession: { _ in throw error },
             saveSession: { _ in throw error },
-            deleteSession: { _ in throw error }
+            deleteSession: { _ in throw error },
         )
     }
 }
@@ -1533,7 +1595,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },
-            deleteSession: { _ in }
+            deleteSession: { _ in },
         )
     }
 
@@ -1541,7 +1603,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },
-            deleteSession: { _ in }
+            deleteSession: { _ in },
         )
     }
 }
