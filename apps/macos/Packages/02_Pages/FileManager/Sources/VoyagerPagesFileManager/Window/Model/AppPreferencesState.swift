@@ -18,6 +18,7 @@ public struct AppPreferencesState: Equatable, Sendable {
 
     public var sidebarVisible: Bool = true
     public var sidebarWidth: CGFloat = 220
+    public var inspectorWidth: CGFloat = FileManagerInspectorLayoutMetrics.defaultWidth
 
     public init() {}
 }

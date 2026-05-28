@@ -31,6 +31,8 @@ enum FileManagerContentChromePropsBuilder {
                 roots: breadcrumbRoots,
             ),
             specialDirectoryIconNames: specialDirectoryIconNames,
+            isContextualAiChatPresented: state.inspector.inspectorVisible
+                && state.inspector.activeMode == .chat,
         )
     }
 
