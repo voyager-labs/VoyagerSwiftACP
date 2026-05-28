@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import VoyagerShared
 
 struct ScopeTreeRowView: View {
     let row: ComposerScopeTreeRow

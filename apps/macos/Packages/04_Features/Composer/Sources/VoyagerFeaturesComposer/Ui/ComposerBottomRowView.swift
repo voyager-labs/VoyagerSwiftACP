@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct ComposerBottomRowView: View {
     let store: StoreOf<ComposerFeature>

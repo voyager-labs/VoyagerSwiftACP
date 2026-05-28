@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct ScopePickerView: View {
     let store: StoreOf<ComposerFeature>
@@ -8,14 +9,6 @@ struct ScopePickerView: View {
         let scopeEditor: ComposerScopeEditorState
         let lastScopeChangeFeedbackDisplay: ComposerScopeChangeFeedbackDisplay?
     }
-
-    private static let cachedApplicationsIcon: NSImage? = {
-        let appIcon = NSImage(
-            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
-        )
-        appIcon?.isTemplate = true
-        return appIcon
-    }()
 
     @FocusState private var isSearchFocused: Bool
     @Environment(\.colorScheme)
@@ -375,7 +368,7 @@ private extension ScopePickerView {
             ScopeTreeRowView(
                 row: row,
                 colorScheme: colorScheme,
-                applicationsIcon: Self.cachedApplicationsIcon,
+                applicationsIcon: ScopePickerAssets.cachedApplicationsIcon,
                 onBodyTap: { handleTreeRowBodyTap(row, viewStore: viewStore) },
                 onAction: { action in
                     handleTreeRowAction(row, action: action, viewStore: viewStore)
@@ -501,8 +494,7 @@ private extension ScopePickerView {
             store.send(.currentScope(.remove(path: path)))
         case let .restoreException(path):
             store.send(.exceptionScope(.restore(path: path)))
-        case .none:
-            break
+        case .none: break
         }
     }
 }

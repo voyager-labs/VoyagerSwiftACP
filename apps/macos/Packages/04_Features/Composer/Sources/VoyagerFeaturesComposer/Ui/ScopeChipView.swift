@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerShared
 
@@ -54,7 +55,7 @@ struct ScopeChipView: View {
         .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme))
+                .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme)),
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(summary.accessibilityText)
@@ -73,7 +74,7 @@ struct ScopeChipView: View {
                 .frame(height: 19)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear)
+                        .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
                 )
         }
         .buttonStyle(.borderless)

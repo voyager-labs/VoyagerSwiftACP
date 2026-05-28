@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesEntry
 
 enum ComposerScopeTreeNeighborhoodCandidates {
     static func make(

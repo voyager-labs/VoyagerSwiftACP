@@ -1,15 +1,18 @@
 import Foundation
+import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
+import VoyagerShared
 
-enum ComposerScopeUtils {
-    struct DirectoryItem: Identifiable, Equatable {
-        let id: String
-        let path: String
-        let name: String
-        let iconName: String
-        let locationIdentifier: String?
-        let secondaryText: String?
+public enum ComposerScopeUtils {
+    public struct DirectoryItem: Identifiable, Equatable, Sendable {
+        public let id: String
+        public let path: String
+        public let name: String
+        public let iconName: String
+        public let locationIdentifier: String?
+        public let secondaryText: String?
 
-        nonisolated init(
+        public nonisolated init(
             id: String,
             path: String,
             name: String,
@@ -44,7 +47,7 @@ enum ComposerScopeUtils {
         let options: FileManager.DirectoryEnumerationOptions
     }
 
-    nonisolated static let rootScopePath = "/"
+    public nonisolated static let rootScopePath = "/"
 
     nonisolated static func applyCandidateDisambiguationPolicy(_ items: [DirectoryItem]) -> [DirectoryItem] {
         let groups = Dictionary(grouping: items.enumerated(), by: { $0.element.name })
@@ -117,13 +120,12 @@ enum ComposerScopeUtils {
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []
         var seenPaths: Set<String> = []
-        let collectionsExtension = CollectionConstants.fileExtension
         let homePath = entryLoadingClient.homeDirectory()
         let iconPathMap = ComposerScopeSearchIconResolver.buildPathMapping(entryLoadingClient: entryLoadingClient)
 
         let historyItems = history.reversed().prefix(maxCount)
         for path in historyItems {
-            if (path as NSString).pathExtension.lowercased() == collectionsExtension { continue }
+            if (path as NSString).pathExtension.lowercased() == CollectionConstants.fileExtension { continue }
             guard !seenPaths.contains(path) else { continue }
             guard entryLoadingClient.fileExists(path) else { continue }
 
@@ -154,7 +156,7 @@ enum ComposerScopeUtils {
         if remainingSlots > 0 {
             for favorite in favorites.prefix(remainingSlots) {
                 let path = favorite.url.path
-                if favorite.url.pathExtension.lowercased() == collectionsExtension { continue }
+                if favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension { continue }
                 guard !seenPaths.contains(path) else { continue }
                 guard entryLoadingClient.fileExists(path) else { continue }
 

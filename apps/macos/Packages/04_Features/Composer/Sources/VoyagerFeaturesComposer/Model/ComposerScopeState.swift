@@ -1,20 +1,42 @@
 import Foundation
 
-struct ComposerScopeBase: Equatable, Sendable, Identifiable {
-    let path: String
+public struct ComposerScopeBase: Equatable, Sendable, Identifiable {
+    public let path: String
 
-    var id: String { path }
+    public var id: String { path }
+
+    public init(path: String) {
+        self.path = path
+    }
 }
 
-struct ComposerScopeException: Equatable, Sendable, Identifiable {
-    let path: String
+public struct ComposerScopeException: Equatable, Sendable, Identifiable {
+    public let path: String
 
-    var id: String { path }
+    public var id: String { path }
+
+    public init(path: String) {
+        self.path = path
+    }
 }
 
-enum ComposerScopeSelection: Equatable, Sendable {
+public enum ComposerScopeSelection: Equatable, Sendable {
     case rootOnly
     case explicit(bases: [ComposerScopeBase], exceptions: [ComposerScopeException])
+
+    public var isRootOnly: Bool {
+        explicitBases.isEmpty
+    }
+
+    public var legacyScopePaths: [String] {
+        switch self {
+        case .rootOnly:
+            return [ComposerScopeUtils.rootScopePath]
+        case let .explicit(bases, _):
+            let paths = bases.map(\.path)
+            return paths.isEmpty ? [ComposerScopeUtils.rootScopePath] : paths
+        }
+    }
 
     var explicitBases: [ComposerScopeBase] {
         switch self {
@@ -40,20 +62,6 @@ enum ComposerScopeSelection: Equatable, Sendable {
 
     var hasExceptions: Bool {
         !exceptions.isEmpty
-    }
-
-    var isRootOnly: Bool {
-        explicitBases.isEmpty
-    }
-
-    var legacyScopePaths: [String] {
-        switch self {
-        case .rootOnly:
-            return [ComposerScopeUtils.rootScopePath]
-        case let .explicit(bases, _):
-            let paths = bases.map(\.path)
-            return paths.isEmpty ? [ComposerScopeUtils.rootScopePath] : paths
-        }
     }
 
     static func fromLegacyScopes(_ scopes: [String]) -> Self {
@@ -266,13 +274,13 @@ struct ComposerScopeEditorSection: Equatable, Sendable, Identifiable {
     var id: String { kind.id }
 }
 
-struct ComposerScopeEditorState: Equatable, Sendable {
-    var selection: ComposerScopeSelection = .rootOnly
+public struct ComposerScopeEditorState: Equatable, Sendable {
+    public internal(set) var selection: ComposerScopeSelection = .rootOnly
     var includeSubfolders: Bool = true
     var committedSelection: ComposerScopeSelection = .rootOnly
     var committedIncludeSubfolders: Bool = true
     var listState: ComposerScopeEditorListState = .defaultCandidates
-    var isPresented: Bool = false
+    public internal(set) var isPresented: Bool = false
     var queryText: String = ""
     var editingPath: String?
     var entryMode: ComposerScopeEditorEntryMode = .add
@@ -402,7 +410,7 @@ struct ComposerScopeEditorState: Equatable, Sendable {
         queryText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    var hasPendingScopeRuleChanges: Bool {
+    public var hasPendingScopeRuleChanges: Bool {
         committedSelection != selection || committedIncludeSubfolders != includeSubfolders
     }
 }

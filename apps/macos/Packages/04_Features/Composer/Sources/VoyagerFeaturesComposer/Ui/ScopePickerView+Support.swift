@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import CoreGraphics
 import Foundation
@@ -42,6 +43,17 @@ enum ScopePickerAccessibilityID {
         let collapsed = String(mapped).replacingOccurrences(of: "_+", with: "_", options: .regularExpression)
         return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
     }
+}
+
+enum ScopePickerAssets {
+    static let cachedApplicationsIcon: NSImage? = {
+        let appIcon = NSImage(contentsOfFile: applicationsIconPath)
+        appIcon?.isTemplate = true
+        return appIcon
+    }()
+
+    private static let applicationsIconPath =
+        "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns"
 }
 
 extension ComposerScopeEditorListState {

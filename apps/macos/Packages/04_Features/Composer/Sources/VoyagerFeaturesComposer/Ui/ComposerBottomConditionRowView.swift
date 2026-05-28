@@ -1,8 +1,9 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct ComposerBottomRowChipSizePreferenceKey: PreferenceKey {
-    static var defaultValue: [AnyHashable: CGSize] = [:]
+    nonisolated(unsafe) static let defaultValue: [AnyHashable: CGSize] = [:]
 
     static func reduce(value: inout [AnyHashable: CGSize], nextValue: () -> [AnyHashable: CGSize]) {
         value.merge(nextValue()) { _, new in new }
