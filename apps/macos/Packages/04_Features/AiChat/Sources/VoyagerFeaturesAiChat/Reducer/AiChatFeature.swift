@@ -1,8 +1,10 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
 import VoyagerEntitiesAi
 
+// swiftlint:disable type_body_length
 @Reducer
 public struct AiChatFeature {
     public typealias State = AiChatState
@@ -57,14 +59,14 @@ public struct AiChatFeature {
                 let snapshot = startNewUnselectedChat(state: &state)
                 return .concatenate(
                     cancelRequestLifecycle(),
-                    saveNewChat(snapshot)
+                    saveNewChat(snapshot),
                 )
 
             case .startNewChatFromRebindTapped:
                 let snapshot = startNewUnselectedChat(state: &state)
                 return .concatenate(
                     cancelRequestLifecycle(),
-                    saveNewChat(snapshot)
+                    saveNewChat(snapshot),
                 )
 
             case .rebindContextTapped:
@@ -101,7 +103,7 @@ public struct AiChatFeature {
                     state.executionPhase = .cancelled(lock.recordingTerminal(
                         at: currentTimestampMs(),
                         failure: .cancelled,
-                        wasCancelled: true
+                        wasCancelled: true,
                     ))
                 }
 
@@ -111,7 +113,7 @@ public struct AiChatFeature {
                 }
                 return .concatenate(
                     cancelRequestLifecycle(),
-                    restoreEffect
+                    restoreEffect,
                 )
 
             case let .deleteSessionTapped(sessionID):
@@ -135,7 +137,7 @@ public struct AiChatFeature {
                         state.executionPhase = .cancelled(lock.recordingTerminal(
                             at: currentTimestampMs(),
                             failure: .cancelled,
-                            wasCancelled: true
+                            wasCancelled: true,
                         ))
                     }
                     preDeleteEffects.append(cancelRequestLifecycle())
@@ -145,7 +147,7 @@ public struct AiChatFeature {
                 }
                 return .concatenate(
                     .merge(preDeleteEffects),
-                    deleteSession(sessionID)
+                    deleteSession(sessionID),
                 )
 
             case let .renameSessionTapped(sessionID):
@@ -317,9 +319,9 @@ public struct AiChatFeature {
                         .send(.modelListLoading(
                             requestID: loadRequest.requestID,
                             provider: loadRequest.provider,
-                            credential: loadRequest.credential
+                            credential: loadRequest.credential,
                         ))
-                    })
+                    }),
                 )
 
             case let .modelListLoading(requestID, provider, credential):
@@ -381,15 +383,15 @@ public struct AiChatFeature {
                 let currentContext = currentContextSnapshot(
                     snapshot,
                     excluding: state.addedAttachments,
-                    applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath
+                    applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath,
                 )
                 ensureCurrentFolderStructureModeDefaults(
                     for: currentContext,
-                    in: &state.currentContextFolderStructureModesByCanonicalPath
+                    in: &state.currentContextFolderStructureModesByCanonicalPath,
                 )
                 state.currentContext = applyFolderStructureModes(
                     state.currentContextFolderStructureModesByCanonicalPath,
-                    to: currentContext
+                    to: currentContext,
                 )
                 return .none
 
@@ -412,7 +414,7 @@ public struct AiChatFeature {
                 let didAddAttachments = addAttachmentDrafts(
                     from: urls,
                     skippingCurrentContextDuplicates: false,
-                    state: &state
+                    state: &state,
                 )
                 guard didAddAttachments else { return .none }
                 removeCurrentContextDuplicates(state: &state)
@@ -425,15 +427,7 @@ public struct AiChatFeature {
             case let .folderStructureModeChanged(target, mode):
                 switch target {
                 case .currentContext:
-                    let currentContextKeys = currentContextFolderStructureKeys(for: state.currentContext)
-                    for key in currentContextKeys {
-                        state.currentContextFolderStructureModesByCanonicalPath[key] = mode
-                    }
-                    state.currentContext = currentContextSnapshot(
-                        state.currentContext,
-                        excluding: state.addedAttachments,
-                        applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath
-                    )
+                    updateCurrentContextFolderStructureMode(mode, state: &state)
                 case let .attachment(attachmentID):
                     guard let index = state.addedAttachments.firstIndex(where: { $0.id == attachmentID }) else {
                         return .none
@@ -441,7 +435,7 @@ public struct AiChatFeature {
                     guard state.addedAttachments[index].source == .folder else { return .none }
                     state.addedAttachments[index] = updateAttachmentFolderStructureMode(
                         mode,
-                        for: state.addedAttachments[index]
+                        for: state.addedAttachments[index],
                     )
                 }
                 return .none
@@ -470,7 +464,7 @@ public struct AiChatFeature {
                 state.executionPhase = .cancelled(lock.recordingTerminal(
                     at: currentTimestampMs(),
                     failure: .cancelled,
-                    wasCancelled: true
+                    wasCancelled: true,
                 ))
                 return cancelRequestLifecycle()
 
@@ -495,7 +489,8 @@ public struct AiChatFeature {
 
             case let .restoreOutcome(requestedSessionID, result, restoreFailure):
                 guard state.restoreSessionID == requestedSessionID else { return .none }
-                let isSessionListRestore = state.mode == .sessions && state.sessionList.selectedSessionID == requestedSessionID
+                let isSessionListRestore = state.mode == .sessions && state.sessionList
+                    .selectedSessionID == requestedSessionID
                 if isSessionListRestore,
                    let restoreFailure,
                    restoreFailure != .contextMismatch
@@ -551,7 +546,7 @@ public struct AiChatFeature {
         .merge(
             .cancel(id: CancelID.request),
             .cancel(id: CancelID.requestStartPersistence),
-            .cancel(id: CancelID.requestFinalPersistence)
+            .cancel(id: CancelID.requestFinalPersistence),
         )
     }
 
@@ -564,7 +559,7 @@ public struct AiChatFeature {
             .cancel(id: CancelID.newChat),
             .cancel(id: CancelID.sessionList),
             .cancel(id: CancelID.sessionDelete),
-            .cancel(id: CancelID.sessionRename)
+            .cancel(id: CancelID.sessionRename),
         )
     }
 }
@@ -618,16 +613,16 @@ private extension AiChatFeature {
                 return AiChatModelListLoadRequest(
                     requestID: requestID,
                     provider: provider,
-                    credential: record.credential
+                    credential: record.credential,
                 )
-            }
+            },
         )
     }
 
     func loadModelList(
         requestID: UUID,
         provider: AiProvider,
-        credential: StoredCredentialPayload?
+        credential: StoredCredentialPayload?,
     ) -> Effect<Action> {
         .run { [aiProviderModelListClient] send in
             do {
@@ -640,7 +635,7 @@ private extension AiChatFeature {
                 await send(.modelListLoadFailed(
                     requestID: requestID,
                     provider: provider,
-                    failure: Self.makeModelListFailure(provider: provider, error: error)
+                    failure: Self.makeModelListFailure(provider: provider, error: error),
                 ))
             }
         }
@@ -753,43 +748,87 @@ private extension AiChatFeature {
     }
 }
 
+// swiftlint:enable type_body_length
+
 private extension AiChatFeature {
+    func updateCurrentContextFolderStructureMode(_ mode: AiChatFolderStructureMode, state: inout State) {
+        let currentContextKeys = currentContextFolderStructureKeys(for: state.currentContext)
+        let targetKeys = mode == .includeSubfolders
+            ? pruningFolderStructureKeysCoveredByRecursiveParents(currentContextKeys)
+            : currentContextKeys
+        let coveredKeys = Set(currentContextKeys).subtracting(targetKeys)
+        for key in coveredKeys {
+            state.currentContextFolderStructureModesByCanonicalPath.removeValue(forKey: key)
+        }
+        for key in targetKeys {
+            state.currentContextFolderStructureModesByCanonicalPath[key] = mode
+        }
+        state.currentContext = currentContextSnapshot(
+            state.currentContext,
+            excluding: state.addedAttachments,
+            applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath,
+        )
+    }
+
     func removeCurrentContextDuplicates(state: inout State) {
         let currentContext = currentContextSnapshot(
             state.currentContext,
             excluding: state.addedAttachments,
-            applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath
+            applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath,
         )
         ensureCurrentFolderStructureModeDefaults(
             for: currentContext,
-            in: &state.currentContextFolderStructureModesByCanonicalPath
+            in: &state.currentContextFolderStructureModesByCanonicalPath,
         )
         state.currentContext = applyFolderStructureModes(
             state.currentContextFolderStructureModesByCanonicalPath,
-            to: currentContext
+            to: currentContext,
         )
     }
 
     func ensureCurrentFolderStructureModeDefaults(
         for snapshot: AiChatCurrentContextSnapshot,
-        in folderStructureModes: inout [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode]
+        in folderStructureModes: inout [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
     ) {
         for key in currentContextFolderStructureKeys(for: snapshot) where folderStructureModes[key] == nil {
             let isCoveredByRecursiveFolder = folderStructureModes.contains { parentKey, mode in
-                let parentPath = parentKey.canonicalPath
-                let normalizedParentPath = parentPath.hasSuffix("/") ? String(parentPath.dropLast()) : parentPath
-                return mode == .includeSubfolders
-                    && (key.canonicalPath.hasPrefix(parentPath + "/") || key.canonicalPath.hasPrefix(normalizedParentPath + "/"))
+                mode == .includeSubfolders && recursiveFolderStructureKey(parentKey, covers: key)
             }
             guard !isCoveredByRecursiveFolder else { continue }
             folderStructureModes[key] = .currentFolderOnly
         }
     }
 
+    func pruningFolderStructureKeysCoveredByRecursiveParents(
+        _ keys: [AiChatCurrentContextFolderStructureKey],
+    ) -> [AiChatCurrentContextFolderStructureKey] {
+        keys.filter { key in
+            !keys.contains { parentKey in
+                recursiveFolderStructureKey(parentKey, covers: key)
+            }
+        }
+    }
+
+    func recursiveFolderStructureKey(
+        _ parentKey: AiChatCurrentContextFolderStructureKey,
+        covers key: AiChatCurrentContextFolderStructureKey,
+    ) -> Bool {
+        let parentPath = parentKey.canonicalPath.hasSuffix("/")
+            ? String(parentKey.canonicalPath.dropLast())
+            : parentKey.canonicalPath
+        let childPath = key.canonicalPath.hasSuffix("/")
+            ? String(key.canonicalPath.dropLast())
+            : key.canonicalPath
+        guard parentPath != childPath else { return false }
+        return childPath.hasPrefix(parentPath + "/")
+    }
+
     func currentContextSnapshot(
         _ snapshot: AiChatCurrentContextSnapshot,
         excluding attachments: [AiChatAttachmentDraft],
-        applyingFolderStructureModes folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode]
+        applyingFolderStructureModes folderStructureModes: [
+            AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode
+        ],
     ) -> AiChatCurrentContextSnapshot {
         let attachmentPaths = Set(attachments.compactMap(normalizedAttachmentPath(for:)))
         let references = attachmentPaths.isEmpty
@@ -812,7 +851,7 @@ private extension AiChatFeature {
                     title: item.title,
                     subtitle: item.subtitle,
                     metadata: item.metadata,
-                    references: itemReferences
+                    references: itemReferences,
                 )
             }
         let contextAttachments = attachmentPaths.isEmpty
@@ -829,14 +868,14 @@ private extension AiChatFeature {
                 summary: currentContextSummary(references: references, items: items, attachments: contextAttachments),
                 references: references,
                 items: items,
-                attachments: contextAttachments
+                attachments: contextAttachments,
             )
         return applyFolderStructureModes(folderStructureModes, to: filteredSnapshot)
     }
 
     func applyFolderStructureModes(
         _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
-        to snapshot: AiChatCurrentContextSnapshot
+        to snapshot: AiChatCurrentContextSnapshot,
     ) -> AiChatCurrentContextSnapshot {
         guard !folderStructureModes.isEmpty else {
             return clearFolderStructureModeMetadata(from: snapshot)
@@ -855,7 +894,7 @@ private extension AiChatFeature {
             summary: snapshot.summary,
             references: references,
             items: items,
-            attachments: attachments
+            attachments: attachments,
         )
     }
 
@@ -873,13 +912,13 @@ private extension AiChatFeature {
             summary: snapshot.summary,
             references: references,
             items: items,
-            attachments: attachments
+            attachments: attachments,
         )
     }
 
     func applyFolderStructureMode(
         _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
-        to reference: AiChatContextReference
+        to reference: AiChatContextReference,
     ) -> AiChatContextReference {
         let metadata = applyingFolderStructureModeMetadata(
             folderStructureModes,
@@ -887,20 +926,20 @@ private extension AiChatFeature {
             kind: reference.kind,
             metadata: reference.metadata,
             identifier: reference.identifier,
-            subtitle: reference.subtitle
+            subtitle: reference.subtitle,
         )
         return AiChatContextReference(
             kind: reference.kind,
             identifier: reference.identifier,
             title: reference.title,
             subtitle: reference.subtitle,
-            metadata: metadata
+            metadata: metadata,
         )
     }
 
     func applyFolderStructureMode(
         _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
-        to item: AiChatContextItem
+        to item: AiChatContextItem,
     ) -> AiChatContextItem {
         let metadata = applyingFolderStructureModeMetadata(
             folderStructureModes,
@@ -908,7 +947,7 @@ private extension AiChatFeature {
             kind: item.kind,
             metadata: item.metadata,
             identifier: item.identifier,
-            subtitle: item.subtitle
+            subtitle: item.subtitle,
         )
         return AiChatContextItem(
             kind: item.kind,
@@ -923,22 +962,22 @@ private extension AiChatFeature {
                     kind: reference.kind,
                     metadata: reference.metadata,
                     identifier: reference.identifier,
-                    subtitle: reference.subtitle
+                    subtitle: reference.subtitle,
                 )
                 return AiChatContextReference(
                     kind: reference.kind,
                     identifier: reference.identifier,
                     title: reference.title,
                     subtitle: reference.subtitle,
-                    metadata: metadata
+                    metadata: metadata,
                 )
-            }
+            },
         )
     }
 
     func applyFolderStructureMode(
         _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
-        to attachment: AiChatContextAttachment
+        to attachment: AiChatContextAttachment,
     ) -> AiChatContextAttachment {
         let metadata = applyingFolderStructureModeMetadata(
             folderStructureModes,
@@ -946,14 +985,14 @@ private extension AiChatFeature {
             kind: attachment.kind,
             metadata: attachment.metadata,
             identifier: attachment.identifier,
-            subtitle: attachment.subtitle
+            subtitle: attachment.subtitle,
         )
         return AiChatContextAttachment(
             identifier: attachment.identifier,
             title: attachment.title,
             subtitle: attachment.subtitle,
             kind: attachment.kind,
-            metadata: metadata
+            metadata: metadata,
         )
     }
 
@@ -963,7 +1002,7 @@ private extension AiChatFeature {
             identifier: reference.identifier,
             title: reference.title,
             subtitle: reference.subtitle,
-            metadata: removingFolderStructureModeMetadata(from: reference.metadata)
+            metadata: removingFolderStructureModeMetadata(from: reference.metadata),
         )
     }
 
@@ -974,7 +1013,7 @@ private extension AiChatFeature {
             title: item.title,
             subtitle: item.subtitle,
             metadata: removingFolderStructureModeMetadata(from: item.metadata),
-            references: item.references.map(removeFolderStructureModeMetadata)
+            references: item.references.map(removeFolderStructureModeMetadata),
         )
     }
 
@@ -984,7 +1023,7 @@ private extension AiChatFeature {
             title: attachment.title,
             subtitle: attachment.subtitle,
             kind: attachment.kind,
-            metadata: removingFolderStructureModeMetadata(from: attachment.metadata)
+            metadata: removingFolderStructureModeMetadata(from: attachment.metadata),
         )
     }
 
@@ -994,7 +1033,7 @@ private extension AiChatFeature {
         kind: AiChatContextItemKind,
         metadata: [String: String],
         identifier: String,
-        subtitle: String?
+        subtitle: String?,
     ) -> [String: String] {
         var metadata = removingFolderStructureModeMetadata(from: metadata)
         let keys = currentContextFolderStructureKeys(
@@ -1002,7 +1041,7 @@ private extension AiChatFeature {
             kind: kind,
             metadata: metadata,
             identifier: identifier,
-            subtitle: subtitle
+            subtitle: subtitle,
         )
         let mode = folderStructureModes.first(where: { key, _ in keys.contains(key) })?.value
         if let mode {
@@ -1023,7 +1062,7 @@ private extension AiChatFeature {
 
     func updateAttachmentFolderStructureMode(
         _ mode: AiChatFolderStructureMode,
-        for attachment: AiChatAttachmentDraft
+        for attachment: AiChatAttachmentDraft,
     ) -> AiChatAttachmentDraft {
         var metadata = attachment.metadata
         metadata["folderStructureMode"] = mode.rawValue
@@ -1035,14 +1074,14 @@ private extension AiChatFeature {
             kind: attachment.kind,
             sourceLocation: attachment.sourceLocation,
             metadata: metadata,
-            currentStatus: attachment.currentStatus
+            currentStatus: attachment.currentStatus,
         )
     }
 
     func currentContextSummary(
         references: [AiChatContextReference],
         items: [AiChatContextItem],
-        attachments: [AiChatContextAttachment]
+        attachments: [AiChatContextAttachment],
     ) -> String? {
         if items.count == 1 {
             return items[0].title ?? currentContextDisplayName(from: items[0].identifier)
@@ -1063,7 +1102,7 @@ private extension AiChatFeature {
         normalizedCurrentContextPaths(
             metadata: reference.metadata,
             identifier: reference.identifier,
-            subtitle: reference.subtitle
+            subtitle: reference.subtitle,
         )
     }
 
@@ -1071,7 +1110,7 @@ private extension AiChatFeature {
         normalizedCurrentContextPaths(
             metadata: item.metadata,
             identifier: item.identifier,
-            subtitle: item.subtitle
+            subtitle: item.subtitle,
         )
     }
 
@@ -1079,14 +1118,14 @@ private extension AiChatFeature {
         normalizedCurrentContextPaths(
             metadata: attachment.metadata,
             identifier: attachment.identifier,
-            subtitle: attachment.subtitle
+            subtitle: attachment.subtitle,
         )
     }
 
     func normalizedCurrentContextPaths(
         metadata: [String: String],
         identifier: String,
-        subtitle: String?
+        subtitle: String?,
     ) -> [String] {
         var paths: [String] = []
         for value in [metadata["path"], metadata["filePath"], subtitle, identifier].compactMap(\.self) {
@@ -1114,15 +1153,15 @@ private extension AiChatFeature {
             for droppedProvider in providers {
                 if droppedProvider.provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
                    let url = await Self.droppedFileURL(
-                    from: droppedProvider.provider,
-                    typeIdentifier: UTType.fileURL.identifier
+                       from: droppedProvider.provider,
+                       typeIdentifier: UTType.fileURL.identifier,
                    )
                 {
                     urls.append(url)
                 } else if droppedProvider.provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
                           let url = await Self.droppedFileURL(
-                            from: droppedProvider.provider,
-                            typeIdentifier: UTType.url.identifier
+                              from: droppedProvider.provider,
+                              typeIdentifier: UTType.url.identifier,
                           )
                 {
                     urls.append(url)
@@ -1164,7 +1203,7 @@ private extension AiChatFeature {
     func addAttachmentDrafts(
         from urls: [URL],
         skippingCurrentContextDuplicates: Bool,
-        state: inout State
+        state: inout State,
     ) -> Bool {
         var didAddAttachments = false
         var knownPaths = Set(state.addedAttachments.compactMap(normalizedAttachmentPath(for:)))
@@ -1200,7 +1239,9 @@ private extension AiChatFeature {
         return paths
     }
 
-    func currentContextFolderStructureKeys(for snapshot: AiChatCurrentContextSnapshot) -> [AiChatCurrentContextFolderStructureKey] {
+    func currentContextFolderStructureKeys(for snapshot: AiChatCurrentContextSnapshot)
+        -> [AiChatCurrentContextFolderStructureKey]
+    {
         var keys: [AiChatCurrentContextFolderStructureKey] = []
         for reference in snapshot.references {
             appendUnique(currentContextFolderStructureKeys(
@@ -1208,7 +1249,7 @@ private extension AiChatFeature {
                 kind: reference.kind,
                 metadata: reference.metadata,
                 identifier: reference.identifier,
-                subtitle: reference.subtitle
+                subtitle: reference.subtitle,
             ), to: &keys)
         }
         for item in snapshot.items {
@@ -1217,7 +1258,7 @@ private extension AiChatFeature {
                 kind: item.kind,
                 metadata: item.metadata,
                 identifier: item.identifier,
-                subtitle: item.subtitle
+                subtitle: item.subtitle,
             ), to: &keys)
             for reference in item.references {
                 appendUnique(currentContextFolderStructureKeys(
@@ -1225,7 +1266,7 @@ private extension AiChatFeature {
                     kind: reference.kind,
                     metadata: reference.metadata,
                     identifier: reference.identifier,
-                    subtitle: reference.subtitle
+                    subtitle: reference.subtitle,
                 ), to: &keys)
             }
         }
@@ -1235,7 +1276,7 @@ private extension AiChatFeature {
                 kind: attachment.kind,
                 metadata: attachment.metadata,
                 identifier: attachment.identifier,
-                subtitle: attachment.subtitle
+                subtitle: attachment.subtitle,
             ), to: &keys)
         }
         return keys
@@ -1246,28 +1287,30 @@ private extension AiChatFeature {
         kind: AiChatContextItemKind,
         metadata: [String: String],
         identifier: String,
-        subtitle: String?
+        subtitle: String?,
     ) -> [AiChatCurrentContextFolderStructureKey] {
-        guard supportsFolderStructureMode(kind: kind, metadata: metadata, identifier: identifier, subtitle: subtitle) else {
+        guard supportsFolderStructureMode(kind: kind, metadata: metadata, identifier: identifier, subtitle: subtitle)
+        else {
             return []
         }
-        return normalizedCurrentContextPaths(metadata: metadata, identifier: identifier, subtitle: subtitle).map { path in
-            AiChatCurrentContextFolderStructureKey(source: source, canonicalPath: path)
-        }
+        return normalizedCurrentContextPaths(metadata: metadata, identifier: identifier, subtitle: subtitle)
+            .map { path in
+                AiChatCurrentContextFolderStructureKey(source: source, canonicalPath: path)
+            }
     }
 
     func supportsFolderStructureMode(
         kind: AiChatContextItemKind,
         metadata: [String: String],
         identifier: String,
-        subtitle: String?
+        subtitle: String?,
     ) -> Bool {
         kind == .folder
             || metadata["route"] == "folder"
             || metadata["kind"] == "folder"
             || metadata["fileKind"] == "folder"
             || normalizedCurrentContextPaths(metadata: metadata, identifier: identifier, subtitle: subtitle)
-                .contains(where: pathIsDirectory)
+            .contains(where: pathIsDirectory)
     }
 
     func pathIsDirectory(_ path: String) -> Bool {
@@ -1277,7 +1320,7 @@ private extension AiChatFeature {
 
     func appendUnique(
         _ newKeys: [AiChatCurrentContextFolderStructureKey],
-        to keys: inout [AiChatCurrentContextFolderStructureKey]
+        to keys: inout [AiChatCurrentContextFolderStructureKey],
     ) {
         for key in newKeys where !keys.contains(key) {
             keys.append(key)
@@ -1309,7 +1352,7 @@ private extension AiChatFeature {
             source: attachmentSource(for: normalizedURL),
             displayTitle: normalizedURL.lastPathComponent.isEmpty ? nil : normalizedURL.lastPathComponent,
             sourceLocation: AiChatAttachmentSourceLocation(fileURL: normalizedURL, filePath: normalizedPath),
-            metadata: metadata
+            metadata: metadata,
         )
     }
 
@@ -1397,7 +1440,7 @@ private extension AiChatFeature {
             lastRequestID: nil,
             lastRunID: nil,
             lastRequestContext: nil,
-            updatedAtMs: currentTimestampMs()
+            updatedAtMs: currentTimestampMs(),
         )
     }
 
@@ -1426,7 +1469,7 @@ private extension AiChatFeature {
                 try await aiChatSessionPersistenceClient.saveSession(renamedSnapshot)
                 await send(.sessionRenameSucceeded(
                     AiChatSessionSummary(snapshot: renamedSnapshot),
-                    customTitle: renamedSnapshot.customTitle
+                    customTitle: renamedSnapshot.customTitle,
                 ))
             } catch is CancellationError {
                 return
@@ -1440,7 +1483,7 @@ private extension AiChatFeature {
     static func snapshot(
         _ snapshot: AiChatSessionSnapshot,
         renamedTo title: String,
-        updatedAtMs: Int64
+        updatedAtMs: Int64,
     ) -> AiChatSessionSnapshot {
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlankForSessionRename
         return AiChatSessionSnapshot(
@@ -1455,7 +1498,7 @@ private extension AiChatFeature {
             lastRequestID: snapshot.lastRequestID,
             lastRunID: snapshot.lastRunID,
             lastRequestContext: snapshot.lastRequestContext,
-            updatedAtMs: updatedAtMs
+            updatedAtMs: updatedAtMs,
         )
     }
 
@@ -1528,15 +1571,15 @@ private extension AiChatFeature {
     func sessionRestoreFailureMessage(for failure: AiChatSessionRestoreFailure) -> String {
         switch failure {
         case .missingRecord:
-            return "That chat is no longer available."
+            "That chat is no longer available."
         case .contextMismatch:
-            return "That chat can no longer be restored with the current model context."
+            "That chat can no longer be restored with the current model context."
         case .corruptedRecord:
-            return "That chat could not be restored because its saved data is corrupted."
+            "That chat could not be restored because its saved data is corrupted."
         case .unsupportedVersion:
-            return "That chat was saved in an unsupported format."
+            "That chat was saved in an unsupported format."
         case .unknown:
-            return "That chat could not be restored."
+            "That chat could not be restored."
         }
     }
 
