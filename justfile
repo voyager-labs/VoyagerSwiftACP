@@ -50,3 +50,23 @@ swift-version:
 # hooks 재설치
 reinstall-hooks:
     lefthook install --force
+
+# CodeGraph 인덱스 초기화 (최초 1회)
+codegraph-init:
+    npx -y @colbymchenry/codegraph@0.9.6 init -i
+
+# CodeGraph MCP 서버 실행
+codegraph-serve:
+    npx -y @colbymchenry/codegraph@0.9.6 serve --mcp
+
+# CodeGraph 인덱스 재구축
+codegraph-reindex:
+    npx -y @colbymchenry/codegraph@0.9.6 index
+
+# CodeGraph 인덱스/캐시 삭제
+codegraph-clean:
+    rm -rf .codegraph
+
+# CodeGraph 인덱스 상태 확인
+codegraph-status:
+    npx -y @colbymchenry/codegraph@0.9.6 status
