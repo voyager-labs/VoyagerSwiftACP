@@ -137,7 +137,7 @@ enum ComposerScopeEditorEntryMode: Equatable, Sendable {
     case edit
 }
 
-enum ScopeCandidateIntent: Equatable, Sendable {
+public enum ScopeCandidateIntent: Equatable, Sendable {
     case add(path: String)
     case replace(oldPath: String, newPath: String)
     case exclude(path: String)
@@ -387,7 +387,7 @@ public struct ComposerScopeEditorState: Equatable, Sendable {
         }
     }
 
-    func candidateSelectionIntent(for path: String) -> ScopeCandidateIntent {
+    public func candidateSelectionIntent(for path: String) -> ScopeCandidateIntent {
         let normalizedPath = ComposerScopeUtils.normalizeScopePath(path)
 
         guard entryMode == .edit,
