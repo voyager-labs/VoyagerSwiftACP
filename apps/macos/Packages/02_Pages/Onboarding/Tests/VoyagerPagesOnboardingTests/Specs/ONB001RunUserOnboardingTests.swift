@@ -1,5 +1,5 @@
 import ComposableArchitecture
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 @testable import VoyagerPagesOnboarding
 import XCTest
 
@@ -161,7 +161,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 검증 내용: 단계 전환 후 `currentStep`, title, 인덱스가 betaAccess에 해당하는 값으로 갱신됩니다.
     /// - 사전 조건: 새 세션이 시작되어 welcome 단계에 위치합니다.
     /// - 기대 결과: `currentStep`은 `.betaAccess`, title "Unlock Voyager", `currentStepIndex` 2입니다.
-    func testShowBetaAccessStepAfterWelcome() async {
+    func testShowAccessStepAfterWelcome() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
@@ -186,7 +186,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 검증 내용: betaAccess 검증 성공(`.active`) 후 다음 단계 전환이 정상 동작합니다.
     /// - 사전 조건: welcome 통과, betaAccess에서 `.active` 확인 응답 수신 후 `isComplete = true` 상태입니다.
     /// - 기대 결과: `currentStep`은 `.permissions`, title "Permissions", `currentStepIndex` 3입니다.
-    func testShowPermissionsStepAfterBetaAccess() async {
+    func testShowPermissionsStepAfterAccess() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
@@ -199,7 +199,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.currentStep = .betaAccess
         }
         await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
         await store.send(.nextTapped) { state in
@@ -303,7 +303,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         // beta access를 완료하여 다음 네비게이션 활성화
         await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
 
@@ -362,7 +362,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 검증 내용: `verificationResponse` 액션이 `status`, `reason`, `isComplete`를 올바르게 갱신합니다.
     /// - 사전 조건: `onAppear` 후 betaAccess는 미완료(`.notActive`) 상태입니다.
     /// - 기대 결과: `isComplete = true`, `status = .active`, `reason = .none`으로 변경됩니다.
-    func testUpdateBetaAccessStepStateOnVerification() async {
+    func testUpdateAccessStepStateOnVerification() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
@@ -378,7 +378,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         // 성공적인 확인이 상태를 업데이트
         await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
 
@@ -405,7 +405,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
 
@@ -493,7 +493,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.send(.nextTapped)
 
         await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
 
@@ -692,7 +692,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     func testGoBackToBetaAccessPreservesUnlockedState() async {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .permissions
-        StateMutation.applyActiveBetaAccess(state: &initialState)
+        StateMutation.applyPersistedCompletedAccessStep(state: &initialState)
         initialState.permissions.isComplete = true
 
         let store = TestStore(initialState: initialState) {
@@ -750,7 +750,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isComplete = false
         }
         await store.receive(\.betaAccess.onAppear)
-        await store.receive(\.betaAccess.accessStatusResponse)
+        await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
         await store.finish()
@@ -871,7 +871,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.aiProviderSetup.status = .complete
         }
         await store.receive(\.betaAccess.onAppear)
-        await store.receive(\.betaAccess.accessStatusResponse)
+        await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
         XCTAssertEqual(store.state.currentStep, .complete)
@@ -956,7 +956,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isComplete = false
         }
         await store.receive(\.betaAccess.onAppear)
-        await store.receive(\.betaAccess.accessStatusResponse)
+        await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
         let saved = saveRecorder.value
@@ -967,7 +967,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-resume_onboarding_session: 완료로 저장된 BetaAccess에 access snapshot이 없으면 Access step으로 되돌려 재확인을 요구한다.
+    /// ONB-001-resume_onboarding_session: 완료로 저장된 Access step에 access snapshot이 없으면 Access step으로 되돌려 재확인을 요구한다.
     /// 과거 진행 상태가 완료 flag만 갖고 외부 access source of truth를 복원할 수 없을 때 stale completion을 신뢰하지 않는지 검증합니다.
     /// - 검증 내용: `betaAccessComplete = true`이지만 `accessSnapshot = nil`인 snapshot을 복원하면 betaAccess를 미완료로 보정하고 저장합니다.
     /// - 사전 조건: snapshot은 permissions 진입 직전 상태이나 access 결과 snapshot은 저장되어 있지 않습니다.
@@ -1021,7 +1021,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         // swiftlint:enable function_body_length
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
-        let accessSnapshotRecorder = AccessSnapshotRecorder()
+        let accessSnapshotRecorder = LicenseAuthSnapshotRecorder()
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .permissions,
             stepState: OnboardingStepState(
@@ -1032,8 +1032,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             ),
             accessSnapshot: StateMutation.activeAccessSnapshot,
         )
-        let revokedResponse = AccessStatusResponse(status: .revoked, entitlements: [])
-        let revokedSnapshot = AccessStatusSnapshot(
+        let revokedResponse = LicenseAuthStatusResponse(status: .revoked, entitlements: [])
+        let revokedSnapshot = LicenseAuthStatusSnapshot(
             status: .revoked,
             entitlements: [],
             fetchedAt: testDate,
@@ -1046,14 +1046,14 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
                 snapshot: snapshot,
                 saveRecorder: saveRecorder,
             )
-            $0.accessClient = AccessClient(
+            $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
                 claimLicense: { _ in StateMutation.activeAccessResponse },
                 redeemBetaCode: { _ in StateMutation.activeAccessResponse },
                 fetchAccessStatus: { revokedResponse },
                 signOut: {},
             )
-            $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(
+            $0.licenseAuthStatusSnapshotClient = LicenseAuthSnapshotClient.recording(
                 recorder: accessSnapshotRecorder,
                 load: StateMutation.activeAccessSnapshot,
             )
@@ -1069,7 +1069,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         await store.receive(\.betaAccess.onAppear)
-        await store.receive(\.betaAccess.accessStatusResponse) { state in
+        await store.receive(\.betaAccess.licenseAuthStatusResponse) { state in
             state.currentStep = .betaAccess
             state.betaAccess.status = .revoked
             state.betaAccess.snapshot = revokedSnapshot
@@ -1241,7 +1241,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isComplete = true
         }
         await store.receive(\.betaAccess.onAppear)
-        await store.receive(\.betaAccess.accessStatusResponse)
+        await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
         await store.finish()
@@ -1562,7 +1562,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isComplete = true
         }
         await store.receive(\.betaAccess.onAppear)
-        await store.receive(\.betaAccess.accessStatusResponse)
+        await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
         XCTAssertTrue(store.state.isSessionComplete)
@@ -1579,7 +1579,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// ONB-001:access_snapshot_persistence — access가 완료된 상태에서 snapshot을 생성하면 access snapshot이 포함된다.
     func testProgressSnapshotIncludesAccessSnapshotWhenAccessComplete() {
         var state = OnboardingFeature.State()
-        StateMutation.applyActiveBetaAccess(state: &state)
+        StateMutation.applyPersistedCompletedAccessStep(state: &state)
 
         let snapshot = state.progressSnapshot
 

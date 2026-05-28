@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 
 struct UnlockSurfaceView: View {
     let store: StoreOf<UnlockSurfaceFeature>
@@ -18,7 +18,7 @@ struct UnlockSurfaceView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
-                UnlockAccessStepView(store: store.scope(state: \.unlockAccess, action: \.unlockAccess))
+                UnlockLicenseAuthStepView(store: store.scope(state: \.unlockAccess, action: \.unlockAccess))
                 Spacer()
             }
             .padding(32)

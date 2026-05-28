@@ -1,12 +1,12 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 
 @CasePathable
 enum AppLifecycleAction: CasePathable, Equatable, Sendable {
     case launch(Launch)
     case termination(Termination)
-    case accessGate(AccessGate)
+    case licenseAuthGate(LicenseAuthGate)
     case delegate(Delegate)
 
     @CasePathable
@@ -17,11 +17,11 @@ enum AppLifecycleAction: CasePathable, Equatable, Sendable {
     }
 
     @CasePathable
-    enum AccessGate: CasePathable, Equatable, Sendable {
+    enum LicenseAuthGate: CasePathable, Equatable, Sendable {
         case checkAccessStatus
-        case accessStatusResponse(Result<AccessStatusResponse, AccessError>)
+        case licenseAuthStatusResponse(Result<LicenseAuthStatusResponse, LicenseAuthError>)
         case showUnlockSurface
-        case accessGranted(snapshot: AccessStatusSnapshot)
+        case licenseAuthGranted(snapshot: LicenseAuthStatusSnapshot)
     }
 
     @CasePathable

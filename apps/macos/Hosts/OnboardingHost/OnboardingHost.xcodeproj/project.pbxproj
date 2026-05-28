@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		B10000000000000000000016 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000018 /* VoyagerPagesOnboarding */; };
 		B10000000000000000000017 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000019 /* VoyagerShared */; };
-		B10000000000000000000024 /* VoyagerFeaturesAccess in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000023 /* VoyagerFeaturesAccess */; };
+		B10000000000000000000024 /* VoyagerFeaturesLicenseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000023 /* VoyagerFeaturesLicenseAuth */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,7 +31,7 @@
 			files = (
 				B10000000000000000000016 /* VoyagerPagesOnboarding in Frameworks */,
 				B10000000000000000000017 /* VoyagerShared in Frameworks */,
-				B10000000000000000000024 /* VoyagerFeaturesAccess in Frameworks */,
+				B10000000000000000000024 /* VoyagerFeaturesLicenseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,7 +76,7 @@
 			packageProductDependencies = (
 				B10000000000000000000018 /* VoyagerPagesOnboarding */,
 				B10000000000000000000019 /* VoyagerShared */,
-				B10000000000000000000023 /* VoyagerFeaturesAccess */,
+				B10000000000000000000023 /* VoyagerFeaturesLicenseAuth */,
 			);
 			productName = OnboardingHost;
 			productReference = B10000000000000000000004 /* OnboardingHost.app */;
@@ -109,7 +109,7 @@
 			packageReferences = (
 				B10000000000000000000020 /* XCLocalSwiftPackageReference "VoyagerPagesOnboarding" */,
 				B10000000000000000000021 /* XCLocalSwiftPackageReference "VoyagerShared" */,
-				B10000000000000000000022 /* XCLocalSwiftPackageReference "VoyagerFeaturesAccess" */,
+				B10000000000000000000022 /* XCLocalSwiftPackageReference "VoyagerFeaturesLicenseAuth" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B10000000000000000000003 /* Products */;
@@ -368,9 +368,9 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../Packages/06_Shared/VoyagerShared;
 		};
-		B10000000000000000000022 /* XCLocalSwiftPackageReference "VoyagerFeaturesAccess" */ = {
+		B10000000000000000000022 /* XCLocalSwiftPackageReference "VoyagerFeaturesLicenseAuth" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../Packages/04_Features/Access;
+			relativePath = ../../Packages/04_Features/LicenseAuth;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -385,10 +385,10 @@
 			package = B10000000000000000000021 /* XCLocalSwiftPackageReference "VoyagerShared" */;
 			productName = VoyagerShared;
 		};
-		B10000000000000000000023 /* VoyagerFeaturesAccess */ = {
+		B10000000000000000000023 /* VoyagerFeaturesLicenseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = B10000000000000000000022 /* XCLocalSwiftPackageReference "VoyagerFeaturesAccess" */;
-			productName = VoyagerFeaturesAccess;
+			package = B10000000000000000000022 /* XCLocalSwiftPackageReference "VoyagerFeaturesLicenseAuth" */;
+			productName = VoyagerFeaturesLicenseAuth;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

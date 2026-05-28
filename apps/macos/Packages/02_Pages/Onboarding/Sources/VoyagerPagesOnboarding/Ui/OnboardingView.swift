@@ -226,7 +226,7 @@ struct OnboardingView: View {
         case .welcome:
             WelcomeStepView(store: store.scope(state: \.welcome, action: \.welcome))
         case .betaAccess:
-            UnlockAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
+            UnlockLicenseAuthStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
         case .aiProviderSetup:

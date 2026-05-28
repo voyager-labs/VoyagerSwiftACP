@@ -1,12 +1,12 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 
 @ObservableState
 struct AppLifecycleState: Equatable {
     var didStartHelper = false
     var terminationAttemptID: UUID?
-    var isCheckingAccess = false
-    var lastAccessStatus: AccessStatus?
-    var accessGateResolved = false
+    var isCheckingLicenseAuth = false
+    var lastLicenseAuthStatus: LicenseAuthStatus?
+    var licenseAuthGateResolved = false
 }

@@ -2,7 +2,7 @@ import ComposableArchitecture
 import Foundation
 import Logging
 import VoyagerEntitiesAppPreferences
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 import VoyagerPagesOnboarding
 import VoyagerShared
 
@@ -27,9 +27,9 @@ struct AppLifecycleFeature {
     var appTerminationReplyClient
     @Dependency(\.uuid)
     var uuid
-    @Dependency(\.accessClient)
-    var accessClient
-    @Dependency(\.accessStatusSnapshotClient)
+    @Dependency(\.licenseAuthClient)
+    var licenseAuthClient
+    @Dependency(\.licenseAuthStatusSnapshotClient)
     var snapshotClient
     @Dependency(\.unlockSurfaceWindowClient)
     var unlockSurfaceWindowClient
@@ -72,58 +72,58 @@ struct AppLifecycleFeature {
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
-                return .send(.accessGate(.checkAccessStatus))
+                return .send(.licenseAuthGate(.checkAccessStatus))
 
             case let .launch(.appReopen(hasVisibleWindows: flag)):
                 if onboardingWindowClient.showIfNeeded() {
                     return .none
                 }
-                if !state.accessGateResolved {
+                if !state.licenseAuthGateResolved {
                     return .none
                 }
-                guard state.lastAccessStatus?.isActive == true else {
+                guard state.lastLicenseAuthStatus?.isActive == true else {
                     return .none
                 }
                 return .send(.delegate(.reopenWindowIfNeeded(hasVisibleWindows: flag)))
 
             // MARK: - Access Gate
 
-            case .accessGate(.checkAccessStatus):
-                state.isCheckingAccess = true
-                let accessClient = accessClient
+            case .licenseAuthGate(.checkAccessStatus):
+                state.isCheckingLicenseAuth = true
+                let licenseAuthClient = licenseAuthClient
                 return .run { send in
                     do {
-                        let response = try await accessClient.fetchAccessStatus()
-                        await send(.accessGate(.accessStatusResponse(.success(response))))
-                    } catch let error as AccessError {
-                        await send(.accessGate(.accessStatusResponse(.failure(error))))
+                        let response = try await licenseAuthClient.fetchAccessStatus()
+                        await send(.licenseAuthGate(.licenseAuthStatusResponse(.success(response))))
+                    } catch let error as LicenseAuthError {
+                        await send(.licenseAuthGate(.licenseAuthStatusResponse(.failure(error))))
                     } catch {
-                        await send(.accessGate(.accessStatusResponse(.failure(.networkFailure))))
+                        await send(.licenseAuthGate(.licenseAuthStatusResponse(.failure(.networkFailure))))
                     }
                 }
                 .cancellable(id: CancelID.accessCheck, cancelInFlight: true)
 
-            case let .accessGate(.accessStatusResponse(.success(response))):
-                state.isCheckingAccess = false
-                state.lastAccessStatus = response.status
-                state.accessGateResolved = true
+            case let .licenseAuthGate(.licenseAuthStatusResponse(.success(response))):
+                state.isCheckingLicenseAuth = false
+                state.lastLicenseAuthStatus = response.status
+                state.licenseAuthGateResolved = true
 
                 if response.status.isActive {
                     let now = date.now
-                    let snapshot = AccessStatusSnapshot(
+                    let snapshot = LicenseAuthStatusSnapshot(
                         status: response.status,
                         expiresAt: response.expiresAt,
                         entitlements: response.entitlements,
                         fetchedAt: now,
                     )
-                    return .send(.accessGate(.accessGranted(snapshot: snapshot)))
+                    return .send(.licenseAuthGate(.licenseAuthGranted(snapshot: snapshot)))
                 } else {
-                    return .send(.accessGate(.showUnlockSurface))
+                    return .send(.licenseAuthGate(.showUnlockSurface))
                 }
 
-            case let .accessGate(.accessStatusResponse(.failure(error))):
+            case let .licenseAuthGate(.licenseAuthStatusResponse(.failure(error))):
                 guard error == .networkFailure else {
-                    return .send(.accessGate(.showUnlockSurface))
+                    return .send(.licenseAuthGate(.showUnlockSurface))
                 }
                 let snapshotClient = snapshotClient
                 let dateNow = date.now
@@ -133,30 +133,30 @@ struct AppLifecycleFeature {
                           dateNow.timeIntervalSince(cached.fetchedAt) <= 24 * 3600,
                           cached.expiresAt.map({ dateNow < $0 }) ?? true
                     else {
-                        await send(.accessGate(.showUnlockSurface))
+                        await send(.licenseAuthGate(.showUnlockSurface))
                         return
                     }
-                    await send(.accessGate(.accessGranted(snapshot: cached)))
+                    await send(.licenseAuthGate(.licenseAuthGranted(snapshot: cached)))
                 }
 
-            case .accessGate(.showUnlockSurface):
-                state.isCheckingAccess = false
-                state.accessGateResolved = true
+            case .licenseAuthGate(.showUnlockSurface):
+                state.isCheckingLicenseAuth = false
+                state.licenseAuthGateResolved = true
                 let unlockSurfaceClient = unlockSurfaceWindowClient
                 return .run { _ in
                     await unlockSurfaceClient.showWindow()
                 }
 
-            case let .accessGate(.accessGranted(snapshot)):
+            case let .licenseAuthGate(.licenseAuthGranted(snapshot)):
                 let snapshotClient = snapshotClient
 
                 let saveEffect: Effect<Action> = .run { _ in
                     await snapshotClient.save(snapshot)
                 }
 
-                state.lastAccessStatus = snapshot.status
-                state.accessGateResolved = true
-                state.isCheckingAccess = false
+                state.lastLicenseAuthStatus = snapshot.status
+                state.licenseAuthGateResolved = true
+                state.isCheckingLicenseAuth = false
 
                 var effects: [Effect<Action>] = [saveEffect]
 

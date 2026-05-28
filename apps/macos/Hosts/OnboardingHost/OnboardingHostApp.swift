@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 import VoyagerPagesOnboarding
 
 // MARK: - Deterministic smoke mode (env-toggle, host-only)
@@ -145,7 +145,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
             }
             return true
         },
-        accessClient: .mock,
+        licenseAuthClient: .mock,
     )
 
     func applicationDidFinishLaunching(_: Notification) {

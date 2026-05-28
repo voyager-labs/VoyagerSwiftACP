@@ -1,24 +1,24 @@
 import Dependencies
 import Foundation
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 @testable import VoyagerPagesOnboarding
 
 // MARK: - 상태 변이 헬퍼
 
 /// 테스트에서 반복 사용하는 상태 변이 패턴을 네임스페이스로 제공합니다.
 enum StateMutation {
-    static let activeAccessResponse = AccessStatusResponse(
+    static let activeAccessResponse = LicenseAuthStatusResponse(
         status: .coreLicenseActive,
         entitlements: [.coreLicense],
     )
 
-    static let activeAccessSnapshot = AccessStatusSnapshot(
+    static let activeAccessSnapshot = LicenseAuthStatusSnapshot(
         status: .coreLicenseActive,
         entitlements: [.coreLicense],
         fetchedAt: Date(timeIntervalSince1970: 0),
     )
 
-    static let activeAccessClient = AccessClient(
+    static let activeLicenseAuthClient = LicenseAuthClient(
         restoreSession: { nil },
         claimLicense: { _ in activeAccessResponse },
         redeemBetaCode: { _ in activeAccessResponse },
@@ -27,8 +27,8 @@ enum StateMutation {
     )
 
     static func installActiveAccessRefresh(_ dependencies: inout DependencyValues) {
-        dependencies.accessClient = activeAccessClient
-        dependencies.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+        dependencies.licenseAuthClient = activeLicenseAuthClient
+        dependencies.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
             load: { activeAccessSnapshot },
             save: { _ in },
             remove: {},
@@ -36,8 +36,8 @@ enum StateMutation {
         dependencies.date = .constant(activeAccessSnapshot.fetchedAt)
     }
 
-    /// betaAccess 상태를 server-canonical active access 결과와 동일하게 설정합니다.
-    static func applyActiveBetaAccess(state: inout OnboardingFeature.State) {
+    /// access 상태를 server-canonical active access 결과와 동일하게 설정합니다.
+    static func applyActiveAccess(state: inout OnboardingFeature.State) {
         state.betaAccess.status = .coreLicenseActive
         state.betaAccess.snapshot = activeAccessSnapshot
         state.betaAccess.isComplete = true
@@ -45,7 +45,7 @@ enum StateMutation {
     }
 
     static func applyPersistedCompletedAccessStep(state: inout OnboardingFeature.State) {
-        applyActiveBetaAccess(state: &state)
+        applyActiveAccess(state: &state)
     }
 
     /// applyStepState + accessSnapshot 복원 경로를 시뮬레이션합니다.

@@ -1,12 +1,12 @@
 import ComposableArchitecture
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 
 @ObservableState
 struct OnboardingState: Equatable {
     var currentStep: OnboardingStep = .welcome
 
     var welcome: WelcomeFeature.State = .init()
-    var betaAccess: UnlockAccessFeature.State = .init()
+    var betaAccess: UnlockLicenseAuthFeature.State = .init()
     var permissions: PermissionsFeature.State = .init()
     var aiProviderSetup: AiProviderSetupFeature.State = .init()
     var complete: CompleteFeature.State = .init()
@@ -69,7 +69,7 @@ struct OnboardingState: Equatable {
             betaAccess.isComplete = true
             betaAccess.isSubmitting = false
         } else {
-            betaAccess = UnlockAccessFeature.State()
+            betaAccess = UnlockLicenseAuthFeature.State()
         }
         permissions.isComplete = stepState.permissionsComplete
         aiProviderSetup.choice = stepState.aiProviderSetupChoice

@@ -1,5 +1,5 @@
 import ComposableArchitecture
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 @testable import VoyagerPagesOnboarding
 import XCTest
 
@@ -15,10 +15,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: unlock surface가 표시되어 있고 child access reducer가 active access snapshot을 delegate로 전달합니다.
     /// - 기대 결과: snapshot 저장 recorder와 window callback이 각각 한 번 호출되고 `.delegate(.unlocked(snapshot))`이 수신됩니다.
     func testCompleteAccessResultSavesSnapshotAndEmitsSurfaceDelegate() async {
-        let recorder = AccessSnapshotRecorder()
+        let recorder = LicenseAuthSnapshotRecorder()
         let closedWindow = LockIsolated(false)
-        let completedSnapshots = LockIsolated<[AccessStatusSnapshot]>([])
-        let snapshot = AccessStatusSnapshot(
+        let completedSnapshots = LockIsolated<[LicenseAuthStatusSnapshot]>([])
+        let snapshot = LicenseAuthStatusSnapshot(
             status: .coreLicenseActive,
             entitlements: [.coreLicense],
             fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
@@ -27,7 +27,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         let store = TestStore(initialState: UnlockSurfaceFeature.State()) {
             UnlockSurfaceFeature()
         } withDependencies: {
-            $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(recorder: recorder)
+            $0.licenseAuthStatusSnapshotClient = LicenseAuthSnapshotClient.recording(recorder: recorder)
             $0.unlockSurfaceWindowClient = UnlockSurfaceWindowClient(
                 showWindow: {},
                 closeWindow: { closedWindow.setValue(true) },
@@ -53,12 +53,12 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: unlock surface가 표시되어 있고 child access 조회가 `.networkFailure`로 실패합니다.
     /// - 기대 결과: child state는 retry 가능한 오류 상태가 되고 저장된 access snapshot은 없습니다.
     func testErrorAccessResultDoesNotSaveSnapshotOrEmitSurfaceDelegate() async {
-        let recorder = AccessSnapshotRecorder()
+        let recorder = LicenseAuthSnapshotRecorder()
 
         let store = TestStore(initialState: UnlockSurfaceFeature.State()) {
             UnlockSurfaceFeature()
         } withDependencies: {
-            $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(recorder: recorder)
+            $0.licenseAuthStatusSnapshotClient = LicenseAuthSnapshotClient.recording(recorder: recorder)
             $0.unlockSurfaceWindowClient = UnlockSurfaceWindowClient(
                 showWindow: {},
                 closeWindow: {},

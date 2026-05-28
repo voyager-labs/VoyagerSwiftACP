@@ -1,6 +1,6 @@
 import AppKit
 import ComposableArchitecture
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 
 @MainActor private var onboardingWindowController: OnboardingWindowController?
 
@@ -59,19 +59,19 @@ extension OnboardingWindowClient: DependencyKey {
 
     nonisolated public static func makeLive(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        accessClient: AccessClient? = nil,
+        licenseAuthClient: LicenseAuthClient? = nil,
     ) -> OnboardingWindowClient {
         makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
-            accessClient: accessClient,
+            licenseAuthClient: licenseAuthClient,
         )
     }
 
     nonisolated static func makeClient(
         progressClient: OnboardingProgressClient,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        accessClient: AccessClient? = nil,
+        licenseAuthClient: LicenseAuthClient? = nil,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
         closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
     ) -> OnboardingWindowClient {
@@ -81,7 +81,7 @@ extension OnboardingWindowClient: DependencyKey {
                 if onboardingWindowController == nil {
                     onboardingWindowController = OnboardingWindowController(
                         openMainWindow: openMainWindow,
-                        accessClient: accessClient,
+                        licenseAuthClient: licenseAuthClient,
                     )
                 }
 

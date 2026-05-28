@@ -1,5 +1,5 @@
 import Foundation
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 
 nonisolated struct OnboardingStepState: Codable, Equatable {
     var welcomeComplete: Bool
@@ -66,12 +66,12 @@ nonisolated struct OnboardingStepState: Codable, Equatable {
 nonisolated struct OnboardingProgressSnapshot: Equatable {
     var currentStep: OnboardingStep
     var stepState: OnboardingStepState
-    var accessSnapshot: AccessStatusSnapshot?
+    var accessSnapshot: LicenseAuthStatusSnapshot?
 
     init(
         currentStep: OnboardingStep,
         stepState: OnboardingStepState,
-        accessSnapshot: AccessStatusSnapshot? = nil,
+        accessSnapshot: LicenseAuthStatusSnapshot? = nil,
     ) {
         self.currentStep = currentStep
         self.stepState = stepState

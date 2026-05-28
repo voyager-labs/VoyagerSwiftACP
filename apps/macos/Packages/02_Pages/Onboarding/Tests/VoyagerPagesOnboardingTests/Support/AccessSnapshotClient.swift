@@ -1,23 +1,23 @@
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 
-actor AccessSnapshotRecorder {
-    private var values: [AccessStatusSnapshot] = []
+actor LicenseAuthSnapshotRecorder {
+    private var values: [LicenseAuthStatusSnapshot] = []
 
-    func append(_ snapshot: AccessStatusSnapshot) {
+    func append(_ snapshot: LicenseAuthStatusSnapshot) {
         values.append(snapshot)
     }
 
-    func snapshot() -> [AccessStatusSnapshot] {
+    func snapshot() -> [LicenseAuthStatusSnapshot] {
         values
     }
 }
 
-enum AccessSnapshotClient {
+enum LicenseAuthSnapshotClient {
     static func recording(
-        recorder: AccessSnapshotRecorder,
-        load snapshot: AccessStatusSnapshot? = nil,
-    ) -> AccessStatusSnapshotClient {
-        AccessStatusSnapshotClient(
+        recorder: LicenseAuthSnapshotRecorder,
+        load snapshot: LicenseAuthStatusSnapshot? = nil,
+    ) -> LicenseAuthStatusSnapshotClient {
+        LicenseAuthStatusSnapshotClient(
             load: { snapshot },
             save: { snapshot in
                 await recorder.append(snapshot)

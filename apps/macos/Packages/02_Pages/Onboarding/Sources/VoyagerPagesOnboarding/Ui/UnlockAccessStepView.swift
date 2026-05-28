@@ -1,9 +1,9 @@
 import ComposableArchitecture
 import SwiftUI
-import VoyagerFeaturesAccess
+import VoyagerFeaturesLicenseAuth
 
-struct UnlockAccessStepView: View {
-    let store: StoreOf<UnlockAccessFeature>
+struct UnlockLicenseAuthStepView: View {
+    let store: StoreOf<UnlockLicenseAuthFeature>
 
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
@@ -12,8 +12,8 @@ struct UnlockAccessStepView: View {
                     get: \.claimMode,
                     send: { .claimModeChanged($0) },
                 )) {
-                    Text("License Key").tag(AccessClaimMode.licenseKey)
-                    Text("Beta Code").tag(AccessClaimMode.betaCode)
+                    Text("License Key").tag(LicenseAuthClaimMode.licenseKey)
+                    Text("Beta Code").tag(LicenseAuthClaimMode.betaCode)
                 }
                 .pickerStyle(.segmented)
 
