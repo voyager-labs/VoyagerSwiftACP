@@ -337,7 +337,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             attachments: [],
         )
 
-        let result = AiChatContextPartResolverClient.live().resolve(
+        let result = await AiChatContextPartResolverClient.live().resolve(
             AiChatContextPartResolverInput(
                 provider: .openai,
                 rawModelID: "gpt-4.1-mini",
@@ -391,7 +391,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             attachments: [],
         )
 
-        let result = AiChatContextPartResolverClient.live().resolve(
+        let result = await AiChatContextPartResolverClient.live().resolve(
             AiChatContextPartResolverInput(
                 provider: .openai,
                 rawModelID: "gpt-4.1-mini",
@@ -445,7 +445,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             attachments: [],
         )
 
-        let result = AiChatContextPartResolverClient.live().resolve(
+        let result = await AiChatContextPartResolverClient.live().resolve(
             AiChatContextPartResolverInput(
                 provider: .openai,
                 rawModelID: "gpt-4.1-mini",
@@ -478,7 +478,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         let folderURL = sandbox.appendingPathComponent("Workspace", isDirectory: true)
         try writeLargeFolderFiles(to: folderURL, count: 1200)
 
-        let result = AiChatContextPartResolverClient.live().resolve(
+        let result = await AiChatContextPartResolverClient.live().resolve(
             AiChatContextPartResolverInput(
                 provider: .openai,
                 rawModelID: "gpt-4.1-mini",
@@ -539,7 +539,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         ]
 
         for (model, row, requestFamily) in cases {
-            let result = AiChatContextPartResolverClient.live().resolve(
+            let result = await AiChatContextPartResolverClient.live().resolve(
                 AiChatContextPartResolverInput(
                     provider: model.provider,
                     rawModelID: model.rawModelID,
@@ -610,7 +610,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         ]
 
         for (model, row, requestFamily) in cases {
-            let result = AiChatContextPartResolverClient.live().resolve(
+            let result = await AiChatContextPartResolverClient.live().resolve(
                 AiChatContextPartResolverInput(
                     provider: model.provider,
                     rawModelID: model.rawModelID,
@@ -747,7 +747,7 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             .appendingPathComponent("missing-codex-attachment-\(UUID().uuidString).txt")
         let draft = makeDraftAttachment(url: missingURL, source: .file)
 
-        let resolvedContext = AiChatContextPartResolverClient.live().resolve(
+        let resolvedContext = await AiChatContextPartResolverClient.live().resolve(
             AiChatContextPartResolverInput(
                 provider: .chatgptCodex,
                 rawModelID: "gpt-5-codex",
