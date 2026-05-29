@@ -12,6 +12,7 @@ public struct AiChatFeature {
 
     enum CancelID: Hashable, Sendable {
         case request
+        case requestContextResolution
         case requestStartPersistence
         case requestFinalPersistence
         case restore
@@ -56,6 +57,7 @@ public struct AiChatFeature {
                 return loadSessions()
 
             case .newChatTapped:
+                state.pendingRequestStart = nil
                 let snapshot = startNewUnselectedChat(state: &state)
                 return .concatenate(
                     cancelRequestLifecycle(),
@@ -63,6 +65,7 @@ public struct AiChatFeature {
                 )
 
             case .startNewChatFromRebindTapped:
+                state.pendingRequestStart = nil
                 let snapshot = startNewUnselectedChat(state: &state)
                 return .concatenate(
                     cancelRequestLifecycle(),
@@ -84,7 +87,8 @@ public struct AiChatFeature {
                 state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
                 state.sessionList.errorMessage = nil
                 if state.sessionID != sessionID {
-                    state.currentContextFolderStructureModesByCanonicalPath = [:]
+                    state.pendingRequestStart = nil
+                    state.currentContextFolderStructureModes = [:]
                 }
 
                 if state.executionPhase.isProcessing, state.sessionID == sessionID {
@@ -219,6 +223,7 @@ public struct AiChatFeature {
                 return .none
 
             case .backToSessionsTapped:
+                state.pendingRequestStart = nil
                 state.mode = .sessions
                 guard let emptyDraftSessionID = cleanupEligibleEmptyDraftSessionID(for: state) else {
                     return .none
@@ -383,14 +388,14 @@ public struct AiChatFeature {
                 let currentContext = currentContextSnapshot(
                     snapshot,
                     excluding: state.addedAttachments,
-                    applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath,
+                    applyingFolderStructureModes: state.currentContextFolderStructureModes,
                 )
                 ensureCurrentFolderStructureModeDefaults(
                     for: currentContext,
-                    in: &state.currentContextFolderStructureModesByCanonicalPath,
+                    in: &state.currentContextFolderStructureModes,
                 )
                 state.currentContext = applyFolderStructureModes(
-                    state.currentContextFolderStructureModesByCanonicalPath,
+                    state.currentContextFolderStructureModes,
                     to: currentContext,
                 )
                 return .none
@@ -457,7 +462,18 @@ public struct AiChatFeature {
             case .regenerateTapped:
                 return startRequest(kind: .regenerate, state: &state)
 
+            case let .requestContextResolved(resolutionID, resolvedContext):
+                return completeRequestContextResolution(
+                    resolutionID: resolutionID,
+                    resolvedContext: resolvedContext,
+                    state: &state,
+                )
+
             case .cancelTapped:
+                if state.pendingRequestStart != nil {
+                    state.pendingRequestStart = nil
+                    return .cancel(id: CancelID.requestContextResolution)
+                }
                 guard let lock = state.executionPhase.lock, state.executionPhase.isProcessing else { return .none }
                 state.lockedModelHandle = nil
                 state.streamingAssistantDraft = nil
@@ -469,6 +485,7 @@ public struct AiChatFeature {
                 return cancelRequestLifecycle()
 
             case .resetTapped:
+                state.pendingRequestStart = nil
                 state.emptyDraftSessionID = nil
                 state.restoreSessionID = nil
                 state.restoreOutcome = nil
@@ -482,6 +499,7 @@ public struct AiChatFeature {
                 return cancelAllInFlightWork()
 
             case .teardownRequested:
+                state.pendingRequestStart = nil
                 state.streamingAssistantDraft = nil
                 state.lockedModelHandle = nil
                 state.executionPhase = .idle
@@ -545,6 +563,7 @@ public struct AiChatFeature {
     private func cancelRequestLifecycle() -> Effect<Action> {
         .merge(
             .cancel(id: CancelID.request),
+            .cancel(id: CancelID.requestContextResolution),
             .cancel(id: CancelID.requestStartPersistence),
             .cancel(id: CancelID.requestFinalPersistence),
         )
@@ -758,15 +777,15 @@ private extension AiChatFeature {
             : currentContextKeys
         let coveredKeys = Set(currentContextKeys).subtracting(targetKeys)
         for key in coveredKeys {
-            state.currentContextFolderStructureModesByCanonicalPath.removeValue(forKey: key)
+            state.currentContextFolderStructureModes.removeValue(forKey: key)
         }
         for key in targetKeys {
-            state.currentContextFolderStructureModesByCanonicalPath[key] = mode
+            state.currentContextFolderStructureModes[key] = mode
         }
         state.currentContext = currentContextSnapshot(
             state.currentContext,
             excluding: state.addedAttachments,
-            applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath,
+            applyingFolderStructureModes: state.currentContextFolderStructureModes,
         )
     }
 
@@ -774,14 +793,14 @@ private extension AiChatFeature {
         let currentContext = currentContextSnapshot(
             state.currentContext,
             excluding: state.addedAttachments,
-            applyingFolderStructureModes: state.currentContextFolderStructureModesByCanonicalPath,
+            applyingFolderStructureModes: state.currentContextFolderStructureModes,
         )
         ensureCurrentFolderStructureModeDefaults(
             for: currentContext,
-            in: &state.currentContextFolderStructureModesByCanonicalPath,
+            in: &state.currentContextFolderStructureModes,
         )
         state.currentContext = applyFolderStructureModes(
-            state.currentContextFolderStructureModesByCanonicalPath,
+            state.currentContextFolderStructureModes,
             to: currentContext,
         )
     }
@@ -1422,7 +1441,7 @@ private extension AiChatFeature {
         state.lastRequestContext = nil
         state.lastRequestContextModelHandle = nil
         state.addedAttachments = []
-        state.currentContextFolderStructureModesByCanonicalPath = [:]
+        state.currentContextFolderStructureModes = [:]
         state.executionPhase = .idle
         state.selectedModelHandle = nil
         state.selectedThinking = nil

@@ -25,12 +25,12 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
             displayTitle: "Screenshot.png",
             sourceLocation: AiChatAttachmentSourceLocation(
                 fileURL: URL(fileURLWithPath: attachmentPath),
-                filePath: attachmentPath
-            )
+                filePath: attachmentPath,
+            ),
         )
         let transcript = [
             AiChatMessage(role: .user, content: "Hello"),
-            AiChatMessage(role: .assistant, content: "Hi there")
+            AiChatMessage(role: .assistant, content: "Hi there"),
         ]
 
         let store = TestStore(initialState: AiChatFeature.State(
@@ -40,14 +40,14 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
                 query: "release",
                 isLoading: false,
                 errorMessage: nil,
-                selectedSessionID: selectedSessionID
+                selectedSessionID: selectedSessionID,
             ),
             sessionID: sessionID,
             sessionStatus: .active,
             currentContext: makeContextSnapshot(),
             addedAttachments: [attachment],
             transcriptHistory: transcript,
-            draftText: "Draft reply"
+            draftText: "Draft reply",
         )) {
             AiChatFeature()
         }
@@ -65,90 +65,16 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
     }
 
     func testNewChatTappedClearsStaleAddedAttachments() async {
-        let staleAttachment = AiChatAttachmentDraft(
-            id: AiChatAttachmentID(rawValue: "/tmp/Stale.pdf"),
-            source: .file,
-            displayTitle: "Stale.pdf",
-            sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Stale.pdf")
-        )
+        let staleAttachment = makeStaleAttachment()
         let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
-
-        let store = TestStore(initialState: AiChatFeature.State(
-            mode: .sessions,
-            currentContextFolderStructureModesByCanonicalPath: [AiChatCurrentContextFolderStructureKey(source: .reference, canonicalPath: "/tmp/StaleFolder"): .includeSubfolders],
-            addedAttachments: [staleAttachment]
-        )) {
-            AiChatFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_000))
-            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
-                loadSession: { _ in nil },
-                saveSession: { _ in },
-                deleteSession: { _ in }
-            )
-        }
+        let store = makeNewChatClearingStaleAttachmentStore(staleAttachment: staleAttachment)
 
         await store.send(.newChatTapped) { state in
-            state.sessionID = newSessionID
-            state.emptyDraftSessionID = newSessionID
-            state.sessionStatus = .idle
-            state.mode = .chat
-            state.restoreSessionID = nil
-            state.restoreOutcome = nil
-            state.restoreFailure = nil
-            state.sessionList.selectedSessionID = nil
-            state.sessionList.errorMessage = nil
-            state.transcriptHistory = []
-            state.draftText = ""
-            state.streamingAssistantDraft = nil
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.lastRequestContext = nil
-            state.lastRequestContextModelHandle = nil
-            state.addedAttachments = []
-            state.currentContextFolderStructureModesByCanonicalPath = [:]
-            state.executionPhase = .idle
-            state.selectedModelHandle = nil
-            state.selectedThinking = nil
-            state.unavailableSelectedModelHandle = nil
+            applyNewChatStartedState(&state, newSessionID: newSessionID)
         }
 
-        let expectedSnapshot = AiChatSessionSnapshot(
-            sessionID: newSessionID,
-            status: .idle,
-            customTitle: nil,
-            provider: nil,
-            model: nil,
-            selectedModelRow: nil,
-            selectedThinking: nil,
-            transcriptHistory: [],
-            lastRequestID: nil,
-            lastRunID: nil,
-            lastRequestContext: nil,
-            updatedAtMs: 1_700_000_000_000
-        )
-
-        await store.receive(.newChatCreated(expectedSnapshot)) { state in
-            state.sessionID = newSessionID
-            state.emptyDraftSessionID = newSessionID
-            state.sessionStatus = .idle
-            state.transcriptHistory = []
-            state.streamingAssistantDraft = nil
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.lastRequestContext = nil
-            state.lastRequestContextModelHandle = nil
-            state.addedAttachments = []
-            state.executionPhase = .idle
-            state.selectedModelHandle = nil
-            state.selectedThinking = nil
-            state.restoreSessionID = newSessionID
-            state.restoreOutcome = nil
-            state.restoreFailure = nil
-            state.mode = .chat
-            state.sessionList.selectedSessionID = newSessionID
-            state.sessionList.errorMessage = nil
+        await store.receive(.newChatCreated(makeNewChatSnapshot(sessionID: newSessionID))) { state in
+            applyNewChatCreatedState(&state, newSessionID: newSessionID)
         }
     }
 
@@ -162,11 +88,11 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
             mode: .chat,
             sessionList: .init(
                 allRows: [summary],
-                selectedSessionID: sessionID
+                selectedSessionID: sessionID,
             ),
             sessionID: sessionID,
             emptyDraftSessionID: sessionID,
-            sessionStatus: .idle
+            sessionStatus: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -175,7 +101,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
                 saveSession: { _ in },
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
-                }
+                },
             )
         }
 
@@ -213,11 +139,11 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
             mode: .chat,
             sessionList: .init(
                 allRows: [summary],
-                selectedSessionID: sessionID
+                selectedSessionID: sessionID,
             ),
             sessionID: sessionID,
             emptyDraftSessionID: sessionID,
-            sessionStatus: .idle
+            sessionStatus: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -226,7 +152,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
                 saveSession: { _ in },
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
-                }
+                },
             )
         }
 
@@ -267,12 +193,12 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
             mode: .chat,
             sessionList: .init(
                 allRows: [summary],
-                selectedSessionID: sessionID
+                selectedSessionID: sessionID,
             ),
             sessionID: sessionID,
             emptyDraftSessionID: sessionID,
             sessionStatus: .idle,
-            selectedModelHandle: model
+            selectedModelHandle: model,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -281,7 +207,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
                 saveSession: { _ in },
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
-                }
+                },
             )
         }
 
@@ -317,11 +243,11 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
             mode: .chat,
             sessionList: .init(
                 allRows: [summary],
-                selectedSessionID: sessionID
+                selectedSessionID: sessionID,
             ),
             sessionID: sessionID,
             emptyDraftSessionID: sessionID,
-            sessionStatus: .idle
+            sessionStatus: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -331,7 +257,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
                 deleteSession: { sessionID in
                     deletedSessionIDs.withValue { $0.append(sessionID) }
                     throw AiChatSessionPersistenceClientError.applicationSupportDirectoryUnavailable
-                }
+                },
             )
         }
 
@@ -355,7 +281,6 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         XCTAssertEqual(deletedSessionIDs.value, [sessionID])
         XCTAssertEqual(store.state.sessionList.allRows, [summary])
     }
-
 }
 
 private func makeSessionSummary(
@@ -366,9 +291,9 @@ private func makeSessionSummary(
     contextTitle: String? = "Release docs",
     provider: AiProvider = .openai,
     model: AiModelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
-    createdAtMs: Int64 = 1_000,
-    updatedAtMs: Int64 = 2_000,
-    status: AiChatSessionStatus = .active
+    createdAtMs: Int64 = 1000,
+    updatedAtMs: Int64 = 2000,
+    status: AiChatSessionStatus = .active,
 ) -> AiChatSessionSummary {
     AiChatSessionSummary(
         sessionID: sessionID,
@@ -380,6 +305,95 @@ private func makeSessionSummary(
         model: model,
         createdAtMs: createdAtMs,
         updatedAtMs: updatedAtMs,
-        status: status
+        status: status,
     )
+}
+
+private func makeStaleAttachment() -> AiChatAttachmentDraft {
+    AiChatAttachmentDraft(
+        id: AiChatAttachmentID(rawValue: "/tmp/Stale.pdf"),
+        source: .file,
+        displayTitle: "Stale.pdf",
+        sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Stale.pdf"),
+    )
+}
+
+@MainActor
+private func makeNewChatClearingStaleAttachmentStore(
+    staleAttachment: AiChatAttachmentDraft,
+) -> TestStore<AiChatFeature.State, AiChatFeature.Action> {
+    TestStore(initialState: AiChatFeature.State(
+        mode: .sessions,
+        currentContextFolderStructureModes: [
+            AiChatCurrentContextFolderStructureKey(
+                source: .reference,
+                canonicalPath: "/tmp/StaleFolder",
+            ): .includeSubfolders,
+        ],
+        addedAttachments: [staleAttachment],
+    )) {
+        AiChatFeature()
+    } withDependencies: {
+        $0.uuid = .incrementing
+        $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_000))
+        $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+            loadSession: { _ in nil },
+            saveSession: { _ in },
+            deleteSession: { _ in },
+        )
+    }
+}
+
+private func makeNewChatSnapshot(sessionID: AiChatSessionID) -> AiChatSessionSnapshot {
+    AiChatSessionSnapshot(
+        sessionID: sessionID,
+        status: .idle,
+        customTitle: nil,
+        provider: nil,
+        model: nil,
+        selectedModelRow: nil,
+        selectedThinking: nil,
+        transcriptHistory: [],
+        lastRequestID: nil,
+        lastRunID: nil,
+        lastRequestContext: nil,
+        updatedAtMs: 1_700_000_000_000,
+    )
+}
+
+private func applyNewChatStartedState(
+    _ state: inout AiChatFeature.State,
+    newSessionID: AiChatSessionID,
+) {
+    state.sessionID = newSessionID
+    state.emptyDraftSessionID = newSessionID
+    state.sessionStatus = .idle
+    state.mode = .chat
+    state.restoreSessionID = nil
+    state.restoreOutcome = nil
+    state.restoreFailure = nil
+    state.sessionList.selectedSessionID = nil
+    state.sessionList.errorMessage = nil
+    state.transcriptHistory = []
+    state.draftText = ""
+    state.streamingAssistantDraft = nil
+    state.lockedModelHandle = nil
+    state.lastExecutionFailure = nil
+    state.lastRequestContext = nil
+    state.lastRequestContextModelHandle = nil
+    state.addedAttachments = []
+    state.currentContextFolderStructureModes = [:]
+    state.executionPhase = .idle
+    state.selectedModelHandle = nil
+    state.selectedThinking = nil
+    state.unavailableSelectedModelHandle = nil
+}
+
+private func applyNewChatCreatedState(
+    _ state: inout AiChatFeature.State,
+    newSessionID: AiChatSessionID,
+) {
+    applyNewChatStartedState(&state, newSessionID: newSessionID)
+    state.restoreSessionID = newSessionID
+    state.sessionList.selectedSessionID = newSessionID
 }

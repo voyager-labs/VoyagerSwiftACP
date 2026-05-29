@@ -24,7 +24,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             ],
             lastRequestID: AiChatRequestID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666")),
             lastRunID: AiChatRunID(rawValue: makeUUID("77777777-7777-7777-7777-777777777777")),
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let staleLock = makeRequestLock(
@@ -35,13 +35,13 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
                     requestID: AiChatRequestID(rawValue: UUID()),
                     runID: AiChatRunID(rawValue: UUID()),
                     model: catalogRows[1].handle,
-                    selectedRow: catalogRows[1]
+                    selectedRow: catalogRows[1],
                 ),
-                messages: []
+                messages: [],
             ),
             selectedHandle: catalogRows[1].handle,
             selectedRow: catalogRows[1],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
         let store = TestStore(initialState: AiChatFeature.State(
             restoreSessionID: targetSessionID,
@@ -55,7 +55,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             selectedThinking: .effort(.minimal),
             lockedModelHandle: catalogRows[1].handle,
             lastExecutionFailure: .transportError,
-            executionPhase: .processing(staleLock)
+            executionPhase: .processing(staleLock),
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -63,7 +63,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -78,7 +78,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             selectedModelHandle: catalogRows[0].handle,
             selectedThinking: .effort(.minimal),
             lockedModelHandle: catalogRows[1].handle,
-            lastExecutionFailure: .transportError
+            lastExecutionFailure: .transportError,
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -101,7 +101,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         await store.receive(AiChatAction.restoreOutcome(
             requestedSessionID: targetSessionID,
             AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
-            restoreFailure: nil
+            restoreFailure: nil,
         )) { state in
             state.sessionID = targetSessionID
             state.sessionStatus = AiChatSessionStatus.active
@@ -134,7 +134,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             subtitle: "Old provider subtitle",
             sortOrder: 999,
             isDefault: false,
-            isRecommended: false
+            isRecommended: false,
         )
         let restoredSnapshot = AiChatSessionSnapshot(
             sessionID: targetSessionID,
@@ -143,7 +143,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             model: catalogRows[1].handle,
             selectedModelRow: staleSelectedRow,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let store = TestStore(initialState: AiChatFeature.State()) {
@@ -153,7 +153,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -167,7 +167,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -195,13 +195,13 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             transcriptHistory: restoredSnapshot.transcriptHistory,
             lastRequestID: nil,
             lastRunID: nil,
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
 
         await store.receive(.restoreOutcome(
             requestedSessionID: targetSessionID,
             .restored(snapshot: normalizedSnapshot),
-            restoreFailure: nil
+            restoreFailure: nil,
         )) { state in
             state.sessionID = targetSessionID
             state.sessionStatus = .active
@@ -234,7 +234,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             model: AiModelHandle(provider: .openai, rawValue: "missing-model"),
             selectedModelRow: nil,
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let store = TestStore(initialState: AiChatFeature.State()) {
@@ -244,7 +244,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -258,7 +258,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: restoredSnapshot.model,
             lockedModelHandle: nil,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -280,7 +280,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         await store.receive(AiChatAction.restoreOutcome(
             requestedSessionID: targetSessionID,
             AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
-            restoreFailure: nil
+            restoreFailure: nil,
         )) { state in
             state.sessionID = targetSessionID
             state.sessionStatus = .active
@@ -309,7 +309,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
             lastUsedProviderId: .anthropic,
-            providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)]
+            providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
         )
         let restoredSnapshot = AiChatSessionSnapshot(
             sessionID: targetSessionID,
@@ -319,7 +319,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             selectedModelRow: catalogRows[1],
             selectedThinking: .effort(.high),
             transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let models = makeThinkingCapableProviderModels()
@@ -330,7 +330,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
             $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { _, _ in models })
         }
@@ -346,7 +346,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             selectedModelHandle: catalogRows[1].handle,
             selectedThinking: .effort(.high),
             lockedModelHandle: nil,
-            lastExecutionFailure: nil
+            lastExecutionFailure: nil,
         ))) { state in
             state.restoreSessionID = targetSessionID
             state.restoreOutcome = nil
@@ -369,7 +369,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         await store.receive(AiChatAction.restoreOutcome(
             requestedSessionID: targetSessionID,
             AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
-            restoreFailure: nil
+            restoreFailure: nil,
         )) { state in
             state.sessionID = targetSessionID
             state.sessionStatus = .active
@@ -398,12 +398,12 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         await store.receive(.modelListLoading(
             requestID: requestID,
             provider: .anthropic,
-            credential: anthropicCredential
+            credential: anthropicCredential,
         ))
         await store.receive(.modelListLoaded(
             requestID: requestID,
             provider: .anthropic,
-            models: models
+            models: models,
         )) { state in
             state.catalogRows = catalogRows
             state.modelListState = .loaded(models)
@@ -435,7 +435,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             id: AiChatAttachmentID(rawValue: "/tmp/StaleLiveAttachment.txt"),
             source: .file,
             displayTitle: "StaleLiveAttachment.txt",
-            sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/StaleLiveAttachment.txt")
+            sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/StaleLiveAttachment.txt"),
         )
         let restoredLockedContext = AiChatLockedRequestContextSnapshot(
             currentContext: makeContextSnapshot(summary: "Restored request context"),
@@ -445,9 +445,9 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
                     source: .file,
                     displayTitle: "Restored.txt",
                     sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Restored.txt"),
-                    resolutionResult: .resolvedText(text: "Restored content", metadata: [:])
-                )
-            ]
+                    resolutionResult: .resolvedText(text: "Restored content", metadata: [:]),
+                ),
+            ],
         )
         let restoredSnapshot = AiChatSessionSnapshot(
             sessionID: targetSessionID,
@@ -457,32 +457,39 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             selectedModelRow: catalogRows[1],
             transcriptHistory: [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Restored answer")
+                AiChatMessage(role: .assistant, content: "Restored answer"),
             ],
             lastRequestContext: restoredLockedContext,
-            updatedAtMs: 0
+            updatedAtMs: 0,
         )
         let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
         let store = TestStore(initialState: AiChatFeature.State(
             mode: .sessions,
-            sessionList: .init(rows: [AiChatSessionSummary(
-                sessionID: targetSessionID,
-                title: "Restored session",
-                preview: "Restored answer",
-                messageCount: restoredSnapshot.transcriptHistory.count,
-                contextTitle: restoredLockedContext.currentContext.summary,
-                provider: restoredSnapshot.provider,
-                model: restoredSnapshot.model,
-                createdAtMs: 0,
-                updatedAtMs: restoredSnapshot.updatedAtMs,
-                status: restoredSnapshot.status
-            )]),
+            sessionList: .init(rows: [
+                AiChatSessionSummary(
+                    sessionID: targetSessionID,
+                    title: "Restored session",
+                    preview: "Restored answer",
+                    messageCount: restoredSnapshot.transcriptHistory.count,
+                    contextTitle: restoredLockedContext.currentContext.summary,
+                    provider: restoredSnapshot.provider,
+                    model: restoredSnapshot.model,
+                    createdAtMs: 0,
+                    updatedAtMs: restoredSnapshot.updatedAtMs,
+                    status: restoredSnapshot.status,
+                ),
+            ]),
             currentContext: liveCurrentContext,
-            currentContextFolderStructureModesByCanonicalPath: [AiChatCurrentContextFolderStructureKey(source: .reference, canonicalPath: "/tmp/StaleFolder"): .includeSubfolders],
+            currentContextFolderStructureModes: [
+                AiChatCurrentContextFolderStructureKey(
+                    source: .reference,
+                    canonicalPath: "/tmp/StaleFolder",
+                ): .includeSubfolders,
+            ],
             addedAttachments: [staleAttachment],
             catalogRows: catalogRows,
             modelListState: .loaded(makeProviderModels()),
-            selectedModelHandle: catalogRows[0].handle
+            selectedModelHandle: catalogRows[0].handle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -491,7 +498,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
                 listSessions: { _, _ in [] },
                 loadSession: { id in try await persistence.loadSession(id) },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -499,14 +506,14 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.mode = AiChatMode.sessions
             state.sessionList.selectedSessionID = targetSessionID
             state.sessionList.errorMessage = nil
-            state.currentContextFolderStructureModesByCanonicalPath = [:]
+            state.currentContextFolderStructureModes = [:]
             state.restoreSessionID = targetSessionID
         }
 
         await store.receive(AiChatAction.restoreOutcome(
             requestedSessionID: targetSessionID,
             AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
-            restoreFailure: nil
+            restoreFailure: nil,
         )) { state in
             state.sessionID = targetSessionID
             state.sessionStatus = .active
@@ -517,7 +524,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
             state.lastRequestContext = restoredLockedContext
             state.lastRequestContextModelHandle = restoredSnapshot.model
             state.addedAttachments = []
-            state.currentContextFolderStructureModesByCanonicalPath = [:]
+            state.currentContextFolderStructureModes = [:]
             state.executionPhase = .idle
             state.selectedModelHandle = restoredSnapshot.model
             state.selectedThinking = restoredSnapshot.selectedThinking
@@ -530,9 +537,8 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertEqual(store.state.currentContext, liveCurrentContext)
         XCTAssertEqual(store.state.lastRequestContext, restoredLockedContext)
         XCTAssertTrue(store.state.addedAttachments.isEmpty)
-        XCTAssertTrue(store.state.currentContextFolderStructureModesByCanonicalPath.isEmpty)
+        XCTAssertTrue(store.state.currentContextFolderStructureModes.isEmpty)
         XCTAssertEqual(store.state.currentContext.summary, "Live FileManager selection")
         XCTAssertEqual(store.state.lastRequestContext?.currentContext.summary, "Restored request context")
     }
-
 }

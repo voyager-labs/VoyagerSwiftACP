@@ -2,13 +2,11 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 
-
-
 public struct AiChatAttachmentDropProvider: Equatable, @unchecked Sendable {
     public let id: UUID
     public let provider: NSItemProvider
 
-    public init(id: UUID = UUID(), provider: NSItemProvider) {
+    public init(id: UUID, provider: NSItemProvider) {
         self.id = id
         self.provider = provider
     }
@@ -75,13 +73,14 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case startNewChatFromRebindTapped
     case submitTapped
     case regenerateTapped
+    case requestContextResolved(UUID, AiChatResolvedRequestContext)
     case cancelTapped
     case resetTapped
     case teardownRequested
     case restoreOutcome(
         requestedSessionID: AiChatSessionID,
         AiChatSessionRestoreResult,
-        restoreFailure: AiChatSessionRestoreFailure?
+        restoreFailure: AiChatSessionRestoreFailure?,
     )
     case executionEvent(AiChatEvent)
     case persistenceFailed(AiChatRequestLock, AiChatExecutionFailure)

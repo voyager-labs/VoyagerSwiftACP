@@ -4,15 +4,6 @@ import VoyagerEntitiesAi
 
 let kAiChatHistoryCharacterBudget = 24000
 
-struct AiChatPreparedRequest {
-    var prompt: String
-    var messages: [AiChatMessage]
-    var assistantReplacementIndex: Int?
-    var historyTruncation: AiChatHistoryTruncationMetadata
-    var requestContextOverride: AiChatLockedRequestContextSnapshot? = nil
-    var requestContextSource: AiChatLockedRequestContextSnapshot? = nil
-}
-
 struct AiChatRequestLockInput {
     var kind: AiChatRequestKind
     var sessionID: AiChatSessionID
@@ -41,40 +32,96 @@ extension AiChatFeature {
 
     func startRequest(kind: AiChatRequestKind, state: inout State) -> Effect<Action> {
         guard !state.isProcessing,
+              state.pendingRequestStart == nil,
               let sessionID = state.sessionID,
               case let .loaded(models) = state.modelListState,
               let selectedModel = state.resolvedModel(for: state.selectedModelHandle, in: models),
               let preparedRequest = prepareRequest(kind: kind, state: state)
         else { return .none }
 
-        let selectedHandle = selectedModel.id
+        let pendingRequest = AiChatPendingRequestStart(
+            resolutionID: UUID(),
+            kind: kind,
+            sessionID: sessionID,
+            selectedModel: selectedModel,
+            selectedRow: resolvedSelectedModelRow(in: state),
+            preparedRequest: preparedRequest,
+        )
+
+        if let requestContextOverride = preparedRequest.requestContextOverride {
+            return beginRequest(
+                pendingRequest,
+                lockedRequestContext: requestContextOverride,
+                state: &state,
+            )
+        }
+
+        let resolverInput = makeRequestContextResolverInput(for: pendingRequest, state: state)
+        state.pendingRequestStart = pendingRequest
+        return resolveRequestContext(resolutionID: pendingRequest.resolutionID, input: resolverInput)
+    }
+
+    func completeRequestContextResolution(
+        resolutionID: UUID,
+        resolvedContext: AiChatResolvedRequestContext,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let pendingRequest = state.pendingRequestStart,
+              pendingRequest.resolutionID == resolutionID
+        else { return .none }
+
+        state.pendingRequestStart = nil
+        return beginRequest(
+            pendingRequest,
+            lockedRequestContext: makeLockedRequestContextSnapshot(from: resolvedContext),
+            state: &state,
+        )
+    }
+
+    private func beginRequest(
+        _ pendingRequest: AiChatPendingRequestStart,
+        lockedRequestContext: AiChatLockedRequestContextSnapshot,
+        state: inout State,
+    ) -> Effect<Action> {
+        let selectedHandle = pendingRequest.selectedModel.id
         let lock = makeRequestLock(
             input: AiChatRequestLockInput(
-                kind: kind,
-                sessionID: sessionID,
-                selectedModel: selectedModel,
-                selectedRow: resolvedSelectedModelRow(in: state),
-                preparedRequest: preparedRequest,
+                kind: pendingRequest.kind,
+                sessionID: pendingRequest.sessionID,
+                selectedModel: pendingRequest.selectedModel,
+                selectedRow: pendingRequest.selectedRow,
+                preparedRequest: pendingRequest.preparedRequest,
             ),
+            lockedRequestContext: lockedRequestContext,
             state: state,
         )
 
         applyRequestStart(
-            kind: kind,
-            prompt: preparedRequest.prompt,
+            kind: pendingRequest.kind,
+            prompt: pendingRequest.preparedRequest.prompt,
             selectedHandle: selectedHandle,
             lock: lock,
             state: &state,
         )
-        let startSnapshotEffect = saveRequestStartSnapshotIfNeeded(kind: kind, state: state, lock: lock)
+        let startSnapshotEffect = saveRequestStartSnapshotIfNeeded(kind: pendingRequest.kind, state: state, lock: lock)
         return .merge(startSnapshotEffect, execute(request: lock.request))
     }
 
+    private func resolveRequestContext(
+        resolutionID: UUID,
+        input: AiChatContextPartResolverInput,
+    ) -> Effect<Action> {
+        .run { [aiChatContextPartResolverClient] send in
+            let resolvedContext = await aiChatContextPartResolverClient.resolve(input)
+            await send(.requestContextResolved(resolutionID, resolvedContext))
+        }
+        .cancellable(id: CancelID.requestContextResolution, cancelInFlight: true)
+    }
 
     private func saveRequestStartSnapshotIfNeeded(
         kind: AiChatRequestKind,
         state: State,
-        lock: AiChatRequestLock
+        lock: AiChatRequestLock,
     ) -> Effect<Action> {
         guard kind == .submit else { return .none }
         let snapshot = makeRequestStartSnapshot(state: state, lock: lock)
@@ -84,7 +131,7 @@ extension AiChatFeature {
                 await send(.sessionSnapshotUpdated(
                     AiChatSessionSummary(snapshot: snapshot),
                     requestID: lock.requestID,
-                    runID: lock.runID
+                    runID: lock.runID,
                 ))
             } catch is CancellationError {
                 return
@@ -112,7 +159,7 @@ extension AiChatFeature {
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
             lastRequestContext: persistenceSafeRequestContext(lock.context.requestContext),
-            updatedAtMs: lock.context.submittedAtMs ?? currentTimestampMs()
+            updatedAtMs: lock.context.submittedAtMs ?? currentTimestampMs(),
         )
     }
 
@@ -159,7 +206,7 @@ extension AiChatFeature {
         let lastSubmittedContext = lastSubmittedRequestContext(in: state)
         let requestContextOverride = reusableRequestContext(
             from: lastSubmittedContext,
-            selectedHandle: selectedHandle
+            selectedHandle: selectedHandle,
         )
 
         return AiChatPreparedRequest(
@@ -168,18 +215,19 @@ extension AiChatFeature {
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: truncatedHistory.metadata,
             requestContextOverride: requestContextOverride,
-            requestContextSource: requestContextOverride == nil ? lastSubmittedContext?.context : nil
+            requestContextSource: requestContextOverride == nil ? lastSubmittedContext?.context : nil,
         )
     }
 
-    private func makeRequestLock(input: AiChatRequestLockInput, state: State) -> AiChatRequestLock {
+    private func makeRequestLock(
+        input: AiChatRequestLockInput,
+        lockedRequestContext: AiChatLockedRequestContextSnapshot,
+        state: State,
+    ) -> AiChatRequestLock {
         let requestID = AiChatRequestID(rawValue: uuid())
         let runID = AiChatRunID(rawValue: uuid())
         let submittedAtMs = currentTimestampMs()
         let selectedHandle = input.selectedModel.id
-        let lockedRequestContext = input.preparedRequest.requestContextOverride
-            ?? input.preparedRequest.requestContextSource.map { makeLockedRequestContextSnapshot(from: $0, state: state) }
-            ?? makeLockedRequestContextSnapshot(state: state)
         let context = AiChatRequestContextSnapshot(
             sessionID: input.sessionID,
             requestID: requestID,
@@ -238,11 +286,10 @@ extension AiChatFeature {
         }
     }
 
-
     private func processingSessionSummary(
         prompt: String,
         lock: AiChatRequestLock,
-        sessionID: AiChatSessionID
+        sessionID: AiChatSessionID,
     ) -> AiChatSessionSummary {
         let timestamp = lock.context.submittedAtMs ?? currentTimestampMs()
         return AiChatSessionSummary(
@@ -256,10 +303,9 @@ extension AiChatFeature {
             model: lock.context.model,
             createdAtMs: timestamp,
             updatedAtMs: timestamp,
-            status: .active
+            status: .active,
         )
     }
-
 
     private func execute(request: AiChatRequest) -> Effect<Action> {
         .run { [aiChatExecutionClient, aiConnectionsFileClient] send in
@@ -283,7 +329,8 @@ extension AiChatFeature {
         state.streamingAssistantDraft = nil
         if let index = lock.assistantReplacementIndex,
            state.transcriptHistory.indices.contains(index),
-           state.transcriptHistory[index].role == .assistant {
+           state.transcriptHistory[index].role == .assistant
+        {
             state.transcriptHistory[index] = response.assistantMessage
         } else {
             state.transcriptHistory.append(response.assistantMessage)
@@ -341,7 +388,7 @@ extension AiChatFeature {
     }
 
     private func lastSubmittedRequestContext(
-        in state: State
+        in state: State,
     ) -> (model: AiModelHandle?, context: AiChatLockedRequestContextSnapshot)? {
         if let lock = state.executionPhase.lock {
             return (lock.context.model, lock.context.requestContext)
@@ -352,7 +399,7 @@ extension AiChatFeature {
 
     private func reusableRequestContext(
         from submittedContext: (model: AiModelHandle?, context: AiChatLockedRequestContextSnapshot)?,
-        selectedHandle: AiModelHandle?
+        selectedHandle: AiModelHandle?,
     ) -> AiChatLockedRequestContextSnapshot? {
         guard let submittedContext else { return nil }
         guard let submittedModel = submittedContext.model else { return submittedContext.context }
@@ -360,246 +407,14 @@ extension AiChatFeature {
         return submittedContext.context
     }
 
-    private func makeLockedRequestContextSnapshot(state: State) -> AiChatLockedRequestContextSnapshot {
-        let selectedModel = state.resolvedSelectedModel
-        let provider = selectedModel?.provider ?? state.selectedModelHandle?.provider ?? .openai
-        let rawModelID = selectedModel?.rawModelID ?? state.selectedModelHandle?.rawValue ?? ""
-        let requestFamily = aiChatRequestFamily(for: provider)
-        let resolvedContext = aiChatContextPartResolverClient.resolve(
-            AiChatContextPartResolverInput(
-                provider: provider,
-                rawModelID: rawModelID,
-                requestFamily: requestFamily,
-                currentContext: state.currentContext,
-                attachments: state.addedAttachments
-            )
-        )
-
-        return AiChatLockedRequestContextSnapshot(
-            currentContext: resolvedContext.currentContext,
-            addedAttachments: resolvedContext.addedAttachments.map(requestSummaryAttachmentSnapshot),
-            parts: resolvedContext.parts.map { part in
-                AiChatLockedContextPartSnapshot(
-                    source: part.source == .attachment ? .attachment : .currentContext,
-                    resolution: part.resolution,
-                    canonicalPath: part.canonicalPath,
-                    displayPath: part.displayPath,
-                    fileKind: part.fileKind,
-                    displayTitle: part.displayTitle,
-                    byteCount: part.byteCount,
-                    mimeType: part.mimeType
-                )
-            }
-        )
-    }
-
-    private func makeLockedRequestContextSnapshot(
-        from previousContext: AiChatLockedRequestContextSnapshot,
-        state: State
-    ) -> AiChatLockedRequestContextSnapshot {
-        let selectedModel = state.resolvedSelectedModel
-        let provider = selectedModel?.provider ?? state.selectedModelHandle?.provider ?? .openai
-        let rawModelID = selectedModel?.rawModelID ?? state.selectedModelHandle?.rawValue ?? ""
-        let requestFamily = aiChatRequestFamily(for: provider)
-        let resolvedContext = aiChatContextPartResolverClient.resolve(
-            AiChatContextPartResolverInput(
-                provider: provider,
-                rawModelID: rawModelID,
-                requestFamily: requestFamily,
-                currentContext: previousContext.currentContext,
-                attachments: previousContext.addedAttachments.map(AiChatAttachmentDraft.init(snapshot:))
-            )
-        )
-
-        return AiChatLockedRequestContextSnapshot(
-            currentContext: resolvedContext.currentContext,
-            addedAttachments: resolvedContext.addedAttachments.map(requestSummaryAttachmentSnapshot),
-            parts: resolvedContext.parts.map { part in
-                AiChatLockedContextPartSnapshot(
-                    source: part.source == .attachment ? .attachment : .currentContext,
-                    resolution: part.resolution,
-                    canonicalPath: part.canonicalPath,
-                    displayPath: part.displayPath,
-                    fileKind: part.fileKind,
-                    displayTitle: part.displayTitle,
-                    byteCount: part.byteCount,
-                    mimeType: part.mimeType
-                )
-            }
-        )
-    }
-
-    private func persistenceSafeRequestContext(
-        _ context: AiChatLockedRequestContextSnapshot
-    ) -> AiChatLockedRequestContextSnapshot {
-        AiChatLockedRequestContextSnapshot(
-            currentContext: persistenceSafeCurrentContext(context.currentContext),
-            addedAttachments: context.addedAttachments.map(persistenceSafeAttachmentSnapshot),
-            parts: context.parts.map(persistenceSafeContextPart),
-            status: context.status
-        )
-    }
-
-    private func persistenceSafeCurrentContext(
-        _ snapshot: AiChatCurrentContextSnapshot
-    ) -> AiChatCurrentContextSnapshot {
-        AiChatCurrentContextSnapshot(
-            summary: snapshot.summary,
-            references: snapshot.references.map(persistenceSafeContextReference),
-            items: snapshot.items.map(persistenceSafeContextItem),
-            attachments: snapshot.attachments.map(persistenceSafeContextAttachment)
-        )
-    }
-
-    private func persistenceSafeContextReference(
-        _ reference: AiChatContextReference
-    ) -> AiChatContextReference {
-        AiChatContextReference(
-            kind: reference.kind,
-            identifier: reference.identifier,
-            title: reference.title,
-            subtitle: reference.subtitle,
-            metadata: persistenceSafeMetadata(reference.metadata)
-        )
-    }
-
-    private func persistenceSafeContextItem(_ item: AiChatContextItem) -> AiChatContextItem {
-        AiChatContextItem(
-            kind: item.kind,
-            identifier: item.identifier,
-            title: item.title,
-            subtitle: item.subtitle,
-            metadata: persistenceSafeMetadata(item.metadata),
-            references: item.references.map(persistenceSafeContextReference)
-        )
-    }
-
-    private func persistenceSafeContextAttachment(
-        _ attachment: AiChatContextAttachment
-    ) -> AiChatContextAttachment {
-        AiChatContextAttachment(
-            identifier: attachment.identifier,
-            title: attachment.title,
-            subtitle: attachment.subtitle,
-            kind: attachment.kind,
-            metadata: persistenceSafeMetadata(attachment.metadata)
-        )
-    }
-
-    private func requestSummaryAttachmentSnapshot(
-        _ snapshot: AiChatAttachmentSnapshot
-    ) -> AiChatAttachmentSnapshot {
-        AiChatAttachmentSnapshot(
-            id: snapshot.id,
-            source: snapshot.source,
-            displayTitle: snapshot.displayTitle,
-            subtitle: snapshot.subtitle,
-            kind: snapshot.kind,
-            sourceLocation: snapshot.sourceLocation,
-            metadata: snapshot.metadata,
-            resolutionResult: strippingFolderStructureTreeMetadata(from: snapshot.resolutionResult)
-        )
-    }
-
-    private func persistenceSafeAttachmentSnapshot(
-        _ snapshot: AiChatAttachmentSnapshot
-    ) -> AiChatAttachmentSnapshot {
-        AiChatAttachmentSnapshot(
-            id: snapshot.id,
-            source: snapshot.source,
-            displayTitle: snapshot.displayTitle,
-            subtitle: snapshot.subtitle,
-            kind: snapshot.kind,
-            sourceLocation: snapshot.sourceLocation,
-            metadata: persistenceSafeMetadata(snapshot.metadata),
-            resolutionResult: persistenceSafeResolutionResult(strippingFolderStructureTreeMetadata(from: snapshot.resolutionResult))
-        )
-    }
-
-    private func persistenceSafeContextPart(
-        _ part: AiChatLockedContextPartSnapshot
-    ) -> AiChatLockedContextPartSnapshot {
-        AiChatLockedContextPartSnapshot(
-            source: part.source,
-            resolution: persistenceSafeContextPartResolution(part.resolution),
-            canonicalPath: part.canonicalPath,
-            displayPath: part.displayPath,
-            fileKind: part.fileKind,
-            displayTitle: part.displayTitle,
-            byteCount: part.byteCount,
-            mimeType: part.mimeType
-        )
-    }
-
-    private func persistenceSafeResolutionResult(
-        _ resolution: AiChatAttachmentResolutionResult
-    ) -> AiChatAttachmentResolutionResult {
-        switch resolution {
-        case let .resolvedText(text, metadata):
-            return .resolvedText(text: text, metadata: persistenceSafeMetadata(metadata))
-        case let .resolvedReference(metadata):
-            return .resolvedReference(metadata: persistenceSafeMetadata(metadata))
-        case let .resolvedPartial(text, truncated, metadata):
-            return .resolvedPartial(text: text, truncated: truncated, metadata: persistenceSafeMetadata(metadata))
-        case let .failure(reason, metadata):
-            return .failure(reason: reason, metadata: persistenceSafeMetadata(metadata))
-        }
-    }
-
-    private func strippingFolderStructureTreeMetadata(
-        from resolution: AiChatAttachmentResolutionResult
-    ) -> AiChatAttachmentResolutionResult {
-        switch resolution {
-        case let .resolvedText(text, metadata):
-            return .resolvedText(text: text, metadata: strippingFolderStructureTreeMetadata(from: metadata))
-        case let .resolvedReference(metadata):
-            return .resolvedReference(metadata: strippingFolderStructureTreeMetadata(from: metadata))
-        case let .resolvedPartial(text, truncated, metadata):
-            return .resolvedPartial(text: text, truncated: truncated, metadata: strippingFolderStructureTreeMetadata(from: metadata))
-        case let .failure(reason, metadata):
-            return .failure(reason: reason, metadata: strippingFolderStructureTreeMetadata(from: metadata))
-        }
-    }
-
-    private func strippingFolderStructureTreeMetadata(from metadata: [String: String]) -> [String: String] {
-        metadata.filter { key, _ in
-            !key.hasPrefix("folderStructure") || key == "folderStructureMode"
-        }
-    }
-
-    private func persistenceSafeContextPartResolution(
-        _ resolution: AiChatContextPartResolution
-    ) -> AiChatContextPartResolution {
-        switch resolution {
-        case let .inlineText(text, metadata):
-            return .inlineText(text: text, metadata: persistenceSafeMetadata(metadata))
-        case let .partialText(text, truncated, metadata):
-            return .partialText(text: text, truncated: truncated, metadata: persistenceSafeMetadata(metadata))
-        case let .referenceOnly(metadata):
-            return .referenceOnly(metadata: persistenceSafeMetadata(metadata))
-        case let .collectionPathList(paths, metadata):
-            return .collectionPathList(paths: paths, metadata: persistenceSafeMetadata(metadata))
-        case let .providerNativeFile(kind, mimeType, metadata):
-            return .providerNativeFile(kind: kind, mimeType: mimeType, metadata: persistenceSafeMetadata(metadata))
-        case let .failure(reason, metadata):
-            return .failure(reason: reason, metadata: persistenceSafeMetadata(metadata))
-        }
-    }
-
-    private func persistenceSafeMetadata(_ metadata: [String: String]) -> [String: String] {
-        metadata.filter { key, _ in
-            !["base64Data", "nativeBase64Data", "fileDataBase64"].contains(key)
-        }
-    }
-
-    private func aiChatRequestFamily(for provider: AiProvider) -> AiChatContextPartResolverRequestFamily {
+    func aiChatRequestFamily(for provider: AiProvider) -> AiChatContextPartResolverRequestFamily {
         switch provider {
         case .openai:
-            return .openAIResponses
+            .openAIResponses
         case .anthropic:
-            return .anthropicMessages
+            .anthropicMessages
         case .chatgptCodex:
-            return .codexCLI
+            .codexCLI
         }
     }
 
@@ -646,8 +461,7 @@ extension AiChatFeature {
     }
 }
 
-
-private extension AiChatAttachmentDraft {
+extension AiChatAttachmentDraft {
     init(snapshot: AiChatAttachmentSnapshot) {
         self.init(
             id: snapshot.id,
@@ -657,7 +471,7 @@ private extension AiChatAttachmentDraft {
             kind: snapshot.kind,
             sourceLocation: snapshot.sourceLocation,
             metadata: snapshot.metadata,
-            currentStatus: .pending
+            currentStatus: .pending,
         )
     }
 }

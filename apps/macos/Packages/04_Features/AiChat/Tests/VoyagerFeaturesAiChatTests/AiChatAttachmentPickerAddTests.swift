@@ -160,7 +160,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
                     ),
                 ),
             ]
-            $0.currentContextFolderStructureModesByCanonicalPath = [folderKey(.reference, "/tmp"): .currentFolderOnly]
+            $0.currentContextFolderStructureModes = [folderKey(.reference, "/tmp"): .currentFolderOnly]
             $0.currentContext = AiChatCurrentContextSnapshot(
                 summary: "Desktop",
                 references: [
@@ -214,7 +214,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
             attachments: [],
         )
         await store.send(.currentContextChanged(nextCurrentContext)) {
-            $0.currentContextFolderStructureModesByCanonicalPath = [
+            $0.currentContextFolderStructureModes = [
                 folderKey(.reference, "/tmp"): .currentFolderOnly,
             ]
             $0.currentContext = AiChatCurrentContextSnapshot(
@@ -267,7 +267,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
         }
 
         await store.send(.currentContextChanged(currentContext)) {
-            $0.currentContextFolderStructureModesByCanonicalPath = [folderKey(.reference, "/tmp"): .currentFolderOnly]
+            $0.currentContextFolderStructureModes = [folderKey(.reference, "/tmp"): .currentFolderOnly]
             $0.currentContext = AiChatCurrentContextSnapshot(
                 summary: "Desktop",
                 references: [
@@ -336,7 +336,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
         }
 
         await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders)) {
-            $0.currentContextFolderStructureModesByCanonicalPath = [
+            $0.currentContextFolderStructureModes = [
                 folderKey(.reference, folderPath): .includeSubfolders,
             ]
             $0.currentContext = AiChatCurrentContextSnapshot(
@@ -357,7 +357,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
             )
         }
         XCTAssertEqual(
-            store.state.currentContextFolderStructureModesByCanonicalPath[folderKey(.reference, folderPath)],
+            store.state.currentContextFolderStructureModes[folderKey(.reference, folderPath)],
             .includeSubfolders,
         )
         XCTAssertEqual(
@@ -386,7 +386,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
         }
 
         XCTAssertEqual(
-            store.state.currentContextFolderStructureModesByCanonicalPath[folderKey(.reference, folderPath)],
+            store.state.currentContextFolderStructureModes[folderKey(.reference, folderPath)],
             .includeSubfolders,
         )
         XCTAssertEqual(
@@ -414,7 +414,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
         }
 
         await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders)) {
-            $0.currentContextFolderStructureModesByCanonicalPath = [
+            $0.currentContextFolderStructureModes = [
                 folderKey(.reference, folderPath): .includeSubfolders,
             ]
             $0.currentContext = AiChatCurrentContextSnapshot(
@@ -434,7 +434,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
                 attachments: [],
             )
         }
-        XCTAssertNil(store.state.currentContextFolderStructureModesByCanonicalPath[folderKey(.item, childPath)])
+        XCTAssertNil(store.state.currentContextFolderStructureModes[folderKey(.item, childPath)])
         XCTAssertNil(store.state.currentContext.items.first?.metadata["folderStructureMode"])
     }
 
@@ -469,7 +469,7 @@ final class AiChatAttachmentPickerAddTests: XCTestCase {
 
         await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders))
 
-        XCTAssertTrue(store.state.currentContextFolderStructureModesByCanonicalPath.isEmpty)
+        XCTAssertTrue(store.state.currentContextFolderStructureModes.isEmpty)
         XCTAssertEqual(store.state.currentContext, currentContext)
         XCTAssertNil(AiChatStateDisplayModelBuilder(state: store.state).requestContextDisplayModel.currentContext?
             .folderStructureMode)
