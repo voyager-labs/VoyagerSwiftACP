@@ -1,20 +1,29 @@
 import Foundation
+
 public enum AiChatProviderPreflightError: Error, Equatable, Sendable {
     case missingCredential(AiProvider)
     case invalidCredential(provider: AiProvider, expected: ProviderAuthMethod)
     case loweringFailed(AiChatProviderRequestLoweringError)
 }
+
 public enum AiChatProviderValidatedCredential: Equatable, Sendable {
     case apiKey(String)
     case oauth(OAuthCredentialFile)
 }
+
 public enum AiChatProviderPreflightWarning: Equatable, Sendable {
     case omittedThinkingSelection(provider: AiProvider, selection: AiThinkingSelection, reason: String)
 }
+
 public struct AiChatProviderPreflightResult: Equatable, Sendable {
     public let payload: AiChatProviderRequestPayload
     public let credential: AiChatProviderValidatedCredential
     public let warnings: [AiChatProviderPreflightWarning]
+    private let originalContext: AiChatRequestContextSnapshot?
+
+    var executionContext: AiChatRequestContextSnapshot {
+        originalContext ?? payload.fallbackExecutionContext
+    }
 
     public init(
         payload: AiChatProviderRequestPayload,
@@ -24,8 +33,22 @@ public struct AiChatProviderPreflightResult: Equatable, Sendable {
         self.payload = payload
         self.credential = credential
         self.warnings = warnings
+        originalContext = nil
+    }
+
+    init(
+        payload: AiChatProviderRequestPayload,
+        credential: AiChatProviderValidatedCredential,
+        originalContext: AiChatRequestContextSnapshot,
+        warnings: [AiChatProviderPreflightWarning] = [],
+    ) {
+        self.payload = payload
+        self.credential = credential
+        self.warnings = warnings
+        self.originalContext = originalContext
     }
 }
+
 public enum AiChatProviderPreflight {
     public static func prepare(
         _ request: AiChatRequest,
@@ -38,6 +61,7 @@ public enum AiChatProviderPreflight {
             thinkingCapability: request.context.selectedModel?.thinkingCapability,
         )
     }
+
     public static func prepare(
         context: AiChatRequestContextSnapshot,
         messages: [AiChatMessage],
@@ -61,9 +85,11 @@ public enum AiChatProviderPreflight {
         return AiChatProviderPreflightResult(
             payload: payload,
             credential: validatedCredential,
+            originalContext: context,
             warnings: warnings,
         )
     }
+
     public static func validateCredential(
         for provider: AiProvider,
         credential: StoredCredentialPayload?,
@@ -93,6 +119,7 @@ public enum AiChatProviderPreflight {
             throw AiChatProviderPreflightError.invalidCredential(provider: provider, expected: .oauth)
         }
     }
+
     public static func lowerThinking(
         selection: AiThinkingSelection?,
         provider: AiProvider,
@@ -115,6 +142,7 @@ public enum AiChatProviderPreflight {
         }
     }
 }
+
 public enum AiChatProviderExecutionFailureMapper {
     public static func map(_ error: AiHTTPError) -> AiChatExecutionFailure {
         switch error {
@@ -123,7 +151,8 @@ public enum AiChatProviderExecutionFailureMapper {
         case let .networkError(description):
             let normalized = description.lowercased()
             if normalized.contains("offline") || normalized.contains("not connected") || normalized
-                .contains("network") {
+                .contains("network")
+            {
                 return .network
             }
             return .transportError
@@ -136,6 +165,7 @@ public enum AiChatProviderExecutionFailureMapper {
         }
     }
 }
+
 private extension AiChatProviderPreflight {
     static func lowerOpenAIStyleThinking(
         selection: AiThinkingSelection,
@@ -172,6 +202,7 @@ private extension AiChatProviderPreflight {
                     reason: "The model capability does not advertise support for effort-based thinking.",
                 )
             }
+
         case let .tokenBudget(value):
             switch capability {
             case let .tokenBudget(min, max, _):
@@ -192,6 +223,7 @@ private extension AiChatProviderPreflight {
             }
         }
     }
+
     static func lowerAnthropicThinking(
         selection: AiThinkingSelection,
         capability: AiModelThinkingCapability?,
@@ -206,6 +238,7 @@ private extension AiChatProviderPreflight {
             lowerAnthropicTokenBudgetThinking(value: value, selection: selection, capability: capability)
         }
     }
+
     static func lowerAnthropicNoneThinking(
         selection: AiThinkingSelection,
         capability: AiModelThinkingCapability?,
@@ -229,6 +262,7 @@ private extension AiChatProviderPreflight {
             )
         }
     }
+
     static func lowerAnthropicEffortThinking(
         value: AiThinkingEffort,
         selection: AiThinkingSelection,
@@ -252,6 +286,7 @@ private extension AiChatProviderPreflight {
             )
         }
     }
+
     static func lowerAnthropicDirectEffort(
         value: AiThinkingEffort,
         values: [AiThinkingEffort],
@@ -266,6 +301,7 @@ private extension AiChatProviderPreflight {
         }
         return (.effort(value), [])
     }
+
     static func lowerAnthropicAdaptiveEffort(
         value: AiThinkingEffort,
         values: [AiThinkingEffort],
@@ -285,9 +321,10 @@ private extension AiChatProviderPreflight {
                 provider: .anthropic,
                 selection: selection,
                 reason: "Adaptive capability lowered effort selection to adaptive/default.",
-            )
+            ),
         ])
     }
+
     static func lowerAnthropicTokenBudgetThinking(
         value: Int,
         selection: AiThinkingSelection,
@@ -302,7 +339,7 @@ private extension AiChatProviderPreflight {
                     provider: .anthropic,
                     selection: selection,
                     reason: "Adaptive capability omitted manual token budget.",
-                )
+                ),
             ])
         case .effort, .unknown, .unsupported, nil:
             omittedThinking(
@@ -312,6 +349,7 @@ private extension AiChatProviderPreflight {
             )
         }
     }
+
     static func lowerAnthropicManualBudget(
         value: Int,
         min: Int,
@@ -327,6 +365,7 @@ private extension AiChatProviderPreflight {
         }
         return (.tokenBudget(value), [])
     }
+
     static func omittedThinking(
         provider: AiProvider,
         selection: AiThinkingSelection,
@@ -338,6 +377,7 @@ private extension AiChatProviderPreflight {
         )
     }
 }
+
 private extension AiChatProviderExecutionFailureMapper {
     static func mapHTTPStatus(_ statusCode: Int, body: String) -> AiChatExecutionFailure {
         switch statusCode {
