@@ -55,7 +55,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     provider: .chatgptCodex,
                     connectionState: .connectInProgress,
                     flowState: .browserLoginInProgress,
-                )
+                ),
             ]),
         ) {
             AiSettingsFeature()
@@ -96,7 +96,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastVerifiedAtMs: staleFile.updatedAtMs,
                         lastErrorCode: .none,
                     ),
-                )
+                ),
             ],
         )
         let saveSpy = ConnectionsFileSaveSpy()
@@ -137,7 +137,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                 AiConnectionRowState(
                     provider: .openai,
                     connectionState: .disconnecting,
-                )
+                ),
             ]),
         ) {
             AiSettingsFeature()
@@ -178,7 +178,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastVerifiedAtMs: nil,
                         lastErrorCode: .providerUnsupportedInBuild,
                     ),
-                )
+                ),
             ],
         )
         let saveSpy = ConnectionsFileSaveSpy()
@@ -285,111 +285,7 @@ final class AiSettingsFeatureTests: XCTestCase {
 
     // MARK: - Valid Stored Auth → Connected
 
-    func testOnAppear_validStoredAuth_restoresConnected() async {
-        let connectedFile = AIConnectionsFile(
-            updatedAtMs: 1_760_000_000_000,
-            providers: [
-                "openai": ProviderRecordFile(
-                    providerId: .openai,
-                    authMethod: .apiKey,
-                    credential: .apiKey(APIKeyCredentialFile(secret: "sk-test-valid")),
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
-                ),
-                "chatgptCodex": ProviderRecordFile(
-                    providerId: .chatgptCodex,
-                    authMethod: .oauth,
-                    credential: .oauth(OAuthCredentialFile(accessToken: "token-valid")),
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
-                )
-            ],
-        )
-
-        let store = TestStore(initialState: AiSettingsState()) {
-            AiSettingsFeature()
-        } withDependencies: {
-            $0.aiConnectionsFileClient.load = { connectedFile }
-            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
-        }
-
-        await store.send(.onAppear) { state in
-            state.didBootstrap = true
-            state.bootstrapPhase = .loading
-        }
-
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
-            state.rows[id: .chatgptCodex]?.statusReason = .none
-            state.rows[id: .openai]?.connectionState = .checkingStatus
-            state.rows[id: .openai]?.statusReason = .none
-        }
-
-        await store.receive(\.bootstrapVerificationCompleted) { state in
-            state.rows[id: .chatgptCodex]?.connectionState = .connected
-            state.rows[id: .chatgptCodex]?.statusReason = .none
-            state.rows[id: .openai]?.connectionState = .connected
-            state.rows[id: .openai]?.statusReason = .none
-        }
-
-        await store.finish()
-
-        let storeState = store.state
-        XCTAssertEqual(storeState.rows[id: .chatgptCodex]?.connectionState, .connected)
-        XCTAssertEqual(storeState.rows[id: .chatgptCodex]?.primaryAction, .disconnect)
-        XCTAssertEqual(storeState.rows[id: .openai]?.connectionState, .connected)
-        XCTAssertEqual(storeState.rows[id: .openai]?.primaryAction, .disconnect)
-        XCTAssertEqual(storeState.rows[id: .anthropic]?.connectionState, .notVerified)
-    }
-
     // MARK: - Connection Failed (Corrupt/Expired)
-
-    func testOnAppear_connectionFailedSnapshot_restoresFailed() async {
-        let failedFile = AIConnectionsFile(
-            updatedAtMs: 1_760_000_000_000,
-            providers: [
-                "openai": ProviderRecordFile(
-                    providerId: .openai,
-                    authMethod: .apiKey,
-                    credential: .apiKey(APIKeyCredentialFile(secret: "sk-expired")),
-                    snapshot: ProviderSnapshotFile(
-                        lastKnownStatus: .connectionFailed,
-                        lastErrorCode: .expired,
-                    ),
-                )
-            ],
-        )
-
-        let store = TestStore(initialState: AiSettingsState()) {
-            AiSettingsFeature()
-        } withDependencies: {
-            $0.aiConnectionsFileClient.load = { failedFile }
-            $0.aiProviderVerificationClient.verify = { _, _ in .invalid(.expired) }
-        }
-
-        await store.send(.onAppear) { state in
-            state.didBootstrap = true
-            state.bootstrapPhase = .loading
-        }
-
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .openai]?.connectionState = .checkingStatus
-            state.rows[id: .openai]?.statusReason = .none
-        }
-
-        await store.receive(\.bootstrapVerificationCompleted) { state in
-            state.rows[id: .openai]?.connectionState = .connectionFailed
-            state.rows[id: .openai]?.statusReason = .expired
-        }
-
-        await store.finish()
-
-        let storeState = store.state
-        let openaiRow = storeState.rows[id: .openai]
-        XCTAssertEqual(openaiRow?.connectionState, .connectionFailed)
-        XCTAssertEqual(openaiRow?.statusReason, .expired)
-        XCTAssertEqual(openaiRow?.primaryAction, .retry)
-    }
 
     func testOnAppear_invalidAPIKeySnapshot_restoresFailed() async {
         let failedFile = AIConnectionsFile(
@@ -403,7 +299,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                         lastKnownStatus: .connectionFailed,
                         lastErrorCode: .invalidAPIKey,
                     ),
-                )
+                ),
             ],
         )
 
@@ -486,84 +382,7 @@ final class AiSettingsFeatureTests: XCTestCase {
 
     // MARK: - Missing Credential → Not Verified
 
-    func testOnAppear_recordWithoutCredential_showsNotVerified() async {
-        let partialFile = AIConnectionsFile(
-            updatedAtMs: 1_760_000_000_000,
-            providers: [
-                "openai": ProviderRecordFile(
-                    providerId: .openai,
-                    authMethod: .apiKey,
-                    credential: nil,
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
-                )
-            ],
-        )
-
-        let store = TestStore(initialState: AiSettingsState()) {
-            AiSettingsFeature()
-        } withDependencies: {
-            $0.aiConnectionsFileClient.load = { partialFile }
-        }
-
-        await store.send(.onAppear) { state in
-            state.didBootstrap = true
-            state.bootstrapPhase = .loading
-        }
-
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .openai]?.connectionState = .notVerified
-            state.rows[id: .openai]?.statusReason = .missingCredential
-        }
-
-        await store.finish()
-    }
-
     // MARK: - Provider List Rendering State
-
-    func testCatalogRows_containsAllThreeProviders() {
-        let rows = AiSettingsState.catalogRows()
-        XCTAssertEqual(rows.count, 3)
-        XCTAssertEqual(rows[0].provider, .chatgptCodex)
-        XCTAssertEqual(rows[1].provider, .openai)
-        XCTAssertEqual(rows[2].provider, .anthropic)
-    }
-
-    func testRowState_displayNameAndAuthMethod() {
-        let codexRow = AiConnectionRowState(provider: .chatgptCodex)
-        XCTAssertEqual(codexRow.displayName, "ChatGPT Codex")
-        XCTAssertEqual(codexRow.authMethodLabel, "OAuth")
-
-        let openaiRow = AiConnectionRowState(provider: .openai)
-        XCTAssertEqual(openaiRow.displayName, "OpenAI")
-        XCTAssertEqual(openaiRow.authMethodLabel, "API Key")
-
-        let anthropicRow = AiConnectionRowState(provider: .anthropic)
-        XCTAssertEqual(anthropicRow.displayName, "Anthropic")
-        XCTAssertEqual(anthropicRow.authMethodLabel, "API Key")
-    }
-
-    func testRowState_noLastUsedOrDefaultLabels() {
-        let rows = AiSettingsState.catalogRows()
-        for row in rows {
-            XCTAssertEqual(row.connectionState, .notVerified)
-            XCTAssertEqual(row.primaryAction, .connect)
-        }
-    }
-
-    func testRowState_connectedProvider_showsDisconnectAction() {
-        let row = AiConnectionRowState(provider: .openai, connectionState: .connected)
-        XCTAssertEqual(row.primaryAction, .disconnect)
-    }
-
-    func testRowState_failedProvider_showsRetryAction() {
-        let row = AiConnectionRowState(
-            provider: .anthropic,
-            connectionState: .connectionFailed,
-            statusReason: .expired,
-        )
-        XCTAssertEqual(row.primaryAction, .retry)
-    }
 
     // MARK: - Disconnected State
 
@@ -576,7 +395,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .disconnected),
-                )
+                ),
             ],
         )
 
@@ -615,7 +434,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .oauth,
                     credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connectInProgress),
-                )
+                ),
             ],
         )
 
@@ -650,7 +469,7 @@ final class AiSettingsFeatureTests: XCTestCase {
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .disconnecting),
-                )
+                ),
             ],
         )
 
@@ -669,44 +488,6 @@ final class AiSettingsFeatureTests: XCTestCase {
             state.bootstrapPhase = .loaded
             state.rows[id: .anthropic]?.connectionState = .disconnected
             state.rows[id: .anthropic]?.statusReason = .none
-        }
-
-        await store.finish()
-    }
-
-    func testSubmitAPIKey_validKey_verifiesAndConnects() async {
-        let store = TestStore(
-            initialState: AiConnectionRowState(provider: .openai),
-        ) {
-            AiConnectionRowReducer()
-        } withDependencies: {
-            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
-            $0.aiProviderConnectionClient.connectAPIKey = { provider, _, connectionState in
-                AiProviderConnectionResult(
-                    provider: provider,
-                    state: connectionState,
-                    reason: .none,
-                    updatedFile: AIConnectionsFile.empty(),
-                )
-            }
-        }
-
-        await store.send(.submitAPIKey("sk-test-valid-key")) { state in
-            state.enteredKey = "sk-test-valid-key"
-            state.connectionState = .connectInProgress
-            state.flowState = .connecting
-            state.isVerifying = true
-        }
-
-        await store.receive(\._verificationResponse) { state in
-            state.isVerifying = false
-        }
-
-        await store.receive(\._connectionResponse) { state in
-            state.connectionState = .connected
-            state.statusReason = .none
-            state.flowState = .idle
-            state.enteredKey = ""
         }
 
         await store.finish()
@@ -754,32 +535,6 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         XCTAssertEqual(store.state.connectionState, .notVerified)
         XCTAssertEqual(store.state.flowState, .idle)
-    }
-
-    func testSubmitAPIKey_invalidKey_showsConnectionFailed() async {
-        let store = TestStore(
-            initialState: AiConnectionRowState(provider: .anthropic),
-        ) {
-            AiConnectionRowReducer()
-        } withDependencies: {
-            $0.aiProviderVerificationClient.verify = { _, _ in .invalid(.invalidAPIKey) }
-        }
-
-        await store.send(.submitAPIKey("bad-key")) { state in
-            state.enteredKey = "bad-key"
-            state.connectionState = .connectInProgress
-            state.flowState = .connecting
-            state.isVerifying = true
-        }
-
-        await store.receive(\._verificationResponse) { state in
-            state.isVerifying = false
-            state.connectionState = .connectionFailed
-            state.statusReason = .invalidAPIKey
-            state.flowState = .idle
-        }
-
-        await store.finish()
     }
 
     func testSubmitAPIKey_networkError_showsConnectionFailed() async {

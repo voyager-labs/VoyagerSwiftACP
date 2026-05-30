@@ -6,17 +6,17 @@ import XCTest
 /*
  SET-007-manage_ai_connections coverage preservation
 
- | Existing file | Existing scenario | SET-007 section | Preservation |
- | --- | --- | --- | --- |
- | AiSettingsFeatureTests | provider catalog rows, method labels, default/last-used absence | SET-007-show_ai_provider_list | testProviderRowsExposeSupportedProvidersMethodsAndActions |
- | AiConnectionUnavailableTests | unavailable rows are inert and disabled | SET-007-show_ai_provider_list / connect_ai_provider | testUnavailableProviderIsVisibleDisabledAndInert |
- | AiConnectionOAuthTests | ChatGPT Codex browser login success, retry, duplicate guard | SET-007-connect_ai_provider | OAuth scenarios in owner suite |
- | AiSettingsFeatureTests | OpenAI/Anthropic API key submit success/failure | SET-007-connect_ai_provider | API key scenarios in owner suite |
- | AiConnectionDisconnectTests | confirmation, cancel, success, failure, duplicate guard | SET-007-disconnect_ai_provider | disconnect scenarios in owner suite |
- | AiConnectionRestoreTests / AiConnectionCatalogFailureTests | restore, failed bootstrap, retry | SET-007-restore_ai_provider_connection_status | restore scenarios in owner suite |
+ | Existing file | Merged/deleted duplicate coverage | Retained edge coverage |
+ | --- | --- | --- |
+ | AiSettingsFeatureTests | catalog rows, method labels, no default/last-used, connected/retry actions, valid/missing/failed restore, API-key success/invalid | delegate/persist events, idempotent bootstrap, stale snapshots, API-key cancel/network/empty/trim |
+ | AiConnectionOAuthTests | OAuth success and duplicate connect guard | delayed completion, cancel/failure/timeout/callback mismatch, verification/persist failure, token expiry, device auth, retry |
+ | AiConnectionDisconnectTests | confirmation, cancel, success, clears entered API key, failure | non-connected guard, duplicate disconnecting guard |
+ | AiConnectionRestoreTests | valid credential, missing credential, failed snapshot | no record, unavailable, in-progress, disconnected/disconnecting, mixed provider restore states |
+ | AiConnectionUnavailableTests | unavailable inert/disabled behavior covered by owner suite | provider-type direct-start/dependency trap and unavailable restore details |
+ | AiConnectionCatalogFailureTests | failed phase + retry recovery | no automatic retry after catalog failure |
 
- The legacy flat tests remain in place for now. This owner suite provides the
- product-spec traceability layer before any duplicate cleanup is attempted.
+ This second pass keeps unique regression/edge tests in their flat files and removes
+ only SET-007 product AC duplicates already owned by this spec suite.
  */
 
 @MainActor
@@ -216,37 +216,48 @@ final class SET007ManageAIConnectionsTests: XCTestCase {
         XCTAssertEqual(store.state.connectionState, .connected)
     }
 
-    /// SET-007-disconnect_ai_provider: confirmation success는 credential을 제거하고 not_verified로 돌아간다.
-    /// provider disconnect 성공 응답이 row와 입력 key를 연결 전 상태로 되돌리는지 검증한다.
-    /// - 검증 내용: disconnecting transition, disconnect response, enteredKey clearing, connect action
+    /// SET-007-disconnect_ai_provider: confirmation success는 credential 제거 file update를 전달하고 not_verified로 돌아간다.
+    /// Settings 소유 범위에서 연결 해제 결과가 row state와 저장 파일의 credential 제거 사실을 함께 갱신하는지 검증한다.
+    /// - 검증 내용: disconnecting transition, disconnect response, credential nil updatedFile delegate, connect action
     /// - 사전 조건: OpenAI row가 connected이고 confirmation이 표시되어 있다.
-    /// - 기대 결과: row가 not_verified/idle로 바뀌고 primary action은 connect다.
-    func testDisconnectConfirmationSuccessRemovesCredentialAndReturnsNotVerified() async {
-        let store = rowStore(
-            state: AiConnectionRowState(
+    /// - 기대 결과: row는 not_verified가 되고 delegate payload의 OpenAI credential은 nil이다.
+    func testDisconnectConfirmationSuccessRemovesCredentialAndEmitsFileUpdate() async {
+        let updatedFile = openAIDisconnectedFile()
+        let result = AiProviderConnectionResult(
+            provider: .openai,
+            state: .notVerified,
+            reason: .none,
+            updatedFile: updatedFile,
+        )
+        let store = TestStore(initialState: AiSettingsState(rows: [
+            AiConnectionRowState(
                 provider: .openai,
                 connectionState: .connected,
                 enteredKey: "sk-preserved",
                 isShowingDisconnectConfirmation: true,
             ),
-        ) {
-            $0.aiProviderConnectionClient.disconnect = { provider in .disconnectSuccess(provider: provider) }
+        ])) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiProviderConnectionClient.disconnect = { _ in result }
         }
 
-        await store.send(.disconnectConfirm) { state in
-            state.isShowingDisconnectConfirmation = false
-            state.flowState = .disconnecting
-            state.connectionState = .disconnecting
+        await store.send(.row(.element(id: .openai, action: .disconnectConfirm))) { state in
+            state.rows[id: .openai]?.isShowingDisconnectConfirmation = false
+            state.rows[id: .openai]?.flowState = .disconnecting
+            state.rows[id: .openai]?.connectionState = .disconnecting
         }
-        await store.receive(\._disconnectResponse) { state in
-            state.flowState = .idle
-            state.connectionState = .notVerified
-            state.statusReason = .none
-            state.enteredKey = ""
+        await store.receive(.row(.element(id: .openai, action: ._disconnectResponse(result)))) { state in
+            state.rows[id: .openai]?.flowState = .idle
+            state.rows[id: .openai]?.connectionState = .notVerified
+            state.rows[id: .openai]?.statusReason = .none
+            state.rows[id: .openai]?.enteredKey = ""
         }
+        await store.receive(.delegate(.connectionsFileUpdated(updatedFile)))
         await store.finish()
 
-        XCTAssertEqual(store.state.primaryAction, .connect)
+        XCTAssertNil(updatedFile.providers[AiProvider.openai.rawValue]?.credential)
+        XCTAssertEqual(store.state.rows[id: .openai]?.primaryAction, .connect)
     }
 
     /// SET-007-disconnect_ai_provider: disconnect 실패는 connected 상태를 보존한다.
@@ -455,6 +466,20 @@ private func settingsStore(
         $0.aiConnectionsFileClient.load = { file }
         dependencies(&$0)
     }
+}
+
+private func openAIDisconnectedFile() -> AIConnectionsFile {
+    AIConnectionsFile(
+        updatedAtMs: 1_760_000_000_000,
+        providers: [
+            AiProvider.openai.rawValue: ProviderRecordFile(
+                providerId: .openai,
+                authMethod: .apiKey,
+                credential: nil,
+                snapshot: ProviderSnapshotFile(lastKnownStatus: .notVerified),
+            ),
+        ],
+    )
 }
 
 private actor LoadCounter {
