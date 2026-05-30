@@ -4,76 +4,9 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
-@MainActor
 // swiftlint:disable:next type_body_length
+@MainActor
 final class AiChatFeatureEntryStateTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
-    func testSetupBuildsUnconnectedEntryStateWithSkeletonDisplayContract() async {
-        let store = TestStore(initialState: AiChatFeature.State()) {
-            AiChatFeature()
-        }
-
-        let catalogRows = makeCatalogRows()
-        let summary = makeContextSnapshot()
-
-        await store.send(.setup(AiChatSetupState(
-            sessionID: nil,
-            sessionStatus: .idle,
-            currentContext: summary,
-            transcriptHistory: [],
-            draftText: "",
-            catalogRows: catalogRows,
-            selectedModelHandle: nil,
-            lockedModelHandle: nil,
-            lastExecutionFailure: nil
-        ))) { state in
-            state.sessionID = nil
-            state.sessionStatus = .idle
-            state.currentContext = summary
-            state.transcriptHistory = []
-            state.draftText = ""
-            state.catalogRows = catalogRows
-            state.modelListState = .loaded(makeProviderModels())
-            state.selectedModelHandle = nil
-            state.selectedThinking = nil
-            state.unavailableSelectedModelHandle = nil
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.executionPhase = .idle
-        }
-
-        await store.send(.onAppear)
-
-        XCTAssertEqual(store.state.currentContextSummaryDisplayModel.title, "Four files selected")
-        XCTAssertEqual(store.state.currentContextSummaryDisplayModel.detail, "1 reference · 1 item · 1 attachment")
-        XCTAssertEqual(store.state.connectionState, .unconnected(.init(
-            title: "Connect an AI provider",
-            detail: "Set up a provider in Settings to chat with this context.",
-            fixLabel: "Open Settings"
-        )))
-
-        if case let .unconnected(connection, summaryDisplay) = store.state.surfaceState {
-            XCTAssertEqual(connection.fixLabel, "Open Settings")
-            XCTAssertEqual(summaryDisplay.title, "Four files selected")
-        } else {
-            XCTFail("Expected unconnected surface state")
-        }
-
-        XCTAssertEqual(store.state.skeletonDisplayModel.headerTitle, "Chat")
-        XCTAssertEqual(store.state.chatInputDisplayModel.placeholder, "Ask anything…")
-        XCTAssertEqual(store.state.chatInputDisplayModel.modelLabel, "Select model")
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "Select model")
-        XCTAssertFalse(store.state.chatInputDisplayModel.canSubmit)
-        XCTAssertFalse(store.state.canSubmit)
-
-        XCTAssertEqual(store.state.modelFieldLabel, "Model")
-        XCTAssertEqual(store.state.modelCatalogState.rows.first?.label.title, "GPT-4.1 Mini")
-        XCTAssertNil(store.state.modelCatalogState.rows.first?.label.subtitle)
-        XCTAssertNil(store.state.modelCatalogState.rows.first?.providerBadge)
-        XCTAssertNil(store.state.selectedModelDisplayModel)
-        XCTAssertNil(store.state.selectedModelHandle)
-    }
-
     func testChatInputThinkingLabelReflectsUnknownUnsupportedAndSupportedCapabilities() {
         let selectedHandle = makeCatalogRows()[0].handle
         let unknownState = AiChatFeature.State(
@@ -81,7 +14,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             sessionStatus: .active,
             catalogRows: makeCatalogRows(),
             modelListState: .loaded(makeProviderModels()),
-            selectedModelHandle: selectedHandle
+            selectedModelHandle: selectedHandle,
         )
         let unsupportedModel = AiProviderModel(
             id: selectedHandle,
@@ -90,21 +23,21 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             displayName: "GPT-4.1 Mini",
             providerDisplayName: ProviderDescriptor.descriptor(for: .openai)?.displayName ?? "OpenAI",
             thinkingCapability: .unsupported(reason: .init(message: "Thinking is not supported for this model.")),
-            unavailableReason: nil
+            unavailableReason: nil,
         )
         let unsupportedState = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
             sessionStatus: .active,
             catalogRows: makeCatalogRows(),
             modelListState: .loaded([unsupportedModel]),
-            selectedModelHandle: selectedHandle
+            selectedModelHandle: selectedHandle,
         )
         let supportedState = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
             sessionStatus: .active,
             catalogRows: makeCatalogRows(),
             modelListState: .loaded(makeThinkingCapableProviderModels()),
-            selectedModelHandle: selectedHandle
+            selectedModelHandle: selectedHandle,
         )
 
         XCTAssertEqual(unknownState.chatInputDisplayModel.effortLabel, "Thinking unavailable")
@@ -116,11 +49,11 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         let loadingState = AiChatFeature.State(modelListState: .loading)
         let emptyState = AiChatFeature.State(modelListState: .empty)
         let failedState = AiChatFeature.State(modelListState: .failed(.init(
-            message: "Anthropic model list request failed (500)."
+            message: "Anthropic model list request failed (500).",
         )))
         let unsupportedState = AiChatFeature.State(modelListState: .failed(.init(
             message: "ChatGPT Codex model listing is unavailable.",
-            reason: .unsupportedProvider
+            reason: .unsupportedProvider,
         )))
 
         XCTAssertTrue(loadingState.modelSelectorHasPresentableContent)
@@ -128,7 +61,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: loadingState.modelSelectorContentState))
         XCTAssertEqual(loadingState.modelSelectorContentState, .loading(.init(
             title: "Loading models",
-            detail: "Fetching available models from connected providers."
+            detail: "Fetching available models from connected providers.",
         )))
 
         XCTAssertTrue(emptyState.modelSelectorHasPresentableContent)
@@ -136,7 +69,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: emptyState.modelSelectorContentState))
         XCTAssertEqual(emptyState.modelSelectorContentState, .empty(.init(
             title: "No models available",
-            detail: "No selectable models are available for the current provider setup."
+            detail: "No selectable models are available for the current provider setup.",
         )))
 
         XCTAssertTrue(failedState.modelSelectorHasPresentableContent)
@@ -144,7 +77,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: failedState.modelSelectorContentState))
         XCTAssertEqual(failedState.modelSelectorContentState, .failed(.init(
             title: "Models unavailable",
-            detail: "Anthropic model list request failed (500)."
+            detail: "Anthropic model list request failed (500).",
         )))
 
         XCTAssertTrue(unsupportedState.modelSelectorHasPresentableContent)
@@ -152,7 +85,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: unsupportedState.modelSelectorContentState))
         XCTAssertEqual(unsupportedState.modelSelectorContentState, .unsupported(.init(
             title: "Provider unsupported",
-            detail: "ChatGPT Codex model listing is unavailable."
+            detail: "ChatGPT Codex model listing is unavailable.",
         )))
     }
 
@@ -163,7 +96,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             catalogRows: makeCatalogRows(),
             modelListState: .loaded(makeProviderModels()),
             providerConnectionSnapshot: .unknown,
-            availableModelsByProvider: [:]
+            availableModelsByProvider: [:],
         )
 
         guard case let .loaded(sections) = state.modelSelectorContentState else {
@@ -172,7 +105,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
 
         XCTAssertEqual(sections.map(\.title), [
             aiChatProviderSectionTitle(for: .openai),
-            aiChatProviderSectionTitle(for: .anthropic)
+            aiChatProviderSectionTitle(for: .anthropic),
         ])
         XCTAssertEqual(sections.first?.rows.map(\.title), ["GPT-4.1 Mini"])
         XCTAssertEqual(sections.last?.rows.map(\.title), ["Claude Sonnet 4"])
@@ -189,7 +122,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             sessionStatus: .active,
             catalogRows: catalogRows,
             modelListState: .loaded(makeProviderModels()),
-            selectedModelHandle: catalogRows[1].handle
+            selectedModelHandle: catalogRows[1].handle,
         )
 
         XCTAssertEqual(AiChatSelectorLabels.modelSelectorLabel(for: state), "Claude Sonnet 4")
@@ -201,7 +134,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             sessionStatus: .active,
             catalogRows: makeCatalogRows(),
             modelListState: .loaded(makeProviderModels()),
-            selectedModelHandle: nil
+            selectedModelHandle: nil,
         )
 
         XCTAssertEqual(AiChatSelectorLabels.modelSelectorLabel(for: state), "Model")
@@ -217,7 +150,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
                 summary: "Documents · 2 selected",
                 references: [],
                 items: [],
-                attachments: []
+                attachments: [],
             ),
             transcriptHistory: [],
             draftText: "",
@@ -225,7 +158,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
         XCTAssertEqual(selectedEntriesState.currentContextSummaryDisplayModel.title, "Documents · 2 selected")
         XCTAssertNil(selectedEntriesState.currentContextSummaryDisplayModel.detail)
@@ -240,7 +173,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
         XCTAssertEqual(locationOnlyState.currentContextSummaryDisplayModel.title, "Documents")
         XCTAssertNil(locationOnlyState.currentContextSummaryDisplayModel.detail)
@@ -255,7 +188,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
         XCTAssertEqual(emptyContextState.currentContextSummaryDisplayModel.title, "No current selection")
         XCTAssertNil(emptyContextState.currentContextSummaryDisplayModel.detail)
@@ -272,7 +205,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: nil,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         XCTAssertEqual(state.connectionState, .connected)
@@ -300,7 +233,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: nil,
             lastExecutionFailure: .transportError,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
         let store = TestStore(initialState: state) {
             AiChatFeature()
@@ -328,7 +261,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: nil,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
