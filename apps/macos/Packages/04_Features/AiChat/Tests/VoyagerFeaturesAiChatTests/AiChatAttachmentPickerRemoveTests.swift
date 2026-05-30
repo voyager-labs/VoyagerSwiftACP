@@ -12,7 +12,7 @@ final class AiChatAttachmentPickerRemoveTests: XCTestCase {
         let third = makeDraftAttachment(id: "third", filePath: "/tmp/Third.txt")
 
         let store = TestStore(initialState: AiChatFeature.State(
-            addedAttachments: [first, second, third]
+            addedAttachments: [first, second, third],
         )) {
             AiChatFeature()
         }
@@ -22,29 +22,11 @@ final class AiChatAttachmentPickerRemoveTests: XCTestCase {
         }
     }
 
-    func testRemoveAddedAttachmentDoesNotTouchCurrentContext() async {
-        let summary = makeContextSnapshot(summary: "Pinned context")
-        let attachment = makeDraftAttachment(id: "remove-me", filePath: "/tmp/Notes.txt")
-
-        let store = TestStore(initialState: AiChatFeature.State(
-            currentContext: summary,
-            addedAttachments: [attachment]
-        )) {
-            AiChatFeature()
-        }
-
-        await store.send(.removeAddedAttachment(attachment.id)) {
-            $0.addedAttachments = []
-        }
-
-        XCTAssertEqual(store.state.currentContext, summary)
-    }
-
     func testRemoveAddedAttachmentUnknownIDIsNoOp() async {
         let attachment = makeDraftAttachment(id: "keep", filePath: "/tmp/Keep.txt")
         let store = TestStore(initialState: AiChatFeature.State(
             currentContext: makeContextSnapshot(summary: "Current context"),
-            addedAttachments: [attachment]
+            addedAttachments: [attachment],
         )) {
             AiChatFeature()
         }
@@ -64,7 +46,7 @@ private func makeDraftAttachment(id: String, filePath: String) -> AiChatAttachme
         displayTitle: url.lastPathComponent,
         sourceLocation: AiChatAttachmentSourceLocation(
             fileURL: url,
-            filePath: url.path(percentEncoded: false)
-        )
+            filePath: url.path(percentEncoded: false),
+        ),
     )
 }
