@@ -24,7 +24,7 @@ Xcode 버전 고정
 
 - 고정 파일: `.xcode-version`
 - Swiftly 선택 파일: `.swift-version` (`xcode`, 현재 선택된 Xcode toolchain 사용)
-- Swift 기대 버전 파일: `.swift-toolchain-version` (`just swift-version` 검증 기준)
+- Swift 기대 버전 파일: `.swift-toolchain-version` (`mise run swift-version` 검증 기준)
 - 설치/선택 스크립트: `scripts/xcodes.sh`
 
 권장 설정 방법
@@ -38,7 +38,7 @@ Swiftly를 사용하는 shell에서는 레포 루트에서 아래 값도 확인�
 
 ```bash
 swiftly use
-just swift-version
+mise run swift-version
 ```
 
 정상 출력은 `xcode` 및 `.swift-toolchain-version`과 일치하는 Swift 6.2.1입니다.

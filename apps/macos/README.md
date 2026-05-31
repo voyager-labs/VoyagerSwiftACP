@@ -4,10 +4,10 @@
 
 ### 필수 요구사항
 
--   **macOS**: 13.5 (Ventura) 이상
--   **Swift**: 6.0
--   **SwiftLint**: 코드 스타일 검사 도구
--   **SwiftFormat**: 코드 포맷팅 도구
+- **macOS**: 13.5 (Ventura) 이상
+- **Swift**: 6.0
+- **SwiftLint**: 코드 스타일 검사 도구
+- **SwiftFormat**: 코드 포맷팅 도구
 
 ### 1. 프로젝트 클론 및 설정
 
@@ -23,13 +23,13 @@ open Voyager.xcworkspace
 ### 2. SwiftLint 설치
 
 ```bash
-brew install swiftlint
+mise use -g swiftlint
 ```
 
 ### 3. SwiftFormat 설치
 
 ```bash
-brew install swiftformat
+mise use -g swiftformat
 ```
 
 ## 개발 도구 설정
@@ -37,12 +37,10 @@ brew install swiftformat
 ### Xcode 설정
 
 1. **Build Settings**에서 다음을 확인:
-
     - Deployment Target: macOS 13.5
     - Swift Language Version: Swift 6.0
 
 2. **Scheme 설정**:
-
     - Run schemes:
         - Voyager-Dev (개발 실행)
         - Voyager-Prod (배포/Archive)
@@ -124,21 +122,21 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 
 프로젝트에서 사용하는 외부 라이브러리:
 
--   **swift-composable-architecture** : TCA 프레임워크 (상태 관리)
--   **swiftui-introspect** : SwiftUI에서 AppKit 접근
--   **swift-dotenv** : 환경변수 관리 (.env 파일 지원)
--   **Inject** : SwiftUI 핫 리로딩
--   **InjectionNext** : 고급 코드 인젝션
--   **swift-identified-collections** : 식별 가능한 컬렉션
--   **swift-dependencies** : 의존성 주입 프레임워크
+- **swift-composable-architecture** : TCA 프레임워크 (상태 관리)
+- **swiftui-introspect** : SwiftUI에서 AppKit 접근
+- **swift-dotenv** : 환경변수 관리 (.env 파일 지원)
+- **Inject** : SwiftUI 핫 리로딩
+- **InjectionNext** : 고급 코드 인젝션
+- **swift-identified-collections** : 식별 가능한 컬렉션
+- **swift-dependencies** : 의존성 주입 프레임워크
 
 ### InjectionNext 사용법
 
 #### 필요한 설정 - 완료
 
--   **Other Linker Flags**: `-Xlinker -interposable` (Debug 빌드에만 적용)
--   **Swift Package**: InjectionNext 의존성
--   **Scheme Environment Variables**: `INJECTION_PROJECT_ROOT = $(SRCROOT)`
+- **Other Linker Flags**: `-Xlinker -interposable` (Debug 빌드에만 적용)
+- **Swift Package**: InjectionNext 의존성
+- **Scheme Environment Variables**: `INJECTION_PROJECT_ROOT = $(SRCROOT)`
 
 #### 사용 방법
 
@@ -155,6 +153,6 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 
 #### 제한사항
 
--   함수 본문만 변경 가능
--   프로퍼티 추가/삭제 불가
--   메서드 시그니처 변경 불가
+- 함수 본문만 변경 가능
+- 프로퍼티 추가/삭제 불가
+- 메서드 시그니처 변경 불가
