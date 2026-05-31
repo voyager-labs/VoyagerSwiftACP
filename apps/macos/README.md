@@ -14,23 +14,17 @@
 ```bash
 # 저장소 클론
 git clone https://github.com/voyager-labs/voyager-app.git
-cd voyager-app/apps/macos/Voyager
+cd voyager-app
+
+# 개발 환경 한 번에 설정 (mise, Xcode, hooks, submodules, xcode-build-server)
+bash scripts/setup.sh
 
 # Xcode 프로젝트 열기
-open Voyager.xcworkspace
+open apps/macos/Voyager/Voyager.xcworkspace
 ```
 
-### 2. SwiftLint 설치
-
-```bash
-mise use -g swiftlint
-```
-
-### 3. SwiftFormat 설치
-
-```bash
-mise use -g swiftformat
-```
+> SwiftLint, SwiftFormat 등 도구는 `mise.toml`에 버전이 고정되어 있으며
+> `bash scripts/setup.sh`로 자동 설치됩니다.
 
 ## 개발 도구 설정
 

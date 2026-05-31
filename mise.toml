@@ -18,7 +18,7 @@ no_app = true
 # ── Tasks ─────────────────────────────────────────────────────
 
 # 온보딩: clone 후 한 번 실행
-# mise install → xcode → hooks → submodules
+# mise install → xcode → hooks → submodules → xcode-build-server
 [tasks.setup]
 description = "온보딩: clone 후 한 번 실행"
 run = """
@@ -26,6 +26,7 @@ mise install
 bash scripts/xcodes.sh
 lefthook install
 git submodule update --init --recursive
+brew install xcode-build-server || true
 """
 
 # .xcode-version 기준 Xcode 설치 및 선택
