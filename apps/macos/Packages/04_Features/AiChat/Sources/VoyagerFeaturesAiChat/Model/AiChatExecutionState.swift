@@ -20,12 +20,62 @@ public struct AiChatHistoryTruncationMetadata: Equatable, Sendable {
         includedMessageCount: Int,
         excludedMessageCount: Int,
         budget: Int,
-        truncationReason: AiChatHistoryTruncationReason?
+        truncationReason: AiChatHistoryTruncationReason?,
     ) {
         self.includedMessageCount = includedMessageCount
         self.excludedMessageCount = excludedMessageCount
         self.budget = budget
         self.truncationReason = truncationReason
+    }
+}
+
+public struct AiChatPreparedRequest: Equatable, Sendable {
+    public var prompt: String
+    public var messages: [AiChatMessage]
+    public var assistantReplacementIndex: Int?
+    public var historyTruncation: AiChatHistoryTruncationMetadata
+    public var requestContextOverride: AiChatLockedRequestContextSnapshot?
+    public var requestContextSource: AiChatLockedRequestContextSnapshot?
+
+    public init(
+        prompt: String,
+        messages: [AiChatMessage],
+        assistantReplacementIndex: Int?,
+        historyTruncation: AiChatHistoryTruncationMetadata,
+        requestContextOverride: AiChatLockedRequestContextSnapshot? = nil,
+        requestContextSource: AiChatLockedRequestContextSnapshot? = nil,
+    ) {
+        self.prompt = prompt
+        self.messages = messages
+        self.assistantReplacementIndex = assistantReplacementIndex
+        self.historyTruncation = historyTruncation
+        self.requestContextOverride = requestContextOverride
+        self.requestContextSource = requestContextSource
+    }
+}
+
+public struct AiChatPendingRequestStart: Equatable, Sendable {
+    public var resolutionID: UUID
+    public var kind: AiChatRequestKind
+    public var sessionID: AiChatSessionID
+    public var selectedModel: AiProviderModel
+    public var selectedRow: AiModelCatalogRow?
+    public var preparedRequest: AiChatPreparedRequest
+
+    public init(
+        resolutionID: UUID,
+        kind: AiChatRequestKind,
+        sessionID: AiChatSessionID,
+        selectedModel: AiProviderModel,
+        selectedRow: AiModelCatalogRow?,
+        preparedRequest: AiChatPreparedRequest,
+    ) {
+        self.resolutionID = resolutionID
+        self.kind = kind
+        self.sessionID = sessionID
+        self.selectedModel = selectedModel
+        self.selectedRow = selectedRow
+        self.preparedRequest = preparedRequest
     }
 }
 
@@ -53,7 +103,7 @@ public struct AiChatRequestObservabilitySummary: Equatable, Sendable {
         terminalAtMs: Int64? = nil,
         chunkCount: Int = 0,
         terminalFailure: AiChatExecutionFailure? = nil,
-        wasCancelled: Bool = false
+        wasCancelled: Bool = false,
     ) {
         self.submittedAtMs = submittedAtMs
         self.firstDeltaAtMs = firstDeltaAtMs
@@ -70,14 +120,14 @@ public struct AiChatRequestObservabilitySummary: Equatable, Sendable {
             terminalAtMs: terminalAtMs,
             chunkCount: chunkCount + 1,
             terminalFailure: terminalFailure,
-            wasCancelled: wasCancelled
+            wasCancelled: wasCancelled,
         )
     }
 
     public func recordingTerminal(
         at timestampMs: Int64,
         failure: AiChatExecutionFailure?,
-        wasCancelled: Bool
+        wasCancelled: Bool,
     ) -> Self {
         Self(
             submittedAtMs: submittedAtMs,
@@ -85,7 +135,7 @@ public struct AiChatRequestObservabilitySummary: Equatable, Sendable {
             terminalAtMs: timestampMs,
             chunkCount: chunkCount,
             terminalFailure: failure,
-            wasCancelled: wasCancelled
+            wasCancelled: wasCancelled,
         )
     }
 }
@@ -114,10 +164,10 @@ public struct AiChatRequestLock: Equatable, Sendable {
         historyTruncation: AiChatHistoryTruncationMetadata = .init(
             includedMessageCount: 0,
             excludedMessageCount: 0,
-            budget: 24_000,
-            truncationReason: nil
+            budget: 24000,
+            truncationReason: nil,
         ),
-        observabilitySummary: AiChatRequestObservabilitySummary = .init(submittedAtMs: 0)
+        observabilitySummary: AiChatRequestObservabilitySummary = .init(submittedAtMs: 0),
     ) {
         self.kind = kind
         self.requestID = requestID
@@ -142,14 +192,14 @@ public struct AiChatRequestLock: Equatable, Sendable {
             selectedModelRow: selectedModelRow,
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: historyTruncation,
-            observabilitySummary: observabilitySummary.recordingDelta(at: timestampMs)
+            observabilitySummary: observabilitySummary.recordingDelta(at: timestampMs),
         )
     }
 
     public func recordingTerminal(
         at timestampMs: Int64,
         failure: AiChatExecutionFailure?,
-        wasCancelled: Bool
+        wasCancelled: Bool,
     ) -> Self {
         Self(
             kind: kind,
@@ -164,8 +214,8 @@ public struct AiChatRequestLock: Equatable, Sendable {
             observabilitySummary: observabilitySummary.recordingTerminal(
                 at: timestampMs,
                 failure: failure,
-                wasCancelled: wasCancelled
-            )
+                wasCancelled: wasCancelled,
+            ),
         )
     }
 }

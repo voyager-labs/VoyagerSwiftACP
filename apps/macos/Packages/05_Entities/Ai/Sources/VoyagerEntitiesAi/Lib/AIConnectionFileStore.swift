@@ -167,6 +167,14 @@ public actor AIConnectionFileStore {
         if !fileManager.fileExists(atPath: parent.path) {
             try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
         }
+        try setOwnerOnlyDirectoryPermissions(parent)
+    }
+
+    private func setOwnerOnlyDirectoryPermissions(_ url: URL) throws {
+        try fileManager.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o700)],
+            ofItemAtPath: url.path
+        )
     }
 
     private func setOwnerOnlyPermissions(_ url: URL) throws {

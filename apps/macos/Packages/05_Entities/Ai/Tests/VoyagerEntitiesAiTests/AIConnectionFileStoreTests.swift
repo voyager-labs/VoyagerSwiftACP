@@ -148,7 +148,7 @@ final class AIConnectionFileStoreTests: XCTestCase {
         XCTAssertEqual(after, before, "Writing isolated storage must not touch the real auth file")
     }
 
-    func testWriteCreatesParentDirectory() async throws {
+    func testWriteCreatesParentDirectoryWithOwnerOnlyPermissions() async throws {
         let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
         let configDir = payloadURL.deletingLastPathComponent()
 
@@ -159,6 +159,31 @@ final class AIConnectionFileStoreTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: configDir.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: payloadURL.path))
+
+        let attrs = try FileManager.default.attributesOfItem(atPath: configDir.path)
+        let perms = attrs[.posixPermissions] as? UInt16
+        XCTAssertEqual(perms, 0o700, "Config directory must be owner-only 0700 permissions")
+    }
+
+    func testWriteTightensExistingParentDirectoryPermissions() async throws {
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
+        let configDir = payloadURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: configDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: NSNumber(value: 0o755)]
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: configDir.path
+        )
+
+        let file = AIConnectionsFile.empty(updatedAtMs: 5678)
+        try await store.write(file)
+
+        let attrs = try FileManager.default.attributesOfItem(atPath: configDir.path)
+        let perms = attrs[.posixPermissions] as? UInt16
+        XCTAssertEqual(perms, 0o700, "Existing config directory permissions must be tightened to 0700")
     }
 
     func testWriteOverwritesExistingFile() async throws {

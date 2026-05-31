@@ -72,7 +72,11 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             return sendEntryOperations(entryOperationsAction)
 
         case .selectionChanged:
-            return sendEntryOperations(.lifecycle(.syncSelectedEntryIDs(state.entryViewLayout.selectedIds)))
+            let currentContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state)
+            return .concatenate(
+                sendEntryOperations(.lifecycle(.syncSelectedEntryIDs(state.entryViewLayout.selectedIds))),
+                .send(.delegate(.currentContextChanged(currentContext))),
+            )
         }
     }
 

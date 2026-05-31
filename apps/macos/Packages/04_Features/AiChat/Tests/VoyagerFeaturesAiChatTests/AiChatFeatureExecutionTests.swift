@@ -75,7 +75,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             $0.aiConnectionsFileClient = AIConnectionsFileClient(
                 load: {
                     makeConnectionsFile(providers: [
-                        makeProviderRecord(provider: .openai, credential: credential)
+                        makeProviderRecord(provider: .openai, credential: credential),
                     ])
                 },
                 save: { .success($0) },
@@ -84,7 +84,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
             state.selectedModelHandle = selectedHandle
@@ -123,7 +124,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.receive(.executionEvent(.final(response: rawResponse))) { state in
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: expectedAssistantMessage)
+                AiChatMessage(role: .assistant, content: expectedAssistantMessage),
             ]
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
@@ -142,11 +143,11 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertEqual(recorded.first?.1, credential)
         XCTAssertEqual(persistence.snapshots.count, 2)
         XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, [
-            AiChatMessage(role: .user, content: "Hello")
+            AiChatMessage(role: .user, content: "Hello"),
         ])
         XCTAssertEqual(persistence.snapshots.last?.transcriptHistory, [
             AiChatMessage(role: .user, content: "Hello"),
-            AiChatMessage(role: .assistant, content: expectedAssistantMessage)
+            AiChatMessage(role: .assistant, content: expectedAssistantMessage),
         ])
         XCTAssertEqual(persistence.snapshots.last?.lastRequestID, lock.request.context.requestID)
         XCTAssertEqual(persistence.snapshots.last?.lastRunID, lock.request.context.runID)
@@ -194,7 +195,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Cancel me")]
             state.lockedModelHandle = selectedHandle
@@ -316,7 +318,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
             state.selectedModelHandle = selectedHandle
@@ -377,7 +380,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Partial failure")]
             state.lockedModelHandle = selectedHandle
@@ -458,7 +462,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
             state.lockedModelHandle = selectedHandle
@@ -481,7 +486,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         )))) { state in
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "First answer")
+                AiChatMessage(role: .assistant, content: "First answer"),
             ]
             state.streamingAssistantDraft = nil
             state.lockedModelHandle = nil
@@ -490,12 +495,13 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.send(.draftTextChanged("Second question")) { state in
             state.draftText = "Second question"
         }
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
                 AiChatMessage(role: .assistant, content: "First answer"),
-                AiChatMessage(role: .user, content: "Second question")
+                AiChatMessage(role: .user, content: "Second question"),
             ]
             state.lockedModelHandle = selectedHandle
             state.streamingAssistantDraft = nil
@@ -505,7 +511,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertEqual(stream.requests[1].messages, [
             AiChatMessage(role: .user, content: "Hello"),
             AiChatMessage(role: .assistant, content: "First answer"),
-            AiChatMessage(role: .user, content: "Second question")
+            AiChatMessage(role: .user, content: "Second question"),
         ])
 
         stream.finish()
@@ -580,7 +586,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
             currentContext: makeContextSnapshot(),
             transcriptHistory: [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Hi")
+                AiChatMessage(role: .assistant, content: "Hi"),
             ],
             draftText: "Second message",
             catalogRows: catalogRows,

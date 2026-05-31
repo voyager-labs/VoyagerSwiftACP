@@ -266,8 +266,14 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
         let button = NSButton(frame: .zero)
         button.bezelStyle = .texturedRounded
         button.isBordered = false
-        button.title = "…"
-        button.font = .systemFont(ofSize: 15, weight: .semibold)
+        button.title = ""
+        button.image = NSImage(
+            systemSymbolName: "ellipsis",
+            accessibilityDescription: "Session actions"
+        )
+        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleNone
         button.contentTintColor = .secondaryLabelColor
         button.target = context.coordinator
         button.action = #selector(Coordinator.showMenu(_:))

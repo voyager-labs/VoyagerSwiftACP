@@ -52,7 +52,8 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
             let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000001"))
             let context = AiChatRequestContextSnapshot(
@@ -87,7 +88,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 model: catalogRows[0].handle,
                 createdAtMs: firstSubmitMs,
                 updatedAtMs: firstSubmitMs,
-                status: .active
+                status: .active,
             )
             state.transcriptHistory = request.messages
             state.draftText = ""
@@ -164,7 +165,8 @@ final class AiChatFeatureSelectionTests: XCTestCase {
 
         store.dependencies.date = .constant(makeFixedDate(milliseconds: secondSubmitMs))
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000002"))
             let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000003"))
             let context = AiChatRequestContextSnapshot(
@@ -196,7 +198,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 model: catalogRows[1].handle,
                 createdAtMs: secondSubmitMs,
                 updatedAtMs: secondSubmitMs,
-                status: .active
+                status: .active,
             )
             state.transcriptHistory = request.messages
             state.draftText = ""
@@ -232,6 +234,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(requestSpy.requests[1].context.selectedThinking, .effort(.medium))
     }
 
+    // swiftlint:disable:next function_body_length
     func testTeardownRequestedStopsProcessingDraftWithoutClearingConversation() async {
         let catalogRows = makeCatalogRows()
         let models = makeThinkingCapableProviderModels()
@@ -419,7 +422,8 @@ final class AiChatFeatureSelectionTests: XCTestCase {
 
         XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "high")
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
             let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000001"))
             let context = AiChatRequestContextSnapshot(
@@ -454,7 +458,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
                 model: catalogRows[0].handle,
                 createdAtMs: firstSubmitMs,
                 updatedAtMs: firstSubmitMs,
-                status: .active
+                status: .active,
             )
             state.transcriptHistory = request.messages
             state.draftText = ""

@@ -52,6 +52,9 @@ public struct FileManagerContentFeature {
             }
 
             switch action {
+            case .view(.openContextualAiChatTapped):
+                return .send(.delegate(.openContextualAiChat))
+
             case .internal(.clearCollectionMode), .internal(.exitCollectionMode):
                 return handleCollectionModeAction(
                     action,

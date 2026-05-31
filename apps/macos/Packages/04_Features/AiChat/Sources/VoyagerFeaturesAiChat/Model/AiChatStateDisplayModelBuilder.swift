@@ -21,7 +21,7 @@ struct AiChatStateDisplayModelBuilder {
         aiChatRequestContextDisplayModel(
             currentContext: state.currentContext,
             addedAttachments: state.addedAttachments,
-            lockedRequestContext: lockedRequestContextSnapshot
+            lockedRequestContext: lockedRequestContextSnapshot,
         )
     }
 
@@ -38,7 +38,7 @@ struct AiChatStateDisplayModelBuilder {
     var emptyStateDisplayModel: AiChatEmptyStateDisplayModel {
         AiChatEmptyStateDisplayModel(
             title: "Ask about this context",
-            detail: "Send a message to start a contextual chat."
+            detail: "Send a message to start a contextual chat.",
         )
     }
 
@@ -54,7 +54,7 @@ struct AiChatStateDisplayModelBuilder {
             isSubmitVisible: !isProcessing,
             isStopVisible: isProcessing,
             canSubmit: canSubmit,
-            canStop: stopEnabled
+            canStop: stopEnabled,
         )
     }
 
@@ -63,7 +63,7 @@ struct AiChatStateDisplayModelBuilder {
             headerTitle: "Chat",
             currentContext: currentContextSummaryDisplayModel,
             surface: skeletonSurfaceDisplayModel,
-            chatInput: chatInputDisplayModel
+            chatInput: chatInputDisplayModel,
         )
     }
 
@@ -120,6 +120,7 @@ struct AiChatStateDisplayModelBuilder {
         guard state.sessionStatus != .rebindRequired else { return false }
         guard !state.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard !isProcessing else { return false }
+        guard state.pendingRequestStart == nil else { return false }
         guard case .loaded = state.modelListState else { return false }
         guard resolvedSelectedModel != nil else { return false }
         guard selectedModelSupportsChatExecution else { return false }
@@ -193,10 +194,10 @@ struct AiChatStateDisplayModelBuilder {
             return .processing(
                 processing: AiChatProcessingState(
                     lockedModel: modelCatalogBuilder.lockedModelDisplayModel(for: lock),
-                    cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true)
+                    cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true),
                 ),
                 summary: currentContextSummaryDisplayModel,
-                selectedModel: selectedModelDisplayModel
+                selectedModel: selectedModelDisplayModel,
             )
         case .completed, .failed, .cancelled, .persistenceRecovery:
             if let metadata = aiChatUnconnectedMetadata(for: state) {

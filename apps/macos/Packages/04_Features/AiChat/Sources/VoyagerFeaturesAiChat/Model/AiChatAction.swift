@@ -2,6 +2,29 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 
+public struct AiChatAttachmentDropProvider: Equatable, @unchecked Sendable {
+    public let id: UUID
+    public let provider: NSItemProvider
+
+    public init(id: UUID, provider: NSItemProvider) {
+        self.id = id
+        self.provider = provider
+    }
+
+    public init(provider: NSItemProvider) {
+        self.init(id: UUID(), provider: provider)
+    }
+
+    public static func == (lhs: AiChatAttachmentDropProvider, rhs: AiChatAttachmentDropProvider) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+public enum AiChatFolderContextTarget: Codable, Equatable, Sendable {
+    case currentContext
+    case attachment(AiChatAttachmentID)
+}
+
 @CasePathable
 public enum AiChatAction: CasePathable, Equatable, Sendable {
     case delegate(Delegate)
@@ -40,21 +63,24 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case draftTextChanged(String)
     case attachmentPickerTapped
     case attachmentPickerSelection([URL])
+    case attachmentDrop([AiChatAttachmentDropProvider])
     case attachmentDropSelection([URL])
     case removeAddedAttachment(AiChatAttachmentID)
+    case folderStructureModeChanged(AiChatFolderContextTarget, AiChatFolderStructureMode)
     case openSettingsTapped
     case errorRecoveryTapped
     case rebindContextTapped
     case startNewChatFromRebindTapped
     case submitTapped
     case regenerateTapped
+    case requestContextResolved(UUID, AiChatResolvedRequestContext)
     case cancelTapped
     case resetTapped
     case teardownRequested
     case restoreOutcome(
         requestedSessionID: AiChatSessionID,
         AiChatSessionRestoreResult,
-        restoreFailure: AiChatSessionRestoreFailure?
+        restoreFailure: AiChatSessionRestoreFailure?,
     )
     case executionEvent(AiChatEvent)
     case persistenceFailed(AiChatRequestLock, AiChatExecutionFailure)

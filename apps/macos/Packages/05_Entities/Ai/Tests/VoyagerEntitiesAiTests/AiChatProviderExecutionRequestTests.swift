@@ -127,7 +127,7 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("/Users/"))
     }
 
-    func testMakeAnthropicRequest_attachmentTransmissionOmitsCurrentContextParts() throws {
+    func testMakeAnthropicRequest_includesCurrentContextResolvedPartsOutsideAttachmentTransmission() throws {
         let payload = try makePayload(
             provider: .anthropic,
             rawModelID: "claude-sonnet-4-20250514",
@@ -183,11 +183,104 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         let decoded = try decodeAnthropicRequestBody(request)
         let system = try XCTUnwrap(decoded.system)
 
+        XCTAssertTrue(system.contains("current_context:"), system)
+        XCTAssertTrue(system.contains("resolved_parts:"), system)
+        XCTAssertTrue(system.contains("current-context.png"), system)
+        XCTAssertTrue(system.contains("uploaded natively as image/png"), system)
         XCTAssertTrue(system.contains("attachment_transmission:"), system)
         XCTAssertTrue(system.contains("Attachment.pdf"), system)
         XCTAssertTrue(system.contains("uploaded natively as application/pdf"), system)
-        XCTAssertFalse(system.contains("current-context.png"), system)
-        XCTAssertFalse(system.contains("uploaded natively as image/png"), system)
+    }
+
+    func testMakeOpenAIRequest_includesResolvedFolderMetadataForCurrentContextAndAttachments() throws {
+        let currentFolderMetadata = [
+            "displayPath": "Desktop",
+            "folderStructureMode": "includeSubfolders",
+            "collectionItemCount": "1",
+            "collectionItemsIncluded": "1",
+            "collectionItemsTruncated": "false",
+            "collectionItemPaths": "Inside.md",
+            "folderStructureEntries": "directory\t0\tDesktop\nfile\t1\tDesktop/Inside.md",
+            "folderStructureDirectoryFilePaths": "Desktop\tDesktop/Inside.md",
+        ]
+        let attachmentFolderMetadata = [
+            "displayPath": "Workspace",
+            "folderStructureMode": "includeSubfolders",
+            "collectionItemCount": "1",
+            "collectionItemsIncluded": "1",
+            "collectionItemsTruncated": "false",
+            "collectionItemPaths": "AttachmentInside.md",
+            "folderStructureEntries": "directory\t0\tWorkspace\nfile\t1\tWorkspace/AttachmentInside.md",
+            "folderStructureDirectoryFilePaths": "Workspace\tWorkspace/AttachmentInside.md",
+            "attachmentID": "folder-attachment",
+        ]
+        let payload = try makePayload(
+            provider: .openai,
+            rawModelID: "gpt-4.1-mini",
+            requestContext: AiChatLockedRequestContextSnapshot(
+                currentContext: AiChatCurrentContextSnapshot(
+                    summary: "Desktop",
+                    items: [
+                        AiChatContextItem(
+                            kind: .folder,
+                            identifier: "Desktop",
+                            title: "Desktop",
+                            metadata: ["folderStructureMode": "includeSubfolders"]
+                        ),
+                    ]
+                ),
+                addedAttachments: [
+                    AiChatAttachmentSnapshot(
+                        id: AiChatAttachmentID(rawValue: "folder-attachment"),
+                        source: .folder,
+                        displayTitle: "Workspace",
+                        kind: .folder,
+                        sourceLocation: AiChatAttachmentSourceLocation(filePath: "Workspace"),
+                        resolutionResult: .resolvedReference(metadata: attachmentFolderMetadata)
+                    ),
+                ],
+                parts: [
+                    AiChatLockedContextPartSnapshot(
+                        source: .currentContext,
+                        resolution: .referenceOnly(metadata: currentFolderMetadata),
+                        canonicalPath: "/tmp/Desktop",
+                        displayPath: "Desktop",
+                        fileKind: .folder,
+                        displayTitle: "Desktop"
+                    ),
+                    AiChatLockedContextPartSnapshot(
+                        source: .attachment,
+                        resolution: .referenceOnly(metadata: attachmentFolderMetadata),
+                        canonicalPath: "/tmp/Workspace",
+                        displayPath: "Workspace",
+                        fileKind: .folder,
+                        displayTitle: "Workspace"
+                    ),
+                ]
+            )
+        )
+
+        let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
+            payload: payload,
+            credential: .apiKey("openai-key")
+        )
+        let decoded = try decodeOpenAIRequestBody(request)
+        let prompt = try XCTUnwrap(decoded.input.first?.content.text)
+
+        XCTAssertTrue(prompt.contains("current_context:"), prompt)
+        XCTAssertTrue(prompt.contains("resolved_parts:"), prompt)
+        XCTAssertTrue(prompt.contains("Desktop/Inside.md"), prompt)
+        XCTAssertTrue(prompt.contains("- Inside.md"), prompt)
+        XCTAssertTrue(prompt.contains("folder_structure:"), prompt)
+        XCTAssertTrue(prompt.contains("directory_file_paths:"), prompt)
+        XCTAssertTrue(prompt.contains("- Desktop\tDesktop/Inside.md"), prompt)
+        XCTAssertFalse(prompt.contains("folderStructureDirectoryFilePaths:"), prompt)
+        XCTAssertTrue(prompt.contains("added_attachments:"), prompt)
+        XCTAssertTrue(prompt.contains("attachment_transmission:"), prompt)
+        XCTAssertTrue(prompt.contains("Workspace/AttachmentInside.md"), prompt)
+        XCTAssertTrue(prompt.contains("- AttachmentInside.md"), prompt)
+        XCTAssertTrue(prompt.contains("- Workspace\tWorkspace/AttachmentInside.md"), prompt)
+        XCTAssertFalse(prompt.contains("attachmentID:"), prompt)
     }
 
     func testMakeAnthropicRequest_omitsBase64PayloadMetadataFromSystemPrompt() throws {

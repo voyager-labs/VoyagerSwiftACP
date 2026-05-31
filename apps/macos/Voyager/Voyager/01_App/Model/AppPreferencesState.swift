@@ -75,6 +75,7 @@ struct AppPreferencesState: Equatable, Sendable {
         result.gridTextSize = gridTextSize
         result.sidebarVisible = sidebarVisible
         result.sidebarWidth = sidebarWidth
+        result.inspectorWidth = inspectorWidth
         return result
     }
 }

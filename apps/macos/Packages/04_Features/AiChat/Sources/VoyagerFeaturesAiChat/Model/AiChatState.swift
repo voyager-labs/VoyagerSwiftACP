@@ -57,7 +57,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
         deletedSessionIDs: Set<AiChatSessionID> = [],
         renamingSessionID: AiChatSessionID? = nil,
-        renameDraftText: String = ""
+        renameDraftText: String = "",
     ) {
         self.allRows = allRows
         self.query = query
@@ -134,6 +134,27 @@ public struct AiChatSessionListState: Equatable, Sendable {
     }
 }
 
+public enum AiChatCurrentContextFolderStructureSource: String, Codable, Equatable, Hashable, Sendable {
+    case reference
+    case item
+    case itemReference
+    case attachment
+}
+
+public struct AiChatCurrentContextFolderStructureKey: Codable, Equatable, Hashable, Sendable {
+    public let source: AiChatCurrentContextFolderStructureSource
+    public let canonicalPath: String
+
+    public init(source: AiChatCurrentContextFolderStructureSource, canonicalPath: String) {
+        self.source = source
+        self.canonicalPath = canonicalPath
+    }
+}
+
+public typealias AiChatCurrentContextFolderStructureModes = [
+    AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode
+]
+
 @ObservableState
 public struct AiChatState: Equatable, Sendable {
     public var restoreSessionID: AiChatSessionID?
@@ -143,9 +164,11 @@ public struct AiChatState: Equatable, Sendable {
     public var sessionList: AiChatSessionListState
     public var sessionID: AiChatSessionID?
     public var emptyDraftSessionID: AiChatSessionID?
+    public var pendingEmptyDraftDeletionSessionIDs: Set<AiChatSessionID>
     public var currentSessionCustomTitle: String?
     public var sessionStatus: AiChatSessionStatus
     public var currentContext: AiChatCurrentContextSnapshot
+    public var currentContextFolderStructureModes: AiChatCurrentContextFolderStructureModes
     public var addedAttachments: [AiChatAttachmentDraft]
     public var transcriptHistory: [AiChatMessage]
     public var draftText: String
@@ -161,6 +184,7 @@ public struct AiChatState: Equatable, Sendable {
     public var lastExecutionFailure: AiChatExecutionFailure?
     public var lastRequestContext: AiChatLockedRequestContextSnapshot?
     public var lastRequestContextModelHandle: AiModelHandle?
+    public var pendingRequestStart: AiChatPendingRequestStart?
     public var executionPhase: AiChatExecutionPhase
     public var modelListRequestID: UUID?
     public var modelListProvider: AiProvider?
@@ -179,9 +203,11 @@ public struct AiChatState: Equatable, Sendable {
         sessionList: AiChatSessionListState = .init(),
         sessionID: AiChatSessionID? = nil,
         emptyDraftSessionID: AiChatSessionID? = nil,
+        pendingEmptyDraftDeletionSessionIDs: Set<AiChatSessionID> = [],
         currentSessionCustomTitle: String? = nil,
         sessionStatus: AiChatSessionStatus = .idle,
         currentContext: AiChatCurrentContextSnapshot = .init(),
+        currentContextFolderStructureModes: AiChatCurrentContextFolderStructureModes = [:],
         addedAttachments: [AiChatAttachmentDraft] = [],
         transcriptHistory: [AiChatMessage] = [],
         draftText: String = "",
@@ -197,6 +223,7 @@ public struct AiChatState: Equatable, Sendable {
         lastExecutionFailure: AiChatExecutionFailure? = nil,
         lastRequestContext: AiChatLockedRequestContextSnapshot? = nil,
         lastRequestContextModelHandle: AiModelHandle? = nil,
+        pendingRequestStart: AiChatPendingRequestStart? = nil,
         executionPhase: AiChatExecutionPhase = .idle,
         modelListRequestID: UUID? = nil,
         modelListProvider: AiProvider? = nil,
@@ -214,9 +241,11 @@ public struct AiChatState: Equatable, Sendable {
         self.sessionList = sessionList
         self.sessionID = sessionID
         self.emptyDraftSessionID = emptyDraftSessionID
+        self.pendingEmptyDraftDeletionSessionIDs = pendingEmptyDraftDeletionSessionIDs
         self.currentSessionCustomTitle = currentSessionCustomTitle
         self.sessionStatus = sessionStatus
         self.currentContext = currentContext
+        self.currentContextFolderStructureModes = currentContextFolderStructureModes
         self.addedAttachments = addedAttachments
         self.transcriptHistory = transcriptHistory
         self.draftText = draftText
@@ -233,6 +262,7 @@ public struct AiChatState: Equatable, Sendable {
         self.lastExecutionFailure = lastExecutionFailure
         self.lastRequestContext = lastRequestContext
         self.lastRequestContextModelHandle = lastRequestContextModelHandle
+        self.pendingRequestStart = pendingRequestStart
         self.executionPhase = executionPhase
         self.modelListRequestID = modelListRequestID
         self.modelListProvider = modelListProvider
@@ -278,16 +308,18 @@ public struct AiChatState: Equatable, Sendable {
     public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { displayModelBuilder.lockedModelDisplayModel }
 
     public var hiddenEmptyDraftSessionIDs: Set<AiChatSessionID> {
-        guard let emptyDraftSessionID,
-              sessionID == emptyDraftSessionID,
-              sessionStatus == .idle,
-              transcriptHistory.isEmpty,
-              streamingAssistantDraft == nil,
-              lastRequestContext == nil,
-              !executionPhase.isProcessing
-        else { return [] }
-
-        return [emptyDraftSessionID]
+        var hiddenSessionIDs = pendingEmptyDraftDeletionSessionIDs
+        if let emptyDraftSessionID,
+           sessionID == emptyDraftSessionID,
+           sessionStatus == .idle,
+           transcriptHistory.isEmpty,
+           streamingAssistantDraft == nil,
+           lastRequestContext == nil,
+           !executionPhase.isProcessing
+        {
+            hiddenSessionIDs.insert(emptyDraftSessionID)
+        }
+        return hiddenSessionIDs
     }
 
     public var canSubmit: Bool { displayModelBuilder.canSubmit }

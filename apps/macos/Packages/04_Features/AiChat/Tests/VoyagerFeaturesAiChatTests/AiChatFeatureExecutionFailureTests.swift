@@ -41,7 +41,7 @@ final class AiChatFeatureExecutionFailureTests: XCTestCase {
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -84,7 +84,7 @@ final class AiChatFeatureExecutionFailureTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -96,12 +96,13 @@ final class AiChatFeatureExecutionFailureTests: XCTestCase {
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { _ in },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: prompt)]
             state.lockedModelHandle = selectedHandle
@@ -117,7 +118,7 @@ final class AiChatFeatureExecutionFailureTests: XCTestCase {
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         ).recordingTerminal(at: fixedMs, failure: reason, wasCancelled: false)
 
         stream.yield(.failed(context: request.context, reason: reason))
@@ -147,7 +148,7 @@ final class AiChatFeatureExecutionFailureTests: XCTestCase {
             request: retryRequest,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
 
         XCTAssertEqual(retryRequest.messages, [AiChatMessage(role: .user, content: prompt)])

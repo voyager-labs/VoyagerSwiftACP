@@ -28,7 +28,7 @@ extension AiChatFeature {
     static func restoreOutcomeAction(
         for snapshot: AiChatSessionSnapshot,
         context: AiChatRestoreContext,
-        uuid: UUIDGenerator,
+        uuid _: UUIDGenerator,
     ) -> Action {
         let normalizedSnapshot = normalizeRestoredSnapshot(snapshot, catalogRows: context.catalogRows)
         if snapshot.status == .rebindRequired {
@@ -130,6 +130,8 @@ extension AiChatFeature {
         state.transcriptHistory = setup.transcriptHistory
         state.draftText = setup.draftText
         state.streamingAssistantDraft = nil
+        state.addedAttachments = []
+        state.currentContextFolderStructureModes = [:]
     }
 
     private func applySetupModelState(_ setup: AiChatSetupState, to state: inout State) {
@@ -193,6 +195,8 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lastRequestContext = snapshot.lastRequestContext
         state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
+        state.addedAttachments = []
+        state.currentContextFolderStructureModes = [:]
         state.executionPhase = .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
@@ -208,6 +212,8 @@ extension AiChatFeature {
         state.lastExecutionFailure = nil
         state.lastRequestContext = nil
         state.lastRequestContextModelHandle = nil
+        state.addedAttachments = []
+        state.currentContextFolderStructureModes = [:]
         state.executionPhase = .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
