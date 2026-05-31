@@ -13,11 +13,10 @@
   "[swift]": {
     "editor.defaultFormatter": "vknabel.vscode-swiftformat"
   },
+  "swiftformat.path": ["mise", "exec", "--", "swiftformat"],
   "swiftformat.configSearchPaths": [
     "${workspaceFolder}/apps/macos/.swiftformat"
   ],
-  "swiftformat.path": "/opt/homebrew/bin/swiftformat",
-  "swiftlint.path": "/opt/homebrew/bin/swiftlint",
   "notebook.formatOnSave.enabled": true,
   "cSpell.customDictionaries": {
     "custom-dictionary-workspace": {
