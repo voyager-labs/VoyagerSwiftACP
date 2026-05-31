@@ -10,9 +10,10 @@ xcodes = "1.6.2"
 python = "3.13"
 
 # SwiftFormat: GitHub releases backend
-# 바이너리 이름이 swiftformat (소문자)로 설치됨
 [tools."github:nicklockwood/SwiftFormat"]
 version = "0.61.1"
+rename_exe = "swiftformat"
+no_app = true
 
 # ── Tasks ─────────────────────────────────────────────────────
 
