@@ -15,7 +15,7 @@ final class CBW003ResolveContextualChatRequestsTests: XCTestCase {
 
         let result = try AiChatProviderPreflight.prepare(
             request,
-            credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+            credential: .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
         )
 
         XCTAssertEqual(result.payload.provider, .openai)
@@ -72,7 +72,7 @@ final class CBW003ResolveContextualChatRequestsTests: XCTestCase {
 
         let events = try await collectCBW003Events(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+            .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
         ))
 
         XCTAssertEqual(events, [
@@ -109,7 +109,7 @@ final class CBW003ResolveContextualChatRequestsTests: XCTestCase {
 
         let events = try await collectCBW003Events(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+            .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
         ))
 
         XCTAssertEqual(events, [
@@ -142,7 +142,7 @@ final class CBW003ResolveContextualChatRequestsTests: XCTestCase {
 
         let events = try await collectCBW003Events(client.execute(
             request,
-            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+            .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
         ))
 
         XCTAssertEqual(events, [
@@ -161,7 +161,7 @@ final class CBW003ResolveContextualChatRequestsTests: XCTestCase {
     func testShowResponseReferencesKeepsSnapshotProvenanceWithoutSensitivePaths() throws {
         let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
             payload: AiChatProviderRequestPayload.lower(makeCBW003Request(), thinking: .effort(.high)),
-            credential: .apiKey("openai-key"),
+            credential: .apiKey(FixtureCredentials.openAIApiKey),
         )
         let decoded = try JSONDecoder().decode(CBW003OpenAIRequestBody.self, from: XCTUnwrap(request.httpBody))
         let prompt = try XCTUnwrap(decoded.input.first?.content.text)
@@ -172,6 +172,7 @@ final class CBW003ResolveContextualChatRequestsTests: XCTestCase {
         XCTAssertTrue(prompt.contains("collection_items:"), prompt)
         XCTAssertTrue(prompt.contains("Broken.txt [readFailed]"), prompt)
         XCTAssertTrue(prompt.contains("not included: readFailed"), prompt)
+        RedactionTestHelper().assertNoRawSecrets(in: prompt)
         XCTAssertFalse(prompt.contains("/Users/me/secret"), prompt)
     }
 }
