@@ -28,7 +28,7 @@
       "extensions": [".md"]
     },
     "swiftformat": {
-      "command": ["swiftformat", "$FILE"],
+      "command": ["mise", "exec", "--", "swiftformat", "$FILE"],
       "extensions": [".swift"]
     }
   }

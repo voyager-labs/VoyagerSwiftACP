@@ -11,25 +11,25 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MACOS_ROOT="$REPO_ROOT/apps/macos"
 
 echo "================================"
-echo "🔧 SwiftFormat: using system installation..."
+echo "🔧 SwiftFormat: using mise-managed installation..."
 echo "================================"
 
-if command -v swiftformat >/dev/null 2>&1; then
-    echo "✓ Running SwiftFormat at: $(which swiftformat)"
-    swiftformat --config "$MACOS_ROOT/.swiftformat" "$SWIFT_ROOT" --verbose || true
+if mise exec -- swiftformat --version >/dev/null 2>&1; then
+    echo "✓ Running SwiftFormat via mise"
+    mise exec -- swiftformat --config "$MACOS_ROOT/.swiftformat" "$SWIFT_ROOT" --verbose || true
     echo "✓ SwiftFormat completed"
 else
-    echo "⚠️ SwiftFormat not found in PATH"
+    echo "⚠️ SwiftFormat not found via mise"
 fi
 
 echo "================================"
-echo "🔍 SwiftLint: using system installation..."
+echo "🔍 SwiftLint: using mise-managed installation..."
 echo "================================"
 
 lint_status=0
 
-if command -v swiftlint >/dev/null 2>&1; then
-    echo "✓ Running SwiftLint at: $(which swiftlint)"
+if mise exec -- swiftlint version >/dev/null 2>&1; then
+    echo "✓ Running SwiftLint via mise"
 
     source_files=()
     test_files=()
@@ -44,13 +44,13 @@ if command -v swiftlint >/dev/null 2>&1; then
     done < <(find "$SWIFT_ROOT" -name '*.swift' -print0)
 
     if [[ ${#source_files[@]} -gt 0 ]]; then
-        if ! swiftlint --config "$MACOS_ROOT/.swiftlint.yml" --reporter xcode --no-cache "${source_files[@]}"; then
+        if ! mise exec -- swiftlint --config "$MACOS_ROOT/.swiftlint.yml" --reporter xcode --no-cache "${source_files[@]}"; then
             lint_status=1
         fi
     fi
 
     if [[ ${#test_files[@]} -gt 0 ]]; then
-        if ! swiftlint --config "$MACOS_ROOT/.swiftlint-tests.yml" --reporter xcode --no-cache "${test_files[@]}"; then
+        if ! mise exec -- swiftlint --config "$MACOS_ROOT/.swiftlint-tests.yml" --reporter xcode --no-cache "${test_files[@]}"; then
             lint_status=1
         fi
     fi
@@ -61,7 +61,7 @@ if command -v swiftlint >/dev/null 2>&1; then
         echo "✗ SwiftLint completed with failures"
     fi
 else
-    echo "⚠️ SwiftLint not found in PATH"
+    echo "⚠️ SwiftLint not found via mise"
 fi
 
 echo "================================"
