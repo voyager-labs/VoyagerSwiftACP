@@ -1,0 +1,109 @@
+# Voyager App — mise.toml
+# 사용법: mise tasks (목록), mise run <task> (실행)
+
+# ── Tools (pinned versions) ───────────────────────────────────
+
+[tools]
+lefthook = "2.1.9"
+swiftlint = "0.63.3"
+xcodes = "1.6.2"
+python = "3.13"
+
+# SwiftFormat: GitHub releases backend
+# 바이너리 이름이 swiftformat (소문자)로 설치됨
+[tools."github:nicklockwood/SwiftFormat"]
+version = "0.61.1"
+
+# ── Tasks ─────────────────────────────────────────────────────
+
+# 온보딩: clone 후 한 번 실행
+# mise install → xcode → hooks → submodules
+[tasks.setup]
+description = "온보딩: clone 후 한 번 실행"
+run = """
+mise install
+bash scripts/xcodes.sh
+lefthook install
+git submodule update --init --recursive
+"""
+
+# .xcode-version 기준 Xcode 설치 및 선택
+[tasks.xcode]
+description = ".xcode-version 기준 Xcode 설치 및 선택"
+run = "bash scripts/xcodes.sh"
+
+# Git hooks 설치 (Lefthook)
+[tasks.hooks]
+description = "Git hooks 설치 (Lefthook)"
+run = "lefthook install"
+
+# Submodule 초기화
+[tasks.submodules]
+description = "Submodule 초기화"
+run = "git submodule update --init --recursive"
+
+# xcode-build-server 설치 (SourceKit-LSP 의존성)
+[tasks.lsp-install]
+description = "xcode-build-server 설치 (SourceKit-LSP용)"
+run = "brew install xcode-build-server"
+
+# SourceKit-LSP용 buildServer.json 생성
+[tasks.lsp]
+description = "SourceKit-LSP용 buildServer.json 생성"
+depends = ["lsp-install"]
+run = "python3 scripts/dev/setup_sourcekit_lsp.py"
+
+# SourceKit-LSP 컨텍스트 선택
+# 사용법: mise run lsp-context -- --path apps/macos/Voyager/VoyagerHelper
+[tasks.lsp-context]
+description = "SourceKit-LSP 컨텍스트 선택"
+depends = ["lsp-install"]
+run = "python3 scripts/dev/lsp_context.py"
+
+# macOS 변경 범위 기반 검증 계획/실행
+# 사용법: mise run macos-checks -- --changed --run
+[tasks.macos-checks]
+description = "macOS 변경 범위 기반 검증 계획/실행"
+run = "python3 scripts/dev/macos_checks.py"
+
+# macOS 개발 앱 빌드 (worktree 내부 DerivedData 사용)
+[tasks.macos-build]
+description = "macOS 개발 앱 빌드"
+run = "xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation build"
+
+# macOS 개발 앱 테스트 (worktree 내부 DerivedData 사용)
+[tasks.macos-test]
+description = "macOS 개발 앱 테스트"
+run = "xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation"
+
+# Xcode 툴체인의 Swift 버전 확인
+[tasks.swift-version]
+description = "Xcode 툴체인의 Swift 버전 확인"
+run = "python3 scripts/dev/check_swift_version.py"
+
+# Git hooks 재설치 (강제)
+[tasks.reinstall-hooks]
+description = "Git hooks 재설치 (강제)"
+run = "lefthook install --force"
+
+# ── CodeGraph ─────────────────────────────────────────────────
+
+[tasks.codegraph-init]
+description = "CodeGraph 인덱스 초기화 (최초 1회)"
+run = "npx -y @colbymchenry/codegraph@0.9.6 init -i"
+
+[tasks.codegraph-serve]
+description = "CodeGraph MCP 서버 실행"
+run = "npx -y @colbymchenry/codegraph@0.9.6 serve --mcp"
+
+[tasks.codegraph-reindex]
+description = "CodeGraph 인덱스 재구축"
+run = "npx -y @colbymchenry/codegraph@0.9.6 index"
+
+[tasks.codegraph-clean]
+description = "CodeGraph 인덱스/캐시 삭제"
+run = "rm -rf .codegraph"
+
+[tasks.codegraph-status]
+description = "CodeGraph 인덱스 상태 확인"
+run = "npx -y @colbymchenry/codegraph@0.9.6 status"
