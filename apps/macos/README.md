@@ -5,9 +5,10 @@
 ### 필수 요구사항
 
 - **macOS**: 13.5 (Ventura) 이상
-- **Swift**: 6.0
-- **SwiftLint**: 코드 스타일 검사 도구
-- **SwiftFormat**: 코드 포맷팅 도구
+- **Xcode**: 26.1 (`.xcode-version` 고정)
+- **Swift**: 6.2.1 (Xcode 26.1 toolchain)
+- **SwiftLint**: 코드 스타일 검사 도구 (`mise.toml` 고정)
+- **SwiftFormat**: 코드 포맷팅 도구 (`mise.toml` 고정)
 
 ### 1. 프로젝트 클론 및 설정
 
@@ -32,7 +33,7 @@ open apps/macos/Voyager/Voyager.xcworkspace
 
 1. **Build Settings**에서 다음을 확인:
     - Deployment Target: macOS 13.5
-    - Swift Language Version: Swift 6.0
+    - Swift Language Version: 프로젝트 기본값 사용 (Xcode 26.1 toolchain 기준)
 
 2. **Scheme 설정**:
     - Run schemes:

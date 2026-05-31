@@ -26,7 +26,7 @@ mise install
 bash scripts/xcodes.sh
 lefthook install
 git submodule update --init --recursive
-brew install xcode-build-server || true
+mise run lsp-install
 """
 
 # .xcode-version 기준 Xcode 설치 및 선택
@@ -47,7 +47,17 @@ run = "git submodule update --init --recursive"
 # xcode-build-server 설치 (SourceKit-LSP 의존성)
 [tasks.lsp-install]
 description = "xcode-build-server 설치 (SourceKit-LSP용)"
-run = "brew install xcode-build-server"
+run = """
+if command -v xcode-build-server >/dev/null 2>&1; then
+  echo "xcode-build-server already installed: $(xcode-build-server --version 2>/dev/null || true)"
+  exit 0
+fi
+if ! command -v brew >/dev/null 2>&1; then
+  echo "ERROR: Homebrew not found. Install Homebrew first: https://brew.sh" >&2
+  exit 1
+fi
+brew install xcode-build-server
+"""
 
 # SourceKit-LSP용 buildServer.json 생성
 [tasks.lsp]
