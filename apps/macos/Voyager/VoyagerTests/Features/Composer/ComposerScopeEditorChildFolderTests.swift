@@ -24,6 +24,7 @@ final class ComposerScopeEditorChildFolderTests: XCTestCase {
             $0.scopeEditor.queryText = ""
             $0.scopeEditor.listState = .childFolders(parentPath: fixture.editingURL.path)
             $0.scopeEditor.candidateItems = fixture.expectedChildCandidates
+            $0.scopeEditor.treeNeighborhoodSeedItems = fixture.expectedNeighborhoodSeeds
             $0.scopeEditor.favorites = []
             $0.scopeEditor.backHistory = []
         }
@@ -225,6 +226,7 @@ final class ComposerScopeEditorChildFolderTests: XCTestCase {
             backHistory: [fixture.explicitBasePeerURL.path],
             entryLoadingClient: makeEntryLoadingClient(homeURL: temporaryRoot),
             expectedChildCandidates: makeExpectedChildCandidates(fixture),
+            expectedNeighborhoodSeeds: makeExpectedNeighborhoodSeeds(fixture),
         )
     }
 
@@ -277,6 +279,27 @@ final class ComposerScopeEditorChildFolderTests: XCTestCase {
         ]
     }
 
+    private func makeExpectedNeighborhoodSeeds(_ fixture: ChildFolderFixture) -> [ComposerScopeTreeSeedItem] {
+        [
+            ComposerScopeTreeSeedItem(
+                path: fixture.workspaceURL.path,
+                name: fixture.workspaceURL.lastPathComponent,
+                iconName: "folder",
+            ),
+            ComposerScopeTreeSeedItem(
+                path: fixture.editingURL.path,
+                name: fixture.editingURL.lastPathComponent,
+                iconName: "folder",
+            ),
+            ComposerScopeTreeSeedItem(
+                path: fixture.siblingURL.path,
+                name: fixture.siblingURL.lastPathComponent,
+                iconName: "folder",
+                locationIdentifier: fixture.workspaceURL.path,
+            ),
+        ]
+    }
+
     private func makeEntryLoadingClient(homeURL: URL) -> EntryLoadingClient {
         var client = EntryLoadingClient.testValue
         client.contentsOfDirectory = { url, keys, options in
@@ -322,6 +345,7 @@ private struct ChildFolderFixture {
     let backHistory: [String]
     let entryLoadingClient: EntryLoadingClient
     let expectedChildCandidates: [ComposerScopeEditorCandidateItem]
+    let expectedNeighborhoodSeeds: [ComposerScopeTreeSeedItem]
 
     init(
         baseURL: URL,
@@ -330,6 +354,7 @@ private struct ChildFolderFixture {
         backHistory: [String] = [],
         entryLoadingClient: EntryLoadingClient = .testValue,
         expectedChildCandidates: [ComposerScopeEditorCandidateItem] = [],
+        expectedNeighborhoodSeeds: [ComposerScopeTreeSeedItem] = [],
     ) {
         temporaryRoot = baseURL
         workspaceURL = baseURL.appendingPathComponent("Workspace", isDirectory: true)
@@ -348,5 +373,6 @@ private struct ChildFolderFixture {
         self.backHistory = backHistory
         self.entryLoadingClient = entryLoadingClient
         self.expectedChildCandidates = expectedChildCandidates
+        self.expectedNeighborhoodSeeds = expectedNeighborhoodSeeds
     }
 }

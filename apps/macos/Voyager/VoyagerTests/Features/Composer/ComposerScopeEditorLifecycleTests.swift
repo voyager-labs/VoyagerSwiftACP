@@ -24,6 +24,7 @@ final class ComposerScopeEditorLifecycleTests: XCTestCase {
             $0.scopeEditor.queryText = ""
             $0.scopeEditor.listState = .defaultCandidates
             $0.scopeEditor.candidateItems = []
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
             $0.scopeEditor.favorites = []
             $0.scopeEditor.backHistory = []
         }
@@ -101,6 +102,7 @@ final class ComposerScopeEditorLifecycleTests: XCTestCase {
             $0.scopeEditor.editingPath = nil
             $0.scopeEditor.listState = .defaultCandidates
             $0.scopeEditor.candidateItems = []
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
         }
 
         await store.finish()
@@ -149,6 +151,14 @@ final class ComposerScopeEditorLifecycleTests: XCTestCase {
                     iconName: "folder",
                     locationIdentifier: parentURL.path,
                 ),
+            ]
+            $0.scopeEditor.treeNeighborhoodSeedItems = [
+                ComposerScopeTreeSeedItem(
+                    path: temporaryRoot.path,
+                    name: temporaryRoot.lastPathComponent,
+                    iconName: "folder",
+                ),
+                ComposerScopeTreeSeedItem(path: parentURL.path, name: parentURL.lastPathComponent, iconName: "folder"),
             ]
         }
 

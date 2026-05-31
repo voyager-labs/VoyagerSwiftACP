@@ -197,6 +197,7 @@ public struct ComposerState: Equatable {
     mutating func resetScopeEditorInteractionState(clearQuery: Bool) {
         scopeEditor.editingPath = nil
         scopeEditor.entryMode = .add
+        scopeEditor.treeNeighborhoodSeedItems = []
         if clearQuery {
             scopeEditor.queryText = ""
         }

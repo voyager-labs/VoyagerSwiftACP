@@ -2,6 +2,22 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
 
+func seedScopeEditorTreeNeighborhoodForCurrentMode(
+    state: inout ComposerFeature.State,
+    entryLoadingClient: EntryLoadingClient,
+) {
+    guard state.scopeEditor.entryMode == .edit else {
+        state.scopeEditor.treeNeighborhoodSeedItems = []
+        return
+    }
+
+    state.scopeEditor.treeNeighborhoodSeedItems = ComposerScopeTreeNeighborhoodCandidates.make(
+        editingPath: state.scopeEditor.editingPath,
+        selection: state.scopeEditor.selection,
+        entryLoadingClient: entryLoadingClient,
+    )
+}
+
 func collapseScopePaths(existing: [String], adding candidate: String) -> [String] {
     let normalizedCandidate = ComposerScopeUtils.normalizeScopePath(candidate)
     var result: [String] = []
@@ -30,6 +46,7 @@ func seedScopeEditorCandidatesForCurrentMode(
             parentPath: normalizedEditingPath,
             entryLoadingClient: entryLoadingClient,
         )
+        seedScopeEditorTreeNeighborhoodForCurrentMode(state: &state, entryLoadingClient: entryLoadingClient)
         return
     }
 
@@ -39,6 +56,7 @@ func seedScopeEditorCandidatesForCurrentMode(
         backHistory: state.scopeEditor.backHistory,
         entryLoadingClient: entryLoadingClient,
     )
+    state.scopeEditor.treeNeighborhoodSeedItems = []
 }
 
 func makeChildScopeEditorCandidates(
@@ -124,6 +142,7 @@ func handleClearAll(
         backHistory: state.scopeEditor.backHistory,
         entryLoadingClient: entryLoadingClient,
     )
+    state.scopeEditor.treeNeighborhoodSeedItems = []
     state.conditions = []
     state.conditionDisplayByKey = [:]
     state.operatorOptionsByKey = [:]

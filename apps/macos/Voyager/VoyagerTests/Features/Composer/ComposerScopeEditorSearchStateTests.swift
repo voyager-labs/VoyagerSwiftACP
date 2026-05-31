@@ -17,6 +17,9 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
                 locationIdentifier: "suggestions",
             ),
         ]
+        initialState.scopeEditor.treeNeighborhoodSeedItems = [
+            ComposerScopeTreeSeedItem(path: "/Users/test", name: "test", iconName: "folder"),
+        ]
 
         let store = makePassiveStore(initialState: initialState)
 
@@ -25,6 +28,7 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
             $0.scopeEditor.queryText = "docs"
             $0.scopeEditor.listState = .searchResults(query: "docs")
             $0.scopeEditor.candidateItems = []
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
         }
 
         await store.send(.scopeEditorSetQueryText("")) {
@@ -32,6 +36,7 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
             $0.scopeEditor.queryText = ""
             $0.scopeEditor.listState = .defaultCandidates
             $0.scopeEditor.candidateItems = []
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
         }
 
         await store.finish()
@@ -59,6 +64,7 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
         ) {
             $0.scopeEditor.queryText = "docs"
             $0.scopeEditor.listState = .searchResults(query: "docs")
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
             $0.scopeEditor.candidateItems = [
                 ComposerScopeEditorCandidateItem(
                     path: "/Users/test/Documents",
@@ -100,6 +106,7 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
         ) {
             $0.scopeEditor.queryText = "docs"
             $0.scopeEditor.listState = .searchResults(query: "docs")
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
             $0.scopeEditor.candidateItems = [
                 ComposerScopeEditorCandidateItem(
                     path: "/Users/test/Work/Docs",
@@ -147,6 +154,7 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
             $0.scopeEditor.queryText = "docs"
             $0.scopeEditor.listState = .searchResults(query: "docs")
             $0.scopeEditor.candidateItems = []
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
         }
     }
 
@@ -166,6 +174,7 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
             $0.scopeEditor.queryText = "docs"
             $0.scopeEditor.listState = .noResults(query: "docs")
             $0.scopeEditor.candidateItems = []
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
         }
     }
 
@@ -195,6 +204,7 @@ final class ComposerScopeEditorSearchStateTests: XCTestCase {
             $0.scopeEditor.queryText = "docs"
             $0.scopeEditor.listState = .noResults(query: "docs")
             $0.scopeEditor.candidateItems = []
+            $0.scopeEditor.treeNeighborhoodSeedItems = []
         }
     }
 

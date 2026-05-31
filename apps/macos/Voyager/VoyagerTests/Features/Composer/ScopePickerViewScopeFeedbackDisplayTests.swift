@@ -31,6 +31,7 @@ final class ScopePickerViewScopeFeedbackDisplayTests: XCTestCase {
         XCTAssertEqual(display.title, "Scope updated to Documents")
         XCTAssertEqual(display.message, "Include subfolders")
         XCTAssertEqual(display.phaseLabel, "Applied")
+        XCTAssertEqual(display.accessibilityLabel, "Scope updated to Documents, Include subfolders, Applied")
         XCTAssertTrue(display.showsUndo)
         XCTAssertFalse(display.showsRedo)
         XCTAssertFalse(display.isFailure)
@@ -127,6 +128,10 @@ final class ScopePickerViewScopeFeedbackDisplayTests: XCTestCase {
         XCTAssertEqual(display.title, "Excluded Secrets from Documents")
         XCTAssertEqual(display.message, "Scope change could not be fully applied. Current selection was kept.")
         XCTAssertEqual(display.phaseLabel, "Failed")
+        XCTAssertEqual(
+            display.accessibilityLabel,
+            "Excluded Secrets from Documents, Scope change could not be fully applied. Current selection was kept., Failed",
+        )
         XCTAssertTrue(display.isFailure)
         XCTAssertFalse(display.isDelayed)
     }

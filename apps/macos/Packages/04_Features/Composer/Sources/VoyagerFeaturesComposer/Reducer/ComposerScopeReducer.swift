@@ -172,6 +172,8 @@ private func handleScopeEditorPresented(
         }
         if state.scopeEditor.candidateItems.isEmpty {
             seedScopeEditorCandidatesForCurrentMode(state: &state, entryLoadingClient: entryLoadingClient)
+        } else {
+            seedScopeEditorTreeNeighborhoodForCurrentMode(state: &state, entryLoadingClient: entryLoadingClient)
         }
         return .none
     }
@@ -188,6 +190,7 @@ private func handleScopeEditorPresented(
         backHistory: state.scopeEditor.backHistory,
         entryLoadingClient: entryLoadingClient,
     )
+    state.scopeEditor.treeNeighborhoodSeedItems = []
     let dismissEffect = Effect<ComposerFeature.Action>.cancel(id: ComposerFeature.CancelID.scopeEditorSearch)
     guard shouldReapplyFilters else {
         return dismissEffect
@@ -228,6 +231,7 @@ private func handleScopeEditorQueryText(
 
     state.scopeEditor.listState = .searchResults(query: trimmedQuery)
     state.scopeEditor.candidateItems = []
+    state.scopeEditor.treeNeighborhoodSeedItems = []
 
     return .run { [trimmedQuery, entryLoadingClient] send in
         do {
@@ -277,6 +281,7 @@ private func handleScopeEditorSearchResponse(
     }
 
     state.scopeEditor.listState = items.isEmpty ? .noResults(query: query) : .searchResults(query: query)
+    state.scopeEditor.treeNeighborhoodSeedItems = []
     state.scopeEditor.candidateItems = items.map {
         ComposerScopeEditorCandidateItem(
             path: $0.path,
@@ -299,6 +304,7 @@ private func handleScopeEditorSearchFailure(
 
     state.scopeEditor.listState = .noResults(query: query)
     state.scopeEditor.candidateItems = []
+    state.scopeEditor.treeNeighborhoodSeedItems = []
     return .none
 }
 
@@ -485,9 +491,9 @@ private func settleScopeEditorAfterSelectionChange(
     state: inout ComposerFeature.State,
     entryLoadingClient: EntryLoadingClient,
 ) -> Effect<ComposerFeature.Action> {
-    state.scopeEditor.isPresented = true
+    let wasPresented = state.scopeEditor.isPresented
     state.scopeEditor.entryMode = state.scopeEditor.editingPath == nil ? .add : .edit
-    if state.scopeEditor.trimmedQueryText.isEmpty {
+    if wasPresented, state.scopeEditor.trimmedQueryText.isEmpty {
         seedScopeEditorCandidatesForCurrentMode(state: &state, entryLoadingClient: entryLoadingClient)
     }
     return .cancel(id: ComposerFeature.CancelID.scopeEditorSearch)
