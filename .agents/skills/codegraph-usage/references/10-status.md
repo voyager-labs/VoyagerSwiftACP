@@ -47,7 +47,7 @@ Returns index health, statistics, and sync status.
 
 ## Edge Cases
 
-- **Stale index**: If many files are pending sync, the index may return outdated results. Run `just codegraph-reindex`.
+- **Stale index**: If many files are pending sync, the index may return outdated results. Run `mise run codegraph-reindex`.
 - **Worktree mismatch**: If the MCP server is running from a different worktree than expected, a warning is shown.
 - **No index**: Returns an error if `.codegraph/` doesn't exist.
 
@@ -62,5 +62,5 @@ codegraph_status()
 ## Tips
 
 - Run this first in any session that uses CodeGraph — verifies the index exists and is current.
-- If "Pending sync" shows many files, the index is stale. Run `just codegraph-reindex` or wait for the file watcher to catch up.
+- If "Pending sync" shows many files, the index is stale. Run `mise run codegraph-reindex` or wait for the file watcher to catch up.
 - Use before and after `codegraph-reindex` to verify the reindex worked.

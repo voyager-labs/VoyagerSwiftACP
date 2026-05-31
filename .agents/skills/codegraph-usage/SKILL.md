@@ -7,7 +7,7 @@ description: Guides effective use of the CodeGraph MCP sidecar for call flow tra
 
 ## Quick Workflow
 
-1. **Index ready?** `just codegraph-status`
+1. **Index ready?** `mise run codegraph-status`
 2. **Find a symbol:** `codegraph_search` → see `references/01-search.md`
 3. **Trace call flow:** `codegraph_trace` or `codegraph_callers` → see `references/11-patterns.md`
 4. **Check impact:** `codegraph_impact` → see `references/11-patterns.md`
@@ -57,6 +57,6 @@ Do NOT read all reference files at once. Load only what the current task needs:
 ## Prerequisites
 
 - `.codegraph/` index must exist in the project root.
-- If missing, run `just codegraph-init` or it auto-initializes on `git checkout`/`git worktree add`.
-- Check status: `just codegraph-status`
-- Rebuild if stale: `just codegraph-reindex`
+- If missing, run `mise run codegraph-init` or it auto-initializes on `git checkout`/`git worktree add`.
+- Check status: `mise run codegraph-status`
+- Rebuild if stale: `mise run codegraph-reindex`
