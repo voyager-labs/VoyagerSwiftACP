@@ -29,12 +29,14 @@ chmod +x scripts/xcodes.sh
 프로젝트는 `apps/macos/Voyager/` 아래에 있습니다.
 
 - Xcode Workspace (권장): `apps/macos/Voyager/Voyager.xcworkspace`
-    - Voyager.xcodeproj와 OnboardingHost.xcodeproj가 모두 포함되어 있습니다
+    - Voyager.xcodeproj, OnboardingHost.xcodeproj, SettingsHost.xcodeproj가 포함되어 있습니다
 - Xcode Project (권장 for CLI): `apps/macos/Voyager/Voyager.xcodeproj`
 - OnboardingHost Project (별도): `apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj`
     - 온보딩 전용 호스트 앱의 독립적인 Xcode 프로젝트입니다
+- SettingsHost Project (별도): `apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj`
+    - 설정 전용 호스트 앱의 독립적인 Xcode 프로젝트입니다
 
-현재는 `xcodebuild -workspace ...`에서 scheme이 노출되지 않는 케이스가 있어, CLI/CI에서는 `-project` 사용을 권장합니다.
+Workspace는 여러 Xcode 프로젝트를 한 창에서 열기 위한 컨테이너입니다. GUI/SweetPad 실행은 workspace를 권장하고, CLI/CI에서는 빌드 대상을 명확히 하기 위해 `-project` 사용을 권장합니다.
 
 ---
 
@@ -70,9 +72,17 @@ xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -sc
 
 > 참고: OnboardingHost는 개발/테스트 전용 호스트로, 배포용 빌드(Voyager-Prod)에는 포함되지 않습니다.
 
+### 4.1.2 개발 빌드 (SettingsHost)
+
+SettingsHost는 별도의 Xcode 프로젝트입니다. `-project` 경로를 명시적으로 지정합니다.
+
+```bash
+xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug
+```
+
 워크스페이스 기준(참고)
 
-주의: 이 레포에서는 Workspace에서 scheme이 노출되지 않는 케이스가 있어, `-workspace` 기반 빌드는 실패할 수 있습니다.
+Workspace에 포함된 프로젝트의 shared scheme 목록을 확인할 수 있습니다.
 
 ```bash
 xcodebuild -list -workspace apps/macos/Voyager/Voyager.xcworkspace

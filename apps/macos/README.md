@@ -49,8 +49,9 @@ brew install swiftformat
     - Helper schemes:
         - VoyagerHelper-Dev (개발용 헬퍼)
         - VoyagerHelper-Prod (배포/Archive 헬퍼)
-    - Host schemes (별도 프로젝트 — OnboardingHost.xcodeproj):
+    - Host schemes (별도 프로젝트):
         - OnboardingHost-Dev (온보딩 호스트 개발)
+        - SettingsHost-Dev (설정 호스트 개발)
     - Test schemes: VoyagerTests, VoyagerUITests
 
 ## 빌드 및 실행
@@ -70,14 +71,17 @@ xcodebuild -project Voyager.xcodeproj -scheme Voyager-Prod -configuration Releas
 xcodebuild -project Voyager.xcodeproj -scheme Voyager-Dev test
 ```
 
-**OnboardingHost.xcodeproj** (별도 프로젝트)
+**Host xcodeproj** (별도 프로젝트)
 
 ```bash
 # 온보딩 호스트 빌드 (개발)
 xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug build
+
+# 설정 호스트 빌드 (개발)
+xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug build
 ```
 
-> 참고: OnboardingHost는 독립적인 Xcode 프로젝트입니다. `-project` 경로를 명시적으로 지정해야 합니다.
+> 참고: Host 앱들은 독립적인 Xcode 프로젝트입니다. CLI에서는 `-project` 경로를 명시적으로 지정하는 것을 권장합니다.
 
 ## 테스트
 
