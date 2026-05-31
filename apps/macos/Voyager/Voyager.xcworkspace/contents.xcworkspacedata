@@ -5,6 +5,9 @@
       location = "group:Voyager.xcodeproj">
    </FileRef>
    <FileRef
-      location = "group:../../Hosts/OnboardingHost/OnboardingHost.xcodeproj">
+      location = "group:../Hosts/OnboardingHost/OnboardingHost.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:../Hosts/SettingsHost/SettingsHost.xcodeproj">
    </FileRef>
 </Workspace>

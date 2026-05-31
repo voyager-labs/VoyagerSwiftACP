@@ -54,7 +54,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 
 - macOS App
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
-        - Workspace에 Voyager.xcodeproj와 OnboardingHost.xcodeproj가 모두 포함되어 있습니다
+        - Workspace에 Voyager.xcodeproj, OnboardingHost.xcodeproj, SettingsHost.xcodeproj가 포함되어 있습니다
     - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
     - VSCode 류 IDE(Sweetpad Extension)에서 실행:
         - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
@@ -67,6 +67,8 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `Voyager Prod: Launch (Release)` - 프로덕션 환경 Release 모드로 빌드 및 실행
                 - `OnboardingHost Dev: Launch (Debug)` - 온보딩 호스트 Debug 모드로 빌드 및 실행
                 - `OnboardingHost Dev: Launch (Release)` - 온보딩 호스트 Release 모드로 빌드 및 실행
+                - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
+                - `SettingsHost Dev: Launch (Release)` - 설정 호스트 Release 모드로 빌드 및 실행
             - 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
     - Zed에서 LSP context/검증 태스크 실행:
         - `cmd-shift-p`로 Command Palette를 열고 `task: spawn`을 실행합니다.
@@ -86,6 +88,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
     - Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
     - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
     - OnboardingHost Build (CLI): `xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug`
+    - SettingsHost Build (CLI): `xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug`
 
 ### Xcode 버전 관리
 
