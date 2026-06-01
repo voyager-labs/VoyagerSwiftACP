@@ -1,5 +1,4 @@
 import Foundation
-
 @testable import VoyagerFeaturesBetaAccess
 
 /// BetaAccess 테스트에서 자주 사용하는 BetaAccessClient 픽스처 모음.

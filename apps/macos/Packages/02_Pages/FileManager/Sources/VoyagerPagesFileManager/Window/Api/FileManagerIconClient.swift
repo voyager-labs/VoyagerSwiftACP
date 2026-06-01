@@ -5,7 +5,7 @@ import VoyagerEntitiesEntry
 public struct FileManagerIconClient: Sendable {
     public var iconNameForURL: @Sendable (URL, Bool, EntryLoadingClient) -> String
 
-    public nonisolated init(
+    nonisolated public init(
         iconNameForURL: @escaping @Sendable (URL, Bool, EntryLoadingClient) -> String,
     ) {
         self.iconNameForURL = iconNameForURL
@@ -18,7 +18,7 @@ extension FileManagerIconClient: DependencyKey {
         domain: FileManager.SearchPathDomainMask,
     )
 
-    private nonisolated(unsafe) static let iconMappings: [(location: IconLocation, iconName: String)] = [
+    nonisolated(unsafe) private static let iconMappings: [(location: IconLocation, iconName: String)] = [
         (
             location: (
                 directory: .applicationDirectory,
@@ -53,7 +53,7 @@ extension FileManagerIconClient: DependencyKey {
         (location: (directory: .trashDirectory, domain: .userDomainMask), iconName: "trash"),
     ]
 
-    public nonisolated static func resolveIconName(
+    nonisolated public static func resolveIconName(
         for url: URL,
         isDirectory: Bool,
         entryLoadingClient: EntryLoadingClient,
@@ -78,7 +78,7 @@ extension FileManagerIconClient: DependencyKey {
         return "folder"
     }
 
-    public nonisolated static var liveValue: FileManagerIconClient {
+    nonisolated public static var liveValue: FileManagerIconClient {
         FileManagerIconClient(
             iconNameForURL: { url, isDirectory, entryLoadingClient in
                 resolveIconName(for: url, isDirectory: isDirectory, entryLoadingClient: entryLoadingClient)
@@ -86,13 +86,13 @@ extension FileManagerIconClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: FileManagerIconClient {
+    nonisolated public static var testValue: FileManagerIconClient {
         FileManagerIconClient(
             iconNameForURL: { _, _, _ in "folder" },
         )
     }
 
-    public nonisolated static var previewValue: FileManagerIconClient {
+    nonisolated public static var previewValue: FileManagerIconClient {
         testValue
     }
 }

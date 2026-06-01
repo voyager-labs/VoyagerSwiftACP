@@ -1,6 +1,6 @@
 import Foundation
 
-struct TrashMetadata: Codable, Equatable, Sendable {
+struct TrashMetadata: Codable, Equatable {
     let trashPath: String
     let originalPath: String
     let deletedDate: Date

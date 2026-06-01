@@ -39,7 +39,7 @@ struct ToolbarView: View {
         }
     }
 
-    // NOTE: ViewState가 내부에 왜 있는지 체크
+    /// NOTE: ViewState가 내부에 왜 있는지 체크
     private struct ViewState: Equatable {
         let backHistoryItems: [ToolbarHistoryItem]
         let forwardHistoryItems: [ToolbarHistoryItem]

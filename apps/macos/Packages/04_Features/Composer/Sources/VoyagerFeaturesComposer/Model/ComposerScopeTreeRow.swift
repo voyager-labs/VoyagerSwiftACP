@@ -1,31 +1,31 @@
 import Foundation
 
-enum ComposerScopeTreeRowVisualState: Equatable, Sendable {
+enum ComposerScopeTreeRowVisualState: Equatable {
     case included
     case excluded
     case none
 }
 
-enum ComposerScopeTreeRowRuleSource: Equatable, Sendable {
+enum ComposerScopeTreeRowRuleSource: Equatable {
     case direct
     case inherited(sourcePath: String)
     case none
 }
 
-enum ComposerScopeTreeRowAvailableAction: Equatable, Sendable {
+enum ComposerScopeTreeRowAvailableAction: Equatable {
     case include
     case exclude
     case clearDirectRule
 }
 
-enum ComposerScopeTreeRowKind: String, Equatable, Sendable {
+enum ComposerScopeTreeRowKind: String, Equatable {
     case root
     case base
     case exception
     case candidate
 }
 
-enum ComposerScopeTreeRowActionIntent: Equatable, Sendable {
+enum ComposerScopeTreeRowActionIntent: Equatable {
     case addBase(path: String)
     case exclude(path: String)
     case removeBase(path: String)
@@ -33,7 +33,7 @@ enum ComposerScopeTreeRowActionIntent: Equatable, Sendable {
     case none
 }
 
-struct ComposerScopeTreeRow: Equatable, Sendable, Identifiable {
+struct ComposerScopeTreeRow: Equatable, Identifiable {
     let path: String
     let depth: Int
     let displayName: String
@@ -52,7 +52,7 @@ struct ComposerScopeTreeRow: Equatable, Sendable, Identifiable {
     }
 }
 
-struct ComposerScopeTreeSeedItem: Equatable, Sendable, Identifiable {
+struct ComposerScopeTreeSeedItem: Equatable, Identifiable {
     let path: String
     let name: String
     let iconName: String
@@ -76,7 +76,9 @@ struct ComposerScopeTreeSeedItem: Equatable, Sendable, Identifiable {
         self.depth = depth
     }
 
-    var id: String { ComposerScopeUtils.normalizeScopePath(path) }
+    var id: String {
+        ComposerScopeUtils.normalizeScopePath(path)
+    }
 }
 
 extension ComposerScopeEditorState {
@@ -156,7 +158,10 @@ extension ComposerScopeEditorState {
         }
     }
 
-    func visibleProjectionCandidates() -> [ComposerScopeEditorCandidateItem] { visibleCandidateItems() }
+    func visibleProjectionCandidates() -> [ComposerScopeEditorCandidateItem] {
+        visibleCandidateItems()
+    }
+
     func projectionExceptionsByOwningBasePath() -> [String: [ComposerScopeException]] {
         let baseInfos = selection.explicitBases.map(TreeBaseInfo.init)
         let exceptionInfos = makeExceptionInfos(baseInfos: baseInfos)

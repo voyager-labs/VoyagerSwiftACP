@@ -228,7 +228,7 @@ private func isRunningXCTest() -> Bool {
 actor VoyagerTerminationCoordinator {
     static let shared = VoyagerTerminationCoordinator()
 
-    enum Reason: Sendable {
+    enum Reason {
         case userQuit
         case sparkleRelaunch
     }

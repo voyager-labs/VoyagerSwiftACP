@@ -19,7 +19,7 @@ struct EntryListCoordinatorSortSignature: Hashable {
 
     init(descriptors: [NSSortDescriptor]) {
         guard let first = descriptors.first, let key = first.key else {
-            self.key = nil
+            key = nil
             ascending = true
             return
         }
@@ -69,14 +69,14 @@ enum EntryListCoordinatorSortDescriptorMapper {
 }
 
 enum EntryListCoordinatorDateFormatting {
-    private nonisolated struct CacheKey: Hashable {
+    nonisolated private struct CacheKey: Hashable {
         let template: String
         let localeIdentifier: String
         let timeZoneIdentifier: String
     }
 
-    private nonisolated static let lock = NSLock()
-    private nonisolated(unsafe) static var cache: [CacheKey: DateFormatter] = [:]
+    nonisolated private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [CacheKey: DateFormatter] = [:]
 
     nonisolated static func template(forWidth width: CGFloat) -> String {
         guard width.isFinite, width > 0 else {
@@ -159,7 +159,9 @@ public final class EntryListCoordinator: NSObject {
     }
 
     let store: StoreOf<EntryViewLayoutFeature>
-    var state: EntryViewLayoutState { store.state }
+    var state: EntryViewLayoutState {
+        store.state
+    }
 
     func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
         store.send(.entryOperations(action))
@@ -215,7 +217,8 @@ public final class EntryListCoordinator: NSObject {
     var finderFavoritesTagClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
-    init(store: StoreOf<EntryViewLayoutFeature>) { self.store = store
+    init(store: StoreOf<EntryViewLayoutFeature>) {
+        self.store = store
         super.init()
     }
 

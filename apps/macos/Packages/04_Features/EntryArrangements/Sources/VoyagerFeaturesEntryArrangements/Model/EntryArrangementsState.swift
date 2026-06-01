@@ -1,5 +1,4 @@
 import Foundation
-
 import VoyagerShared
 
 public struct EntryArrangementsState: Equatable, Sendable {

@@ -160,8 +160,13 @@ final class ComposerScopeOverlayCoordinator {
 }
 
 private final class ComposerScopeOverlayPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
 }
 
 struct ComposerAnchorFrameReader: NSViewRepresentable {

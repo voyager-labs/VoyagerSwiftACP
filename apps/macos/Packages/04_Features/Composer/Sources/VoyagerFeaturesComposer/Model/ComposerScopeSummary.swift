@@ -1,22 +1,22 @@
 import Foundation
 
-enum ComposerScopeSummaryPrimary: Equatable, Hashable, Sendable {
+enum ComposerScopeSummaryPrimary: Equatable, Hashable {
     case rootOnly
     case singleExplicit(path: String)
     case multiExplicit(count: Int)
 }
 
-enum ComposerScopeSummarySecondary: Equatable, Hashable, Sendable {
+enum ComposerScopeSummarySecondary: Equatable, Hashable {
     case includeSubfolders
     case onlySelectedFolder
     case onlySelectedFolders
 }
 
-enum ComposerScopeSummaryBadge: Equatable, Hashable, Sendable {
+enum ComposerScopeSummaryBadge: Equatable, Hashable {
     case exceptionCount(Int)
 }
 
-struct ComposerScopeSummary: Equatable, Hashable, Sendable {
+struct ComposerScopeSummary: Equatable, Hashable {
     let primary: ComposerScopeSummaryPrimary
     let secondaryItems: [ComposerScopeSummarySecondary]
     let badges: [ComposerScopeSummaryBadge]

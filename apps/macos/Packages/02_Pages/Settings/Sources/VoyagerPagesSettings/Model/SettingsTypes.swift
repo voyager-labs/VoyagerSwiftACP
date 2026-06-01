@@ -5,7 +5,9 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     case general
     case appearance
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var title: String {
         switch self {

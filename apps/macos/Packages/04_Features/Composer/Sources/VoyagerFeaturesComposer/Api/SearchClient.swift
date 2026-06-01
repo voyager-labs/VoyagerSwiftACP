@@ -20,7 +20,7 @@ extension SearchClient: DependencyKey {
         },
     )
 
-    public nonisolated(unsafe) static var testValue: SearchClient = .init(
+    nonisolated(unsafe) public static var testValue: SearchClient = .init(
         search: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
         applyFilters: { _ in .init(itemCount: 0, appliedFilters: nil, items: nil, error: nil) },
     )

@@ -13,8 +13,8 @@ final class HelperExternalFileSystemWatcher {
     private let queue: DispatchQueue
     private let watchRootsProvider: () -> [URL]
     private let onChangedPaths: @MainActor ([String]) async -> Void
-    private nonisolated(unsafe) var stream: FSEventStreamRef?
-    private nonisolated(unsafe) var watchRootsObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var stream: FSEventStreamRef?
+    nonisolated(unsafe) private var watchRootsObserver: NSObjectProtocol?
     private var watchRoots: [URL] = []
     private let callbackBox: CallbackBox
 
@@ -145,11 +145,11 @@ final class HelperExternalFileSystemWatcher {
     }
 }
 
-private nonisolated func helperFSFilterNoise(from paths: [String]) -> [String] {
+nonisolated private func helperFSFilterNoise(from paths: [String]) -> [String] {
     paths.filter { !helperFSIsIgnoredEventPath($0) }
 }
 
-private nonisolated func helperFSIsIgnoredEventPath(_ path: String) -> Bool {
+nonisolated private func helperFSIsIgnoredEventPath(_ path: String) -> Bool {
     let url = URL(fileURLWithPath: path)
     let last = url.lastPathComponent
     if last == ".DS_Store" || last == "helper_external_file_changes.json" || last ==

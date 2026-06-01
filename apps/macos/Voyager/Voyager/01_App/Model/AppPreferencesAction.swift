@@ -1,12 +1,12 @@
 import ComposableArchitecture
 
 @CasePathable
-enum AppPreferencesAction: CasePathable, Sendable {
+enum AppPreferencesAction: CasePathable {
     case load
     case reloadFromUserDefaults
     case delegate(Delegate)
 
-    enum Delegate: Sendable {
+    enum Delegate {
         case updated(AppPreferencesState)
     }
 }

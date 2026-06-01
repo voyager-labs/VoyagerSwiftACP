@@ -51,7 +51,7 @@ extension ComposerScopeUtils {
         return (canonicalBases, canonicalExceptions)
     }
 
-    private nonisolated static func dedupeNormalizedPaths(_ paths: [String]) -> [String] {
+    nonisolated private static func dedupeNormalizedPaths(_ paths: [String]) -> [String] {
         var result: [String] = []
 
         for path in paths.map(normalizeScopePath) where !result.contains(path) {
@@ -61,7 +61,7 @@ extension ComposerScopeUtils {
         return result
     }
 
-    private nonisolated static func canonicalizeExceptions(_ exceptions: [String], bases: [String]) -> [String] {
+    nonisolated private static func canonicalizeExceptions(_ exceptions: [String], bases: [String]) -> [String] {
         var result: [String] = []
 
         for path in exceptions

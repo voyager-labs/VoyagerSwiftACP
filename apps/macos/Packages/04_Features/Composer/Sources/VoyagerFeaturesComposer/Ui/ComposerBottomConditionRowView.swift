@@ -25,7 +25,9 @@ struct ComposerBottomConditionRowView: View {
 
     private let hoverFillOpacity: Double = 0.06
 
-    private var isDark: Bool { colorScheme == .dark }
+    private var isDark: Bool {
+        colorScheme == .dark
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: chipSpacing) {

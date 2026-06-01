@@ -13,7 +13,9 @@ public final class KeyCommandHostingView: NSView {
         super.mouseDown(with: event)
     }
 
-    override public var acceptsFirstResponder: Bool { true }
+    override public var acceptsFirstResponder: Bool {
+        true
+    }
 }
 
 public struct KeyCommandView: NSViewRepresentable {

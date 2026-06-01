@@ -1,6 +1,6 @@
 import ComposableArchitecture
 
 @ObservableState
-struct WelcomeState: Equatable, Sendable {
+struct WelcomeState: Equatable {
     var isComplete: Bool = true
 }

@@ -108,7 +108,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
 
     // MARK: - EVM-002-show_hide_hidden_entry (Page-level reload + navigation stability)
 
-    // store.exhaustivity = .off: loadItems 이후 itemsLoaded→arrangements 체인은 검증 대상이 아님
+    /// store.exhaustivity = .off: loadItems 이후 itemsLoaded→arrangements 체인은 검증 대상이 아님
     /// EVM-002-show_hide_hidden_entry: 숨김 파일 토글 + 리로드 시 네비게이션/히스토리 불변 검증
     /// FileManagerContentFeature 전체 리듀서에서 toggleShowHiddenFilesAndReload가
     /// entryViewLayout.toggleShowHiddenFiles + reload 체인을 트리거하며
@@ -196,7 +196,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     ///
     /// - 사전 조건: displayItems에 3개 항목, selectedIds에 2개 선택
     /// - 기대 결과: displayItems.count == 3, selectedIds.count == 2
-    func testStatusTextSourceMatchesDisplayItemsAndSelectedIds() async {
+    func testStatusTextSourceMatchesDisplayItemsAndSelectedIds() {
         var state = FileManagerContentState()
         let entries: [EntryModel] = [
             .temporaryFolder(id: "/seed/file-a", name: "file-a"),
@@ -221,7 +221,7 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     ///
     /// - 사전 조건: displayItems에 2개 항목, selectedIds가 비어 있음
     /// - 기대 결과: displayItems.count == 2, selectedIds.count == 0
-    func testStatusTextSourceWithNoSelection() async {
+    func testStatusTextSourceWithNoSelection() {
         var state = FileManagerContentState()
         let entries: [EntryModel] = [
             .temporaryFolder(id: "/seed/file-x", name: "file-x"),

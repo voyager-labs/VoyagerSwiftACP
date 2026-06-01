@@ -14,7 +14,7 @@ public enum ComposerQueryRenderPhase: Equatable, Sendable {
     case failed
 }
 
-enum ComposerQueryPhaseTransition: Sendable {
+enum ComposerQueryPhaseTransition {
     case reset
     case startSearch
     case searchSucceeded
@@ -32,7 +32,7 @@ public struct ComposerFeature {
     @Dependency(\.registryClient)
     var registryClient
 
-    public nonisolated enum CancelID: Hashable, Sendable {
+    nonisolated public enum CancelID: Hashable, Sendable {
         case search
         case filters
         case scopeEditorSearch
@@ -171,7 +171,7 @@ public struct ComposerFeature {
 
 private func handleSetPresented(
     state: inout ComposerFeature.State,
-    isPresented: Bool
+    isPresented: Bool,
 ) -> Effect<ComposerFeature.Action> {
     state.isPresented = isPresented
     if !isPresented {
@@ -225,7 +225,7 @@ private func handleSetPresented(
 
 func applyQueryPhaseTransition(
     _ transition: ComposerQueryPhaseTransition,
-    state: inout ComposerFeature.State
+    state: inout ComposerFeature.State,
 ) {
     switch transition {
     case .reset:
@@ -246,7 +246,7 @@ func applyQueryPhaseTransition(
 func applyAppliedFilters(
     _ appliedFilters: VoyagerShared.AppliedFiltersPayload?,
     state: inout ComposerFeature.State,
-    registryClient: RegistryClient
+    registryClient: RegistryClient,
 ) {
     if let includeSubfolders = appliedFilters?.includeSubfolders {
         state.scopeEditor.includeSubfolders = includeSubfolders
@@ -277,21 +277,21 @@ func applyAppliedFilters(
                 reconcileDisplayState(
                     for: condition,
                     previous: previous,
-                    registryClient: registryClient
+                    registryClient: registryClient,
                 )
             } else {
                 defaultDisplayState(for: condition, registryClient: registryClient)
             }
             guard let displayState else { return nil }
             return (condition.propertyKey, displayState)
-        }
+        },
     )
     updateOperatorOptions(state: &state, registryClient: registryClient)
 }
 
 func defaultDisplayState(
     for condition: Condition,
-    registryClient: RegistryClient
+    registryClient: RegistryClient,
 ) -> ConditionDisplayState? {
     guard condition.valueType == "number",
           let spec = UnitValueUtils.spec(for: condition.propertyKey, registryClient: registryClient)
@@ -313,7 +313,7 @@ func defaultDisplayState(
 private func reconcileDisplayState(
     for condition: Condition,
     previous: ConditionDisplayState,
-    registryClient: RegistryClient
+    registryClient: RegistryClient,
 ) -> ConditionDisplayState? {
     guard let previousUnitValueState = previous.unitValueState,
           let spec = UnitValueUtils.spec(for: condition.propertyKey, registryClient: registryClient),
@@ -332,7 +332,7 @@ private func reconcileDisplayState(
 
     return .init(
         values: displayValues,
-        unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode)
+        unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode),
     )
 }
 
@@ -343,7 +343,7 @@ func resetValuePicker(state: inout ComposerFeature.State) {
 func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
-    requestID: UUID = UUID()
+    requestID: UUID = UUID(),
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
@@ -380,7 +380,7 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
                 return VoyagerShared.SearchConditionPayload(
                     propertyKey: condition.propertyKey,
                     operator: op,
-                    value: nil
+                    value: nil,
                 )
             }
             guard let values = condition.values, !values.isEmpty else { return nil }
@@ -388,7 +388,7 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
             return VoyagerShared.SearchConditionPayload(
                 propertyKey: condition.propertyKey,
                 operator: op,
-                value: encoded
+                value: encoded,
             )
         }
     kComposerLogger.debug(
@@ -396,7 +396,7 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
         metadata: [
             "scopes": .stringConvertible(state.scopeEditor.selection.legacyScopePaths.count),
             "conditions": .stringConvertible(conditionPayloads.count),
-        ]
+        ],
     )
     return VoyagerShared.SearchFiltersPayload(
         scopes: state.scopeEditor.selection.legacyScopePaths,
@@ -408,11 +408,11 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
 
 func updateOperatorOptions(
     state: inout ComposerFeature.State,
-    registryClient: RegistryClient
+    registryClient: RegistryClient,
 ) {
     state.operatorOptionsByKey = Dictionary(
         uniqueKeysWithValues: state.conditions.map {
             ($0.propertyKey, registryClient.operatorCodes(for: $0.propertyKey))
-        }
+        },
     )
 }

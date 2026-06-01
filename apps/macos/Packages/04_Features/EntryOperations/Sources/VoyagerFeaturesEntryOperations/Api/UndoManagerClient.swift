@@ -1,7 +1,6 @@
 import AppKit
-import ObjectiveC
-
 import ComposableArchitecture
+import ObjectiveC
 
 public struct UndoManagerClient: Sendable {
     public var registerUndo: @Sendable (
@@ -13,7 +12,7 @@ public struct UndoManagerClient: Sendable {
     public var undo: @Sendable (_ windowID: UUID?) async -> Void
     public var redo: @Sendable (_ windowID: UUID?) async -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         registerUndo: @escaping @Sendable (
             _ windowID: UUID?,
             _ record: EntryActionRecord,
@@ -30,7 +29,7 @@ public struct UndoManagerClient: Sendable {
 }
 
 extension UndoManagerClient: DependencyKey {
-    public nonisolated static var liveValue: UndoManagerClient {
+    nonisolated public static var liveValue: UndoManagerClient {
         // Use `live(undoManager:)` at the composition root to inject a concrete UndoManager.
         // The default liveValue asserts to catch unconfigured usage.
         .init(
@@ -52,7 +51,7 @@ extension UndoManagerClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: UndoManagerClient {
+    nonisolated public static var testValue: UndoManagerClient {
         .init(
             registerUndo: { _, _, _, _ in
                 fatalError("undoManagerClient.registerUndo test dependency is not configured")

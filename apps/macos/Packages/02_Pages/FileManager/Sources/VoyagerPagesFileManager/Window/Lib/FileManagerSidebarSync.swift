@@ -35,8 +35,13 @@ struct FileManagerSidebarSync {
     private(set) var currentSidebarVisible: Bool?
     private var hasSetInitialLayout = false
 
-    nonisolated static var sidebarMinWidth: CGFloat { Constants.sidebarMinWidth }
-    nonisolated static var sidebarMaxWidth: CGFloat { Constants.sidebarMaxWidth }
+    nonisolated static var sidebarMinWidth: CGFloat {
+        Constants.sidebarMinWidth
+    }
+
+    nonisolated static var sidebarMaxWidth: CGFloat {
+        Constants.sidebarMaxWidth
+    }
 
     static func isSidebarEffectivelyVisible(
         splitView: NSSplitView?,

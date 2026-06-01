@@ -51,7 +51,9 @@ struct CandidateRowMetadata: Equatable {
 }
 
 extension ComposerScopeTreeRowRuleSource {
-    var isInherited: Bool { if case .inherited = self { true } else { false } }
+    var isInherited: Bool {
+        if case .inherited = self { true } else { false }
+    }
 }
 
 struct ResolvedCandidateState: Equatable {

@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared

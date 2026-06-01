@@ -19,7 +19,9 @@ struct ComposerTopRowView: View {
     @State var isClearHovering: Bool = false
     @State var isSaveHovering: Bool = false
 
-    var isDark: Bool { colorScheme == .dark }
+    var isDark: Bool {
+        colorScheme == .dark
+    }
 
     var body: some View {
         WithViewStore(

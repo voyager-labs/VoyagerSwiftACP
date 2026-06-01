@@ -23,7 +23,7 @@ enum EntryModelPayloadAdapter {
         )
     }
 
-    private nonisolated static func makeSupplementaryMetadata(
+    nonisolated private static func makeSupplementaryMetadata(
         _ payload: SearchEntrySupplementaryMetadataPayload?,
     ) -> EntrySupplementaryMetadata? {
         guard let payload else {

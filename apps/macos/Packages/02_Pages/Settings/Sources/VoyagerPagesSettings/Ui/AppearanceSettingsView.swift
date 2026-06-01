@@ -144,7 +144,9 @@ struct AppearanceSettingsView: View {
         case large
         case mixed
 
-        var id: String { rawValue }
+        var id: String {
+            rawValue
+        }
 
         var title: String {
             switch self {

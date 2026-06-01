@@ -11,8 +11,10 @@ public enum TagColor: Int, CaseIterable, Sendable, Hashable {
     case red = 6
     case orange = 7
 
-    public nonisolated static let colorOrder: [TagColor] = [.red, .orange, .yellow, .green, .blue, .purple, .gray]
-    public var colorCode: Int { rawValue }
+    nonisolated public static let colorOrder: [TagColor] = [.red, .orange, .yellow, .green, .blue, .purple, .gray]
+    public var colorCode: Int {
+        rawValue
+    }
 
     public var nsColor: NSColor {
         switch self {
@@ -27,7 +29,7 @@ public enum TagColor: Int, CaseIterable, Sendable, Hashable {
         }
     }
 
-    public nonisolated init(colorCode: Int) {
+    nonisolated public init(colorCode: Int) {
         self = TagColor(rawValue: colorCode) ?? .none
     }
 

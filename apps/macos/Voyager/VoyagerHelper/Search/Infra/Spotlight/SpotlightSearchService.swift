@@ -6,8 +6,8 @@ import Logging
 import UniformTypeIdentifiers
 import VoyagerShared
 
-struct SpotlightSearchService: Sendable, SearchExecutionServicing {
-    private nonisolated static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
+struct SpotlightSearchService: SearchExecutionServicing {
+    nonisolated private static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
     private let logger: Logger
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
@@ -343,7 +343,7 @@ extension SpotlightSearchService {
         return (try? PropertyListSerialization.propertyList(from: tagData, format: nil) as? [String]) ?? []
     }
 
-    private nonisolated static func loadRawUserTagsXattrData(from url: URL) -> Data? {
+    nonisolated private static func loadRawUserTagsXattrData(from url: URL) -> Data? {
         let size = getxattr(url.path, userTagsXattrName, nil, 0, 0, XATTR_NOFOLLOW)
         guard size > 0 else {
             return nil

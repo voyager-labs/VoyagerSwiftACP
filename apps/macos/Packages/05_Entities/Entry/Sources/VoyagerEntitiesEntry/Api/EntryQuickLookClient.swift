@@ -6,7 +6,7 @@ import QuickLookUI
 public struct EntryQuickLookClient: Sendable {
     public var quickLook: @Sendable (_ urls: [URL], _ initialIndex: Int) async throws -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         quickLook: @escaping @Sendable (_ urls: [URL], _ initialIndex: Int) async throws -> Void,
     ) {
         self.quickLook = quickLook
@@ -16,7 +16,7 @@ public struct EntryQuickLookClient: Sendable {
 extension EntryQuickLookClient: DependencyKey {
     @MainActor private static let coordinator = EntryQuickLookPanelCoordinator()
 
-    public nonisolated static var liveValue: EntryQuickLookClient {
+    nonisolated public static var liveValue: EntryQuickLookClient {
         EntryQuickLookClient(
             quickLook: { urls, initialIndex in
                 await MainActor.run {
@@ -26,7 +26,7 @@ extension EntryQuickLookClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: EntryQuickLookClient {
+    nonisolated public static var testValue: EntryQuickLookClient {
         let unimplemented = { @Sendable (_: Any...) -> Never in
             fatalError("EntryQuickLookClient test dependency not set.")
         }
@@ -36,7 +36,7 @@ extension EntryQuickLookClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: EntryQuickLookClient {
+    nonisolated public static var previewValue: EntryQuickLookClient {
         EntryQuickLookClient(
             quickLook: { _, _ in },
         )
