@@ -750,6 +750,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isComplete = false
         }
         await store.receive(\.betaAccess.onAppear)
+        await store.receive(\.betaAccess._onAppearSessionRestored) { state in
+            state.betaAccess.hasAccountSession = true
+            state.betaAccess.fetchGeneration = 1
+        }
         await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
@@ -871,6 +875,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.aiProviderSetup.status = .complete
         }
         await store.receive(\.betaAccess.onAppear)
+        await store.receive(\.betaAccess._onAppearSessionRestored) { state in
+            state.betaAccess.hasAccountSession = true
+            state.betaAccess.fetchGeneration = 1
+        }
         await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
@@ -956,6 +964,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isComplete = false
         }
         await store.receive(\.betaAccess.onAppear)
+        await store.receive(\.betaAccess._onAppearSessionRestored) { state in
+            state.betaAccess.hasAccountSession = true
+            state.betaAccess.fetchGeneration = 1
+        }
         await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
@@ -1047,7 +1059,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
                 saveRecorder: saveRecorder,
             )
             $0.licenseAuthClient = LicenseAuthClient(
-                restoreSession: { nil },
+                restoreSession: { LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive) },
                 claimLicense: { _ in StateMutation.activeAccessResponse },
                 redeemBetaCode: { _ in StateMutation.activeAccessResponse },
                 fetchAccessStatus: { revokedResponse },
@@ -1069,6 +1081,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         await store.receive(\.betaAccess.onAppear)
+        await store.receive(\.betaAccess._onAppearSessionRestored) { state in
+            state.betaAccess.hasAccountSession = true
+            state.betaAccess.fetchGeneration = 1
+        }
         await store.receive(\.betaAccess.licenseAuthStatusResponse) { state in
             state.currentStep = .betaAccess
             state.betaAccess.status = .revoked
@@ -1241,6 +1257,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isComplete = true
         }
         await store.receive(\.betaAccess.onAppear)
+        await store.receive(\.betaAccess._onAppearSessionRestored) { state in
+            state.betaAccess.hasAccountSession = true
+            state.betaAccess.fetchGeneration = 1
+        }
         await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
@@ -1562,6 +1582,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isComplete = true
         }
         await store.receive(\.betaAccess.onAppear)
+        await store.receive(\.betaAccess._onAppearSessionRestored) { state in
+            state.betaAccess.hasAccountSession = true
+            state.betaAccess.fetchGeneration = 1
+        }
         await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 

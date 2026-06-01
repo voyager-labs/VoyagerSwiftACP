@@ -60,11 +60,13 @@ extension OnboardingWindowClient: DependencyKey {
     nonisolated public static func makeLive(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
         licenseAuthClient: LicenseAuthClient? = nil,
+        signInHandoffClient: SignInHandoffClient? = nil,
     ) -> OnboardingWindowClient {
         makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
             licenseAuthClient: licenseAuthClient,
+            signInHandoffClient: signInHandoffClient,
         )
     }
 
@@ -72,6 +74,7 @@ extension OnboardingWindowClient: DependencyKey {
         progressClient: OnboardingProgressClient,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
         licenseAuthClient: LicenseAuthClient? = nil,
+        signInHandoffClient: SignInHandoffClient? = nil,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
         closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
     ) -> OnboardingWindowClient {
@@ -82,6 +85,7 @@ extension OnboardingWindowClient: DependencyKey {
                     onboardingWindowController = OnboardingWindowController(
                         openMainWindow: openMainWindow,
                         licenseAuthClient: licenseAuthClient,
+                        signInHandoffClient: signInHandoffClient,
                     )
                 }
 

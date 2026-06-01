@@ -13,6 +13,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             false
         },
         licenseAuthClient: LicenseAuthClient? = nil,
+        signInHandoffClient: SignInHandoffClient? = nil,
     ) {
         store = Store(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -28,6 +29,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             )
             if let licenseAuthClient {
                 $0.licenseAuthClient = licenseAuthClient
+            }
+            if let signInHandoffClient {
+                $0.signInHandoffClient = signInHandoffClient
             }
         }
 

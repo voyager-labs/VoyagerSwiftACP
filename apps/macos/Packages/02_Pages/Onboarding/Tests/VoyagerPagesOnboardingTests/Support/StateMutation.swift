@@ -19,7 +19,7 @@ enum StateMutation {
     )
 
     static let activeLicenseAuthClient = LicenseAuthClient(
-        restoreSession: { nil },
+        restoreSession: { LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive) },
         claimLicense: { _ in activeAccessResponse },
         redeemBetaCode: { _ in activeAccessResponse },
         fetchAccessStatus: { activeAccessResponse },

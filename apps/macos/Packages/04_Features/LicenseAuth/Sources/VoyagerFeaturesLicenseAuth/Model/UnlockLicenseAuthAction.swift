@@ -9,8 +9,14 @@ public enum UnlockLicenseAuthAction: CasePathable, Sendable {
     case betaCodeChanged(String)
     case submitTapped
     case retryTapped
+    case loginTapped
+    case signInHandoffCompleted(SignInHandoffResult)
+    case loginCallbackReceived(URL)
+    case _onAppearSessionRestored(Bool)
+    case _loginSessionRestored(Bool)
     case claimResponse(Result<LicenseAuthStatusResponse, LicenseAuthError>)
-    case licenseAuthStatusResponse(Result<LicenseAuthStatusResponse, LicenseAuthError>)
+    case licenseAuthStatusResponse(generation: Int, result: Result<LicenseAuthStatusResponse, LicenseAuthError>)
+    case refreshAccessTapped
     case delegate(Delegate)
 
     @CasePathable

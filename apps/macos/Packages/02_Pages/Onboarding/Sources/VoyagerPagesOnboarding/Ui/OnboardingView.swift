@@ -133,6 +133,39 @@ struct OnboardingView: View {
         case .betaAccess:
             if viewStore.betaAccess.isComplete {
                 nextButton(viewStore: viewStore)
+            } else if viewStore.betaAccess.canStartLogin {
+                Button {
+                    viewStore.send(.betaAccess(.loginTapped))
+                } label: {
+                    topBarLabel("Sign In (Enter)")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(accentColor)
+                .keyboardShortcut(.return, modifiers: [])
+                .disabled(viewStore.betaAccess.isSignInInProgress)
+            } else if viewStore.betaAccess.canRefreshAccess, viewStore.betaAccess.showsRetry {
+                Button {
+                    viewStore.send(.betaAccess(.retryTapped))
+                } label: {
+                    topBarLabel("Retry (Enter)")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(accentColor)
+                .keyboardShortcut(.return, modifiers: [])
+                .disabled(!viewStore.betaAccess.canRetry || viewStore.betaAccess.isSubmitting)
+            } else if viewStore.betaAccess.canRefreshAccess {
+                Button {
+                    viewStore
+                        .send(viewStore.betaAccess
+                            .canSubmitClaim ? .betaAccess(.submitTapped) : .betaAccess(.refreshAccessTapped))
+                } label: {
+                    topBarLabel(viewStore.betaAccess.canSubmitClaim ? "Activate (Enter)" : "Refresh (Enter)")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(accentColor)
+                .keyboardShortcut(.return, modifiers: [])
+                .disabled(!viewStore.betaAccess.canSubmitClaim && !viewStore.betaAccess.canRefreshAccess || viewStore
+                    .betaAccess.isSubmitting || viewStore.betaAccess.isSignInInProgress)
             } else {
                 let isRetry = viewStore.betaAccess.showsRetry
                 Button {

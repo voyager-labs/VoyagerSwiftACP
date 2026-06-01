@@ -138,14 +138,24 @@ struct OnboardingHostApp: App {
 
 @MainActor
 final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
-    private let onboardingWindowClient = OnboardingWindowClient.makeLive(
+    private let mockSignInState = MockSignInState()
+
+    private lazy var onboardingWindowClient = OnboardingWindowClient.makeLive(
         openMainWindow: { _ in
             await MainActor.run {
                 NSApp.terminate(nil)
             }
             return true
         },
-        licenseAuthClient: .mock,
+        licenseAuthClient: .mockSignInBacked(by: mockSignInState),
+        signInHandoffClient: SignInHandoffClient { [mockSignInState] in
+            let mockSession = LicenseAuthSession(
+                accessToken: "mock-onboarding-token",
+                status: .coreLicenseActive,
+            )
+            mockSignInState.setSession(mockSession)
+            return .success(callbackURL: URL(string: "voyager://auth/callback")!)
+        },
     )
 
     func applicationDidFinishLaunching(_: Notification) {

@@ -12,6 +12,9 @@ public struct UnlockLicenseAuthFeature {
     @Dependency(\.licenseAuthStatusSnapshotClient)
     var snapshotClient
 
+    @Dependency(\.signInHandoffClient)
+    var signInHandoffClient
+
     @Dependency(\.date)
     var date
 
@@ -46,11 +49,29 @@ public struct UnlockLicenseAuthFeature {
             case .submitTapped, .retryTapped:
                 return handleSubmit(&state)
 
+            case .loginTapped:
+                return handleLoginTapped(&state)
+
+            case let .signInHandoffCompleted(result):
+                return handleSignInHandoffCompleted(&state, result: result)
+
+            case let .loginCallbackReceived(url):
+                return handleLoginCallbackReceived(&state, url: url)
+
+            case let ._onAppearSessionRestored(hasSession):
+                return handleOnAppearSessionRestored(&state, hasSession: hasSession)
+
+            case let ._loginSessionRestored(hasSession):
+                return handleLoginSessionRestored(&state, hasSession: hasSession)
+
             case let .claimResponse(result):
                 return handleClaimResponse(&state, result: result)
 
-            case let .licenseAuthStatusResponse(result):
-                return handleLicenseAuthStatusResponse(&state, result: result)
+            case let .licenseAuthStatusResponse(generation: gen, result: result):
+                return handleLicenseAuthStatusResponse(&state, generation: gen, result: result)
+
+            case .refreshAccessTapped:
+                return handleRefreshAccessTapped(&state)
 
             case .delegate:
                 return .none
@@ -58,10 +79,26 @@ public struct UnlockLicenseAuthFeature {
         }
     }
 
-    private func handleOnAppear(_ state: inout State) -> Effect<Action> {
-        guard state.snapshot != nil || state.isComplete else { return .none }
+    private func handleOnAppear(_: inout State) -> Effect<Action> {
+        .run { [licenseAuthClient] send in
+            let session = try? await licenseAuthClient.restoreSession()
+            await send(._onAppearSessionRestored(session != nil))
+        }
+    }
 
-        return .run { [licenseAuthClient] send in
+    private func handleOnAppearSessionRestored(_ state: inout State, hasSession: Bool) -> Effect<Action> {
+        state.hasAccountSession = hasSession
+
+        guard hasSession else {
+            return .none
+        }
+
+        state.fetchGeneration += 1
+        return fetchAccessStatusEffect(generation: state.fetchGeneration)
+    }
+
+    private func fetchAccessStatusEffect(generation: Int) -> Effect<Action> {
+        .run { [licenseAuthClient] send in
             let result: Result<LicenseAuthStatusResponse, LicenseAuthError>
             do {
                 let response = try await licenseAuthClient.fetchAccessStatus()
@@ -71,14 +108,93 @@ public struct UnlockLicenseAuthFeature {
             } catch {
                 result = .failure(.networkFailure)
             }
-            await send(.licenseAuthStatusResponse(result))
+            await send(.licenseAuthStatusResponse(generation: generation, result: result))
         }
         .cancellable(id: CancelID.fetchStatus, cancelInFlight: true)
     }
 
+    private func handleLoginTapped(_ state: inout State) -> Effect<Action> {
+        guard state.canStartLogin else {
+            return .none
+        }
+
+        state.isSignInInProgress = true
+        state.didSignInFail = false
+
+        return .run { [signInHandoffClient] send in
+            let result = await signInHandoffClient.performHandoff()
+            await send(.signInHandoffCompleted(result))
+        }
+    }
+
+    private func handleSignInHandoffCompleted(
+        _ state: inout State,
+        result: SignInHandoffResult,
+    ) -> Effect<Action> {
+        switch result {
+        case let .success(callbackURL):
+            // 성공: 기존 callback → restoreSession → fetchAccessStatus 경로로 진입
+            return .send(.loginCallbackReceived(callbackURL))
+
+        case .failure, .cancelled:
+            // 실패/취소: 동일하게 처리
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            return .none
+        }
+    }
+
+    private func handleLoginCallbackReceived(_ state: inout State, url: URL) -> Effect<Action> {
+        guard isValidAuthCallback(url) else {
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            return .none
+        }
+
+        return .run { [licenseAuthClient] send in
+            let session = try? await licenseAuthClient.restoreSession()
+            await send(._loginSessionRestored(session != nil))
+        }
+    }
+
+    private func handleLoginSessionRestored(_ state: inout State, hasSession: Bool) -> Effect<Action> {
+        state.isSignInInProgress = false
+
+        if hasSession {
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.fetchGeneration += 1
+            return fetchAccessStatusEffect(generation: state.fetchGeneration)
+        } else {
+            state.didSignInFail = true
+            return .none
+        }
+    }
+
+    private func isValidAuthCallback(_ url: URL) -> Bool {
+        guard url.scheme == "voyager" else { return false }
+        guard url.host == "auth" else { return false }
+        guard url.path == "/callback" else { return false }
+        return true
+    }
+
+    // MARK: - ONB-002-start_access_unlock_recovery
+
+    private func handleRefreshAccessTapped(_ state: inout State) -> Effect<Action> {
+        guard state.canRefreshAccess else {
+            return .none
+        }
+        state.fetchGeneration += 1
+        return fetchAccessStatusEffect(generation: state.fetchGeneration)
+    }
+
     private func handleSubmit(_ state: inout State) -> Effect<Action> {
-        guard state.canSubmit else {
-            state.errorMessage = "Please enter a license key or beta code."
+        guard state.canSubmitClaim else {
+            if !state.hasAccountSession {
+                state.errorMessage = "Please sign in to continue."
+            } else {
+                state.errorMessage = "Please enter a license key or beta code."
+            }
             return .none
         }
 
@@ -156,8 +272,13 @@ public struct UnlockLicenseAuthFeature {
 
     private func handleLicenseAuthStatusResponse(
         _ state: inout State,
+        generation: Int,
         result: Result<LicenseAuthStatusResponse, LicenseAuthError>,
     ) -> Effect<Action> {
+        guard generation == state.fetchGeneration else {
+            return .none
+        }
+
         switch result {
         case let .success(response):
             state.status = response.status

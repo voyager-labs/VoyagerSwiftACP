@@ -96,6 +96,45 @@ extension LicenseAuthClient: DependencyKey {
     public nonisolated static var previewValue: LicenseAuthClient { .mock }
 }
 
+// MARK: - Mock Sign-In State Holder
+
+/// Mock sign-in 세션 상태를 공유하는 sendable state holder.
+/// Mock sign-in handoff 성공 시 세션이 설정되고, restoreSession에서 읽는다.
+public final class MockSignInState: Sendable {
+    private let lock = NSLock()
+    private nonisolated(unsafe) var _session: LicenseAuthSession?
+
+    public nonisolated init() {}
+
+    public nonisolated var session: LicenseAuthSession? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _session
+    }
+
+    public nonisolated func setSession(_ session: LicenseAuthSession?) {
+        lock.lock()
+        defer { lock.unlock() }
+        _session = session
+    }
+}
+
+public extension LicenseAuthClient {
+    /// 공유 MockSignInState로 backed된 mock client.
+    /// restoreSession은 signInState.session을 반환한다.
+    nonisolated static func mockSignInBacked(by signInState: MockSignInState) -> LicenseAuthClient {
+        LicenseAuthClient(
+            restoreSession: { signInState.session },
+            claimLicense: { key in try mockClaimLicense(key: key) },
+            redeemBetaCode: { code in try mockRedeemBetaCode(code: code) },
+            fetchAccessStatus: {
+                LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+            },
+            signOut: { signInState.setSession(nil) },
+        )
+    }
+}
+
 public extension DependencyValues {
     nonisolated var licenseAuthClient: LicenseAuthClient {
         get { self[LicenseAuthClient.self] }

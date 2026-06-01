@@ -4,6 +4,12 @@ import VoyagerFeaturesLicenseAuth
 
 @MainActor private var unlockWindowController: UnlockSurfaceWindowController?
 
+@MainActor
+public func routeAuthCallbackToUnlockSurface(_ url: URL) {
+    guard let controller = unlockWindowController else { return }
+    controller.store.send(.unlockAccess(.loginCallbackReceived(url)))
+}
+
 public struct UnlockSurfaceWindowClient: Sendable {
     public var showWindow: @Sendable () async -> Void
     public var closeWindow: @Sendable () async -> Void

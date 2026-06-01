@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import VoyagerFeaturesUpdateVersion
+import VoyagerPagesOnboarding
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -41,6 +42,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         } onMissing: {
             true
+        }
+    }
+
+    func application(_: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+
+        guard url.scheme == "voyager",
+              url.host == "auth",
+              url.path == "/callback"
+        else {
+            return
+        }
+
+        routeAuthCallback(url)
+    }
+
+    private func routeAuthCallback(_ url: URL) {
+        MainActor.assumeIsolated {
+            VoyagerPagesOnboarding.routeAuthCallbackToUnlockSurface(url)
         }
     }
 
