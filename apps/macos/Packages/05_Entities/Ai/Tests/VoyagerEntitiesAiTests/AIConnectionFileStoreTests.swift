@@ -171,11 +171,11 @@ final class AIConnectionFileStoreTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: configDir,
             withIntermediateDirectories: true,
-            attributes: [.posixPermissions: NSNumber(value: 0o755)]
+            attributes: [.posixPermissions: NSNumber(value: 0o755)],
         )
         try FileManager.default.setAttributes(
             [.posixPermissions: NSNumber(value: 0o755)],
-            ofItemAtPath: configDir.path
+            ofItemAtPath: configDir.path,
         )
 
         let file = AIConnectionsFile.empty(updatedAtMs: 5678)
@@ -242,6 +242,53 @@ final class AIConnectionFileStoreTests: XCTestCase {
         XCTAssertEqual(loadedRecord.providerId, .chatgptCodex)
         XCTAssertEqual(loadedRecord.authMethod, .oauth)
         XCTAssertEqual(loadedRecord.snapshot.lastKnownStatus, .connected)
+    }
+
+    // MARK: - Update
+
+    func testUpdateReadsAndWritesPayloadUnderSingleStoreOperation() async throws {
+        let codexRecord = ProviderRecordFile(
+            providerId: .chatgptCodex,
+            authMethod: .oauth,
+            credential: .oauth(OAuthCredentialFile(accessToken: "codex-at")),
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+        )
+        let initial = AIConnectionsFile(
+            updatedAtMs: 1000,
+            lastUsedProviderId: .chatgptCodex,
+            lastUsedAtMs: 1000,
+            providers: ["chatgptCodex": codexRecord],
+        )
+        try await store.write(initial)
+
+        let returned = try await store.update { current in
+            var providers = current.providers
+            providers["openai"] = ProviderRecordFile(
+                providerId: .openai,
+                authMethod: .apiKey,
+                credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+                snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+            )
+            return AIConnectionsFile(
+                schemaVersion: current.schemaVersion,
+                updatedAtMs: 2000,
+                lastUsedProviderId: .openai,
+                lastUsedAtMs: 2000,
+                providers: providers,
+            )
+        }
+
+        let loaded = try await store.load()
+        XCTAssertEqual(returned.providers.count, 2)
+        XCTAssertEqual(loaded.providers["chatgptCodex"]?.providerId, .chatgptCodex)
+        XCTAssertEqual(loaded.providers["openai"]?.providerId, .openai)
+        XCTAssertEqual(loaded.lastUsedProviderId, .openai)
+        XCTAssertEqual(loaded.lastUsedAtMs, 2000)
+
+        let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: fixture.homeURL)
+        let attrs = try FileManager.default.attributesOfItem(atPath: payloadURL.path)
+        let perms = attrs[.posixPermissions] as? UInt16
+        XCTAssertEqual(perms, 0o600, "Updated file must keep owner-only 0600 permissions")
     }
 
     // MARK: - Delete credential

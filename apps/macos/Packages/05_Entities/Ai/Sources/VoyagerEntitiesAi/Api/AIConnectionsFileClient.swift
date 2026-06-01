@@ -21,7 +21,7 @@ public struct AIConnectionsFileClient: Sendable {
     public nonisolated init(
         load: @escaping @Sendable () async throws -> AIConnectionsFile,
         save: @escaping @Sendable (AIConnectionsFile) async throws -> AiConnectionMutationResult,
-        deleteCredential: @escaping @Sendable (AiProvider) async throws -> AiConnectionMutationResult
+        deleteCredential: @escaping @Sendable (AiProvider) async throws -> AiConnectionMutationResult,
     ) {
         self.load = load
         self.save = save
@@ -60,17 +60,17 @@ extension AIConnectionsFileClient: DependencyKey {
                 } catch {
                     return .fileSystemError(.fileSystemError(error.localizedDescription))
                 }
-            }
+            },
         )
     }
 
     public nonisolated static func liveForRepoRoot(
         repoRootURL: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
     ) -> AIConnectionsFileClient {
         let store = AIConnectionFileStore.withRepoRoot(
+            repoRootURL: repoRootURL,
             fileManager: fileManager,
-            repoRootURL: repoRootURL
         )
 
         return AIConnectionsFileClient(
@@ -95,7 +95,7 @@ extension AIConnectionsFileClient: DependencyKey {
                 } catch {
                     return .fileSystemError(.fileSystemError(error.localizedDescription))
                 }
-            }
+            },
         )
     }
 
@@ -103,7 +103,7 @@ extension AIConnectionsFileClient: DependencyKey {
         AIConnectionsFileClient(
             load: { AIConnectionsFile.empty() },
             save: { .success($0) },
-            deleteCredential: { _ in .success(AIConnectionsFile.empty()) }
+            deleteCredential: { _ in .success(AIConnectionsFile.empty()) },
         )
     }
 
@@ -117,13 +117,13 @@ extension AIConnectionsFileClient: DependencyKey {
                             providerId: .openai,
                             authMethod: .apiKey,
                             credential: .apiKey(APIKeyCredentialFile(secret: "sk-preview")),
-                            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+                            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
                         ),
-                    ]
+                    ],
                 )
             },
             save: { .success($0) },
-            deleteCredential: { _ in .success(AIConnectionsFile.empty()) }
+            deleteCredential: { _ in .success(AIConnectionsFile.empty()) },
         )
     }
 }
