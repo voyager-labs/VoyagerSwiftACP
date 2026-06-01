@@ -56,6 +56,18 @@ final class LocalOAuthHTTPServerTests: XCTestCase {
         XCTAssertTrue(result.isEmpty)
     }
 
+    func testHtmlPage_escapesTitleAndBody() {
+        let html = LocalOAuthHTTPServer.htmlPage(
+            title: "<Auth & \"Title\">",
+            body: "Denied <script>alert(1)</script> & \"quoted\"",
+        )
+
+        XCTAssertFalse(html.contains("<script>"))
+        XCTAssertFalse(html.contains("<Auth"))
+        XCTAssertTrue(html.contains("&lt;Auth &amp; &quot;Title&quot;&gt;"))
+        XCTAssertTrue(html.contains("Denied &lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;quoted&quot;"))
+    }
+
     func testHtmlPage_containsTitle() {
         let html = LocalOAuthHTTPServer.htmlPage(title: "Test Title", body: "Test Body")
         XCTAssertTrue(html.contains("Test Title"))
