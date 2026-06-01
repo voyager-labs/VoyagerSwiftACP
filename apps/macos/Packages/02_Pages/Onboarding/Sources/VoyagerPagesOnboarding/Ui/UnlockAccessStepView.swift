@@ -10,10 +10,6 @@ struct UnlockLicenseAuthStepView: View {
             VStack(alignment: .leading, spacing: 12) {
                 authStatusBanner(viewStore: viewStore)
 
-                if viewStore.hasAccountSession {
-                    claimInputSection(viewStore: viewStore)
-                }
-
                 HStack(spacing: 8) {
                     if let status = viewStore.status {
                         statusChip(
@@ -88,59 +84,6 @@ struct UnlockLicenseAuthStepView: View {
         }
     }
 
-    // MARK: - Claim input section
-
-    @ViewBuilder
-    private func claimInputSection(viewStore: ViewStoreOf<UnlockLicenseAuthFeature>) -> some View {
-        Picker("Method", selection: viewStore.binding(
-            get: \.claimMode,
-            send: { .claimModeChanged($0) },
-        )) {
-            Text("License Key").tag(LicenseAuthClaimMode.licenseKey)
-            Text("Beta Code").tag(LicenseAuthClaimMode.betaCode)
-        }
-        .pickerStyle(.segmented)
-
-        switch viewStore.claimMode {
-        case .licenseKey:
-            VStack(alignment: .leading, spacing: 4) {
-                Text("License Key")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                TextField(
-                    "VOYAGER-CORE-VALID",
-                    text: viewStore.binding(
-                        get: \.licenseKey,
-                        send: { .licenseKeyChanged($0) },
-                    ),
-                )
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: .infinity)
-                .controlSize(.large)
-            }
-        case .betaCode:
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Beta Code")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                TextField(
-                    "VOYAGER-BETA-TRIAL",
-                    text: viewStore.binding(
-                        get: \.betaCode,
-                        send: { .betaCodeChanged($0) },
-                    ),
-                )
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: .infinity)
-                .controlSize(.large)
-            }
-        }
-
-        Text("Enter your license key or beta code to activate Voyager.")
-            .font(.system(size: 13))
-            .foregroundStyle(.secondary)
-    }
-
     // MARK: - Action CTAs
 
     @ViewBuilder
@@ -157,6 +100,13 @@ struct UnlockLicenseAuthStepView: View {
             .disabled(viewStore.isSignInInProgress)
         }
 
+        if viewStore.onb002AuthAxis == .signedIn,
+           viewStore.onb002AccessStepState == .blocked,
+           let status = viewStore.status
+        {
+            blockedStatusCTAs(viewStore: viewStore, status: status)
+        }
+
         if viewStore.canRefreshAccess, !viewStore.isComplete {
             Button {
                 viewStore.send(.refreshAccessTapped)
@@ -166,6 +116,60 @@ struct UnlockLicenseAuthStepView: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .disabled(viewStore.isSubmitting || viewStore.isSignInInProgress)
+        }
+    }
+
+    // MARK: - 차단 상태별 CTA 버튼
+
+    @ViewBuilder
+    private func blockedStatusCTAs(
+        viewStore: ViewStoreOf<UnlockLicenseAuthFeature>,
+        status: LicenseAuthStatus,
+    ) -> some View {
+        VStack(spacing: 10) {
+            switch status {
+            case .none:
+                Button {
+                    viewStore.send(.openCheckoutTapped)
+                } label: {
+                    Label("Get Access", systemImage: "lock.open")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+            case .trialExpired:
+                Button {
+                    viewStore.send(.openPricingTapped)
+                } label: {
+                    Label("View Plans & Pricing", systemImage: "creditcard")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+            case .revoked, .refunded:
+                Button {
+                    viewStore.send(.openAccessHelpTapped)
+                } label: {
+                    Label("Get Help", systemImage: "questionmark.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+            case .coreLicenseActive, .betaTrialActive, .internalTestActive, .networkFailure:
+                EmptyView()
+            }
+
+            Button {
+                viewStore.send(.openBetaCodeHelpTapped)
+            } label: {
+                Text("Have a beta code?")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
         }
     }
 

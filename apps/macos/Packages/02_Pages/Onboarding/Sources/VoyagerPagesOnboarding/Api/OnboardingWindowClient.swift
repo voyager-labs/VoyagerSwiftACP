@@ -61,12 +61,14 @@ extension OnboardingWindowClient: DependencyKey {
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
         licenseAuthClient: LicenseAuthClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
     ) -> OnboardingWindowClient {
         makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
             licenseAuthClient: licenseAuthClient,
             signInHandoffClient: signInHandoffClient,
+            permissionDebugScenario: permissionDebugScenario,
         )
     }
 
@@ -75,6 +77,7 @@ extension OnboardingWindowClient: DependencyKey {
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
         licenseAuthClient: LicenseAuthClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
         closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
     ) -> OnboardingWindowClient {
@@ -86,6 +89,7 @@ extension OnboardingWindowClient: DependencyKey {
                         openMainWindow: openMainWindow,
                         licenseAuthClient: licenseAuthClient,
                         signInHandoffClient: signInHandoffClient,
+                        permissionDebugScenario: permissionDebugScenario,
                     )
                 }
 

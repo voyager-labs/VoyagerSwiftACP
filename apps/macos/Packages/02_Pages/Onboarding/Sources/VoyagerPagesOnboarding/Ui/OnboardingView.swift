@@ -155,28 +155,14 @@ struct OnboardingView: View {
                 .disabled(!viewStore.betaAccess.canRetry || viewStore.betaAccess.isSubmitting)
             } else if viewStore.betaAccess.canRefreshAccess {
                 Button {
-                    viewStore
-                        .send(viewStore.betaAccess
-                            .canSubmitClaim ? .betaAccess(.submitTapped) : .betaAccess(.refreshAccessTapped))
+                    viewStore.send(.betaAccess(.refreshAccessTapped))
                 } label: {
-                    topBarLabel(viewStore.betaAccess.canSubmitClaim ? "Activate (Enter)" : "Refresh (Enter)")
+                    topBarLabel("Refresh (Enter)")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(accentColor)
                 .keyboardShortcut(.return, modifiers: [])
-                .disabled(!viewStore.betaAccess.canSubmitClaim && !viewStore.betaAccess.canRefreshAccess || viewStore
-                    .betaAccess.isSubmitting || viewStore.betaAccess.isSignInInProgress)
-            } else {
-                let isRetry = viewStore.betaAccess.showsRetry
-                Button {
-                    viewStore.send(isRetry ? .betaAccess(.retryTapped) : .betaAccess(.submitTapped))
-                } label: {
-                    topBarLabel(isRetry ? "Retry (Enter)" : "Activate (Enter)")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(accentColor)
-                .keyboardShortcut(.return, modifiers: [])
-                .disabled(!viewStore.betaAccess.canSubmit || viewStore.betaAccess.isSubmitting)
+                .disabled(viewStore.betaAccess.isSubmitting || viewStore.betaAccess.isSignInInProgress)
             }
         case .complete:
             Button {

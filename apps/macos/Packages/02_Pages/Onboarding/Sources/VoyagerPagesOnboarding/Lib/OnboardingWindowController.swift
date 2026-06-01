@@ -2,18 +2,21 @@ import AppKit
 import ComposableArchitecture
 import QuartzCore
 import SwiftUI
+import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesLicenseAuth
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let store: StoreOf<OnboardingFeature>
     private var shouldTerminateOnClose = true
 
+    // swiftlint:disable:next function_body_length
     init(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
             false
         },
         licenseAuthClient: LicenseAuthClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
     ) {
         store = Store(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -32,6 +35,33 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             }
             if let signInHandoffClient {
                 $0.signInHandoffClient = signInHandoffClient
+            }
+            if let permissionDebugScenario {
+                $0.fullDiskAccessClient = FullDiskAccessClient(
+                    status: {
+                        permissionDebugScenario()?.fullDiskAccessStatus ?? FullDiskAccessClient.liveValue.status()
+                    },
+                )
+                $0.helperFolderAccessClient = HelperFolderAccessClient(
+                    checkAccess: {
+                        if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
+                            return helperFolderAccess
+                        }
+                        return await HelperFolderAccessClient.liveValue.checkAccess()
+                    },
+                    requestAccess: {
+                        if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
+                            return helperFolderAccess
+                        }
+                        return await HelperFolderAccessClient.liveValue.requestAccess()
+                    },
+                )
+                $0.launchAtLoginClient = LaunchAtLoginClient(
+                    isEnabled: {
+                        permissionDebugScenario()?.launchAtLoginEnabled ?? LaunchAtLoginClient.liveValue.isEnabled()
+                    },
+                    setEnabled: { _ in },
+                )
             }
         }
 
