@@ -18,6 +18,8 @@ extension AiChatFeature {
                 } else {
                     await send(Self.missingRestoreAction(context: context, uuid: uuid))
                 }
+            } catch is CancellationError {
+                return
             } catch {
                 await send(Self.corruptedRestoreAction(context: context, uuid: uuid))
             }
@@ -28,7 +30,7 @@ extension AiChatFeature {
     static func restoreOutcomeAction(
         for snapshot: AiChatSessionSnapshot,
         context: AiChatRestoreContext,
-        uuid: UUIDGenerator,
+        uuid _: UUIDGenerator,
     ) -> Action {
         let normalizedSnapshot = normalizeRestoredSnapshot(snapshot, catalogRows: context.catalogRows)
         if snapshot.status == .rebindRequired {
