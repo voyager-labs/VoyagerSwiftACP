@@ -35,6 +35,7 @@ private func makeSavePayload(from state: ComposerState, currentDate: Date) -> Sa
     let context = state.collectionContext
     let query = context?.query ?? ""
     let scopes: [String] = context?.scopes ?? []
+    let excludedScopes: [String] = context?.excludedScopes ?? []
     let conditions: [Condition] = context?.conditions ?? []
     return SaveRequestPayload(
         context: context,
@@ -44,6 +45,8 @@ private func makeSavePayload(from state: ComposerState, currentDate: Date) -> Sa
         definitionFingerprint: CollectionSnapshotHydration.definitionFingerprint(
             query: query,
             scopes: scopes,
+            excludedScopes: excludedScopes,
+            includeSubfolders: context?.includeSubfolders ?? true,
             conditions: conditions,
         ),
         capturedAt: currentDate,

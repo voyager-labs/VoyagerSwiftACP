@@ -8,10 +8,13 @@ public enum CollectionSnapshotHydration {
     public static func definitionFingerprint(
         query: String,
         scopes: [String],
-        conditions: [CollectionCondition],
+        excludedScopes: [String] = [],
+        includeSubfolders: Bool = true,
+        conditions: [CollectionCondition]
     ) -> String {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedScopes = normalizePaths(scopes)
+        let normalizedExcludedScopes = normalizePaths(excludedScopes)
         let normalizedConditions = conditions
             .map { condition in
                 let value = canonicalValueString(condition.value)
@@ -22,7 +25,9 @@ public enum CollectionSnapshotHydration {
         return digest(
             query: normalizedQuery,
             scopes: normalizedScopes,
-            conditions: normalizedConditions,
+            excludedScopes: normalizedExcludedScopes,
+            includeSubfolders: includeSubfolders,
+            conditions: normalizedConditions
         )
     }
 
@@ -30,19 +35,25 @@ public enum CollectionSnapshotHydration {
         definitionFingerprint(
             query: file.query,
             scopes: file.scopes,
-            conditions: file.conditions,
+            excludedScopes: file.excludedScopes,
+            includeSubfolders: file.includeSubfolders,
+            conditions: file.conditions
         )
     }
 
     public static func definitionFingerprint(
         query: String,
         scopes: [String],
-        conditions: [Condition],
+        excludedScopes: [String] = [],
+        includeSubfolders: Bool = true,
+        conditions: [Condition]
     ) -> String {
         definitionFingerprint(
             query: query,
             scopes: scopes,
-            conditions: collectionConditions(from: conditions),
+            excludedScopes: excludedScopes,
+            includeSubfolders: includeSubfolders,
+            conditions: collectionConditions(from: conditions)
         )
     }
 
@@ -56,25 +67,25 @@ public enum CollectionSnapshotHydration {
         return snapshot
     }
 
-    public static func syntheticSearchResponse(for file: VoyagerCollectionFile) -> VoyagerShared
-        .SearchResponsePayload?
-    {
+    public static func syntheticSearchResponse(for file: VoyagerCollectionFile) -> VoyagerShared.SearchResponsePayload? {
         guard let snapshot = usableSnapshot(for: file) else { return nil }
 
         return VoyagerShared.SearchResponsePayload(
             itemCount: file.snapshotMeta?.itemCount ?? snapshot.items.count,
             appliedFilters: VoyagerShared.AppliedFiltersPayload(
                 scopes: file.scopes,
+                excludedScopes: file.excludedScopes,
+                includeSubfolders: file.includeSubfolders,
                 conditions: file.conditions.map {
                     VoyagerShared.SearchConditionPayload(
                         propertyKey: $0.propertyKey,
                         operator: $0.operatorCode,
-                        value: $0.value,
+                        value: $0.value
                     )
-                },
+                }
             ),
             items: snapshot.items,
-            error: nil,
+            error: nil
         )
     }
 
@@ -130,11 +141,15 @@ public enum CollectionSnapshotHydration {
     private static func digest(
         query: String,
         scopes: [String],
-        conditions: [String],
+        excludedScopes: [String],
+        includeSubfolders: Bool,
+        conditions: [String]
     ) -> String {
         let canonical = [
             query,
             scopes.joined(separator: "\u{1D}"),
+            excludedScopes.joined(separator: "\u{1E}"),
+            includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
             conditions.joined(separator: "\u{1C}"),
         ].joined(separator: "\u{1B}")
 

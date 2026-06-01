@@ -55,18 +55,18 @@
                ReferencedContainer = "container:Voyager.xcodeproj">
             </BuildableReference>
          </TestableReference>
-          <TestableReference
-             skipped = "YES"
-             parallelizable = "YES">
-             <BuildableReference
-                BuildableIdentifier = "primary"
-                BlueprintIdentifier = "7E14EDE42E86622E005AC834"
-                BuildableName = "VoyagerUITests.xctest"
-                BlueprintName = "VoyagerUITests"
-                ReferencedContainer = "container:Voyager.xcodeproj">
-             </BuildableReference>
-          </TestableReference>
-       </Testables>
+         <TestableReference
+            skipped = "YES"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7E14EDE42E86622E005AC834"
+               BuildableName = "VoyagerUITests.xctest"
+               BlueprintName = "VoyagerUITests"
+               ReferencedContainer = "container:Voyager.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+      </Testables>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

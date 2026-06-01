@@ -16,7 +16,7 @@ enum FileManagerContentComposerCoordinator {
     static func reduce(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
-        dependencies: Dependencies,
+        dependencies: Dependencies
     ) -> Effect<FileManagerContentAction> {
         if let effect = handleComposerLifecycleAction(action, state: &state, dependencies: dependencies) {
             return effect
@@ -32,7 +32,7 @@ enum FileManagerContentComposerCoordinator {
     private static func handleComposerLifecycleAction(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
-        dependencies: Dependencies,
+        dependencies: Dependencies
     ) -> Effect<FileManagerContentAction>? {
         if let effect = handleComposerSearchResponseAction(action, state: &state, dependencies: dependencies) {
             return effect
@@ -51,7 +51,7 @@ enum FileManagerContentComposerCoordinator {
         case .view(.cancelSearch):
             return .concatenate(
                 .send(.composer(.clearPendingSearchQuery)),
-                .send(.collection(.openSearchPresentationCancelled)),
+                .send(.collection(.openSearchPresentationCancelled))
             )
 
         case .view(.clearAll):
@@ -59,7 +59,7 @@ enum FileManagerContentComposerCoordinator {
                 return .concatenate(
                     .send(.composer(.clearPendingSearchQuery)),
                     .send(.collection(.temporaryContextResetRequested(rootScopePath: ComposerScopeUtils
-                            .rootScopePath))),
+                            .rootScopePath)))
                 )
             }
             return .send(.internal(.exitCollectionMode))
@@ -72,14 +72,14 @@ enum FileManagerContentComposerCoordinator {
     private static func handleComposerSearchResponseAction(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
-        dependencies: Dependencies,
+        dependencies: Dependencies
     ) -> Effect<FileManagerContentAction>? {
         switch action {
         case let .internal(.filtersResponse(requestID, .success(response))):
             return handleFiltersResponseSuccess(
                 requestID: requestID,
                 response: response,
-                state: &state,
+                state: &state
             )
 
         case let .internal(.searchResponse(requestID, .failure(error))):
@@ -90,12 +90,12 @@ enum FileManagerContentComposerCoordinator {
                 error: error,
                 title: "Unable to Run Collection Search",
                 state: &state,
-                dependencies: dependencies,
+                dependencies: dependencies
             )
             return .concatenate(
                 .send(.collection(.refreshFailed)),
                 searchEffect,
-                .send(.delegate(.composerCollectionSearchFailed)),
+                .send(.delegate(.composerCollectionSearchFailed))
             )
 
         case let .internal(.filtersResponse(requestID, .failure(error))):
@@ -109,12 +109,12 @@ enum FileManagerContentComposerCoordinator {
                 error: error,
                 title: title,
                 state: &state,
-                dependencies: dependencies,
+                dependencies: dependencies
             )
             return .concatenate(
                 .send(.collection(.refreshFailed)),
                 searchEffect,
-                .send(.delegate(.composerCollectionSearchFailed)),
+                .send(.delegate(.composerCollectionSearchFailed))
             )
 
         default:
@@ -125,47 +125,43 @@ enum FileManagerContentComposerCoordinator {
     private static func handleFiltersResponseSuccess(
         requestID: UUID,
         response: VoyagerShared.SearchResponsePayload,
-        state: inout FileManagerContentState,
+        state: inout FileManagerContentState
     ) -> Effect<FileManagerContentAction>? {
         guard state.composer.lastAcceptedFiltersRequestID == requestID else {
             return .none
         }
         let wasDirtyBeforeApplyingResponse = state.isOpenedCollectionDirty
         let shouldWriteBackAfterRefresh = state.collection.shouldWriteBackAfterRefresh(
-            wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
+            wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse
         )
         let query = state.composer.pendingSearchQuery ?? ""
-        let nextContext = CollectionContext(
-            query: query,
-            scopes: state.composer.scopes,
-            conditions: state.composer.conditions,
-        )
+        let nextContext = state.composer.collectionContext(query: query)
         let searchEffect = handleSearchSuccess(
             items: response.items ?? [],
             query: query,
             state: &state,
-            nextContext: nextContext,
+            nextContext: nextContext
         )
         return .concatenate(
             .send(.composer(.updateLastFiltersResponse(response))),
             .send(.collection(.refreshResponseReceived(
                 response,
-                wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
+                wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse
             ))),
             searchEffect,
             .send(.composer(.syncCollectionState(
                 context: nextContext,
                 url: state.collection.collectionSession.document?.url,
                 compatibility: state.collection.collectionSession.document?.compatibility,
-                isCollectionMode: true,
+                isCollectionMode: true
             ))),
             .send(.delegate(.composerCollectionSearchSucceeded)),
-            shouldWriteBackAfterRefresh ? .send(.composer(.saveCollection)) : .none,
+            shouldWriteBackAfterRefresh ? .send(.composer(.saveCollection)) : .none
         )
     }
 
     private static func handleComposerDelegateAction(
-        _ action: ComposerFeature.Action,
+        _ action: ComposerFeature.Action
     ) -> Effect<FileManagerContentAction>? {
         guard case let .delegate(delegateAction) = action else {
             return nil
@@ -181,43 +177,56 @@ enum FileManagerContentComposerCoordinator {
     private static func handleSetPresented(
         _ isPresented: Bool,
         state: inout FileManagerContentState,
-        dependencies: Dependencies,
+        dependencies: Dependencies
     ) -> Effect<FileManagerContentAction> {
         guard isPresented else {
-            if case .opened = state.collection.collectionSession.phase {
-                return .send(.composer(.clearPendingSearchQuery))
+            if state.composer.isFilteringInFlight {
+                return .none
             }
-            return .concatenate(
-                .send(.composer(.clearPendingSearchQuery)),
-                .send(.collection(.openSearchPresentationCancelled)),
-            )
-        }
 
-        if state.composer.scopes.isEmpty,
-           state.composer.conditions.isEmpty,
-           state.composer.text.isEmpty
-        {
-            return .send(.composer(.setInitialScope(state.navigation.currentPath)))
+            let shouldCommitScopeEditorChanges = state.composer.scopeEditor.isPresented
+                && state.composer.scopeEditor.hasPendingScopeRuleChanges
+                && state.composer.shouldAutoApplyScopeChange
+
+            if shouldCommitScopeEditorChanges {
+                return .none
+            }
+
+            state.composer.pendingSearchQuery = nil
+            return .send(.collection(.openSearchPresentationCancelled))
         }
 
         dependencies.metricsClient.logMetric(
             "voyager_composer_open",
             1,
-            nil,
+            nil
         )
+
+        guard case let .folder(path) = state.navigation.navigationState else {
+            return .none
+        }
+
+        if state.composer.scopeEditor.selection.isRootOnly,
+           state.composer.conditions.isEmpty,
+           state.composer.text.isEmpty
+        {
+            return .send(.composer(.scopeEditorSeedCurrentPath(path)))
+        }
+
         return .none
     }
 
     private static func handleSetText(
         _ text: String,
         state: inout FileManagerContentState,
-        dependencies _: Dependencies,
+        dependencies _: Dependencies
     ) -> Effect<FileManagerContentAction> {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty, state.composer.conditions.isEmpty, state.composer.scopes.isEmpty {
+        state.composer.pendingSearchQuery = query.isEmpty ? nil : query
+        if query.isEmpty, state.composer.conditions.isEmpty, state.composer.isSemanticallyRootOnly {
             return .concatenate(
                 .send(.composer(.setPendingSearchQuery(nil))),
-                .send(.internal(.exitCollectionMode)),
+                .send(.internal(.exitCollectionMode))
             )
         }
         return .send(.composer(.setPendingSearchQuery(query.isEmpty ? nil : query)))
@@ -227,22 +236,19 @@ enum FileManagerContentComposerCoordinator {
         items: [VoyagerShared.JSONValue],
         query: String,
         state: inout FileManagerContentState,
-        nextContext: CollectionContext? = nil,
+        nextContext: CollectionContext? = nil
     ) -> Effect<FileManagerContentAction> {
         let previousNavigationState = state.navigation.navigationState
         let previousNavigationIsCollection = previousNavigationState.isCollection
-        let resolvedContext = nextContext ?? CollectionContext(
-            query: query,
-            scopes: state.composer.scopes,
-            conditions: state.composer.conditions,
-        )
+        state.composer.pendingSearchQuery = nil
+        let resolvedContext = nextContext ?? state.composer.collectionContext(query: query)
         let proposedNextNavigationState = ContentPageNavigationRoute.collection(
             ContentPageCollectionNavigationFactory.makeCollectionNavigation(
                 state.collection.makeNavigationPresentationPayload(context: resolvedContext),
                 sortKey: state.entryViewLayout.entryArrangements.sortKey,
                 sortOrder: state.entryViewLayout.entryArrangements.sortOrder,
-                viewLayout: state.entryViewLayout.mode,
-            ),
+                viewLayout: state.entryViewLayout.mode
+            )
         )
         let showHidden = state.entryViewLayout.showHiddenFiles
         let paths = searchResultPaths(from: items)
@@ -253,10 +259,10 @@ enum FileManagerContentComposerCoordinator {
                 context: resolvedContext,
                 items: items,
                 previousNavigationIsCollection: previousNavigationIsCollection,
-                nextNavigationDiffers: previousNavigationState != proposedNextNavigationState,
+                nextNavigationDiffers: previousNavigationState != proposedNextNavigationState
             ))),
             .send(.entryViewLayout(.internal(.setCollectionMode(true)))),
-            .send(.entryViewLayout(.internal(.applyCollectionSearchPaths(paths: paths, showHidden: showHidden)))),
+            .send(.entryViewLayout(.internal(.applyCollectionSearchPaths(paths: paths, showHidden: showHidden))))
         )
     }
 
@@ -264,7 +270,7 @@ enum FileManagerContentComposerCoordinator {
         error: Error,
         title: String,
         state: inout FileManagerContentState,
-        dependencies: Dependencies,
+        dependencies: Dependencies
     ) -> Effect<FileManagerContentAction> {
         guard state.collection.collectionSession.phase.isOpening else {
             return .send(.composer(.clearPendingSearchQuery))
@@ -276,7 +282,7 @@ enum FileManagerContentComposerCoordinator {
                 context: state.collection.collectionContext,
                 url: state.collection.collectionSession.document?.url,
                 compatibility: state.collection.collectionSession.document?.compatibility,
-                isCollectionMode: state.isCollectionMode,
+                isCollectionMode: state.isCollectionMode
             ))),
             .send(.collection(.searchFailed)),
             .send(.internal(.requestNavigation(.internal(.rollbackBackHistoryOnce)))),
@@ -289,10 +295,10 @@ enum FileManagerContentComposerCoordinator {
                         \(error.localizedDescription)
 
                         Check Gateway/Helper status and try again.
-                        """,
+                        """
                     )
-                },
-            ),
+                }
+            )
         )
     }
 }

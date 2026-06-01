@@ -67,7 +67,12 @@ struct FileManagerContentSyncReducer {
         guard let context = state.collection.collectionContext else {
             return true
         }
-        return collectionChangeIsRelevant(changedPaths: relevantPaths, scopes: context.scopes)
+        return collectionChangeIsRelevant(
+            changedPaths: relevantPaths,
+            scopes: context.scopes,
+            excludedScopes: context.excludedScopes,
+            includeSubfolders: context.includeSubfolders,
+        )
     }
 
     private func isOpenedCollectionDocumentPath(_ path: String, openedURL: URL?) -> Bool {

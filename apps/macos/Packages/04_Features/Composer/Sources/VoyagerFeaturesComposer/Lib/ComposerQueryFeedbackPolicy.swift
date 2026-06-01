@@ -13,17 +13,20 @@ public enum ComposerQueryFeedbackPolicy {
 
     public static func normalizedFilters(
         appliedFilters: VoyagerShared.AppliedFiltersPayload?,
-        fallback baseline: VoyagerShared.SearchFiltersPayload,
+        fallback baseline: VoyagerShared.SearchFiltersPayload
     ) -> VoyagerShared.SearchFiltersPayload {
-        VoyagerShared.SearchFiltersPayload(
+        let excludedScopes = normalizedExcludedScopes(appliedFilters: appliedFilters, fallback: baseline)
+        return VoyagerShared.SearchFiltersPayload(
             scopes: appliedFilters?.scopes ?? baseline.scopes,
+            excludedScopes: excludedScopes,
+            includeSubfolders: appliedFilters?.includeSubfolders ?? baseline.includeSubfolders,
             conditions: appliedFilters?.conditions ?? baseline.conditions,
         )
     }
 
     public static func isNoOp(
         baseline: VoyagerShared.SearchFiltersPayload,
-        appliedFilters: VoyagerShared.AppliedFiltersPayload?,
+        appliedFilters: VoyagerShared.AppliedFiltersPayload?
     ) -> Bool {
         normalizedFilters(appliedFilters: appliedFilters, fallback: baseline) == baseline
     }
@@ -34,5 +37,18 @@ public enum ComposerQueryFeedbackPolicy {
             .first
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             ?? localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func normalizedExcludedScopes(
+        appliedFilters: VoyagerShared.AppliedFiltersPayload?,
+        fallback baseline: VoyagerShared.SearchFiltersPayload,
+    ) -> [String] {
+        guard let appliedFilters else {
+            return baseline.excludedScopes
+        }
+        if appliedFilters.excludedScopes.isEmpty, !baseline.excludedScopes.isEmpty {
+            return baseline.excludedScopes
+        }
+        return appliedFilters.excludedScopes
     }
 }

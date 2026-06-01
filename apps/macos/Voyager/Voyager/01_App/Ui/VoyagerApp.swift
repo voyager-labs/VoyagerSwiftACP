@@ -20,81 +20,74 @@ struct VoyagerApp: App {
     @MainActor
     init() {
         let fileManagerWindowClient = makeFileManagerWindowClientLive()
-        appRootStore = Self.makeAppRootStore(fileManagerWindowClient: fileManagerWindowClient)
 
-        configureFileManagerWindowClient(appRootStore: appRootStore)
-        appDelegate.configure(appRootStore: appRootStore)
-        configureLogging()
-    }
-
-    private static func makeAppRootStore(fileManagerWindowClient: FileManagerWindowClient) -> StoreOf<AppRootFeature> {
-        Store(initialState: AppRootState()) {
+        appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
         } withDependencies: {
-            $0.composerMetricClient = makeComposerMetricClient()
-            $0.onboardingWindowClient = makeOnboardingWindowClient()
+            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
+                let appLevel: MetricLogLevel = switch level {
+                case .trace: .trace
+                case .debug: .debug
+                case .info: .info
+                case .warn: .warn
+                case .error: .error
+                }
+                MainActor.assumeIsolated {
+                    VoyagerSentryMetricLogger.logMetric(
+                        name,
+                        value: value,
+                        tags: tags,
+                        level: appLevel,
+                    )
+                }
+            }
+            $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { request in
+                await MainActor.run {
+                    let resolvedPath: String = switch request {
+                    case .defaultTabPath:
+                        SettingsDefaults.defaultTabPath()
+                    case let .explicitPath(path):
+                        path
+                    }
+                    requestFileManagerNewWindow(path: resolvedPath)
+                }
+                await Task.yield()
+                return true
+            })
             $0.fileManagerWindowClient = fileManagerWindowClient
             $0.undoManagerClient = .live(resolveUndoManager: { windowID in
                 await MainActor.run {
                     resolveFileManagerUndoManager(windowID: windowID)
                 }
             })
-            $0.metricsClient = makeMetricsClient()
+            $0.metricsClient = .init(
+                logMetric: { name, value, tags in
+                    Task { @MainActor in
+                        VoyagerSentryMetricLogger.logMetric(name, value: value, tags: tags)
+                    }
+                },
+                logDAUNavigation: { kind in
+                    Task { @MainActor in
+                        switch kind {
+                        case .folder: VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
+                        case .collection: VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
+                        }
+                    }
+                },
+                logDAUEntryAction: { actionKind, entryKind in
+                    let sentryActionKind = DAUEntryActionKind(rawValue: actionKind.rawValue)
+                    let sentryEntryKind = DAUEntryKind(rawValue: entryKind.rawValue)
+                    Task { @MainActor in
+                        guard let sentryActionKind, let sentryEntryKind else { return }
+                        VoyagerSentryMetricLogger.logDAUEntryAction(
+                            actionKind: sentryActionKind,
+                            entryKind: sentryEntryKind,
+                        )
+                    }
+                },
+            )
         }
-    }
 
-    private static func makeComposerMetricClient() -> ComposerMetricClient {
-        ComposerMetricClient { name, value, tags, level in
-            let appLevel: MetricLogLevel = switch level {
-            case .trace: .trace
-            case .debug: .debug
-            case .info: .info
-            case .warn: .warn
-            case .error: .error
-            }
-            MainActor.assumeIsolated {
-                VoyagerSentryMetricLogger.logMetric(
-                    name,
-                    value: value,
-                    tags: tags,
-                    level: appLevel,
-                )
-            }
-        }
-    }
-
-    private static func makeOnboardingWindowClient() -> OnboardingWindowClient {
-        OnboardingWindowClient.makeLive(openMainWindow: { request in
-            await MainActor.run {
-                let resolvedPath: String = switch request {
-                case .defaultTabPath:
-                    SettingsDefaults.defaultTabPath()
-                case let .explicitPath(path):
-                    path
-                }
-                requestFileManagerNewWindow(path: resolvedPath)
-            }
-            await Task.yield()
-            return true
-        })
-    }
-
-    private static func makeMetricsClient() -> MetricsClient {
-        .init(
-            logMetric: { name, value, tags in
-                VoyagerSentryMetricLogger.logMetric(name, value: value, tags: tags)
-            },
-            logDAUNavigation: { kind in
-                switch kind {
-                case .folder: VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
-                case .collection: VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
-                }
-            },
-            logDAUEntryAction: resolveAndLogDAUEntryAction,
-        )
-    }
-
-    private func configureFileManagerWindowClient(appRootStore: StoreOf<AppRootFeature>) {
         configureFileManagerWindowClientLive(
             requestNewWindow: { [appRootStore] path in
                 appRootStore.send(.windowManager(.file(.newWindow(path: path))))
@@ -119,34 +112,8 @@ struct VoyagerApp: App {
                 appRootStore.send(.windowManager(.event(.windowClosed(id))))
             },
         )
-    }
-
-    private nonisolated static func resolveAndLogDAUEntryAction(
-        actionKind: VoyagerPagesFileManager.DAUEntryActionKind,
-        entryKind: VoyagerPagesFileManager.DAUEntryKind,
-    ) {
-        guard
-            let resolvedActionKind = DAUEntryActionKind(
-                rawValue: actionKind.rawValue,
-            )
-        else {
-            preconditionFailure(
-                "Invalid DAUEntryActionKind raw value: \(actionKind.rawValue)",
-            )
-        }
-        guard
-            let resolvedEntryKind = DAUEntryKind(
-                rawValue: entryKind.rawValue,
-            )
-        else {
-            preconditionFailure(
-                "Invalid DAUEntryKind raw value: \(entryKind.rawValue)",
-            )
-        }
-        VoyagerSentryMetricLogger.logDAUEntryAction(
-            actionKind: resolvedActionKind,
-            entryKind: resolvedEntryKind,
-        )
+        appDelegate.configure(appRootStore: appRootStore)
+        configureLogging()
     }
 
     private func configureLogging() {

@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import VoyagerShared
 
 protocol SearchExecutionServicing: Sendable {
     func applyFilters(_ filters: SearchFiltersPayload) async throws -> SearchResponsePayload
@@ -9,7 +10,7 @@ protocol SearchExecutionServicing: Sendable {
 
 struct SearchQueryService: Sendable {
     private let searchService: any SearchExecutionServicing
-    private let converter: GatewayQueryConverter
+    private let convertQuery: @Sendable (String, SearchFiltersPayload) async -> GatewayQueryResult
     private let logger: Logger
 
     init(
@@ -20,7 +21,19 @@ struct SearchQueryService: Sendable {
         logger: Logger = Logger(label: "VoyagerHelper.SearchQueryService"),
     ) {
         self.searchService = searchService
-        self.converter = converter
+        convertQuery = { query, existingFilters in
+            await converter.convert(query: query, existingFilters: existingFilters)
+        }
+        self.logger = logger
+    }
+
+    init(
+        searchService: any SearchExecutionServicing,
+        convertQuery: @Sendable @escaping (String, SearchFiltersPayload) async -> GatewayQueryResult,
+        logger: Logger = Logger(label: "VoyagerHelper.SearchQueryService"),
+    ) {
+        self.searchService = searchService
+        self.convertQuery = convertQuery
         self.logger = logger
     }
 
@@ -33,6 +46,8 @@ struct SearchQueryService: Sendable {
             itemCount: 0,
             appliedFilters: AppliedFiltersPayload(
                 scopes: fallbackFilters.scopes,
+                excludedScopes: fallbackFilters.excludedScopes,
+                includeSubfolders: fallbackFilters.includeSubfolders,
                 conditions: fallbackFilters.conditions,
             ),
             items: [],
@@ -70,6 +85,8 @@ struct SearchQueryService: Sendable {
                 itemCount: 0,
                 appliedFilters: AppliedFiltersPayload(
                     scopes: request.filters.scopes,
+                    excludedScopes: request.filters.excludedScopes,
+                    includeSubfolders: request.filters.includeSubfolders,
                     conditions: request.filters.conditions,
                 ),
                 items: nil,
@@ -77,7 +94,7 @@ struct SearchQueryService: Sendable {
             )
         }
 
-        let conversion = await converter.convert(query: trimmedQuery, existingFilters: request.filters)
+        let conversion = await convertQuery(trimmedQuery, request.filters)
 
         if let llmError = conversion.error,
            llmError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
@@ -98,6 +115,8 @@ struct SearchQueryService: Sendable {
 
         let plannedFilters = SearchFiltersPayload(
             scopes: resolvedScopes,
+            excludedScopes: request.filters.excludedScopes,
+            includeSubfolders: request.filters.includeSubfolders,
             conditions: conversion.conditions,
         )
 
@@ -105,6 +124,8 @@ struct SearchQueryService: Sendable {
             itemCount: 0,
             appliedFilters: AppliedFiltersPayload(
                 scopes: plannedFilters.scopes,
+                excludedScopes: plannedFilters.excludedScopes,
+                includeSubfolders: plannedFilters.includeSubfolders,
                 conditions: plannedFilters.conditions,
             ),
             items: nil,

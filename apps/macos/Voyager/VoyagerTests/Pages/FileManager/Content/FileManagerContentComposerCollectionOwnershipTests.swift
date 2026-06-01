@@ -1,19 +1,17 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerPagesFileManager
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
-@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
-/// FileManager composer와 collection 상태 소유권 경계를 검증한다.
 @MainActor
 final class FileManagerComposerOwnershipTests: XCTestCase {
-    /// testSearchSuccessSendsSetCollectionModeBeforeApplyCollectionSearchPaths 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testSearchSuccessSendsSetCollectionModeBeforeApplyCollectionSearchPaths() async {
         let requestID = UUID()
         let items: [VoyagerShared.JSONValue] = [
@@ -27,7 +25,6 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         await assertSearchSuccessSequence(store: store)
     }
 
-    /// testSearchSuccessAcceptsStringPathItems 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testSearchSuccessAcceptsStringPathItems() async {
         let requestID = UUID()
         let items: [VoyagerShared.JSONValue] = [
@@ -44,7 +41,62 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         )
     }
 
-    /// testClearCollectionModeResetsComposerAfterClearingPresentation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testFiltersSuccessPreservesExistingCollectionQueryWhenPendingQueryIsNil() async {
+        let requestID = UUID()
+        let items: [VoyagerShared.JSONValue] = [
+            .object(["fullPath": .string("/tmp/voyager/file1.txt")]),
+        ]
+
+        var initialState = makeInitialState()
+        let context = CollectionContext(
+            query: "kind:image",
+            scopes: ["/tmp/voyager"],
+            includeSubfolders: true,
+            conditions: [],
+        )
+        initialState.collection.collectionContext = context
+        initialState.composer.collectionContext = context
+        initialState.composer.pendingSearchQuery = nil
+        initialState.composer.activeFiltersRequestID = requestID
+        initialState.composer.lastAcceptedFiltersRequestID = requestID
+        initialState.composer.scopeEditor.selection = .fromLegacyScopes(["/tmp/voyager"])
+        initialState.composer.scopeEditor.includeSubfolders = false
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(
+            FileManagerContentAction.composer(
+                ComposerAction.filtersResponse(
+                    requestID,
+                    .success(VoyagerShared.SearchResponsePayload(
+                        itemCount: items.count,
+                        items: items,
+                    )),
+                ),
+            ),
+        )
+
+        await store.receive { action in
+            guard case let .collection(.searchSucceeded(context, _, _, _)) = action else {
+                return false
+            }
+            return context.query == "kind:image"
+                && context.scopes == ["/tmp/voyager"]
+                && context.includeSubfolders == false
+        }
+    }
+
     func testClearCollectionModeResetsComposerAfterClearingPresentation() async {
         var initialState = makeInitialState()
         initialState.collection.collectionContext = CollectionContext(query: "test", scopes: [], conditions: [])
@@ -99,7 +151,82 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         XCTAssertFalse(store.state.composer.isCollectionMode)
     }
 
-    /// testCanSaveCollectionReadsFromCanonicalSource 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testComposerOpenSkipsSeedingWhenNavigationIsNotFolder() async {
+        var initialState = makeInitialState()
+        initialState.navigation.navigationState = .recents
+        initialState.composer.isPresented = false
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+        }
+
+        await store.send(FileManagerContentAction.composer(.view(.setPresented(true))))
+    }
+
+    func testComposerOpenSeedsCurrentPathThroughBridgeAction() async {
+        var initialState = makeInitialState()
+        initialState.composer.isPresented = false
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+        }
+        store.exhaustivity = .off
+
+        await store.send(FileManagerContentAction.composer(.view(.setPresented(true))))
+
+        await store.receive { action in
+            guard case let .composer(.internal(.scopeEditorSeedCurrentPath(path))) = action else {
+                return false
+            }
+            return path == "/tmp/voyager"
+        }
+    }
+
+    func testSyncComposerCollectionStatePreservesPendingScopeRuleWhileEditorIsPresented() {
+        var state = makeInitialState()
+        let context = CollectionContext(
+            query: "",
+            scopes: ["/tmp/voyager"],
+            includeSubfolders: true,
+            conditions: [],
+        )
+        state.collection.collectionContext = context
+        state.composer.collectionContext = context
+        state.composer.scopeEditor.isPresented = true
+        state.composer.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/tmp/voyager")],
+            exceptions: [],
+        )
+        state.composer.scopeEditor.committedSelection = state.composer.scopeEditor.selection
+        state.composer.scopeEditor.includeSubfolders = false
+        state.composer.scopeEditor.committedIncludeSubfolders = true
+
+        state.syncComposerCollectionState()
+
+        XCTAssertFalse(
+            state.composer.scopeEditor.includeSubfolders,
+            "syncComposerCollectionState must not overwrite an uncommitted scope rule while editing",
+        )
+        XCTAssertTrue(
+            state.composer.scopeEditor.committedIncludeSubfolders,
+            "syncComposerCollectionState must preserve the committed scope rule baseline while editing",
+        )
+    }
+
     func testCanSaveCollectionReadsFromCanonicalSource() {
         var state = makeInitialState()
         state.entryViewLayout.isCollectionMode = true

@@ -1,6 +1,6 @@
 # Structured Review Findings Schema
 
-**Version:** 2.0  
+**Version:** 2.0
 **Path:** `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json`  
 **Family:** Structured Findings  
 **Source of truth:** Artifact Contract §Output 2

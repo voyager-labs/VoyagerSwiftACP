@@ -14,7 +14,7 @@ public struct CollectionState: Equatable {
         pendingSave: CollectionSaveSnapshot? = nil,
         isSaving: Bool = false,
         collectionSession: CollectionDocumentSessionState = .init(),
-        collectionContext: CollectionContext? = nil,
+        collectionContext: CollectionContext? = nil
     ) {
         self.pendingSave = pendingSave
         self.isSaving = isSaving
@@ -55,7 +55,9 @@ public extension CollectionState {
         collectionContext = CollectionContext(
             query: "",
             scopes: [rootScopePath],
-            conditions: [],
+            excludedScopes: [],
+            includeSubfolders: true,
+            conditions: []
         )
     }
 
@@ -82,7 +84,7 @@ public extension CollectionState {
     func refreshBlockingReason(
         isCollectionMode: Bool,
         isDirty: Bool,
-        isSearching: Bool,
+        isSearching: Bool
     ) -> CollectionSessionRefreshBlockingReason? {
         if !isCollectionMode {
             return .notInCollectionMode
@@ -123,7 +125,7 @@ public extension CollectionState {
 
     func makeNavigationPresentationPayload(
         context: CollectionContext? = nil,
-        compatibility: CollectionFileCompatibilityMetadata? = nil,
+        compatibility: CollectionFileCompatibilityMetadata? = nil
     ) -> CollectionNavigationPresentationPayload {
         let resolvedContext = context ?? collectionContext ?? CollectionContext(query: "", scopes: [], conditions: [])
         let resolvedCompatibility = compatibility ?? collectionSession.document?.compatibility
@@ -137,7 +139,7 @@ public extension CollectionState {
         return CollectionNavigationPresentationPayload(
             kind: kind,
             context: resolvedContext,
-            compatibility: resolvedCompatibility,
+            compatibility: resolvedCompatibility
         )
     }
 
@@ -153,7 +155,7 @@ public extension CollectionState {
         return CollectionNavigationPresentationPayload(
             kind: .file(url: previousURL, name: name),
             context: baseline.context,
-            compatibility: collectionSession.document?.compatibility,
+            compatibility: collectionSession.document?.compatibility
         )
     }
 
@@ -175,7 +177,7 @@ public extension CollectionState {
             collectionSession.document = .init(
                 url: completion.url,
                 name: completion.url.deletingPathExtension().lastPathComponent,
-                compatibility: compatibility,
+                compatibility: compatibility
             )
         } else {
             collectionSession.document?.url = completion.url
@@ -187,7 +189,7 @@ public extension CollectionState {
         return CollectionWriteBackNavigationPayload(
             nextNavigation: makeNavigationPresentationPayload(compatibility: compatibility),
             previousHistoryNavigation: previousHistoryNavigation,
-            shouldAppendHistory: shouldAppendHistory,
+            shouldAppendHistory: shouldAppendHistory
         )
     }
 
@@ -195,13 +197,14 @@ public extension CollectionState {
         file: VoyagerCollectionFile,
         resolved: AppliedFiltersUtils.ResolutionResult,
         isStale: Bool,
-        compatibility: CollectionFileCompatibilityMetadata,
+        compatibility: CollectionFileCompatibilityMetadata
     ) -> CollectionOpenRestorationPayload {
         let trimmedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let restoredContext = restoredOpenContext(
             trimmedQuery: trimmedQuery,
             resolved: resolved,
             isStale: isStale,
+            includeSubfolders: file.includeSubfolders
         )
         let kind: CollectionSessionPhase.OpenKind = file.snapshotMeta == nil ? .definition : .hydratedSnapshot
 
@@ -215,19 +218,19 @@ public extension CollectionState {
             compatibility: compatibility,
             navigation: makeNavigationPresentationPayload(
                 context: restoredContext,
-                compatibility: compatibility,
+                compatibility: compatibility
             ),
             shouldRestoreStaleNavigation: isStale,
             queryTrigger: makeOpenQueryTrigger(
                 trimmedQuery: trimmedQuery,
                 kind: kind,
-                isStale: isStale,
+                isStale: isStale
             ),
             hydratedOpenPayload: makeHydratedOpenPayload(file: file, restoredContext: restoredContext),
             isEmptyDefinition: trimmedQuery.isEmpty
                 && resolved.scopes.isEmpty
                 && resolved.conditions.isEmpty,
-            unsupportedFilterKeys: resolved.unknownKeys,
+            unsupportedFilterKeys: resolved.unknownKeys
         )
     }
 
@@ -235,11 +238,14 @@ public extension CollectionState {
         trimmedQuery: String,
         resolved: AppliedFiltersUtils.ResolutionResult,
         isStale: Bool,
+        includeSubfolders: Bool
     ) -> CollectionContext {
         let loadedContext = CollectionContext(
             query: trimmedQuery,
             scopes: resolved.scopes,
-            conditions: resolved.conditions,
+            excludedScopes: resolved.excludedScopes,
+            includeSubfolders: includeSubfolders,
+            conditions: resolved.conditions
         )
         if isStale,
            let reopenContext = collectionSession.metadata.reopenContext
@@ -251,7 +257,7 @@ public extension CollectionState {
 
     private mutating func refreshOpenedDocumentForRestoration(
         fileName: String,
-        compatibility: CollectionFileCompatibilityMetadata,
+        compatibility: CollectionFileCompatibilityMetadata
     ) {
         guard let url = collectionSession.document?.url else {
             return
@@ -259,13 +265,13 @@ public extension CollectionState {
         collectionSession.document = .init(
             url: url,
             name: fileName,
-            compatibility: compatibility,
+            compatibility: compatibility
         )
     }
 
     private func makeHydratedOpenPayload(
         file: VoyagerCollectionFile,
-        restoredContext: CollectionContext,
+        restoredContext: CollectionContext
     ) -> CollectionHydratedOpenPayload? {
         guard let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file),
               let items = response.items
@@ -286,14 +292,14 @@ public extension CollectionState {
         return CollectionHydratedOpenPayload(
             lastFiltersResponse: response,
             lastSearchResponse: restoredContext.query.isEmpty ? nil : response,
-            snapshotPaths: snapshotPaths,
+            snapshotPaths: snapshotPaths
         )
     }
 
     private func makeOpenQueryTrigger(
         trimmedQuery: String,
         kind: CollectionSessionPhase.OpenKind,
-        isStale _: Bool,
+        isStale _: Bool
     ) -> CollectionRefreshTriggerPayload? {
         guard kind == .definition else {
             return nil
@@ -305,9 +311,11 @@ public extension CollectionState {
 public struct CollectionSaveSnapshot: Equatable, Sendable {
     public let query: String
     public let scopes: [String]
+    public let excludedScopes: [String]
+    public let includeSubfolders: Bool
     public let conditions: [CollectionCondition]
     public let snapshotItems: [VoyagerShared.JSONValue]?
     public let definitionFingerprint: String
-    let capturedAt: Date
-    let relevanceRoots: [String]
+    public let capturedAt: Date
+    public let relevanceRoots: [String]
 }

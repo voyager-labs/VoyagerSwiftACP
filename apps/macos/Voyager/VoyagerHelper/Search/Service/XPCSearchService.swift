@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import VoyagerShared
 
 final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
     private let service: any SearchExecutionServicing

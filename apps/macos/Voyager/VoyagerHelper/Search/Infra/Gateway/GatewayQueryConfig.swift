@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 enum GatewayQueryConfig {
     static let requestTimeout: TimeInterval = 20

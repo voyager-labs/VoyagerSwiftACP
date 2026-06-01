@@ -1,24 +1,38 @@
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerShared
 
 public enum ComposerScopeUtils {
-    struct DirectoryItem: Identifiable, Equatable {
-        let id: String
-        let path: String
-        let name: String
-        let iconName: String
-    }
+    public struct DirectoryItem: Identifiable, Equatable, Sendable {
+        public let id: String
+        public let path: String
+        public let name: String
+        public let iconName: String
+        public let locationIdentifier: String?
+        public let secondaryText: String?
 
-    private struct IconMapping {
-        let directory: FileManager.SearchPathDirectory
-        let domain: FileManager.SearchPathDomainMask
-        let iconName: String
+        public nonisolated init(
+            id: String,
+            path: String,
+            name: String,
+            iconName: String,
+            locationIdentifier: String? = nil,
+            secondaryText: String? = nil,
+        ) {
+            self.id = id
+            self.path = path
+            self.name = name
+            self.iconName = iconName
+            self.locationIdentifier = locationIdentifier
+            self.secondaryText = secondaryText
+        }
     }
 
     private struct DirectoryMatchContext {
         let query: String
         let maxResults: Int
+        let candidateLimit: Int
         let homePath: String
         let iconPathMap: [String: String]
     }
@@ -33,7 +47,32 @@ public enum ComposerScopeUtils {
         let options: FileManager.DirectoryEnumerationOptions
     }
 
-    public static let rootScopePath = "/"
+    public nonisolated static let rootScopePath = "/"
+
+    nonisolated static func applyCandidateDisambiguationPolicy(_ items: [DirectoryItem]) -> [DirectoryItem] {
+        let groups = Dictionary(grouping: items.enumerated(), by: { $0.element.name })
+        let secondaryTextByID = groups.reduce(into: [String: String]()) { partialResult, group in
+            let entries = group.value
+            guard entries.count > 1 else { return }
+
+            let duplicateItems = entries.map(\.element)
+            let disambiguationTexts = ComposerScopeCandidateDisambiguation.texts(for: duplicateItems)
+            for (entry, secondaryText) in zip(entries, disambiguationTexts) {
+                partialResult[entry.element.id] = secondaryText
+            }
+        }
+
+        return items.map { item in
+            DirectoryItem(
+                id: item.id,
+                path: item.path,
+                name: item.name,
+                iconName: item.iconName,
+                locationIdentifier: item.locationIdentifier,
+                secondaryText: secondaryTextByID[item.id],
+            )
+        }
+    }
 
     nonisolated static func searchDirectories(
         query: String,
@@ -46,13 +85,15 @@ public enum ComposerScopeUtils {
         guard !normalizedQuery.isEmpty else { return [] }
 
         let queryLower = normalizedQuery.lowercased()
+        let candidateLimit = max(maxResults, maxResults * 4)
         let homeDir = entryLoadingClient.homeDirectory()
         let context = SearchExecutionContext(
             match: DirectoryMatchContext(
                 query: queryLower,
                 maxResults: maxResults,
+                candidateLimit: candidateLimit,
                 homePath: homeDir,
-                iconPathMap: buildIconPathMapping(entryLoadingClient: entryLoadingClient),
+                iconPathMap: ComposerScopeSearchIconResolver.buildPathMapping(entryLoadingClient: entryLoadingClient),
             ),
             maxDepth: initialMaxDepth,
             startTime: Date(),
@@ -68,7 +109,7 @@ public enum ComposerScopeUtils {
             context: context,
             entryLoadingClient: entryLoadingClient,
         )
-        return Array(sortSearchResults(results, query: queryLower).prefix(maxResults))
+        return Array(ComposerScopeSearchRanking.sort(results, query: queryLower).prefix(maxResults))
     }
 
     static func buildCombinedList(
@@ -79,18 +120,23 @@ public enum ComposerScopeUtils {
     ) -> [DirectoryItem] {
         var result: [DirectoryItem] = []
         var seenPaths: Set<String> = []
-        let collectionsExtension = CollectionConstants.fileExtension
         let homePath = entryLoadingClient.homeDirectory()
-        let iconPathMap = buildIconPathMapping(entryLoadingClient: entryLoadingClient)
+        let iconPathMap = ComposerScopeSearchIconResolver.buildPathMapping(entryLoadingClient: entryLoadingClient)
 
         let historyItems = history.reversed().prefix(maxCount)
         for path in historyItems {
-            if (path as NSString).pathExtension.lowercased() == collectionsExtension { continue }
+            if (path as NSString).pathExtension.lowercased() == CollectionConstants.fileExtension { continue }
             guard !seenPaths.contains(path) else { continue }
             guard entryLoadingClient.fileExists(path) else { continue }
 
             let displayName = entryLoadingClient.displayName(path)
-            let iconName = iconNameForPath(path, homePath: homePath, iconPathMap: iconPathMap)
+            let iconName = ComposerScopeSearchIconResolver.iconName(
+                for: path,
+                homePath: homePath,
+                iconPathMap: iconPathMap,
+            )
+
+            let locationMetadata = ComposerScopeCandidateDisambiguation.locationMetadata(path: path)
 
             result.append(
                 DirectoryItem(
@@ -98,6 +144,8 @@ public enum ComposerScopeUtils {
                     path: path,
                     name: displayName,
                     iconName: iconName,
+                    locationIdentifier: locationMetadata.locationIdentifier,
+                    secondaryText: locationMetadata.secondaryText,
                 ),
             )
 
@@ -108,9 +156,11 @@ public enum ComposerScopeUtils {
         if remainingSlots > 0 {
             for favorite in favorites.prefix(remainingSlots) {
                 let path = favorite.url.path
-                if favorite.url.pathExtension.lowercased() == collectionsExtension { continue }
+                if favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension { continue }
                 guard !seenPaths.contains(path) else { continue }
                 guard entryLoadingClient.fileExists(path) else { continue }
+
+                let locationMetadata = ComposerScopeCandidateDisambiguation.locationMetadata(path: path)
 
                 result.append(
                     DirectoryItem(
@@ -118,6 +168,8 @@ public enum ComposerScopeUtils {
                         path: path,
                         name: favorite.name,
                         iconName: favorite.iconName,
+                        locationIdentifier: locationMetadata.locationIdentifier,
+                        secondaryText: locationMetadata.secondaryText,
                     ),
                 )
 
@@ -126,42 +178,6 @@ public enum ComposerScopeUtils {
         }
 
         return result
-    }
-
-    private nonisolated static func buildIconPathMapping(
-        entryLoadingClient: EntryLoadingClient,
-    ) -> [String: String] {
-        let mappings: [IconMapping] = [
-            IconMapping(directory: .applicationDirectory, domain: .localDomainMask, iconName: "folder.badge.gearshape"),
-            IconMapping(directory: .desktopDirectory, domain: .userDomainMask, iconName: "menubar.dock.rectangle"),
-            IconMapping(directory: .documentDirectory, domain: .userDomainMask, iconName: "doc.text"),
-            IconMapping(directory: .downloadsDirectory, domain: .userDomainMask, iconName: "arrow.down.circle"),
-            IconMapping(directory: .moviesDirectory, domain: .userDomainMask, iconName: "film"),
-            IconMapping(directory: .musicDirectory, domain: .userDomainMask, iconName: "music.note"),
-            IconMapping(directory: .picturesDirectory, domain: .userDomainMask, iconName: "photo"),
-            IconMapping(directory: .trashDirectory, domain: .userDomainMask, iconName: "trash"),
-        ]
-
-        var pathMap: [String: String] = [:]
-        for mapping in mappings {
-            if let path = entryLoadingClient.urlsForDirectory(mapping.directory, mapping.domain).first?.path {
-                pathMap[path] = mapping.iconName
-            }
-        }
-
-        return pathMap
-    }
-
-    private nonisolated static func iconNameForPath(
-        _ path: String,
-        homePath: String,
-        iconPathMap: [String: String],
-    ) -> String {
-        if path == homePath { return "house" }
-        if path.hasPrefix("/Volumes/") { return "externaldrive" }
-        if let mapped = iconPathMap[path] { return mapped }
-
-        return "folder"
     }
 
     private nonisolated static func isTraversalExcluded(_ path: String, currentDepth: Int) -> Bool {
@@ -188,44 +204,29 @@ public enum ComposerScopeUtils {
         context: DirectoryMatchContext,
         entryLoadingClient: EntryLoadingClient,
     ) {
-        guard results.count < context.maxResults else { return }
+        guard results.count < context.candidateLimit else { return }
 
         guard quickName.lowercased().contains(context.query) else { return }
 
         let displayName = entryLoadingClient.displayName(fullPath)
 
-        let iconName = iconNameForPath(
-            fullPath,
+        let iconName = ComposerScopeSearchIconResolver.iconName(
+            for: fullPath,
             homePath: context.homePath,
             iconPathMap: context.iconPathMap,
         )
+        let locationMetadata = ComposerScopeCandidateDisambiguation.locationMetadata(path: fullPath)
+
         results.append(
             DirectoryItem(
                 id: fullPath,
                 path: fullPath,
                 name: displayName,
                 iconName: iconName,
+                locationIdentifier: locationMetadata.locationIdentifier,
+                secondaryText: locationMetadata.secondaryText,
             ),
         )
-    }
-
-    private nonisolated static func sortSearchResults(
-        _ results: [DirectoryItem],
-        query: String,
-    ) -> [DirectoryItem] {
-        results.sorted { item1, item2 in
-            let name1 = item1.name.lowercased()
-            let name2 = item2.name.lowercased()
-
-            let item1StartsWith = name1.hasPrefix(query)
-            let item2StartsWith = name2.hasPrefix(query)
-
-            if item1StartsWith != item2StartsWith {
-                return item1StartsWith
-            }
-
-            return name1 < name2
-        }
     }
 
     private nonisolated static func makeSearchPaths(homeDir: String) -> [String] {
@@ -247,7 +248,7 @@ public enum ComposerScopeUtils {
     ) -> Bool {
         if Task.isCancelled { return true }
         if Date().timeIntervalSince(context.startTime) > context.timeout { return true }
-        return resultsCount >= context.match.maxResults
+        return resultsCount >= context.match.candidateLimit
     }
 
     private nonisolated static func shouldSkipNode(

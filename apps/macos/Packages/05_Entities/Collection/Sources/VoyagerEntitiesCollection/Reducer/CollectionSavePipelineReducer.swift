@@ -27,7 +27,7 @@ public struct CollectionSavePipelineReducer {
                 handleSaveRequested(
                     state: &state,
                     payload: payload,
-                    collectionSavePanelClient: collectionSavePanelClient,
+                    collectionSavePanelClient: collectionSavePanelClient
                 )
 
             case let .saveToExisting(payload, url):
@@ -36,7 +36,7 @@ public struct CollectionSavePipelineReducer {
                     payload: payload,
                     url: url,
                     collectionFileClient: collectionFileClient,
-                    collectionStalenessClient: collectionStalenessClient,
+                    collectionStalenessClient: collectionStalenessClient
                 )
 
             case let .savePanelResponse(url):
@@ -44,7 +44,7 @@ public struct CollectionSavePipelineReducer {
                     state: &state,
                     selectedURL: url,
                     collectionFileClient: collectionFileClient,
-                    collectionStalenessClient: collectionStalenessClient,
+                    collectionStalenessClient: collectionStalenessClient
                 )
 
             case let .saveCompleted(result):
@@ -52,7 +52,7 @@ public struct CollectionSavePipelineReducer {
                     state: &state,
                     result: result,
                     userDefaultsClient: userDefaultsClient,
-                    collectionStalenessClient: collectionStalenessClient,
+                    collectionStalenessClient: collectionStalenessClient
                 )
 
             default:
@@ -91,12 +91,12 @@ private struct CollectionSaveFailure: Equatable, Error {
 }
 
 private func validateSavePayload(
-    _ payload: SaveRequestPayload,
+    _ payload: SaveRequestPayload
 ) -> Result<(snapshot: CollectionSaveSnapshot, context: CollectionContext), CollectionSaveFailure> {
     guard let context = payload.context else {
         return .failure(.init(
             title: "No New Collection",
-            message: "There is no active new collection to save.",
+            message: "There is no active new collection to save."
         ))
     }
 
@@ -104,14 +104,14 @@ private func validateSavePayload(
     let validation = validateCollectionContext(
         context,
         query: trimmedQuery,
-        payload: payload,
+        payload: payload
     )
 
     switch validation {
     case let .failure(error):
         return .failure(.init(
             title: "Unable to Save Collection",
-            message: error.localizedDescription,
+            message: error.localizedDescription
         ))
     case let .success(snapshot):
         return .success((snapshot: snapshot, context: context))
@@ -121,7 +121,7 @@ private func validateSavePayload(
 private func validateCollectionContext(
     _ context: CollectionContext,
     query: String,
-    payload: SaveRequestPayload,
+    payload: SaveRequestPayload
 ) -> Result<CollectionSaveSnapshot, CollectionSaveValidationError> {
     if query.isEmpty, context.scopes.isEmpty, context.conditions.isEmpty {
         return .failure(.emptyContent)
@@ -136,11 +136,13 @@ private func validateCollectionContext(
         return .success(.init(
             query: query,
             scopes: context.scopes,
+            excludedScopes: context.excludedScopes,
+            includeSubfolders: context.includeSubfolders,
             conditions: conditions,
             snapshotItems: payload.snapshotItems,
             definitionFingerprint: payload.definitionFingerprint,
             capturedAt: payload.capturedAt,
-            relevanceRoots: payload.relevanceRoots,
+            relevanceRoots: payload.relevanceRoots
         ))
     } catch let error as CollectionSaveValidationError {
         return .failure(error)
@@ -185,7 +187,7 @@ private func resetPendingSave(_ state: inout CollectionState) {
 
 private func canStartSave(
     state: CollectionState,
-    payload: SaveRequestPayload,
+    payload: SaveRequestPayload
 ) -> Bool {
     guard !state.isSaving else { return false }
     guard !payload.isSearchLoading, !payload.isFiltersLoading else { return false }
@@ -195,7 +197,7 @@ private func canStartSave(
 private func handleSaveRequested(
     state: inout CollectionState,
     payload: SaveRequestPayload,
-    collectionSavePanelClient: CollectionSavePanelClient,
+    collectionSavePanelClient: CollectionSavePanelClient
 ) -> Effect<CollectionAction> {
     guard canStartSave(state: state, payload: payload) else { return .none }
 
@@ -207,10 +209,10 @@ private func handleSaveRequested(
         state.isSaving = true
         return .run { send in
             let initialDirectory = await collectionSavePanelClient.defaultSaveDirectory(
-                result.context.scopes,
+                result.context.scopes
             )
             let url = await collectionSavePanelClient.presentSavePanel(
-                initialDirectory,
+                initialDirectory
             )
             await send(.savePanelResponse(url))
         }
@@ -222,7 +224,7 @@ private func handleSaveToExisting(
     payload: SaveRequestPayload,
     url: URL,
     collectionFileClient: CollectionFileClient,
-    collectionStalenessClient: CollectionStalenessClient,
+    collectionStalenessClient: CollectionStalenessClient
 ) -> Effect<CollectionAction> {
     guard canStartSave(state: state, payload: payload) else { return .none }
 
@@ -235,7 +237,7 @@ private func handleSaveToExisting(
             snapshot: result.snapshot,
             url: url,
             collectionFileClient: collectionFileClient,
-            collectionStalenessClient: collectionStalenessClient,
+            collectionStalenessClient: collectionStalenessClient
         )
     }
 }
@@ -244,7 +246,7 @@ private func handleSavePanelResponse(
     state: inout CollectionState,
     selectedURL: URL?,
     collectionFileClient: CollectionFileClient,
-    collectionStalenessClient: CollectionStalenessClient,
+    collectionStalenessClient: CollectionStalenessClient
 ) -> Effect<CollectionAction> {
     guard let selectedURL, let snapshot = state.pendingSave else {
         resetPendingSave(&state)
@@ -255,7 +257,7 @@ private func handleSavePanelResponse(
         snapshot: snapshot,
         url: selectedURL,
         collectionFileClient: collectionFileClient,
-        collectionStalenessClient: collectionStalenessClient,
+        collectionStalenessClient: collectionStalenessClient
     )
 }
 
@@ -263,7 +265,7 @@ private func handleSaveCompleted(
     state: inout CollectionState,
     result: Result<CollectionSaveCompletion, Error>,
     userDefaultsClient: UserDefaultsClient,
-    collectionStalenessClient: CollectionStalenessClient,
+    collectionStalenessClient: CollectionStalenessClient
 ) -> Effect<CollectionAction> {
     resetPendingSave(&state)
 
@@ -276,6 +278,8 @@ private func handleSaveCompleted(
             .init(
                 definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
                 relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
+                excludedScopes: file.excludedScopes,
+                includeSubfolders: file.includeSubfolders,
                 lastInvalidatedAt: nil,
             ),
         )
@@ -288,7 +292,7 @@ private func handleSaveCompleted(
         }
         return showSaveError(.init(
             title: "Unable to Save Collection",
-            message: error.localizedDescription,
+            message: error.localizedDescription
         ))
     }
 }
@@ -296,7 +300,7 @@ private func handleSaveCompleted(
 private func makeCollectionFile(
     name: String,
     snapshot: CollectionSaveSnapshot,
-    appVersion: String?,
+    appVersion: String?
 ) -> VoyagerCollectionFile {
     let timestamp = Date()
     return VoyagerCollectionFile(
@@ -306,6 +310,8 @@ private func makeCollectionFile(
         updatedAt: timestamp,
         query: snapshot.query,
         scopes: snapshot.scopes,
+        excludedScopes: snapshot.excludedScopes,
+        includeSubfolders: snapshot.includeSubfolders,
         conditions: snapshot.conditions,
         snapshot: snapshot.snapshotItems.map(CollectionPersistedSnapshot.init(items:)),
         snapshotMeta: snapshot.snapshotItems.map { snapshotItems in
@@ -313,10 +319,10 @@ private func makeCollectionFile(
                 definitionFingerprint: snapshot.definitionFingerprint,
                 capturedAt: snapshot.capturedAt,
                 itemCount: snapshotItems.count,
-                relevanceRoots: snapshot.relevanceRoots,
+                relevanceRoots: snapshot.relevanceRoots
             )
         },
-        appVersion: appVersion,
+        appVersion: appVersion
     )
 }
 
@@ -351,7 +357,7 @@ private func showSaveError(_ failure: CollectionSaveFailure) -> Effect<Collectio
     .run { _ in
         await showCollectionSaveErrorAlert(
             title: failure.title,
-            message: failure.message,
+            message: failure.message
         )
     }
 }
@@ -360,11 +366,11 @@ private func performSave(
     snapshot: CollectionSaveSnapshot,
     url: URL,
     collectionFileClient: CollectionFileClient,
-    collectionStalenessClient: CollectionStalenessClient,
+    collectionStalenessClient: CollectionStalenessClient
 ) -> Effect<CollectionAction> {
     let request = buildSaveRequest(
         snapshot: snapshot,
-        destinationURL: url,
+        destinationURL: url
     )
 
     collectionStalenessClient.suppressPaths([
@@ -374,7 +380,7 @@ private func performSave(
 
     return executeSave(
         request: request,
-        collectionFileClient: collectionFileClient,
+        collectionFileClient: collectionFileClient
     )
 }
 
@@ -385,26 +391,27 @@ private struct CollectionSaveRequest {
 
 private func buildSaveRequest(
     snapshot: CollectionSaveSnapshot,
-    destinationURL: URL,
+    destinationURL: URL
 ) -> CollectionSaveRequest {
-    let finalURL: URL = if destinationURL.pathExtension.lowercased() == CollectionConstants.fileExtension {
-        destinationURL
+    let finalURL: URL
+    if destinationURL.pathExtension.lowercased() == CollectionConstants.fileExtension {
+        finalURL = destinationURL
     } else {
-        destinationURL
+        finalURL = destinationURL
             .deletingPathExtension()
             .appendingPathExtension(CollectionConstants.fileExtension)
     }
     let file = makeCollectionFile(
         name: finalURL.deletingPathExtension().lastPathComponent,
         snapshot: snapshot,
-        appVersion: currentAppVersion(),
+        appVersion: currentAppVersion()
     )
     return .init(url: finalURL, file: file)
 }
 
 private func executeSave(
     request: CollectionSaveRequest,
-    collectionFileClient: CollectionFileClient,
+    collectionFileClient: CollectionFileClient
 ) -> Effect<CollectionAction> {
     .run { send in
         do {

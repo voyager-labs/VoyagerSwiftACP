@@ -217,6 +217,8 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             updatedAt: file.updatedAt,
             query: file.query,
             scopes: file.scopes,
+            excludedScopes: file.excludedScopes,
+            includeSubfolders: file.includeSubfolders,
             conditions: file.conditions,
             snapshot: file.snapshot,
             snapshotMeta: file.snapshotMeta,
@@ -348,6 +350,8 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             updatedAt: payload.updatedAt,
             query: payload.query,
             scopes: payload.scopes,
+            excludedScopes: payload.excludedScopes,
+            includeSubfolders: payload.includeSubfolders,
             conditions: payload.conditions,
             snapshot: snapshotPair.snapshot,
             snapshotMeta: snapshotPair.snapshotMeta,
@@ -467,6 +471,8 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             updatedAt: file.updatedAt,
             query: file.query,
             scopes: file.scopes,
+            excludedScopes: file.excludedScopes,
+            includeSubfolders: file.includeSubfolders,
             conditions: file.conditions,
             snapshot: nil,
             snapshotMeta: nil,
@@ -524,6 +530,8 @@ private nonisolated struct CompatibilityPayload: Decodable {
     let updatedAt: Date
     let query: String
     let scopes: [String]
+    let excludedScopes: [String]
+    let includeSubfolders: Bool
     let conditions: [CollectionCondition]
     let snapshot: LossyOptionalField<CollectionPersistedSnapshot>
     let snapshotMeta: LossyOptionalField<CollectionSnapshotMeta>
@@ -537,6 +545,8 @@ private nonisolated struct CompatibilityPayload: Decodable {
         case updatedAt
         case query
         case scopes
+        case excludedScopes
+        case includeSubfolders
         case conditions
         case snapshot
         case snapshotMeta
@@ -552,6 +562,8 @@ private nonisolated struct CompatibilityPayload: Decodable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         query = try container.decode(String.self, forKey: .query)
         scopes = try container.decode([String].self, forKey: .scopes)
+        excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
+        includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
         conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
         snapshot = try container.decodeIfPresent(
             LossyOptionalField<CollectionPersistedSnapshot>.self,

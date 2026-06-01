@@ -4,10 +4,8 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
-/// 컬렉션 스냅샷 하이드레이션 — 사용성/핑거프린트/조건 매핑 결정을 검증.
 @MainActor
 final class CollectionSnapshotHydrationTests: XCTestCase {
-    /// testUsableSnapshotBuildsSyntheticSearchResponse 테스트 동작을 검증한다.
     func testUsableSnapshotBuildsSyntheticSearchResponse() {
         let conditions: [CollectionCondition] = [
             .init(propertyKey: "name_full", operatorCode: "eq", value: .string("report")),
@@ -24,12 +22,41 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertEqual(response?.itemCount, 1)
         XCTAssertEqual(response?.items, [VoyagerShared.JSONValue.string("/tmp/report.txt")])
         XCTAssertEqual(response?.appliedFilters?.scopes, ["/tmp"])
+        XCTAssertEqual(response?.appliedFilters?.excludedScopes, [])
+        XCTAssertEqual(response?.appliedFilters?.includeSubfolders, true)
         XCTAssertEqual(response?.appliedFilters?.conditions, [
             .init(propertyKey: "name_full", operator: "eq", value: .string("report")),
         ])
     }
 
-    /// testFingerprintMismatchMarksSnapshotUnusable 테스트 동작을 검증한다.
+    func testSyntheticSearchResponsePreservesIncludeSubfoldersFlag() {
+        let file = makeSnapshotFile(
+            query: "report",
+            scopes: ["/tmp"],
+            includeSubfolders: false,
+            conditions: [],
+            snapshotItems: [.string("/tmp/report.txt")],
+        )
+
+        let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
+
+        XCTAssertEqual(response?.appliedFilters?.includeSubfolders, false)
+    }
+
+    func testSyntheticSearchResponsePreservesExcludedScopes() {
+        let file = makeSnapshotFile(
+            query: "report",
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
+            conditions: [],
+            snapshotItems: [.string("/tmp/report.txt")],
+        )
+
+        let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
+
+        XCTAssertEqual(response?.appliedFilters?.excludedScopes, ["/tmp/ignored"])
+    }
+
     func testFingerprintMismatchMarksSnapshotUnusable() {
         let file = makeSnapshotFile(
             query: "report",
@@ -43,7 +70,6 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertNil(CollectionSnapshotHydration.syntheticSearchResponse(for: file))
     }
 
-    /// testDefinitionFingerprintMatchesConditionAndCollectionConditionForms 테스트 동작을 검증한다.
     func testDefinitionFingerprintMatchesConditionAndCollectionConditionForms() {
         let uiConditions = makeUIConditions()
 
@@ -64,6 +90,44 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         )
 
         XCTAssertEqual(fromUI, fromFile)
+    }
+
+    func testDefinitionFingerprintChangesWhenIncludeSubfoldersChanges() {
+        let conditions = makeUIConditions()
+
+        let recursive = CollectionSnapshotHydration.definitionFingerprint(
+            query: "report",
+            scopes: ["/tmp"],
+            includeSubfolders: true,
+            conditions: conditions,
+        )
+        let exact = CollectionSnapshotHydration.definitionFingerprint(
+            query: "report",
+            scopes: ["/tmp"],
+            includeSubfolders: false,
+            conditions: conditions,
+        )
+
+        XCTAssertNotEqual(recursive, exact)
+    }
+
+    func testDefinitionFingerprintChangesWhenExcludedScopesChange() {
+        let conditions = makeUIConditions()
+
+        let withoutExcluded = CollectionSnapshotHydration.definitionFingerprint(
+            query: "report",
+            scopes: ["/tmp"],
+            excludedScopes: [],
+            conditions: conditions,
+        )
+        let withExcluded = CollectionSnapshotHydration.definitionFingerprint(
+            query: "report",
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
+            conditions: conditions,
+        )
+
+        XCTAssertNotEqual(withoutExcluded, withExcluded)
     }
 }
 
@@ -120,6 +184,8 @@ private func makeCondition(
 private func makeSnapshotFile(
     query: String,
     scopes: [String],
+    excludedScopes: [String] = [],
+    includeSubfolders: Bool = true,
     conditions: [CollectionCondition],
     snapshotItems: [VoyagerShared.JSONValue],
     fingerprint: String? = nil,
@@ -128,6 +194,8 @@ private func makeSnapshotFile(
         ?? CollectionSnapshotHydration.definitionFingerprint(
             query: query,
             scopes: scopes,
+            excludedScopes: excludedScopes,
+            includeSubfolders: includeSubfolders,
             conditions: conditions,
         )
 
@@ -138,6 +206,8 @@ private func makeSnapshotFile(
         updatedAt: .distantPast,
         query: query,
         scopes: scopes,
+        excludedScopes: excludedScopes,
+        includeSubfolders: includeSubfolders,
         conditions: conditions,
         snapshot: .init(items: snapshotItems),
         snapshotMeta: .init(

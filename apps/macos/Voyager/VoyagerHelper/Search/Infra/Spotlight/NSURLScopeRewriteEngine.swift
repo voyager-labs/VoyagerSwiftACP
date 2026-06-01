@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 struct NSURLScopeRewriteEngine: Sendable {
     private struct ScopeRewriteRule {
