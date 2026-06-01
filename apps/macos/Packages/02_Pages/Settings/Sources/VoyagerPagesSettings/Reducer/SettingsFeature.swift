@@ -31,11 +31,17 @@ public struct SettingsFeature {
             }
 
             if case .closeWindow = action {
+                state.selectedSection = .general
                 return .run { _ in
                     await MainActor.run {
                         NSApp.keyWindow?.close()
                     }
                 }
+            }
+
+            if case .resetSectionForFreshOpen = action {
+                state.selectedSection = .general
+                return .none
             }
 
             return .none

@@ -10,8 +10,9 @@ import XCTest
    `testOpenSettingsWindowOnAppearLoadsGeneralAndAppearance`
  - SET-001-switch_setting_tabs: 집중 자동화 테스트
    `testSwitchSettingTabsPreservesChildState`
- - SET-001-close_settings_window: 수동 QA
-   `NSApp.keyWindow?.close()`가 headless/CI 환경에서 비결정적이므로 자동화하지 않는다.
+ - SET-001-close_settings_window: 수동 QA + 상태 계약 자동화
+   AppKit close side effect는 headless/CI에서 비결정적이므로 수동 QA로 남기고,
+   fresh reopen 기준 section 초기화는 `testResetSectionForFreshOpenReturnsToGeneralWithoutClearingChildState`로 검증한다.
 
  Fixture reset:
  - 메모리 기반 `TestStore`만 사용하므로 영구 UserDefaults 상태가 필요 없다.
@@ -79,9 +80,30 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
         XCTAssertEqual(store.state.generalSettings.startingDirectory, "/test/preserved")
     }
 
+    /// SET-001-close_settings_window: Settings를 닫으면 다음 fresh reopen은 General section에서 시작한다.
+    /// AppKit window close side effect 자체는 수동 QA로 남기되, persisted root state에 마지막 탭이 남지 않는 계약을 검증한다.
+    /// - 검증 내용: `.resetSectionForFreshOpen`이 선택 section만 `.general`로 초기화하고 child state를 보존한다.
+    /// - 사전 조건: Appearance section이 선택되어 있고 General child state에는 저장된 테스트 경로가 들어 있다.
+    /// - 기대 결과: 다음 Settings fresh reopen의 기준 section은 General이며 저장된 설정값은 유지된다.
+    func testResetSectionForFreshOpenReturnsToGeneralWithoutClearingChildState() async {
+        var initialState = SettingsFeature.State()
+        initialState.selectedSection = .appearance
+        initialState.generalSettings.startingDirectory = "/test/preserved"
+
+        let store = TestStore(initialState: initialState) {
+            SettingsFeature()
+        }
+
+        await store.send(.resetSectionForFreshOpen) { state in
+            state.selectedSection = .general
+        }
+
+        XCTAssertEqual(store.state.generalSettings.startingDirectory, "/test/preserved")
+    }
+
     // SET-001-close_settings_window: 닫기 control/⌘W는 현재 Settings window를 닫는 AppKit lifecycle 경로다.
-    // 이 AC는 reducer의 deterministic state가 아니라 `NSApp.keyWindow?.close()` side effect에 의존하므로 수동 QA로 남긴다.
-    // - 검증 내용: 자동화 범위에서는 close action을 실행하지 않고 headless 환경에서의 비결정성을 문서화한다.
+    // AppKit side effect 자체는 `NSApp.keyWindow?.close()`에 의존하므로 수동 QA로 남긴다.
+    // - 검증 내용: 실제 앱 런타임에서 close control/⌘W가 현재 Settings window를 닫는지 확인한다.
     // - 사전 조건: 실제 앱 런타임에서 Settings window가 key window로 열린 상태여야 한다.
-    // - 기대 결과: 닫기 control 또는 ⌘W 입력 후 현재 Settings window가 닫힌다.
+    // - 기대 결과: 닫기 control 또는 ⌘W 입력 후 현재 Settings window가 닫히고 다음 fresh reopen은 General로 시작한다.
 }
