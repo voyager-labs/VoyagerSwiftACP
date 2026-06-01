@@ -35,6 +35,13 @@ mise tasks
 - Never automatically reset, revert, or discard changes in `opencode.json`.
 - Never include `opencode.json` in commits unless the user explicitly asks for it.
 
+## Plan quality conventions
+
+Plans under `.sisyphus/plans/` must follow the quality contract in `.agents/rules/99-agent/11-plan-quality-contract.md`. Every implementation plan includes TDD evidence policy, test ownership convention, and commit workflow references. Agents that write or review plans must load and apply this rule.
+
+## Destructive operation safety
+
+Agents must never run destructive git or filesystem operations (`git checkout -- .`, `git clean`, `git reset --hard`, `rm -rf`, etc.) without first asking the user for explicit confirmation, even when tool permissions allow it. See `.agents/rules/99-agent/12-destructive-operation-confirmation.md`.
 ## Commit attribution
 
 - Agents must **never** add `Co-authored-by: Sisyphus`, `Co-authored-by: Sisyphus <...>`, `Ultraworked with Sisyphus`, or any similar AI/Sisyphus co-author trailer to commit messages.
