@@ -3,6 +3,10 @@
 
 post-checkout:
   commands:
+    mise-install:
+      run: mise install
+    lefthook-install:
+      run: lefthook install
     submodules:
       run: git submodule update --init --recursive
     codegraph:
