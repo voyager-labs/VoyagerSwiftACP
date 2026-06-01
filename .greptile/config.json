@@ -1,8 +1,7 @@
 {
   "strictness": 3,
   "commentTypes": [
-    "logic",
-    "style"
+    "logic"
   ],
   "triggerOnUpdates": true,
   "statusCheck": true,
@@ -18,7 +17,7 @@
     "collapsible": false,
     "defaultOpen": true
   },
-  "ignorePatterns": "docs/canonical/**",
+  "ignorePatterns": "docs/canonical\ndocs/**\nREADME.md\nREADME.*.md\n**/*.generated.*\nbuild/**\nDerivedData/**\n**/__snapshots__/**\n**/coverage/**\nvendor/**\nnode_modules/**",
   "instructions": "Review this repository like a senior Voyager engineer, not like a linter. Prioritize repository architecture fit, ownership boundaries, reuse of existing modules/utilities, duplicate abstraction detection, lifecycle/cancellation correctness, and FSD/TCA dependency direction. All review comments and explanations must be written in Korean. Keep code symbols, file paths, type names, API names, and commands in English. Do not comment on formatting, import ordering, naming nits, obvious type errors, or issues that CI/lint/formatters would catch. Leave only high-confidence P0/P1 findings with concrete evidence from the diff and surrounding code.",
   "rules": [
     {
