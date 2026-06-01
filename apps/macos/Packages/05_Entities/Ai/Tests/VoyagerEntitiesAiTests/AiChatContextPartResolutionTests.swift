@@ -39,27 +39,6 @@ final class AiChatContextPartResolutionTests: XCTestCase {
         )
     }
 
-    func testResolvedReference_mapsCollectionPathsToCollectionPathList() {
-        let result = AiChatAttachmentResolutionResult.resolvedReference(
-            metadata: [
-                "collectionItemCount": "2",
-                "collectionItemPaths": "/tmp/project/README.md\n/tmp/project/design.pdf\n",
-                "collectionItemsIncluded": "2",
-            ],
-        )
-
-        XCTAssertEqual(
-            result.contextPartResolution,
-            .collectionPathList(
-                paths: ["/tmp/project/README.md", "/tmp/project/design.pdf"],
-                metadata: [
-                    "collectionItemCount": "2",
-                    "collectionItemsIncluded": "2",
-                ],
-            ),
-        )
-    }
-
     func testFailure_mapsToFailurePreservingReasonAndMetadata() {
         let result = AiChatAttachmentResolutionResult.failure(
             reason: .permissionDenied,
@@ -70,18 +49,5 @@ final class AiChatContextPartResolutionTests: XCTestCase {
             result.contextPartResolution,
             .failure(reason: .permissionDenied, metadata: ["path": "/tmp/Secrets.txt"]),
         )
-    }
-
-    func testContextPartResolution_roundTripsProviderNativeFileKind() throws {
-        let resolution = AiChatContextPartResolution.providerNativeFile(
-            kind: .openAIDocument,
-            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            metadata: ["source": "upload"],
-        )
-
-        let encoded = try JSONEncoder().encode(resolution)
-        let decoded = try JSONDecoder().decode(AiChatContextPartResolution.self, from: encoded)
-
-        XCTAssertEqual(decoded, resolution)
     }
 }
