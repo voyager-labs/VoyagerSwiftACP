@@ -65,22 +65,18 @@ public extension AiChatProviderExecutionClient {
     internal nonisolated static func live(
         session: URLSession = .shared,
         now: @escaping @Sendable () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1000.0).rounded()) },
-        codexExecutor: @escaping @Sendable (
-            _ model: String,
-            _ prompt: String,
-            _ thinking: AiChatProviderThinkingPayload?,
-            _ credential: OAuthCredentialFile,
-            _ onDelta: @escaping @Sendable (String) -> Void,
-        ) async throws -> String,
+        codexExecutor: @escaping AiChatProviderCodexExecutor = executeCodexCLI,
+        registry: AiChatProviderExecutorRegistry? = nil,
     ) -> AiChatProviderExecutionClient {
-        AiChatProviderExecutionClient(
+        let executorRegistry = registry ?? .default()
+        return AiChatProviderExecutionClient(
             execute: { request, credential in
                 NSLog(
                     "[AiChatProviderExecution] Preparing provider request provider=%@ model=%@ requestID=%@ credentialPresent=%@",
                     request.context.provider.rawValue,
                     request.context.selectedModel?.rawModelID ?? request.context.model.rawValue,
                     request.context.requestID.rawValue.uuidString,
-                    String(credential != nil)
+                    String(credential != nil),
                 )
 
                 let result: AiChatProviderPreflightResult
@@ -92,7 +88,7 @@ public extension AiChatProviderExecutionClient {
                         request.context.provider.rawValue,
                         request.context.selectedModel?.rawModelID ?? request.context.model.rawValue,
                         request.context.requestID.rawValue.uuidString,
-                        preflightLogReason(error)
+                        preflightLogReason(error),
                     )
                     throw mapPreflightError(error)
                 }
@@ -103,44 +99,16 @@ public extension AiChatProviderExecutionClient {
                     result.payload.rawModelID,
                     request.context.requestID.rawValue.uuidString,
                     result.payload.context.requestContext.parts.count,
-                    result.payload.messages.count
+                    result.payload.messages.count,
                 )
 
-                switch result.payload.provider {
-                case .openai:
-                    NSLog(
-                        "[AiChatProviderExecution] Starting OpenAI stream requestID=%@",
-                        request.context.requestID.rawValue.uuidString
-                    )
-                    return openAIStream(
-                        context: request.context,
-                        preflight: result,
-                        session: session,
-                        now: now,
-                    )
-                case .anthropic:
-                    NSLog(
-                        "[AiChatProviderExecution] Starting Anthropic stream requestID=%@",
-                        request.context.requestID.rawValue.uuidString
-                    )
-                    return anthropicStream(
-                        context: request.context,
-                        preflight: result,
-                        session: session,
-                        now: now,
-                    )
-                case .chatgptCodex:
-                    NSLog(
-                        "[AiChatProviderExecution] Starting Codex execution requestID=%@",
-                        request.context.requestID.rawValue.uuidString
-                    )
-                    return codexStream(
-                        context: request.context,
-                        preflight: result,
-                        now: now,
-                        executor: codexExecutor,
-                    )
-                }
+                let executor = try executorRegistry.executor(for: result.payload.provider)
+                return executor.execute(AiChatProviderExecutionInput(
+                    preflight: result,
+                    session: session,
+                    now: now,
+                    codexExecutor: codexExecutor,
+                ))
             },
         )
     }
@@ -149,19 +117,19 @@ public extension AiChatProviderExecutionClient {
 private func preflightLogReason(_ error: AiChatProviderPreflightError) -> String {
     switch error {
     case let .missingCredential(provider):
-        return "missingCredential(\(provider.rawValue))"
+        "missingCredential(\(provider.rawValue))"
     case let .invalidCredential(provider, expected):
-        return "invalidCredential(\(provider.rawValue), expected: \(expected.rawValue))"
+        "invalidCredential(\(provider.rawValue), expected: \(expected.rawValue))"
     case let .loweringFailed(error):
-        return "loweringFailed(\(loweringLogReason(error)))"
+        "loweringFailed(\(loweringLogReason(error)))"
     }
 }
 
 private func loweringLogReason(_ error: AiChatProviderRequestLoweringError) -> String {
     switch error {
     case let .modelProviderMismatch(requestProvider, modelProvider):
-        return "modelProviderMismatch(request: \(requestProvider.rawValue), model: \(modelProvider.rawValue))"
+        "modelProviderMismatch(request: \(requestProvider.rawValue), model: \(modelProvider.rawValue))"
     case let .missingModelID(provider):
-        return "missingModelID(\(provider.rawValue))"
+        "missingModelID(\(provider.rawValue))"
     }
 }

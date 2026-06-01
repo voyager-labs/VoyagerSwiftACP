@@ -104,7 +104,9 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
                     throw error
                 }
 
-                let result = try await group.next()!
+                guard let result = try await group.next() else {
+                    throw OAuthCallbackError.cancelled
+                }
                 group.cancelAll()
                 return result
             }
@@ -181,7 +183,7 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
         guard let queryIndex = path.firstIndex(of: "?") else {
             respond(
                 html: Self.htmlPage(title: "Error", body: "Invalid callback URL."),
-                on: connection
+                on: connection,
             )
             resolve(.failure(OAuthCallbackError.invalidCallback("No query string")))
             return
@@ -194,7 +196,7 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
             let desc = params["error_description"] ?? error
             respond(
                 html: Self.htmlPage(title: "Authentication Failed", body: desc),
-                on: connection
+                on: connection,
             )
             resolve(.failure(OAuthCallbackError.accessDenied(desc)))
             return
@@ -203,7 +205,7 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
         guard let code = params["code"], let state = params["state"] else {
             respond(
                 html: Self.htmlPage(title: "Error", body: "Missing authorization parameters."),
-                on: connection
+                on: connection,
             )
             resolve(.failure(OAuthCallbackError.invalidCallback("Missing code or state")))
             return
@@ -211,7 +213,7 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
 
         respond(
             html: Self.htmlPage(title: "Success!", body: "You can close this tab and return to Voyager."),
-            on: connection
+            on: connection,
         )
         resolve(.success(OAuthCallbackResult(code: code, state: state)))
     }
@@ -260,16 +262,35 @@ final class LocalOAuthHTTPServer: @unchecked Sendable {
     }
 
     static func htmlPage(title: String, body: String) -> String {
-        """
-        <!DOCTYPE html><html><head><title>\(title)</title></head>\
+        let escapedTitle = htmlEscaped(title)
+        let escapedBody = htmlEscaped(body)
+        return """
+        <!DOCTYPE html><html><head><title>\(escapedTitle)</title></head>\
         <body style="font-family:-apple-system,sans-serif;display:flex;\
         justify-content:center;align-items:center;height:100vh;margin:0;\
         background:#f5f5f7;">\
         <div style="text-align:center;padding:40px;background:white;\
         border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.1);">\
-        <h1 style="color:#1d1d1f;">\(title)</h1>\
-        <p style="color:#6e6e73;">\(body)</p>\
+        <h1 style="color:#1d1d1f;">\(escapedTitle)</h1>\
+        <p style="color:#6e6e73;">\(escapedBody)</p>\
         </div></body></html>
         """
+    }
+
+    private static func htmlEscaped(_ value: String) -> String {
+        value.reduce(into: "") { result, character in
+            switch character {
+            case "&":
+                result += "&amp;"
+            case "<":
+                result += "&lt;"
+            case ">":
+                result += "&gt;"
+            case "\"":
+                result += "&quot;"
+            default:
+                result.append(character)
+            }
+        }
     }
 }

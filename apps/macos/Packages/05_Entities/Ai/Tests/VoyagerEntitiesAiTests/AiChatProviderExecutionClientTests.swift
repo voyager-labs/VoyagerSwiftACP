@@ -10,6 +10,65 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         super.tearDown()
     }
 
+    func testProviderExecutorRegistry_defaultRegistersEveryProvider() throws {
+        let registry = AiChatProviderExecutorRegistry.default()
+
+        XCTAssertEqual(registry.registeredProviders, Set(AiProvider.allCases))
+        for provider in AiProvider.allCases {
+            XCTAssertNoThrow(try registry.executor(for: provider))
+        }
+    }
+
+    func testExecute_openAIRoutesThroughRegistryExecutor() throws {
+        try assertRegistryRoute(
+            provider: .openai,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+            rawModelID: "gpt-5.5",
+        )
+    }
+
+    func testExecute_anthropicRoutesThroughRegistryExecutor() throws {
+        try assertRegistryRoute(
+            provider: .anthropic,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
+            rawModelID: "claude-sonnet-4-6",
+        )
+    }
+
+    func testExecute_chatgptCodexRoutesThroughRegistryExecutor() throws {
+        try assertRegistryRoute(
+            provider: .chatgptCodex,
+            credential: .oauth(OAuthCredentialFile(accessToken: "codex-token")),
+            rawModelID: "gpt-5-codex",
+            selectedThinking: .effort(.high),
+            thinkingCapability: .effort(values: [.low, .high], defaultValue: .low),
+        )
+    }
+
+    func testProviderExecutorRegistry_missingExecutorFailsBeforeNetwork() throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OpenAIExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        nonisolated(unsafe) var codexInvocationCount = 0
+        let client = AiChatProviderExecutionClient.live(
+            session: session,
+            codexExecutor: { _, _, _, _, _ in
+                codexInvocationCount += 1
+                return "unreachable"
+            },
+            registry: AiChatProviderExecutorRegistry(executors: [:]),
+        )
+        let request = makeRequest(provider: .openai, rawModelID: "gpt-5.5")
+
+        XCTAssertThrowsError(
+            try client.execute(request, .apiKey(APIKeyCredentialFile(secret: "sk-openai"))),
+        ) { error in
+            XCTAssertEqual(error as? AiChatProviderExecutionClientError, .unsupportedProvider(.openai))
+        }
+        XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 0)
+        XCTAssertEqual(codexInvocationCount, 0)
+    }
+
     func testExecute_openAIWithOAuthCredential_failsBeforeNetwork() throws {
         let client = makeLiveClient()
         let request = makeRequest(provider: .openai, rawModelID: "gpt-5.5")
@@ -25,6 +84,41 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
                 .invalidCredential(provider: .openai, expected: .apiKey),
             )
         }
+        XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 0)
+    }
+
+    func testExecute_invalidCredentialPreflightDoesNotInvokeRegistryExecutor() throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OpenAIExecutionURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        nonisolated(unsafe) var executorInvocationCount = 0
+        let registry = AiChatProviderExecutorRegistry(executors: [
+            .openai: AiChatProviderExecutor { input in
+                executorInvocationCount += 1
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.started(context: input.preflight.executionContext))
+                    continuation.finish()
+                }
+            },
+        ])
+        let client = AiChatProviderExecutionClient.live(
+            session: session,
+            registry: registry,
+        )
+        let request = makeRequest(provider: .openai, rawModelID: "gpt-5.5")
+
+        XCTAssertThrowsError(
+            try client.execute(
+                request,
+                .oauth(OAuthCredentialFile(accessToken: "oauth-token")),
+            ),
+        ) { error in
+            XCTAssertEqual(
+                error as? AiChatProviderExecutionClientError,
+                .invalidCredential(provider: .openai, expected: .apiKey),
+            )
+        }
+        XCTAssertEqual(executorInvocationCount, 0)
         XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 0)
     }
 
@@ -69,6 +163,88 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             )),
         ])
         XCTAssertEqual(OpenAIExecutionURLProtocol.requestCount, 0)
+    }
+
+    func testExecute_chatgptCodexStreamCancellation_stopsExecutorWithoutTerminalEvent() async throws {
+        let request = makeRequest(
+            provider: .chatgptCodex,
+            rawModelID: "gpt-5-codex",
+            selectedThinking: .effort(.high),
+            thinkingCapability: .effort(values: [.low, .high], defaultValue: .low),
+        )
+        let executorEntered = XCTestExpectation(description: "Codex executor entered")
+        let startedObserved = XCTestExpectation(description: "Consumer observed started event")
+        let executorCancelled = XCTestExpectation(description: "Codex executor cancelled")
+        let consumerFinished = XCTestExpectation(description: "Consumer finished")
+        let client = makeCancellableCodexClient(
+            executorEntered: executorEntered,
+            executorCancelled: executorCancelled,
+        )
+        let stream = try client.execute(request, .oauth(OAuthCredentialFile(accessToken: "codex-token")))
+        let consumerTask = Self.consumeUntilCancelledForTest(
+            stream,
+            startedObserved: startedObserved,
+            finished: consumerFinished,
+        )
+
+        XCTAssertEqual(XCTWaiter.wait(for: [executorEntered, startedObserved], timeout: 1.0), .completed)
+        consumerTask.cancel()
+        XCTAssertEqual(XCTWaiter.wait(for: [executorCancelled, consumerFinished], timeout: 1.0), .completed)
+
+        let events = await consumerTask.value
+        XCTAssertEqual(events, [.started(context: request.context)])
+        XCTAssertFalse(events.containsTerminalEvent)
+    }
+
+    func testExecute_registryExecutorCancellation_stopsProducerWithoutTerminalEvent() async throws {
+        let request = makeRequest(provider: .openai, rawModelID: "gpt-5.5")
+        let producerEntered = XCTestExpectation(description: "Registry executor entered")
+        let startedObserved = XCTestExpectation(description: "Registry consumer observed started event")
+        let producerCancelled = XCTestExpectation(description: "Registry executor cancelled")
+        let consumerFinished = XCTestExpectation(description: "Registry consumer finished")
+        let registry = makeCancellableRegistry(
+            producerEntered: producerEntered,
+            producerCancelled: producerCancelled,
+        )
+        let client = AiChatProviderExecutionClient.live(registry: registry)
+        let stream = try client.execute(request, .apiKey(APIKeyCredentialFile(secret: "sk-openai")))
+        let consumerTask = Self.consumeUntilCancelledForTest(
+            stream,
+            startedObserved: startedObserved,
+            finished: consumerFinished,
+        )
+
+        XCTAssertEqual(XCTWaiter.wait(for: [producerEntered, startedObserved], timeout: 1.0), .completed)
+        consumerTask.cancel()
+        XCTAssertEqual(XCTWaiter.wait(for: [producerCancelled, consumerFinished], timeout: 1.0), .completed)
+
+        let events = await consumerTask.value
+        XCTAssertEqual(events, [.started(context: request.context)])
+        XCTAssertFalse(events.containsTerminalEvent)
+    }
+
+    func testExecute_registryExecutorFailureEvent_preservesFailureSurface() throws {
+        let request = makeRequest(provider: .openai, rawModelID: "gpt-5.5")
+        let registry = AiChatProviderExecutorRegistry(executors: [
+            .openai: AiChatProviderExecutor { input in
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.started(context: input.preflight.executionContext))
+                    continuation.yield(.failed(context: input.preflight.executionContext, reason: .authentication))
+                    continuation.finish()
+                }
+            },
+        ])
+        let client = AiChatProviderExecutionClient.live(registry: registry)
+
+        let events = try collect(client.execute(
+            request,
+            .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+        ))
+
+        XCTAssertEqual(events, [
+            .started(context: request.context),
+            .failed(context: request.context, reason: .authentication),
+        ])
     }
 
     func testCodexProcessStateTerminatesProcessSetAfterCancellation() throws {
@@ -675,6 +851,164 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
 }
 
 private extension AiChatProviderExecutionClientTests {
+    func assertRegistryRoute(
+        provider: AiProvider,
+        credential: StoredCredentialPayload,
+        rawModelID: String,
+        selectedThinking: AiThinkingSelection? = AiThinkingSelection.none,
+        thinkingCapability: AiModelThinkingCapability? = nil,
+    ) throws {
+        let request = makeRequest(
+            provider: provider,
+            rawModelID: rawModelID,
+            selectedThinking: selectedThinking,
+            thinkingCapability: thinkingCapability,
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        let session = URLSession(configuration: configuration)
+        let expectedNow: Int64 = 42424
+        nonisolated(unsafe) var executedProviders: [AiProvider] = []
+        nonisolated(unsafe) var observedInput: AiChatProviderExecutionInput?
+        let codexExecutor: AiChatProviderCodexExecutor = { _, _, _, _, _ in
+            "registry-stub"
+        }
+        let executor = AiChatProviderExecutor { input in
+            executedProviders.append(provider)
+            observedInput = input
+            return AsyncThrowingStream { continuation in
+                continuation.yield(.started(context: input.preflight.executionContext))
+                continuation.finish()
+            }
+        }
+        let registry = AiChatProviderExecutorRegistry(executors: [provider: executor])
+        let client = AiChatProviderExecutionClient.live(
+            session: session,
+            now: { expectedNow },
+            codexExecutor: codexExecutor,
+            registry: registry,
+        )
+
+        let events = try collect(client.execute(request, credential))
+
+        XCTAssertEqual(events, [.started(context: request.context)])
+        XCTAssertEqual(executedProviders, [provider])
+        let input = try XCTUnwrap(observedInput)
+        XCTAssertEqual(input.preflight, try AiChatProviderPreflight.prepare(request, credential: credential))
+        XCTAssertEqual(ObjectIdentifier(input.session), ObjectIdentifier(session))
+        XCTAssertEqual(input.now(), expectedNow)
+
+        assertCodexProbe(provider: provider, rawModelID: rawModelID, input: input)
+    }
+
+    func assertCodexProbe(
+        provider: AiProvider,
+        rawModelID: String,
+        input: AiChatProviderExecutionInput,
+    ) {
+        guard provider == .chatgptCodex else { return }
+        let prompt = AiChatProviderExecutionClient.makeCodexPrompt(payload: input.preflight.payload)
+        XCTAssertEqual(input.preflight.payload.rawModelID, rawModelID)
+        XCTAssertEqual(input.preflight.payload.thinking, .effort(.high))
+        XCTAssertTrue(prompt.contains("current_context:"))
+    }
+
+    func makeCancellableCodexClient(
+        executorEntered: XCTestExpectation,
+        executorCancelled: XCTestExpectation,
+    ) -> AiChatProviderExecutionClient {
+        AiChatProviderExecutionClient.live(
+            now: { 30002 },
+            codexExecutor: { model, prompt, thinking, credential, _ in
+                XCTAssertEqual(model, "gpt-5-codex")
+                XCTAssertEqual(thinking, .effort(.high))
+                XCTAssertEqual(credential.accessToken, "codex-token")
+                XCTAssertTrue(prompt.contains("current_context:"))
+                executorEntered.fulfill()
+                return try await Self.waitForCancellationForTest(onCancel: executorCancelled.fulfill)
+            },
+        )
+    }
+
+    func makeCancellableRegistry(
+        producerEntered: XCTestExpectation,
+        producerCancelled: XCTestExpectation,
+    ) -> AiChatProviderExecutorRegistry {
+        AiChatProviderExecutorRegistry(executors: [
+            .openai: AiChatProviderExecutor { input in
+                Self.cancellableRegistryStreamForTest(
+                    context: input.preflight.executionContext,
+                    producerEntered: producerEntered,
+                    producerCancelled: producerCancelled,
+                )
+            },
+        ])
+    }
+
+    static func consumeUntilCancelledForTest(
+        _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
+        startedObserved: XCTestExpectation,
+        finished: XCTestExpectation,
+    ) -> Task<[AiChatProviderExecutionEvent], Never> {
+        Task {
+            defer { finished.fulfill() }
+            return await Self.collectUntilCancelledForTest(stream, startedObserved: startedObserved)
+        }
+    }
+
+    static func collectUntilCancelledForTest(
+        _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
+        startedObserved: XCTestExpectation,
+    ) async -> [AiChatProviderExecutionEvent] {
+        var events: [AiChatProviderExecutionEvent] = []
+        do {
+            for try await event in stream {
+                events.append(event)
+                if case .started = event { startedObserved.fulfill() }
+            }
+        } catch is CancellationError {
+            return events
+        } catch {
+            XCTFail("Unexpected consumer error: \(error)")
+        }
+        return events
+    }
+
+    static func waitForCancellationForTest(onCancel: @escaping @Sendable () -> Void) async throws -> String {
+        try await withTaskCancellationHandler {
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            throw CancellationError()
+        } onCancel: {
+            onCancel()
+        }
+    }
+
+    static func cancellableRegistryStreamForTest(
+        context: AiChatRequestContextSnapshot,
+        producerEntered: XCTestExpectation,
+        producerCancelled: XCTestExpectation,
+    ) -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let producer = Task {
+                await withTaskCancellationHandler {
+                    producerEntered.fulfill()
+                    continuation.yield(.started(context: context))
+                    while !Task.isCancelled {
+                        await Task.yield()
+                    }
+                    continuation.finish()
+                } onCancel: {
+                    producerCancelled.fulfill()
+                    continuation.finish()
+                }
+            }
+            continuation.onTermination = { termination in
+                if case .cancelled = termination { producer.cancel() }
+            }
+        }
+    }
+
     func makeLiveClient(
         now: Int64 = 5000,
         handler: @escaping @Sendable (URLRequest) throws -> (HTTPURLResponse, Data),
@@ -914,6 +1248,16 @@ private extension AiChatProviderExecutionClientTests {
     }
 }
 
+private extension [AiChatProviderExecutionEvent] {
+    var containsTerminalEvent: Bool {
+        contains { event in
+            if case .final = event { return true }
+            if case .failed = event { return true }
+            return false
+        }
+    }
+}
+
 private struct CapturedOpenAIRequestBody: Decodable {
     let model: String
     let input: [CapturedOpenAIInputItem]
@@ -930,15 +1274,6 @@ private enum CapturedOpenAIContent: Decodable, Equatable {
     case text(String)
     case parts([CapturedOpenAIContentItem])
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let text = try? container.decode(String.self) {
-            self = .text(text)
-            return
-        }
-        self = .parts(try container.decode([CapturedOpenAIContentItem].self))
-    }
-
     var text: String? {
         guard case let .text(value) = self else { return nil }
         return value
@@ -947,6 +1282,15 @@ private enum CapturedOpenAIContent: Decodable, Equatable {
     var parts: [CapturedOpenAIContentItem]? {
         guard case let .parts(value) = self else { return nil }
         return value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let text = try? container.decode(String.self) {
+            self = .text(text)
+            return
+        }
+        self = try .parts(container.decode([CapturedOpenAIContentItem].self))
     }
 }
 

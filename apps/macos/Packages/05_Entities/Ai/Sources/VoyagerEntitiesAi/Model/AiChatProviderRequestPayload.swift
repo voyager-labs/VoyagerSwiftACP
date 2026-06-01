@@ -81,6 +81,23 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
         context.requestContext.currentContext
     }
 
+    var fallbackExecutionContext: AiChatRequestContextSnapshot {
+        AiChatRequestContextSnapshot(
+            sessionID: context.sessionID,
+            requestID: context.requestID,
+            runID: context.runID,
+            provider: provider,
+            model: AiModelHandle(provider: provider, rawValue: rawModelID),
+            selectedModel: nil,
+            selectedThinking: nil,
+            sessionStatus: .idle,
+            currentContext: context.currentContext,
+            requestContext: context.requestContext,
+            promptSummary: context.promptSummary,
+            submittedAtMs: context.submittedAtMs,
+        )
+    }
+
     public static func lower(
         _ request: AiChatRequest,
         thinking: AiChatProviderThinkingPayload?,

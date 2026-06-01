@@ -18,6 +18,8 @@ extension AiChatFeature {
                 } else {
                     await send(Self.missingRestoreAction(context: context, uuid: uuid))
                 }
+            } catch is CancellationError {
+                return
             } catch {
                 await send(Self.corruptedRestoreAction(context: context, uuid: uuid))
             }
