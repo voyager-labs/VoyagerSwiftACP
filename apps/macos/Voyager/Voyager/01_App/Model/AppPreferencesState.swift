@@ -6,7 +6,7 @@ import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
-struct AppPreferencesState: Equatable, Sendable {
+struct AppPreferencesState: Equatable {
     var showHiddenFiles: Bool = false
     var viewLayout: EntryViewLayoutState.Mode = .list
     var sortKey: SortKey = .name

@@ -51,7 +51,7 @@ public struct CollectionNavigationStatePayload: Equatable, Sendable {
         composerText: String,
         scopes: [String],
         excludedScopes: [String]? = nil,
-        conditions: [Condition]
+        conditions: [Condition],
     ) {
         self.context = context
         self.includeSubfolders = includeSubfolders ?? context.includeSubfolders

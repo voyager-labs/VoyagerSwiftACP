@@ -12,7 +12,7 @@ public struct CollectionContext: Equatable, Sendable {
         scopes: [String] = [],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
-        conditions: [Condition] = []
+        conditions: [Condition] = [],
     ) {
         self.query = query
         self.scopes = scopes

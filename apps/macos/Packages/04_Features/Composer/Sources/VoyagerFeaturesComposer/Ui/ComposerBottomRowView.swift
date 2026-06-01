@@ -19,13 +19,18 @@ struct ComposerBottomRowView: View {
     private let chipVerticalPadding: CGFloat = 8
     private let maxChipAreaHeight: CGFloat = 200
     private let defaultChipHeight: CGFloat = 28
-    private var conditionChipHeight: CGFloat { defaultChipHeight }
+    private var conditionChipHeight: CGFloat {
+        defaultChipHeight
+    }
+
     private let scopeRowVerticalPadding: CGFloat = 0
     private let defaultChipWidth: CGFloat = 120
     private let conditionRowVerticalPadding: CGFloat = 0
     private let conditionRowHorizontalPadding: CGFloat = 0
 
-    private var conditionRowHeight: CGFloat { defaultChipHeight }
+    private var conditionRowHeight: CGFloat {
+        defaultChipHeight
+    }
 
     var body: some View {
         WithViewStore(
@@ -99,7 +104,6 @@ private extension ComposerBottomRowView {
         .padding(.vertical, chipVerticalPadding)
     }
 
-    @ViewBuilder
     private func scopeSection(
         rows: [[ChipItemType]],
         historyPaths: [String],
@@ -108,7 +112,6 @@ private extension ComposerBottomRowView {
         scopeRow(rows: rows, historyPaths: historyPaths, isPresented: isPresented)
     }
 
-    @ViewBuilder
     private func conditionSection(
         rows: [[ChipItemType]],
         pickerStore: StoreOf<ConditionPropertyPickerFeature>,
@@ -178,7 +181,6 @@ private extension ComposerBottomRowView {
         )
     }
 
-    @ViewBuilder
     private func scopeRow(
         rows: [[ChipItemType]],
         historyPaths: [String],

@@ -104,7 +104,6 @@ private extension ScopePickerView {
         }
     }
 
-    @ViewBuilder
     private func scopeChangeFeedbackBanner(_ display: ComposerScopeChangeFeedbackDisplay) -> some View {
         ScopeChangeFeedbackBannerView(
             display: display,
@@ -410,8 +409,6 @@ private extension ScopePickerView {
             }
             .padding(.vertical, 8)
             .accessibilityIdentifier(ScopePickerAccessibilityID.noResults)
-        } else {
-            EmptyView()
         }
     }
 

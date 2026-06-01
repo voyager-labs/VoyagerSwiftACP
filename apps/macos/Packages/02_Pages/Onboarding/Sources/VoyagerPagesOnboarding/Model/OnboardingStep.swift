@@ -1,6 +1,6 @@
 import Foundation
 
-enum OnboardingStep: String, CaseIterable, Codable, Sendable {
+enum OnboardingStep: String, CaseIterable, Codable {
     case welcome
     case betaAccess
     case permissions

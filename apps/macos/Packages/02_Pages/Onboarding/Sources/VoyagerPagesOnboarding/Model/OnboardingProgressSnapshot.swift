@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated struct OnboardingStepState: Codable, Equatable, Sendable {
+nonisolated struct OnboardingStepState: Codable, Equatable {
     var welcomeComplete: Bool
     var betaAccessComplete: Bool
     var permissionsComplete: Bool
@@ -19,7 +19,7 @@ nonisolated struct OnboardingStepState: Codable, Equatable, Sendable {
     }
 }
 
-nonisolated struct OnboardingProgressSnapshot: Equatable, Sendable {
+nonisolated struct OnboardingProgressSnapshot: Equatable {
     var currentStep: OnboardingStep
     var stepState: OnboardingStepState
 }

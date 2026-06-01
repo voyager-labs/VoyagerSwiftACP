@@ -7,7 +7,7 @@ public struct EntryThumbnailCacheClient: Sendable {
     public var removeThumbnails: @Sendable (_ paths: [String]) -> Void
     public var clearCache: @Sendable () -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         getThumbnail: @escaping @Sendable (_ path: String) -> NSImage?,
         saveThumbnail: @escaping @Sendable (_ image: NSImage, _ path: String) -> Void,
         removeThumbnails: @escaping @Sendable (_ paths: [String]) -> Void,
@@ -33,13 +33,13 @@ public struct EntryThumbnailCacheClient: Sendable {
 }
 
 extension EntryThumbnailCacheClient: DependencyKey {
-    private nonisolated(unsafe) static let thumbnailCache: NSCache<NSString, NSImage> = {
+    nonisolated(unsafe) private static let thumbnailCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.countLimit = 300
         return cache
     }()
 
-    public nonisolated static var liveValue: EntryThumbnailCacheClient {
+    nonisolated public static var liveValue: EntryThumbnailCacheClient {
         .init(
             getThumbnail: { path in
                 thumbnailCache.object(forKey: path as NSString)
@@ -58,7 +58,7 @@ extension EntryThumbnailCacheClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: EntryThumbnailCacheClient {
+    nonisolated public static var testValue: EntryThumbnailCacheClient {
         .init(
             getThumbnail: { _ in nil },
             saveThumbnail: { _, _ in },
@@ -67,7 +67,9 @@ extension EntryThumbnailCacheClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: EntryThumbnailCacheClient { testValue }
+    nonisolated public static var previewValue: EntryThumbnailCacheClient {
+        testValue
+    }
 }
 
 public extension DependencyValues {

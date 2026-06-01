@@ -1,5 +1,4 @@
 @preconcurrency import AppKit
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared

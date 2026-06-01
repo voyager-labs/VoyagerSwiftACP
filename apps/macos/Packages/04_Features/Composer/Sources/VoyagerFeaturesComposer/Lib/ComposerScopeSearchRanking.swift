@@ -35,7 +35,7 @@ enum ComposerScopeSearchRanking {
         }
     }
 
-    private nonisolated static func searchResultScore(
+    nonisolated private static func searchResultScore(
         for item: ComposerScopeUtils.DirectoryItem,
         query: String,
     ) -> SearchResultScore {
@@ -56,7 +56,7 @@ enum ComposerScopeSearchRanking {
         )
     }
 
-    private nonisolated static func searchMatchRank(
+    nonisolated private static func searchMatchRank(
         name: String,
         query: String,
     ) -> SearchMatchRank {
@@ -66,7 +66,7 @@ enum ComposerScopeSearchRanking {
         return .substring
     }
 
-    private nonisolated static func containsWordBoundaryMatch(
+    nonisolated private static func containsWordBoundaryMatch(
         name: String,
         query: String,
     ) -> Bool {
@@ -89,7 +89,7 @@ enum ComposerScopeSearchRanking {
         return false
     }
 
-    private nonisolated static func pathDepth(_ path: String) -> Int {
+    nonisolated private static func pathDepth(_ path: String) -> Int {
         URL(fileURLWithPath: path).pathComponents.count
     }
 }

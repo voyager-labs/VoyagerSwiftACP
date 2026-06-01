@@ -423,7 +423,6 @@ extension ConditionChipValueSectionView {
         }
     }
 
-    @ViewBuilder
     private func inlineValueFields(
         indices: [Int],
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,

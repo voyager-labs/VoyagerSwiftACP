@@ -266,7 +266,7 @@ struct WindowSessionFeature {
     }
 
     @CasePathable
-    enum Action: Sendable {
+    enum Action {
         case window(FileManagerWindowFeature.Action)
     }
 

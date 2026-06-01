@@ -3,7 +3,9 @@ import Foundation
 public struct ComposerScopeBase: Equatable, Sendable, Identifiable {
     public let path: String
 
-    public var id: String { path }
+    public var id: String {
+        path
+    }
 
     public init(path: String) {
         self.path = path
@@ -13,7 +15,9 @@ public struct ComposerScopeBase: Equatable, Sendable, Identifiable {
 public struct ComposerScopeException: Equatable, Sendable, Identifiable {
     public let path: String
 
-    public var id: String { path }
+    public var id: String {
+        path
+    }
 
     public init(path: String) {
         self.path = path
@@ -126,13 +130,13 @@ public enum ComposerScopeSelection: Equatable, Sendable {
     }
 }
 
-enum ComposerScopeCompositionState: Equatable, Sendable {
+enum ComposerScopeCompositionState: Equatable {
     case rootOnly
     case singleExplicit
     case multiExplicit
 }
 
-enum ComposerScopeEditorEntryMode: Equatable, Sendable {
+enum ComposerScopeEditorEntryMode: Equatable {
     case add
     case edit
 }
@@ -143,7 +147,7 @@ public enum ScopeCandidateIntent: Equatable, Sendable {
     case exclude(path: String)
 }
 
-enum ComposerScopeEditorListState: Equatable, Sendable {
+enum ComposerScopeEditorListState: Equatable {
     case defaultCandidates
     case childFolders(parentPath: String)
     case searchResults(query: String)
@@ -183,12 +187,14 @@ enum ComposerScopeEditorListState: Equatable, Sendable {
     }
 }
 
-struct ComposerScopeEditorCurrentItem: Equatable, Sendable, Identifiable {
+struct ComposerScopeEditorCurrentItem: Equatable, Identifiable {
     let base: ComposerScopeBase
     let isEditingTarget: Bool
     let exceptionCount: Int
 
-    var id: String { base.id }
+    var id: String {
+        base.id
+    }
 
     var exceptionSummaryText: String? {
         guard exceptionCount > 0 else { return nil }
@@ -196,7 +202,7 @@ struct ComposerScopeEditorCurrentItem: Equatable, Sendable, Identifiable {
     }
 }
 
-struct ComposerScopeEditorCandidateItem: Equatable, Sendable, Identifiable {
+struct ComposerScopeEditorCandidateItem: Equatable, Identifiable {
     let path: String
     let name: String
     let iconName: String
@@ -217,17 +223,21 @@ struct ComposerScopeEditorCandidateItem: Equatable, Sendable, Identifiable {
         self.secondaryText = secondaryText
     }
 
-    var id: String { path }
+    var id: String {
+        path
+    }
 }
 
-struct ComposerScopeEditorExceptionItem: Equatable, Sendable, Identifiable {
+struct ComposerScopeEditorExceptionItem: Equatable, Identifiable {
     let path: String
     let owningBasePath: String
 
-    var id: String { "exception-\(owningBasePath)-\(path)" }
+    var id: String {
+        "exception-\(owningBasePath)-\(path)"
+    }
 }
 
-enum ComposerScopeEditorSectionItem: Equatable, Sendable, Identifiable {
+enum ComposerScopeEditorSectionItem: Equatable, Identifiable {
     case currentScope(ComposerScopeEditorCurrentItem)
     case exceptionScope(ComposerScopeEditorExceptionItem)
     case addableCandidate(ComposerScopeEditorCandidateItem)
@@ -244,8 +254,8 @@ enum ComposerScopeEditorSectionItem: Equatable, Sendable, Identifiable {
     }
 }
 
-struct ComposerScopeEditorSection: Equatable, Sendable, Identifiable {
-    enum Kind: Equatable, Sendable {
+struct ComposerScopeEditorSection: Equatable, Identifiable {
+    enum Kind: Equatable {
         case currentScopes
         case addableCandidates(ComposerScopeEditorListState)
 
@@ -271,7 +281,9 @@ struct ComposerScopeEditorSection: Equatable, Sendable, Identifiable {
     let kind: Kind
     let items: [ComposerScopeEditorSectionItem]
 
-    var id: String { kind.id }
+    var id: String {
+        kind.id
+    }
 }
 
 public struct ComposerScopeEditorState: Equatable, Sendable {

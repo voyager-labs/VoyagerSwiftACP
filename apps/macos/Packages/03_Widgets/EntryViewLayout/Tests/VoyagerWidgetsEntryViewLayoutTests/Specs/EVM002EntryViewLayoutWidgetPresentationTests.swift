@@ -248,7 +248,7 @@ final class EVM002EntryViewLayoutWidgetPresentationTests: XCTestCase {
             EntryViewLayoutFeature()
         }
 
-        let ids: Set<String> = ["id-1", "id-2", "id-3"]
+        let ids: Set = ["id-1", "id-2", "id-3"]
 
         await store.send(.internal(.setSelectionState(
             ids: ids,
@@ -277,7 +277,7 @@ final class EVM002EntryViewLayoutWidgetPresentationTests: XCTestCase {
             EntryViewLayoutFeature()
         }
 
-        let newSelection: Set<String> = ["other-item"]
+        let newSelection: Set = ["other-item"]
 
         await store.send(.internal(.setSelectionState(
             ids: newSelection,
@@ -342,7 +342,7 @@ final class EVM002EntryViewLayoutWidgetPresentationTests: XCTestCase {
 
         XCTAssertEqual(store.state.selectedIds.count, 2)
 
-        let newIds: Set<String> = ["id-a", "id-b", "id-c", "id-d"]
+        let newIds: Set = ["id-a", "id-b", "id-c", "id-d"]
 
         await store.send(.internal(.setSelectionState(
             ids: newIds,

@@ -10,7 +10,7 @@ public struct FileManagerWindowClient: Sendable {
     public var closeAll: @Sendable () async -> Void
     public var focusPath: @Sendable (_ path: String) async -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         open: @escaping @Sendable (_ id: UUID) async -> Void,
         openTab: @escaping @Sendable (_ id: UUID) async -> Void,
         close: @escaping @Sendable (_ id: UUID) async -> Void,
@@ -26,7 +26,7 @@ public struct FileManagerWindowClient: Sendable {
 }
 
 extension FileManagerWindowClient: DependencyKey {
-    public nonisolated static var liveValue: FileManagerWindowClient {
+    nonisolated public static var liveValue: FileManagerWindowClient {
         .init(
             open: { _ in
                 fatalError("fileManagerWindowClient.open live dependency is not configured")
@@ -46,7 +46,7 @@ extension FileManagerWindowClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: FileManagerWindowClient {
+    nonisolated public static var testValue: FileManagerWindowClient {
         .init(
             open: { _ in
                 fatalError("fileManagerWindowClient.open test dependency is not configured")
@@ -66,7 +66,7 @@ extension FileManagerWindowClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: FileManagerWindowClient {
+    nonisolated public static var previewValue: FileManagerWindowClient {
         testValue
     }
 }

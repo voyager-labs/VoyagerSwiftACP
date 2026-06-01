@@ -18,7 +18,7 @@ public struct CollectionSavePanelClient: Sendable {
 }
 
 extension CollectionSavePanelClient: DependencyKey {
-    public nonisolated static var liveValue: CollectionSavePanelClient {
+    nonisolated public static var liveValue: CollectionSavePanelClient {
         CollectionSavePanelClient(
             presentSavePanel: { initialDirectory in
                 await MainActor.run {
@@ -67,14 +67,14 @@ extension CollectionSavePanelClient: DependencyKey {
         )
     }
 
-    public nonisolated(unsafe) static var testValue: CollectionSavePanelClient {
+    nonisolated(unsafe) public static var testValue: CollectionSavePanelClient {
         CollectionSavePanelClient(
             presentSavePanel: { _ in nil },
             defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") },
         )
     }
 
-    public nonisolated static var previewValue: CollectionSavePanelClient {
+    nonisolated public static var previewValue: CollectionSavePanelClient {
         CollectionSavePanelClient(
             presentSavePanel: { _ in nil },
             defaultSaveDirectory: { _ in URL(fileURLWithPath: "/tmp") },

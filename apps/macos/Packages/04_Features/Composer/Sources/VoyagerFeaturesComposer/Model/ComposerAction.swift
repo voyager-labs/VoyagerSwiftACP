@@ -98,30 +98,72 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
 }
 
 public extension ComposerAction {
-    static func setPresented(_ isPresented: Bool) -> Self { .view(.setPresented(isPresented)) }
-    static func setText(_ text: String) -> Self { .view(.setText(text)) }
-    static var focusQueryField: Self { .view(.focusQueryField) }
+    static func setPresented(_ isPresented: Bool) -> Self {
+        .view(.setPresented(isPresented))
+    }
+
+    static func setText(_ text: String) -> Self {
+        .view(.setText(text))
+    }
+
+    static var focusQueryField: Self {
+        .view(.focusQueryField)
+    }
+
     static func scopeEditorOpen(editingPath: String?, favorites: [ScopeFavoriteItem], backHistory: [String]) -> Self {
         .view(.scopeEditorOpen(editingPath: editingPath, favorites: favorites, backHistory: backHistory))
     }
 
-    static func scopeEditorSetPresented(_ isPresented: Bool) -> Self { .view(.scopeEditorSetPresented(isPresented)) }
-    static func scopeEditorSetQueryText(_ text: String) -> Self { .view(.scopeEditorSetQueryText(text)) }
+    static func scopeEditorSetPresented(_ isPresented: Bool) -> Self {
+        .view(.scopeEditorSetPresented(isPresented))
+    }
+
+    static func scopeEditorSetQueryText(_ text: String) -> Self {
+        .view(.scopeEditorSetQueryText(text))
+    }
+
     static func scopeEditorSetIncludeSubfolders(_ includeSubfolders: Bool)
-        -> Self { .view(.scopeEditorSetIncludeSubfolders(includeSubfolders)) }
-    static func candidateScope(_ action: CandidateScope) -> Self { .view(.candidateScope(action)) }
-    static func currentScope(_ action: CurrentScope) -> Self { .view(.currentScope(action)) }
-    static func exceptionScope(_ action: ExceptionScope) -> Self { .view(.exceptionScope(action)) }
-    static func addScope(path: String) -> Self { .view(.candidateScope(.add(path: path))) }
-    static func removeScope(path: String) -> Self { .view(.currentScope(.remove(path: path))) }
+        -> Self
+    {
+        .view(.scopeEditorSetIncludeSubfolders(includeSubfolders))
+    }
+
+    static func candidateScope(_ action: CandidateScope) -> Self {
+        .view(.candidateScope(action))
+    }
+
+    static func currentScope(_ action: CurrentScope) -> Self {
+        .view(.currentScope(action))
+    }
+
+    static func exceptionScope(_ action: ExceptionScope) -> Self {
+        .view(.exceptionScope(action))
+    }
+
+    static func addScope(path: String) -> Self {
+        .view(.candidateScope(.add(path: path)))
+    }
+
+    static func removeScope(path: String) -> Self {
+        .view(.currentScope(.remove(path: path)))
+    }
+
     static func updateScope(oldPath: String, newPath: String) -> Self {
         .view(.currentScope(.replace(oldPath: oldPath, newPath: newPath)))
     }
 
-    static func excludeScope(path: String) -> Self { .view(.exceptionScope(.exclude(path: path))) }
-    static func restoreScope(path: String) -> Self { .view(.exceptionScope(.restore(path: path))) }
+    static func excludeScope(path: String) -> Self {
+        .view(.exceptionScope(.exclude(path: path)))
+    }
 
-    static func addCondition(propertyKey: String) -> Self { .view(.addCondition(propertyKey: propertyKey)) }
+    static func restoreScope(path: String) -> Self {
+        .view(.exceptionScope(.restore(path: path)))
+    }
+
+    static func addCondition(propertyKey: String) -> Self {
+        .view(.addCondition(propertyKey: propertyKey))
+    }
+
     static func removeCondition(propertyKey: String) -> Self {
         .view(.removeCondition(propertyKey: propertyKey))
     }
@@ -142,17 +184,49 @@ public extension ComposerAction {
         .view(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
     }
 
-    static var clearAll: Self { .view(.clearAll) }
-    static var submit: Self { .view(.submit) }
-    static var applyFilters: Self { .view(.applyFilters) }
-    static var cancelSearch: Self { .view(.cancelSearch) }
-    static var cancelFilters: Self { .view(.cancelFilters) }
-    static var saveCollection: Self { .view(.saveCollection) }
-    static var saveCollectionAs: Self { .view(.saveCollectionAs) }
-    static var undo: Self { .view(.undo) }
-    static var redo: Self { .view(.redo) }
-    static var scopeFeedbackUndoTapped: Self { .view(.scopeFeedbackUndoTapped) }
-    static var scopeFeedbackRedoTapped: Self { .view(.scopeFeedbackRedoTapped) }
+    static var clearAll: Self {
+        .view(.clearAll)
+    }
+
+    static var submit: Self {
+        .view(.submit)
+    }
+
+    static var applyFilters: Self {
+        .view(.applyFilters)
+    }
+
+    static var cancelSearch: Self {
+        .view(.cancelSearch)
+    }
+
+    static var cancelFilters: Self {
+        .view(.cancelFilters)
+    }
+
+    static var saveCollection: Self {
+        .view(.saveCollection)
+    }
+
+    static var saveCollectionAs: Self {
+        .view(.saveCollectionAs)
+    }
+
+    static var undo: Self {
+        .view(.undo)
+    }
+
+    static var redo: Self {
+        .view(.redo)
+    }
+
+    static var scopeFeedbackUndoTapped: Self {
+        .view(.scopeFeedbackUndoTapped)
+    }
+
+    static var scopeFeedbackRedoTapped: Self {
+        .view(.scopeFeedbackRedoTapped)
+    }
 
     static func searchResponse(
         _ requestID: UUID,
@@ -183,7 +257,9 @@ public extension ComposerAction {
         .internal(.dismissTransientFeedback(id))
     }
 
-    static var searchListApplied: Self { .internal(.searchListApplied) }
+    static var searchListApplied: Self {
+        .internal(.searchListApplied)
+    }
 
     static func applyCollectionDraftRestore(_ payload: CollectionDraftRestorePayload) -> Self {
         .internal(.applyCollectionDraftRestore(payload))
@@ -211,7 +287,9 @@ public extension ComposerAction {
         .internal(.updateLastFiltersResponse(response))
     }
 
-    static var clearPendingSearchQuery: Self { .internal(.clearPendingSearchQuery) }
+    static var clearPendingSearchQuery: Self {
+        .internal(.clearPendingSearchQuery)
+    }
 
     static func setPendingSearchQuery(_ query: String?) -> Self {
         .internal(.setPendingSearchQuery(query))

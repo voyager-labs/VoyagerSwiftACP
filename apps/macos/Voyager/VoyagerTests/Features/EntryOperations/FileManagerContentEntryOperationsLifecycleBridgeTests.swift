@@ -24,7 +24,7 @@ final class ContentEntryOpsLifecycleTests: XCTestCase {
         }
 
         // swiftlint:disable:next nesting
-        enum Action: Sendable {
+        enum Action {
             case bridge(EntryOperationsAction)
             case forwarded(FileManagerContentAction)
         }

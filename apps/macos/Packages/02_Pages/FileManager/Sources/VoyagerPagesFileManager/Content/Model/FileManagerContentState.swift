@@ -13,15 +13,7 @@ public struct FileManagerContentState: Equatable {
     public var composer: ComposerFeature.State = .init()
     public var collection: CollectionFeature.State = .init()
 
-    public nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.navigation == rhs.navigation
-            && lhs.entryViewLayout == rhs.entryViewLayout
-            && lhs.composer == rhs.composer
-            && lhs.collection == rhs.collection
-            && lhs.resetComposerOnNextDirectoryNavigation == rhs.resetComposerOnNextDirectoryNavigation
-    }
-
-    // 컴포저 관련
+    /// 컴포저 관련
     var resetComposerOnNextDirectoryNavigation: Bool = false
 
     var isCollectionMode: Bool {

@@ -59,7 +59,7 @@ enum ComposerScopeCandidateDisambiguation {
         return disambiguationTexts.map { $0 ?? "" }
     }
 
-    private nonisolated static func disambiguationLabels(
+    nonisolated private static func disambiguationLabels(
         for sources: [Source],
         existingLabels: Set<String>,
     ) -> [String]? {
@@ -80,7 +80,7 @@ enum ComposerScopeCandidateDisambiguation {
         return nil
     }
 
-    private nonisolated static func candidateSource(
+    nonisolated private static func candidateSource(
         for item: ComposerScopeUtils.DirectoryItem,
     ) -> Source {
         let parentPath = normalizedParentPath(for: item)
@@ -97,7 +97,7 @@ enum ComposerScopeCandidateDisambiguation {
         )
     }
 
-    private nonisolated static func normalizedParentPath(for item: ComposerScopeUtils.DirectoryItem) -> String {
+    nonisolated private static func normalizedParentPath(for item: ComposerScopeUtils.DirectoryItem) -> String {
         if let locationIdentifier = item.locationIdentifier, !locationIdentifier.isEmpty {
             return ComposerScopeUtils.normalizeScopePath(locationIdentifier)
         }
@@ -107,13 +107,13 @@ enum ComposerScopeCandidateDisambiguation {
         return ComposerScopeUtils.normalizeScopePath(parentPath)
     }
 
-    private nonisolated static func pathComponents(_ path: String) -> [String] {
+    nonisolated private static func pathComponents(_ path: String) -> [String] {
         ComposerScopeUtils.normalizeScopePath(path)
             .split(separator: Character(ComposerScopeUtils.rootScopePath))
             .map(String.init)
     }
 
-    private nonisolated static func storageMetadata(
+    nonisolated private static func storageMetadata(
         parentComponents: [String],
     ) -> (String, String?) {
         guard let firstComponent = parentComponents.first else {
@@ -131,11 +131,11 @@ enum ComposerScopeCandidateDisambiguation {
         return ("other", firstComponent)
     }
 
-    private nonisolated static func hasMixedStorageKinds(_ sources: [Source]) -> Bool {
+    nonisolated private static func hasMixedStorageKinds(_ sources: [Source]) -> Bool {
         Set(sources.map(\.storageKindKey)).count > 1
     }
 
-    private nonisolated static func uniqueParentSuffixLabels(
+    nonisolated private static func uniqueParentSuffixLabels(
         for sources: [Source],
         existingLabels: Set<String>,
     ) -> [String]? {
@@ -153,7 +153,7 @@ enum ComposerScopeCandidateDisambiguation {
         return nil
     }
 
-    private nonisolated static func parentSuffixLabel(
+    nonisolated private static func parentSuffixLabel(
         for source: Source,
         depth: Int,
     ) -> String {
@@ -165,7 +165,7 @@ enum ComposerScopeCandidateDisambiguation {
         return suffixComponents.joined(separator: ComposerScopeUtils.rootScopePath)
     }
 
-    private nonisolated static func uniqueStorageFallbackLabels(
+    nonisolated private static func uniqueStorageFallbackLabels(
         for sources: [Source],
         existingLabels: Set<String>,
     ) -> [String]? {

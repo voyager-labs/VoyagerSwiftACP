@@ -1,10 +1,10 @@
 @preconcurrency import CoreServices
 import Foundation
 
-struct SpotlightQueryEngine: Sendable {
+struct SpotlightQueryEngine {
     private let maxCandidates: Int
 
-    struct QueryMatch: Equatable, Sendable {
+    struct QueryMatch: Equatable {
         let path: String
         let lastUsedDate: Date?
         let rawUserTags: [String]
