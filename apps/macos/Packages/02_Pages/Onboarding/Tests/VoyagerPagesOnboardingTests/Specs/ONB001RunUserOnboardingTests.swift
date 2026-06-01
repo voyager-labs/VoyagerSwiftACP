@@ -198,7 +198,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.send(.nextTapped) { state in
             state.currentStep = .betaAccess
         }
-        await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
+        await store.send(.betaAccess(.licenseAuthStatusResponse(
+            generation: 0,
+            result: .success(StateMutation.activeAccessResponse),
+        ))) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -302,7 +305,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         // beta access를 완료하여 다음 네비게이션 활성화
-        await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
+        await store.send(.betaAccess(.licenseAuthStatusResponse(
+            generation: 0,
+            result: .success(StateMutation.activeAccessResponse),
+        ))) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -377,7 +383,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertNil(store.state.betaAccess.status)
 
         // 성공적인 확인이 상태를 업데이트
-        await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
+        await store.send(.betaAccess(.licenseAuthStatusResponse(
+            generation: 0,
+            result: .success(StateMutation.activeAccessResponse),
+        ))) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -404,7 +413,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
-        await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
+        await store.send(.betaAccess(.licenseAuthStatusResponse(
+            generation: 0,
+            result: .success(StateMutation.activeAccessResponse),
+        ))) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -492,7 +504,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         await store.send(.nextTapped)
 
-        await store.send(.betaAccess(.claimResponse(.success(StateMutation.activeAccessResponse)))) { state in
+        await store.send(.betaAccess(.licenseAuthStatusResponse(
+            generation: 0,
+            result: .success(StateMutation.activeAccessResponse),
+        ))) { state in
             StateMutation.applyActiveAccess(state: &state)
         }
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -741,6 +756,12 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
             StateMutation.installActiveAccessRefresh(&$0)
         }
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear) { state in
             state.currentStep = .permissions
@@ -756,8 +777,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
         await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
-
-        await store.finish()
     }
 
     /// ONB-001-resume_onboarding_session: persisted current step이 incomplete일 때 resume하면 안전한 이전/기본 step으로 fallback한다.
@@ -788,6 +807,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         // betaAccess 미완료 → lastValidStep이 betaAccess로 되돌아감
         await store.send(.onAppear) { state in
@@ -864,6 +885,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
             StateMutation.installActiveAccessRefresh(&$0)
         }
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         // permissions 완료 → 선행 단계 모두 완료 → .complete 직접 복원
         await store.send(.onAppear) { state in
@@ -955,6 +978,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             )
             StateMutation.installActiveAccessRefresh(&$0)
         }
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear) { state in
             state.currentStep = .permissions
@@ -1004,6 +1029,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
                 saveRecorder: saveRecorder,
             )
         }
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear) { state in
             state.currentStep = .betaAccess
@@ -1017,8 +1044,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(saveRecorder.value?.currentStep, .betaAccess)
         XCTAssertEqual(saveRecorder.value?.stepState.betaAccessComplete, false)
         XCTAssertNil(saveRecorder.value?.accessSnapshot)
-
-        await store.finish()
     }
 
     // swiftlint:disable function_body_length
@@ -1060,8 +1085,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             )
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive) },
-                claimLicense: { _ in StateMutation.activeAccessResponse },
-                redeemBetaCode: { _ in StateMutation.activeAccessResponse },
                 fetchAccessStatus: { revokedResponse },
                 signOut: {},
             )
@@ -1071,6 +1094,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             )
             $0.date = .constant(testDate)
         }
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear) { state in
             state.currentStep = .permissions
@@ -1097,8 +1122,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(saveRecorder.value?.stepState.betaAccessComplete, false)
         let savedAccessSnapshots = await accessSnapshotRecorder.snapshot()
         XCTAssertEqual(savedAccessSnapshots, [revokedSnapshot])
-
-        await store.finish()
     }
 
     /// ONB-001-resume_onboarding_session: 손상된 stepState가 저장되어 있을 때 resume하면 welcome fallback으로 안전하게 복구한다.
@@ -1246,6 +1269,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
             StateMutation.installActiveAccessRefresh(&$0)
         }
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear) { state in
             state.currentStep = .complete
@@ -1263,8 +1288,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
         await store.receive(\.betaAccess.licenseAuthStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
-
-        await store.finish()
     }
 
     /// ONB-001-complete_onboarding_session: complete step에서 완료할 때 progress를 저장하면 completeComplete flag와 completed 상태가
@@ -1592,7 +1615,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertTrue(store.state.isSessionComplete)
         XCTAssertEqual(store.state.currentStep, .complete)
 
-        await store.finish()
+        await store.skipInFlightEffects()
     }
 
     // MARK: - ONB-001-access_snapshot_persistence

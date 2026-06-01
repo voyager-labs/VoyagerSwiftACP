@@ -67,7 +67,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             )
         }
 
-        await store.send(.unlockAccess(.claimResponse(.failure(.networkFailure)))) { state in
+        await store.send(.unlockAccess(.licenseAuthStatusResponse(
+            generation: 0,
+            result: .failure(.networkFailure),
+        ))) { state in
             state.unlockAccess.status = .networkFailure
             state.unlockAccess.isComplete = false
             state.unlockAccess.errorMessage = "Network error. Please check your connection and try again."
@@ -85,13 +88,12 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// 계정 세션이 없을 때 UI에 Login 버튼이 primary CTA로 표시되어야 함을 상태 affordance로 검증합니다.
     /// - 검증 내용: hasAccountSession=false일 때 canStartLogin만 true입니다.
     /// - 사전 조건: 세션 없음, 로그인 진행 중 아님, 로그인 실패 아님.
-    /// - 기대 결과: canStartLogin=true, canSubmitClaim=false, canRefreshAccess=false, canRetry=false.
+    /// - 기대 결과: canStartLogin=true, canRefreshAccess=false, canRetry=false.
     func testSignedOutStateShowsLoginCTADisablesAllOthers() {
         var state = UnlockLicenseAuthFeature.State()
         state.hasAccountSession = false
 
         XCTAssertTrue(state.canStartLogin, "signed-out 상태에서 canStartLogin이 true여야 함")
-        XCTAssertFalse(state.canSubmitClaim, "signed-out 상태에서 canSubmitClaim이 false여야 함")
         XCTAssertFalse(state.canRefreshAccess, "signed-out 상태에서 canRefreshAccess가 false여야 함")
         XCTAssertFalse(state.canRetry, "signed-out 상태에서 canRetry가 false여야 함")
         XCTAssertEqual(state.onb002AuthAxis, .signedOut)
@@ -117,13 +119,12 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// 로그인 pending 상태에서 UI가 모든 CTA를 disable하는지 검증합니다.
     /// - 검증 내용: isSignInInProgress=true일 때 모든 affordance가 false입니다.
     /// - 사전 조건: isSignInInProgress=true.
-    /// - 기대 결과: canStartLogin=false, canSubmitClaim=false, canRefreshAccess=false.
+    /// - 기대 결과: canStartLogin=false, canRefreshAccess=false.
     func testSignInInProgressDisablesAllActions() {
         var state = UnlockLicenseAuthFeature.State()
         state.isSignInInProgress = true
 
         XCTAssertFalse(state.canStartLogin, "sign-in 진행 중 canStartLogin이 false여야 함")
-        XCTAssertFalse(state.canSubmitClaim, "sign-in 진행 중 canSubmitClaim이 false여야 함")
         XCTAssertFalse(state.canRefreshAccess, "sign-in 진행 중 canRefreshAccess가 false여야 함")
         XCTAssertFalse(state.canRetry, "sign-in 진행 중 canRetry가 false여야 함")
         XCTAssertEqual(state.onb002AuthAxis, .signInInProgress)
@@ -184,48 +185,16 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         XCTAssertTrue(onboardingState.canGoNext, "complete 상태에서 canGoNext가 true여야 함")
     }
 
-    /// ONB-002 UI: claim submit 진행 중에는 모든 액션 버튼이 비활성화된다.
-    /// isSubmitting=true일 때 UI가 모든 CTA를 disable하는지 검증합니다.
-    /// - 검증 내용: isSubmitting=true → canSubmitClaim=false, canRefreshAccess=false, canRetry=false.
-    /// - 사전 조건: 세션 있음, 입력 있음, submit 진행 중.
-    /// - 기대 결과: 모든 affordance가 false.
-    func testSubmittingDisablesAllActions() {
+    /// ONB-002 UI: signed-in + empty input → Refresh Access는 활성.
+    /// 입력 유무와 관계없이 Refresh Access가 가능해야 함을 검증합니다.
+    /// - 검증 내용: hasAccountSession=true → canRefreshAccess=true.
+    /// - 사전 조건: 세션 있음.
+    /// - 기대 결과: canRefreshAccess=true.
+    func testSignedInEnablesRefreshAccess() {
         var state = UnlockLicenseAuthFeature.State()
         state.hasAccountSession = true
-        state.licenseKey = "VOYAGER-TEST"
-        state.isSubmitting = true
 
-        XCTAssertFalse(state.canSubmitClaim, "submitting 중 canSubmitClaim이 false여야 함")
-        XCTAssertFalse(state.canRefreshAccess, "submitting 중 canRefreshAccess가 false여야 함")
-        XCTAssertFalse(state.canRetry, "submitting 중 canRetry가 false여야 함")
-    }
-
-    /// ONB-002 UI: signed-in + non-empty input → claim submit이 가능하다.
-    /// 세션이 있고 입력값이 있을 때 Activate(claim submit) CTA가 활성화되는지 검증합니다.
-    /// - 검증 내용: hasAccountSession=true, licenseKey non-empty → canSubmitClaim=true.
-    /// - 사전 조건: 세션 있음, license key 입력됨.
-    /// - 기대 결과: canSubmitClaim=true, canRefreshAccess=true.
-    func testSignedInWithInputEnablesClaimSubmit() {
-        var state = UnlockLicenseAuthFeature.State()
-        state.hasAccountSession = true
-        state.licenseKey = "VOYAGER-TEST-KEY"
-
-        XCTAssertTrue(state.canSubmitClaim, "signed-in + non-empty input에서 canSubmitClaim이 true여야 함")
         XCTAssertTrue(state.canRefreshAccess, "signed-in에서 canRefreshAccess가 true여야 함")
-    }
-
-    /// ONB-002 UI: signed-in + empty input → claim submit은 비활성, Refresh Access는 활성.
-    /// 입력이 비어 있어도 Refresh Access는 가능해야 함을 검증합니다.
-    /// - 검증 내용: hasAccountSession=true, input empty → canSubmitClaim=false, canRefreshAccess=true.
-    /// - 사전 조건: 세션 있음, 입력 없음.
-    /// - 기대 결과: canSubmitClaim=false, canRefreshAccess=true.
-    func testSignedInEmptyInputDisablesClaimButEnablesRefresh() {
-        var state = UnlockLicenseAuthFeature.State()
-        state.hasAccountSession = true
-        // licenseKey and betaCode are both empty by default
-
-        XCTAssertFalse(state.canSubmitClaim, "empty input에서 canSubmitClaim이 false여야 함")
-        XCTAssertTrue(state.canRefreshAccess, "signed-in에서 canRefreshAccess가 true여야 함 (입력 무관)")
     }
 
     // MARK: - ONB-002 Login CTA action dispatch
@@ -298,8 +267,6 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.noOp
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in StateMutation.activeAccessResponse },
-                redeemBetaCode: { _ in StateMutation.activeAccessResponse },
                 fetchAccessStatus: { revokedResponse },
                 signOut: {},
             )
@@ -335,16 +302,15 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
 
     /// ONB-002 UI: onboarding betaAccess step에서 signed-out 상태이면 Next/Activate/Retry가 모두 비활성화된다.
     /// 세션이 없을 때 trailing action이 Next를 disable하는지 onboarding 상태로 검증합니다.
-    /// - 검증 내용: betaAccess signed-out → canGoNext=false, canSubmit=false.
+    /// - 검증 내용: betaAccess signed-out → canGoNext=false.
     /// - 사전 조건: currentStep=betaAccess, hasAccountSession=false.
-    /// - 기대 결과: canGoNext=false, canSubmit=false, showsRetry=false.
+    /// - 기대 결과: canGoNext=false, showsRetry=false.
     func testOnboardingBetaAccessSignedOutCannotGoNext() {
         var state = OnboardingFeature.State()
         state.currentStep = .betaAccess
 
         XCTAssertFalse(state.canGoNext, "signed-out에서 canGoNext가 false여야 함")
         XCTAssertFalse(state.betaAccess.isComplete)
-        XCTAssertFalse(state.betaAccess.canSubmit)
         XCTAssertFalse(state.betaAccess.showsRetry)
     }
 
@@ -407,8 +373,6 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in StateMutation.activeAccessResponse },
-                redeemBetaCode: { _ in StateMutation.activeAccessResponse },
                 fetchAccessStatus: { StateMutation.activeAccessResponse },
                 signOut: {},
             )
@@ -436,6 +400,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
             $0.signInHandoffClient = SignInHandoffClient {
+                // swiftlint:disable:next force_unwrapping
                 .success(callbackURL: URL(string: "voyager://auth/callback")!)
             }
             $0.loginURLClient = LoginURLClient(openLoginURL: { _ in })

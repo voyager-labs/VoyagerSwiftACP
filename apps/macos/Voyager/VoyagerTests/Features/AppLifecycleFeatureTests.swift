@@ -129,7 +129,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(helperStartCount, 1)
     }
 
-    // swiftlint:disable:next function_body_length
     func testInactiveAccessShowsUnlockSurface() async {
         nonisolated(unsafe) var didShowUnlock = false
 
@@ -140,12 +139,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
-                },
                 fetchAccessStatus: {
                     LicenseAuthStatusResponse(status: .revoked, entitlements: [])
                 },
@@ -204,12 +197,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
-                },
                 fetchAccessStatus: {
                     accessCheckCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -263,12 +250,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
-                },
                 fetchAccessStatus: {
                     throw LicenseAuthError.networkFailure
                 },
@@ -350,12 +331,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
-                },
                 fetchAccessStatus: {
                     throw LicenseAuthError.notConfigured
                 },
@@ -414,7 +389,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         XCTAssertEqual(helperStartCount, 0)
     }
 
-    // swiftlint:disable:next function_body_length
     func testNetworkFailureWithoutCacheShowsUnlock() async {
         nonisolated(unsafe) var didShowUnlock = false
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
@@ -426,12 +400,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
-                },
                 fetchAccessStatus: {
                     throw LicenseAuthError.networkFailure
                 },
@@ -495,12 +463,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
-                },
                 fetchAccessStatus: {
                     throw LicenseAuthError.networkFailure
                 },
