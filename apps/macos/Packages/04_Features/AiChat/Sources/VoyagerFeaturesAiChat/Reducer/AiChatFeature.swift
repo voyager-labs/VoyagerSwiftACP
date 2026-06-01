@@ -220,8 +220,26 @@ public struct AiChatFeature {
 
             case .backToSessionsTapped:
                 state.mode = .sessions
+                if case let .processing(lock) = state.executionPhase {
+                    state.lockedModelHandle = nil
+                    state.streamingAssistantDraft = nil
+                    state.executionPhase = .cancelled(lock.recordingTerminal(
+                        at: currentTimestampMs(),
+                        failure: .cancelled,
+                        wasCancelled: true,
+                    ))
+                }
+                let exitEffects: Effect<Action> = .merge(
+                    cancelRequestLifecycle(),
+                    .cancel(id: CancelID.restore),
+                )
+                if state.restoreSessionID != nil {
+                    state.restoreSessionID = nil
+                    state.restoreOutcome = nil
+                    state.restoreFailure = nil
+                }
                 guard let emptyDraftSessionID = cleanupEligibleEmptyDraftSessionID(for: state) else {
-                    return .none
+                    return exitEffects
                 }
                 state.pendingEmptyDraftDeletionSessionIDs.insert(emptyDraftSessionID)
                 state.emptyDraftSessionID = nil
@@ -231,7 +249,10 @@ public struct AiChatFeature {
                 state.restoreFailure = nil
                 state.sessionList.selectedSessionID = nil
                 state.sessionList.errorMessage = nil
-                return deleteSession(emptyDraftSessionID)
+                return .concatenate(
+                    exitEffects,
+                    deleteSession(emptyDraftSessionID),
+                )
 
             case let .sessionSearchQueryChanged(query):
                 state.sessionList.updateQuery(query)
