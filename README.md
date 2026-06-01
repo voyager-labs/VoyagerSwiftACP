@@ -99,12 +99,11 @@ Swift 기대 버전은 루트 `.swift-toolchain-version`에 별도로 명시합�
 
 `swiftly`를 사용하는 환경을 위해 루트 `.swift-version`은 `xcode`로 고정합니다.
 `.swift-version`은 swiftly가 읽는 toolchain 선택 파일이고, `.swift-toolchain-version`은 이 레포가 기대하는 Swift 버전을 검증하기 위한 파일입니다.
-따라서 `swiftly`가 PATH에서 먼저 잡히더라도 레포 안에서는 현재 선택된 Xcode toolchain을 사용하고, 그 결과가 Swift 6.2.1인지 `just swift-version`으로 확인합니다.
+따라서 `swiftly`가 PATH에서 먼저 잡히더라도 레포 안에서는 현재 선택된 Xcode toolchain을 사용하고, 그 결과가 Swift 6.2.1인지 `mise run swift-version`으로 확인합니다.
 
 #### 사전 준비
 
 - macOS
-- [Homebrew](https://brew.sh) 설치
 - Xcode 설치 및 업데이트 권한
 
 #### 이 프로젝트용 Xcode 설정 방법
@@ -119,7 +118,7 @@ chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 �
 이 스크립트는 다음 작업을 수행합니다.
 
 1. 레포 루트의 `.xcode-version` 파일을 읽어, 필요한 Xcode 버전을 확인합니다.
-2. `xcodes` CLI가 설치되어 있지 않으면 Homebrew로 설치합니다.
+2. `xcodes` CLI가 설치되어 있지 않으면 설치합니다.
 3. `xcodes install <버전>`으로 해당 Xcode 버전을 설치합니다. (이미 설치되어 있다면 건너뜁니다)
 4. `xcodes select <버전>`으로 해당 버전을 현재 macOS의 활성 Xcode로 설정합니다.
 
@@ -127,10 +126,10 @@ chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 �
 
 ```bash
 swiftly use
-just swift-version
+mise run swift-version
 ```
 
-정상이라면 `swiftly use`는 `xcode`, `just swift-version`은 `.swift-toolchain-version`과 일치하는 Swift 6.2.1을 출력합니다.
+정상이라면 `swiftly use`는 `xcode`, `mise run swift-version`은 `.swift-toolchain-version`과 일치하는 Swift 6.2.1을 출력합니다.
 
 설정이 제대로 되었는지 확인하려면:
 
@@ -151,7 +150,7 @@ xcodebuild -version
 처음 클론한 후(그리고 새로운 머신에서) **레포 루트에서 한 번만** 실행하세요:
 
 ```bash
-make bootstrap
+bash scripts/setup.sh
 ```
 
 이 설정은 repo-local git config(`core.hooksPath`)에 저장되며, 동일 레포에서 생성한 worktree에도 그대로 적용되는 것을 목표로 합니다.
@@ -168,18 +167,18 @@ make bootstrap
 `opencode` 세션에서 사용하려면 각 개발자 로컬 환경에 `cupertino` 바이너리가 먼저 설치되어 있어야 합니다.
 
 - 지원 플랫폼: macOS 15+
-- 설치(권장):
+- 설치(upstream installer 권장):
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/mihaelamj/cupertino/main/install.sh)
+```
+
+- 또는 Homebrew 사용:
 
 ```bash
 brew tap mihaelamj/tap
 brew install cupertino
 cupertino setup
-```
-
-- 또는 upstream installer 사용:
-
-```bash
-bash <(curl -sSL https://raw.githubusercontent.com/mihaelamj/cupertino/main/install.sh)
 ```
 
 설치 후에는 아래 명령으로 경로를 확인하세요.

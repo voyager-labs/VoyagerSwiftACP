@@ -9,14 +9,14 @@ If the evaluation result is No-Go, or the user requests removal, follow these st
 1. **Delete the index:**
 
     ```
-    just codegraph-clean
+    mise run codegraph-clean
     ```
 
 2. **Remove the MCP entry** from `opencode.json`:
    Delete the `codegraph` entry in the `mcpServers` section.
 
-3. **Remove justfile commands:**
-   Delete the `codegraph-*` recipes from the `justfile`.
+3. **Remove mise.toml tasks:**
+   Delete the `codegraph-*` tasks from `mise.toml`.
 
 4. **Remove the lefthook hook:**
    Delete the `codegraph` entry under `post-checkout` in `lefthook.yml`.

@@ -31,7 +31,7 @@ Swift macros (e.g., `@Observable`, `@DependencyClient`) expand at compile time. 
 The index auto-updates only while the MCP server is running (which means while `opencode` is active). If you edit files outside of an opencode session, the index becomes stale. Run this manually to re-index:
 
 ```
-just codegraph-reindex
+mise run codegraph-reindex
 ```
 
 ### Trace Max 7 Hops

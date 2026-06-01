@@ -3,11 +3,13 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 
-# just 설치 확인
-if ! command -v just &>/dev/null; then
-  echo ":: just 없음, brew로 설치 중..."
-  brew install just
-fi
+export PATH="$HOME/.local/bin:$PATH"
 
-# justfile 실행
-just setup
+command -v mise &>/dev/null || curl https://mise.run | sh
+
+mise trust -q 2>/dev/null || true
+
+echo "📦 mise run setup 실행 중..."
+mise run setup
+
+echo "✅ setup 완료"

@@ -34,10 +34,10 @@
     {
       "id": 4,
       "prompt": "codegraph 도구를 쓰려는데 인덱스가 없거나 stale한 것 같아.",
-      "expected_output": "Checks index status first via codegraph_status or just codegraph-status, runs init or reindex if needed, then proceeds with the query only after confirming index is ready.",
+      "expected_output": "Checks index status first via codegraph_status or mise run codegraph-status, runs init or reindex if needed, then proceeds with the query only after confirming index is ready.",
       "assertions": [
-        "Runs codegraph_status or just codegraph-status first",
-        "If index missing, runs just codegraph-init or just codegraph-reindex",
+        "Runs codegraph_status or mise run codegraph-status first",
+        "If index missing, runs mise run codegraph-init or mise run codegraph-reindex",
         "Does not proceed with queries before confirming index is ready"
       ]
     }
