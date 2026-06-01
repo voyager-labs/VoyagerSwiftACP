@@ -65,18 +65,20 @@ enum FileManagerWindowChrome {
         window.setFrameAutosaveName("VoyagerMainWindow")
         let minimumInitialWidth = minimumInitialWidth(reservesSidebarWidth: reservesSidebarWidth)
 
-        if !window.setFrameUsingName("VoyagerMainWindow") {
-            let desiredSize = constrainedInitialSize(
-                initialWindowSizeProvider?() ?? Constants.defaultWindowSize,
+        if let initialWindowSize = initialWindowSizeProvider?() {
+            applyCenteredInitialSize(
+                initialWindowSize,
+                to: window,
                 minimumWidth: minimumInitialWidth,
                 minimumHeight: window.minSize.height,
             )
-            let screenFrame = NSScreen.main?.visibleFrame ?? .zero
-            let origin = NSPoint(
-                x: screenFrame.midX - desiredSize.width / 2,
-                y: screenFrame.midY - desiredSize.height / 2,
+        } else if !window.setFrameUsingName("VoyagerMainWindow") {
+            applyCenteredInitialSize(
+                Constants.defaultWindowSize,
+                to: window,
+                minimumWidth: minimumInitialWidth,
+                minimumHeight: window.minSize.height,
             )
-            window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
         }
 
         expandInitialFrameIfNeeded(
@@ -151,6 +153,25 @@ enum FileManagerWindowChrome {
             return "New Collection"
         }
         return makeWindowTitle(titlePath)
+    }
+
+    private static func applyCenteredInitialSize(
+        _ size: NSSize,
+        to window: NSWindow,
+        minimumWidth: CGFloat,
+        minimumHeight: CGFloat,
+    ) {
+        let desiredSize = constrainedInitialSize(
+            size,
+            minimumWidth: minimumWidth,
+            minimumHeight: minimumHeight,
+        )
+        let screenFrame = NSScreen.main?.visibleFrame ?? .zero
+        let origin = NSPoint(
+            x: screenFrame.midX - desiredSize.width / 2,
+            y: screenFrame.midY - desiredSize.height / 2,
+        )
+        window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
     }
 
     private static func expandInitialFrameIfNeeded(
