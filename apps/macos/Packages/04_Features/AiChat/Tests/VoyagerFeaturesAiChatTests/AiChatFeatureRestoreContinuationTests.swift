@@ -4,8 +4,12 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW004/CBW005 spec-owner suite 밖에 남긴 restore continuation 회귀 테스트.
+// restored model handle resolution과 incompatible thinking cleanup contract를 보존한다.
+
 @MainActor
 final class AiChatFeatureRestoreContinuationTests: XCTestCase {
+    // restore된 model handle이 현재 catalog에서 해석되면 최신 row metadata를 사용하는지 검증
     // swiftlint:disable:next function_body_length
     func testRestoreUsesCurrentCatalogRowMetadataWhenRestoredHandleStillResolves() async {
         let catalogRows = makeCatalogRows()
@@ -106,6 +110,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[1])
     }
 
+    // restore된 model이 현재 catalog에 없으면 선택이 정리되는지 검증
     // swiftlint:disable:next function_body_length
     func testRestoreClearsSelectionWhenRestoredModelIsMissing() async {
         let catalogRows = makeCatalogRows()
@@ -184,6 +189,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 
+    // restore 후 concrete model capability가 로드되면 incompatible thinking이 정리되는지 검증
     // swiftlint:disable:next function_body_length
     func testRestoreClearsIncompatibleThinkingWhenConcreteModelCapabilitiesLoad() async {
         let catalogRows = makeCatalogRows()
@@ -192,8 +198,8 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .anthropic,
             providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
+            lastUsedProviderId: .anthropic,
         )
         let restoredSnapshot = AiChatSessionSnapshot(
             sessionID: targetSessionID,

@@ -4,8 +4,12 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW005 spec-owner suite로 이관하지 않은 restore recovery 회귀 테스트.
+// missing record fallback, rebind submit guard, empty catalog behavior 같은 edge contract를 보존한다.
+
 @MainActor
 final class AiChatFeatureRestoreTests: XCTestCase {
+    // 누락된 session record restore가 오류 없이 새 session fallback으로 전환되는지 검증
     // swiftlint:disable:next function_body_length
     func testRestoreMissingRecordFallsBackToNewSessionWithoutError() async {
         let catalogRows = makeCatalogRows()
@@ -90,6 +94,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         XCTAssertEqual(store.state.transcriptAutoScrollVersion, 0)
     }
 
+    // 빈 catalog에서 누락 session fallback이 unknown model selection을 노출하지 않는지 검증
     // swiftlint:disable:next function_body_length
     func testRestoreMissingRecordWithEmptyCatalogDoesNotExposeUnknownModelSelection() async {
         let summary = makeContextSnapshot()
@@ -174,6 +179,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         XCTAssertEqual(store.state.sessionStatus, .idle)
     }
 
+    /// rebind required 상태에서는 선택 model이 유효해도 submit이 차단되는지 검증
     func testRebindRequiredBlocksSubmitEvenWhenSelectionIsOtherwiseValid() {
         let catalogRows = makeCatalogRows()
         let state = AiChatFeature.State(
@@ -190,6 +196,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         XCTAssertFalse(state.chatInputDisplayModel.canSubmit)
     }
 
+    /// rebind 상태에서 새 chat 시작 시 durable unselected snapshot이 저장되는지 검증
     func testStartNewChatFromRebindTappedSavesDurableUnselectedSnapshot() async {
         let catalogRows = makeCatalogRows()
         let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))

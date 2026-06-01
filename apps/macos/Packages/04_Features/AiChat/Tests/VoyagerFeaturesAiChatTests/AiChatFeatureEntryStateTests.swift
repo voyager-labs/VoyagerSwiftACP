@@ -4,9 +4,13 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW001/CBW004 spec-owner suite 밖에 남긴 AiChat entry state 회귀 테스트.
+// current context fixture, provider unavailable surface, canSubmit guard 같은 display/state contract를 보존한다.
+
 // swiftlint:disable:next type_body_length
 @MainActor
 final class AiChatFeatureEntryStateTests: XCTestCase {
+    /// current context summary fixture가 inspector 표시 contract와 일치하는지 검증
     func testCurrentContextSummaryFixturesMatchInspectorContract() {
         let selectedHandle = makeCatalogRows()[0].handle
 
@@ -61,6 +65,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertNil(emptyContextState.currentContextSummaryDisplayModel.detail)
     }
 
+    /// provider unavailable 상태가 고정 banner와 빈 model label로 표시되는지 검증
     func testProviderUnavailableSurfaceUsesFixedBannerAndEmptyComposerModelLabel() {
         let state = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -88,6 +93,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         }
     }
 
+    /// failure surface가 남아 있을 때 submit 재시도가 차단되는지 검증
     func testCanSubmitDisallowsRetryWhileFailureSurfaceExists() {
         let catalogRows = makeCatalogRows()
         let state = AiChatFeature.State(
@@ -108,6 +114,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 
+    /// canSubmit이 false인 상태에서 submitTapped가 no-op인지 검증
     func testSubmitTappedIsNoOpWhenCanSubmitIsFalse() async {
         final class ExecutionRequestSpy: @unchecked Sendable {
             private(set) var requests: [AiChatRequest] = []

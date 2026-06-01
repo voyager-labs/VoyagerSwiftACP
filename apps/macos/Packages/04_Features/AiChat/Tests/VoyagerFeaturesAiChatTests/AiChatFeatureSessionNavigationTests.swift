@@ -4,8 +4,12 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW005 spec-owner suite 밖에 남긴 session navigation empty-draft cleanup 회귀 테스트.
+// back-to-sessions draft deletion/failure와 stale attachment reset contract를 보존한다.
+
 @MainActor
 final class AiChatFeatureSessionNavigationTests: XCTestCase {
+    /// 초기 AiChat mode가 sessions로 시작하는지 검증
     func testInitialModeDefaultsToSessions() {
         let store = TestStore(initialState: AiChatFeature.State()) {
             AiChatFeature()
@@ -15,6 +19,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         XCTAssertEqual(store.state.sessionList, .init())
     }
 
+    /// new chat 시작 시 stale added attachments가 정리되는지 검증
     func testNewChatTappedClearsStaleAddedAttachments() async {
         let staleAttachment = makeNavigationAttachment(path: "/tmp/Stale.pdf")
         let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
@@ -47,6 +52,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         }
     }
 
+    /// 수정하지 않은 new chat draft에서 sessions로 돌아가면 draft가 삭제되는지 검증
     func testBackToSessionsDeletesUntouchedNewChatDraft() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333"))
         let summary = makeSessionSummary(sessionID: sessionID, status: .idle)
@@ -98,6 +104,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         XCTAssertEqual(deletedSessionIDs.value, [sessionID])
     }
 
+    /// 입력만 하고 전송하지 않은 new chat draft가 sessions 복귀 시 삭제되는지 검증
     func testBackToSessionsDeletesNewChatDraftAfterTypingWithoutSending() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444"))
         let summary = makeSessionSummary(sessionID: sessionID, status: .idle)
@@ -151,6 +158,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         XCTAssertEqual(deletedSessionIDs.value, [sessionID])
     }
 
+    /// model 선택만 한 new chat draft가 sessions 복귀 시 삭제되는지 검증
     func testBackToSessionsDeletesNewChatDraftAfterModelSelectionWithoutSending() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666"))
         let model = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
@@ -202,6 +210,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
         XCTAssertEqual(deletedSessionIDs.value, [sessionID])
     }
 
+    /// empty draft 삭제 실패가 sessions 화면에 error로 표시되는지 검증
     func testBackToSessionsSurfacesEmptyDraftDeleteFailure() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555"))
         let summary = makeSessionSummary(sessionID: sessionID, status: .idle)

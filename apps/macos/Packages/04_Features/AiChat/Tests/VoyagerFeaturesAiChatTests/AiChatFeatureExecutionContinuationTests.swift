@@ -4,9 +4,14 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW001/CBW003/CBW005 spec-owner suite로 이관하지 않은 execution continuation 회귀 테스트.
+// context freeze, history truncation, persistence failure, session switch cancellation, snapshot redaction contract를
+// 보존한다.
+
 // swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureExecutionContinuationTests: XCTestCase {
+    // 다른 session으로 전환할 때 현재 request를 cancel한 뒤 restore하는지 검증
     // swiftlint:disable:next function_body_length
     func testSwitchingToDifferentSessionCancelsCurrentRequestBeforeRestore() async {
         let activeSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111221"))
@@ -122,6 +127,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(store.state.transcriptHistory, targetSnapshot.transcriptHistory)
     }
 
+    // 진행 중 chat이 session history를 이어받고 session row를 갱신하는지 검증
     // swiftlint:disable:next function_body_length
     func testInFlightChatContinuesFromSessionHistoryAndUpdatesSessionRow() async {
         let stream = AiChatExecutionStreamDriver()
@@ -294,6 +300,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(persistence.snapshots.last?.transcriptHistory, expectedTranscript)
     }
 
+    // session 저장 실패가 recovery state로 전환되는지 검증
     // swiftlint:disable:next function_body_length
     func testPersistenceFailureCreatesRecoveryState() async {
         let stream = AiChatExecutionStreamDriver()
@@ -385,6 +392,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         await store.finish()
     }
 
+    /// 현재 loaded model 목록에 없는 선택 모델로 regenerate가 차단되는지 검증
     func testRegenerateIsBlockedWhenSelectedModelIsNotInCurrentLoadedList() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -425,6 +433,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertNil(store.state.lockedModelHandle)
     }
 
+    /// session snapshot이 다음 요청 선택값 대신 locked model/thinking을 사용하는지 검증
     func testMakeSessionSnapshotUsesLockedModelAndThinkingInsteadOfNextRequestSelection() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111116"))
         let catalogRows = makeCatalogRows()
@@ -476,6 +485,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
     }
 
+    // session snapshot 저장 시 provider-native binary payload metadata가 제거되는지 검증
     // swiftlint:disable:next function_body_length
     func testMakeSessionSnapshotDropsProviderNativeBinaryPayloadMetadata() throws {
         let feature = AiChatFeature()
@@ -598,6 +608,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(lock.context.requestContext.parts[0].resolution, requestContext.parts[0].resolution)
     }
 
+    // submit 시 context timing과 deterministic history truncation이 고정되는지 검증
     // swiftlint:disable:next function_body_length
     func testSubmitFreezesContextTimingAndDeterministicHistoryTruncation() async {
         let stream = AiChatExecutionStreamDriver()
@@ -680,6 +691,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(request.context.selectedThinking, .effort(.medium))
     }
 
+    /// 빈 context 요청도 deterministic submitted timestamp로 준비되는지 검증
     func testEmptyContextStillPreparesRequestWithDeterministicSubmittedTimestamp() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()

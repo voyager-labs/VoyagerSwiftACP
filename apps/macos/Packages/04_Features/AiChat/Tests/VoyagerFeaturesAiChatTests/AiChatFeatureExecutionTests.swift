@@ -5,9 +5,13 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW001/CBW003 spec-owner suite 밖에 남긴 provider execution adapter 회귀 테스트.
+// connection load failure, raw provider delta, Settings CTA delegation, second submit history contract를 보존한다.
+
 // swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureExecutionTests: XCTestCase {
+    // connections file load 실패가 provider 실행 없이 unknown failure로 전환되는지 검증
     // swiftlint:disable:next function_body_length
     func testSubmitConnectionsFileLoadFailureEmitsUnknownFailureWithoutProviderExecution() async {
         actor ProviderDriver {
@@ -97,6 +101,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertEqual(store.state.requestStatusText, "An unknown chat error occurred.")
     }
 
+    // 두 번째 submit 요청에 이전 assistant turn이 execution request로 포함되는지 검증
     // swiftlint:disable:next function_body_length
     func testSecondSubmitIncludesPreviousAssistantTurnInExecutionRequest() async {
         let stream = AiChatExecutionStreamDriver()
@@ -187,6 +192,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.finish()
     }
 
+    /// live execution adapter가 final 전 raw Anthropic delta를 먼저 방출하는지 검증
     func testLiveExecutionClientEmitsRawAnthropicDeltaBeforeFinal() async {
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[1].handle
@@ -226,6 +232,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertEqual(events.last?.isFinalResponse, true)
     }
 
+    /// provider 없음 CTA의 Open Settings 동작이 Settings delegate로 전달되는지 검증
     func testOpenSettingsTappedDelegatesOpenAISettingsForNoProviderCTA() async {
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),

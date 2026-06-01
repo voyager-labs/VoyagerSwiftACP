@@ -5,9 +5,13 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW004 spec-owner suite 밖에 남긴 model selection reducer 회귀 테스트.
+// provider update selection 보존/해제와 Codex execution path contract를 보존한다.
+
 // swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureSelectionTests: XCTestCase {
+    /// teardown 요청이 processing draft를 중단하되 conversation은 유지하는지 검증
     func testTeardownRequestedStopsProcessingDraftWithoutClearingConversation() async {
         let catalogRows = makeCatalogRows()
         let models = makeThinkingCapableProviderModels()
@@ -53,6 +57,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
     }
 
+    /// Codex model 선택이 CLI execution path로 submit 가능한지 검증
     func testCodexModelSelectionCanSubmitThroughCLIExecutionPath() {
         let handle = AiModelHandle(provider: .chatgptCodex, rawValue: "gpt-5-codex")
         let row = AiModelCatalogRow(
@@ -89,6 +94,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertNil(state.requestStatusText)
     }
 
+    /// 기존 model handle이 유지될 때 catalog row display name이 갱신되는지 검증
     func testCatalogRowsRefreshDisplayNameWhenExistingHandleIsPreserved() {
         let handle = AiModelHandle(provider: .openai, rawValue: "gpt-5.4-mini")
         let staleRow = AiModelCatalogRow(
@@ -120,13 +126,14 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(rows.first?.isRecommended, true)
     }
 
+    // provider connection 갱신 후에도 유효한 현재 선택 model이 유지되는지 검증
     // swiftlint:disable:next function_body_length
     func testProviderConnectionsUpdatedPreservesValidCurrentSelection() async {
         let catalogRows = makeCatalogRows()
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .anthropic,
             providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
+            lastUsedProviderId: .anthropic,
         )
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -182,13 +189,14 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[1].handle)
     }
 
+    // provider connection 갱신 후 현재 선택 model이 사라지면 선택이 정리되는지 검증
     // swiftlint:disable:next function_body_length
     func testProviderConnectionsUpdatedClearsSelectionWhenCurrentModelDisappears() async {
         let catalogRows = makeCatalogRows()
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .anthropic,
             providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
+            lastUsedProviderId: .anthropic,
         )
         let remainingModel = makeProviderModels()[1]
         let store = TestStore(initialState: AiChatFeature.State(
@@ -248,6 +256,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 
+    /// setup이 model selection 누락 상태를 자동 선택으로 보정하지 않는지 검증
     func testSetupDoesNotAutoSelectWhenSelectionIsMissing() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()

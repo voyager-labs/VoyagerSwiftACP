@@ -4,8 +4,12 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW005 spec-owner suite 밖에 남긴 session delete/rename/cancellation 회귀 테스트.
+// current processing delete, late snapshot callback, rename persistence 같은 session edge contract를 보존한다.
+
 @MainActor
 final class AiChatFeatureSessionDeleteTests: XCTestCase {
+    /// session 삭제 실패가 row를 유지하고 list error를 표시하는지 검증
     func testDeleteSessionFailureLeavesRowAndSetsListError() async {
         let deletedSessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333"))
         let deletedRow = makeDeleteTestSessionSummary(sessionID: deletedSessionID)
@@ -39,6 +43,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         XCTAssertEqual(store.state.sessionList.selectedSessionID, deletedSessionID)
     }
 
+    /// sessions mode에서 현재 loaded session을 삭제해도 chat state가 유지되는지 검증
     func testDeleteCurrentLoadedSessionFromSessionsModeLeavesChatStateIntact() async {
         let activeSessionID = AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444"))
         let activeRow = makeDeleteTestSessionSummary(sessionID: activeSessionID, title: "Live chat")
@@ -80,6 +85,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         )
     }
 
+    /// 삭제된 processing session에 대한 late snapshot callback이 row를 되살리지 않는지 검증
     func testLateSnapshotCallbacksDoNotReinsertDeletedProcessingSession() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("88888888-8888-8888-8888-888888888888"))
         let requestID = AiChatRequestID(rawValue: makeUUID("99999999-9999-9999-9999-999999999999"))
@@ -137,6 +143,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         assertProcessingSessionDeleted(store.state, sessionID: sessionID, deletedIDs: deletedIDs.value)
     }
 
+    /// 현재 processing session 삭제 시 request를 먼저 cancel한 뒤 삭제하는지 검증
     func testDeleteCurrentProcessingSessionCancelsRequestBeforeDelete() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
         let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Processing chat")
@@ -194,6 +201,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         )
     }
 
+    // completed session 삭제 시 final snapshot save를 취소한 뒤 삭제하는지 검증
     // swiftlint:disable:next function_body_length
     func testDeleteCurrentCompletedSessionCancelsFinalSnapshotSaveBeforeDelete() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("dddddddd-dddd-dddd-dddd-dddddddddddd"))
@@ -283,6 +291,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         XCTAssertTrue(completedSaves.value.isEmpty)
     }
 
+    // processing session 삭제 시 request-start snapshot save를 취소한 뒤 삭제하는지 검증
     // swiftlint:disable:next function_body_length
     func testDeleteCurrentProcessingSessionCancelsRequestStartSnapshotBeforeDelete() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("cccccccc-cccc-cccc-cccc-cccccccccccc"))
@@ -379,6 +388,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         XCTAssertTrue(completedSaves.value.isEmpty)
     }
 
+    /// session rename 성공이 custom title을 저장하고 filtered rows를 갱신하는지 검증
     func testRenameSessionSuccessPersistsCustomTitleAndUpdatesFilteredRows() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555"))
         let originalRow = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Original derived title")
@@ -425,6 +435,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         XCTAssertEqual(savedSnapshots.value, [expectedSnapshot])
     }
 
+    /// 빈 title rename이 custom title을 지우고 derived title로 fallback하는지 검증
     func testRenameSessionBlankTitleClearsCustomTitleAndFallsBackToDerivedTitle() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666"))
         let originalRow = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Custom title")
@@ -469,6 +480,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         XCTAssertEqual(expectedSummary.title, "Original prompt")
     }
 
+    /// session rename 실패가 editor를 열어 둔 채 list error를 표시하는지 검증
     func testRenameSessionFailureKeepsEditorOpenAndSetsListError() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("77777777-7777-7777-7777-777777777777"))
         let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Original derived title")

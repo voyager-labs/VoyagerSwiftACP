@@ -4,8 +4,12 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW005 spec-owner suite 밖에 남긴 session list/new chat cancellation 회귀 테스트.
+// in-flight new chat save cancellation과 teardown cleanup contract를 보존한다.
+
 @MainActor
 final class AiChatFeatureSessionListTests: XCTestCase {
+    /// 선택 model이 없을 때 new chat이 unselected draft snapshot을 저장하는지 검증
     func testNewChatTappedKeepsModelUnselectedAndSavesDraftWhenNoSelectedModelIsSet() async {
         let catalogRows = makeCatalogRows()
         let currentContext = makeContextSnapshot(summary: "Release docs")
@@ -52,6 +56,7 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         XCTAssertEqual(store.state.catalogRows, catalogRows)
     }
 
+    // new chat 시작 전에 진행 중 request를 cancel하는지 검증
     // swiftlint:disable:next function_body_length
     func testNewChatTappedCancelsInFlightRequestBeforeStartingDraft() async {
         let oldSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111331"))
@@ -130,6 +135,7 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         XCTAssertEqual(store.state.executionPhase, .idle)
     }
 
+    // teardown 요청이 session list delete/rename effect를 취소하는지 검증
     // swiftlint:disable:next function_body_length
     func testTeardownRequestedCancelsSessionListDeleteAndRenameEffects() async {
         let renameSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111441"))
@@ -208,10 +214,12 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         XCTAssertTrue(deleteCancelled.value)
     }
 
+    /// teardown 요청이 진행 중 new chat save를 취소하는지 검증
     func testTeardownRequestedCancelsInFlightNewChatSave() async {
         await assertInFlightNewChatSaveCancelled(by: .teardown)
     }
 
+    /// reset 요청이 진행 중 new chat save를 취소하는지 검증
     func testResetTappedCancelsInFlightNewChatSave() async {
         await assertInFlightNewChatSaveCancelled(by: .reset)
     }

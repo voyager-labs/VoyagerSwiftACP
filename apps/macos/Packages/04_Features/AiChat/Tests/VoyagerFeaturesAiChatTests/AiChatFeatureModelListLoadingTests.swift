@@ -5,9 +5,14 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW004 spec-owner suite로 이관하지 않은 model list loading 회귀 테스트.
+// provider connection update, partial provider failure, Codex model listing, stale response cancellation contract를
+// 보존한다.
+
 // swiftlint:disable:next type_body_length
 @MainActor
 final class AiChatFeatureModelListLoadingTests: XCTestCase {
+    // provider connection 변경이 진행 중 model list batch를 취소하고 stale response를 무시하는지 검증
     // swiftlint:disable:next function_body_length
     func testProviderConnectionUpdatesCancelInFlightBatchAndIgnoreStaleResponse() async {
         actor LoadDriver {
@@ -39,13 +44,13 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         let openAICredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-openai"))
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let openAIFile = makeConnectionsFile(
-            lastUsedProviderId: .openai,
             providers: [makeProviderRecord(provider: .openai, credential: openAICredential)],
+            lastUsedProviderId: .openai,
         )
         let anthropicFile = makeConnectionsFile(
+            providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
             updatedAtMs: 2,
             lastUsedProviderId: .anthropic,
-            providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
         )
         let driver = LoadDriver()
         let firstRequestID = makeUUID("00000000-0000-0000-0000-000000000000")
@@ -135,6 +140,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.unavailableSelectedModelHandle, catalogRows[0].handle)
     }
 
+    // 여러 connected provider의 model list가 하나의 catalog로 병합되는지 검증
     // swiftlint:disable:next function_body_length
     func testProviderConnectionsUpdatedMergesModelsFromMultipleConnectedProviders() async {
         actor LoadDriver {
@@ -156,11 +162,11 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         let openAICredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-openai"))
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .openai,
             providers: [
                 makeProviderRecord(provider: .openai, credential: openAICredential),
                 makeProviderRecord(provider: .anthropic, credential: anthropicCredential),
             ],
+            lastUsedProviderId: .openai,
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
         let openAIModels = [makeProviderModels()[0]]
@@ -243,6 +249,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelCatalogState.sections.last?.rows.first?.providerBadge, "Reasoning-first chat")
     }
 
+    // 일부 provider model list 실패 시 다른 provider의 성공 결과가 유지되는지 검증
     // swiftlint:disable:next function_body_length
     func testModelListPartialFailurePreservesSuccessfulModelsFromAnotherProvider() async {
         actor LoadDriver {
@@ -264,11 +271,11 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         let openAICredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-openai"))
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .openai,
             providers: [
                 makeProviderRecord(provider: .openai, credential: openAICredential),
                 makeProviderRecord(provider: .anthropic, credential: anthropicCredential),
             ],
+            lastUsedProviderId: .openai,
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
         let openAIModels = [makeProviderModels()[0]]
@@ -347,6 +354,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelListFailedProviders, [.anthropic: anthropicFailure])
     }
 
+    // Codex model list 실패가 성공한 OpenAI model 결과를 지우지 않는지 검증
     // swiftlint:disable:next function_body_length
     func testModelListCodexFailurePreservesSuccessfulOpenAIModels() async {
         actor LoadDriver {
@@ -368,11 +376,11 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         let openAICredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-openai"))
         let codexCredential = StoredCredentialPayload.oauth(OAuthCredentialFile(accessToken: "codex-token"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .openai,
             providers: [
                 makeProviderRecord(provider: .openai, credential: openAICredential),
                 makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential),
             ],
+            lastUsedProviderId: .openai,
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
         let openAIModels = [makeProviderModels()[0]]
@@ -453,14 +461,15 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelListFailedProviders, [.chatgptCodex: codexFailure])
     }
 
+    // Codex-only connection에서 Codex model과 thinking metadata가 로드되는지 검증
     // swiftlint:disable:next function_body_length
     func testModelListCodexOnlySuccessLoadsCodexModelsAndThinkingMetadata() async {
         let codexCredential = StoredCredentialPayload.oauth(OAuthCredentialFile(accessToken: "codex-token"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .chatgptCodex,
             providers: [
                 makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential),
             ],
+            lastUsedProviderId: .chatgptCodex,
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
         let codexModel = AiProviderModel(
@@ -542,14 +551,15 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         )
     }
 
+    // Codex-only model list 실패가 failed state와 unsupported provider 정보를 노출하는지 검증
     // swiftlint:disable:next function_body_length
     func testModelListCodexOnlyFailureTransitionsToFailedStateAndExposesUnsupportedProvider() async {
         let codexCredential = StoredCredentialPayload.oauth(OAuthCredentialFile(accessToken: "codex-token"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .chatgptCodex,
             providers: [
                 makeProviderRecord(provider: .chatgptCodex, authMethod: .oauth, credential: codexCredential),
             ],
+            lastUsedProviderId: .chatgptCodex,
         )
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
         let codexFailure = AiModelListFailure(
@@ -607,6 +617,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelListFailedProviders, [.chatgptCodex: codexFailure])
     }
 
+    /// model list refresh 후 기존 선택 model이 남아 있으면 선택이 유지되는지 검증
     func testModelListLoadedKeepsCurrentSelectionWhenStillPresent() async {
         let models = makeProviderModels()
         let catalogRows = makeCatalogRows()
@@ -645,6 +656,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         }
     }
 
+    /// model 선택은 유지하되 호환되지 않는 thinking 선택은 정리되는지 검증
     func testModelListLoadedKeepsSelectionButClearsIncompatibleThinking() async {
         let models = makeThinkingCapableProviderModels()
         let catalogRows = makeCatalogRows()
@@ -685,6 +697,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         }
     }
 
+    /// model list load 실패가 failed state로 전환되는지 검증
     func testModelListLoadFailedTransitionsToFailedState() async {
         let requestID = makeUUID("00000000-0000-0000-0000-000000000030")
         let failure = AiModelListFailure(message: "Anthropic model list request failed (500).")
@@ -718,6 +731,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         }
     }
 
+    /// connected provider가 없을 때 unconnected state로 복구되는지 검증
     func testProviderConnectionsUpdatedWithNoConnectedProvidersRestoresUnconnectedState() async {
         let selectedHandle = makeCatalogRows()[0].handle
         let file = makeConnectionsFile(providers: [
@@ -759,6 +773,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 
+    /// loaded model 결과가 비어 있을 때 empty state로 전환되는지 검증
     func testModelListLoadedWithEmptyModelsTransitionsToEmptyState() async {
         let requestID = makeUUID("00000000-0000-0000-0000-000000000040")
         let selectedHandle = makeCatalogRows()[0].handle
