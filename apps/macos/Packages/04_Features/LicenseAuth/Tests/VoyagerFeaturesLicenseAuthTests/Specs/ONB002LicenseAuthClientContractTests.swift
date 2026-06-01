@@ -15,55 +15,6 @@ final class ONB002LicenseAuthClientContractTests: XCTestCase {
 
     // MARK: - ONB-002-apply_access_unlock_result
 
-    func testActiveMockClaims() async throws {
-        let client = LicenseAuthClient.mock
-
-        let licenseResponse = try await client.claimLicense("VOYAGER-CORE-VALID")
-        XCTAssertEqual(licenseResponse.status, .coreLicenseActive)
-        XCTAssertTrue(licenseResponse.status.isActive)
-
-        let betaResponse = try await client.redeemBetaCode("VOYAGER-BETA-TRIAL")
-        XCTAssertEqual(betaResponse.status, .betaTrialActive)
-        XCTAssertTrue(betaResponse.status.isActive)
-        XCTAssertNotNil(betaResponse.expiresAt)
-
-        let internalResponse = try await client.claimLicense("VOYAGER-INTERNAL")
-        XCTAssertEqual(internalResponse.status, .internalTestActive)
-        XCTAssertTrue(internalResponse.status.isActive)
-    }
-
-    func testInactiveAndFailureMockClaims() async throws {
-        let client = LicenseAuthClient.mock
-
-        let expired = try await client.claimLicense("VOYAGER-EXPIRED")
-        XCTAssertEqual(expired.status, .trialExpired)
-        XCTAssertFalse(expired.status.isActive)
-
-        let revoked = try await client.claimLicense("VOYAGER-REVOKED")
-        XCTAssertEqual(revoked.status, .revoked)
-        XCTAssertFalse(revoked.status.isActive)
-
-        let refunded = try await client.claimLicense("VOYAGER-REFUNDED")
-        XCTAssertEqual(refunded.status, .refunded)
-        XCTAssertFalse(refunded.status.isActive)
-    }
-
-    func testUnknownInputThrows() async {
-        let client = LicenseAuthClient.mock
-        do {
-            _ = try await client.claimLicense("UNKNOWN-KEY")
-            XCTFail("Should have thrown")
-        } catch {}
-    }
-
-    func testEmptyInputThrows() async {
-        let client = LicenseAuthClient.mock
-        do {
-            _ = try await client.claimLicense("")
-            XCTFail("Should have thrown for empty input")
-        } catch {}
-    }
-
     func testGatewayNotConfigured() async {
         let client = LicenseAuthClient.liveValue
         do {

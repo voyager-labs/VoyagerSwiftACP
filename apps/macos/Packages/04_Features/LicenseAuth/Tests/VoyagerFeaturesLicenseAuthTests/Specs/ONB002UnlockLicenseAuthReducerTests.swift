@@ -1,3 +1,5 @@
+// swiftlint:disable force_unwrapping
+
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesLicenseAuth
 import XCTest
@@ -36,445 +38,31 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         return state
     }
 
-    // MARK: - ONB-002-apply_access_unlock_result
-
-    func testLicenseClaimSuccessEmitsUnlockedDelegate() async {
-        let store = makeTestStore(initialState: signedInInitialState())
-
-        await store.send(.licenseKeyChanged("VOYAGER-CORE-VALID")) { state in
-            state.licenseKey = "VOYAGER-CORE-VALID"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .coreLicenseActive
-            state.isComplete = true
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: .coreLicenseActive,
-                entitlements: [.coreLicense],
-                fetchedAt: self.referenceDate,
-            )
-        }
-
-        await store.receive(\.delegate.unlocked)
-
-        XCTAssertTrue(store.state.isComplete)
-        await store.finish()
-    }
-
-    // MARK: - Beta Trial Happy Path
-
-    func testBetaTrialSuccessEmitsUnlockedDelegate() async {
-        let betaExpiry = Date(timeIntervalSince1970: 1_701_209_600)
-        let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
-                restoreSession: { nil },
-                claimLicense: { _ in
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    LicenseAuthStatusResponse(
-                        status: .betaTrialActive,
-                        expiresAt: betaExpiry,
-                        entitlements: [.betaTrial],
-                    )
-                },
-                fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-            ),
-            initialState: signedInInitialState(),
+    private func makeCheckoutURLClient(
+        openCount: LockIsolated<Int>,
+        checkoutCount: LockIsolated<Int>,
+        pricingCount: LockIsolated<Int>,
+        supportCount: LockIsolated<Int>,
+        openedURLs: LockIsolated<[URL]>,
+    ) -> CheckoutURLClient {
+        CheckoutURLClient(
+            openURL: { url in
+                openCount.withValue { $0 += 1 }
+                openedURLs.withValue { $0.append(url) }
+            },
+            checkoutURL: {
+                checkoutCount.withValue { $0 += 1 }
+                return URL(string: "http://test.test/checkout")!
+            },
+            pricingURL: {
+                pricingCount.withValue { $0 += 1 }
+                return URL(string: "http://test.test/pricing")!
+            },
+            supportURL: {
+                supportCount.withValue { $0 += 1 }
+                return URL(string: "http://test.test/support")!
+            },
         )
-
-        await store.send(.claimModeChanged(.betaCode)) { state in
-            state.claimMode = .betaCode
-        }
-
-        await store.send(.betaCodeChanged("VOYAGER-BETA-TRIAL")) { state in
-            state.betaCode = "VOYAGER-BETA-TRIAL"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .betaTrialActive
-            state.isComplete = true
-            state.trialExpiresAt = betaExpiry
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: .betaTrialActive,
-                expiresAt: betaExpiry,
-                entitlements: [.betaTrial],
-                fetchedAt: self.referenceDate,
-            )
-        }
-
-        await store.receive(\.delegate.unlocked)
-
-        XCTAssertEqual(store.state.trialExpiresAt, betaExpiry)
-        await store.finish()
-    }
-
-    // MARK: - ONB-002-start_access_unlock_recovery
-
-    func testMissingInputDoesNotSubmit() async {
-        var initialState = UnlockLicenseAuthFeature.State()
-        initialState.hasAccountSession = true
-
-        let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
-        } withDependencies: {
-            $0.licenseAuthClient = .mock
-            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
-        }
-
-        await store.send(.submitTapped) { state in
-            state.errorMessage = "Please enter a license key or beta code."
-        }
-
-        XCTAssertFalse(store.state.isSubmitting)
-        await store.finish()
-    }
-
-    // MARK: - ONB-002-apply_access_unlock_result
-
-    func testInvalidKeyShowsError() async {
-        let store = makeTestStore(initialState: signedInInitialState())
-
-        await store.send(.licenseKeyChanged("INVALID-KEY")) { state in
-            state.licenseKey = "INVALID-KEY"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.isComplete = false
-            state.errorMessage = "The license key is invalid."
-        }
-
-        XCTAssertFalse(store.state.isComplete)
-        await store.finish()
-    }
-
-    // MARK: - Expired Status
-
-    func testExpiredDoesNotUnlock() async {
-        let store = makeTestStore(initialState: signedInInitialState())
-
-        await store.send(.licenseKeyChanged("VOYAGER-EXPIRED")) { state in
-            state.licenseKey = "VOYAGER-EXPIRED"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .trialExpired
-            state.isComplete = false
-            state.errorMessage = "This trial has expired."
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: .trialExpired,
-                entitlements: [],
-                fetchedAt: self.referenceDate,
-            )
-        }
-
-        XCTAssertFalse(store.state.isComplete)
-        await store.finish()
-    }
-
-    // MARK: - Revoked Status
-
-    func testRevokedDoesNotUnlock() async {
-        let store = makeTestStore(initialState: signedInInitialState())
-
-        await store.send(.licenseKeyChanged("VOYAGER-REVOKED")) { state in
-            state.licenseKey = "VOYAGER-REVOKED"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .revoked
-            state.isComplete = false
-            state.errorMessage = "This license has been revoked."
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: .revoked,
-                entitlements: [],
-                fetchedAt: self.referenceDate,
-            )
-        }
-
-        XCTAssertFalse(store.state.isComplete)
-        await store.finish()
-    }
-
-    // MARK: - Network Failure
-
-    func testNetworkFailureShowsRetry() async {
-        let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
-                restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.networkFailure },
-                redeemBetaCode: { _ in throw LicenseAuthError.networkFailure },
-                fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-            ),
-            initialState: signedInInitialState(),
-        )
-
-        await store.send(.licenseKeyChanged("ANY-KEY")) { state in
-            state.licenseKey = "ANY-KEY"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .networkFailure
-            state.isComplete = false
-            state.errorMessage = "Network error. Please check your connection and try again."
-        }
-
-        XCTAssertFalse(store.state.isComplete)
-        XCTAssertTrue(store.state.showsRetry)
-
-        await store.finish()
-    }
-
-    // MARK: - ONB-002-start_access_unlock_recovery
-
-    func testRetryAfterFailure() async {
-        nonisolated(unsafe) var callCount = 0
-        let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
-                restoreSession: { nil },
-                claimLicense: { _ in
-                    callCount += 1
-                    if callCount == 1 {
-                        throw LicenseAuthError.networkFailure
-                    }
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in throw LicenseAuthError.networkFailure },
-                fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-            ),
-            initialState: signedInInitialState(),
-        )
-
-        await store.send(.licenseKeyChanged("ANY-KEY")) { state in
-            state.licenseKey = "ANY-KEY"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .networkFailure
-            state.isComplete = false
-            state.errorMessage = "Network error. Please check your connection and try again."
-        }
-
-        await store.send(.retryTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-            state.errorMessage = nil
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .coreLicenseActive
-            state.isComplete = true
-            state.errorMessage = nil
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: .coreLicenseActive,
-                entitlements: [.coreLicense],
-                fetchedAt: self.referenceDate,
-            )
-        }
-
-        await store.receive(\.delegate.unlocked)
-
-        XCTAssertTrue(store.state.isComplete)
-        await store.finish()
-    }
-
-    // MARK: - ONB-002-start_access_unlock_recovery
-
-    func testModeSwitchClearsError() async {
-        let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
-                restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.networkFailure },
-                redeemBetaCode: { _ in throw LicenseAuthError.networkFailure },
-                fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-            ),
-            initialState: signedInInitialState(),
-        )
-
-        await store.send(.licenseKeyChanged("ANY-KEY")) { state in
-            state.licenseKey = "ANY-KEY"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .networkFailure
-            state.isComplete = false
-            state.errorMessage = "Network error. Please check your connection and try again."
-        }
-
-        await store.send(.claimModeChanged(.betaCode)) { state in
-            state.claimMode = .betaCode
-            state.errorMessage = nil
-        }
-
-        XCTAssertNil(store.state.errorMessage)
-        await store.finish()
-    }
-
-    // MARK: - ONB-002-start_access_unlock_recovery
-
-    func testSubmitUsesLicensePathForLicenseMode() async {
-        nonisolated(unsafe) var claimedLicense = false
-        nonisolated(unsafe) var redeemedBeta = false
-
-        let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
-                restoreSession: { nil },
-                claimLicense: { _ in
-                    claimedLicense = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    redeemedBeta = true
-                    return LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
-                },
-                fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-            ),
-            initialState: signedInInitialState(),
-        )
-
-        await store.send(.licenseKeyChanged("SOME-KEY")) { state in
-            state.licenseKey = "SOME-KEY"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .coreLicenseActive
-            state.isComplete = true
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: .coreLicenseActive,
-                entitlements: [.coreLicense],
-                fetchedAt: self.referenceDate,
-            )
-        }
-
-        await store.receive(\.delegate.unlocked)
-
-        XCTAssertTrue(claimedLicense)
-        XCTAssertFalse(redeemedBeta)
-        await store.finish()
-    }
-
-    func testSubmitUsesBetaPathForBetaMode() async {
-        nonisolated(unsafe) var claimedLicense = false
-        nonisolated(unsafe) var redeemedBeta = false
-
-        let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
-                restoreSession: { nil },
-                claimLicense: { _ in
-                    claimedLicense = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                redeemBetaCode: { _ in
-                    redeemedBeta = true
-                    return LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
-                },
-                fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-            ),
-            initialState: signedInInitialState(),
-        )
-
-        await store.send(.claimModeChanged(.betaCode)) { state in
-            state.claimMode = .betaCode
-        }
-
-        await store.send(.betaCodeChanged("SOME-CODE")) { state in
-            state.betaCode = "SOME-CODE"
-        }
-
-        await store.send(.submitTapped) { state in
-            state.isSubmitting = true
-            state.isComplete = false
-        }
-
-        await store.receive(\.claimResponse) { state in
-            state.isSubmitting = false
-            state.status = .betaTrialActive
-            state.isComplete = true
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: .betaTrialActive,
-                entitlements: [.betaTrial],
-                fetchedAt: self.referenceDate,
-            )
-        }
-
-        await store.receive(\.delegate.unlocked)
-
-        XCTAssertFalse(claimedLicense)
-        XCTAssertTrue(redeemedBeta)
-        await store.finish()
     }
 
     // MARK: - ONB-002-show_access_unlock_status (Auth Axis + Access Step Interpretation)
@@ -488,23 +76,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         XCTAssertEqual(state.onb002AuthAxis, .signedOut)
         XCTAssertEqual(state.onb002AccessStepState, .blocked)
         XCTAssertTrue(state.canStartLogin)
-        XCTAssertFalse(state.canSubmitClaim)
-        XCTAssertFalse(state.canRefreshAccess)
-        XCTAssertFalse(state.canRetry)
-        XCTAssertTrue(state.requiresAccountSession)
-    }
-
-    /// ONB-002-show_access_unlock_status
-    /// signInInProgress: authAxis == .signInInProgress, accessStepState == .pending
-    /// 로그인 진행 중 모든 액션 비활성화
-    func testSignInInProgressDerivesPending() {
-        var state = UnlockLicenseAuthFeature.State()
-        state.isSignInInProgress = true
-
-        XCTAssertEqual(state.onb002AuthAxis, .signInInProgress)
-        XCTAssertEqual(state.onb002AccessStepState, .pending)
-        XCTAssertFalse(state.canStartLogin)
-        XCTAssertFalse(state.canSubmitClaim)
         XCTAssertFalse(state.canRefreshAccess)
         XCTAssertFalse(state.canRetry)
         XCTAssertTrue(state.requiresAccountSession)
@@ -520,7 +91,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         XCTAssertEqual(state.onb002AuthAxis, .signInFailed)
         XCTAssertEqual(state.onb002AccessStepState, .blocked)
         XCTAssertTrue(state.canStartLogin)
-        XCTAssertFalse(state.canSubmitClaim)
         XCTAssertFalse(state.canRefreshAccess)
         XCTAssertFalse(state.canRetry)
         XCTAssertTrue(state.requiresAccountSession)
@@ -536,7 +106,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         XCTAssertEqual(state.onb002AuthAxis, .signedIn)
         XCTAssertEqual(state.onb002AccessStepState, .pending)
         XCTAssertFalse(state.canStartLogin)
-        XCTAssertFalse(state.canSubmitClaim)
         XCTAssertTrue(state.canRefreshAccess)
         XCTAssertFalse(state.canRetry)
         XCTAssertFalse(state.requiresAccountSession)
@@ -661,36 +230,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     // MARK: - ONB-002-show_access_unlock_status (Affordance Guards)
 
     /// ONB-002-show_access_unlock_status
-    /// canSubmitClaim: signedIn + has input + not submitting
-    func testCanSubmitClaimWhenSignedInWithInput() {
-        var state = UnlockLicenseAuthFeature.State()
-        state.hasAccountSession = true
-        state.licenseKey = "SOME-KEY"
-
-        XCTAssertTrue(state.canSubmitClaim)
-    }
-
-    /// ONB-002-show_access_unlock_status
-    /// canSubmitClaim == false when signed out
-    func testCannotSubmitClaimWhenSignedOut() {
-        var state = UnlockLicenseAuthFeature.State()
-        state.licenseKey = "SOME-KEY"
-
-        XCTAssertFalse(state.canSubmitClaim)
-    }
-
-    /// ONB-002-show_access_unlock_status
-    /// canSubmitClaim == false when submitting
-    func testCannotSubmitClaimWhenSubmitting() {
-        var state = UnlockLicenseAuthFeature.State()
-        state.hasAccountSession = true
-        state.licenseKey = "SOME-KEY"
-        state.isSubmitting = true
-
-        XCTAssertFalse(state.canSubmitClaim)
-    }
-
-    /// ONB-002-show_access_unlock_status
     /// canRefreshAccess: signedIn + not submitting + not signInInProgress
     func testCanRefreshAccessWhenSignedIn() {
         var state = UnlockLicenseAuthFeature.State()
@@ -760,8 +299,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         let store = makeTestStore(
             licenseAuthClient: LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -769,6 +306,8 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
                 signOut: {},
             ),
         )
+        // store.exhaustivity = .off: didBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear)
 
@@ -778,7 +317,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         XCTAssertEqual(store.state.onb002AuthAxis, .signedOut)
         XCTAssertEqual(store.state.onb002AccessStepState, .blocked)
         XCTAssertFalse(fetchCalled)
-        await store.finish()
     }
 
     /// ONB-002-start_access_unlock_recovery
@@ -793,8 +331,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
                 restoreSession: {
                     LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive)
                 },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -802,6 +338,8 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
                 signOut: {},
             ),
         )
+        // store.exhaustivity = .off: didBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear)
 
@@ -824,7 +362,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
 
         XCTAssertTrue(fetchCalled)
         XCTAssertTrue(store.state.hasAccountSession)
-        await store.finish()
     }
 
     /// ONB-002-mock_sign_in_handoff: signInHandoffClient를 통한 로그인이 signInInProgress를 설정한다.
@@ -885,6 +422,144 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - ONB-002-open_external_url_redirect
+
+    /// ONB-002-open_checkout_tapped: checkout CTA가 checkout URL을 한 번 열고 다른 URL은 호출하지 않는다.
+    /// 구매 CTA가 checkoutURLClient의 checkoutURL → openURL 경로를 타는지 검증합니다.
+    /// - 검증 내용: `.openCheckoutTapped` 전송 후 checkoutURL 1회, openURL 1회, 나머지 URL 메서드 0회.
+    /// - 사전 조건: checkoutURLClient spy 설정, 초기 상태.
+    /// - 기대 결과: checkout URL이 브라우저 열기 경로로 전달됩니다.
+    func testOpenCheckoutTappedOpensCheckoutURL() async {
+        let openCount = LockIsolated(0)
+        let checkoutCount = LockIsolated(0)
+        let pricingCount = LockIsolated(0)
+        let supportCount = LockIsolated(0)
+        let openedURLs = LockIsolated<[URL]>([])
+
+        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
+            UnlockLicenseAuthFeature()
+        } withDependencies: {
+            $0.checkoutURLClient = self.makeCheckoutURLClient(
+                openCount: openCount,
+                checkoutCount: checkoutCount,
+                pricingCount: pricingCount,
+                supportCount: supportCount,
+                openedURLs: openedURLs,
+            )
+        }
+
+        await store.send(.openCheckoutTapped)
+        await store.finish()
+
+        XCTAssertEqual(checkoutCount.value, 1)
+        XCTAssertEqual(pricingCount.value, 0)
+        XCTAssertEqual(supportCount.value, 0)
+        XCTAssertEqual(openCount.value, 1)
+        XCTAssertEqual(openedURLs.value, [URL(string: "http://test.test/checkout")!])
+    }
+
+    /// ONB-002-open_pricing_tapped: pricing CTA가 pricing URL을 한 번 열고 다른 URL은 호출하지 않는다.
+    /// 요금제 CTA가 checkoutURLClient의 pricingURL → openURL 경로를 타는지 검증합니다.
+    /// - 검증 내용: `.openPricingTapped` 전송 후 pricingURL 1회, openURL 1회, 나머지 URL 메서드 0회.
+    /// - 사전 조건: checkoutURLClient spy 설정, 초기 상태.
+    /// - 기대 결과: pricing URL이 브라우저 열기 경로로 전달됩니다.
+    func testOpenPricingTappedOpensPricingURL() async {
+        let openCount = LockIsolated(0)
+        let checkoutCount = LockIsolated(0)
+        let pricingCount = LockIsolated(0)
+        let supportCount = LockIsolated(0)
+        let openedURLs = LockIsolated<[URL]>([])
+
+        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
+            UnlockLicenseAuthFeature()
+        } withDependencies: {
+            $0.checkoutURLClient = self.makeCheckoutURLClient(
+                openCount: openCount,
+                checkoutCount: checkoutCount,
+                pricingCount: pricingCount,
+                supportCount: supportCount,
+                openedURLs: openedURLs,
+            )
+        }
+
+        await store.send(.openPricingTapped)
+        await store.finish()
+
+        XCTAssertEqual(checkoutCount.value, 0)
+        XCTAssertEqual(pricingCount.value, 1)
+        XCTAssertEqual(supportCount.value, 0)
+        XCTAssertEqual(openCount.value, 1)
+        XCTAssertEqual(openedURLs.value, [URL(string: "http://test.test/pricing")!])
+    }
+
+    /// ONB-002-open_access_help_tapped: access help CTA가 support URL을 한 번 열고 다른 URL은 호출하지 않는다.
+    /// 접근 도움 CTA가 checkoutURLClient의 supportURL → openURL 경로를 타는지 검증합니다.
+    /// - 검증 내용: `.openAccessHelpTapped` 전송 후 supportURL 1회, openURL 1회, 나머지 URL 메서드 0회.
+    /// - 사전 조건: checkoutURLClient spy 설정, 초기 상태.
+    /// - 기대 결과: support URL이 브라우저 열기 경로로 전달됩니다.
+    func testOpenAccessHelpTappedOpensHelpURL() async {
+        let openCount = LockIsolated(0)
+        let checkoutCount = LockIsolated(0)
+        let pricingCount = LockIsolated(0)
+        let supportCount = LockIsolated(0)
+        let openedURLs = LockIsolated<[URL]>([])
+
+        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
+            UnlockLicenseAuthFeature()
+        } withDependencies: {
+            $0.checkoutURLClient = self.makeCheckoutURLClient(
+                openCount: openCount,
+                checkoutCount: checkoutCount,
+                pricingCount: pricingCount,
+                supportCount: supportCount,
+                openedURLs: openedURLs,
+            )
+        }
+
+        await store.send(.openAccessHelpTapped)
+        await store.finish()
+
+        XCTAssertEqual(checkoutCount.value, 0)
+        XCTAssertEqual(pricingCount.value, 0)
+        XCTAssertEqual(supportCount.value, 1)
+        XCTAssertEqual(openCount.value, 1)
+        XCTAssertEqual(openedURLs.value, [URL(string: "http://test.test/support")!])
+    }
+
+    /// ONB-002-open_beta_code_help_tapped: beta code help CTA가 support URL을 한 번 열고 다른 URL은 호출하지 않는다.
+    /// 베타 코드 도움 CTA가 checkoutURLClient의 supportURL → openURL 경로를 타는지 검증합니다.
+    /// - 검증 내용: `.openBetaCodeHelpTapped` 전송 후 supportURL 1회, openURL 1회, 나머지 URL 메서드 0회.
+    /// - 사전 조건: checkoutURLClient spy 설정, 초기 상태.
+    /// - 기대 결과: support URL이 브라우저 열기 경로로 전달됩니다.
+    func testOpenBetaCodeHelpTappedOpensHelpURL() async {
+        let openCount = LockIsolated(0)
+        let checkoutCount = LockIsolated(0)
+        let pricingCount = LockIsolated(0)
+        let supportCount = LockIsolated(0)
+        let openedURLs = LockIsolated<[URL]>([])
+
+        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
+            UnlockLicenseAuthFeature()
+        } withDependencies: {
+            $0.checkoutURLClient = self.makeCheckoutURLClient(
+                openCount: openCount,
+                checkoutCount: checkoutCount,
+                pricingCount: pricingCount,
+                supportCount: supportCount,
+                openedURLs: openedURLs,
+            )
+        }
+
+        await store.send(.openBetaCodeHelpTapped)
+        await store.finish()
+
+        XCTAssertEqual(checkoutCount.value, 0)
+        XCTAssertEqual(pricingCount.value, 0)
+        XCTAssertEqual(supportCount.value, 1)
+        XCTAssertEqual(openCount.value, 1)
+        XCTAssertEqual(openedURLs.value, [URL(string: "http://test.test/support")!])
+    }
+
     /// ONB-002-start_access_unlock_recovery
     /// Deep-link 콜백 URL이 유효하면 restoreSession 후 signed-in 상태로 전이한다.
     /// - 검증 내용: voyager://auth/callback 수신 → restoreSession 성공 → hasAccountSession = true
@@ -904,8 +579,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
                 restoreSession: {
                     LicenseAuthSession(accessToken: "restored-token", status: .coreLicenseActive)
                 },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -960,8 +633,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -1001,8 +672,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -1071,8 +740,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -1109,8 +776,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
@@ -1145,14 +810,14 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
                 restoreSession: {
                     LicenseAuthSession(accessToken: "test-token", status: .none)
                 },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     LicenseAuthStatusResponse(status: LicenseAuthStatus.none, entitlements: [])
                 },
                 signOut: {},
             ),
         )
+        // store.exhaustivity = .off: didBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear)
 
@@ -1174,7 +839,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
 
         XCTAssertEqual(store.state.onb002AccessStepState, .blocked)
         XCTAssertFalse(store.state.isComplete)
-        await store.finish()
     }
 
     /// ONB-002-apply_access_unlock_result
@@ -1188,14 +852,14 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
                 restoreSession: {
                     LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive)
                 },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     throw LicenseAuthError.networkFailure
                 },
                 signOut: {},
             ),
         )
+        // store.exhaustivity = .off: didBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear)
 
@@ -1212,7 +876,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
 
         XCTAssertEqual(store.state.onb002AccessStepState, .error)
         XCTAssertTrue(store.state.canRetry)
-        await store.finish()
     }
 
     /// ONB-002-apply_access_unlock_result
@@ -1228,14 +891,14 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
                 restoreSession: {
                     LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive)
                 },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     throw LicenseAuthError.decodingFailure
                 },
                 signOut: {},
             ),
         )
+        // store.exhaustivity = .off: didBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear)
 
@@ -1252,7 +915,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         XCTAssertFalse(store.state.isComplete)
         XCTAssertNotNil(store.state.errorMessage)
         XCTAssertTrue(store.state.canRefreshAccess)
-        await store.finish()
     }
 
     // MARK: - ONB-002-start_access_unlock_recovery (Refresh Access)
@@ -1272,8 +934,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCount += 1
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -1315,8 +975,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         let store = makeTestStore(
             licenseAuthClient: LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -1348,8 +1006,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
@@ -1365,36 +1021,138 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         await store.finish()
     }
 
-    // MARK: - ONB-002-apply_access_unlock_result (Session Guard for Submit)
+    // MARK: - ONB-002-start_access_unlock_recovery (Foreground Activation Refresh)
 
-    /// ONB-002-apply_access_unlock_result
-    /// Submit when signed out → session required error, no claim/redeem call
-    /// - 검증: signed-out 상태에서 submitTapped 시 claim/redeem 대신 세션 필요 에러
-    /// - 사전 조건: hasAccountSession == false, licenseKey 입력됨
-    /// - 기대 결과: errorMessage = "Please sign in to continue.", isSubmitting == false
-    func testSubmitWhenSignedOutShowsSessionRequiredError() async {
-        let store = makeTestStore()
+    /// ONB-002-start_access_unlock_recovery
+    /// 앱이 foreground로 돌아오면 signed-in 상태에서 access status를 다시 조회한다.
+    /// - 검증 내용: appDidBecomeActive가 fetchAccessStatus를 트리거하고 generation을 증가시킴
+    /// - 사전 조건: hasAccountSession == true
+    /// - 기대 결과: fetchGeneration 증가, fetchAccessStatus 호출됨, response가 reducer에 반영됨
+    func testAppDidBecomeActive_TriggersFetchAccessStatus() async {
+        nonisolated(unsafe) var fetchCount = 0
+        var initialState = UnlockLicenseAuthFeature.State()
+        initialState.hasAccountSession = true
+        initialState.status = .revoked
 
-        await store.send(.licenseKeyChanged("SOME-KEY")) { state in
-            state.licenseKey = "SOME-KEY"
+        let store = TestStore(initialState: initialState) {
+            UnlockLicenseAuthFeature()
+        } withDependencies: {
+            $0.licenseAuthClient = LicenseAuthClient(
+                restoreSession: { nil },
+                fetchAccessStatus: {
+                    fetchCount += 1
+                    return LicenseAuthStatusResponse(status: LicenseAuthStatus.none, entitlements: [])
+                },
+                signOut: {},
+            )
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
         }
 
-        await store.send(.submitTapped) { state in
-            state.errorMessage = "Please sign in to continue."
+        await store.send(.appDidBecomeActive) { state in
+            state.fetchGeneration = 1
         }
 
-        XCTAssertFalse(store.state.isSubmitting)
+        await store.receive(\.licenseAuthStatusResponse) { state in
+            state.status = LicenseAuthStatus.none
+            state.isComplete = false
+            state.errorMessage = "Access denied."
+            state.snapshot = LicenseAuthStatusSnapshot(
+                status: LicenseAuthStatus.none,
+                entitlements: [],
+                fetchedAt: self.referenceDate,
+            )
+        }
+
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(store.state.fetchGeneration, 1)
+        XCTAssertFalse(store.state.isComplete)
+        await store.finish()
+    }
+
+    /// ONB-002-start_access_unlock_recovery
+    /// signed-out 상태에서는 foreground 진입해도 access status를 조회하지 않는다.
+    /// - 검증 내용: appDidBecomeActive가 signed-out 상태에서 no-op
+    /// - 사전 조건: hasAccountSession == false
+    /// - 기대 결과: fetchAccessStatus 미호출, 상태 변화 없음
+    func testAppDidBecomeActive_WhenSignedOut_DoesNotFetchStatus() async {
+        nonisolated(unsafe) var fetchCalled = false
+        let store = makeTestStore(
+            licenseAuthClient: LicenseAuthClient(
+                restoreSession: { nil },
+                fetchAccessStatus: {
+                    fetchCalled = true
+                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                },
+                signOut: {},
+            ),
+        )
+
+        await store.send(.appDidBecomeActive)
+
+        XCTAssertFalse(fetchCalled)
+        XCTAssertEqual(store.state.fetchGeneration, 0)
         XCTAssertFalse(store.state.hasAccountSession)
+        await store.finish()
+    }
+
+    /// ONB-002-start_access_unlock_recovery
+    /// foreground refresh 결과가 blocked에서 complete로 전환되면 delegate unlock을 보낸다.
+    /// - 검증 내용: appDidBecomeActive 이후 active 응답이 complete 상태와 snapshot을 갱신
+    /// - 사전 조건: signed-in 상태, 초기 accessStepState == blocked
+    /// - 기대 결과: complete 전환, snapshot 저장, delegate.unlocked 발행
+    func testAppDidBecomeActive_StatusChangesFromBlockedToComplete() async {
+        nonisolated(unsafe) var fetchCount = 0
+        var initialState = UnlockLicenseAuthFeature.State()
+        initialState.hasAccountSession = true
+        initialState.status = LicenseAuthStatus.none
+        initialState.isComplete = false
+
+        let store = TestStore(initialState: initialState) {
+            UnlockLicenseAuthFeature()
+        } withDependencies: {
+            $0.licenseAuthClient = LicenseAuthClient(
+                restoreSession: { nil },
+                fetchAccessStatus: {
+                    fetchCount += 1
+                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                },
+                signOut: {},
+            )
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+        }
+
+        await store.send(.appDidBecomeActive) { state in
+            state.fetchGeneration = 1
+        }
+
+        await store.receive(\.licenseAuthStatusResponse) { state in
+            state.status = .coreLicenseActive
+            state.isComplete = true
+            state.errorMessage = nil
+            state.snapshot = LicenseAuthStatusSnapshot(
+                status: .coreLicenseActive,
+                entitlements: [.coreLicense],
+                fetchedAt: self.referenceDate,
+            )
+        }
+
+        await store.receive(\.delegate.unlocked)
+
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(store.state.fetchGeneration, 1)
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertEqual(store.state.onb002AccessStepState, .complete)
         await store.finish()
     }
 
     // MARK: - ONB-002-start_access_unlock_recovery (Latest Response Semantics)
 
-    /// ONB-002-start_access_unlock_recovery
-    /// Second refresh overrides first blocked result with active
-    /// - 검증: 두 번째 refresh의 active 응답이 첫 번째 blocked 응답을 올바르게 대체
-    /// - 사전 조건: signed in 상태에서 첫 fetch → blocked, 두 번째 fetch → active
-    /// - 기대 결과: 최종 상태가 active, fetchGeneration == 2, isComplete == true
+    // ONB-002-start_access_unlock_recovery
+    // Second refresh overrides first blocked result with active
+    // - 검증: 두 번째 refresh의 active 응답이 첫 번째 blocked 응답을 올바르게 대체
+    // - 사전 조건: signed in 상태에서 첫 fetch → blocked, 두 번째 fetch → active
+    // - 기대 결과: 최종 상태가 active, fetchGeneration == 2, isComplete == true
+    // swiftlint:disable:next function_body_length
     func testRefreshOverridesPreviousBlockedResult() async {
         nonisolated(unsafe) var fetchCount = 0
         var initialState = UnlockLicenseAuthFeature.State()
@@ -1405,8 +1163,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         } withDependencies: {
             $0.licenseAuthClient = LicenseAuthClient(
                 restoreSession: { nil },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     fetchCount += 1
                     if fetchCount == 1 {
@@ -1478,8 +1234,6 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
                 restoreSession: {
                     LicenseAuthSession(accessToken: "mock-token", status: .coreLicenseActive)
                 },
-                claimLicense: { _ in throw LicenseAuthError.notConfigured },
-                redeemBetaCode: { _ in throw LicenseAuthError.notConfigured },
                 fetchAccessStatus: {
                     LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
@@ -1637,3 +1391,5 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         await store.finish()
     }
 }
+
+// swiftlint:enable force_unwrapping
