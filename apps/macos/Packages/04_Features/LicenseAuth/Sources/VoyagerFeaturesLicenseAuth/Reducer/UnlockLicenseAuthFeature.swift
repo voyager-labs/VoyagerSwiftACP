@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 
@@ -18,9 +19,15 @@ public struct UnlockLicenseAuthFeature {
     @Dependency(\.date)
     var date
 
+    @Dependency(\.checkoutURLClient)
+    var checkoutURLClient
+
+    @Dependency(\.notificationCenterClient)
+    var notificationCenterClient
+
     private enum CancelID {
-        static let claim = "unlockLicenseAuthClaim"
         static let fetchStatus = "unlockLicenseAuthFetchStatus"
+        static let appDidBecomeActiveObserver = "unlockLicenseAuthAppDidBecomeActiveObserver"
     }
 
     public init() {}
@@ -31,23 +38,9 @@ public struct UnlockLicenseAuthFeature {
             case .onAppear:
                 return handleOnAppear(&state)
 
-            case let .claimModeChanged(mode):
-                state.claimMode = mode
-                state.errorMessage = nil
-                return .none
-
-            case let .licenseKeyChanged(key):
-                state.licenseKey = key
-                state.errorMessage = nil
-                return .none
-
-            case let .betaCodeChanged(code):
-                state.betaCode = code
-                state.errorMessage = nil
-                return .none
-
-            case .submitTapped, .retryTapped:
-                return handleSubmit(&state)
+            case .retryTapped:
+                state.fetchGeneration += 1
+                return fetchAccessStatusEffect(generation: state.fetchGeneration)
 
             case .loginTapped:
                 return handleLoginTapped(&state)
@@ -64,14 +57,31 @@ public struct UnlockLicenseAuthFeature {
             case let ._loginSessionRestored(hasSession):
                 return handleLoginSessionRestored(&state, hasSession: hasSession)
 
-            case let .claimResponse(result):
-                return handleClaimResponse(&state, result: result)
-
             case let .licenseAuthStatusResponse(generation: gen, result: result):
                 return handleLicenseAuthStatusResponse(&state, generation: gen, result: result)
 
             case .refreshAccessTapped:
                 return handleRefreshAccessTapped(&state)
+
+            case .appDidBecomeActive:
+                // 세션이 있을 때만 status 갱신 (불필요한 네트워크 요청 방지)
+                guard state.hasAccountSession else {
+                    return .none
+                }
+                state.fetchGeneration += 1
+                return fetchAccessStatusEffect(generation: state.fetchGeneration)
+
+            case .openCheckoutTapped:
+                return handleOpenCheckout(&state)
+
+            case .openPricingTapped:
+                return handleOpenPricing(&state)
+
+            case .openAccessHelpTapped:
+                return handleOpenAccessHelp(&state)
+
+            case .openBetaCodeHelpTapped:
+                return handleOpenBetaCodeHelp(&state)
 
             case .delegate:
                 return .none
@@ -80,10 +90,13 @@ public struct UnlockLicenseAuthFeature {
     }
 
     private func handleOnAppear(_: inout State) -> Effect<Action> {
-        .run { [licenseAuthClient] send in
-            let session = try? await licenseAuthClient.restoreSession()
-            await send(._onAppearSessionRestored(session != nil))
-        }
+        .merge(
+            .run { [licenseAuthClient] send in
+                let session = try? await licenseAuthClient.restoreSession()
+                await send(._onAppearSessionRestored(session != nil))
+            },
+            observeAppDidBecomeActive(),
+        )
     }
 
     private func handleOnAppearSessionRestored(_ state: inout State, hasSession: Bool) -> Effect<Action> {
@@ -188,88 +201,6 @@ public struct UnlockLicenseAuthFeature {
         return fetchAccessStatusEffect(generation: state.fetchGeneration)
     }
 
-    private func handleSubmit(_ state: inout State) -> Effect<Action> {
-        guard state.canSubmitClaim else {
-            if !state.hasAccountSession {
-                state.errorMessage = "Please sign in to continue."
-            } else {
-                state.errorMessage = "Please enter a license key or beta code."
-            }
-            return .none
-        }
-
-        state.isSubmitting = true
-        state.errorMessage = nil
-        state.isComplete = false
-
-        let mode = state.claimMode
-        let licenseKey = state.licenseKey
-        let betaCode = state.betaCode
-
-        return .run { [licenseAuthClient] send in
-            let result: Result<LicenseAuthStatusResponse, LicenseAuthError>
-            do {
-                let response: LicenseAuthStatusResponse = switch mode {
-                case .licenseKey:
-                    try await licenseAuthClient.claimLicense(licenseKey)
-                case .betaCode:
-                    try await licenseAuthClient.redeemBetaCode(betaCode)
-                }
-                result = .success(response)
-            } catch let error as LicenseAuthError {
-                result = .failure(error)
-            } catch {
-                result = .failure(.networkFailure)
-            }
-            await send(.claimResponse(result))
-        }
-        .cancellable(id: CancelID.claim, cancelInFlight: true)
-    }
-
-    private func handleClaimResponse(
-        _ state: inout State,
-        result: Result<LicenseAuthStatusResponse, LicenseAuthError>,
-    ) -> Effect<Action> {
-        state.isSubmitting = false
-
-        switch result {
-        case let .success(response):
-            state.status = response.status
-            state.trialExpiresAt = response.expiresAt
-
-            let snapshot = LicenseAuthStatusSnapshot(
-                status: response.status,
-                expiresAt: response.expiresAt,
-                entitlements: response.entitlements,
-                fetchedAt: date(),
-            )
-            state.snapshot = snapshot
-
-            if response.status.isActive {
-                state.isComplete = true
-                state.errorMessage = nil
-                return .run { [snapshotClient] send in
-                    await snapshotClient.save(snapshot)
-                    await send(.delegate(.unlocked(snapshot)))
-                }
-            } else {
-                state.isComplete = false
-                state.errorMessage = errorMessageForStatus(response.status)
-                return .run { [snapshotClient] _ in
-                    await snapshotClient.save(snapshot)
-                }
-            }
-
-        case let .failure(error):
-            state.isComplete = false
-            state.errorMessage = errorMessage(for: error)
-            if error == .networkFailure {
-                state.status = .networkFailure
-            }
-            return .none
-        }
-    }
-
     private func handleLicenseAuthStatusResponse(
         _ state: inout State,
         generation: Int,
@@ -317,16 +248,8 @@ public struct UnlockLicenseAuthFeature {
         }
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
     private func errorMessage(for error: LicenseAuthError) -> String {
         switch error {
-        case .missingInput: "Please enter a license key or beta code."
-        case .invalidLicenseKey: "The license key is invalid."
-        case .licenseAlreadyUsed: "This license key has already been used."
-        case .licenseRevoked: "This license has been revoked."
-        case .licenseRefunded: "This license has been refunded."
-        case .betaCodeAlreadyRedeemed: "This beta code has already been redeemed."
-        case .betaCodeExpired: "This beta code has expired."
         case .networkFailure: "Network error. Please check your connection and try again."
         case .notConfigured: "Access service is not configured."
         case .decodingFailure: "Failed to process the response."
@@ -342,6 +265,55 @@ public struct UnlockLicenseAuthFeature {
         case .networkFailure: "Network error. Please check your connection and try again."
         case .none: "Access denied."
         default: "An unexpected status was returned."
+        }
+    }
+
+    // MARK: - Foreground 활성화 관찰
+
+    /// 앱이 foreground로 돌아올 때 access_status를 자동 갱신한다.
+    private func observeAppDidBecomeActive() -> Effect<Action> {
+        .run { [notificationCenterClient] send in
+            for await _ in notificationCenterClient.notifications(
+                NSApplication.didBecomeActiveNotification,
+                nil,
+            ) {
+                await send(.appDidBecomeActive)
+            }
+        }
+        .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true)
+    }
+
+    // MARK: - 외부 URL 리다이렉트
+
+    /// 체크아웃(구매) 페이지를 브라우저에서 연다.
+    private func handleOpenCheckout(_: inout State) -> Effect<Action> {
+        .run { [checkoutURLClient] _ in
+            let url = checkoutURLClient.checkoutURL()
+            checkoutURLClient.openURL(url)
+        }
+    }
+
+    /// 요금제 페이지를 브라우저에서 연다.
+    private func handleOpenPricing(_: inout State) -> Effect<Action> {
+        .run { [checkoutURLClient] _ in
+            let url = checkoutURLClient.pricingURL()
+            checkoutURLClient.openURL(url)
+        }
+    }
+
+    /// 접근 권한 도움 페이지를 브라우저에서 연다.
+    private func handleOpenAccessHelp(_: inout State) -> Effect<Action> {
+        .run { [checkoutURLClient] _ in
+            let url = checkoutURLClient.supportURL()
+            checkoutURLClient.openURL(url)
+        }
+    }
+
+    /// 베타 코드 도움 페이지를 브라우저에서 연다.
+    private func handleOpenBetaCodeHelp(_: inout State) -> Effect<Action> {
+        .run { [checkoutURLClient] _ in
+            let url = checkoutURLClient.supportURL()
+            checkoutURLClient.openURL(url)
         }
     }
 }
