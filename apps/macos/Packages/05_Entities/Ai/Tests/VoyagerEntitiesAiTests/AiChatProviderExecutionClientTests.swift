@@ -11,7 +11,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
     }
 
     func testProviderExecutorRegistry_defaultRegistersEveryProvider() throws {
-        let registry = AiChatProviderExecutorRegistry.default(codexExecutor: { _, _, _, _, _ in "" })
+        let registry = AiChatProviderExecutorRegistry.default()
 
         XCTAssertEqual(registry.registeredProviders, Set(AiProvider.allCases))
         for provider in AiProvider.allCases {
@@ -181,7 +181,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
             executorCancelled: executorCancelled,
         )
         let stream = try client.execute(request, .oauth(OAuthCredentialFile(accessToken: "codex-token")))
-        let consumerTask = consumeUntilCancelledForTest(
+        let consumerTask = Self.consumeUntilCancelledForTest(
             stream,
             startedObserved: startedObserved,
             finished: consumerFinished,
@@ -208,7 +208,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         )
         let client = AiChatProviderExecutionClient.live(registry: registry)
         let stream = try client.execute(request, .apiKey(APIKeyCredentialFile(secret: "sk-openai")))
-        let consumerTask = consumeUntilCancelledForTest(
+        let consumerTask = Self.consumeUntilCancelledForTest(
             stream,
             startedObserved: startedObserved,
             finished: consumerFinished,
@@ -924,7 +924,7 @@ private extension AiChatProviderExecutionClientTests {
                 XCTAssertEqual(credential.accessToken, "codex-token")
                 XCTAssertTrue(prompt.contains("current_context:"))
                 executorEntered.fulfill()
-                return try await waitForCancellationForTest(onCancel: executorCancelled.fulfill)
+                return try await Self.waitForCancellationForTest(onCancel: executorCancelled.fulfill)
             },
         )
     }
@@ -935,7 +935,7 @@ private extension AiChatProviderExecutionClientTests {
     ) -> AiChatProviderExecutorRegistry {
         AiChatProviderExecutorRegistry(executors: [
             .openai: AiChatProviderExecutor { input in
-                cancellableRegistryStreamForTest(
+                Self.cancellableRegistryStreamForTest(
                     context: input.preflight.executionContext,
                     producerEntered: producerEntered,
                     producerCancelled: producerCancelled,
@@ -944,7 +944,47 @@ private extension AiChatProviderExecutionClientTests {
         ])
     }
 
-    func cancellableRegistryStream(
+    static func consumeUntilCancelledForTest(
+        _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
+        startedObserved: XCTestExpectation,
+        finished: XCTestExpectation,
+    ) -> Task<[AiChatProviderExecutionEvent], Never> {
+        Task {
+            defer { finished.fulfill() }
+            return await Self.collectUntilCancelledForTest(stream, startedObserved: startedObserved)
+        }
+    }
+
+    static func collectUntilCancelledForTest(
+        _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
+        startedObserved: XCTestExpectation,
+    ) async -> [AiChatProviderExecutionEvent] {
+        var events: [AiChatProviderExecutionEvent] = []
+        do {
+            for try await event in stream {
+                events.append(event)
+                if case .started = event { startedObserved.fulfill() }
+            }
+        } catch is CancellationError {
+            return events
+        } catch {
+            XCTFail("Unexpected consumer error: \(error)")
+        }
+        return events
+    }
+
+    static func waitForCancellationForTest(onCancel: @escaping @Sendable () -> Void) async throws -> String {
+        try await withTaskCancellationHandler {
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            throw CancellationError()
+        } onCancel: {
+            onCancel()
+        }
+    }
+
+    static func cancellableRegistryStreamForTest(
         context: AiChatRequestContextSnapshot,
         producerEntered: XCTestExpectation,
         producerCancelled: XCTestExpectation,
@@ -967,35 +1007,6 @@ private extension AiChatProviderExecutionClientTests {
                 if case .cancelled = termination { producer.cancel() }
             }
         }
-    }
-
-    func consumeUntilCancelledForTest(
-        _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
-        startedObserved: XCTestExpectation,
-        finished: XCTestExpectation,
-    ) -> Task<[AiChatProviderExecutionEvent], Never> {
-        Task {
-            defer { finished.fulfill() }
-            return await collectUntilCancelledForTest(stream, startedObserved: startedObserved)
-        }
-    }
-
-    func collectUntilCancelled(
-        _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
-        startedObserved: XCTestExpectation,
-    ) async -> [AiChatProviderExecutionEvent] {
-        var events: [AiChatProviderExecutionEvent] = []
-        do {
-            for try await event in stream {
-                events.append(event)
-                if case .started = event { startedObserved.fulfill() }
-            }
-        } catch is CancellationError {
-            return events
-        } catch {
-            XCTFail("Unexpected consumer error: \(error)")
-        }
-        return events
     }
 
     func makeLiveClient(
@@ -1234,71 +1245,6 @@ private extension AiChatProviderExecutionClientTests {
                 ),
             ),
         ]
-    }
-}
-
-private func consumeUntilCancelledForTest(
-    _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
-    startedObserved: XCTestExpectation,
-    finished: XCTestExpectation,
-) -> Task<[AiChatProviderExecutionEvent], Never> {
-    Task {
-        defer { finished.fulfill() }
-        return await collectUntilCancelledForTest(stream, startedObserved: startedObserved)
-    }
-}
-
-private func collectUntilCancelledForTest(
-    _ stream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
-    startedObserved: XCTestExpectation,
-) async -> [AiChatProviderExecutionEvent] {
-    var events: [AiChatProviderExecutionEvent] = []
-    do {
-        for try await event in stream {
-            events.append(event)
-            if case .started = event { startedObserved.fulfill() }
-        }
-    } catch is CancellationError {
-        return events
-    } catch {
-        XCTFail("Unexpected consumer error: \(error)")
-    }
-    return events
-}
-
-private func waitForCancellationForTest(onCancel: @escaping @Sendable () -> Void) async throws -> String {
-    try await withTaskCancellationHandler {
-        while !Task.isCancelled {
-            await Task.yield()
-        }
-        throw CancellationError()
-    } onCancel: {
-        onCancel()
-    }
-}
-
-private func cancellableRegistryStreamForTest(
-    context: AiChatRequestContextSnapshot,
-    producerEntered: XCTestExpectation,
-    producerCancelled: XCTestExpectation,
-) -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error> {
-    AsyncThrowingStream { continuation in
-        let producer = Task {
-            await withTaskCancellationHandler {
-                producerEntered.fulfill()
-                continuation.yield(.started(context: context))
-                while !Task.isCancelled {
-                    await Task.yield()
-                }
-                continuation.finish()
-            } onCancel: {
-                producerCancelled.fulfill()
-                continuation.finish()
-            }
-        }
-        continuation.onTermination = { termination in
-            if case .cancelled = termination { producer.cancel() }
-        }
     }
 }
 
