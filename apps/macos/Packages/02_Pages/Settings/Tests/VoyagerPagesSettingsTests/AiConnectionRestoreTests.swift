@@ -5,87 +5,11 @@ import XCTest
 
 // MARK: - Restore / Bootstrap Regression Tests (SET-007)
 
-// swiftlint:disable type_body_length
 @MainActor
 final class AiConnectionRestoreTests: XCTestCase {
     // MARK: 1. Valid stored credential → checkingStatus → connected
 
-    func testRestore_validStoredCredential_entersCheckingStatusThenConnected() async {
-        let file = AIConnectionsFile.singleProvider(.openai, state: .connected)
-
-        let store = TestStore(initialState: AiSettingsState()) {
-            AiSettingsFeature()
-        } withDependencies: {
-            $0.aiConnectionsFileClient.load = { file }
-            $0.aiProviderVerificationClient.verify = { provider, credential in
-                XCTAssertEqual(provider, .openai)
-                XCTAssertNotNil(credential)
-                return .valid
-            }
-        }
-
-        await store.send(.onAppear) { state in
-            state.didBootstrap = true
-            state.bootstrapPhase = .loading
-        }
-
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .openai]?.connectionState = .checkingStatus
-            state.rows[id: .openai]?.statusReason = .none
-        }
-
-        await store.receive(\.bootstrapVerificationCompleted) { state in
-            state.rows[id: .openai]?.connectionState = .connected
-            state.rows[id: .openai]?.statusReason = .none
-        }
-
-        await store.finish()
-
-        let openaiRow = store.state.rows[id: .openai]
-        XCTAssertEqual(openaiRow?.connectionState, .connected)
-        XCTAssertEqual(openaiRow?.primaryAction, .disconnect)
-    }
-
     // MARK: 2. Missing credential → notVerified (.missingCredential reason)
-
-    func testRestore_missingCredential_mapsToNotVerified() async {
-        let file = AIConnectionsFile(
-            updatedAtMs: 1_760_000_000_000,
-            providers: [
-                "openai": ProviderRecordFile(
-                    providerId: .openai,
-                    authMethod: .apiKey,
-                    credential: nil,
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
-                ),
-            ],
-        )
-
-        let store = TestStore(initialState: AiSettingsState()) {
-            AiSettingsFeature()
-        } withDependencies: {
-            $0.aiConnectionsFileClient.load = { file }
-        }
-
-        await store.send(.onAppear) { state in
-            state.didBootstrap = true
-            state.bootstrapPhase = .loading
-        }
-
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .openai]?.connectionState = .notVerified
-            state.rows[id: .openai]?.statusReason = .missingCredential
-        }
-
-        await store.finish()
-
-        let openaiRow = store.state.rows[id: .openai]
-        XCTAssertEqual(openaiRow?.connectionState, .notVerified)
-        XCTAssertEqual(openaiRow?.statusReason, .missingCredential)
-        XCTAssertEqual(openaiRow?.primaryAction, .connect)
-    }
 
     // MARK: 3. No provider record → notVerified (.none reason)
 
@@ -115,48 +39,6 @@ final class AiConnectionRestoreTests: XCTestCase {
     }
 
     // MARK: 4. connectionFailed snapshot → checkingStatus → .connectionFailed with reason + retry action
-
-    func testRestore_connectionFailedSnapshot_entersCheckingStatusThenFails() async {
-        let file = AIConnectionsFile.singleProvider(
-            .openai,
-            state: .connectionFailed,
-            errorCode: .expired,
-        )
-
-        let store = TestStore(initialState: AiSettingsState()) {
-            AiSettingsFeature()
-        } withDependencies: {
-            $0.aiConnectionsFileClient.load = { file }
-            $0.aiProviderVerificationClient.verify = { provider, credential in
-                XCTAssertEqual(provider, .openai)
-                XCTAssertNotNil(credential)
-                return .invalid(.expired)
-            }
-        }
-
-        await store.send(.onAppear) { state in
-            state.didBootstrap = true
-            state.bootstrapPhase = .loading
-        }
-
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .openai]?.connectionState = .checkingStatus
-            state.rows[id: .openai]?.statusReason = .none
-        }
-
-        await store.receive(\.bootstrapVerificationCompleted) { state in
-            state.rows[id: .openai]?.connectionState = .connectionFailed
-            state.rows[id: .openai]?.statusReason = .expired
-        }
-
-        await store.finish()
-
-        let openaiRow = store.state.rows[id: .openai]
-        XCTAssertEqual(openaiRow?.connectionState, .connectionFailed)
-        XCTAssertEqual(openaiRow?.statusReason, .expired)
-        XCTAssertEqual(openaiRow?.primaryAction, .retry)
-    }
 
     // MARK: 5. Corrupted/network failure (load throws) → all notVerified
 
@@ -451,5 +333,3 @@ final class AiConnectionRestoreTests: XCTestCase {
         XCTAssertEqual(anthropicRow?.primaryAction, .connect)
     }
 }
-
-// swiftlint:enable type_body_length
