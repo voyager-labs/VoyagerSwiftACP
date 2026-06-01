@@ -1,6 +1,5 @@
-import Foundation
-
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAppPreferences
 @testable import VoyagerPagesOnboarding
 import XCTest

@@ -34,7 +34,7 @@ public struct EntryLoadingClient: Sendable {
     public var isPackageDirectory: @Sendable (URL) -> Bool
     public var displayName: @Sendable (String) -> String
 
-    public nonisolated init(
+    nonisolated public init(
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [EntryModel],
         loadComputerItems: @escaping @Sendable () async throws -> [EntryModel],
         loadRecentItems: @escaping @Sendable (Bool, WorkspaceClient) async -> [EntryModel],
@@ -77,7 +77,7 @@ public struct EntryLoadingClient: Sendable {
 }
 
 extension EntryLoadingClient: DependencyKey {
-    public nonisolated static var liveValue: EntryLoadingClient {
+    nonisolated public static var liveValue: EntryLoadingClient {
         EntryLoadingClient(
             loadItems: EntryLoadingLive.loadItems,
             loadComputerItems: EntryLoadingLive.loadComputerItems,
@@ -102,7 +102,7 @@ extension EntryLoadingClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: EntryLoadingClient {
+    nonisolated public static var testValue: EntryLoadingClient {
         EntryLoadingClient(
             loadItems: { _, _ in [] },
             loadComputerItems: { [] },
@@ -123,7 +123,7 @@ extension EntryLoadingClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: EntryLoadingClient {
+    nonisolated public static var previewValue: EntryLoadingClient {
         EntryLoadingClient(
             loadItems: { _, _ in [] },
             loadComputerItems: { [] },

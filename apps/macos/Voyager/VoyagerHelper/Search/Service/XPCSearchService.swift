@@ -183,7 +183,7 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
 
 private final class ReplyBox: @unchecked Sendable {
     private let lock = NSLock()
-    private nonisolated(unsafe) var reply: ((Data?, NSError?) -> Void)?
+    nonisolated(unsafe) private var reply: ((Data?, NSError?) -> Void)?
 
     nonisolated init(_ reply: @escaping (Data?, NSError?) -> Void) {
         self.reply = reply

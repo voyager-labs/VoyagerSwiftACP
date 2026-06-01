@@ -104,7 +104,7 @@ public extension RegistryClient {
 extension RegistryClient: DependencyKey, TestDependencyKey {
     public static let liveValue: RegistryClient = live(snapshot: RegistrySnapshot.load())
 
-    public nonisolated(unsafe) static var testValue: RegistryClient = .init(
+    nonisolated(unsafe) public static var testValue: RegistryClient = .init(
         allProperties: { [] },
         labelForKey: { $0 },
         propertyTypeString: { _ in "unknown" },
@@ -128,7 +128,7 @@ public extension DependencyValues {
 }
 
 public extension RegistryClient {
-    private nonisolated static func requiredValue<T>(
+    nonisolated private static func requiredValue<T>(
         from dictionary: [String: T],
         key: String,
         missingMessage: String,
@@ -139,7 +139,7 @@ public extension RegistryClient {
         return value
     }
 
-    private nonisolated static func resolveKey(
+    nonisolated private static func resolveKey(
         _ key: String,
         labels: [String: String],
         legacyKeyMap: [String: String],

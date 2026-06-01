@@ -176,7 +176,7 @@ struct GatewayOutput: Decodable {
     let error: String?
 }
 
-struct GatewayQueryResult: Sendable {
+struct GatewayQueryResult {
     let conditions: [SearchConditionPayload]
     let scopes: [String]?
     let error: String?

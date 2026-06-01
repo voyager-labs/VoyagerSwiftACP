@@ -1,7 +1,6 @@
 @preconcurrency import AppKit
 import Combine
 import ComposableArchitecture
-
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations

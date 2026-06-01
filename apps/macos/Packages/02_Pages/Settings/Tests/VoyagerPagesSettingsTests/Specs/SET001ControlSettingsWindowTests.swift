@@ -79,9 +79,9 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
         XCTAssertEqual(store.state.generalSettings.startingDirectory, "/test/preserved")
     }
 
-    /// SET-001-close_settings_window: 닫기 control/⌘W는 현재 Settings window를 닫는 AppKit lifecycle 경로다.
-    /// 이 AC는 reducer의 deterministic state가 아니라 `NSApp.keyWindow?.close()` side effect에 의존하므로 수동 QA로 남긴다.
-    /// - 검증 내용: 자동화 범위에서는 close action을 실행하지 않고 headless 환경에서의 비결정성을 문서화한다.
-    /// - 사전 조건: 실제 앱 런타임에서 Settings window가 key window로 열린 상태여야 한다.
-    /// - 기대 결과: 닫기 control 또는 ⌘W 입력 후 현재 Settings window가 닫힌다.
+    // SET-001-close_settings_window: 닫기 control/⌘W는 현재 Settings window를 닫는 AppKit lifecycle 경로다.
+    // 이 AC는 reducer의 deterministic state가 아니라 `NSApp.keyWindow?.close()` side effect에 의존하므로 수동 QA로 남긴다.
+    // - 검증 내용: 자동화 범위에서는 close action을 실행하지 않고 headless 환경에서의 비결정성을 문서화한다.
+    // - 사전 조건: 실제 앱 런타임에서 Settings window가 key window로 열린 상태여야 한다.
+    // - 기대 결과: 닫기 control 또는 ⌘W 입력 후 현재 Settings window가 닫힌다.
 }

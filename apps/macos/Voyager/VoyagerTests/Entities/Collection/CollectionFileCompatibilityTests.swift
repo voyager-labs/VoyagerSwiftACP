@@ -41,7 +41,7 @@ final class CollectionFileCompatibilityTests: XCTestCase {
         XCTAssertEqual(reencoded, data)
     }
 
-    func testNormalizeForSavePreservesScopeRuleFields() throws {
+    func testNormalizeForSavePreservesScopeRuleFields() {
         let file = VoyagerCollectionFile(
             schemaVersion: .init(major: 0, minor: 9),
             id: "compat-preserve",

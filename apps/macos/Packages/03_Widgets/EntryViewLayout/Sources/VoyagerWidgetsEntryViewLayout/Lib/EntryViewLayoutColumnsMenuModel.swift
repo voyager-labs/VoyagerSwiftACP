@@ -1,17 +1,17 @@
 import Foundation
 
-struct EntryViewLayoutColumnsMenuModel: Equatable, Sendable {
+struct EntryViewLayoutColumnsMenuModel: Equatable {
     let toggleItems: [ToggleItem]
     let resetItem: ResetItem
 
-    struct ToggleItem: Equatable, Sendable {
+    struct ToggleItem: Equatable {
         let column: EntryListColumn
         let title: String
         let isChecked: Bool
         let isEnabled: Bool
     }
 
-    struct ResetItem: Equatable, Sendable {
+    struct ResetItem: Equatable {
         let title: String
         let isEnabled: Bool
     }

@@ -7,7 +7,7 @@ public struct AppearanceSettingsClient: Sendable {
     public var applyTheme: @Sendable (AppTheme) async -> Void
     public var applyThemeSync: @Sendable (AppTheme) -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         loadTheme: @escaping @Sendable () -> AppTheme,
         applyTheme: @escaping @Sendable (AppTheme) async -> Void,
         applyThemeSync: @escaping @Sendable (AppTheme) -> Void,
@@ -39,7 +39,7 @@ extension AppearanceSettingsClient: DependencyKey {
         }
     }
 
-    public nonisolated static var liveValue: AppearanceSettingsClient {
+    nonisolated public static var liveValue: AppearanceSettingsClient {
         AppearanceSettingsClient(
             loadTheme: {
                 @Dependency(\.userDefaultsClient)
@@ -71,7 +71,7 @@ extension AppearanceSettingsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: AppearanceSettingsClient {
+    nonisolated public static var testValue: AppearanceSettingsClient {
         AppearanceSettingsClient(
             loadTheme: { .system },
             applyTheme: { _ in },
@@ -79,7 +79,7 @@ extension AppearanceSettingsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: AppearanceSettingsClient {
+    nonisolated public static var previewValue: AppearanceSettingsClient {
         AppearanceSettingsClient(
             loadTheme: { .system },
             applyTheme: { _ in },

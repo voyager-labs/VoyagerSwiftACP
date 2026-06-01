@@ -36,7 +36,7 @@ public struct FileManagerClient: Sendable {
     public var temporaryDirectory: @Sendable () -> URL
     public var currentDirectoryPath: @Sendable () -> String
 
-    public nonisolated init(
+    nonisolated public init(
         contentsOfDirectory:
         @escaping @Sendable (URL, [URLResourceKey]?, FileManager.DirectoryEnumerationOptions) throws -> [URL],
         createDirectory:
@@ -75,7 +75,7 @@ public struct FileManagerClient: Sendable {
 }
 
 extension FileManagerClient: DependencyKey {
-    public nonisolated static var liveValue: FileManagerClient {
+    nonisolated public static var liveValue: FileManagerClient {
         nonisolated(unsafe) let fileManager = FileManager.default
         return FileManagerClient(
             contentsOfDirectory: { url, keys, options in
@@ -139,7 +139,7 @@ extension FileManagerClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: FileManagerClient {
+    nonisolated public static var testValue: FileManagerClient {
         FileManagerClient(
             contentsOfDirectory: { _, _, _ in [] },
             createDirectory: { _, _, _ in },
@@ -158,7 +158,7 @@ extension FileManagerClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: FileManagerClient {
+    nonisolated public static var previewValue: FileManagerClient {
         testValue
     }
 }

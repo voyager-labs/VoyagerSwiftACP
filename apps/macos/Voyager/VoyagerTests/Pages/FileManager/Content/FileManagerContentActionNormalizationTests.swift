@@ -12,11 +12,11 @@ import XCTest
 /// 현재 API 미구현으로 스텁 상태.
 @MainActor
 final class ContentActionNormalizationTests: XCTestCase {
-    func testActionHasChildCases() async {}
+    func testActionHasChildCases() {}
     /// 전체 선택 액션이 entryViewLayout으로 올바르게 라우팅되는지 확인 (미구현 스텁).
-    func testSelectAllEntriesRoutesToEntryViewLayout() async {}
+    func testSelectAllEntriesRoutesToEntryViewLayout() {}
     /// 숨김 파일 토글 후 리로드가 올바르게 수행되는지 확인 (미구현 스텁).
-    func testToggleShowHiddenFilesAndReloadRoutesCorrectly() async {}
+    func testToggleShowHiddenFilesAndReloadRoutesCorrectly() {}
     /// 썸네일 액션이 entryOperations를 통해 라우팅되는지 확인 (미구현 스텁).
-    func testThumbnailActionsRoutedThroughEntryOperations() async {}
+    func testThumbnailActionsRoutedThroughEntryOperations() {}
 }

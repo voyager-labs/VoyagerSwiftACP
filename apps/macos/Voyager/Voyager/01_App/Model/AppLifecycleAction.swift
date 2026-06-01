@@ -2,20 +2,20 @@ import ComposableArchitecture
 import Foundation
 
 @CasePathable
-enum AppLifecycleAction: CasePathable, Sendable {
+enum AppLifecycleAction: CasePathable {
     case launch(Launch)
     case termination(Termination)
     case delegate(Delegate)
 
     @CasePathable
-    enum Launch: CasePathable, Sendable {
+    enum Launch: CasePathable {
         case willFinishLaunching
         case didFinishLaunching
         case appReopen(hasVisibleWindows: Bool)
     }
 
     @CasePathable
-    enum Termination: CasePathable, Sendable {
+    enum Termination: CasePathable {
         case requestTermination
         case quitConfirmationResponse(attemptID: UUID, result: QuitConfirmationResult)
         case startTerminationCleanup(attemptID: UUID)
@@ -23,7 +23,7 @@ enum AppLifecycleAction: CasePathable, Sendable {
         case willTerminate
     }
 
-    enum Delegate: Sendable {
+    enum Delegate {
         case openInitialWindowIfNeeded
         case reopenWindowIfNeeded(hasVisibleWindows: Bool)
     }

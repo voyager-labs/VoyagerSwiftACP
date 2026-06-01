@@ -9,7 +9,7 @@ public extension WorkspaceClient {
             return thumbnail
         }
 
-        let icon: NSImage = if entry.fullPath == "/" {
+        return if entry.fullPath == "/" {
             iconForFile("/")
         } else if entry.fileExtension.lowercased() == CollectionConstants.fileExtension {
             NSImage(named: CollectionConstants.fileIconName)
@@ -21,6 +21,5 @@ public extension WorkspaceClient {
         } else {
             iconForType(.data)
         }
-        return icon
     }
 }

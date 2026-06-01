@@ -17,7 +17,7 @@ public enum SidebarItems {
         public let url: URL
         public let iconName: String
 
-        public nonisolated init(name: String, url: URL, iconName: String) {
+        nonisolated public init(name: String, url: URL, iconName: String) {
             self.name = name
             self.url = url
             self.iconName = iconName
@@ -47,7 +47,7 @@ public enum SidebarItems {
             try container.encode(url.absoluteString, forKey: .url)
         }
 
-        public nonisolated var displayName: String {
+        nonisolated public var displayName: String {
             CollectionFileUtils.displayName(url, fallback: name)
         }
     }

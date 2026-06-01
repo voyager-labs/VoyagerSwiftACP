@@ -24,7 +24,7 @@ public struct WorkspaceClient: Sendable {
     ) -> NSObjectProtocol
     public var removeWorkspaceNotificationObserver: @Sendable (NSObjectProtocol) -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         urlForApplication: @escaping @Sendable (String) -> URL?,
         urlForApplicationToOpen: @escaping @Sendable (URL) -> URL?,
         urlsForApplications: @escaping @Sendable (URL) -> [URL],
@@ -63,7 +63,7 @@ public struct WorkspaceClient: Sendable {
 }
 
 extension WorkspaceClient: DependencyKey {
-    public nonisolated static var liveValue: WorkspaceClient {
+    nonisolated public static var liveValue: WorkspaceClient {
         nonisolated(unsafe) let workspace = NSWorkspace.shared
         return WorkspaceClient(
             urlForApplication: { bundleID in
@@ -122,7 +122,7 @@ extension WorkspaceClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: WorkspaceClient {
+    nonisolated public static var testValue: WorkspaceClient {
         WorkspaceClient(
             urlForApplication: { _ in nil },
             urlForApplicationToOpen: { _ in nil },
@@ -141,7 +141,7 @@ extension WorkspaceClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: WorkspaceClient {
+    nonisolated public static var previewValue: WorkspaceClient {
         testValue
     }
 }

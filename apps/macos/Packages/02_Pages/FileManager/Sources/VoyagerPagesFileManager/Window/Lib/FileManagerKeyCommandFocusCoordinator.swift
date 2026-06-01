@@ -18,13 +18,6 @@ final class FileManagerKeyCommandFocusCoordinator {
     }
 }
 
-private struct FileManagerKeyCommandFocusKey: EnvironmentKey {
-    static let defaultValue: FileManagerKeyCommandFocusCoordinator? = nil
-}
-
 extension EnvironmentValues {
-    var fileManagerKeyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator? {
-        get { self[FileManagerKeyCommandFocusKey.self] }
-        set { self[FileManagerKeyCommandFocusKey.self] = newValue }
-    }
+    @Entry var fileManagerKeyCommandFocusCoordinator: FileManagerKeyCommandFocusCoordinator?
 }

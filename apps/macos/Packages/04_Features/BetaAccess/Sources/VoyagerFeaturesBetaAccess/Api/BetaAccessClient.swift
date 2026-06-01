@@ -7,7 +7,7 @@ import VoyagerShared
 public struct BetaAccessClient: Sendable {
     public var verify: @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse
 
-    public nonisolated init(
+    nonisolated public init(
         verify: @escaping @Sendable (_ email: String, _ token: String) async throws -> BetaAccessVerifyResponse,
     ) {
         self.verify = verify
@@ -27,14 +27,19 @@ public extension BetaAccessClient {
 }
 
 extension BetaAccessClient: DependencyKey {
-    public nonisolated static var liveValue: BetaAccessClient {
+    nonisolated public static var liveValue: BetaAccessClient {
         BetaAccessClient(verify: { email, token in
             try await verifyBetaAccess(email: email, token: token)
         })
     }
 
-    public nonisolated static var testValue: BetaAccessClient { .mock }
-    public nonisolated static var previewValue: BetaAccessClient { .mock }
+    nonisolated public static var testValue: BetaAccessClient {
+        .mock
+    }
+
+    nonisolated public static var previewValue: BetaAccessClient {
+        .mock
+    }
 }
 
 public extension DependencyValues {

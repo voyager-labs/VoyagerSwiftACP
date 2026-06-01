@@ -1,6 +1,6 @@
 import Foundation
 
-struct SearchConditionBuilder: Sendable {
+struct SearchConditionBuilder {
     let registry: PropertyConditionRegistry
     let propertyMap: [String: PropertyMapping]
     let legacyKeyMap: [String: String]
@@ -9,10 +9,12 @@ struct SearchConditionBuilder: Sendable {
     struct BuilderError: Error, CustomStringConvertible {
         let message: String
 
-        var description: String { message }
+        var description: String {
+            message
+        }
     }
 
-    struct PropertyMapping: Sendable {
+    struct PropertyMapping {
         let key: String
         let type: String
         let systemKeys: [String]

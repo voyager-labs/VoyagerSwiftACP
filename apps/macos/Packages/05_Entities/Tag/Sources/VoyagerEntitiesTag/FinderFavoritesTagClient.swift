@@ -5,7 +5,7 @@ public struct FinderFavoritesTagClient: Sendable {
     public var favoriteTagNames: @Sendable () -> [String]
     public var favoriteTags: @Sendable () -> [Tag]
 
-    public nonisolated init(
+    nonisolated public init(
         favoriteTagNames: @escaping @Sendable () -> [String],
         favoriteTags: @escaping @Sendable () -> [Tag],
     ) {
@@ -15,7 +15,7 @@ public struct FinderFavoritesTagClient: Sendable {
 }
 
 extension FinderFavoritesTagClient: DependencyKey {
-    public nonisolated static var liveValue: FinderFavoritesTagClient {
+    nonisolated public static var liveValue: FinderFavoritesTagClient {
         let favoriteTagNamesLoader: @Sendable () -> [String] = {
             guard let finderDefaults = UserDefaults(suiteName: "com.apple.finder"),
                   let tagNames = finderDefaults.array(forKey: "FavoriteTagNames") as? [String]
@@ -49,14 +49,16 @@ extension FinderFavoritesTagClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: FinderFavoritesTagClient {
+    nonisolated public static var testValue: FinderFavoritesTagClient {
         FinderFavoritesTagClient(
             favoriteTagNames: { [] },
             favoriteTags: { [] },
         )
     }
 
-    public nonisolated static var previewValue: FinderFavoritesTagClient { testValue }
+    nonisolated public static var previewValue: FinderFavoritesTagClient {
+        testValue
+    }
 }
 
 public extension DependencyValues {

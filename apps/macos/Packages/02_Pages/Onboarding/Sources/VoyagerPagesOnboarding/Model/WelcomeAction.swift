@@ -1,6 +1,6 @@
 import ComposableArchitecture
 
 @CasePathable
-enum WelcomeAction: CasePathable, Sendable {
+enum WelcomeAction: CasePathable {
     case setCompleted(Bool)
 }

@@ -333,11 +333,10 @@ private func handleAddScope(
     state.pushHistory()
     state.scopeEditor.selection = selection
     recordScopeChangeFeedback(state: &state, beforeScope: beforeScope, origin: .addBase)
-    let settleEffect = settleScopeEditorAfterSelectionChange(
+    return settleScopeEditorAfterSelectionChange(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    return settleEffect
 }
 
 private func handleRemoveScope(
@@ -364,11 +363,10 @@ private func handleRemoveScope(
     if state.scopeEditor.editingPath == normalizedPath {
         state.resetScopeEditorInteractionState(clearQuery: false)
     }
-    let settleEffect = settleScopeEditorAfterSelectionChange(
+    return settleScopeEditorAfterSelectionChange(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    return settleEffect
 }
 
 private func handleUpdateScope(
@@ -401,11 +399,10 @@ private func handleUpdateScope(
         state.scopeEditor.editingPath = normalizedNewPath
         state.scopeEditor.entryMode = .edit
     }
-    let settleEffect = settleScopeEditorAfterSelectionChange(
+    return settleScopeEditorAfterSelectionChange(
         state: &state,
         entryLoadingClient: entryLoadingClient,
     )
-    return settleEffect
 }
 
 private func handleExcludeScope(

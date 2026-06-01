@@ -11,7 +11,7 @@ public struct UserDefaultsClient: Sendable {
     public var object: @Sendable (String) -> Any?
     public var setObject: @Sendable (Any?, String) -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         bool: @escaping @Sendable (String) -> Bool,
         setBool: @escaping @Sendable (Bool, String) -> Void,
         string: @escaping @Sendable (String) -> String?,
@@ -33,7 +33,7 @@ public struct UserDefaultsClient: Sendable {
 }
 
 extension UserDefaultsClient: DependencyKey {
-    public nonisolated static var liveValue: UserDefaultsClient {
+    nonisolated public static var liveValue: UserDefaultsClient {
         nonisolated(unsafe) let userDefaults = UserDefaults.standard
         return UserDefaultsClient(
             bool: { key in
@@ -63,7 +63,7 @@ extension UserDefaultsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: UserDefaultsClient {
+    nonisolated public static var testValue: UserDefaultsClient {
         nonisolated(unsafe) var storage: [String: Any] = [:]
         let lock = NSLock()
         return UserDefaultsClient(
@@ -110,7 +110,7 @@ extension UserDefaultsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: UserDefaultsClient {
+    nonisolated public static var previewValue: UserDefaultsClient {
         testValue
     }
 }

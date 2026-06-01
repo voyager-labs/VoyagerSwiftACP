@@ -8,7 +8,7 @@ protocol SearchExecutionServicing: Sendable {
     func searchTag(_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload
 }
 
-struct SearchQueryService: Sendable {
+struct SearchQueryService {
     private let searchService: any SearchExecutionServicing
     private let convertQuery: @Sendable (String, SearchFiltersPayload) async -> GatewayQueryResult
     private let logger: Logger
@@ -37,7 +37,7 @@ struct SearchQueryService: Sendable {
         self.logger = logger
     }
 
-    private nonisolated func makeErrorResponse(
+    nonisolated private func makeErrorResponse(
         code: String,
         details: String?,
         fallbackFilters: SearchFiltersPayload,
@@ -55,7 +55,7 @@ struct SearchQueryService: Sendable {
         )
     }
 
-    private nonisolated func resolveScopes(
+    nonisolated private func resolveScopes(
         queryScopes: [String]?,
         chipsScopes: [String],
     ) -> [String] {
@@ -69,7 +69,7 @@ struct SearchQueryService: Sendable {
         return chipsScopes
     }
 
-    private nonisolated func cleanScopes(_ scopes: [String]) -> [String] {
+    nonisolated private func cleanScopes(_ scopes: [String]) -> [String] {
         scopes
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.isEmpty == false }

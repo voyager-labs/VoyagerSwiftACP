@@ -2,12 +2,12 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
-struct OnboardingProgressClient: Sendable {
+struct OnboardingProgressClient {
     var load: @Sendable () -> LoadResult
     var save: @Sendable (OnboardingProgressSnapshot) -> Void
     var reset: @Sendable () -> Void
 
-    enum LoadResult: Equatable, Sendable {
+    enum LoadResult: Equatable {
         case empty
         case resetRequired
         case success(OnboardingProgressSnapshot)
@@ -15,7 +15,7 @@ struct OnboardingProgressClient: Sendable {
 }
 
 extension OnboardingProgressClient: DependencyKey {
-    private nonisolated enum Keys {
+    nonisolated private enum Keys {
         static let version = "onboardingProgressVersion"
         static let currentStep = "onboardingCurrentStep"
         static let stepState = "onboardingStepState"

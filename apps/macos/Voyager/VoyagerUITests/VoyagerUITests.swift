@@ -18,7 +18,7 @@ final class VoyagerUITests: XCTestCase {
     /// 앱이 정상적으로 실행되어 포그라운드 상태가 되는지 확인하는 스모크 테스트.
     /// 앱 크래시·런치 실패 등 치명적 회귀를 조기에 감지하기 위해 실행 상태와 스크린샷을 검증한다.
     @MainActor
-    func testAppLaunchSmoke() throws {
+    func testAppLaunchSmoke() {
         let app = XCUIApplication()
         app.launch()
 

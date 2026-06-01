@@ -1,6 +1,6 @@
 import Foundation
 
-struct SearchScopeNormalizer: Sendable {
+enum SearchScopeNormalizer {
     private static func normalizeOne(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {

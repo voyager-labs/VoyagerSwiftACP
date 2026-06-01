@@ -2,23 +2,11 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
-struct DirectorySelectionClient: Sendable {
+struct DirectorySelectionClient {
     var pickDirectory: @Sendable () async -> String?
     var pathExists: @Sendable (_ path: String) -> Bool
     var isDirectory: @Sendable (_ path: String) -> Bool
     var defaultHomePath: @Sendable () -> String
-
-    nonisolated init(
-        pickDirectory: @escaping @Sendable () async -> String?,
-        pathExists: @escaping @Sendable (_ path: String) -> Bool,
-        isDirectory: @escaping @Sendable (_ path: String) -> Bool,
-        defaultHomePath: @escaping @Sendable () -> String,
-    ) {
-        self.pickDirectory = pickDirectory
-        self.pathExists = pathExists
-        self.isDirectory = isDirectory
-        self.defaultHomePath = defaultHomePath
-    }
 }
 
 extension DirectorySelectionClient: DependencyKey {

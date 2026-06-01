@@ -4,11 +4,11 @@ import VoyagerShared
 
 private final class SpotlightQueryCompilerBundleToken {}
 
-struct SpotlightQueryCompiler: Sendable {
+struct SpotlightQueryCompiler {
     private let logger: Logger
     private let conditionBuilder: SearchConditionBuilder
 
-    struct CompilePlan: Sendable {
+    struct CompilePlan {
         let predicate: String
         let pushdownConditions: [SearchConditionPayload]
     }
@@ -118,7 +118,7 @@ struct SpotlightQueryCompiler: Sendable {
 }
 
 extension SpotlightQueryCompiler {
-    enum DateMdqueryOperator: String, Sendable {
+    enum DateMdqueryOperator: String {
         case eq = "=="
         case neq = "!="
         case gt = ">"
