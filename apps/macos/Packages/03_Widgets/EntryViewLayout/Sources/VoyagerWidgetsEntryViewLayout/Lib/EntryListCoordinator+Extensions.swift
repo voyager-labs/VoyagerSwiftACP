@@ -44,6 +44,10 @@ extension EntryListCoordinator.OutlineItem {
 }
 
 extension EntryListCoordinator: NSOutlineViewDelegate {
+    public func outlineView(_: NSOutlineView, rowViewForItem _: Any) -> NSTableRowView? {
+        EntryListSelectionRowView()
+    }
+
     public func outlineView(_: NSOutlineView, shouldEdit tableColumn: NSTableColumn?, item: Any) -> Bool {
         guard let tableColumn else { return false }
         guard tableColumn.identifier.rawValue == EntryListColumn.name.rawValue else { return false }
