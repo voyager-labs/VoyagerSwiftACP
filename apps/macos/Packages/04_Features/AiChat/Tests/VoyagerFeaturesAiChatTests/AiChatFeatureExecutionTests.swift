@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
@@ -8,7 +7,6 @@ import XCTest
 // CBW001/CBW003 spec-owner suite 밖에 남긴 provider execution adapter 회귀 테스트.
 // connection load failure, raw provider delta, Settings CTA delegation, second submit history contract를 보존한다.
 
-// swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureExecutionTests: XCTestCase {
     // connections file load 실패가 provider 실행 없이 unknown failure로 전환되는지 검증
@@ -75,7 +73,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
             state.selectedModelHandle = selectedHandle
@@ -137,7 +136,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
             state.lockedModelHandle = selectedHandle
@@ -169,7 +169,8 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         await store.send(.draftTextChanged("Second question")) { state in
             state.draftText = "Second question"
         }
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [
                 AiChatMessage(role: .user, content: "Hello"),
@@ -256,8 +257,6 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         )
     }
 }
-
-// swiftlint:enable type_body_length
 
 private extension AiChatEvent {
     var isFinalResponse: Bool {
