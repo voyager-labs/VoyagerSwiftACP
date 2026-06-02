@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import VoyagerFeaturesLicenseAuth
 import VoyagerPagesOnboarding
@@ -133,12 +134,30 @@ struct OnboardingHostApp: App {
         Settings {
             EmptyView()
         }
+        .commands {
+            CommandMenu("Onboarding Debug") {
+                Button("Show Permission Scenarios") {
+                    appDelegate.showDebugPanel()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Divider()
+
+                ForEach(OnboardingPermissionDebugScenario.allCases) { scenario in
+                    Button(scenario.title) {
+                        appDelegate.selectDebugScenario(scenario)
+                    }
+                }
+            }
+        }
     }
 }
 
 @MainActor
 final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     private let mockSignInState = MockSignInState()
+    private let debugStore = OnboardingHostDebugStore(initialScenario: .allGranted)
+    private var debugPanel: NSPanel?
 
     private lazy var onboardingWindowClient = OnboardingWindowClient.makeLive(
         openMainWindow: { _ in
@@ -154,16 +173,141 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 status: .coreLicenseActive,
             )
             mockSignInState.setSession(mockSession)
-            return .success(callbackURL: URL(string: "voyager://auth/callback")!)
+            guard let callbackURL = URL(string: "voyager://auth/callback") else {
+                return .failure
+            }
+            return .success(callbackURL: callbackURL)
+        },
+        permissionDebugScenario: { [debugStore] in
+            debugStore.currentScenario
         },
     )
 
     func applicationDidFinishLaunching(_: Notification) {
+        debugStore.onScenarioChanged = { [weak self] in
+            self?.reloadOnboardingWindow()
+        }
         resetOnboardingProgress()
         _ = onboardingWindowClient.showIfNeeded()
+        showDebugPanel()
+    }
+
+    func showDebugPanel() {
+        if let debugPanel {
+            debugPanel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let rootView = OnboardingHostDebugPanel(store: debugStore)
+        let hostingController = NSHostingController(rootView: rootView)
+        let panel = NSPanel(contentViewController: hostingController)
+        panel.title = "Onboarding Debug"
+        panel.styleMask = [.titled, .closable, .utilityWindow]
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.setContentSize(NSSize(width: 360, height: 360))
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+        debugPanel = panel
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func selectDebugScenario(_ scenario: OnboardingPermissionDebugScenario) {
+        debugStore.select(scenario)
+        showDebugPanel()
     }
 
     private func resetOnboardingProgress() {
         OnboardingWindowClient.liveValue.resetStoredProgress()
+    }
+
+    private func reloadOnboardingWindow() {
+        Task { @MainActor in
+            await onboardingWindowClient.closeWindow()
+            resetOnboardingProgress()
+            _ = onboardingWindowClient.showIfNeeded()
+        }
+    }
+}
+
+private final class OnboardingHostDebugStore: ObservableObject, @unchecked Sendable {
+    @Published private(set) var scenario: OnboardingPermissionDebugScenario
+
+    var onScenarioChanged: (@MainActor () -> Void)?
+
+    private nonisolated(unsafe) let lock = NSLock()
+    private nonisolated(unsafe) var lockedScenario: OnboardingPermissionDebugScenario
+
+    init(initialScenario: OnboardingPermissionDebugScenario) {
+        scenario = initialScenario
+        lockedScenario = initialScenario
+    }
+
+    nonisolated var currentScenario: OnboardingPermissionDebugScenario {
+        lock.lock()
+        defer { lock.unlock() }
+        return lockedScenario
+    }
+
+    @MainActor
+    func select(_ scenario: OnboardingPermissionDebugScenario) {
+        lock.lock()
+        lockedScenario = scenario
+        lock.unlock()
+
+        self.scenario = scenario
+        onScenarioChanged?()
+    }
+}
+
+private struct OnboardingHostDebugPanel: View {
+    @ObservedObject var store: OnboardingHostDebugStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Permission Scenarios")
+                    .font(.headline)
+                Text("OnboardingHost uses mocked permission clients. Voyager.app still uses live macOS permissions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(OnboardingPermissionDebugScenario.allCases) { scenario in
+                    Button {
+                        store.select(scenario)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: store.scenario == scenario ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(store.scenario == scenario ? .orange : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(scenario.title)
+                                    .font(.system(.body, weight: .semibold))
+                                Text(scenario.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(store.scenario == scenario ? Color.orange.opacity(0.16) : Color.secondary
+                                .opacity(0.08)),
+                    )
+                }
+            }
+
+            Text("Changing a scenario reloads the onboarding window and replays the normal reducer path.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(18)
+        .frame(width: 360)
     }
 }
