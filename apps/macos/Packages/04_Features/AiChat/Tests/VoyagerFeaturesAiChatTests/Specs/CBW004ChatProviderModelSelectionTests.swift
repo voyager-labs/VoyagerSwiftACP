@@ -124,6 +124,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         applyCBW004ObservationFocusedExhaustivity(to: store)
 
         await store.send(.submitTapped)
+        await resolvePendingRequestContext(store)
         let firstRequest = try XCTUnwrap(fixture.stream.requests.first)
         XCTAssertEqual(firstRequest.context.model, fixture.catalogRows[0].handle)
         XCTAssertEqual(firstRequest.context.selectedThinking, .effort(.medium))
@@ -145,6 +146,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         }
         store.dependencies.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_601))
         await store.send(.submitTapped)
+        await resolvePendingRequestContext(store)
 
         let secondRequest = try XCTUnwrap(fixture.stream.requests.last)
         XCTAssertEqual(fixture.stream.requests.count, 2)
@@ -176,6 +178,7 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "high")
 
         await store.send(.submitTapped)
+        await resolvePendingRequestContext(store)
 
         let request = try XCTUnwrap(fixture.stream.requests.first)
         XCTAssertEqual(request.context.selectedThinking, .effort(.high))
