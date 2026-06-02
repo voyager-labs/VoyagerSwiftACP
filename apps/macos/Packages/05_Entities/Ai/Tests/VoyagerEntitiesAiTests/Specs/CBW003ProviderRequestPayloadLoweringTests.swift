@@ -77,6 +77,73 @@ final class CBW003ProviderRequestPayloadLoweringTests: XCTestCase {
         try assertAnthropicOmitsBase64PayloadMetadataFromSystemPrompt()
     }
 
+    /// CBW-003-build_contextual_request_payload: prompt metadata는 허용된 요약 key만 출력한다.
+    /// 신규 metadata key가 추가되어도 file path, base64 payload, 내부 식별자가 provider prompt에 누수되지 않는지 추적합니다.
+    /// - 검증 내용: allow-list key는 남고 미허용 key 이름과 값은 제외되는지 확인합니다.
+    /// - 사전 조건: 안전 key와 민감 key가 섞인 current context 및 attachment metadata를 사용합니다.
+    /// - 기대 결과: prompt에는 encoding/resolution만 남고 raw payload/path/internal id는 포함되지 않습니다.
+    func testMakeAnthropicRequest_omitsUnapprovedPromptMetadataKeys() throws {
+        let request = try AiChatProviderExecutionClient.makeAnthropicRequest(
+            payload: makePromptMetadataAllowListPayload(),
+            credential: .apiKey("anthropic-key"),
+        )
+        let decoded = try decodeAnthropicRequestBody(request)
+        let system = try XCTUnwrap(decoded.system)
+
+        XCTAssertTrue(system.contains("encoding: utf-8"), system)
+        XCTAssertTrue(system.contains("resolution: reference_only"), system)
+        XCTAssertFalse(system.contains("originalFilePath:"), system)
+        XCTAssertFalse(system.contains("rawBase64Payload:"), system)
+        XCTAssertFalse(system.contains("attachmentMetadata:"), system)
+        XCTAssertFalse(system.contains("providerInternalAttachmentID:"), system)
+        XCTAssertFalse(system.contains("/Users/me/secret/Secret.swift"), system)
+        XCTAssertFalse(system.contains("CURRENT_CONTEXT_RAW_BYTES"), system)
+        XCTAssertFalse(system.contains("INTERNAL_ATTACHMENT_METADATA"), system)
+        XCTAssertFalse(system.contains("ATTACHMENT_INTERNAL_ID"), system)
+    }
+
+    private func makePromptMetadataAllowListPayload() throws -> AiChatProviderRequestPayload {
+        try makePayload(
+            provider: .anthropic,
+            rawModelID: "claude-sonnet-4-20250514",
+            requestContext: AiChatLockedRequestContextSnapshot(
+                currentContext: AiChatCurrentContextSnapshot(
+                    summary: "Locked metadata context",
+                    items: [makePromptMetadataAllowListItem()],
+                ),
+                addedAttachments: [makePromptMetadataAllowListAttachment()],
+            ),
+        )
+    }
+
+    private func makePromptMetadataAllowListItem() -> AiChatContextItem {
+        AiChatContextItem(
+            kind: .file,
+            identifier: "secret-file",
+            title: "Secret.swift",
+            metadata: [
+                "encoding": "utf-8",
+                "originalFilePath": "/Users/me/secret/Secret.swift",
+                "rawBase64Payload": "CURRENT_CONTEXT_RAW_BYTES",
+            ],
+        )
+    }
+
+    private func makePromptMetadataAllowListAttachment() -> AiChatAttachmentSnapshot {
+        AiChatAttachmentSnapshot(
+            id: AiChatAttachmentID(rawValue: "secret-attachment"),
+            source: .file,
+            displayTitle: "SecretAttachment.txt",
+            kind: .file,
+            sourceLocation: AiChatAttachmentSourceLocation(filePath: "SecretAttachment.txt"),
+            metadata: ["attachmentMetadata": "INTERNAL_ATTACHMENT_METADATA"],
+            resolutionResult: .resolvedReference(metadata: [
+                "providerInternalAttachmentID": "ATTACHMENT_INTERNAL_ID",
+                "resolution": "reference_only",
+            ]),
+        )
+    }
+
     /// CBW-003-build_contextual_request_payload: Anthropic native upload 불가 항목은 prompt-only fallback으로 내려간다.
     /// provider-native 전송이 불가능한 attachment가 텍스트 fallback으로 안전하게 표현되는지 추적합니다.
     /// - 검증 내용: unsupported/too-large 항목의 fallback prompt와 redaction을 확인합니다.

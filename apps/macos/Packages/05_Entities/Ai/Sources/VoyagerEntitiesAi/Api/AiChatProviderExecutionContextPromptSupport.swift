@@ -103,33 +103,22 @@ enum ContextPromptTransmission {
 }
 
 enum ContextPromptMetadataFormatting {
-    private static let promptMetadataExcludedKeys: Set<String> = [
-        "canonicalPath",
-        "filePath",
-        "path",
-        "realPath",
-        "base64Data",
-        "nativeBase64Data",
-        "fileDataBase64",
-        "collectionItemPaths",
-        "attachmentID",
-        "folderStructurePathStyle",
-        "folderStructureRootName",
-        "folderStructureMaxDepth",
-        "folderStructureMaxEntries",
-        "folderStructureUTF8ByteBudget",
-        "folderStructureEntriesIncluded",
-        "folderStructureEntriesTruncated",
-        "folderStructureSkippedCount",
-        "folderStructureSymlinkEscapes",
-        "folderStructureReadFailures",
-        "folderStructureEntries",
-        "folderStructureDirectoryFilePaths",
+    // prompt에 출력할 metadata는 외부 provider 전송 안전성이 확인된 요약 키만 명시적으로 허용한다.
+    private static let promptMetadataAllowedKeys: Set<String> = [
+        "collectionItemCount",
+        "collectionItemsIncluded",
+        "collectionItemsTruncated",
+        "encoding",
+        "fileExtension",
+        "folderStructureMode",
+        "mimeType",
+        "nativeUploadMode",
+        "resolution",
     ]
 
     static func metadataLines(_ metadata: [String: String], indent: String) -> [String] {
         let filtered = metadata
-            .filter { !promptMetadataExcludedKeys.contains($0.key) }
+            .filter { promptMetadataAllowedKeys.contains($0.key) }
             .mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.key.isEmpty && !$0.value.isEmpty }
             .sorted { lhs, rhs in lhs.key < rhs.key }
