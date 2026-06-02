@@ -3,7 +3,6 @@
 @testable import VoyagerEntitiesAi
 import XCTest
 
-// swiftlint:disable:next type_body_length
 final class AiChatProviderExecutionClientTests: XCTestCase {
     override func tearDown() {
         OpenAIExecutionURLProtocol.reset()
@@ -11,7 +10,7 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
     }
 
     func testProviderExecutorRegistry_defaultRegistersEveryProvider() throws {
-        let registry = AiChatProviderExecutorRegistry.default(codexExecutor: { _, _, _, _, _ in "" })
+        let registry = AiChatProviderExecutorRegistry.default()
 
         XCTAssertEqual(registry.registeredProviders, Set(AiProvider.allCases))
         for provider in AiProvider.allCases {
