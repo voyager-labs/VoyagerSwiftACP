@@ -510,7 +510,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             mode: .sessions,
             sessionList: .init(rows: [AiChatSessionSummary(snapshot: snapshot)]),
             currentContext: liveCurrentContext,
-            currentContextFolderStructureModesByCanonicalPath: [
+            currentContextFolderStructureModes: [
                 AiChatCurrentContextFolderStructureKey(
                     source: .reference,
                     canonicalPath: "/tmp/StaleFolder",
@@ -530,7 +530,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         state.mode = .sessions
         state.sessionList.selectedSessionID = sessionID
         state.sessionList.errorMessage = nil
-        state.currentContextFolderStructureModesByCanonicalPath = [:]
+        state.currentContextFolderStructureModes = [:]
         state.restoreSessionID = sessionID
     }
 
@@ -543,7 +543,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         state.lastRequestContext = lockedContext
         state.lastRequestContextModelHandle = snapshot.model
         state.addedAttachments = []
-        state.currentContextFolderStructureModesByCanonicalPath = [:]
+        state.currentContextFolderStructureModes = [:]
         state.mode = .chat
     }
 

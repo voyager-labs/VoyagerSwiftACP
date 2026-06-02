@@ -26,7 +26,7 @@ final class AiChatFeatureSessionNavigationTests: XCTestCase {
 
         let store = TestStore(initialState: AiChatFeature.State(
             mode: .sessions,
-            currentContextFolderStructureModesByCanonicalPath: [
+            currentContextFolderStructureModes: [
                 makeNavigationFolderKey("/tmp/StaleFolder"): .includeSubfolders,
             ],
             addedAttachments: [staleAttachment],
@@ -306,7 +306,7 @@ private func applyNavigationNewChatStarted(
 ) {
     applySessionListNewChatStarted(&state, sessionID: sessionID)
     state.addedAttachments = []
-    state.currentContextFolderStructureModesByCanonicalPath = [:]
+    state.currentContextFolderStructureModes = [:]
 }
 
 private func applyNavigationNewChatCreated(

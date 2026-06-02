@@ -94,7 +94,7 @@ final class CBW002RequestContextManagementTests: XCTestCase {
 
         await store.send(.attachmentDropSelection([url])) { state in
             state.addedAttachments = [makeCBW002FileDraft(url: normalizedURL)]
-            state.currentContextFolderStructureModesByCanonicalPath = [folderKey: .currentFolderOnly]
+            state.currentContextFolderStructureModes = [folderKey: .currentFolderOnly]
             state.currentContext = makeCBW002CurrentContext(
                 title: nil,
                 path: "/tmp",
@@ -123,7 +123,7 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         }
 
         await store.send(.folderStructureModeChanged(.currentContext, .includeSubfolders)) { state in
-            state.currentContextFolderStructureModesByCanonicalPath = [folderKey: .includeSubfolders]
+            state.currentContextFolderStructureModes = [folderKey: .includeSubfolders]
             state.currentContext = makeCBW002FolderContext(
                 summary: "Projects",
                 folderPath: folderPath,
