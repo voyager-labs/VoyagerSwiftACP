@@ -143,7 +143,7 @@ build_notarize() {
   "${SCRIPT_DIR}/export-macos-app.sh" "${BUILD_DIR}/Voyager.xcarchive" "${BUILD_DIR}/export"
 
   log "Creating DMG..."
-  "${SCRIPT_DIR}/create-dmg.sh" "${BUILD_DIR}/export/Voyager.app" "${BUILD_DIR}/Voyager.dmg"
+  uv run "${SCRIPT_DIR}/create-dmg.py" "${BUILD_DIR}/export/Voyager.app" "${BUILD_DIR}/Voyager.dmg"
 
   if [[ "${SKIP_NOTARIZE:-0}" == "1" ]]; then
     log "Skipping notarization (SKIP_NOTARIZE=1)."

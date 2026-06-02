@@ -8,6 +8,7 @@ lefthook = "2.1.9"
 swiftlint = "0.63.3"
 xcodes = "1.6.2"
 python = "3.13"
+uv = "0.8.13"
 
 # SwiftFormat: GitHub releases backend
 [tools."github:nicklockwood/SwiftFormat"]

@@ -110,6 +110,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install mise tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v mise >/dev/null 2>&1 || curl https://mise.run | sh
+          mise trust -q 2>/dev/null || true
+          mise install
+
       - name: Resolve version from tag
         id: version
         shell: bash
