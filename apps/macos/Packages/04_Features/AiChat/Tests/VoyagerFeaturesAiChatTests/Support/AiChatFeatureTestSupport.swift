@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
@@ -247,4 +248,36 @@ func makeConnectionsFile(
         lastUsedProviderId: lastUsedProviderId,
         providers: Dictionary(uniqueKeysWithValues: providers.map { ($0.providerId.rawValue, $0) }),
     )
+}
+
+@MainActor
+func resolvePendingRequestContext(
+    _ store: TestStore<AiChatFeature.State, AiChatFeature.Action>,
+    update: @escaping (inout AiChatFeature.State) -> Void = { _ in },
+) async {
+    guard let pendingRequest = store.state.pendingRequestStart else { return }
+    let selectedModel = pendingRequest.selectedModel
+    let sourceContext = pendingRequest.preparedRequest.requestContextSource
+    let input = AiChatContextPartResolverInput(
+        provider: selectedModel.provider,
+        rawModelID: selectedModel.rawModelID,
+        requestFamily: testRequestFamily(for: selectedModel.provider),
+        currentContext: sourceContext?.currentContext ?? store.state.currentContext,
+        attachments: sourceContext == nil ? store.state.addedAttachments : [],
+    )
+    let resolvedContext = await AiChatContextPartResolverClient.live().resolve(input)
+    await store.receive(.requestContextResolved(pendingRequest.resolutionID, resolvedContext)) { state in
+        update(&state)
+    }
+}
+
+private func testRequestFamily(for provider: AiProvider) -> AiChatContextPartResolverRequestFamily {
+    switch provider {
+    case .openai:
+        .openAIResponses
+    case .anthropic:
+        .anthropicMessages
+    case .chatgptCodex:
+        .codexCLI
+    }
 }

@@ -41,7 +41,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let store = makeSubmitStore(fixture: fixture)
         applyObservationFocusedExhaustivity(to: store)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             self.applySubmitStartedState(&state, selectedHandle: fixture.selectedHandle, sessionID: fixture.sessionID)
         }
         guard case let .processing(lock) = store.state.executionPhase else {
@@ -77,7 +78,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let fixture = makeStreamFixture(draftText: "Partial failure", fixedMs: 1_700_000_000_250)
         applyObservationFocusedExhaustivity(to: fixture.store)
 
-        await fixture.store.send(.submitTapped) { state in
+        await fixture.store.send(.submitTapped)
+        await resolvePendingRequestContext(fixture.store) { state in
             self.applyProcessingFailureStartedState(&state, selectedHandle: fixture.selectedHandle)
         }
         guard let request = fixture.stream.requests.first else {
@@ -112,7 +114,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let fixture = makeStreamFixture(draftText: "Cancel me", fixedMs: 1_700_000_000_200)
         applyObservationFocusedExhaustivity(to: fixture.store)
 
-        await fixture.store.send(.submitTapped) { state in
+        await fixture.store.send(.submitTapped)
+        await resolvePendingRequestContext(fixture.store) { state in
             self.applyCancelStartedState(&state, selectedHandle: fixture.selectedHandle)
         }
         guard let request = fixture.stream.requests.first else {
@@ -159,7 +162,8 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         )
         applyObservationFocusedExhaustivity(to: fixture.store)
 
-        await fixture.store.send(.regenerateTapped) { state in
+        await fixture.store.send(.regenerateTapped)
+        await resolvePendingRequestContext(fixture.store) { state in
             self.applyRegenerateStartedState(&state, selectedHandle: fixture.selectedHandle)
         }
         guard let request = fixture.stream.requests.first else {
