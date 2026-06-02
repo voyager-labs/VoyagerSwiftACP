@@ -47,6 +47,12 @@ public struct AiChatProviderPreflightResult: Equatable, Sendable {
         self.warnings = warnings
         self.originalContext = originalContext
     }
+
+    public static func == (lhs: AiChatProviderPreflightResult, rhs: AiChatProviderPreflightResult) -> Bool {
+        lhs.payload == rhs.payload
+            && lhs.credential == rhs.credential
+            && lhs.warnings == rhs.warnings
+    }
 }
 
 public enum AiChatProviderPreflight {

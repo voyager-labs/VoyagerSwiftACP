@@ -9,9 +9,9 @@ public actor AIConnectionFileStore {
     private let decoder = JSONDecoder()
 
     public init(
-        fileManager: FileManager = .default,
         payloadURL: URL,
-        lockURL: URL
+        lockURL: URL,
+        fileManager: FileManager = .default,
     ) {
         self.fileManager = fileManager
         self.payloadURL = payloadURL
@@ -20,31 +20,31 @@ public actor AIConnectionFileStore {
     }
 
     public static func withDefaultHome(
+        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
         fileManager: FileManager = .default,
-        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot()
     ) -> AIConnectionFileStore {
         let payloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeDirectoryURL)
         let lockURL = AIConnectionFSLocation.lockFileURL(homeDirectoryURL: homeDirectoryURL)
         return AIConnectionFileStore(
-            fileManager: fileManager,
             payloadURL: payloadURL,
-            lockURL: lockURL
+            lockURL: lockURL,
+            fileManager: fileManager,
         )
     }
 
     public static func withRepoRoot(
+        repoRootURL: URL,
         fileManager: FileManager = .default,
-        repoRootURL: URL
     ) -> AIConnectionFileStore {
         AIConnectionFileStore(
-            fileManager: fileManager,
             payloadURL: AIConnectionFSLocation.projectPayloadFileURL(repoRootURL: repoRootURL),
-            lockURL: AIConnectionFSLocation.projectLockFileURL(repoRootURL: repoRootURL)
+            lockURL: AIConnectionFSLocation.projectLockFileURL(repoRootURL: repoRootURL),
+            fileManager: fileManager,
         )
     }
 
     public func migrateFromHomeIfNeeded(
-        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot()
+        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
     ) throws {
         let homePayloadURL = AIConnectionFSLocation.payloadFileURL(homeDirectoryURL: homeDirectoryURL)
 
@@ -68,25 +68,17 @@ public actor AIConnectionFileStore {
 
     public func load() throws -> AIConnectionsFile {
         try withExclusiveLock {
-            guard fileManager.fileExists(atPath: payloadURL.path) else {
-                return AIConnectionsFile.empty()
-            }
+            try loadUnlocked()
+        }
+    }
 
-            let data = try Data(contentsOf: payloadURL)
-            guard !data.isEmpty else {
-                try quarantineAndRemove()
-                return AIConnectionsFile.empty()
-            }
-
-            let file: AIConnectionsFile
-            do {
-                file = try decoder.decode(AIConnectionsFile.self, from: data)
-            } catch {
-                try quarantineAndRemove()
-                return AIConnectionsFile.empty()
-            }
-
-            return AIConnectionsNormalizer.normalize(file)
+    public func update(_ transform: (AIConnectionsFile) throws -> AIConnectionsFile) throws -> AIConnectionsFile {
+        try withExclusiveLock {
+            let current = try loadUnlocked()
+            let updated = try transform(current)
+            let data = try encoder.encode(updated)
+            try replacePayload(with: data)
+            return updated
         }
     }
 
@@ -121,8 +113,8 @@ public actor AIConnectionFileStore {
                 snapshot: ProviderSnapshotFile(
                     lastKnownStatus: .notVerified,
                     lastVerifiedAtMs: nil,
-                    lastErrorCode: .none
-                )
+                    lastErrorCode: .none,
+                ),
             )
 
             var updatedProviders = current.providers
@@ -140,7 +132,7 @@ public actor AIConnectionFileStore {
                 updatedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
                 lastUsedProviderId: updatedLastUsed,
                 lastUsedAtMs: updatedLastUsedAt,
-                providers: updatedProviders
+                providers: updatedProviders,
             )
 
             let data = try encoder.encode(updatedFile)
@@ -148,9 +140,31 @@ public actor AIConnectionFileStore {
         }
     }
 
+    private func loadUnlocked() throws -> AIConnectionsFile {
+        guard fileManager.fileExists(atPath: payloadURL.path) else {
+            return AIConnectionsFile.empty()
+        }
+
+        let data = try Data(contentsOf: payloadURL)
+        guard !data.isEmpty else {
+            try quarantineAndRemove()
+            return AIConnectionsFile.empty()
+        }
+
+        let file: AIConnectionsFile
+        do {
+            file = try decoder.decode(AIConnectionsFile.self, from: data)
+        } catch {
+            try quarantineAndRemove()
+            return AIConnectionsFile.empty()
+        }
+
+        return AIConnectionsNormalizer.normalize(file)
+    }
+
     private func quarantineAndRemove() throws {
         let quarantineURL = AIConnectionFSLocation.quarantineFileURL(
-            directoryURL: payloadURL.deletingLastPathComponent()
+            directoryURL: payloadURL.deletingLastPathComponent(),
         )
         try ensureParentDirectoryExists()
 
@@ -173,14 +187,14 @@ public actor AIConnectionFileStore {
     private func setOwnerOnlyDirectoryPermissions(_ url: URL) throws {
         try fileManager.setAttributes(
             [.posixPermissions: NSNumber(value: 0o700)],
-            ofItemAtPath: url.path
+            ofItemAtPath: url.path,
         )
     }
 
     private func setOwnerOnlyPermissions(_ url: URL) throws {
         try fileManager.setAttributes(
             [.posixPermissions: NSNumber(value: 0o600)],
-            ofItemAtPath: url.path
+            ofItemAtPath: url.path,
         )
     }
 
@@ -204,7 +218,7 @@ public actor AIConnectionFileStore {
         let didCreateFile = fileManager.createFile(
             atPath: payloadURL.path,
             contents: Data(),
-            attributes: [.posixPermissions: NSNumber(value: 0o600)]
+            attributes: [.posixPermissions: NSNumber(value: 0o600)],
         )
         guard didCreateFile else { throw CocoaError(.fileWriteUnknown) }
     }

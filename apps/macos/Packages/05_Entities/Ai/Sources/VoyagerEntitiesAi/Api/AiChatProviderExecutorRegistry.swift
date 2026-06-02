@@ -58,11 +58,7 @@ struct AiChatProviderExecutorRegistry: Sendable {
         return executor
     }
 
-    static func `default`(
-        session _: URLSession = .shared,
-        now _: @escaping @Sendable () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1000.0).rounded()) },
-        codexExecutor _: @escaping AiChatProviderCodexExecutor = AiChatProviderExecutionClient.executeCodexCLI,
-    ) -> AiChatProviderExecutorRegistry {
+    static func `default`() -> AiChatProviderExecutorRegistry {
         AiChatProviderExecutorRegistry(executors: [
             .openai: AiChatProviderExecutor { input in
                 let context = input.preflight.executionContext

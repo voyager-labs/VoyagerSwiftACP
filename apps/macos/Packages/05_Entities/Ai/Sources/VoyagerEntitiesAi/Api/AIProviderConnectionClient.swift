@@ -18,7 +18,7 @@ public struct AiProviderConnectionResult: Equatable, Sendable {
         provider: AiProvider,
         state: ProviderConnectionState,
         reason: ProviderStatusReason,
-        updatedFile: AIConnectionsFile
+        updatedFile: AIConnectionsFile,
     ) {
         self.provider = provider
         self.state = state
@@ -45,7 +45,7 @@ public struct AIProviderConnectionClient: Sendable {
             -> AiProviderConnectionResult,
         connectAPIKey: @escaping @Sendable (AiProvider, String, ProviderConnectionState) async
             -> AiProviderConnectionResult,
-        disconnect: @escaping @Sendable (AiProvider) async -> AiProviderConnectionResult
+        disconnect: @escaping @Sendable (AiProvider) async -> AiProviderConnectionResult,
     ) {
         self.connectOAuth = connectOAuth
         self.connectAPIKey = connectAPIKey
@@ -61,89 +61,106 @@ extension AIProviderConnectionClient: DependencyKey {
 
     public nonisolated static func liveForRepoRoot(
         repoRootURL: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
     ) -> AIProviderConnectionClient {
         let store = AIConnectionFileStore.withRepoRoot(
+            repoRootURL: repoRootURL,
             fileManager: fileManager,
-            repoRootURL: repoRootURL
         )
         return Self.persistenceClient(store: store)
     }
 
     private nonisolated static func persistenceClient(
-        store: AIConnectionFileStore
+        store: AIConnectionFileStore,
     ) -> AIProviderConnectionClient {
         AIProviderConnectionClient(
-            connectOAuth: { provider, credential, connectionState in
-                try? await store.migrateFromHomeIfNeeded()
-                guard let descriptor = ProviderDescriptor.descriptor(for: provider),
-                      descriptor.authMethod == .oauth
-                else {
-                    return AiProviderConnectionResult(
-                        provider: provider,
-                        state: .connectionFailed,
-                        reason: .providerUnsupportedInBuild,
-                        updatedFile: AIConnectionsFile.empty()
-                    )
-                }
+            connectOAuth: connectOAuthHandler(store: store),
+            connectAPIKey: connectAPIKeyHandler(store: store),
+            disconnect: disconnectHandler(store: store),
+        )
+    }
 
-                let credentialPayload = StoredCredentialPayload.oauth(credential)
-                let reason: ProviderStatusReason = connectionState == .notVerified ? .networkUnavailable : .none
-                return await Self.persistAndReturn(
-                    store: store,
-                    provider: provider,
-                    authMethod: descriptor.authMethod,
-                    credential: credentialPayload,
-                    connectionState: connectionState,
-                    reason: reason
-                )
-            },
-            connectAPIKey: { provider, secret, connectionState in
-                try? await store.migrateFromHomeIfNeeded()
-                guard let descriptor = ProviderDescriptor.descriptor(for: provider),
-                      descriptor.authMethod == .apiKey
-                else {
-                    return AiProviderConnectionResult(
-                        provider: provider,
-                        state: .connectionFailed,
-                        reason: .providerUnsupportedInBuild,
-                        updatedFile: AIConnectionsFile.empty()
-                    )
-                }
+    private nonisolated static func connectOAuthHandler(
+        store: AIConnectionFileStore,
+    ) -> @Sendable (AiProvider, OAuthCredentialFile, ProviderConnectionState) async -> AiProviderConnectionResult {
+        { provider, credential, connectionState in
+            try? await store.migrateFromHomeIfNeeded()
+            guard let descriptor = ProviderDescriptor.descriptor(for: provider),
+                  descriptor.authMethod == .oauth
+            else {
+                return unsupportedProviderResult(provider: provider)
+            }
 
-                let credentialPayload = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: secret))
-                let reason: ProviderStatusReason = connectionState == .notVerified ? .networkUnavailable : .none
-                return await Self.persistAndReturn(
-                    store: store,
-                    provider: provider,
-                    authMethod: .apiKey,
-                    credential: credentialPayload,
-                    connectionState: connectionState,
-                    reason: reason
-                )
-            },
-            disconnect: { provider in
-                do {
-                    try await store.migrateFromHomeIfNeeded()
-                    try await store.deleteCredential(for: provider)
-                } catch {
-                    let current = await (try? store.load()) ?? AIConnectionsFile.empty()
-                    return AiProviderConnectionResult(
-                        provider: provider,
-                        state: .connectionFailed,
-                        reason: .unknown,
-                        updatedFile: current
-                    )
-                }
-                let updated = await (try? store.load()) ?? AIConnectionsFile.empty()
+            let credentialPayload = StoredCredentialPayload.oauth(credential)
+            let reason: ProviderStatusReason = connectionState == .notVerified ? .networkUnavailable : .none
+            return await Self.persistAndReturn(
+                store: store,
+                provider: provider,
+                authMethod: descriptor.authMethod,
+                credential: credentialPayload,
+                connectionState: connectionState,
+                reason: reason,
+            )
+        }
+    }
 
+    private nonisolated static func connectAPIKeyHandler(
+        store: AIConnectionFileStore,
+    ) -> @Sendable (AiProvider, String, ProviderConnectionState) async -> AiProviderConnectionResult {
+        { provider, secret, connectionState in
+            try? await store.migrateFromHomeIfNeeded()
+            guard let descriptor = ProviderDescriptor.descriptor(for: provider),
+                  descriptor.authMethod == .apiKey
+            else {
+                return unsupportedProviderResult(provider: provider)
+            }
+
+            let credentialPayload = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: secret))
+            let reason: ProviderStatusReason = connectionState == .notVerified ? .networkUnavailable : .none
+            return await Self.persistAndReturn(
+                store: store,
+                provider: provider,
+                authMethod: descriptor.authMethod,
+                credential: credentialPayload,
+                connectionState: connectionState,
+                reason: reason,
+            )
+        }
+    }
+
+    private nonisolated static func disconnectHandler(
+        store: AIConnectionFileStore,
+    ) -> @Sendable (AiProvider) async -> AiProviderConnectionResult {
+        { provider in
+            do {
+                try await store.migrateFromHomeIfNeeded()
+                try await store.deleteCredential(for: provider)
+            } catch {
+                let current = await (try? store.load()) ?? AIConnectionsFile.empty()
                 return AiProviderConnectionResult(
                     provider: provider,
-                    state: .notVerified,
-                    reason: .none,
-                    updatedFile: updated
+                    state: .connectionFailed,
+                    reason: .unknown,
+                    updatedFile: current,
                 )
             }
+            let updated = await (try? store.load()) ?? AIConnectionsFile.empty()
+
+            return AiProviderConnectionResult(
+                provider: provider,
+                state: .notVerified,
+                reason: .none,
+                updatedFile: updated,
+            )
+        }
+    }
+
+    private nonisolated static func unsupportedProviderResult(provider: AiProvider) -> AiProviderConnectionResult {
+        AiProviderConnectionResult(
+            provider: provider,
+            state: .connectionFailed,
+            reason: .providerUnsupportedInBuild,
+            updatedFile: AIConnectionsFile.empty(),
         )
     }
 
@@ -153,51 +170,81 @@ extension AIProviderConnectionClient: DependencyKey {
         authMethod: ProviderAuthMethod,
         credential: StoredCredentialPayload,
         connectionState: ProviderConnectionState,
-        reason: ProviderStatusReason
+        reason: ProviderStatusReason,
     ) async -> AiProviderConnectionResult {
-        let current = await (try? store.load()) ?? AIConnectionsFile.empty()
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let record = providerRecord(
+            provider: provider,
+            authMethod: authMethod,
+            credential: credential,
+            connectionState: connectionState,
+            reason: reason,
+            now: now,
+        )
 
+        do {
+            let updated = try await store.update { current in
+                Self.updatedConnectionsFile(
+                    current: current,
+                    provider: provider,
+                    record: record,
+                    now: now,
+                )
+            }
+            return AiProviderConnectionResult(
+                provider: provider,
+                state: connectionState,
+                reason: reason,
+                updatedFile: updated,
+            )
+        } catch {
+            let current = await (try? store.load()) ?? AIConnectionsFile.empty()
+            return AiProviderConnectionResult(
+                provider: provider,
+                state: .connectionFailed,
+                reason: .unknown,
+                updatedFile: current,
+            )
+        }
+    }
+
+    private nonisolated static func providerRecord(
+        provider: AiProvider,
+        authMethod: ProviderAuthMethod,
+        credential: StoredCredentialPayload,
+        connectionState: ProviderConnectionState,
+        reason: ProviderStatusReason,
+        now: Int64,
+    ) -> ProviderRecordFile {
         let snapshotReason: ProviderStatusReason = connectionState == .connected ? .none : reason
-
-        let record = ProviderRecordFile(
+        return ProviderRecordFile(
             providerId: provider,
             authMethod: authMethod,
             credential: credential,
             snapshot: ProviderSnapshotFile(
                 lastKnownStatus: connectionState,
                 lastVerifiedAtMs: connectionState == .connected ? now : nil,
-                lastErrorCode: snapshotReason
-            )
+                lastErrorCode: snapshotReason,
+            ),
         )
+    }
 
+    private nonisolated static func updatedConnectionsFile(
+        current: AIConnectionsFile,
+        provider: AiProvider,
+        record: ProviderRecordFile,
+        now: Int64,
+    ) -> AIConnectionsFile {
         var providers = current.providers
         providers[provider.rawValue] = record
 
-        let updated = AIConnectionsFile(
-            schemaVersion: 1,
+        return AIConnectionsFile(
+            schemaVersion: current.schemaVersion,
             updatedAtMs: now,
             lastUsedProviderId: provider,
             lastUsedAtMs: now,
-            providers: providers
+            providers: providers,
         )
-
-        do {
-            try await store.write(updated)
-            return AiProviderConnectionResult(
-                provider: provider,
-                state: connectionState,
-                reason: reason,
-                updatedFile: updated
-            )
-        } catch {
-            return AiProviderConnectionResult(
-                provider: provider,
-                state: .connectionFailed,
-                reason: .unknown,
-                updatedFile: current
-            )
-        }
     }
 
     public nonisolated static var testValue: AIProviderConnectionClient {
@@ -207,7 +254,7 @@ extension AIProviderConnectionClient: DependencyKey {
                     provider: provider,
                     state: connectionState,
                     reason: .none,
-                    updatedFile: AIConnectionsFile.empty()
+                    updatedFile: AIConnectionsFile.empty(),
                 )
             },
             connectAPIKey: { provider, _, connectionState in
@@ -215,7 +262,7 @@ extension AIProviderConnectionClient: DependencyKey {
                     provider: provider,
                     state: connectionState,
                     reason: .none,
-                    updatedFile: AIConnectionsFile.empty()
+                    updatedFile: AIConnectionsFile.empty(),
                 )
             },
             disconnect: { provider in
@@ -223,9 +270,9 @@ extension AIProviderConnectionClient: DependencyKey {
                     provider: provider,
                     state: .notVerified,
                     reason: .none,
-                    updatedFile: AIConnectionsFile.empty()
+                    updatedFile: AIConnectionsFile.empty(),
                 )
-            }
+            },
         )
     }
 
@@ -236,7 +283,7 @@ extension AIProviderConnectionClient: DependencyKey {
                     provider: provider,
                     state: .connected,
                     reason: .none,
-                    updatedFile: AIConnectionsFile.empty()
+                    updatedFile: AIConnectionsFile.empty(),
                 )
             },
             connectAPIKey: { provider, _, _ in
@@ -244,7 +291,7 @@ extension AIProviderConnectionClient: DependencyKey {
                     provider: provider,
                     state: .connected,
                     reason: .none,
-                    updatedFile: AIConnectionsFile.empty()
+                    updatedFile: AIConnectionsFile.empty(),
                 )
             },
             disconnect: { provider in
@@ -252,9 +299,9 @@ extension AIProviderConnectionClient: DependencyKey {
                     provider: provider,
                     state: .notVerified,
                     reason: .none,
-                    updatedFile: AIConnectionsFile.empty()
+                    updatedFile: AIConnectionsFile.empty(),
                 )
-            }
+            },
         )
     }
 }

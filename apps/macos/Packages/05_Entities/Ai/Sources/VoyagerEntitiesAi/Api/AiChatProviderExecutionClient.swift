@@ -68,7 +68,7 @@ public extension AiChatProviderExecutionClient {
         codexExecutor: @escaping AiChatProviderCodexExecutor = executeCodexCLI,
         registry: AiChatProviderExecutorRegistry? = nil,
     ) -> AiChatProviderExecutionClient {
-        let executorRegistry = registry ?? .default(session: session, now: now, codexExecutor: codexExecutor)
+        let executorRegistry = registry ?? .default()
         return AiChatProviderExecutionClient(
             execute: { request, credential in
                 NSLog(

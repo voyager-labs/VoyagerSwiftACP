@@ -28,7 +28,7 @@ final class AiChatFeatureHistoryTruncationTests: XCTestCase {
                 AiChatMessage(role: .user, content: oversizedRecentUser),
                 AiChatMessage(role: .assistant, content: oversizedRecentAssistant),
                 AiChatMessage(role: .user, content: latestUser),
-                AiChatMessage(role: .assistant, content: latestAssistant)
+                AiChatMessage(role: .assistant, content: latestAssistant),
             ],
             draftText: draft,
             catalogRows: catalogRows,
@@ -47,7 +47,8 @@ final class AiChatFeatureHistoryTruncationTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.lockedModelHandle = catalogRows[0].handle
         }
@@ -61,7 +62,7 @@ final class AiChatFeatureHistoryTruncationTests: XCTestCase {
         XCTAssertEqual(request.messages, [
             AiChatMessage(role: .user, content: latestUser),
             AiChatMessage(role: .assistant, content: latestAssistant),
-            AiChatMessage(role: .user, content: draft)
+            AiChatMessage(role: .user, content: draft),
         ])
         XCTAssertFalse(request.messages.contains(AiChatMessage(role: .user, content: olderUser)))
         XCTAssertFalse(request.messages.contains(AiChatMessage(role: .assistant, content: olderAssistant)))

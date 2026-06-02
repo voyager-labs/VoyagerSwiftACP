@@ -78,6 +78,7 @@ extension AiChatFeature {
             }
             .cancellable(id: CancelID.requestFinalPersistence, cancelInFlight: true),
             .cancel(id: CancelID.request),
+            .cancel(id: CancelID.requestStartPersistence),
         )
     }
 
@@ -100,7 +101,10 @@ extension AiChatFeature {
             reason,
         )
         state.transcriptAutoScrollVersion += 1
-        return .cancel(id: CancelID.request)
+        return .merge(
+            .cancel(id: CancelID.request),
+            .cancel(id: CancelID.requestStartPersistence),
+        )
     }
 
     private func clearStreamingDraftIfEmpty(lock: AiChatRequestLock, state: inout State) {
