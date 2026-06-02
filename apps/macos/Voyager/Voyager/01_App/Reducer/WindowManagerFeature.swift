@@ -47,10 +47,15 @@ struct WindowManagerFeature {
 
             case let .lifecycle(.applyAppPreferences(preferences)):
                 state.appPreferences = preferences
-                let packagePreferences = preferences.toPackageState()
                 return .merge(
-                    state.windows.ids.map { id in
-                        .send(.windows(.element(id: id, action: .window(.applyAppPreferences(packagePreferences)))))
+                    state.windows.map { windowSession in
+                        let packagePreferences = windowSession.window.appPreferencesPreservingSidebarState(
+                            from: preferences.toPackageState(),
+                        )
+                        return .send(.windows(.element(
+                            id: windowSession.id,
+                            action: .window(.applyAppPreferences(packagePreferences)),
+                        )))
                     },
                 )
 

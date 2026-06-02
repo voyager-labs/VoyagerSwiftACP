@@ -129,6 +129,23 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-002 Sidebar preference fan-out: 기존 window-local Sidebar 상태를 preference 적용 시 보존
+    /// App 레이어가 열린 창에 app preferences를 다시 적용할 때 사용할 projection이 width/visibility를 유지하는지 검증한다.
+    func test_windowPreferenceProjectionPreservesWindowLocalSidebarState() {
+        var windowState = FileManagerWindowState()
+        windowState.sidebar.sidebarVisible = false
+        windowState.sidebar.sidebarWidth = SidebarWidth.inRange
+
+        var preferences = AppPreferencesState()
+        preferences.sidebarVisible = true
+        preferences.sidebarWidth = SidebarWidth.max
+
+        let projected = windowState.appPreferencesPreservingSidebarState(from: preferences)
+
+        XCTAssertFalse(projected.sidebarVisible)
+        XCTAssertEqual(projected.sidebarWidth, SidebarWidth.inRange)
+    }
+
     // MARK: - FMW-002-show_inspector_pane
 
     /// FMW-002-show_inspector_pane: toggleInspector가 inspectorVisible을 true로 설정
