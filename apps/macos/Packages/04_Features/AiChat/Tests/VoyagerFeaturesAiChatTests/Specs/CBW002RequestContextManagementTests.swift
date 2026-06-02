@@ -188,6 +188,7 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         applyCBW002ObservationFocusedExhaustivity(to: store)
 
         await store.send(.submitTapped)
+        await resolvePendingRequestContext(store)
 
         let request = try XCTUnwrap(stream.requests.first)
         XCTAssertEqual(request.context.currentContext.summary, "Current selected file")
