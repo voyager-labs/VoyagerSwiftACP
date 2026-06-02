@@ -262,6 +262,17 @@ private func unregisterFileManagerWindowController(windowID: UUID) {
 }
 
 @MainActor
+private func currentFileManagerWindowSize() -> NSSize? {
+    if let keyWindow = NSApp.keyWindow,
+       let controller = fileManagerWindowControllers.first(where: { $0.window === keyWindow })
+    {
+        return controller.window?.frame.size
+    }
+
+    return fileManagerWindowControllers.first?.window?.frame.size
+}
+
+@MainActor
 private func makeManagedWindowController(
     windowID: UUID,
     fileManagerStore: StoreOf<FileManagerFeature>,
@@ -283,7 +294,7 @@ private func makeManagedWindowController(
             fileManagerWindowOnClosed?(id)
         },
         initialWindowSizeProvider: {
-            fileManagerWindowControllers.first?.window?.frame.size
+            currentFileManagerWindowSize()
         },
     )
 }

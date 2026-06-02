@@ -191,7 +191,15 @@ public extension FileManagerWindowCoordinator {
         return options
     }
 
-    func windowWillClose(_: Notification) {
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        FileManagerWindowChrome.saveFrame(window)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let window = notification.object as? NSWindow {
+            FileManagerWindowChrome.saveFrame(window)
+        }
         tearDownBindings()
         if let onWillClose {
             onWillClose(windowID)

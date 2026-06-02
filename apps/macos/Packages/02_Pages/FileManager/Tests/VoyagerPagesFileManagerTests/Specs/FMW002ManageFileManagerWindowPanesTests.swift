@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 @testable import VoyagerPagesFileManager
 import XCTest
@@ -77,6 +78,48 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-002-hide_sidebar: 메뉴/단축키 Hide Sidebar는 기존 유효 너비를 보존
+    /// 숨김 상태에서 다시 표시하면 사용자가 마지막으로 조정한 너비로 복원되어야 한다.
+    func test_hideSidebar_preservesLastValidWidthForShowRestore() async {
+        let store = PaneTestSupport
+            .makeSidebarStore(initialState: PaneTestSupport.makeSidebarState(
+                visible: true,
+                width: SidebarWidth.inRange,
+            ))
+
+        await store.send(.view(.setSidebarVisible(false))) { state in
+            state.sidebarVisible = false
+        }
+
+        XCTAssertEqual(store.state.sidebarWidth, SidebarWidth.inRange)
+
+        await store.send(.view(.setSidebarVisible(true))) { state in
+            state.sidebarVisible = true
+        }
+
+        XCTAssertEqual(store.state.sidebarWidth, SidebarWidth.inRange)
+
+        await store.finish()
+    }
+
+    /// FMW-002-hide_sidebar: 숨김 상태의 layout width 변화는 저장된 너비를 덮지 않음
+    /// Hide Sidebar 직후 SwiftUI/AppKit layout이 0 또는 최소폭을 보고해도 복원 너비는 유지되어야 한다.
+    func test_hiddenSidebarIgnoresLayoutWidthSync() async {
+        let store = PaneTestSupport
+            .makeSidebarStore(initialState: PaneTestSupport.makeSidebarState(
+                visible: false,
+                width: SidebarWidth.inRange,
+            ))
+
+        await store.send(.view(.setSidebarWidth(0)))
+        XCTAssertEqual(store.state.sidebarWidth, SidebarWidth.inRange)
+
+        await store.send(.view(.setSidebarWidth(SidebarWidth.min)))
+        XCTAssertEqual(store.state.sidebarWidth, SidebarWidth.inRange)
+
+        await store.finish()
+    }
+
     // MARK: - FMW-002-adjust_sidebar_width
 
     /// FMW-002-adjust_sidebar_width: 정상 범위 내 너비 적용
@@ -127,6 +170,163 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         }
 
         await store.finish()
+    }
+
+    /// FMW-002-adjust_sidebar_width: divider를 정확히 최소폭까지 줄이면 숨김이 아닌 보이는 resize로 처리
+    /// 150pt는 유효한 Sidebar width이므로 hidden 전환 없이 width만 저장한다.
+    func test_userResizeToMinimumSyncsWidthWithoutHidingSidebar() {
+        var sync = FileManagerSidebarSync(storeSidebarWidth: SidebarWidth.inRange)
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let sidebarView = NSView()
+        let contentView = NSView()
+        splitView.addArrangedSubview(sidebarView)
+        splitView.addArrangedSubview(contentView)
+
+        sync.applyInitialLayoutIfNeeded(
+            sidebarVisible: true,
+            sidebarWidth: SidebarWidth.inRange,
+            splitView: splitView,
+            mainContainerLeading: nil,
+            contentVerticalMargin: 4,
+        ) { _ in }
+
+        splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth, ofDividerAt: 0)
+        splitView.adjustSubviews()
+
+        var syncedWidths: [CGFloat] = []
+        let decision = sync.handleSplitViewResize(
+            splitView: splitView,
+            sidebarView: sidebarView,
+            storeSidebarVisible: true,
+            isUserInitiatedCollapse: true,
+        ) { width in
+            syncedWidths.append(width)
+        }
+
+        XCTAssertEqual(decision, .none)
+        XCTAssertEqual(syncedWidths, [FileManagerSidebarSync.sidebarMinWidth])
+    }
+
+    /// FMW-002-adjust_sidebar_width: 보이는 Sidebar divider는 0 또는 최소폭 이상으로만 스냅
+    /// 0~150pt 사이 중간 폭은 traffic-light 없는 Sidebar 상태를 만들 수 있으므로 hidden(0)으로 스냅한다.
+    func test_visibleSidebarDividerBelowMinimumSnapsToHidden() {
+        XCTAssertEqual(
+            FileManagerSidebarSync.constrainedSidebarDividerPosition(
+                proposedPosition: FileManagerSidebarSync.sidebarMinWidth - 1,
+            ),
+            0,
+        )
+    }
+
+    /// FMW-002-adjust_sidebar_width: 숨김 Sidebar를 divider로 다시 열 때도 중간 폭은 허용하지 않음
+    /// hidden 상태에서도 0~150pt 사이는 0으로 유지하고, 150pt 이상부터 보이는 Sidebar로 전환한다.
+    func test_hiddenSidebarDividerOpeningKeepsIntermediateWidthCollapsed() {
+        XCTAssertEqual(
+            FileManagerSidebarSync.constrainedSidebarDividerPosition(proposedPosition: 1),
+            0,
+        )
+        XCTAssertEqual(
+            FileManagerSidebarSync.constrainedSidebarDividerPosition(
+                proposedPosition: FileManagerSidebarSync.sidebarMinWidth,
+            ),
+            FileManagerSidebarSync.sidebarMinWidth,
+        )
+    }
+
+    /// FMW-002-adjust_sidebar_width: divider를 최소폭 미만으로 줄이면 hidden으로 전환
+    /// 150pt 미만은 유효 너비로 저장하지 않고 Hide Sidebar 경로로 라우팅한다.
+    func test_userResizeBelowMinimumHidesSidebarWithoutSyncingWidth() {
+        var sync = FileManagerSidebarSync(storeSidebarWidth: SidebarWidth.inRange)
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let sidebarView = NSView()
+        let contentView = NSView()
+        splitView.addArrangedSubview(sidebarView)
+        splitView.addArrangedSubview(contentView)
+
+        sync.applyInitialLayoutIfNeeded(
+            sidebarVisible: true,
+            sidebarWidth: SidebarWidth.inRange,
+            splitView: splitView,
+            mainContainerLeading: nil,
+            contentVerticalMargin: 4,
+        ) { _ in }
+
+        splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth - 1, ofDividerAt: 0)
+        splitView.adjustSubviews()
+
+        var syncedWidths: [CGFloat] = []
+        let decision = sync.handleSplitViewResize(
+            splitView: splitView,
+            sidebarView: sidebarView,
+            storeSidebarVisible: true,
+            isUserInitiatedCollapse: true,
+        ) { width in
+            syncedWidths.append(width)
+        }
+
+        XCTAssertEqual(decision, .hideSidebar)
+        XCTAssertTrue(syncedWidths.isEmpty)
+    }
+
+    /// FMW-002-show_sidebar: hidden 상태에서 divider를 다시 열면 store도 visible로 복구
+    /// 실제 Sidebar frame은 보이는데 traffic light만 숨겨진 제3 상태가 생기지 않도록 showSidebar 결정을 반환한다.
+    func test_userDragOpenFromHiddenShowsSidebarWithCurrentWidth() {
+        var sync = FileManagerSidebarSync(storeSidebarWidth: SidebarWidth.inRange)
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let sidebarView = NSView()
+        let contentView = NSView()
+        splitView.addArrangedSubview(sidebarView)
+        splitView.addArrangedSubview(contentView)
+
+        sync.applyInitialLayoutIfNeeded(
+            sidebarVisible: false,
+            sidebarWidth: SidebarWidth.inRange,
+            splitView: splitView,
+            mainContainerLeading: nil,
+            contentVerticalMargin: 4,
+        ) { _ in }
+
+        splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth, ofDividerAt: 0)
+        splitView.adjustSubviews()
+
+        var syncedWidths: [CGFloat] = []
+        let decision = sync.handleSplitViewResize(
+            splitView: splitView,
+            sidebarView: sidebarView,
+            storeSidebarVisible: false,
+            isUserInitiatedCollapse: true,
+        ) { width in
+            syncedWidths.append(width)
+        }
+
+        XCTAssertEqual(decision, .showSidebar(FileManagerSidebarSync.sidebarMinWidth))
+        XCTAssertTrue(syncedWidths.isEmpty)
+    }
+
+    /// FMW-002 Sidebar preference fan-out: 기존 window-local Sidebar 상태를 preference 적용 시 보존
+    /// App 레이어가 열린 창에 app preferences를 다시 적용할 때 사용할 projection이 width/visibility를 유지하는지 검증한다.
+    func test_windowPreferenceProjectionPreservesWindowLocalSidebarState() {
+        var windowState = FileManagerWindowState()
+        windowState.sidebar.sidebarVisible = false
+        windowState.sidebar.sidebarWidth = SidebarWidth.inRange
+
+        var preferences = AppPreferencesState()
+        preferences.sidebarVisible = true
+        preferences.sidebarWidth = SidebarWidth.max
+
+        let projected = windowState.appPreferencesPreservingSidebarState(from: preferences)
+
+        XCTAssertFalse(projected.sidebarVisible)
+        XCTAssertEqual(projected.sidebarWidth, SidebarWidth.inRange)
     }
 
     // MARK: - FMW-002-show_inspector_pane

@@ -19,3 +19,12 @@ public struct FileManagerWindowState: Equatable {
         return state
     }
 }
+
+public extension FileManagerWindowState {
+    func appPreferencesPreservingSidebarState(from preferences: AppPreferencesState) -> AppPreferencesState {
+        var result = preferences
+        result.sidebarVisible = sidebar.sidebarVisible
+        result.sidebarWidth = sidebar.sidebarWidth
+        return result
+    }
+}
