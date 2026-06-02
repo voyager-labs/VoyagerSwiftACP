@@ -23,6 +23,9 @@ public struct SettingsView: View {
             .onAppear {
                 store.send(.onAppear)
             }
+            .onDisappear {
+                store.send(.resetSectionForFreshOpen)
+            }
             .background(
                 Button("") {
                     store.send(.closeWindow)
