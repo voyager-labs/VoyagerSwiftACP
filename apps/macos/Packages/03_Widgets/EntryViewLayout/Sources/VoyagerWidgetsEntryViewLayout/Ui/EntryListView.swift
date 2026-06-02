@@ -32,6 +32,14 @@ public struct EntryListViewRepresentable: NSViewRepresentable {
     }
 }
 
+final class EntryListSelectionRowView: NSTableRowView {
+    override var isEmphasized: Bool {
+        didSet {
+            super.isEmphasized = true
+        }
+    }
+}
+
 public final class EntryListView: NSView {
     @MainActor
     protocol EntryListTableViewContextMenuProviding: AnyObject {

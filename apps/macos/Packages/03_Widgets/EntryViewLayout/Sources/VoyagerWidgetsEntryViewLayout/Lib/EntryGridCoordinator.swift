@@ -162,6 +162,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         restoreScrollPositionIfNeeded()
         if let width = view?.bounds.width { updateGridColumnCountIfNeeded(for: width) }
         DispatchQueue.main.async { [weak self] in
+            self?.syncSelectionFromStore()
             self?.syncRenamingFromStore()
             self?.requestThumbnailsForVisibleArea()
         }
