@@ -5,236 +5,13 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW004 spec-owner suite 밖에 남긴 model selection reducer 회귀 테스트.
+// provider update selection 보존/해제와 Codex execution path contract를 보존한다.
+
 // swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureSelectionTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
-    func testModelSelectionIsNextRequestOnlyAndSameModelIsNoOp() async {
-        final class ExecutionRequestSpy: @unchecked Sendable {
-            private(set) var requests: [AiChatRequest] = []
-
-            func append(_ request: AiChatRequest) {
-                requests.append(request)
-            }
-        }
-
-        let catalogRows = makeCatalogRows()
-        let models = makeThinkingCapableProviderModels()
-        let summary = makeContextSnapshot()
-        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111111"))
-        let firstSubmitMs: Int64 = 1_700_000_000_600
-        let secondSubmitMs: Int64 = 1_700_000_000_601
-        let requestSpy = ExecutionRequestSpy()
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: sessionID,
-            sessionStatus: .active,
-            currentContext: summary,
-            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            draftText: "Draft",
-            catalogRows: catalogRows,
-            modelListState: .loaded(models),
-            selectedModelHandle: catalogRows[0].handle,
-            selectedThinking: .effort(.medium),
-            lockedModelHandle: nil,
-            lastExecutionFailure: nil,
-            executionPhase: .idle,
-        )) {
-            AiChatFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.date = .constant(makeFixedDate(milliseconds: firstSubmitMs))
-            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
-                requestSpy.append(request)
-                return AsyncStream { continuation in
-                    continuation.finish()
-                }
-            })
-        }
-        store.exhaustivity = .off(showSkippedAssertions: false)
-
-        await store.send(.submitTapped)
-        await resolvePendingRequestContext(store) { state in
-            let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
-            let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000001"))
-            let context = AiChatRequestContextSnapshot(
-                sessionID: sessionID,
-                requestID: requestID,
-                runID: runID,
-                provider: catalogRows[0].handle.provider,
-                model: catalogRows[0].handle,
-                selectedModel: models[0],
-                selectedModelRow: catalogRows[0],
-                selectedThinking: .effort(.medium),
-                sessionStatus: .active,
-                currentContext: summary,
-                promptSummary: "Draft",
-                submittedAtMs: firstSubmitMs,
-            )
-            let request = AiChatRequest(
-                context: context,
-                messages: [
-                    AiChatMessage(role: .user, content: "Hello"),
-                    AiChatMessage(role: .user, content: "Draft"),
-                ],
-            )
-            let processingSummary = AiChatSessionSummary(
-                sessionID: sessionID,
-                title: "Draft",
-                preview: "Draft",
-                messageCount: 1,
-                contextTitle: summary.summary,
-                searchText: "Draft",
-                provider: catalogRows[0].handle.provider,
-                model: catalogRows[0].handle,
-                createdAtMs: firstSubmitMs,
-                updatedAtMs: firstSubmitMs,
-                status: .active,
-            )
-            state.transcriptHistory = request.messages
-            state.draftText = ""
-            state.sessionList.allRows = [processingSummary]
-            state.sessionList.rows = [processingSummary]
-            state.sessionList.selectedSessionID = sessionID
-            state.sessionList.unreadCompletedSessionIDs = []
-            state.lockedModelHandle = catalogRows[0].handle
-            state.transcriptAutoScrollVersion = 1
-            state.executionPhase = .processing(AiChatRequestLock(
-                kind: .submit,
-                requestID: requestID,
-                runID: runID,
-                context: context,
-                request: request,
-                selectedModelHandle: catalogRows[0].handle,
-                selectedModelRow: catalogRows[0],
-                assistantReplacementIndex: nil,
-                historyTruncation: AiChatHistoryTruncationMetadata(
-                    includedMessageCount: 2,
-                    excludedMessageCount: 0,
-                    budget: 24000,
-                    truncationReason: nil,
-                ),
-                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: firstSubmitMs),
-            ))
-        }
-
-        XCTAssertEqual(requestSpy.requests.count, 1)
-        XCTAssertEqual(requestSpy.requests[0].context.model, catalogRows[0].handle)
-        XCTAssertEqual(requestSpy.requests[0].context.provider, catalogRows[0].handle.provider)
-        XCTAssertEqual(requestSpy.requests[0].context.selectedModel, models[0])
-        XCTAssertEqual(requestSpy.requests[0].context.selectedThinking, .effort(.medium))
-
-        await store.send(.selectedModelChanged(catalogRows[0].handle))
-
-        XCTAssertEqual(requestSpy.requests.count, 1)
-        XCTAssertEqual(store.state.lockedModelHandle, catalogRows[0].handle)
-
-        await store.send(.selectedModelChanged(catalogRows[1].handle)) { state in
-            state.selectedModelHandle = catalogRows[1].handle
-            state.unavailableSelectedModelHandle = nil
-        }
-
-        XCTAssertEqual(store.state.lockedModelHandle, catalogRows[0].handle)
-        if case let .processing(lock) = store.state.executionPhase {
-            XCTAssertEqual(lock.selectedModelHandle, catalogRows[0].handle)
-            XCTAssertEqual(lock.context.model, catalogRows[0].handle)
-            XCTAssertEqual(lock.context.provider, catalogRows[0].handle.provider)
-            XCTAssertEqual(lock.context.selectedModel, models[0])
-            XCTAssertEqual(lock.context.selectedThinking, .effort(.medium))
-        } else {
-            XCTFail("Expected request to remain locked while processing")
-        }
-
-        if case let .processing(processing, _, selectedModel) = store.state.surfaceState {
-            XCTAssertEqual(processing.lockedModel.label.title, "GPT-4.1 Mini")
-            XCTAssertEqual(selectedModel?.label.title, "Claude Sonnet 4")
-        } else {
-            XCTFail("Expected processing surface state")
-        }
-
-        await store.send(.resetTapped) { state in
-            state.draftText = ""
-            state.transcriptHistory = []
-            state.lastExecutionFailure = nil
-            state.lockedModelHandle = nil
-            state.executionPhase = .idle
-        }
-
-        await store.send(.draftTextChanged("Second request")) { state in
-            state.draftText = "Second request"
-        }
-
-        store.dependencies.date = .constant(makeFixedDate(milliseconds: secondSubmitMs))
-
-        await store.send(.submitTapped)
-        await resolvePendingRequestContext(store) { state in
-            let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000002"))
-            let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000003"))
-            let context = AiChatRequestContextSnapshot(
-                sessionID: sessionID,
-                requestID: requestID,
-                runID: runID,
-                provider: catalogRows[1].handle.provider,
-                model: catalogRows[1].handle,
-                selectedModel: models[1],
-                selectedModelRow: catalogRows[1],
-                selectedThinking: .effort(.medium),
-                sessionStatus: .active,
-                currentContext: summary,
-                promptSummary: "Second request",
-                submittedAtMs: secondSubmitMs,
-            )
-            let request = AiChatRequest(
-                context: context,
-                messages: [AiChatMessage(role: .user, content: "Second request")],
-            )
-            let processingSummary = AiChatSessionSummary(
-                sessionID: sessionID,
-                title: "Second request",
-                preview: "Second request",
-                messageCount: 1,
-                contextTitle: summary.summary,
-                searchText: "Second request",
-                provider: catalogRows[1].handle.provider,
-                model: catalogRows[1].handle,
-                createdAtMs: secondSubmitMs,
-                updatedAtMs: secondSubmitMs,
-                status: .active,
-            )
-            state.transcriptHistory = request.messages
-            state.draftText = ""
-            state.sessionList.allRows = [processingSummary]
-            state.sessionList.rows = [processingSummary]
-            state.sessionList.selectedSessionID = sessionID
-            state.sessionList.unreadCompletedSessionIDs = []
-            state.lockedModelHandle = catalogRows[1].handle
-            state.transcriptAutoScrollVersion = 2
-            state.executionPhase = .processing(AiChatRequestLock(
-                kind: .submit,
-                requestID: requestID,
-                runID: runID,
-                context: context,
-                request: request,
-                selectedModelHandle: catalogRows[1].handle,
-                selectedModelRow: catalogRows[1],
-                assistantReplacementIndex: nil,
-                historyTruncation: AiChatHistoryTruncationMetadata(
-                    includedMessageCount: 1,
-                    excludedMessageCount: 0,
-                    budget: 24000,
-                    truncationReason: nil,
-                ),
-                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: secondSubmitMs),
-            ))
-        }
-
-        XCTAssertEqual(requestSpy.requests.count, 2)
-        XCTAssertEqual(requestSpy.requests[1].context.model, catalogRows[1].handle)
-        XCTAssertEqual(requestSpy.requests[1].context.provider, catalogRows[1].handle.provider)
-        XCTAssertEqual(requestSpy.requests[1].context.selectedModel, models[1])
-        XCTAssertEqual(requestSpy.requests[1].context.selectedThinking, .effort(.medium))
-    }
-
-    // swiftlint:disable:next function_body_length
+    /// teardown 요청이 processing draft를 중단하되 conversation은 유지하는지 검증
     func testTeardownRequestedStopsProcessingDraftWithoutClearingConversation() async {
         let catalogRows = makeCatalogRows()
         let models = makeThinkingCapableProviderModels()
@@ -243,37 +20,13 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000004"))
         let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000005"))
         let messages = [AiChatMessage(role: .user, content: "Keep this transcript")]
-        let context = AiChatRequestContextSnapshot(
+        let lock = makeTeardownProcessingLock(
             sessionID: sessionID,
-            requestID: requestID,
-            runID: runID,
-            provider: catalogRows[0].handle.provider,
-            model: catalogRows[0].handle,
+            requestIDs: (requestID: requestID, runID: runID),
+            catalogRow: catalogRows[0],
             selectedModel: models[0],
-            selectedModelRow: catalogRows[0],
-            selectedThinking: .effort(.medium),
-            sessionStatus: .active,
-            currentContext: summary,
-            promptSummary: "Keep this transcript",
-            submittedAtMs: 1_700_000_000_600,
-        )
-        let request = AiChatRequest(context: context, messages: messages)
-        let lock = AiChatRequestLock(
-            kind: .submit,
-            requestID: requestID,
-            runID: runID,
-            context: context,
-            request: request,
-            selectedModelHandle: catalogRows[0].handle,
-            selectedModelRow: catalogRows[0],
-            assistantReplacementIndex: nil,
-            historyTruncation: AiChatHistoryTruncationMetadata(
-                includedMessageCount: 1,
-                excludedMessageCount: 0,
-                budget: 24000,
-                truncationReason: nil,
-            ),
-            observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: 1_700_000_000_600),
+            summary: summary,
+            messages: messages,
         )
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -304,6 +57,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
     }
 
+    /// Codex model 선택이 CLI execution path로 submit 가능한지 검증
     func testCodexModelSelectionCanSubmitThroughCLIExecutionPath() {
         let handle = AiModelHandle(provider: .chatgptCodex, rawValue: "gpt-5-codex")
         let row = AiModelCatalogRow(
@@ -340,6 +94,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertNil(state.requestStatusText)
     }
 
+    /// 기존 model handle이 유지될 때 catalog row display name이 갱신되는지 검증
     func testCatalogRowsRefreshDisplayNameWhenExistingHandleIsPreserved() {
         let handle = AiModelHandle(provider: .openai, rawValue: "gpt-5.4-mini")
         let staleRow = AiModelCatalogRow(
@@ -371,200 +126,14 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(rows.first?.isRecommended, true)
     }
 
-    // swiftlint:disable:next function_body_length
-    func testSelectedThinkingChangedUpdatesDisplayModelAndNextRequestContext() async {
-        final class ExecutionRequestSpy: @unchecked Sendable {
-            private(set) var requests: [AiChatRequest] = []
-
-            func append(_ request: AiChatRequest) {
-                requests.append(request)
-            }
-        }
-
-        let catalogRows = makeCatalogRows()
-        let models = makeThinkingCapableProviderModels()
-        let summary = makeContextSnapshot()
-        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111111"))
-        let firstSubmitMs: Int64 = 1_700_000_000_600
-        let requestSpy = ExecutionRequestSpy()
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: sessionID,
-            sessionStatus: .active,
-            currentContext: summary,
-            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            draftText: "Use high thinking",
-            catalogRows: catalogRows,
-            modelListState: .loaded(models),
-            selectedModelHandle: catalogRows[0].handle,
-            selectedThinking: nil,
-            lockedModelHandle: nil,
-            lastExecutionFailure: nil,
-            executionPhase: .idle,
-        )) {
-            AiChatFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.date = .constant(makeFixedDate(milliseconds: firstSubmitMs))
-            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
-                requestSpy.append(request)
-                return AsyncStream { continuation in
-                    continuation.finish()
-                }
-            })
-        }
-        store.exhaustivity = .off(showSkippedAssertions: false)
-
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "default")
-
-        await store.send(.selectedThinkingChanged(.effort(.high))) { state in
-            state.selectedThinking = .effort(.high)
-        }
-
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "high")
-
-        await store.send(.submitTapped)
-        await resolvePendingRequestContext(store) { state in
-            let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000000"))
-            let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000001"))
-            let context = AiChatRequestContextSnapshot(
-                sessionID: sessionID,
-                requestID: requestID,
-                runID: runID,
-                provider: catalogRows[0].handle.provider,
-                model: catalogRows[0].handle,
-                selectedModel: models[0],
-                selectedModelRow: catalogRows[0],
-                selectedThinking: .effort(.high),
-                sessionStatus: .active,
-                currentContext: summary,
-                promptSummary: "Use high thinking",
-                submittedAtMs: firstSubmitMs,
-            )
-            let request = AiChatRequest(
-                context: context,
-                messages: [
-                    AiChatMessage(role: .user, content: "Hello"),
-                    AiChatMessage(role: .user, content: "Use high thinking"),
-                ],
-            )
-            let processingSummary = AiChatSessionSummary(
-                sessionID: sessionID,
-                title: "Use high thinking",
-                preview: "Use high thinking",
-                messageCount: 1,
-                contextTitle: summary.summary,
-                searchText: "Use high thinking",
-                provider: catalogRows[0].handle.provider,
-                model: catalogRows[0].handle,
-                createdAtMs: firstSubmitMs,
-                updatedAtMs: firstSubmitMs,
-                status: .active,
-            )
-            state.transcriptHistory = request.messages
-            state.draftText = ""
-            state.sessionList.allRows = [processingSummary]
-            state.sessionList.rows = [processingSummary]
-            state.sessionList.selectedSessionID = sessionID
-            state.sessionList.unreadCompletedSessionIDs = []
-            state.lockedModelHandle = catalogRows[0].handle
-            state.transcriptAutoScrollVersion = 1
-            state.executionPhase = .processing(AiChatRequestLock(
-                kind: .submit,
-                requestID: requestID,
-                runID: runID,
-                context: context,
-                request: request,
-                selectedModelHandle: catalogRows[0].handle,
-                selectedModelRow: catalogRows[0],
-                assistantReplacementIndex: nil,
-                historyTruncation: AiChatHistoryTruncationMetadata(
-                    includedMessageCount: 2,
-                    excludedMessageCount: 0,
-                    budget: 24000,
-                    truncationReason: nil,
-                ),
-                observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: firstSubmitMs),
-            ))
-        }
-
-        XCTAssertEqual(requestSpy.requests.count, 1)
-        XCTAssertEqual(requestSpy.requests[0].context.selectedThinking, .effort(.high))
-    }
-
-    func testSelectedThinkingChangedDistinguishesProviderDefaultFromNoThinking() async {
-        let catalogRows = makeCatalogRows()
-        let baseModels = makeThinkingCapableProviderModels()
-        let models = [
-            AiProviderModel(
-                id: baseModels[0].id,
-                provider: baseModels[0].provider,
-                rawModelID: baseModels[0].rawModelID,
-                displayName: baseModels[0].displayName,
-                providerDisplayName: baseModels[0].providerDisplayName,
-                thinkingCapability: baseModels[0].thinkingCapability,
-                supportsThinkingNone: true,
-                unavailableReason: baseModels[0].unavailableReason,
-            ),
-            baseModels[1],
-        ]
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: catalogRows,
-            modelListState: .loaded(models),
-            selectedModelHandle: catalogRows[0].handle,
-            selectedThinking: .effort(.medium),
-        )) {
-            AiChatFeature()
-        }
-
-        await store.send(.selectedThinkingChanged(AiThinkingSelection.none)) { state in
-            state.selectedThinking = AiThinkingSelection.none
-        }
-
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "none")
-
-        await store.send(.selectedThinkingChanged(nil)) { state in
-            state.selectedThinking = nil
-        }
-
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "default")
-    }
-
-    func testModelSelectorPresentationTogglesWithoutTouchingSelection() async {
-        let catalogRows = [makeCatalogRows()[0]]
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[0].handle,
-        )) {
-            AiChatFeature()
-        }
-
-        XCTAssertFalse(store.state.isModelSelectorPresented)
-
-        await store.send(.modelSelectorTapped) { state in
-            state.isModelSelectorPresented = true
-        }
-
-        await store.send(.selectedModelChanged(catalogRows[0].handle))
-
-        await store.send(.modelSelectorDismissed) { state in
-            state.isModelSelectorPresented = false
-        }
-
-        XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
-        XCTAssertFalse(store.state.isModelSelectorPresented)
-    }
-
+    // provider connection 갱신 후에도 유효한 현재 선택 model이 유지되는지 검증
     // swiftlint:disable:next function_body_length
     func testProviderConnectionsUpdatedPreservesValidCurrentSelection() async {
         let catalogRows = makeCatalogRows()
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .anthropic,
             providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
+            lastUsedProviderId: .anthropic,
         )
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -620,13 +189,14 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[1].handle)
     }
 
+    // provider connection 갱신 후 현재 선택 model이 사라지면 선택이 정리되는지 검증
     // swiftlint:disable:next function_body_length
     func testProviderConnectionsUpdatedClearsSelectionWhenCurrentModelDisappears() async {
         let catalogRows = makeCatalogRows()
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .anthropic,
             providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
+            lastUsedProviderId: .anthropic,
         )
         let remainingModel = makeProviderModels()[1]
         let store = TestStore(initialState: AiChatFeature.State(
@@ -686,6 +256,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 
+    /// setup이 model selection 누락 상태를 자동 선택으로 보정하지 않는지 검증
     func testSetupDoesNotAutoSelectWhenSelectionIsMissing() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
@@ -725,6 +296,49 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.chatInputDisplayModel.modelLabel, "Select model")
         XCTAssertFalse(store.state.canSubmit)
     }
+}
+
+private func makeTeardownProcessingLock(
+    sessionID: AiChatSessionID,
+    requestIDs: (requestID: AiChatRequestID, runID: AiChatRunID),
+    catalogRow: AiModelCatalogRow,
+    selectedModel: AiProviderModel,
+    summary: AiChatCurrentContextSnapshot,
+    messages: [AiChatMessage],
+) -> AiChatRequestLock {
+    let context = AiChatRequestContextSnapshot(
+        sessionID: sessionID,
+        requestID: requestIDs.requestID,
+        runID: requestIDs.runID,
+        provider: catalogRow.handle.provider,
+        model: catalogRow.handle,
+        selectedModel: selectedModel,
+        selectedModelRow: catalogRow,
+        selectedThinking: .effort(.medium),
+        sessionStatus: .active,
+        currentContext: summary,
+        promptSummary: "Keep this transcript",
+        submittedAtMs: 1_700_000_000_600,
+    )
+    let request = AiChatRequest(context: context, messages: messages)
+
+    return AiChatRequestLock(
+        kind: .submit,
+        requestID: requestIDs.requestID,
+        runID: requestIDs.runID,
+        context: context,
+        request: request,
+        selectedModelHandle: catalogRow.handle,
+        selectedModelRow: catalogRow,
+        assistantReplacementIndex: nil,
+        historyTruncation: AiChatHistoryTruncationMetadata(
+            includedMessageCount: 1,
+            excludedMessageCount: 0,
+            budget: 24000,
+            truncationReason: nil,
+        ),
+        observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: 1_700_000_000_600),
+    )
 }
 
 // swiftlint:enable type_body_length

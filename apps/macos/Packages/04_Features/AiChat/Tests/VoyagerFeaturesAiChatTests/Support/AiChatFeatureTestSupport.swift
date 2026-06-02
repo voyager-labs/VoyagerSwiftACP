@@ -4,6 +4,9 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// AiChat feature tests에서 공유하는 fixture와 dependency double support.
+// Specs와 flat contract tests가 공통 provider/model/session fixture를 직접 재사용한다.
+
 func makeFixedDate(milliseconds: Int64) -> Date {
     Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000)
 }
@@ -235,11 +238,10 @@ func makeProviderRecord(
     )
 }
 
-// swiftlint:disable function_default_parameter_at_end
 func makeConnectionsFile(
+    providers: [ProviderRecordFile],
     updatedAtMs: Int64 = 1,
     lastUsedProviderId: AiProvider? = nil,
-    providers: [ProviderRecordFile],
 ) -> AIConnectionsFile {
     AIConnectionsFile(
         updatedAtMs: updatedAtMs,
@@ -247,8 +249,6 @@ func makeConnectionsFile(
         providers: Dictionary(uniqueKeysWithValues: providers.map { ($0.providerId.rawValue, $0) }),
     )
 }
-
-// swiftlint:enable function_default_parameter_at_end
 
 @MainActor
 func resolvePendingRequestContext(

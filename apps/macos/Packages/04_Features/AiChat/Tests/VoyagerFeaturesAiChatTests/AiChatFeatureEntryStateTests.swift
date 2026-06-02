@@ -4,209 +4,13 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
-@MainActor
+// CBW001/CBW004 spec-owner suite 밖에 남긴 AiChat entry state 회귀 테스트.
+// current context fixture, provider unavailable surface, canSubmit guard 같은 display/state contract를 보존한다.
+
 // swiftlint:disable:next type_body_length
+@MainActor
 final class AiChatFeatureEntryStateTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
-    func testSetupBuildsUnconnectedEntryStateWithSkeletonDisplayContract() async {
-        let store = TestStore(initialState: AiChatFeature.State()) {
-            AiChatFeature()
-        }
-
-        let catalogRows = makeCatalogRows()
-        let summary = makeContextSnapshot()
-
-        await store.send(.setup(AiChatSetupState(
-            sessionID: nil,
-            sessionStatus: .idle,
-            currentContext: summary,
-            transcriptHistory: [],
-            draftText: "",
-            catalogRows: catalogRows,
-            selectedModelHandle: nil,
-            lockedModelHandle: nil,
-            lastExecutionFailure: nil
-        ))) { state in
-            state.sessionID = nil
-            state.sessionStatus = .idle
-            state.currentContext = summary
-            state.transcriptHistory = []
-            state.draftText = ""
-            state.catalogRows = catalogRows
-            state.modelListState = .loaded(makeProviderModels())
-            state.selectedModelHandle = nil
-            state.selectedThinking = nil
-            state.unavailableSelectedModelHandle = nil
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.executionPhase = .idle
-        }
-
-        await store.send(.onAppear)
-
-        XCTAssertEqual(store.state.currentContextSummaryDisplayModel.title, "Four files selected")
-        XCTAssertEqual(store.state.currentContextSummaryDisplayModel.detail, "1 reference · 1 item · 1 attachment")
-        XCTAssertEqual(store.state.connectionState, .unconnected(.init(
-            title: "Connect an AI provider",
-            detail: "Set up a provider in Settings to chat with this context.",
-            fixLabel: "Open Settings"
-        )))
-
-        if case let .unconnected(connection, summaryDisplay) = store.state.surfaceState {
-            XCTAssertEqual(connection.fixLabel, "Open Settings")
-            XCTAssertEqual(summaryDisplay.title, "Four files selected")
-        } else {
-            XCTFail("Expected unconnected surface state")
-        }
-
-        XCTAssertEqual(store.state.skeletonDisplayModel.headerTitle, "Chat")
-        XCTAssertEqual(store.state.chatInputDisplayModel.placeholder, "Ask anything…")
-        XCTAssertEqual(store.state.chatInputDisplayModel.modelLabel, "Select model")
-        XCTAssertEqual(store.state.chatInputDisplayModel.effortLabel, "Select model")
-        XCTAssertFalse(store.state.chatInputDisplayModel.canSubmit)
-        XCTAssertFalse(store.state.canSubmit)
-
-        XCTAssertEqual(store.state.modelFieldLabel, "Model")
-        XCTAssertEqual(store.state.modelCatalogState.rows.first?.label.title, "GPT-4.1 Mini")
-        XCTAssertNil(store.state.modelCatalogState.rows.first?.label.subtitle)
-        XCTAssertNil(store.state.modelCatalogState.rows.first?.providerBadge)
-        XCTAssertNil(store.state.selectedModelDisplayModel)
-        XCTAssertNil(store.state.selectedModelHandle)
-    }
-
-    func testChatInputThinkingLabelReflectsUnknownUnsupportedAndSupportedCapabilities() {
-        let selectedHandle = makeCatalogRows()[0].handle
-        let unknownState = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: makeCatalogRows(),
-            modelListState: .loaded(makeProviderModels()),
-            selectedModelHandle: selectedHandle
-        )
-        let unsupportedModel = AiProviderModel(
-            id: selectedHandle,
-            provider: .openai,
-            rawModelID: "gpt-4.1-mini",
-            displayName: "GPT-4.1 Mini",
-            providerDisplayName: ProviderDescriptor.descriptor(for: .openai)?.displayName ?? "OpenAI",
-            thinkingCapability: .unsupported(reason: .init(message: "Thinking is not supported for this model.")),
-            unavailableReason: nil
-        )
-        let unsupportedState = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: makeCatalogRows(),
-            modelListState: .loaded([unsupportedModel]),
-            selectedModelHandle: selectedHandle
-        )
-        let supportedState = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: makeCatalogRows(),
-            modelListState: .loaded(makeThinkingCapableProviderModels()),
-            selectedModelHandle: selectedHandle
-        )
-
-        XCTAssertEqual(unknownState.chatInputDisplayModel.effortLabel, "Thinking unavailable")
-        XCTAssertEqual(unsupportedState.chatInputDisplayModel.effortLabel, "Thinking unavailable")
-        XCTAssertEqual(supportedState.chatInputDisplayModel.effortLabel, "default")
-    }
-
-    func testModelSelectorContentStateProvidesExplicitNonLoadedStates() {
-        let loadingState = AiChatFeature.State(modelListState: .loading)
-        let emptyState = AiChatFeature.State(modelListState: .empty)
-        let failedState = AiChatFeature.State(modelListState: .failed(.init(
-            message: "Anthropic model list request failed (500)."
-        )))
-        let unsupportedState = AiChatFeature.State(modelListState: .failed(.init(
-            message: "ChatGPT Codex model listing is unavailable.",
-            reason: .unsupportedProvider
-        )))
-
-        XCTAssertTrue(loadingState.modelSelectorHasPresentableContent)
-        XCTAssertFalse(loadingState.modelSelectorIsDisabled)
-        XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: loadingState.modelSelectorContentState))
-        XCTAssertEqual(loadingState.modelSelectorContentState, .loading(.init(
-            title: "Loading models",
-            detail: "Fetching available models from connected providers."
-        )))
-
-        XCTAssertTrue(emptyState.modelSelectorHasPresentableContent)
-        XCTAssertTrue(emptyState.modelSelectorIsDisabled)
-        XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: emptyState.modelSelectorContentState))
-        XCTAssertEqual(emptyState.modelSelectorContentState, .empty(.init(
-            title: "No models available",
-            detail: "No selectable models are available for the current provider setup."
-        )))
-
-        XCTAssertTrue(failedState.modelSelectorHasPresentableContent)
-        XCTAssertFalse(failedState.modelSelectorIsDisabled)
-        XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: failedState.modelSelectorContentState))
-        XCTAssertEqual(failedState.modelSelectorContentState, .failed(.init(
-            title: "Models unavailable",
-            detail: "Anthropic model list request failed (500)."
-        )))
-
-        XCTAssertTrue(unsupportedState.modelSelectorHasPresentableContent)
-        XCTAssertFalse(unsupportedState.modelSelectorIsDisabled)
-        XCTAssertFalse(AiChatModelSelectorLayout.usesScrollableContent(for: unsupportedState.modelSelectorContentState))
-        XCTAssertEqual(unsupportedState.modelSelectorContentState, .unsupported(.init(
-            title: "Provider unsupported",
-            detail: "ChatGPT Codex model listing is unavailable."
-        )))
-    }
-
-    func testModelSelectorContentStateGroupsLoadedModelsByProviderWithoutConnectionSnapshot() {
-        let state = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: makeCatalogRows(),
-            modelListState: .loaded(makeProviderModels()),
-            providerConnectionSnapshot: .unknown,
-            availableModelsByProvider: [:]
-        )
-
-        guard case let .loaded(sections) = state.modelSelectorContentState else {
-            return XCTFail("Expected loaded model selector content")
-        }
-
-        XCTAssertEqual(sections.map(\.title), [
-            aiChatProviderSectionTitle(for: .openai),
-            aiChatProviderSectionTitle(for: .anthropic)
-        ])
-        XCTAssertEqual(sections.first?.rows.map(\.title), ["GPT-4.1 Mini"])
-        XCTAssertEqual(sections.last?.rows.map(\.title), ["Claude Sonnet 4"])
-        XCTAssertTrue(state.modelSelectorHasPresentableContent)
-        XCTAssertFalse(state.modelSelectorIsDisabled)
-        XCTAssertTrue(AiChatModelSelectorLayout.usesScrollableContent(for: state.modelSelectorContentState))
-        XCTAssertGreaterThan(AiChatModelSelectorLayout.contentMaxHeight, 0)
-    }
-
-    func testModelSelectorLabelUsesSelectedModelDisplayNameWhenLoaded() {
-        let catalogRows = makeCatalogRows()
-        let state = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: catalogRows,
-            modelListState: .loaded(makeProviderModels()),
-            selectedModelHandle: catalogRows[1].handle
-        )
-
-        XCTAssertEqual(AiChatSelectorLabels.modelSelectorLabel(for: state), "Claude Sonnet 4")
-    }
-
-    func testModelSelectorLabelFallsBackToGenericLoadedLabelWithoutSelection() {
-        let state = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            catalogRows: makeCatalogRows(),
-            modelListState: .loaded(makeProviderModels()),
-            selectedModelHandle: nil
-        )
-
-        XCTAssertEqual(AiChatSelectorLabels.modelSelectorLabel(for: state), "Model")
-    }
-
+    /// current context summary fixture가 inspector 표시 contract와 일치하는지 검증
     func testCurrentContextSummaryFixturesMatchInspectorContract() {
         let selectedHandle = makeCatalogRows()[0].handle
 
@@ -217,7 +21,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
                 summary: "Documents · 2 selected",
                 references: [],
                 items: [],
-                attachments: []
+                attachments: [],
             ),
             transcriptHistory: [],
             draftText: "",
@@ -225,7 +29,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
         XCTAssertEqual(selectedEntriesState.currentContextSummaryDisplayModel.title, "Documents · 2 selected")
         XCTAssertNil(selectedEntriesState.currentContextSummaryDisplayModel.detail)
@@ -240,7 +44,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
         XCTAssertEqual(locationOnlyState.currentContextSummaryDisplayModel.title, "Documents")
         XCTAssertNil(locationOnlyState.currentContextSummaryDisplayModel.detail)
@@ -255,12 +59,13 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
         XCTAssertEqual(emptyContextState.currentContextSummaryDisplayModel.title, "No current selection")
         XCTAssertNil(emptyContextState.currentContextSummaryDisplayModel.detail)
     }
 
+    /// provider unavailable 상태가 고정 banner와 빈 model label로 표시되는지 검증
     func testProviderUnavailableSurfaceUsesFixedBannerAndEmptyComposerModelLabel() {
         let state = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -272,7 +77,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: nil,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         XCTAssertEqual(state.connectionState, .connected)
@@ -288,6 +93,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         }
     }
 
+    /// failure surface가 남아 있을 때 submit 재시도가 차단되는지 검증
     func testCanSubmitDisallowsRetryWhileFailureSurfaceExists() {
         let catalogRows = makeCatalogRows()
         let state = AiChatFeature.State(
@@ -300,7 +106,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: catalogRows[0].handle,
             lockedModelHandle: nil,
             lastExecutionFailure: .transportError,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
         let store = TestStore(initialState: state) {
             AiChatFeature()
@@ -308,6 +114,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 
+    /// canSubmit이 false인 상태에서 submitTapped가 no-op인지 검증
     func testSubmitTappedIsNoOpWhenCanSubmitIsFalse() async {
         final class ExecutionRequestSpy: @unchecked Sendable {
             private(set) var requests: [AiChatRequest] = []
@@ -328,7 +135,7 @@ final class AiChatFeatureEntryStateTests: XCTestCase {
             selectedModelHandle: nil,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         } withDependencies: {

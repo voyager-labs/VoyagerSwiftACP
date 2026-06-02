@@ -4,9 +4,14 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW001/CBW003/CBW005 spec-owner suite로 이관하지 않은 execution continuation 회귀 테스트.
+// context freeze, history truncation, persistence failure, session switch cancellation, snapshot redaction contract를
+// 보존한다.
+
 // swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureExecutionContinuationTests: XCTestCase {
+    // 다른 session으로 전환할 때 현재 request를 cancel한 뒤 restore하는지 검증
     // swiftlint:disable:next function_body_length
     func testSwitchingToDifferentSessionCancelsCurrentRequestBeforeRestore() async {
         let activeSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111221"))
@@ -122,6 +127,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(store.state.transcriptHistory, targetSnapshot.transcriptHistory)
     }
 
+    // back-to-sessions가 진행 중 chat을 cancel하고 late final event를 무시하는지 검증
     // swiftlint:disable:next function_body_length
     func testBackToSessionsCancelsInFlightChatAndIgnoresLateFinalEvent() async {
         let stream = AiChatExecutionStreamDriver()
@@ -165,7 +171,8 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello while browsing history")]
             state.lockedModelHandle = selectedHandle
@@ -184,6 +191,11 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             assistantReplacementIndex: nil,
         )
         XCTAssertEqual(store.state.executionPhase, .processing(lock))
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, sessionID)
+        XCTAssertEqual(store.state.sessionList.unreadCompletedSessionIDs, [])
+        XCTAssertEqual(store.state.sessionList.allRows.first?.sessionID, sessionID)
+        XCTAssertEqual(store.state.sessionList.allRows.first?.title, "Hello while browsing history")
+        XCTAssertEqual(store.state.sessionList.allRows.first?.status, .active)
 
         let expectedStartSnapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
@@ -198,6 +210,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             updatedAtMs: fixedMs,
         )
         let expectedStartSummary = AiChatSessionSummary(snapshot: expectedStartSnapshot)
+        XCTAssertEqual(expectedStartSummary.title, "Hello while browsing history")
         await store.receive(.sessionSnapshotUpdated(
             expectedStartSummary,
             requestID: lock.requestID,
@@ -249,90 +262,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         )
     }
 
-    // swiftlint:disable:next function_body_length
-    func testRegenerateReplacesAssistantWithoutDuplicatingUserTurn() async {
-        let stream = AiChatExecutionStreamDriver()
-        let persistence = AiChatSessionPersistenceSpy()
-        let catalogRows = makeCatalogRows()
-        let selectedHandle = catalogRows[0].handle
-        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111113"))
-        let fixedMs: Int64 = 1_700_000_000_300
-
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: sessionID,
-            sessionStatus: .active,
-            currentContext: makeContextSnapshot(),
-            transcriptHistory: [
-                AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Old answer"),
-            ],
-            draftText: "",
-            catalogRows: catalogRows,
-            selectedModelHandle: selectedHandle,
-            lockedModelHandle: nil,
-            lastExecutionFailure: nil,
-            executionPhase: .idle,
-        )) {
-            AiChatFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
-            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
-                stream.stream(for: request)
-            })
-            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
-                loadSession: { _ in nil },
-                saveSession: { snapshot in
-                    await persistence.save(snapshot)
-                },
-                deleteSession: { _ in },
-            )
-        }
-        store.exhaustivity = .off(showSkippedAssertions: false)
-
-        await store.send(.regenerateTapped) { state in
-            state.lockedModelHandle = selectedHandle
-        }
-
-        guard let request = stream.requests.first else {
-            XCTFail("Expected execution request")
-            return
-        }
-        let lock = makeRequestLock(
-            kind: .regenerate,
-            request: request,
-            selectedHandle: selectedHandle,
-            selectedRow: catalogRows[0],
-            assistantReplacementIndex: 1,
-        )
-
-        XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello")])
-        XCTAssertEqual(store.state.executionPhase, .processing(lock))
-
-        let finalResponse = AiChatResponse(
-            context: request.context,
-            assistantMessage: AiChatMessage(role: .assistant, content: "New answer"),
-            completedAtMs: fixedMs,
-        )
-        stream.yield(.final(response: finalResponse))
-        stream.finish()
-
-        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
-            state.transcriptHistory = [
-                AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "New answer"),
-            ]
-            state.lockedModelHandle = nil
-            state.executionPhase = .completed(lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false))
-        }
-
-        await store.finish()
-        XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, [
-            AiChatMessage(role: .user, content: "Hello"),
-            AiChatMessage(role: .assistant, content: "New answer"),
-        ])
-    }
-
+    // session 저장 실패가 recovery state로 전환되는지 검증
     // swiftlint:disable:next function_body_length
     func testPersistenceFailureCreatesRecoveryState() async {
         let stream = AiChatExecutionStreamDriver()
@@ -371,9 +301,12 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
+            state.lockedModelHandle = selectedHandle
+            state.transcriptAutoScrollVersion = 1
         }
 
         guard let request = stream.requests.first else {
@@ -422,6 +355,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         await store.finish()
     }
 
+    /// 현재 loaded model 목록에 없는 선택 모델로 regenerate가 차단되는지 검증
     func testRegenerateIsBlockedWhenSelectedModelIsNotInCurrentLoadedList() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -462,16 +396,12 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertNil(store.state.lockedModelHandle)
     }
 
+    /// session snapshot이 다음 요청 선택값 대신 locked model/thinking을 사용하는지 검증
     func testMakeSessionSnapshotUsesLockedModelAndThinkingInsteadOfNextRequestSelection() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111116"))
         let catalogRows = makeCatalogRows()
         let models = makeThinkingCapableProviderModels()
-        let feature = withDependencies {
-            $0.uuid = .incrementing
-            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_500))
-        } operation: {
-            AiChatFeature()
-        }
+        let feature = makeFeatureWithFrozenRequestDependencies()
         var state = AiChatFeature.State(
             sessionID: sessionID,
             sessionStatus: .active,
@@ -494,6 +424,17 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             feature.startRequest(kind: .submit, state: &state)
         }
 
+        guard let pendingRequest = state.pendingRequestStart else {
+            return XCTFail("Expected pending request context resolution")
+        }
+        let resolverInput = feature.makeRequestContextResolverInput(for: pendingRequest, state: state)
+        let resolvedContext = await AiChatContextPartResolverClient.live().resolve(resolverInput)
+        _ = feature.completeRequestContextResolution(
+            resolutionID: pendingRequest.resolutionID,
+            resolvedContext: resolvedContext,
+            state: &state,
+        )
+
         guard case let .processing(lock) = state.executionPhase else {
             return XCTFail("Expected processing lock")
         }
@@ -513,9 +454,10 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
     }
 
+    // session snapshot 저장 시 provider-native binary payload metadata가 제거되는지 검증
     // swiftlint:disable:next function_body_length
     func testMakeSessionSnapshotDropsProviderNativeBinaryPayloadMetadata() throws {
-        let feature = AiChatFeature()
+        let feature = makeFeatureWithFrozenRequestDependencies()
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let requestContext = AiChatLockedRequestContextSnapshot(
@@ -635,6 +577,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(lock.context.requestContext.parts[0].resolution, requestContext.parts[0].resolution)
     }
 
+    // submit 시 context timing과 deterministic history truncation이 고정되는지 검증
     // swiftlint:disable:next function_body_length
     func testSubmitFreezesContextTimingAndDeterministicHistoryTruncation() async {
         let stream = AiChatExecutionStreamDriver()
@@ -677,9 +620,18 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: largeUser1),
+                AiChatMessage(role: .assistant, content: largeAssistant1),
+                AiChatMessage(role: .user, content: largeUser2),
+                AiChatMessage(role: .assistant, content: largeAssistant2),
+                AiChatMessage(role: .user, content: draft),
+            ]
             state.lockedModelHandle = catalogRows[0].handle
+            state.transcriptAutoScrollVersion = 1
         }
 
         guard let request = stream.requests.first,
@@ -709,6 +661,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(request.context.selectedThinking, .effort(.medium))
     }
 
+    /// 빈 context 요청도 deterministic submitted timestamp로 준비되는지 검증
     func testEmptyContextStillPreparesRequestWithDeterministicSubmittedTimestamp() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -735,10 +688,12 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
 
-        await store.send(.submitTapped) { state in
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
             state.draftText = ""
             state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello empty context")]
             state.lockedModelHandle = catalogRows[0].handle
+            state.transcriptAutoScrollVersion = 1
         }
 
         guard let request = stream.requests.first else {
@@ -766,5 +721,14 @@ private func waitUntil(
     }
     if !condition() {
         XCTFail("Timed out waiting for condition", file: file, line: line)
+    }
+}
+
+private func makeFeatureWithFrozenRequestDependencies() -> AiChatFeature {
+    withDependencies {
+        $0.uuid = .incrementing
+        $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_500))
+    } operation: {
+        AiChatFeature()
     }
 }

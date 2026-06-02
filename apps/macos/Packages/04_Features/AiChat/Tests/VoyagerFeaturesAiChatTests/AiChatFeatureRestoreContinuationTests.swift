@@ -4,124 +4,12 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW004/CBW005 spec-owner suite 밖에 남긴 restore continuation 회귀 테스트.
+// restored model handle resolution과 incompatible thinking cleanup contract를 보존한다.
+
 @MainActor
 final class AiChatFeatureRestoreContinuationTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
-    func testRestoreValidSessionRestoresTranscriptAndNormalizesLockedState() async {
-        let catalogRows = makeCatalogRows()
-        let summary = makeContextSnapshot()
-        let targetSessionID = AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555"))
-        let restoredSnapshot = AiChatSessionSnapshot(
-            sessionID: targetSessionID,
-            status: .active,
-            provider: .anthropic,
-            model: catalogRows[1].handle,
-            selectedModelRow: catalogRows[1],
-            selectedThinking: .effort(.minimal),
-            transcriptHistory: [
-                AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Restored answer"),
-            ],
-            lastRequestID: AiChatRequestID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666")),
-            lastRunID: AiChatRunID(rawValue: makeUUID("77777777-7777-7777-7777-777777777777")),
-            updatedAtMs: 0,
-        )
-        let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
-        let staleLock = makeRequestLock(
-            kind: .submit,
-            request: AiChatRequest(
-                context: makeRequestContext(
-                    sessionID: targetSessionID,
-                    requestID: AiChatRequestID(rawValue: UUID()),
-                    runID: AiChatRunID(rawValue: UUID()),
-                    model: catalogRows[1].handle,
-                    selectedRow: catalogRows[1],
-                ),
-                messages: [],
-            ),
-            selectedHandle: catalogRows[1].handle,
-            selectedRow: catalogRows[1],
-            assistantReplacementIndex: nil,
-        )
-        let store = TestStore(initialState: AiChatFeature.State(
-            restoreSessionID: targetSessionID,
-            sessionID: nil,
-            sessionStatus: .restoring,
-            currentContext: summary,
-            transcriptHistory: [AiChatMessage(role: .assistant, content: "stale")],
-            draftText: "Draft",
-            catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[0].handle,
-            selectedThinking: .effort(.minimal),
-            lockedModelHandle: catalogRows[1].handle,
-            lastExecutionFailure: .transportError,
-            executionPhase: .processing(staleLock),
-        )) {
-            AiChatFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
-                loadSession: { id in try await persistence.loadSession(id) },
-                saveSession: { _ in },
-                deleteSession: { _ in },
-            )
-        }
-
-        await store.send(.setup(AiChatSetupState(
-            restoreSessionID: targetSessionID,
-            sessionID: nil,
-            sessionStatus: .idle,
-            currentContext: summary,
-            transcriptHistory: [AiChatMessage(role: .assistant, content: "stale")],
-            draftText: "Draft",
-            catalogRows: catalogRows,
-            selectedModelHandle: catalogRows[0].handle,
-            selectedThinking: .effort(.minimal),
-            lockedModelHandle: catalogRows[1].handle,
-            lastExecutionFailure: .transportError,
-        ))) { state in
-            state.restoreSessionID = targetSessionID
-            state.restoreOutcome = nil
-            state.restoreFailure = nil
-            state.sessionID = nil
-            state.sessionStatus = .restoring
-            state.currentContext = summary
-            state.transcriptHistory = [AiChatMessage(role: .assistant, content: "stale")]
-            state.draftText = "Draft"
-            state.catalogRows = catalogRows
-            state.modelListState = .loaded(makeProviderModels())
-            state.selectedModelHandle = catalogRows[0].handle
-            state.selectedThinking = .effort(.minimal)
-            state.unavailableSelectedModelHandle = nil
-            state.lockedModelHandle = catalogRows[1].handle
-            state.lastExecutionFailure = .transportError
-            state.executionPhase = .idle
-        }
-
-        await store.receive(AiChatAction.restoreOutcome(
-            requestedSessionID: targetSessionID,
-            AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
-            restoreFailure: nil,
-        )) { state in
-            state.sessionID = targetSessionID
-            state.sessionStatus = AiChatSessionStatus.active
-            state.transcriptHistory = restoredSnapshot.transcriptHistory
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.executionPhase = .idle
-            state.selectedModelHandle = restoredSnapshot.model
-            state.selectedThinking = restoredSnapshot.selectedThinking
-            state.restoreOutcome = AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot)
-            state.restoreFailure = nil
-        }
-
-        XCTAssertEqual(store.state.transcriptHistory, restoredSnapshot.transcriptHistory)
-        XCTAssertEqual(store.state.selectedThinking, restoredSnapshot.selectedThinking)
-        XCTAssertNil(store.state.lockedModelHandle)
-        XCTAssertEqual(store.state.executionPhase, .idle)
-        XCTAssertEqual(store.state.sessionStatusText, "Restored session")
-    }
-
+    // restore된 model handle이 현재 catalog에서 해석되면 최신 row metadata를 사용하는지 검증
     // swiftlint:disable:next function_body_length
     func testRestoreUsesCurrentCatalogRowMetadataWhenRestoredHandleStillResolves() async {
         let catalogRows = makeCatalogRows()
@@ -222,6 +110,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[1])
     }
 
+    // restore된 model이 현재 catalog에 없으면 선택이 정리되는지 검증
     // swiftlint:disable:next function_body_length
     func testRestoreClearsSelectionWhenRestoredModelIsMissing() async {
         let catalogRows = makeCatalogRows()
@@ -300,6 +189,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 
+    // restore 후 concrete model capability가 로드되면 incompatible thinking이 정리되는지 검증
     // swiftlint:disable:next function_body_length
     func testRestoreClearsIncompatibleThinkingWhenConcreteModelCapabilitiesLoad() async {
         let catalogRows = makeCatalogRows()
@@ -308,8 +198,8 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         let requestID = makeUUID("00000000-0000-0000-0000-000000000000")
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
         let connectionsFile = makeConnectionsFile(
-            lastUsedProviderId: .anthropic,
             providers: [makeProviderRecord(provider: .anthropic, credential: anthropicCredential)],
+            lastUsedProviderId: .anthropic,
         )
         let restoredSnapshot = AiChatSessionSnapshot(
             sessionID: targetSessionID,
@@ -424,121 +314,5 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[1].handle)
         XCTAssertNil(store.state.selectedThinking)
         XCTAssertNil(store.state.unavailableSelectedModelHandle)
-    }
-
-    // swiftlint:disable:next function_body_length
-    func testSessionRowRestoreKeepsLiveCurrentContextWhileHydratingPersistedRequestContext() async {
-        let catalogRows = makeCatalogRows()
-        let targetSessionID = AiChatSessionID(rawValue: makeUUID("34343434-3434-3434-3434-343434343434"))
-        let liveCurrentContext = makeContextSnapshot(summary: "Live FileManager selection")
-        let staleAttachment = AiChatAttachmentDraft(
-            id: AiChatAttachmentID(rawValue: "/tmp/StaleLiveAttachment.txt"),
-            source: .file,
-            displayTitle: "StaleLiveAttachment.txt",
-            sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/StaleLiveAttachment.txt"),
-        )
-        let restoredLockedContext = AiChatLockedRequestContextSnapshot(
-            currentContext: makeContextSnapshot(summary: "Restored request context"),
-            addedAttachments: [
-                AiChatAttachmentSnapshot(
-                    id: AiChatAttachmentID(rawValue: "restored-attachment"),
-                    source: .file,
-                    displayTitle: "Restored.txt",
-                    sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Restored.txt"),
-                    resolutionResult: .resolvedText(text: "Restored content", metadata: [:]),
-                ),
-            ],
-        )
-        let restoredSnapshot = AiChatSessionSnapshot(
-            sessionID: targetSessionID,
-            status: .active,
-            provider: catalogRows[1].handle.provider,
-            model: catalogRows[1].handle,
-            selectedModelRow: catalogRows[1],
-            transcriptHistory: [
-                AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Restored answer"),
-            ],
-            lastRequestContext: restoredLockedContext,
-            updatedAtMs: 0,
-        )
-        let persistence = AiChatSessionPersistenceSpy(loadHandler: { _ in restoredSnapshot })
-        let store = TestStore(initialState: AiChatFeature.State(
-            mode: .sessions,
-            sessionList: .init(rows: [
-                AiChatSessionSummary(
-                    sessionID: targetSessionID,
-                    title: "Restored session",
-                    preview: "Restored answer",
-                    messageCount: restoredSnapshot.transcriptHistory.count,
-                    contextTitle: restoredLockedContext.currentContext.summary,
-                    provider: restoredSnapshot.provider,
-                    model: restoredSnapshot.model,
-                    createdAtMs: 0,
-                    updatedAtMs: restoredSnapshot.updatedAtMs,
-                    status: restoredSnapshot.status,
-                ),
-            ]),
-            currentContext: liveCurrentContext,
-            currentContextFolderStructureModes: [
-                AiChatCurrentContextFolderStructureKey(
-                    source: .reference,
-                    canonicalPath: "/tmp/StaleFolder",
-                ): .includeSubfolders,
-            ],
-            addedAttachments: [staleAttachment],
-            catalogRows: catalogRows,
-            modelListState: .loaded(makeProviderModels()),
-            selectedModelHandle: catalogRows[0].handle,
-        )) {
-            AiChatFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
-                listSessions: { _, _ in [] },
-                loadSession: { id in try await persistence.loadSession(id) },
-                saveSession: { _ in },
-                deleteSession: { _ in },
-            )
-        }
-
-        await store.send(AiChatAction.sessionRowTapped(targetSessionID)) { state in
-            state.mode = AiChatMode.sessions
-            state.sessionList.selectedSessionID = targetSessionID
-            state.sessionList.errorMessage = nil
-            state.currentContextFolderStructureModes = [:]
-            state.restoreSessionID = targetSessionID
-        }
-
-        await store.receive(AiChatAction.restoreOutcome(
-            requestedSessionID: targetSessionID,
-            AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot),
-            restoreFailure: nil,
-        )) { state in
-            state.sessionID = targetSessionID
-            state.sessionStatus = .active
-            state.transcriptHistory = restoredSnapshot.transcriptHistory
-            state.streamingAssistantDraft = nil
-            state.lockedModelHandle = nil
-            state.lastExecutionFailure = nil
-            state.lastRequestContext = restoredLockedContext
-            state.lastRequestContextModelHandle = restoredSnapshot.model
-            state.addedAttachments = []
-            state.currentContextFolderStructureModes = [:]
-            state.executionPhase = .idle
-            state.selectedModelHandle = restoredSnapshot.model
-            state.selectedThinking = restoredSnapshot.selectedThinking
-            state.restoreOutcome = AiChatSessionRestoreResult.restored(snapshot: restoredSnapshot)
-            state.restoreFailure = nil
-            state.mode = AiChatMode.chat
-            state.sessionList.errorMessage = nil
-        }
-
-        XCTAssertEqual(store.state.currentContext, liveCurrentContext)
-        XCTAssertEqual(store.state.lastRequestContext, restoredLockedContext)
-        XCTAssertTrue(store.state.addedAttachments.isEmpty)
-        XCTAssertTrue(store.state.currentContextFolderStructureModes.isEmpty)
-        XCTAssertEqual(store.state.currentContext.summary, "Live FileManager selection")
-        XCTAssertEqual(store.state.lastRequestContext?.currentContext.summary, "Restored request context")
     }
 }
