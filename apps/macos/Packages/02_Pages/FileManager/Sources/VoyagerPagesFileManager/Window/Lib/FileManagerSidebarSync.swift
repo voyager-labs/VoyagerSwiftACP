@@ -23,6 +23,7 @@ struct FileManagerSidebarSync {
     enum ResizeDecision: Equatable {
         case none
         case hideSidebar
+        case showSidebar(CGFloat)
         case restoreSidebar
     }
 
@@ -53,6 +54,11 @@ struct FileManagerSidebarSync {
 
         return !splitView.isSubviewCollapsed(sidebarView)
             && sidebarView.frame.width >= Constants.sidebarMinWidth
+    }
+
+    static func constrainedSidebarDividerPosition(proposedPosition: CGFloat) -> CGFloat {
+        if proposedPosition < Constants.sidebarMinWidth { return 0 }
+        return min(proposedPosition, Constants.sidebarMaxWidth)
     }
 
     init(storeSidebarWidth: CGFloat) {
@@ -152,13 +158,21 @@ struct FileManagerSidebarSync {
         guard hasSetInitialLayout else { return .none }
 
         let sidebarWidth = sidebarView.frame.width
+        let isEffectivelyVisible = Self.isSidebarEffectivelyVisible(
+            splitView: splitView,
+            sidebarView: sidebarView,
+        )
 
-        if Self.isSidebarEffectivelyVisible(splitView: splitView, sidebarView: sidebarView) {
+        guard storeSidebarVisible else {
+            guard isUserInitiatedCollapse, isEffectivelyVisible else { return .none }
+            return .showSidebar(Self.clampedWidth(sidebarWidth))
+        }
+
+        if isEffectivelyVisible {
             syncWidthToStore(sidebarWidth)
             return .none
         }
 
-        guard storeSidebarVisible else { return .none }
         return isUserInitiatedCollapse ? .hideSidebar : .restoreSidebar
     }
 
@@ -171,7 +185,6 @@ struct FileManagerSidebarSync {
         callbacks: Callbacks,
     ) {
         guard let splitView = layout.splitView,
-              let sidebarView = layout.sidebarView,
               splitView.bounds.width > 0
         else { return }
 
@@ -183,10 +196,6 @@ struct FileManagerSidebarSync {
                 contentVerticalMargin: layout.contentVerticalMargin,
             )
         } else {
-            let currentWidth = sidebarView.frame.width
-            if currentWidth >= Constants.sidebarMinWidth {
-                callbacks.onSidebarVisibilityChanged(false, currentWidth)
-            }
             splitView.setPosition(0, ofDividerAt: 0)
             FileManagerWindowSplitLayout.updateMainContainerLeading(
                 layout.mainContainerLeading,
@@ -195,7 +204,12 @@ struct FileManagerSidebarSync {
             )
         }
 
-        callbacks.onTrafficLightUpdate(isVisible)
+        splitView.adjustSubviews()
+        let isActuallyVisible = Self.isSidebarEffectivelyVisible(
+            splitView: splitView,
+            sidebarView: layout.sidebarView,
+        )
+        callbacks.onTrafficLightUpdate(isActuallyVisible)
     }
 
     private static func clampedWidth(_ width: CGFloat) -> CGFloat {
