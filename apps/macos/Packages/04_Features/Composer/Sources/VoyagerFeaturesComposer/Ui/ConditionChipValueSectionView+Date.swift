@@ -52,10 +52,12 @@ private struct ConditionChipDateButtonLabelView: View {
         Text(labelText)
             .font(.system(size: 11, weight: .medium))
             .foregroundColor(config.currentText.isEmpty ? .secondary : .primary)
+            .lineLimit(1)
+            .truncationMode(.tail)
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .frame(minWidth: 50, maxWidth: 80, alignment: .center)
-            .fixedSize(horizontal: true, vertical: true)
+            .frame(minWidth: 50, alignment: .center)
+            .fixedSize(horizontal: true, vertical: false)
             .background(
                 RoundedRectangle(cornerRadius: 4)
                     .fill(
