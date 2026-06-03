@@ -236,7 +236,7 @@ which cupertino
 ## Documentation for Agents
 
 - 진입점: `docs/index.md`
-- Active engineering 문서: `docs/engineering/index.md`
+- Active engineering 문서: `docs/canonical/ENGINEERING/index.md`
 - Canonical product/docs SSOT: `docs/canonical/README.md`
 - Legacy app 문서: `docs/legacy/index.md`
 - Legacy architecture quick refs (이관 대기):
