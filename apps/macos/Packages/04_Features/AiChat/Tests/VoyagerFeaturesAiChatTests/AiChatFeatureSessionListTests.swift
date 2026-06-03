@@ -56,16 +56,15 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         XCTAssertEqual(store.state.catalogRows, catalogRows)
     }
 
-    // new chat 시작 전에 진행 중 request를 cancel하는지 검증
+    // new chat을 열어도 기존 in-flight request completion을 보존하는지 검증
     // swiftlint:disable:next function_body_length
-    func testNewChatTappedCancelsInFlightRequestBeforeStartingDraft() async {
+    func testNewChatTappedPreservesInFlightRequestAndSavesOriginalCompletion() async {
         let oldSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111331"))
         let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000002"))
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let fixedMs: Int64 = 1_700_000_001_331
-        let requestStarted = LockIsolated(false)
-        let requestCancelled = LockIsolated(false)
+        let stream = AiChatExecutionStreamDriver()
         let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
 
         let store = TestStore(initialState: AiChatFeature.State(
@@ -83,15 +82,8 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
-            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { _ in
-                requestStarted.setValue(true)
-                return AsyncStream { continuation in
-                    continuation.onTermination = { termination in
-                        if case .cancelled = termination {
-                            requestCancelled.setValue(true)
-                        }
-                    }
-                }
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
             })
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 listSessions: { _, _ in [] },
@@ -108,31 +100,86 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.submitTapped)
-        await waitUntil { requestStarted.value }
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Question before new chat")]
+            state.lockedModelHandle = selectedHandle
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.transcriptAutoScrollVersion = 1
+        }
 
-        await store.send(.newChatTapped)
+        guard let request = stream.requests.first else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
 
-        let expectedSnapshot = AiChatSessionSnapshot(
+        await store.send(.newChatTapped) { state in
+            applySessionListNewChatStarted(&state, sessionID: newSessionID)
+            state.executionPhase = .processing(lock)
+        }
+
+        let newChatSnapshot = makeSessionListEmptySnapshot(
             sessionID: newSessionID,
-            status: .idle,
-            customTitle: nil,
-            provider: nil,
-            model: nil,
-            selectedModelRow: nil,
-            selectedThinking: nil,
-            transcriptHistory: [],
-            lastRequestID: nil,
-            lastRunID: nil,
-            lastRequestContext: nil,
             updatedAtMs: fixedMs,
         )
-        await store.receive(.newChatCreated(expectedSnapshot))
-        await store.finish()
+        await store.receive(.newChatCreated(newChatSnapshot)) { state in
+            applySessionListNewChatCreated(&state, snapshot: newChatSnapshot)
+            state.executionPhase = .processing(lock)
+        }
 
-        XCTAssertTrue(requestCancelled.value)
-        XCTAssertEqual(savedSnapshots.value.last, expectedSnapshot)
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Original request completed")
+        let finalResponse = AiChatResponse(
+            context: request.context,
+            assistantMessage: assistantMessage,
+            completedAtMs: fixedMs,
+        )
+        stream.yield(.final(response: finalResponse))
+        stream.finish()
+
+        let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.executionPhase = .completed(finalizedLock)
+        }
+
+        let expectedOriginalSnapshot = AiChatSessionSnapshot(
+            sessionID: oldSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Question before new chat"),
+                assistantMessage,
+            ],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        await store.receive(.sessionSnapshotSaved(AiChatSessionSummary(snapshot: expectedOriginalSnapshot))) { state in
+            state.sessionList.replaceRow(AiChatSessionSummary(snapshot: expectedOriginalSnapshot))
+            state.sessionList.unreadCompletedSessionIDs = [oldSessionID]
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.finish()
         XCTAssertEqual(store.state.sessionID, newSessionID)
-        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertEqual(store.state.transcriptHistory, [])
+        if case .processing = store.state.surfaceState {
+            XCTFail("The new chat draft must not show the original request as processing")
+        }
+        XCTAssertFalse(store.state.isProcessing)
+        XCTAssertTrue(savedSnapshots.value.contains(newChatSnapshot))
+        XCTAssertTrue(savedSnapshots.value.contains(expectedOriginalSnapshot))
     }
 
     // teardown 요청이 session list delete/rename effect를 취소하는지 검증
