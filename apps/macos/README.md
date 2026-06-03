@@ -45,6 +45,7 @@ open apps/macos/Voyager/Voyager.xcworkspace
     - Host schemes (별도 프로젝트):
         - OnboardingHost-Dev (온보딩 호스트 개발)
         - SettingsHost-Dev (설정 호스트 개발)
+        - FileManagerHost-Dev (File Manager mock-only fixture/smoke 개발)
     - Test schemes: VoyagerTests, VoyagerUITests
 
 ## 빌드 및 실행
@@ -72,6 +73,9 @@ xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -sc
 
 # 설정 호스트 빌드 (개발)
 xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug build
+
+# File Manager mock-only fixture 호스트 빌드 (개발)
+xcodebuild -project apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj -scheme FileManagerHost-Dev -configuration Debug build
 ```
 
 > 참고: Host 앱들은 독립적인 Xcode 프로젝트입니다. CLI에서는 `-project` 경로를 명시적으로 지정하는 것을 권장합니다.
@@ -114,6 +118,13 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 - **OnboardingHost**: 온보딩 전용 호스트 앱 (`apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj`)
     - 독립적인 Xcode 프로젝트로, Voyager.xcworkspace에 통합되어 있습니다
     - 배포용 타겟이 아닌 개발/테스트용 호스트입니다
+
+**FileManagerHost.xcodeproj** (별도 프로젝트)
+
+- **FileManagerHost**: File Manager Window mock-only fixture/smoke 호스트 앱 (`apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj`)
+    - 전체 Voyager 앱 bootstrap 없이 실제 File Manager UI 조합을 deterministic mock state로 확인합니다
+    - Host 앱은 별도 catalog 없이 기본 mock state를 사용해 실제 File Manager window view controller를 띄웁니다
+    - smoke 검증은 `FILE_MANAGER_HOST_SMOKE=1`로 view controller mount 가능 여부를 빠르게 확인합니다
 
 ## 의존성 관리
 
