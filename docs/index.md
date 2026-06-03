@@ -1,49 +1,14 @@
-# Voyager 문서
+# Voyager Docs
 
-이 문서는 AI 에이전트용(PRD/아키텍처/스펙) 문서 인덱스입니다. 사람도 읽기 좋게 유지합니다.
+이 앱 레포는 active engineering 문서, legacy reference 문서, canonical product 문서를 분리한다.
 
-## 문서 원칙
+## Active documentation
 
-- `docs/`는 설계/아키텍처/기능 설명(why/how, 다이어그램 포함)을 위한 문서 공간입니다.
-- 강제 규칙(Do/Don't, 컨벤션, globs 기반 적용)은 `.agents/rules/`를 SSOT로 유지합니다.
-- 절차/워크플로우(스크립트 포함)는 `.agents/skills/`를 사용합니다.
+- [Engineering docs](engineering/index.md) — 이 레포의 active 기술 결정, 구현 흐름, 코드/테스트 topology.
+- [Canonical docs](canonical/README.md) — 문서 submodule이 관리하는 제품, 비즈니스, 웹사이트, 그로스, feature-spec SSOT.
 
-## 아키텍처
+## Legacy reference
 
-- [시스템 개요](architecture/overview.md)
-- [macOS 앱 구조](architecture/macos-app.md)
-- [환경 설정 (ENV)](architecture/environment.md)
-- [Registry JSON (스펙/운영)](architecture/registries.md)
-- [기술 스택](architecture/tech-stack.md)
-- [소스 트리](architecture/source-tree.md)
-- [코딩/작업 규칙 요약](architecture/coding-standards.md)
+- [Legacy docs](legacy/index.md) — 이전 architecture, macOS, integration, development, testing, deployment, troubleshooting 문서.
 
-## 주요 기능
-
-- [검색 (LLM → 조건 변환)](features/search.md)
-- [인덱싱 (초기/증분)](features/indexing.md)
-- [조건 컴포저](features/composer.md)
-- [엔트리/컬렉션](features/entries-collections.md)
-- [설정](features/settings.md)
-- [업데이트](features/update.md)
-- [온보딩](features/onboarding.md)
-
-## 통합/연동
-
-- [Helper ↔ Backend 부트스트랩](integration/backend-bootstrap.md)
-
-## macOS
-
-- [macOS 빌드/실행](macos/build-and-run.md)
-- [VoyagerHelper 상세 문서](macos/voyager-helper.md)
-
-## 개발/테스트/배포
-
-- [개발 환경](development.md)
-- [테스트](testing.md)
-- [배포/번들링](deployment.md)
-- [트러블슈팅](troubleshooting.md)
-
-## Product (Drive)
-
-- [Google Drive PRD 연동](product/google-drive.md)
+Legacy 문서는 stale일 수 있다. 새 기술 문서는 `engineering/`에 작성하고, legacy의 유효한 내용은 필요할 때 active engineering 문서로 이관한다.

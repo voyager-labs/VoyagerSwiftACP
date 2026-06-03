@@ -235,11 +235,14 @@ which cupertino
 
 ## Documentation for Agents
 
-- Entry point: `docs/index.md` (PRD / Architecture / Frontend Spec 샤드 인덱스)
-- Architecture quick refs loaded by tools:
-    - `docs/architecture/coding-standards.md`
-    - `docs/architecture/tech-stack.md`
-    - `docs/architecture/source-tree.md`
+- 진입점: `docs/index.md`
+- Active engineering 문서: `docs/engineering/index.md`
+- Canonical product/docs SSOT: `docs/canonical/README.md`
+- Legacy app 문서: `docs/legacy/index.md`
+- Legacy architecture quick refs (이관 대기):
+    - `docs/legacy/architecture/coding-standards.md`
+    - `docs/legacy/architecture/tech-stack.md`
+    - `docs/legacy/architecture/source-tree.md`
 
 ## Back to Docs
 
