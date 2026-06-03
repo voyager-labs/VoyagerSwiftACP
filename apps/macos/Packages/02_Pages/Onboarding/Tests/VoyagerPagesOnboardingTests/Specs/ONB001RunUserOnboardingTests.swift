@@ -1329,4 +1329,150 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         await store.finish()
     }
+
+    // MARK: - ONB-001-credential_persistence
+
+    // BetaAccess 이메일/토큰의 스냅샷 저장 및 복원을 검증합니다.
+    // 검증 완료 후 자격 증명이 스냅샷에 포함되어 저장되고,
+    // 복원 시 이전에 입력한 이메일/토큰이 복구되는지 확인합니다.
+
+    /// ONB-001:credential_persistence — betaAccess가 완료된 상태에서 snapshot을 생성하면 email/token이 snapshot에 포함된다.
+    func testProgressSnapshotIncludesCredentialsWhenBetaAccessComplete() {
+        var state = OnboardingFeature.State()
+        state.betaAccess.email = "user@test.com"
+        state.betaAccess.token = "valid-token"
+        state.betaAccess.isComplete = true
+        state.betaAccess.status = .active
+
+        let snapshot = state.progressSnapshot
+
+        XCTAssertEqual(snapshot.stepState.betaAccessEmail, "user@test.com")
+        XCTAssertEqual(snapshot.stepState.betaAccessToken, "valid-token")
+    }
+
+    /// ONB-001:credential_persistence — betaAccess가 미완료 상태에서 snapshot을 생성하면 email/token이 nil이다.
+    func testProgressSnapshotExcludesCredentialsWhenBetaAccessIncomplete() {
+        var state = OnboardingFeature.State()
+        state.betaAccess.email = "user@test.com"
+        state.betaAccess.token = "valid-token"
+
+        let snapshot = state.progressSnapshot
+
+        XCTAssertNil(snapshot.stepState.betaAccessEmail)
+        XCTAssertNil(snapshot.stepState.betaAccessToken)
+    }
+
+    /// ONB-001:credential_persistence — 자격 증명이 포함된 snapshot에서 복원하면 email/token이 복구된다.
+    func testResumeFromSnapshotWithCredentialsRestoresEmailAndToken() async {
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .permissions,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                betaAccessComplete: true,
+                permissionsComplete: false,
+                completeComplete: false,
+                betaAccessEmail: "user@test.com",
+                betaAccessToken: "valid-token",
+            ),
+        )
+
+        let store = TestStore(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
+        }
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .permissions
+            StateMutation.applyActiveBetaAccess(
+                state: &state,
+                email: "user@test.com",
+                token: "valid-token",
+            )
+        }
+
+        XCTAssertEqual(store.state.betaAccess.email, "user@test.com")
+        XCTAssertEqual(store.state.betaAccess.token, "valid-token")
+        XCTAssertFalse(store.state.betaAccess.isRestoredVerifiedAccess)
+
+        await store.finish()
+    }
+
+    /// ONB-001:credential_persistence — 자격 증명이 없는 이전 snapshot에서 복원하면 email/token이 비어 있고 isRestoredVerifiedAccess가
+    /// true이다.
+    func testResumeFromLegacySnapshotWithoutCredentialsShowsRestoredVerified() async {
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .permissions,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                betaAccessComplete: true,
+                permissionsComplete: false,
+                completeComplete: false,
+            ),
+        )
+
+        let store = TestStore(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
+        }
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .permissions
+            StateMutation.applyActiveBetaAccess(state: &state)
+        }
+
+        XCTAssertTrue(store.state.betaAccess.isRestoredVerifiedAccess)
+        XCTAssertEqual(store.state.betaAccess.email, "")
+        XCTAssertEqual(store.state.betaAccess.token, "")
+
+        await store.finish()
+    }
+
+    /// ONB-001:credential_persistence — 검증 완료 후 진행 상태를 저장하면 snapshot에 email/token이 포함된다.
+    func testStepStateUpdateSavesCredentialsInSnapshot() async {
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+
+        var initialState = OnboardingFeature.State()
+        initialState.betaAccess.email = "user@test.com"
+        initialState.betaAccess.token = "valid-token"
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+        }
+
+        await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
+            state.betaAccess.status = .active
+            state.betaAccess.reason = .none
+            state.betaAccess.isComplete = true
+        }
+
+        let saved = saveRecorder.value
+        XCTAssertNotNil(saved)
+        XCTAssertEqual(saved?.stepState.betaAccessEmail, "user@test.com")
+        XCTAssertEqual(saved?.stepState.betaAccessToken, "valid-token")
+
+        await store.finish()
+    }
+
+    /// ONB-001:credential_persistence — credential 필드가 nil인 이전 JSON도 안전하게 디코딩된다.
+    func testOldSnapshotWithoutCredentialFieldsDecodesSafely() throws {
+        let json = """
+        {
+            "welcomeComplete": true,
+            "betaAccessComplete": true,
+            "permissionsComplete": false,
+            "completeComplete": false
+        }
+        """
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let stepState = try JSONDecoder().decode(OnboardingStepState.self, from: data)
+
+        XCTAssertTrue(stepState.welcomeComplete)
+        XCTAssertTrue(stepState.betaAccessComplete)
+        XCTAssertNil(stepState.betaAccessEmail)
+        XCTAssertNil(stepState.betaAccessToken)
+    }
 }

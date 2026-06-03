@@ -30,6 +30,12 @@ public struct BetaAccessState: Equatable, Sendable {
         !email.isEmpty && !token.isEmpty && !isVerifying
     }
 
+    /// `true` when beta access was restored from a legacy snapshot that lacked credential fields.
+    /// The UI shows a restored-verified message instead of blank input fields.
+    public var isRestoredVerifiedAccess: Bool {
+        isComplete && status == .active && email.isEmpty && token.isEmpty
+    }
+
     public var showsRetry: Bool {
         status == .checkFailed
     }

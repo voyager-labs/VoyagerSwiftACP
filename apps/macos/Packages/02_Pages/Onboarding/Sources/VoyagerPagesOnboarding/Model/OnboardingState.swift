@@ -38,6 +38,8 @@ struct OnboardingState: Equatable {
                 betaAccessComplete: betaAccess.isComplete,
                 permissionsComplete: permissions.isComplete,
                 completeComplete: complete.isComplete,
+                betaAccessEmail: betaAccess.isComplete ? betaAccess.email : nil,
+                betaAccessToken: betaAccess.isComplete ? betaAccess.token : nil,
             ),
         )
     }
@@ -62,6 +64,12 @@ struct OnboardingState: Equatable {
         if betaAccess.isComplete {
             betaAccess.status = .active
             betaAccess.reason = .none
+            if let email = stepState.betaAccessEmail, !email.isEmpty {
+                betaAccess.email = email
+            }
+            if let token = stepState.betaAccessToken, !token.isEmpty {
+                betaAccess.token = token
+            }
         } else {
             betaAccess.status = .notActive
             betaAccess.reason = .missingInput

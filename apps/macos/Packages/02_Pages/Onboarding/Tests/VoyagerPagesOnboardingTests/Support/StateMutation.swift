@@ -12,4 +12,17 @@ enum StateMutation {
         state.betaAccess.reason = .none
         state.betaAccess.isComplete = true
     }
+
+    /// betaAccess 상태를 active/none/true로 설정하고 email/token도 복원합니다.
+    static func applyActiveBetaAccess(
+        state: inout OnboardingFeature.State,
+        email: String,
+        token: String,
+    ) {
+        state.betaAccess.email = email
+        state.betaAccess.token = token
+        state.betaAccess.status = .active
+        state.betaAccess.reason = .none
+        state.betaAccess.isComplete = true
+    }
 }

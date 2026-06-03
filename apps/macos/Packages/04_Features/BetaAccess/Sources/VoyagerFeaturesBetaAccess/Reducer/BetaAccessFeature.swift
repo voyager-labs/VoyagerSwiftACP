@@ -26,13 +26,15 @@ public struct BetaAccessFeature {
 
             case let .emailChanged(email):
                 let wasComplete = state.isComplete
+                let didChange = state.email != email
                 state.email = email
-                return handleInputChange(&state, wasComplete: wasComplete)
+                return handleInputChange(&state, wasComplete: wasComplete, didChange: didChange)
 
             case let .tokenChanged(token):
                 let wasComplete = state.isComplete
+                let didChange = state.token != token
                 state.token = token
-                return handleInputChange(&state, wasComplete: wasComplete)
+                return handleInputChange(&state, wasComplete: wasComplete, didChange: didChange)
 
             case .checkTapped, .retryTapped:
                 return verify(&state)
@@ -45,8 +47,10 @@ public struct BetaAccessFeature {
         }
     }
 
-    private func handleInputChange(_ state: inout State, wasComplete: Bool) -> Effect<Action> {
-        if wasComplete {
+    private func handleInputChange(
+        _ state: inout State, wasComplete: Bool, didChange: Bool,
+    ) -> Effect<Action> {
+        if wasComplete, didChange {
             state.updateStatus(.notActive, reason: .none)
         }
         if state.email.isEmpty || state.token.isEmpty {

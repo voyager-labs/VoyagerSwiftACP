@@ -335,12 +335,12 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-002:show_access_unlock_status — 검증 완료 상태에서 같은 이메일로 다시 설정해도 무효화되는지 확인한다.
+    /// ONB-002:show_access_unlock_status — 검증 완료 상태에서 같은 이메일로 다시 설정하면 검증 상태가 유지되는지 확인한다.
     ///
-    /// - 검증 내용: `wasComplete`는 이전 `isComplete` 값 기준이므로 같은 값이어도 무효화됨.
+    /// - 검증 내용: 같은 값의 재발행(macos TextField Enter/commit)은 verified state를 보존해야 한다.
     /// - 사전 조건: `status == .active`, `isComplete == true`인 상태에서 같은 email 재설정.
-    /// - 기대 결과: `isComplete == false`, `status == .notActive`.
-    func testSettingSameEmailAfterVerifiedStillInvalidates() async {
+    /// - 기대 결과: `isComplete == true`, `status == .active`, `reason == .none` 유지.
+    func testSettingSameEmailAfterVerifiedPreservesState() async {
         let store = TestStore(initialState: BetaAccessFeature.State(
             email: "user@test.com",
             token: "valid-token",
@@ -353,14 +353,37 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             $0.betaAccessClient = .mock
         }
 
-        await store.send(.emailChanged("user@test.com")) { state in
-            state.email = "user@test.com"
-            state.status = .notActive
-            state.reason = .none
-            state.isComplete = false
+        await store.send(.emailChanged("user@test.com"))
+
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertEqual(store.state.status, .active)
+        XCTAssertEqual(store.state.reason, .none)
+        await store.finish()
+    }
+
+    /// ONB-002:show_access_unlock_status — 검증 완료 상태에서 같은 토큰으로 다시 설정하면 검증 상태가 유지되는지 확인한다.
+    ///
+    /// - 검증 내용: macOS SwiftUI TextField Enter/commit이 같은 토큰을 재발행할 때 verified state가 보존되어야 한다.
+    /// - 사전 조건: `status == .active`, `isComplete == true`인 상태에서 같은 token 재설정.
+    /// - 기대 결과: `isComplete == true`, `status == .active`, `reason == .none` 유지.
+    func testSettingSameTokenAfterVerifiedPreservesState() async {
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = .mock
         }
 
-        XCTAssertFalse(store.state.isComplete)
+        await store.send(.tokenChanged("valid-token"))
+
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertEqual(store.state.status, .active)
+        XCTAssertEqual(store.state.reason, .none)
         await store.finish()
     }
 
@@ -1284,6 +1307,68 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             state.reason = .none
             state.isComplete = true
         }
+
+        await store.finish()
+    }
+
+    // MARK: - Restored verified state (snapshot restore, no credentials)
+
+    /// Snapshot restore sets `isComplete == true`, `status == .active` but leaves
+    /// email/token empty. `isRestoredVerifiedAccess` must be `true` in this case.
+    func testIsRestoredVerifiedAccessTrueWhenVerifiedButCredentialsEmpty() {
+        let state = BetaAccessFeature.State(
+            email: "",
+            token: "",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )
+        XCTAssertTrue(state.isRestoredVerifiedAccess)
+    }
+
+    /// In-session verified state (email/token present) must NOT be flagged as restored.
+    func testIsRestoredVerifiedAccessFalseWhenCredentialsPresent() {
+        let state = BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )
+        XCTAssertFalse(state.isRestoredVerifiedAccess)
+    }
+
+    /// Unverified state with empty fields must NOT be flagged as restored.
+    func testIsRestoredVerifiedAccessFalseWhenNotVerified() {
+        let state = BetaAccessFeature.State()
+        XCTAssertFalse(state.isRestoredVerifiedAccess)
+    }
+
+    /// Snapshot-restored state with `onAppear` must not trigger re-verification.
+    func testOnAppearSkipsVerificationWhenRestoredVerified() async {
+        let counter = AttemptCounter()
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "",
+            token: "",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
+                _ = counter.increment()
+                return BetaAccessVerifyResponse(ok: true)
+            })
+        }
+
+        await store.send(.onAppear)
+
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertEqual(store.state.status, .active)
+        XCTAssertFalse(store.state.isVerifying)
+        XCTAssertTrue(store.state.isRestoredVerifiedAccess)
+        XCTAssertEqual(counter.value, 0)
 
         await store.finish()
     }
