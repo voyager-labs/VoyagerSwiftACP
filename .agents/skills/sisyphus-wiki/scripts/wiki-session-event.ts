@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { ensureDir, nowIso, one, parseArgs, printJson, repoKnowledgeRoot, requireOne } from "./wiki-lib";
+import { ensureDir, nowIso, one, parseArgs, printJson, repoKnowledgeRoot, requireOne, slugify } from "./wiki-lib";
 
 const help = `Usage:
   bun .agents/skills/sisyphus-wiki/scripts/wiki-session-event.ts --session-id <id> --event knowledge.candidate --summary "..."
@@ -28,9 +28,10 @@ try {
   const ts = nowIso();
   const payload = { ts, event, session_id: sessionId, summary, tags: one(args, "tags") };
 
+  const safeName = slugify(sessionId);
   const sessionsDir = join(root, "sessions");
   ensureDir(sessionsDir);
-  appendFileSync(join(sessionsDir, `${sessionId}.jsonl`), `${JSON.stringify(payload)}\n`);
+  appendFileSync(join(sessionsDir, `${safeName}.jsonl`), `${JSON.stringify(payload)}\n`);
 
   if (args.has("candidate")) {
     const inbox = join(root, "inbox");
@@ -38,7 +39,7 @@ try {
     appendFileSync(join(inbox, "pending-extractions.jsonl"), `${JSON.stringify(payload)}\n`);
   }
 
-  printJson({ ok: true, path: `sessions/${sessionId}.jsonl`, candidate: args.has("candidate") });
+  printJson({ ok: true, path: `sessions/${safeName}.jsonl`, candidate: args.has("candidate") });
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.stderr.write(help);

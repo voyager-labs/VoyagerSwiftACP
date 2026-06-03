@@ -9,6 +9,15 @@ function ensureDir(path) {
   mkdirSync(path, { recursive: true });
 }
 
+function safeFilename(value) {
+  return value
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "unknown-session";
+}
+
 function safeString(value, max = MAX_STRING_CHARS) {
   if (typeof value !== "string") return value;
   return value
@@ -101,7 +110,7 @@ function appendSessionEvent(event) {
 
   const sessionsDir = join(KNOWLEDGE_ROOT, "sessions");
   ensureDir(sessionsDir);
-  appendJsonl(join(sessionsDir, `${sid}.jsonl`), payload);
+  appendJsonl(join(sessionsDir, `${safeFilename(sid)}.jsonl`), payload);
 
   if (isCandidateEvent(name)) {
     const inbox = join(KNOWLEDGE_ROOT, "inbox");
