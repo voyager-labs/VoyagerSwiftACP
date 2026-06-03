@@ -112,4 +112,7 @@ apps/backend/alembic.ini.bak
 !scripts/build
 !apps/macos/**/Lib
 
+# CodeGraph (semantic code intelligence)
+.codegraph/
+
 node_modules/

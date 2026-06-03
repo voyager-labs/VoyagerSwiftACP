@@ -11,19 +11,19 @@ public enum FullDiskAccessStatus: String, Equatable, Sendable {
 public struct FullDiskAccessClient: Sendable {
     public var status: @Sendable () -> FullDiskAccessStatus
 
-    public nonisolated init(status: @escaping @Sendable () -> FullDiskAccessStatus) {
+    nonisolated public init(status: @escaping @Sendable () -> FullDiskAccessStatus) {
         self.status = status
     }
 }
 
 extension FullDiskAccessClient: DependencyKey {
-    public nonisolated static var liveValue: FullDiskAccessClient {
+    nonisolated public static var liveValue: FullDiskAccessClient {
         FullDiskAccessClient(status: {
             statusFromProtectedReadProbe()
         })
     }
 
-    private nonisolated static func statusFromProtectedReadProbe() -> FullDiskAccessStatus {
+    nonisolated private static func statusFromProtectedReadProbe() -> FullDiskAccessStatus {
         let fileManager = FileManager.default
         let homeDirectory = NSHomeDirectory()
 
@@ -58,7 +58,7 @@ extension FullDiskAccessClient: DependencyKey {
         return .needsAction
     }
 
-    private nonisolated static func isMissingFileOrDirectoryError(_ error: Error) -> Bool {
+    nonisolated private static func isMissingFileOrDirectoryError(_ error: Error) -> Bool {
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoSuchFileError {
             return true
@@ -69,7 +69,7 @@ extension FullDiskAccessClient: DependencyKey {
         return false
     }
 
-    private nonisolated static func isPermissionDeniedError(_ error: Error) -> Bool {
+    nonisolated private static func isPermissionDeniedError(_ error: Error) -> Bool {
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoPermissionError {
             return true
@@ -80,11 +80,11 @@ extension FullDiskAccessClient: DependencyKey {
         return false
     }
 
-    public nonisolated static var testValue: FullDiskAccessClient {
+    nonisolated public static var testValue: FullDiskAccessClient {
         FullDiskAccessClient(status: { .unknown })
     }
 
-    public nonisolated static var previewValue: FullDiskAccessClient {
+    nonisolated public static var previewValue: FullDiskAccessClient {
         FullDiskAccessClient(status: { .unknown })
     }
 }

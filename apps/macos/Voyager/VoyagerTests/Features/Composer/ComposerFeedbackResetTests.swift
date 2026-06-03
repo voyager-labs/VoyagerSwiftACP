@@ -5,10 +5,8 @@ import Foundation
 import VoyagerShared
 import XCTest
 
-/// Composer 피드백 리셋 — 타이핑/취소/stale 이벤트에 따른 피드백 보존/초기화를 검증.
 @MainActor
 final class ComposerFeedbackResetTests: XCTestCase {
-    /// testTypingClearsFeedbackImmediately 테스트 동작을 검증한다.
     func testTypingClearsFeedbackImmediately() async {
         let feedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "boom")
         var initialState = ComposerState()
@@ -23,7 +21,6 @@ final class ComposerFeedbackResetTests: XCTestCase {
         }
     }
 
-    /// testCancelSearchClearsFeedbackImmediately 테스트 동작을 검증한다.
     func testCancelSearchClearsFeedbackImmediately() async {
         let feedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "boom")
         var initialState = ComposerState()
@@ -43,7 +40,46 @@ final class ComposerFeedbackResetTests: XCTestCase {
         }
     }
 
-    /// testDuplicateFailureKeepsExistingFeedbackAndTimer 테스트 동작을 검증한다.
+    func testClearAllClearsScopeChangeFeedback() async {
+        let requestID = UUID()
+        let addedSelection = ComposerScopeSelection.explicit(
+            bases: [ComposerScopeBase(path: "/tmp")],
+            exceptions: [],
+        )
+        var initialState = ComposerState()
+        initialState.scopeEditor.selection = addedSelection
+        initialState.isLoadingFilters = true
+        initialState.activeFiltersRequestID = requestID
+        initialState.lastScopeChangeFeedback = ComposerScopeChangeFeedback(
+            id: UUID(),
+            beforeScope: ComposerScopeSnapshot(
+                scopeSelection: .rootOnly,
+                includeSubfolders: true,
+            ),
+            afterScope: ComposerScopeSnapshot(
+                scopeSelection: addedSelection,
+                includeSubfolders: true,
+            ),
+            origin: .addBase,
+            phase: .delayed,
+            pendingResultRequest: .filters(requestID),
+            historyDepthAfterCommit: 1,
+            redoDepthAfterCommit: 0,
+        )
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.clearAll)
+
+        XCTAssertNil(store.state.lastScopeChangeFeedback)
+        XCTAssertNil(store.state.lastScopeChangeFeedbackDisplay)
+        XCTAssertFalse(store.state.isLoadingFilters)
+        XCTAssertNil(store.state.activeFiltersRequestID)
+        XCTAssertTrue(store.state.scopeEditor.selection.isRootOnly)
+    }
+
     func testDuplicateFailureKeepsExistingFeedbackAndTimer() async {
         let clock = TestClock()
         let requestID = UUID()
@@ -85,7 +121,6 @@ final class ComposerFeedbackResetTests: XCTestCase {
         }
     }
 
-    /// testStaleDismissActionDoesNotClearReplacementFeedback 테스트 동작을 검증한다.
     func testStaleDismissActionDoesNotClearReplacementFeedback() async {
         let oldFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "old")
         let newFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "new")

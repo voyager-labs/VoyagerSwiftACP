@@ -1,27 +1,12 @@
+import ComposableArchitecture
 import Foundation
 
-import ComposableArchitecture
-
-struct TrashMetadataStoreClient: Sendable {
+struct TrashMetadataStoreClient {
     var save: @Sendable (TrashMetadata) async -> Void
     var load: @Sendable () async -> [TrashMetadata]
     var find: @Sendable (_ trashPath: String) async -> TrashMetadata?
     var remove: @Sendable (_ trashPath: String) async -> Void
     var removeAll: @Sendable () async -> Void
-
-    nonisolated init(
-        save: @escaping @Sendable (TrashMetadata) async -> Void,
-        load: @escaping @Sendable () async -> [TrashMetadata],
-        find: @escaping @Sendable (_ trashPath: String) async -> TrashMetadata?,
-        remove: @escaping @Sendable (_ trashPath: String) async -> Void,
-        removeAll: @escaping @Sendable () async -> Void,
-    ) {
-        self.save = save
-        self.load = load
-        self.find = find
-        self.remove = remove
-        self.removeAll = removeAll
-    }
 }
 
 extension TrashMetadataStoreClient: DependencyKey {

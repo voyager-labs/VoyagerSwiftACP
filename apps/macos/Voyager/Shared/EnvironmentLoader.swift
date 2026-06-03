@@ -10,7 +10,7 @@ struct EnvironmentLoader {
         case fileNotFound(path: String)
     }
 
-    private nonisolated static let projectRootKey = "VOYAGER_PROJECT_ROOT"
+    nonisolated private static let projectRootKey = "VOYAGER_PROJECT_ROOT"
 
     enum AppEnv: String {
         case dev
@@ -76,7 +76,7 @@ struct EnvironmentLoader {
         try loadEnvFile(at: resources.appendingPathComponent(appEnv.envFileName))
     }
 
-    private nonisolated static func resolveProjectRoot(
+    nonisolated private static func resolveProjectRoot(
         environment: [String: String],
         bundle: Bundle,
     ) -> URL? {
@@ -87,7 +87,7 @@ struct EnvironmentLoader {
         return inferProjectRoot(from: bundle.bundleURL)
     }
 
-    private nonisolated static func inferProjectRoot(from start: URL) -> URL? {
+    nonisolated private static func inferProjectRoot(from start: URL) -> URL? {
         let fm = FileManager.default
         var current = start
         let rootPath = current.pathComponents.first ?? "/"
@@ -106,7 +106,7 @@ struct EnvironmentLoader {
         }
     }
 
-    private nonisolated static func loadEnvFile(at url: URL) throws {
+    nonisolated private static func loadEnvFile(at url: URL) throws {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LoadError.fileNotFound(path: url.path)
         }

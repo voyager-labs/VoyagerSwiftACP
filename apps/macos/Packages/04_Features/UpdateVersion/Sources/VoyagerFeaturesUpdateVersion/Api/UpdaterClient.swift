@@ -11,7 +11,7 @@ public struct UpdaterClient: Sendable {
     public var checkForUpdates: @Sendable () async -> Void
     public var setAutomaticUpdate: @Sendable (Bool) async -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         configure: @escaping @Sendable () async -> Void,
         startAtLaunch: @escaping @Sendable () async -> Void,
         checkForUpdates: @escaping @Sendable () async -> Void,
@@ -25,7 +25,7 @@ public struct UpdaterClient: Sendable {
 }
 
 extension UpdaterClient: DependencyKey {
-    public nonisolated static var liveValue: UpdaterClient {
+    nonisolated public static var liveValue: UpdaterClient {
         UpdaterClient(
             configure: {
                 await UpdaterCoordinator.shared.configureIfNeeded()
@@ -42,7 +42,7 @@ extension UpdaterClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: UpdaterClient {
+    nonisolated public static var testValue: UpdaterClient {
         UpdaterClient(
             configure: {},
             startAtLaunch: {},
@@ -51,7 +51,7 @@ extension UpdaterClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: UpdaterClient {
+    nonisolated public static var previewValue: UpdaterClient {
         UpdaterClient(
             configure: {},
             startAtLaunch: {},

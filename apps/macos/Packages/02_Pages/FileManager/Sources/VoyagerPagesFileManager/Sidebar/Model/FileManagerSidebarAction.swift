@@ -18,9 +18,8 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case setContextMenuTarget(id: String?, wasSelected: Bool)
     }
 
-    // NSItemProvider가 Sendable을 준수하지 않아 @unchecked 필요. 드래그앤드롭은 @MainActor에서만 수행됨.
     @CasePathable
-    public enum Delegate: CasePathable, @unchecked Sendable {
+    public enum Delegate: CasePathable, Sendable {
         case openFavorite(SidebarItems.FavoriteItem)
         case openLocation(SidebarItems.LocationItem)
         case showTag(String)
@@ -30,9 +29,8 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case dropItemsToTag(providers: [NSItemProvider], tagName: String)
     }
 
-    // insertFavoriteFromDrop의 NSItemProvider 때문에 @unchecked 필요. 드래그앤드롭은 @MainActor에서만 수행됨.
     @CasePathable
-    public enum Internal: CasePathable, @unchecked Sendable {
+    public enum Internal: CasePathable, Sendable {
         case restoreSidebarSelection
         case loadFavorites
         case favoritesLoaded([SidebarItems.FavoriteItem])

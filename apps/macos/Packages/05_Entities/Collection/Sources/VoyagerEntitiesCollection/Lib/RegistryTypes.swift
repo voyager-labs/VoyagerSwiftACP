@@ -11,9 +11,17 @@ public enum SystemPropertyTypeKey: String, Equatable, Sendable {
     case categorical
     case unknown
 
-    public var valueType: String { rawValue }
-    public var operatorKey: String { rawValue }
-    public var operatorKeyOrNil: String? { self == .unknown ? nil : rawValue }
+    public var valueType: String {
+        rawValue
+    }
+
+    public var operatorKey: String {
+        rawValue
+    }
+
+    public var operatorKeyOrNil: String? {
+        self == .unknown ? nil : rawValue
+    }
 
     public init(rawType: String) {
         switch rawType.lowercased() {

@@ -1,12 +1,8 @@
 import AppKit
 import ComposableArchitecture
 
-struct AppTerminationReplyClient: Sendable {
+struct AppTerminationReplyClient {
     var reply: @Sendable (_ shouldTerminate: Bool) async -> Void
-
-    nonisolated init(reply: @escaping @Sendable (_ shouldTerminate: Bool) async -> Void) {
-        self.reply = reply
-    }
 }
 
 extension AppTerminationReplyClient: DependencyKey {

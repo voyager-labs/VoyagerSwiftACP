@@ -6,7 +6,7 @@ import QuickLookThumbnailing
 public struct ThumbnailGeneratorClient: Sendable {
     public var generateThumbnail: @Sendable (_ url: URL, _ size: CGSize, _ scale: CGFloat) async -> NSImage?
 
-    public nonisolated init(
+    nonisolated public init(
         generateThumbnail: @escaping @Sendable (_ url: URL, _ size: CGSize, _ scale: CGFloat) async -> NSImage?,
     ) {
         self.generateThumbnail = generateThumbnail
@@ -22,7 +22,7 @@ public struct ThumbnailGeneratorClient: Sendable {
 }
 
 extension ThumbnailGeneratorClient: DependencyKey {
-    public nonisolated static var liveValue: ThumbnailGeneratorClient {
+    nonisolated public static var liveValue: ThumbnailGeneratorClient {
         .init(
             generateThumbnail: { url, size, scale in
                 let request = QLThumbnailGenerator.Request(
@@ -38,11 +38,13 @@ extension ThumbnailGeneratorClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: ThumbnailGeneratorClient {
+    nonisolated public static var testValue: ThumbnailGeneratorClient {
         .init(generateThumbnail: { _, _, _ in nil })
     }
 
-    public nonisolated static var previewValue: ThumbnailGeneratorClient { testValue }
+    nonisolated public static var previewValue: ThumbnailGeneratorClient {
+        testValue
+    }
 }
 
 public extension DependencyValues {

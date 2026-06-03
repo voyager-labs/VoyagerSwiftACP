@@ -4,7 +4,7 @@ import VoyagerEntitiesTag
 
 @ObservableState
 public struct FileManagerSidebarState: Equatable {
-    var sidebarVisible: Bool = true
+    public var sidebarVisible: Bool = true
     var sidebarWidth: CGFloat = 220
     var selectedSidebarItem: String?
     var favorites: [SidebarItems.FavoriteItem] = []

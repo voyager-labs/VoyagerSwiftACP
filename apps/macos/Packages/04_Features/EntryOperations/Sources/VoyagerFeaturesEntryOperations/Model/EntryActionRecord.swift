@@ -12,7 +12,7 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
         public let beforeTags: [String]?
         public let afterTags: [String]?
 
-        public nonisolated init(
+        nonisolated public init(
             beforePath: String?,
             afterPath: String?,
             beforeTags: [String]? = nil,
@@ -25,7 +25,7 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
         }
     }
 
-    public nonisolated init(
+    nonisolated public init(
         operationKind: OperationKind,
         targets: [Target],
         id: UUID = UUID(),

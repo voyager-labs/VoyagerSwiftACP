@@ -2,8 +2,8 @@ import Foundation
 
 @MainActor
 final class HelperExternalFileChangeBridge {
-    private nonisolated(unsafe) var replayObserver: NSObjectProtocol?
-    private nonisolated(unsafe) var replayAckObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var replayObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var replayAckObserver: NSObjectProtocol?
     private let store: HelperExternalFileChangeStore
 
     init(store: HelperExternalFileChangeStore = HelperExternalFileChangeStore()) {

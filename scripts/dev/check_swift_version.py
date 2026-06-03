@@ -41,7 +41,7 @@ def main() -> None:
         print(f"Expected: {expected_marker}", file=sys.stderr)
         print("Actual:", file=sys.stderr)
         print(swift.stdout.strip(), file=sys.stderr)
-        print("Run: just xcode", file=sys.stderr)
+        print("Run: mise run xcode", file=sys.stderr)
         raise SystemExit(1)
 
     print(swift.stdout, end="")

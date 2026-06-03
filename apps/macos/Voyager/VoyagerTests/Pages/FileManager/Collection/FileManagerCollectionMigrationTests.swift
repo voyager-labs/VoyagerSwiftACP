@@ -26,7 +26,8 @@ final class FileManagerCollectionMigrationTests: XCTestCase {
             appVersion: nil,
         )
 
-        let resolved = file.resolveCollectionFilters(
+        let resolved = CollectionFilterResolution.resolve(
+            file: file,
             registryClient: RegistryTestSupport.makeRegistryClient(),
         )
 

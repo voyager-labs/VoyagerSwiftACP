@@ -303,7 +303,12 @@ private func handleCollectionFileLoaded(
             let canonicalPath = url.standardizedFileURL.path
             isStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
             _ = collectionStalenessClient.consumeInvalidation(canonicalPath)
-            collectionStalenessClient.registerCollection(canonicalPath, file.scopes)
+            collectionStalenessClient.registerCollection(
+                canonicalPath,
+                file.scopes,
+                file.excludedScopes,
+                file.includeSubfolders,
+            )
         }
         return handleCollectionFileLoadedSuccess(
             file,
@@ -336,6 +341,7 @@ private func handleNavigateToCollection(
     }
     let payload = CollectionNavigationStatePayload(
         context: navigation.context,
+        includeSubfolders: navigation.context.includeSubfolders,
         document: openedURL.map {
             CollectionOpenedDocumentState(
                 url: $0,
@@ -346,6 +352,7 @@ private func handleNavigateToCollection(
         baseline: openedURL.map { _ in CollectionBaseline(context: navigation.context) },
         composerText: navigation.context.query,
         scopes: navigation.context.scopes,
+        excludedScopes: navigation.context.excludedScopes,
         conditions: navigation.context.conditions,
     )
 
@@ -375,6 +382,7 @@ private func handleCollectionFileLoadedSuccess(
     state: inout FileManagerWindowState,
     environment: CollectionOpenEnvironment,
 ) -> Effect<FileManagerWindowAction> {
+    state.content.composer.isPresented = false
     let resolved = file.resolveCollectionFilters(registryClient: environment.registryClient)
     let openPayload = state.content.collection.makeOpenRestorationPayload(
         file: file,

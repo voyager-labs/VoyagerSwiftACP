@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
@@ -64,7 +63,7 @@ struct EntryTaggingOperationsReducer {
         }
     }
 
-    private nonisolated static func makeAfterTags(
+    nonisolated private static func makeAfterTags(
         mode: TagMutationRequest.Mode,
         tagName: String,
         beforeTags: [String],

@@ -8,7 +8,7 @@ import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 enum FileManagerContentComposerCoordinator {
-    struct Dependencies: Sendable {
+    struct Dependencies {
         let collectionAlertClient: CollectionAlertClient
         let metricsClient: MetricsClient
     }
@@ -135,11 +135,7 @@ enum FileManagerContentComposerCoordinator {
             wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
         )
         let query = state.composer.pendingSearchQuery ?? ""
-        let nextContext = CollectionContext(
-            query: query,
-            scopes: state.composer.scopes,
-            conditions: state.composer.conditions,
-        )
+        let nextContext = state.composer.collectionContext(query: query)
         let searchEffect = handleSearchSuccess(
             items: response.items ?? [],
             query: query,
@@ -184,20 +180,20 @@ enum FileManagerContentComposerCoordinator {
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction> {
         guard isPresented else {
-            if case .opened = state.collection.collectionSession.phase {
-                return .send(.composer(.clearPendingSearchQuery))
+            if state.composer.isFilteringInFlight {
+                return .none
             }
-            return .concatenate(
-                .send(.composer(.clearPendingSearchQuery)),
-                .send(.collection(.openSearchPresentationCancelled)),
-            )
-        }
 
-        if state.composer.scopes.isEmpty,
-           state.composer.conditions.isEmpty,
-           state.composer.text.isEmpty
-        {
-            return .send(.composer(.setInitialScope(state.navigation.currentPath)))
+            let shouldCommitScopeEditorChanges = state.composer.scopeEditor.isPresented
+                && state.composer.scopeEditor.hasPendingScopeRuleChanges
+                && state.composer.shouldAutoApplyScopeChange
+
+            if shouldCommitScopeEditorChanges {
+                return .none
+            }
+
+            state.composer.pendingSearchQuery = nil
+            return .send(.collection(.openSearchPresentationCancelled))
         }
 
         dependencies.metricsClient.logMetric(
@@ -205,6 +201,18 @@ enum FileManagerContentComposerCoordinator {
             1,
             nil,
         )
+
+        guard case let .folder(path) = state.navigation.navigationState else {
+            return .none
+        }
+
+        if state.composer.scopeEditor.selection.isRootOnly,
+           state.composer.conditions.isEmpty,
+           state.composer.text.isEmpty
+        {
+            return .send(.composer(.scopeEditorSeedCurrentPath(path)))
+        }
+
         return .none
     }
 
@@ -214,7 +222,8 @@ enum FileManagerContentComposerCoordinator {
         dependencies _: Dependencies,
     ) -> Effect<FileManagerContentAction> {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty, state.composer.conditions.isEmpty, state.composer.scopes.isEmpty {
+        state.composer.pendingSearchQuery = query.isEmpty ? nil : query
+        if query.isEmpty, state.composer.conditions.isEmpty, state.composer.isSemanticallyRootOnly {
             return .concatenate(
                 .send(.composer(.setPendingSearchQuery(nil))),
                 .send(.internal(.exitCollectionMode)),
@@ -231,11 +240,8 @@ enum FileManagerContentComposerCoordinator {
     ) -> Effect<FileManagerContentAction> {
         let previousNavigationState = state.navigation.navigationState
         let previousNavigationIsCollection = previousNavigationState.isCollection
-        let resolvedContext = nextContext ?? CollectionContext(
-            query: query,
-            scopes: state.composer.scopes,
-            conditions: state.composer.conditions,
-        )
+        state.composer.pendingSearchQuery = nil
+        let resolvedContext = nextContext ?? state.composer.collectionContext(query: query)
         let proposedNextNavigationState = ContentPageNavigationRoute.collection(
             ContentPageCollectionNavigationFactory.makeCollectionNavigation(
                 state.collection.makeNavigationPresentationPayload(context: resolvedContext),

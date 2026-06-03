@@ -38,7 +38,10 @@
 
 ### 커밋 및 PR 규칙
 
-- **Conventional Commits** 사용. 현재 type/scope 정책과 예시는 `.agents/skills/commit-message/SKILL.md`를 source of truth로 사용
+- **Conventional Commits** 사용: `<type>(<scope>): <description>`
+    - 타입: `feat`, `fix`, `ui`, `refactor`, `style`, `docs`, `chore`, `test`, `ci`, `build`
+    - 스코프: 모노레포 명확성을 위해 `(backend)` 또는 `(macos)` 권장
+    - 예시: `feat(backend): add asset ingestion endpoint`
 - Swift와 Python 변경은 가능하면 분리 (강하게 결합된 경우만 예외)
 - PR 설명에 의도/범위/리스크/검증 증거 포함
 

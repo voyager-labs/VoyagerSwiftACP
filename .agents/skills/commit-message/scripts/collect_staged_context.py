@@ -62,84 +62,6 @@ def _clamp_lines(lines: list[str], head_n: int, tail_n: int) -> list[str]:
     return [*lines[:head_n], "... (truncated) ...", *lines[-tail_n:]]
 
 
-def _camel_to_kebab(name: str) -> str:
-    s1 = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", name)
-    s2 = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1-\2", s1)
-    return s2.lower()
-
-
-def _infer_macos_scope(path: str) -> str | None:
-    if path.startswith("apps/macos/Voyager/VoyagerHelper/"):
-        return "helper"
-    if path.startswith("apps/macos/Voyager/Voyager/01_App/"):
-        return "main-app"
-    match = re.match(r"^apps/macos/Voyager/Voyager/02_Pages/([^/]+)/", path)
-    if match:
-        return f"pages/{_camel_to_kebab(match.group(1))}"
-    match = re.match(r"^apps/macos/Voyager/Voyager/03_Widgets/([^/]+)/", path)
-    if match:
-        return f"widgets/{_camel_to_kebab(match.group(1))}"
-    match = re.match(r"^apps/macos/Voyager/Voyager/04_Features/([^/]+)/", path)
-    if match:
-        return f"features/{_camel_to_kebab(match.group(1))}"
-    match = re.match(r"^apps/macos/Voyager/Voyager/05_Entities/([^/]+)/", path)
-    if match:
-        return f"entities/{_camel_to_kebab(match.group(1))}"
-    if path.startswith("apps/macos/Voyager/Voyager/06_Shared/"):
-        return "shared"
-    match = re.match(
-        r"^apps/macos/Voyager/Packages/VoyagerModules/(?:Sources|Tests)/VoyagerPages([^/]+?)(?:Tests)?/",
-        path,
-    )
-    if match:
-        return f"pages/{_camel_to_kebab(match.group(1))}"
-    match = re.match(
-        r"^apps/macos/Voyager/Packages/VoyagerModules/(?:Sources|Tests)/VoyagerWidgets([^/]+?)(?:Tests)?/",
-        path,
-    )
-    if match:
-        return f"widgets/{_camel_to_kebab(match.group(1))}"
-    match = re.match(
-        r"^apps/macos/Voyager/Packages/VoyagerModules/(?:Sources|Tests)/VoyagerFeatures([^/]+?)(?:Tests)?/",
-        path,
-    )
-    if match:
-        return f"features/{_camel_to_kebab(match.group(1))}"
-    match = re.match(
-        r"^apps/macos/Voyager/Packages/VoyagerModules/(?:Sources|Tests)/VoyagerEntities([^/]+?)(?:Tests)?/",
-        path,
-    )
-    if match:
-        return f"entities/{_camel_to_kebab(match.group(1))}"
-    if re.match(
-        r"^apps/macos/Voyager/Packages/VoyagerModules/(?:Sources|Tests)/VoyagerShared(?:Tests)?/",
-        path,
-    ):
-        return "shared"
-    return None
-
-
-def _collapse_scope_candidates(scope_candidates: list[str]) -> Counter[str]:
-    scope_counter = Counter(scope_candidates)
-    has_helper = "helper" in scope_counter
-    has_main_app = "main-app" in scope_counter
-    if has_helper and has_main_app:
-        _ = scope_counter.setdefault("macos", 0)
-
-    for layer in ("pages", "widgets", "features", "entities"):
-        layer_members = [
-            scope for scope in list(scope_counter) if scope.startswith(f"{layer}/")
-        ]
-        if len(layer_members) <= 1:
-            continue
-        total = sum(scope_counter[scope] for scope in layer_members)
-        for scope in layer_members:
-            del scope_counter[scope]
-        scope_counter[layer] += total
-
-    return scope_counter
-
-
 def _group_by_top_level(paths: Iterable[str]) -> list[tuple[str, int]]:
     counts: dict[str, int] = {}
     for p in paths:
@@ -467,11 +389,7 @@ def main() -> int:
         if p.startswith("apps/backend/"):
             scope_candidates.append("backend")
         elif p.startswith("apps/macos/"):
-            specific = _infer_macos_scope(p)
-            if specific is not None:
-                scope_candidates.append(specific)
-            else:
-                scope_candidates.append("macos")
+            scope_candidates.append("macos")
         elif p.startswith("docs/"):
             scope_candidates.append("docs")
         elif p.startswith(".github/"):
@@ -480,8 +398,7 @@ def main() -> int:
             scope_candidates.append("infra")
 
     if scope_candidates:
-        scope_counter = _collapse_scope_candidates(scope_candidates)
-        for s, c in scope_counter.most_common(8):
+        for s, c in Counter(scope_candidates).most_common(8):
             print(f"{c:>3}  {s}")
         print("note: omit scope if ambiguous")
     else:

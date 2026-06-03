@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntitiesEntry
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -248,7 +249,7 @@ final class EVM002EntryViewLayoutWidgetPresentationTests: XCTestCase {
             EntryViewLayoutFeature()
         }
 
-        let ids: Set<String> = ["id-1", "id-2", "id-3"]
+        let ids: Set = ["id-1", "id-2", "id-3"]
 
         await store.send(.internal(.setSelectionState(
             ids: ids,
@@ -277,7 +278,7 @@ final class EVM002EntryViewLayoutWidgetPresentationTests: XCTestCase {
             EntryViewLayoutFeature()
         }
 
-        let newSelection: Set<String> = ["other-item"]
+        let newSelection: Set = ["other-item"]
 
         await store.send(.internal(.setSelectionState(
             ids: newSelection,
@@ -325,6 +326,52 @@ final class EVM002EntryViewLayoutWidgetPresentationTests: XCTestCase {
         }
     }
 
+    /// EVM-002-show_selected_entry_counts: 새 항목 목록이 비면 이전 folder selection을 제거하는지 검증
+    ///
+    /// - 검증 내용: itemsLoaded([]) 후 selectedIds와 selection anchor가 새 entries 기준으로 정리됨
+    /// - 사전 조건: 이전 folder에서 더블클릭으로 선택된 ID가 남아 있는 상태
+    /// - 기대 결과: 빈 folder에서는 선택 수가 0이 되도록 selection 상태가 초기화됨
+    func testItemsLoadedEmptyEntriesClearsStaleSelection() {
+        var state = EntryViewLayoutState()
+        state.selectedIds = ["/previous/selected"]
+        state.lastSelectedId = "/previous/selected"
+        state.rangeAnchorId = "/previous/selected"
+        state.shouldScrollToSelection = true
+        state.entryOperations.loadingContext.items = []
+
+        _ = EntryViewLayoutFeature.updateEntriesAndReapply(&state)
+
+        XCTAssertEqual(state.entries, [])
+        XCTAssertEqual(state.selectedIds, [])
+        XCTAssertNil(state.lastSelectedId)
+        XCTAssertNil(state.rangeAnchorId)
+        XCTAssertFalse(state.shouldScrollToSelection)
+    }
+
+    /// EVM-002-show_selected_entry_counts: 새 항목 목록에 남아 있는 selection만 유지하는지 검증
+    ///
+    /// - 검증 내용: itemsLoaded 후 selectedIds가 새 entries ID와 교집합으로 정리됨
+    /// - 사전 조건: 유지 가능한 ID와 이전 folder stale ID가 함께 선택된 상태
+    /// - 기대 결과: 유지 가능한 선택만 남고 stale anchor는 남은 선택으로 보정됨
+    func testItemsLoadedEntriesPreservesOnlyVisibleSelection() {
+        let keptEntry = EntryModel.temporaryFolder(id: "/next/kept", name: "kept")
+        let otherEntry = EntryModel.temporaryFolder(id: "/next/other", name: "other")
+        var state = EntryViewLayoutState()
+        state.selectedIds = [keptEntry.id, "/previous/stale"]
+        state.lastSelectedId = "/previous/stale"
+        state.rangeAnchorId = "/previous/stale"
+        state.shouldScrollToSelection = true
+        state.entryOperations.loadingContext.items = [keptEntry, otherEntry]
+
+        _ = EntryViewLayoutFeature.updateEntriesAndReapply(&state)
+
+        XCTAssertEqual(state.entries, [keptEntry, otherEntry])
+        XCTAssertEqual(state.selectedIds, [keptEntry.id])
+        XCTAssertEqual(state.lastSelectedId, keptEntry.id)
+        XCTAssertEqual(state.rangeAnchorId, keptEntry.id)
+        XCTAssertFalse(state.shouldScrollToSelection)
+    }
+
     // MARK: - EVM-002-view_entry_counts_in_current_page
 
     /// EVM-002-view_entry_counts_in_current_page: 선택 수가 상태에 정확히 반영되는지 검증
@@ -342,7 +389,7 @@ final class EVM002EntryViewLayoutWidgetPresentationTests: XCTestCase {
 
         XCTAssertEqual(store.state.selectedIds.count, 2)
 
-        let newIds: Set<String> = ["id-a", "id-b", "id-c", "id-d"]
+        let newIds: Set = ["id-a", "id-b", "id-c", "id-d"]
 
         await store.send(.internal(.setSelectionState(
             ids: newIds,

@@ -14,7 +14,7 @@ public enum ComposerQueryRenderPhase: Equatable, Sendable {
     case failed
 }
 
-enum ComposerQueryPhaseTransition: Sendable {
+enum ComposerQueryPhaseTransition {
     case reset
     case startSearch
     case searchSucceeded
@@ -32,9 +32,10 @@ public struct ComposerFeature {
     @Dependency(\.registryClient)
     var registryClient
 
-    public nonisolated enum CancelID: Hashable, Sendable {
+    nonisolated public enum CancelID: Hashable, Sendable {
         case search
         case filters
+        case scopeEditorSearch
         case feedbackDismiss
     }
 
@@ -70,6 +71,12 @@ public struct ComposerFeature {
             case .view(.focusQueryField):
                 state.focusRequestID += 1
                 return .none
+
+            case .view(.scopeFeedbackUndoTapped):
+                return .send(.view(.undo))
+
+            case .view(.scopeFeedbackRedoTapped):
+                return .send(.view(.redo))
 
             case .view(.undo),
                  .view(.redo):
@@ -137,17 +144,23 @@ public struct ComposerFeature {
                  .view(.setOperator),
                  .view(.replaceConditionProperty),
                  .view(.setValue),
-                 .view(.addScope),
-                 .view(.removeScope),
-                 .view(.updateScope),
+                 .view(.candidateScope),
+                 .view(.currentScope),
                  .view(.clearAll),
                  .view(.saveCollection),
                  .view(.saveCollectionAs),
+                 .view(.scopeEditorOpen),
+                 .view(.scopeEditorSetPresented),
+                 .view(.scopeEditorSetIncludeSubfolders),
+                 .view(.scopeEditorSetQueryText),
+                 .view(.exceptionScope),
                  .propertyPicker,
                  .operatorPicker,
                  .valuePicker,
                  .internal(.searchResponse),
                  .internal(.filtersResponse),
+                 .internal(.scopeEditorSeedCurrentPath),
+                 .internal(.scopeEditorSearchResponse),
                  .internal(.searchListApplied),
                  .delegate:
                 return .none
@@ -162,25 +175,49 @@ private func handleSetPresented(
 ) -> Effect<ComposerFeature.Action> {
     state.isPresented = isPresented
     if !isPresented {
+        let shouldPreserveFilterLifecycle = state.scopeEditor.isPresented
+            && state.scopeEditor.hasPendingScopeRuleChanges
+            && state.shouldAutoApplyScopeChange
+        let hasActiveFilterLifecycle = state.isFilteringInFlight
+            || state.activeFiltersRequestID != nil
+            || state.isLoadingFilters
+        let shouldKeepFiltersAlive = shouldPreserveFilterLifecycle || hasActiveFilterLifecycle
+        let shouldCloseScopeEditorWithoutCommit = state.scopeEditor.isPresented && !shouldPreserveFilterLifecycle
+
         state.hasSubmittedInSession = false
         state.searchStartedAt = nil
-        state.filtersStartedAt = nil
         state.transientFeedback = nil
-        state.submittedSearchFilters = nil
         state.isLoadingSearch = false
-        state.isLoadingFilters = false
-        state.isFilteringInFlight = false
         state.activeSearchRequestID = nil
-        state.activeFiltersRequestID = nil
         state.lastAcceptedSearchRequestID = nil
-        state.lastAcceptedFiltersRequestID = nil
         applyQueryPhaseTransition(.reset, state: &state)
 
-        return .merge(
+        if !shouldKeepFiltersAlive {
+            state.filtersStartedAt = nil
+            state.submittedSearchFilters = nil
+            state.isLoadingFilters = false
+            state.isFilteringInFlight = false
+            state.activeFiltersRequestID = nil
+            state.lastAcceptedFiltersRequestID = nil
+            state.lastScopeChangeFeedback = nil
+        }
+
+        var effects: [Effect<ComposerFeature.Action>] = [
             .cancel(id: ComposerFeature.CancelID.search),
-            .cancel(id: ComposerFeature.CancelID.filters),
             .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
-        )
+        ]
+        if shouldPreserveFilterLifecycle {
+            effects.append(.send(.scopeEditorSetPresented(false)))
+        }
+        if shouldCloseScopeEditorWithoutCommit {
+            state.scopeEditor.isPresented = false
+            state.resetScopeEditorInteractionState(clearQuery: true)
+        }
+        if !shouldKeepFiltersAlive {
+            effects.append(.cancel(id: ComposerFeature.CancelID.filters))
+        }
+
+        return .merge(effects)
     }
 
     return .none
@@ -211,14 +248,28 @@ func applyAppliedFilters(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
 ) {
+    if let includeSubfolders = appliedFilters?.includeSubfolders {
+        state.scopeEditor.includeSubfolders = includeSubfolders
+    }
     let previousDisplayByKey = state.conditionDisplayByKey
-    let resolved = AppliedFiltersUtils.resolve(
+    let resolved = AppliedFiltersUtils.resolveDetailed(
         appliedFilters,
-        fallbackScopes: state.scopes,
+        fallbackScopes: state.scopeEditor.selection.legacyScopePaths,
         fallbackConditions: state.conditions,
         registryClient: registryClient,
+        fallbackExcludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
     )
-    state.scopes = resolved.scopes
+    let selection = ComposerScopeSelection.fromCanonicalScopes(
+        bases: resolved.scopes,
+        exceptions: resolved.excludedScopes,
+        includeSubfolders: state.scopeEditor.includeSubfolders,
+    )
+    let shouldPreserveLocalMultiScope = state.scopeEditor.selection.explicitBases.count > 1
+        && resolved.excludedScopes.isEmpty
+        && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
+    if !shouldPreserveLocalMultiScope {
+        state.scopeEditor.selection = selection
+    }
     state.conditions = resolved.conditions
     state.conditionDisplayByKey = Dictionary(
         uniqueKeysWithValues: resolved.conditions.compactMap { condition in
@@ -305,6 +356,7 @@ func applyFiltersIfNeeded(
         state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters)
     }
+    state.markScopeChangeFeedbackPending(.filters(requestID))
     return .run { send in
         do {
             let response = try await searchClient.applyFilters(.init(filters: filters))
@@ -316,12 +368,13 @@ func applyFiltersIfNeeded(
             await send(.filtersResponse(requestID, .failure(error)))
         }
     }
+    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
 }
 
 func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
     let conditionPayloads: [VoyagerShared.SearchConditionPayload] = state.conditions
         .compactMap { condition -> VoyagerShared.SearchConditionPayload? in
-            guard condition.isActive else { return nil }
+            guard condition.isSearchReady else { return nil }
             guard let op = condition.operatorCode else { return nil }
             if let arity = condition.operatorValueArity, arity == 0 {
                 return VoyagerShared.SearchConditionPayload(
@@ -341,12 +394,14 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
     kComposerLogger.debug(
         "Built search filters payload",
         metadata: [
-            "scopes": .stringConvertible(state.scopes.count),
+            "scopes": .stringConvertible(state.scopeEditor.selection.legacyScopePaths.count),
             "conditions": .stringConvertible(conditionPayloads.count),
         ],
     )
     return VoyagerShared.SearchFiltersPayload(
-        scopes: state.scopes,
+        scopes: state.scopeEditor.selection.legacyScopePaths,
+        excludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
+        includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
         conditions: conditionPayloads,
     )
 }

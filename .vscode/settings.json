@@ -13,11 +13,10 @@
   "[swift]": {
     "editor.defaultFormatter": "vknabel.vscode-swiftformat"
   },
+  "swiftformat.path": ["mise", "exec", "--", "swiftformat"],
   "swiftformat.configSearchPaths": [
     "${workspaceFolder}/apps/macos/.swiftformat"
   ],
-  "swiftformat.path": "/opt/homebrew/bin/swiftformat",
-  "swiftlint.path": "/opt/homebrew/bin/swiftlint",
   "notebook.formatOnSave.enabled": true,
   "cSpell.customDictionaries": {
     "custom-dictionary-workspace": {
@@ -42,10 +41,10 @@
   "evenBetterToml.taplo.configFile.path": ".taplo.toml",
   "sweetpad.build.xcodeWorkspacePath": "apps/macos/Voyager/Voyager.xcworkspace",
   "sweetpad.build.autoGenerateBuildServerConfig": false,
-  "sweetpad.build.derivedDataPath": "${workspaceFolder}/build/dev/DerivedData",
+  "sweetpad.build.derivedDataPath": "build/dev/DerivedData",
   "sweetpad.build.args": [
     "-clonedSourcePackagesDirPath",
-    "${workspaceFolder}/build/dev/SourcePackages",
+    "build/dev/SourcePackages",
     "-skipPackagePluginValidation",
     "-skipMacroValidation"
   ],

@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 extension SearchConditionBuilder {
     func canonicalVisiblePropertyKey(for rawKey: String) -> String? {

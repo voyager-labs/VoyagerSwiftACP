@@ -2,32 +2,21 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import UniformTypeIdentifiers
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
 
-struct OpenWithPanelSelection: Equatable, Sendable {
+struct OpenWithPanelSelection: Equatable {
     let bundleID: String
     let setAsDefault: Bool
 }
 
-struct OpenWithPanelClient: Sendable {
+struct OpenWithPanelClient {
     var selectApplication: @Sendable (
         _ fileURLs: [URL],
         _ defaultChecked: Bool,
         _ workspaceClient: WorkspaceClient,
     ) async -> OpenWithPanelSelection?
-
-    nonisolated init(
-        selectApplication: @escaping @Sendable (
-            _ fileURLs: [URL],
-            _ defaultChecked: Bool,
-            _ workspaceClient: WorkspaceClient,
-        ) async -> OpenWithPanelSelection?,
-    ) {
-        self.selectApplication = selectApplication
-    }
 }
 
 extension OpenWithPanelClient: DependencyKey {

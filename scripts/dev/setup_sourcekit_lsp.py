@@ -28,7 +28,7 @@ def main() -> None:
     )
 
     if shutil.which("xcode-build-server") is None:
-        fail("xcode-build-server is not installed. Run: brew bundle")
+        fail("xcode-build-server is not installed. Run: mise run lsp-install")
 
     derived_data_path.mkdir(parents=True, exist_ok=True)
 

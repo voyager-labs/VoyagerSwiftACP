@@ -249,7 +249,6 @@ public struct EntryViewLayoutFeature {
                 }
 
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: Array(remainingItems))
-                Self.reconcileSelectionAfterCollectionMutation(&state)
                 return Self.updateEntriesAndReapply(&state)
 
             case .internal(.clearCollectionPresentation):
@@ -295,17 +294,25 @@ public struct EntryViewLayoutFeature {
 
     static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
         state.entries = state.displayOrderItems
+        reconcileSelectionWithEntries(&state)
         return .send(.entryArrangements(.reapply))
     }
 
-    static func reconcileSelectionAfterCollectionMutation(_ state: inout State) {
-        let remainingIds = Set(state.collectionItems.map(\.id))
+    static func reconcileSelectionWithEntries(_ state: inout State) {
+        let remainingIds = Set(state.entries.map(\.id))
         state.selectedIds = state.selectedIds.intersection(remainingIds)
 
-        if let lastSelectedId = state.lastSelectedId, !remainingIds.contains(lastSelectedId) {
-            state.lastSelectedId = state.collectionItems.first { state.selectedIds.contains($0.id) }?.id
+        guard !state.selectedIds.isEmpty else {
+            state.lastSelectedId = nil
+            state.rangeAnchorId = nil
+            state.shouldScrollToSelection = false
+            return
         }
-        if let rangeAnchorId = state.rangeAnchorId, !remainingIds.contains(rangeAnchorId) {
+
+        if state.lastSelectedId.map(state.selectedIds.contains) != true {
+            state.lastSelectedId = state.entries.first { state.selectedIds.contains($0.id) }?.id
+        }
+        if state.rangeAnchorId.map(state.selectedIds.contains) != true {
             state.rangeAnchorId = state.lastSelectedId
         }
         state.shouldScrollToSelection = false

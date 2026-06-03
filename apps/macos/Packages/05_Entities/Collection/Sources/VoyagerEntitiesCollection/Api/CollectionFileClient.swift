@@ -16,8 +16,8 @@ public struct CollectionFileClient: Sendable {
 }
 
 extension CollectionFileClient: DependencyKey {
-    // `.voycoll`은 Finder에서 패키지(디렉터리)로 보이도록 저장한다.
-    // 기존에 단일 바이너리 파일로 저장된 레거시(.voycoll 파일)도 읽기 호환을 유지한다.
+    /// `.voycoll`은 Finder에서 패키지(디렉터리)로 보이도록 저장한다.
+    /// 기존에 단일 바이너리 파일로 저장된 레거시(.voycoll 파일)도 읽기 호환을 유지한다.
     public static let liveValue: CollectionFileClient = .init(
         save: { file, url in
             let packagePayloadFilename = "collection.plist"
@@ -65,7 +65,7 @@ extension CollectionFileClient: DependencyKey {
         },
     )
 
-    public nonisolated(unsafe) static var testValue: CollectionFileClient = .init(
+    nonisolated(unsafe) public static var testValue: CollectionFileClient = .init(
         save: { _, _ in },
         load: { _ in
             VoyagerCollectionFileCompatibilityOwner.makeLoadResult(

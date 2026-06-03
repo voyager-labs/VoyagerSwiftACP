@@ -29,7 +29,6 @@ private struct FileManagerNavigationBridgeReducer {
                  .sidebar(.internal(.locationsLoaded)),
                  .sidebar(.internal(.tagsLoaded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
-                    ?? state.content.navigation.currentPath
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none
 
@@ -62,7 +61,6 @@ private struct FileManagerNavigationBridgeReducer {
             case .content(.delegate(.composerCollectionSearchSucceeded)),
                  .content(.delegate(.collectionChangesDiscarded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
-                    ?? state.content.navigation.currentPath
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none
 
@@ -81,7 +79,7 @@ private struct FileManagerNavigationBridgeReducer {
 
 func syncSidebarSelection(
     state: inout FileManagerWindowState,
-    computerName: String,
+    computerName: String?,
 ) {
     switch state.content.navigation.navigationState {
     case .collection:
@@ -97,7 +95,7 @@ func syncSidebarSelection(
     case let .tags(tagName):
         state.sidebar.selectedSidebarItem = tagName
     case .computer:
-        state.sidebar.selectedSidebarItem = computerName
+        state.sidebar.selectedSidebarItem = computerName ?? state.content.navigation.currentPath
     case .folder:
         state.sidebar.selectedSidebarItem = matchedSidebarItemName(
             path: state.content.navigation.currentPath,
@@ -112,16 +110,22 @@ func matchedSidebarItemName(
     path: String,
     favorites: [SidebarItems.FavoriteItem],
     locations: [SidebarItems.LocationItem],
-    computerName: String,
+    computerName: String?,
 ) -> String? {
-    if path == computerName {
+    if let computerName, path == computerName {
         return locations.first(where: { $0.isComputer })?.name ?? path
     }
     if !path.hasPrefix("/") {
         return path
     }
-    return favorites.first(where: { $0.url.path == path })?.name
-        ?? locations.first(where: { $0.url.path == path })?.name
+
+    let standardizedPath = standardizedFilePath(path)
+    return favorites.first(where: { standardizedFilePath($0.url.path) == standardizedPath })?.name
+        ?? locations.first(where: { standardizedFilePath($0.url.path) == standardizedPath })?.name
+}
+
+private func standardizedFilePath(_ path: String) -> String {
+    URL(fileURLWithPath: path).standardizedFileURL.path
 }
 
 func handleNavigateToState(

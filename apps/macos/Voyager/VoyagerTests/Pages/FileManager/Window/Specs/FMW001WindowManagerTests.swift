@@ -81,7 +81,8 @@ final class FMW001WindowManagerTests: XCTestCase {
             .windows(.element(
                 id: newID,
                 action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(newID)))))),
-            )))
+            )),
+        )
 
         // applyAppPreferences child action이 newID로 방출되었는지 수신 확인
         let defaultPackagePrefs = AppPreferencesState().toPackageState()
@@ -89,7 +90,8 @@ final class FMW001WindowManagerTests: XCTestCase {
             .windows(.element(
                 id: newID,
                 action: .window(.applyAppPreferences(defaultPackagePrefs)),
-            )))
+            )),
+        )
 
         // 나머지 파생 이펙트(arrangements 정렬/그룹 갱신)는 package-scoped 테스트가 검증
         await store.finish()

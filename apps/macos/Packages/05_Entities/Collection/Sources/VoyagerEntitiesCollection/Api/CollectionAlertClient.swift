@@ -5,7 +5,7 @@ public struct CollectionAlertClient: Sendable {
     public var showUnsavedNavigationAlert: @Sendable () async -> CollectionNavigationChoice
     public var showCollectionOpenErrorAlert: @Sendable (_ title: String, _ message: String) async -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         showUnsavedNavigationAlert: @escaping @Sendable () async -> CollectionNavigationChoice,
         showCollectionOpenErrorAlert: @escaping @Sendable (_ title: String, _ message: String) async -> Void,
     ) {
@@ -15,7 +15,7 @@ public struct CollectionAlertClient: Sendable {
 }
 
 extension CollectionAlertClient: DependencyKey {
-    public nonisolated static var liveValue: CollectionAlertClient {
+    nonisolated public static var liveValue: CollectionAlertClient {
         CollectionAlertClient(
             showUnsavedNavigationAlert: {
                 await MainActor.run {
@@ -51,14 +51,14 @@ extension CollectionAlertClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: CollectionAlertClient {
+    nonisolated public static var testValue: CollectionAlertClient {
         CollectionAlertClient(
             showUnsavedNavigationAlert: { .cancel },
             showCollectionOpenErrorAlert: { _, _ in },
         )
     }
 
-    public nonisolated static var previewValue: CollectionAlertClient {
+    nonisolated public static var previewValue: CollectionAlertClient {
         CollectionAlertClient(
             showUnsavedNavigationAlert: { .cancel },
             showCollectionOpenErrorAlert: { _, _ in },

@@ -1,6 +1,7 @@
 import Foundation
+import VoyagerShared
 
-struct SearchConditionSanitizer: Sendable {
+struct SearchConditionSanitizer {
     private let conditionBuilder: SearchConditionBuilder
 
     init(conditionBuilder: SearchConditionBuilder) {

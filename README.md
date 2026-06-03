@@ -54,7 +54,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 
 - macOS App
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
-        - Workspace에 Voyager.xcodeproj와 OnboardingHost.xcodeproj가 모두 포함되어 있습니다
+        - Workspace에 Voyager.xcodeproj, OnboardingHost.xcodeproj, SettingsHost.xcodeproj가 포함되어 있습니다
     - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
     - VSCode 류 IDE(Sweetpad Extension)에서 실행:
         - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
@@ -67,6 +67,8 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `Voyager Prod: Launch (Release)` - 프로덕션 환경 Release 모드로 빌드 및 실행
                 - `OnboardingHost Dev: Launch (Debug)` - 온보딩 호스트 Debug 모드로 빌드 및 실행
                 - `OnboardingHost Dev: Launch (Release)` - 온보딩 호스트 Release 모드로 빌드 및 실행
+                - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
+                - `SettingsHost Dev: Launch (Release)` - 설정 호스트 Release 모드로 빌드 및 실행
             - 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
     - Zed에서 LSP context/검증 태스크 실행:
         - `cmd-shift-p`로 Command Palette를 열고 `task: spawn`을 실행합니다.
@@ -86,6 +88,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
     - Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
     - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
     - OnboardingHost Build (CLI): `xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug`
+    - SettingsHost Build (CLI): `xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug`
 
 ### Xcode 버전 관리
 
@@ -96,12 +99,11 @@ Swift 기대 버전은 루트 `.swift-toolchain-version`에 별도로 명시합�
 
 `swiftly`를 사용하는 환경을 위해 루트 `.swift-version`은 `xcode`로 고정합니다.
 `.swift-version`은 swiftly가 읽는 toolchain 선택 파일이고, `.swift-toolchain-version`은 이 레포가 기대하는 Swift 버전을 검증하기 위한 파일입니다.
-따라서 `swiftly`가 PATH에서 먼저 잡히더라도 레포 안에서는 현재 선택된 Xcode toolchain을 사용하고, 그 결과가 Swift 6.2.1인지 `just swift-version`으로 확인합니다.
+따라서 `swiftly`가 PATH에서 먼저 잡히더라도 레포 안에서는 현재 선택된 Xcode toolchain을 사용하고, 그 결과가 Swift 6.2.1인지 `mise run swift-version`으로 확인합니다.
 
 #### 사전 준비
 
 - macOS
-- [Homebrew](https://brew.sh) 설치
 - Xcode 설치 및 업데이트 권한
 
 #### 이 프로젝트용 Xcode 설정 방법
@@ -116,7 +118,7 @@ chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 �
 이 스크립트는 다음 작업을 수행합니다.
 
 1. 레포 루트의 `.xcode-version` 파일을 읽어, 필요한 Xcode 버전을 확인합니다.
-2. `xcodes` CLI가 설치되어 있지 않으면 Homebrew로 설치합니다.
+2. `xcodes` CLI가 설치되어 있지 않으면 설치합니다.
 3. `xcodes install <버전>`으로 해당 Xcode 버전을 설치합니다. (이미 설치되어 있다면 건너뜁니다)
 4. `xcodes select <버전>`으로 해당 버전을 현재 macOS의 활성 Xcode로 설정합니다.
 
@@ -124,10 +126,10 @@ chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 �
 
 ```bash
 swiftly use
-just swift-version
+mise run swift-version
 ```
 
-정상이라면 `swiftly use`는 `xcode`, `just swift-version`은 `.swift-toolchain-version`과 일치하는 Swift 6.2.1을 출력합니다.
+정상이라면 `swiftly use`는 `xcode`, `mise run swift-version`은 `.swift-toolchain-version`과 일치하는 Swift 6.2.1을 출력합니다.
 
 설정이 제대로 되었는지 확인하려면:
 
@@ -148,7 +150,7 @@ xcodebuild -version
 처음 클론한 후(그리고 새로운 머신에서) **레포 루트에서 한 번만** 실행하세요:
 
 ```bash
-make bootstrap
+bash scripts/setup.sh
 ```
 
 이 설정은 repo-local git config(`core.hooksPath`)에 저장되며, 동일 레포에서 생성한 worktree에도 그대로 적용되는 것을 목표로 합니다.
@@ -165,18 +167,18 @@ make bootstrap
 `opencode` 세션에서 사용하려면 각 개발자 로컬 환경에 `cupertino` 바이너리가 먼저 설치되어 있어야 합니다.
 
 - 지원 플랫폼: macOS 15+
-- 설치(권장):
+- 설치(upstream installer 권장):
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/mihaelamj/cupertino/main/install.sh)
+```
+
+- 또는 Homebrew 사용:
 
 ```bash
 brew tap mihaelamj/tap
 brew install cupertino
 cupertino setup
-```
-
-- 또는 upstream installer 사용:
-
-```bash
-bash <(curl -sSL https://raw.githubusercontent.com/mihaelamj/cupertino/main/install.sh)
 ```
 
 설치 후에는 아래 명령으로 경로를 확인하세요.
@@ -217,9 +219,15 @@ which cupertino
         3. 동일 변경사항을 `develop` 및 진행 중인 `release/*` 브랜치에도 반영
 
 - Conventional Commits
-    - type/scope 정책과 예시는 `.agents/skills/commit-message/SKILL.md`를 source of truth로 사용
-    - Subject는 Conventional Commit 형식 유지: `<type>(<scope>): <short description>` 또는 `<type>: <short description>`
-    - Body는 필요할 때만 `- ` 불릿으로 WHAT/WHY를 명확히 기재
+    - Subject: `<type>(<scope>): <short description>` (명령형, ≲ 50자)
+    - Scope: 모노레포 명확성을 위해 `(backend)` 또는 `(macos)` 권장
+    - Types: `feat`, `fix`, `ui`, `refactor`, `style`, `docs`, `chore`, `test`, `ci`, `build`
+    - Body: `- ` 불릿으로 WHAT/WHY, 현재형, 영향 범위/파일 필요 시 명시
+    - 예시:
+        - `feat(backend): add asset ingestion endpoint`
+        - `fix(macos): resolve crash on QuickLook preview`
+        - `ui(macos): improve sidebar navigation layout`
+        - `docs: consolidate API contract guidelines`
 
 - Pull Requests
     - PR 설명에 의도/범위/리스크/검증 증거/롤백 포함, 관련 이슈 링크 및 UI 변경 시 스크린샷 첨부

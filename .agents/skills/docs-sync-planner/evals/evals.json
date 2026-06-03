@@ -13,7 +13,7 @@
     },
     {
       "id": 2,
-      "prompt": "We changed a developer command in justfile. Plan which docs should be updated without duplicating policy text.",
+      "prompt": "We changed a developer command in mise.toml. Plan which docs should be updated without duplicating policy text.",
       "expected_output": "A concise plan that distinguishes canonical human docs from agent-only rules and proposes link/path verification.",
       "assertions": [
         "Output checks human-facing docs separately from agent rules",

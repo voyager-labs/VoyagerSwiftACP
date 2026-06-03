@@ -32,7 +32,7 @@ import XCTest
 
 @MainActor
 final class SET002ConfigureGeneralSettingsTests: XCTestCase {
-    private nonisolated(unsafe) var storage: InMemoryStorage!
+    nonisolated(unsafe) private var storage: InMemoryStorage!
 
     override func setUp() {
         super.setUp()

@@ -19,7 +19,9 @@ struct ComposerTopRowView: View {
     @State var isClearHovering: Bool = false
     @State var isSaveHovering: Bool = false
 
-    var isDark: Bool { colorScheme == .dark }
+    var isDark: Bool {
+        colorScheme == .dark
+    }
 
     var body: some View {
         WithViewStore(
@@ -47,6 +49,7 @@ private extension ComposerTopRowView {
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .frame(height: 40)
+        .accessibilityIdentifier("composer.inputRow")
     }
 
     @ViewBuilder
@@ -252,9 +255,9 @@ private extension ComposerTopRowView {
         isLocked: Bool,
     ) -> some View {
         let trimmedText = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isRootScopeOnly = viewStore.scopes == [ComposerScopeUtils.rootScopePath]
+        let isRootScopeOnly = viewStore.isSemanticallyRootOnly
         let isAllEmpty = trimmedText.isEmpty && viewStore.conditions.isEmpty
-            && (viewStore.scopes.isEmpty || isRootScopeOnly)
+            && (viewStore.scopeEditor.selection.legacyScopePaths.isEmpty || isRootScopeOnly)
         let isDiscard = isDiscardEnabled
         let isEnabled = isDiscard ? !isLocked : (!isLocked && !isAllEmpty)
 

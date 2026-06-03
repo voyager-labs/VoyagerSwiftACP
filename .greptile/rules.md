@@ -201,6 +201,77 @@ When a PR touches credential, OAuth, provider, settings, or file-backed storage 
 
 Flag storage path mismatches as correctness/data-loss risks, not style issues.
 
+## Backend API contracts
+
+When a PR touches backend routes, request/response schemas, search conversion,
+or API clients, verify the observable contract rather than implementation style:
+
+- Response envelopes, status codes, and error shapes remain compatible with
+  existing clients.
+- Internal exceptions, tracebacks, filesystem paths, and provider details are
+  not exposed as raw API responses.
+- Search conversion endpoints preserve the documented convert-only contract;
+  do not introduce implicit indexing, filesystem mutation, or app-runtime
+  coupling through backend APIs.
+- Schema/model changes include matching route behavior and tests for success,
+  validation failure, and provider/backend failure paths.
+
+Flag API contract drift as a correctness or compatibility risk, not a naming
+or formatting issue.
+
+## Environment, secrets, and build settings
+
+When a PR touches `APP_ENV`, `PUBLIC_*` values, `.env.prod`, scheme
+environment, `Info.plist`, entitlement files, or env-copy/build scripts, check
+for runtime mismatch and secret exposure:
+
+- Secrets must not be committed, copied into bundles, logged, or represented as
+  `PUBLIC_*` values.
+- Debug/release environment selection must stay deterministic and match the
+  app/helper/XPC launch path.
+- Build scripts must copy only intended secret-free production templates and
+  must not make local `.env.dev` values part of the app bundle.
+- `Info.plist`, entitlements, and scheme changes must not silently weaken
+  sandboxing, helper lookup, network access, or release behavior.
+
+Treat leaked secrets as P0 and boot/runtime environment mismatches as P1 when
+the failure is concrete.
+
+## Helper and XPC contracts
+
+When a PR changes helper launch code, XPC protocols/transports, helper state
+broadcasting, indexing, external file replay, or app-helper handoff paths,
+review the contract across all participating targets:
+
+- Shared protocol changes must be reflected in the app, helper/XPC service,
+  transport adapters, and tests/fixtures that exercise the contract.
+- Timeouts, process termination, unavailable helper states, and replay/restore
+  paths must fail closed and surface semantic reducer actions.
+- Do not bypass the shared XPC/helper contract with global notifications,
+  singleton state, direct file mutation, or app-only assumptions.
+- The app and helper must agree on storage paths, environment, protocol version,
+  and failure semantics.
+
+Flag mismatched contracts, missing failure paths, and one-sided app/helper
+updates as P1 runtime risks.
+
+## Package and public boundaries
+
+When a PR touches Swift packages or promotes code across package boundaries,
+verify package independence and public API completeness:
+
+- Package targets must not import the app target or higher FSD layers; use
+  dependency injection, adapters, or lower-layer promotion instead.
+- Avoid `@testable import Voyager` or app-only fixtures in package tests.
+- Public API promotions must expose the initializer, stored properties, enum
+  cases, and dependency surfaces needed by real consumers, not only the current
+  call site.
+- Wrapper-only compatibility types should be removed or folded into the
+  canonical owner unless they represent a stable external boundary.
+
+Flag package reverse dependencies, incomplete public surfaces, and compatibility
+wrappers that hide ownership drift as P1 maintainability risks.
+
 ## Local-only artifacts
 
 The following paths are local agent/runtime artifacts:
@@ -236,11 +307,32 @@ Use this format for findings:
 <왜 문제가 되는지 한국어로 설명. 이 레포의 구조/소유권/재사용 관점에서 구체적으로 설명.>
 
 Evidence:
+
 - `<path>`: <relevant symbol or behavior>
 - Existing pattern to reuse: `<path or type>`
 
 Suggested direction:
+
 - <concrete alternative>
 ```
 
 If there are no P0/P1 findings, say that no high-confidence structural/runtime issues were found.
+
+## Review output and decision
+
+When a review is not skipped, structure the final output around:
+
+- TL;DR: Korean summary of intent, scope, and verdict.
+- Findings: P0/P1 findings only, using the comment format above. If there are no findings, state that no high-confidence structural/runtime issues were found.
+- Coverage: required for large PRs or partial reviews; state reviewed/skipped areas and confidence.
+- Tests/QA: concrete commands or user flows relevant to the reviewed risk.
+- Risk: rollback, feature flag, migration, or follow-up risk when applicable.
+- Review decision: `approve`, `comment`, or `request changes`.
+
+Decision policy:
+
+- Use `request changes` when there is one or more P0/P1 finding.
+- Use `approve` when there are no P0/P1 findings and the change is well-structured.
+- Use `comment` when there are no P0/P1 findings but the review should record non-blocking observations or coverage caveats.
+
+Non-blocking observations must not be labeled as P0/P1 findings.

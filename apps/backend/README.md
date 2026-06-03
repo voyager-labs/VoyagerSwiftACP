@@ -21,11 +21,9 @@ uv run dev
 참고: OpenAPI 문서는 `http://localhost:8000/docs` 에서 확인할 수 있습니다.
 
 ### `POST /api/collection`
-
 자연어 쿼리 기반 조건 변환(LLM) + 선택적 필터
 
 요청(JSON): `QuerySearchRequest`
-
 - `query`: string
 - `filters` (optional): `{ scopes: string[], conditions: SearchCondition[] }`
 
@@ -42,7 +40,6 @@ curl -X POST http://localhost:8000/api/collection \
 - 일부 실패 케이스는 HTTP error로 raise 되지 않고 `SearchResponse.error` 필드로 표현되며, 이 경우에도 HTTP status가 `200`일 수 있습니다.
 
 **쿼리 예시:**
-
 - "PDF 파일"
 - "최근 1주일 이내 수정된 이미지"
 - "큰 동영상 파일"
@@ -53,4 +50,4 @@ curl -X POST http://localhost:8000/api/collection \
 **상세 가이드**
 
 - 개발 환경: `docs/development.md`
-- 검색 API/흐름: `docs/integration/search-contract.md`
+- 검색 API/흐름: `docs/features/search.md`

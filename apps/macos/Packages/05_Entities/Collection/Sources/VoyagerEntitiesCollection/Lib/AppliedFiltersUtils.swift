@@ -4,11 +4,18 @@ import VoyagerShared
 public enum AppliedFiltersUtils {
     public struct ResolutionResult: Equatable {
         public let scopes: [String]
+        public let excludedScopes: [String]
         public let conditions: [Condition]
         public let unknownKeys: [String]
 
-        public init(scopes: [String], conditions: [Condition], unknownKeys: [String]) {
+        public init(
+            scopes: [String],
+            excludedScopes: [String] = [],
+            conditions: [Condition],
+            unknownKeys: [String],
+        ) {
             self.scopes = scopes
+            self.excludedScopes = excludedScopes
             self.conditions = conditions
             self.unknownKeys = unknownKeys
         }
@@ -24,12 +31,14 @@ public enum AppliedFiltersUtils {
         fallbackScopes: [String],
         fallbackConditions: [Condition],
         registryClient: RegistryClient,
+        fallbackExcludedScopes: [String] = [],
     ) -> (scopes: [String], conditions: [Condition]) {
         let resolved = resolveDetailed(
             appliedFilters,
             fallbackScopes: fallbackScopes,
             fallbackConditions: fallbackConditions,
             registryClient: registryClient,
+            fallbackExcludedScopes: fallbackExcludedScopes,
         )
         return (resolved.scopes, resolved.conditions)
     }
@@ -39,8 +48,13 @@ public enum AppliedFiltersUtils {
         fallbackScopes: [String],
         fallbackConditions: [Condition],
         registryClient: RegistryClient,
+        fallbackExcludedScopes: [String] = [],
     ) -> ResolutionResult {
         let scopes = appliedFilters?.scopes ?? fallbackScopes
+        let excludedScopes = resolvedExcludedScopes(
+            appliedFilters: appliedFilters,
+            fallbackExcludedScopes: fallbackExcludedScopes,
+        )
         if let appliedConditions = appliedFilters?.conditions {
             let resolved = appliedConditions.map {
                 makeResolvedCondition(from: $0, registryClient: registryClient)
@@ -50,15 +64,30 @@ public enum AppliedFiltersUtils {
             ).sorted()
             return ResolutionResult(
                 scopes: scopes,
+                excludedScopes: excludedScopes,
                 conditions: resolved.map(\.condition),
                 unknownKeys: unknownKeys,
             )
         }
         return ResolutionResult(
             scopes: scopes,
+            excludedScopes: excludedScopes,
             conditions: fallbackConditions,
             unknownKeys: [],
         )
+    }
+
+    private static func resolvedExcludedScopes(
+        appliedFilters: VoyagerShared.AppliedFiltersPayload?,
+        fallbackExcludedScopes: [String],
+    ) -> [String] {
+        guard let appliedFilters else {
+            return fallbackExcludedScopes
+        }
+        if appliedFilters.excludedScopes.isEmpty, !fallbackExcludedScopes.isEmpty {
+            return fallbackExcludedScopes
+        }
+        return appliedFilters.excludedScopes
     }
 
     private static func makeResolvedCondition(

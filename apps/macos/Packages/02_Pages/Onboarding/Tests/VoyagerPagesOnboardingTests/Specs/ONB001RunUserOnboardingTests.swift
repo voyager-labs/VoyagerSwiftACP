@@ -350,7 +350,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 검증 내용: betaAccess 확인 응답 처리 후 `save()`가 호출되고 업데이트된 단계 상태를 반영합니다.
     /// - 사전 조건: `saveRecorder`로 저장 호출을 캡처합니다. 초기 상태에서 betaAccess 확인 응답을 전송합니다.
     /// - 기대 결과: 저장된 스냅샷의 `betaAccessComplete`이 `true`입니다.
-    func testStepStateUpdateTriggersProgressSave() async {
+    func testStepStateUpdateTriggersProgressSave() async throws {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
@@ -367,7 +367,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let saved = saveRecorder.value
         XCTAssertNotNil(saved)
         // swiftlint:disable:next force_unwrapping
-        XCTAssertTrue(saved!.stepState.betaAccessComplete)
+        XCTAssertTrue(try XCTUnwrap(saved?.stepState.betaAccessComplete))
 
         await store.finish()
     }

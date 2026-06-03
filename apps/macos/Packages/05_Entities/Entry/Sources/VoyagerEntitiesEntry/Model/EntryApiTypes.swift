@@ -7,7 +7,7 @@ public struct ApplicationInfo: Identifiable, Equatable, Sendable {
     public let bundleID: String?
     public let isDefault: Bool
 
-    public nonisolated init(id: String, name: String, bundleID: String?, isDefault: Bool = false) {
+    nonisolated public init(id: String, name: String, bundleID: String?, isDefault: Bool = false) {
         self.id = id
         self.name = name
         self.bundleID = bundleID
@@ -20,7 +20,7 @@ public struct EntryItemMetadata: Equatable, Sendable {
     public let creatorApplication: String?
     public let lastUsedDate: Date?
 
-    public nonisolated init(kind: String, creatorApplication: String?, lastUsedDate: Date?) {
+    nonisolated public init(kind: String, creatorApplication: String?, lastUsedDate: Date?) {
         self.kind = kind
         self.creatorApplication = creatorApplication
         self.lastUsedDate = lastUsedDate
