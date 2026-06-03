@@ -146,13 +146,23 @@ extension AiChatFeature {
             return .none
         }
 
+        let failedLock = lock.recordingTerminal(
+            at: currentTimestampMs(),
+            failure: reason,
+            wasCancelled: false,
+        )
+        state.executionPhase = .failed(failedLock, reason)
+        guard isVisibleRequest(lock: lock, state: state) else {
+            state.lockedModelHandle = nil
+            return .merge(
+                .cancel(id: CancelID.request),
+                .cancel(id: CancelID.requestStartPersistence),
+            )
+        }
+
         clearStreamingDraftIfEmpty(lock: lock, state: &state)
         state.lockedModelHandle = nil
         state.lastExecutionFailure = reason
-        state.executionPhase = .failed(
-            lock.recordingTerminal(at: currentTimestampMs(), failure: reason, wasCancelled: false),
-            reason,
-        )
         state.transcriptAutoScrollVersion += 1
         return .merge(
             .cancel(id: CancelID.request),

@@ -163,7 +163,8 @@ struct AiChatStateDisplayModelBuilder {
             return "Processing \(lock.selectedModelRow?.displayName ?? lock.selectedModelHandle.rawValue)"
         case .completed:
             return selectedModelUnsupportedStatusText
-        case let .failed(_, failure):
+        case let .failed(lock, failure):
+            guard isVisibleRequest(lock: lock) else { return selectedModelUnsupportedStatusText }
             return failure.displayMessage
         case .cancelled:
             return "Request cancelled"
@@ -218,7 +219,17 @@ struct AiChatStateDisplayModelBuilder {
                     selectedModel: selectedModelDisplayModel,
                 )
             }
-        case .completed, .failed, .cancelled, .persistenceRecovery:
+        case let .failed(lock, _):
+            if isVisibleRequest(lock: lock) {
+                if let metadata = aiChatUnconnectedMetadata(for: state) {
+                    return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
+                }
+                if let metadata = aiChatTerminalErrorMetadata(for: state) {
+                    return .error(connection: metadata, summary: currentContextSummaryDisplayModel)
+                }
+                return .ready(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
+            }
+        case .completed, .cancelled, .persistenceRecovery:
             if let metadata = aiChatUnconnectedMetadata(for: state) {
                 return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
             }

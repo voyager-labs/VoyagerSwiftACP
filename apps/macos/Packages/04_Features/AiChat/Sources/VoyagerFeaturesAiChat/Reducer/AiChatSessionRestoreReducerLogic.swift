@@ -209,8 +209,14 @@ extension AiChatFeature {
         for _: AiChatSessionID,
         state: State,
     ) -> AiChatExecutionPhase? {
-        guard case let .processing(lock) = state.executionPhase else { return nil }
-        return .processing(lock)
+        switch state.executionPhase {
+        case let .processing(lock):
+            .processing(lock)
+        case let .failed(lock, failure):
+            .failed(lock, failure)
+        case .idle, .completed, .cancelled, .persistenceRecovery:
+            nil
+        }
     }
 
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
