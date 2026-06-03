@@ -111,6 +111,38 @@ Tests/<PackageTestTarget>/
 
 Both suites share the same spec ID prefix and the same interaction IDs in `// MARK:` sections and traceability comments, but each suite only asserts behavior within its own ownership scope.
 
+## Forbidden implementation-named suites
+
+A suite whose filename includes reducer, client, status, contract, or feature implementation terms after the spec ID prefix must not contain product AC coverage. Only `<SpecID><PascalCaseSpecTitle>Tests` owns product ACs.
+
+### Examples of forbidden suite names
+
+These real patterns from LicenseAuth package tests violate the ownership rule because they embed implementation detail in the suite name:
+
+| Forbidden suite name                         | Why it is forbidden                                           |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| `ONB002UnlockLicenseAuthReducerTests`        | Reducer implementation detail, not a spec-owner suite         |
+| `ONB002LicenseAuthClientContractTests`       | Client implementation detail, not a spec-owner suite          |
+| `ONB002LicenseAuthStatusActivityTests`       | Status activity implementation detail, not a spec-owner suite |
+| `ONB002LicenseAuthStatusCodingContractTests` | Coding contract detail, not a spec-owner suite                |
+| `UnlockLicenseAuthFeatureTests`              | Forbidden `FeatureTests` suffix                               |
+
+### Correct owner
+
+The correct spec-owner suite for ONB-002 is `ONB002PresentAccessUnlockStepTests`, derived from the feature inventory:
+
+- `feature_id` = `ONB-002`
+- `feature_title` = `Present Access Unlock Step`
+- Compact prefix: `ONB002`
+- PascalCase title: `PresentAccessUnlockStep`
+- Expected suite: `ONB002PresentAccessUnlockStepTests.swift`
+
+Each target that owns ONB-002 behavior should contain a file named `ONB002PresentAccessUnlockStepTests.swift`, not any of the forbidden names above.
+
+### Rule
+
+If a suite name matches the spec-like pattern `[A-Z]{2,4}[0-9]{3}.*Tests\.swift` but does not match the TSV-computed owner suite name `<CompactPrefix><PascalCaseTitle>Tests.swift`, it must not contain product interaction `// MARK:` sections. Such files may exist as technical-only contract or adapter tests, but they must not own product AC coverage.
+
 ## Support rules
 
 - Put fixtures, recorders, dependency doubles, builders, and helper assertions in `Support/`.
