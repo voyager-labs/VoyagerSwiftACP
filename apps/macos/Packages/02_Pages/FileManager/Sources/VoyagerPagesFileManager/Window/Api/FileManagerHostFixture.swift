@@ -14,16 +14,17 @@ import VoyagerWidgetsEntryViewLayout
 public enum FileManagerHostFixture {
     public static func makeWindowController() -> NSWindowController {
         let state = FileManagerHostFixtureStateFactory.makeState()
+        let undoManager = UndoManager()
         let store = Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
-            FileManagerHostFixtureDependencies.apply(to: &$0)
+            FileManagerHostFixtureDependencies.apply(to: &$0, undoManager: undoManager)
         }
 
         return FileManagerWindowCoordinator(
             windowID: UUID(),
             store: store,
-            windowUndoManager: UndoManager(),
+            windowUndoManager: undoManager,
         )
     }
 }
@@ -50,7 +51,7 @@ private enum FileManagerHostFixtureStateFactory {
 
 @MainActor
 private enum FileManagerHostFixtureDependencies {
-    static func apply(to dependencies: inout DependencyValues) {
+    static func apply(to dependencies: inout DependencyValues, undoManager: UndoManager) {
         dependencies.userDefaultsClient = .previewValue
         dependencies.metricsClient = .previewValue
         dependencies.fileManagerWindowClient = .previewValue
@@ -73,7 +74,7 @@ private enum FileManagerHostFixtureDependencies {
         dependencies.entryQuickLookClient = .previewValue
         dependencies.entryFileOpsClient = .previewValue
         dependencies.entryOperationsAlertClient = .previewValue
-        dependencies.undoManagerClient = .live(undoManager: UndoManager())
+        dependencies.undoManagerClient = .live(undoManager: undoManager)
         dependencies.registryClient = .testValue
         dependencies.collectionFileClient = .testValue
         dependencies.collectionAlertClient = .previewValue
