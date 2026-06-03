@@ -85,26 +85,30 @@ struct OnboardingState: Equatable {
         if isPriorRequiredStepComplete(step) {
             return step
         }
-        // Fallback: walk backwards to find the last completed step.
+        // Fallback: walk backwards to find the first step whose entire prior chain is complete.
         var candidate = step
-        while !isStepComplete(candidate) {
+        while true {
+            if isPriorRequiredStepComplete(candidate) {
+                return candidate
+            }
             guard let previous = candidate.previous else {
                 return .welcome
             }
             candidate = previous
         }
-        return candidate
     }
 
-    /// Returns `true` when the immediate prior required step for the given step is complete.
+    /// Returns `true` when **all** prior required steps for the given step are complete.
     /// - `.welcome` has no prior requirements (always `true`).
     /// - `.betaAccess` requires `.welcome` complete.
-    /// - `.permissions` requires `.betaAccess` complete.
-    /// - `.complete` requires `.permissions` complete.
+    /// - `.permissions` requires `.welcome` + `.betaAccess` complete.
+    /// - `.complete` requires `.welcome` + `.betaAccess` + `.permissions` complete.
     private func isPriorRequiredStepComplete(_ step: OnboardingStep) -> Bool {
-        guard let previous = step.previous else {
-            return true
+        // Walk the entire chain from .welcome up to (but not including) `step`.
+        for priorStep in OnboardingStep.allCases {
+            if priorStep == step { break }
+            if !isStepComplete(priorStep) { return false }
         }
-        return isStepComplete(previous)
+        return true
     }
 }

@@ -716,7 +716,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 검증 내용: `currentStep = .permissions`이지만 betaAccess가 미완료이면 welcome으로 되돌아갑니다.
     /// - 사전 조건: snapshot에 `permissions`가 currentStep이지만 betaAccess/permissions 미완료입니다.
     ///   초기 상태를 `.complete`/완료로 설정하여 mutation 관찰이 가능합니다.
-    /// - 기대 결과: `onAppear` 후 `currentStep = .welcome`, `complete.isComplete = false`로 복원됩니다.
+    /// - 기대 결과: `onAppear` 후 `currentStep = .betaAccess`, `complete.isComplete = false`로 복원됩니다.
     func testResumeWithIncompleteCurrentStepFallsBack() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .permissions,
@@ -739,13 +739,50 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
-        // permissions 미완료 → lastValidStep이 welcome으로 되돌아감
+        // betaAccess 미완료 → lastValidStep이 betaAccess로 되돌아감
         await store.send(.onAppear) { state in
-            state.currentStep = .welcome
+            state.currentStep = .betaAccess
             state.complete.isComplete = false
         }
 
-        XCTAssertEqual(store.state.currentStep, .welcome)
+        XCTAssertEqual(store.state.currentStep, .betaAccess)
+
+        await store.finish()
+    }
+
+    /// ONB-001-resume_onboarding_session: snapshot에 currentStep == .complete이지만 중간 선행 단계가 미완료면 복원하지 않는다.
+    /// `currentStep = .complete`, `permissionsComplete = true`, `betaAccessComplete = false`인 불일치 snapshot에서
+    /// complete 단계로 직접 복원하지 않고 가장 마지막 완료 단계인 welcome으로 되돌아갑니다.
+    /// - 사전 조건: snapshot에 welcome만 완료, betaAccess 미완료, permissions 완료(불일치), currentStep = .complete.
+    /// - 기대 결과: `onAppear` 후 `currentStep = .betaAccess`으로 fallback (welcome은 완료이므로 betaAccess부터 재개).
+    func testResumeCompleteStepWithIncompleteBetaAccessFallsBack() async {
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .complete,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                betaAccessComplete: false,
+                permissionsComplete: true,
+                completeComplete: false,
+            ),
+        )
+
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .complete
+        initialState.complete.isComplete = true
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
+        }
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .betaAccess
+            state.permissions.isComplete = true
+            state.complete.isComplete = false
+        }
+
+        XCTAssertEqual(store.state.currentStep, .betaAccess)
 
         await store.finish()
     }
@@ -903,7 +940,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// 마지막 유효 단계로 대체됨을 검증합니다.
     /// - 검증 내용: complete/betaAccess/permissions가 모두 미완료이면 welcome으로 fallback합니다.
     /// - 사전 조건: snapshot에 `currentStep = .complete`, welcome만 완료, 나머지 미완료가 저장되어 있습니다.
-    /// - 기대 결과: `onAppear` 후 `currentStep = .welcome`, welcome만 완료, betaAccess 미완료입니다.
+    /// - 기대 결과: `onAppear` 후 `currentStep = .betaAccess`, welcome만 완료, betaAccess 미완료입니다.
     func testResumeFromUnknownStepFallsBackToLastValidStep() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .complete,
@@ -921,11 +958,12 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
-        // complete ✗ → permissions ✗ → betaAccess ✗ → welcome ✓
-        // 적용된 상태가 기본값과 동일하므로 클로저 불필요
-        await store.send(.onAppear)
+        // complete ✗ → permissions ✗ → betaAccess: prior chain (welcome) complete → .betaAccess
+        await store.send(.onAppear) { state in
+            state.currentStep = .betaAccess
+        }
 
-        XCTAssertEqual(store.state.currentStep, .welcome)
+        XCTAssertEqual(store.state.currentStep, .betaAccess)
         XCTAssertTrue(store.state.isStepComplete(.welcome))
         XCTAssertFalse(store.state.isStepComplete(.betaAccess))
 
