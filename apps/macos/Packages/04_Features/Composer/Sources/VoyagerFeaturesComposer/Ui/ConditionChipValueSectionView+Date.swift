@@ -376,18 +376,9 @@ extension ConditionChipValueSectionView {
     }
 
     private func relativePresetPicker(selection: Binding<DateValueState.RelativePreset>) -> some View {
-        Picker("", selection: selection) {
-            Text("Custom").tag(DateValueState.RelativePreset.custom)
-            Text("Today").tag(DateValueState.RelativePreset.today)
-            Text("Yesterday").tag(DateValueState.RelativePreset.yesterday)
-            Text("Last 7 days").tag(DateValueState.RelativePreset.last7Days)
-            Text("Last 30 days").tag(DateValueState.RelativePreset.last30Days)
-            Text("Last 3 months").tag(DateValueState.RelativePreset.last3Months)
-            Text("Last year").tag(DateValueState.RelativePreset.lastYear)
-        }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .frame(width: kDatePopoverContentWidth)
+        RelativePresetMenuPicker(selection: selection, width: kDatePopoverContentWidth)
+            .fixedSize()
+            .frame(width: kDatePopoverContentWidth, alignment: .center)
     }
 
     private func relativeCustomInputRow(

@@ -3,7 +3,7 @@ import Foundation
 import VoyagerEntitiesCollection
 import VoyagerShared
 
-private func applyRelativePreset(_ preset: DateValueState.RelativePreset, to dateValueState: inout DateValueState) {
+func applyRelativePreset(_ preset: DateValueState.RelativePreset, to dateValueState: inout DateValueState) {
     dateValueState.relativePreset = preset
     switch preset {
     case .custom:
@@ -46,7 +46,7 @@ private func applyRelativePreset(_ preset: DateValueState.RelativePreset, to dat
     }
 }
 
-private func syncRelativeSelectedDate(_ dateValueState: inout DateValueState) {
+func syncRelativeSelectedDate(_ dateValueState: inout DateValueState) {
     let now = DateNormalizerUtils.normalizedDay(Date())
     let literal = RelativeDateConditionLiteral(
         direction: dateValueState.relativeDirection,
@@ -57,7 +57,7 @@ private func syncRelativeSelectedDate(_ dateValueState: inout DateValueState) {
     dateValueState.selectedDate = literal.resolve(now: now) ?? now
 }
 
-private func prepareDateValueState(
+func prepareDateValueState(
     values: [String],
     valueType: String,
     valueArity: Int,
@@ -100,7 +100,7 @@ private func prepareDateValueState(
     )
 }
 
-private func commitSemanticDateIfNeeded(
+func commitSemanticDateIfNeeded(
     state: inout ValuePickerFeature.State,
     propertyKey: String,
 ) -> Effect<ValuePickerFeature.Action>? {
@@ -148,10 +148,10 @@ private func commitSemanticDateIfNeeded(
     )
 }
 
-private func isSingleDateEditing(_ state: ValuePickerFeature.State) -> Bool {
+func isSingleDateEditing(_ state: ValuePickerFeature.State) -> Bool {
     state.valueArity == 1 && (state.valueType == "date" || state.valueType == "datetime")
 }
 
-private func isToday(_ date: Date) -> Bool {
+func isToday(_ date: Date) -> Bool {
     DateNormalizerUtils.formatDateOnly(date) == DateNormalizerUtils.formatDateOnly(Date())
 }
