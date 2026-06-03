@@ -1,5 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    ".agents/rules/00-core/*.md",
+    ".agents/rules/10-routing/*.md",
+    ".agents/rules/99-agent/01-agent-harness-artifacts.md"
+  ],
   "mcp": {
     "cupertino": {
       "type": "local",
@@ -23,7 +28,7 @@
       "extensions": [".md"]
     },
     "swiftformat": {
-      "command": ["mise", "exec", "--", "swiftformat", "$FILE"],
+      "command": ["swiftformat", "$FILE"],
       "extensions": [".swift"]
     }
   }

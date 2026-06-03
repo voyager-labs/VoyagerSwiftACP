@@ -20,6 +20,7 @@ struct AppPreferencesState: Equatable {
 
     var sidebarVisible: Bool = true
     var sidebarWidth: CGFloat = 220
+    var inspectorWidth: CGFloat = FileManagerInspectorLayoutMetrics.defaultWidth
 
     static func load(from userDefaultsClient: UserDefaultsClient) -> Self {
         var state = AppPreferencesState()
@@ -52,8 +53,11 @@ struct AppPreferencesState: Equatable {
 
         // TODO: UserDefaults sidebar 저장 버그 수정 후 원복
         state.sidebarVisible = true
-        if let sidebarWidth = userDefaultsClient.object(SettingsKeys.sidebarWidth) as? Double, sidebarWidth > 0 {
-            state.sidebarWidth = CGFloat(sidebarWidth)
+        if let sidebarWidth = readPersistedCGFloat(userDefaultsClient, SettingsKeys.sidebarWidth) {
+            state.sidebarWidth = sidebarWidth
+        }
+        if let inspectorWidth = readPersistedCGFloat(userDefaultsClient, SettingsKeys.inspectorWidth) {
+            state.inspectorWidth = inspectorWidth
         }
         return state
     }
@@ -71,6 +75,7 @@ struct AppPreferencesState: Equatable {
         result.gridTextSize = gridTextSize
         result.sidebarVisible = sidebarVisible
         result.sidebarWidth = sidebarWidth
+        result.inspectorWidth = inspectorWidth
         return result
     }
 }
@@ -83,4 +88,12 @@ private func readCGFloat(_ userDefaultsClient: UserDefaultsClient, _ key: String
         return CGFloat(value)
     }
     return nil
+}
+
+private func readPersistedCGFloat(_ userDefaultsClient: UserDefaultsClient, _ key: String) -> CGFloat? {
+    if let value = readCGFloat(userDefaultsClient, key), value > 0 {
+        return value
+    }
+    let value = userDefaultsClient.double(key)
+    return value > 0 ? CGFloat(value) : nil
 }

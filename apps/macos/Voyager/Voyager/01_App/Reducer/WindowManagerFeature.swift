@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
@@ -13,11 +14,25 @@ struct WindowManagerFeature {
     typealias State = WindowManagerState
     typealias Action = WindowManagerAction
 
+    let pickAttachments: @Sendable () async -> [URL]
+
+    init(
+        pickAttachments: @escaping @Sendable () async -> [URL] = {
+            await MainActor.run {
+                AttachmentPickerPresenter.pickAttachments()
+            }
+        },
+    ) {
+        self.pickAttachments = pickAttachments
+    }
+
     @Dependency(\.onboardingWindowClient)
     private var onboardingWindowClient
 
     @Dependency(\.fileManagerWindowClient)
     private var fileManagerWindowClient
+    @Dependency(\.attachmentPickerClient)
+    private var attachmentPickerClient
 
     @Dependency(\.uuid)
     private var uuid
@@ -56,6 +71,13 @@ struct WindowManagerFeature {
                             id: windowSession.id,
                             action: .window(.applyAppPreferences(packagePreferences)),
                         )))
+                    },
+                )
+
+            case let .lifecycle(.aiConnectionsFileUpdated(file)):
+                return .merge(
+                    state.windows.ids.map { id in
+                        .send(.windows(.element(id: id, action: .window(.aiConnectionsFileUpdated(file)))))
                     },
                 )
 
@@ -116,6 +138,9 @@ struct WindowManagerFeature {
             case .edit(.toggleComposer):
                 return sendCommandToFocusedWindow(state, .toggleComposer)
 
+            case .edit(.openContextualAiChat):
+                return sendCommandToFocusedWindow(state, .openContextualAiChat)
+
             case .edit(.cut):
                 return sendCommandToFocusedWindow(state, .cut)
 
@@ -169,7 +194,17 @@ struct WindowManagerFeature {
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewTab(path))))):
                 return .send(.file(.newTab(path: path)))
 
-            case .windows:
+            case let .windows(.element(id: _, action: .window(.inspector(.setInspectorWidth(width))))):
+                state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
+                return .none
+
+            case let .windows(.element(id: id, action: .window(.delegate(.requestAttachmentPicker)))):
+                return requestAttachmentPicker(for: id)
+
+            case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
+                return .send(.delegate(.openAISettings))
+
+            case .delegate, .windows:
                 return .none
             }
         }
@@ -247,6 +282,7 @@ struct WindowManagerFeature {
         )))
     }
 
+
     private func sendCommandToFocusedWindow(
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
@@ -290,3 +326,19 @@ struct WindowSessionFeature {
 }
 
 typealias WindowSessionState = WindowSessionFeature.State
+
+private extension WindowManagerFeature {
+    func requestAttachmentPicker(for windowID: WindowManagerState.WindowID) -> Effect<Action> {
+        .run { [attachmentPickerClient] send in
+            let urls = await attachmentPickerClient.pickAttachments()
+            guard !urls.isEmpty else { return }
+            let action = await MainActor.run {
+                Action.windows(.element(
+                    id: windowID,
+                    action: .window(.inspector(.aiChat(.attachmentPickerSelection(urls)))),
+                ))
+            }
+            await send(action)
+        }
+    }
+}

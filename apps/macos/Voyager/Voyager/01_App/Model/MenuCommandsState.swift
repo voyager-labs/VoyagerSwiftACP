@@ -31,6 +31,7 @@ struct MenuCommandsState: Equatable {
     var canRedo: Bool
     var selectedItemCount: Int
     var isComposerPresented: Bool
+    var isContextualAiChatPresented: Bool
 
     init() {
         hasFocusedWindow = false
@@ -50,6 +51,7 @@ struct MenuCommandsState: Equatable {
         canRedo = false
         selectedItemCount = 0
         isComposerPresented = false
+        isContextualAiChatPresented = false
     }
 
     init(state: AppRootState) {
@@ -64,7 +66,7 @@ struct MenuCommandsState: Equatable {
         let windowState = window.window
 
         hasFocusedWindow = true
-        let projection = windowState.menuCommandProjection
+let projection = windowState.menuCommandProjection
         canOpen = projection.canOpen
         canQuickLook = projection.canQuickLook
         canGoBack = projection.canGoBack
@@ -81,5 +83,6 @@ struct MenuCommandsState: Equatable {
         canRedo = projection.canRedo
         selectedItemCount = projection.selectedItemCount
         isComposerPresented = projection.isComposerPresented
+        isContextualAiChatPresented = projection.isContextualAiChatPresented
     }
 }

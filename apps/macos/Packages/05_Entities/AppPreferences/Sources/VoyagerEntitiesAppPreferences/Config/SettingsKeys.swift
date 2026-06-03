@@ -13,6 +13,7 @@ public enum SettingsKeys {
     public static let showHiddenFiles = "showHiddenFiles"
     public static let sidebarWidth = "sidebarWidth"
     public static let sidebarVisible = "sidebarVisible"
+    public static let inspectorWidth = "inspectorWidth"
     public static let viewLayout = "viewLayout"
     public static let helperFolderAccessSnapshot = "helperFolderAccessSnapshot"
 }
