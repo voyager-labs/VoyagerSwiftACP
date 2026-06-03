@@ -1,0 +1,50 @@
+{
+  "skill_name": "sisyphus-wiki",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The user rejects putting __adhoc__ under every .sisyphus category and asks for an LLM Wiki that links sessions, plans, reviews, and decisions as a graph. Design the artifact structure.",
+      "expected_output": "A plan-independent .sisyphus/knowledge structure with entries, index.json, graph.jsonl, and relation links to plan-scoped artifacts.",
+      "assertions": [
+        "Output does not propose __adhoc__ under evidence/notepads/reviews as the primary structure",
+        "Output uses .sisyphus/knowledge as the runtime root",
+        "Output separates plan-scoped artifacts from cross-session knowledge entries",
+        "Output includes graph relationships between sessions, plans, reviews, decisions, and entries"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "A compound review found that a REJECT → FIX → APPROVE correction was lost from structured findings. Create a durable wiki entry shape for this knowledge.",
+      "expected_output": "A Markdown entry with frontmatter including id, type, tags, sources, relations, affected artifacts, and body sections for context, durable insight, implications, and next action.",
+      "assertions": [
+        "Output includes YAML frontmatter for the entry",
+        "Output includes sources linking to session/plan/review artifacts",
+        "Output uses relation types from the allowed taxonomy such as motivates, example_of, affects, resolved_by, or evidence_for",
+        "Output distinguishes the durable insight from raw telemetry"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Before starting related harness work, retrieve prior wiki knowledge about traceability and compound-review. Explain how to consume it safely.",
+      "expected_output": "A retrieval workflow that reads index.json first, selects matching entries, verifies claims against linked artifacts, and reports consumed entry IDs.",
+      "assertions": [
+        "Output starts retrieval from .sisyphus/knowledge/index.json when available",
+        "Output searches by tags, source IDs, affected paths, plan slugs, or skill names",
+        "Output treats wiki entries as advisory rather than proof",
+        "Output reports which entry IDs influenced the work"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Make sisyphus-wiki automatically accumulate OpenCode/OMO conversation context without editing opencode.json. Choose a safe minimum implementation.",
+      "expected_output": "A project-local .opencode/plugins adapter that writes sanitized session/candidate streams under .sisyphus/knowledge and leaves curated entries to the wiki policy/scripts.",
+      "assertions": [
+        "Output avoids editing protected opencode.json",
+        "Output uses .opencode/plugins for project-local automatic capture",
+        "Output distinguishes raw candidate capture from curated knowledge entries",
+        "Output includes sanitization or redaction for sensitive fields",
+        "Output keeps durable runtime data under .sisyphus/knowledge"
+      ]
+    }
+  ]
+}
