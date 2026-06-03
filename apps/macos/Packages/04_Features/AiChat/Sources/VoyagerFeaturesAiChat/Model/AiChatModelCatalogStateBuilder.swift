@@ -21,7 +21,7 @@ struct AiChatModelCatalogStateBuilder {
                     isSelected: row.handle == selectedHandle,
                     isLocked: row.handle == lockedHandle,
                     isDefault: row.isDefault,
-                    isRecommended: row.isRecommended
+                    isRecommended: row.isRecommended,
                 )
             }
         case .idle, .loading, .empty, .failed:
@@ -35,7 +35,7 @@ struct AiChatModelCatalogStateBuilder {
             rows: rows,
             sections: sections,
             selectedModel: selectedModel,
-            lockedModel: lockedModel
+            lockedModel: lockedModel,
         )
     }
 
@@ -44,12 +44,12 @@ struct AiChatModelCatalogStateBuilder {
         case .idle, .loading:
             return .loading(.init(
                 title: "Loading models",
-                detail: "Fetching available models from connected providers."
+                detail: "Fetching available models from connected providers.",
             ))
         case .empty:
             return .empty(.init(
                 title: "No models available",
-                detail: "No selectable models are available for the current provider setup."
+                detail: "No selectable models are available for the current provider setup.",
             ))
         case let .failed(failure):
             if failure.reason == .unsupportedProvider {
@@ -61,7 +61,7 @@ struct AiChatModelCatalogStateBuilder {
             if sections.isEmpty {
                 return .empty(.init(
                     title: "No models available",
-                    detail: "No selectable models are available for the current provider setup."
+                    detail: "No selectable models are available for the current provider setup.",
                 ))
             }
             return .loaded(sections)
@@ -71,11 +71,11 @@ struct AiChatModelCatalogStateBuilder {
     var modelSelectorIsDisabled: Bool {
         switch modelSelectorContentState {
         case .empty:
-            return true
+            true
         case let .loaded(sections):
-            return sections.isEmpty
+            sections.isEmpty
         case .loading, .failed, .unsupported:
-            return false
+            false
         }
     }
 
@@ -85,7 +85,9 @@ struct AiChatModelCatalogStateBuilder {
     }
 
     var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
-        if case let .processing(lock) = state.executionPhase {
+        if case let .processing(lock) = state.executionPhase,
+           state.sessionID == lock.context.sessionID
+        {
             return lockedModelDisplayModel(for: lock)
         }
         guard let row = state.resolvedModelRow(for: state.lockedModelHandle) else { return nil }
@@ -98,12 +100,12 @@ struct AiChatModelCatalogStateBuilder {
         }
         return AiChatLockedModelDisplayModel(
             handle: lock.selectedModelHandle,
-            label: AiChatModelLabel(title: lock.selectedModelHandle.rawValue)
+            label: AiChatModelLabel(title: lock.selectedModelHandle.rawValue),
         )
     }
 
     private func modelCatalogSections(
-        rowsByHandle: [AiModelHandle: AiChatModelCatalogRowDisplayModel]
+        rowsByHandle: [AiModelHandle: AiChatModelCatalogRowDisplayModel],
     ) -> [AiChatModelCatalogSectionDisplayModel] {
         guard case .loaded = state.modelListState else { return [] }
         let discoveredProviders = availableModels.reduce(into: [AiProvider]()) { providers, model in
@@ -123,7 +125,7 @@ struct AiChatModelCatalogStateBuilder {
             return AiChatModelCatalogSectionDisplayModel(
                 provider: provider,
                 title: aiChatProviderSectionTitle(for: provider),
-                rows: providerRows
+                rows: providerRows,
             )
         }
     }
