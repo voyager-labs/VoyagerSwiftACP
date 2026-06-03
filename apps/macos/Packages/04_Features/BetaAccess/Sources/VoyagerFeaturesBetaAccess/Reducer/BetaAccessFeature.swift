@@ -19,6 +19,10 @@ public struct BetaAccessFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
+                if state.needsReverification {
+                    state.needsReverification = false
+                    return verify(&state)
+                }
                 if state.isComplete, state.status == .active {
                     return .none
                 }

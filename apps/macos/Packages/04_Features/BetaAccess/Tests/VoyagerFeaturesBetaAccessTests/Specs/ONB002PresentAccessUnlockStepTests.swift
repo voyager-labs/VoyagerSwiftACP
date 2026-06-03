@@ -1372,4 +1372,103 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
 
         await store.finish()
     }
+
+    // MARK: - Re-verification on snapshot restore
+
+    /// `needsReverification == true`인 상태에서 `onAppear`가 호출되면
+    /// gateway re-verification을 수행하고 성공 시 `active` 상태를 유지한다.
+    func testOnAppearReverifiesWhenNeedsReverification() async {
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+            needsReverification: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
+                BetaAccessVerifyResponse(ok: true)
+            })
+        }
+
+        await store.send(.onAppear) { state in
+            state.needsReverification = false
+            state.isVerifying = true
+        }
+        await store.receive(\.verificationResponse) { state in
+            state.isVerifying = false
+            state.status = .active
+            state.reason = .none
+            state.isComplete = true
+        }
+
+        await store.finish()
+    }
+
+    /// `needsReverification == true`인 상태에서 re-verification이 실패하면
+    /// `notActive`로 전환된다.
+    func testOnAppearReverifiesFailsWhenTokenInvalid() async {
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "expired-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+            needsReverification: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
+                BetaAccessVerifyResponse(ok: false)
+            })
+        }
+
+        await store.send(.onAppear) { state in
+            state.needsReverification = false
+            state.isVerifying = true
+        }
+        await store.receive(\.verificationResponse) { state in
+            state.isVerifying = false
+            state.status = .checkFailed
+            state.reason = .internalError
+            state.isComplete = false
+        }
+
+        await store.finish()
+    }
+
+    /// `needsReverification == true`이지만 email/token이 비어 있으면
+    /// gateway 호출 없이 즉시 `missingInput` 상태가 된다.
+    func testOnAppearReverifiesWithEmptyCredentialsReturnsMissingInput() async {
+        let counter = AttemptCounter()
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "",
+            token: "",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+            needsReverification: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
+                _ = counter.increment()
+                return BetaAccessVerifyResponse(ok: true)
+            })
+        }
+
+        await store.send(.onAppear) { state in
+            state.needsReverification = false
+            state.isVerifying = false
+            state.status = .notActive
+            state.reason = .missingInput
+            state.isComplete = false
+        }
+
+        XCTAssertEqual(counter.value, 0)
+
+        await store.finish()
+    }
 }

@@ -9,6 +9,10 @@ public struct BetaAccessState: Equatable, Sendable {
     public var reason: BetaAccessReason = .missingInput
     public var isVerifying: Bool = false
     public var isComplete: Bool = false
+    /// When `true`, the next `onAppear` will re-verify credentials instead of trusting
+    /// the restored `isComplete / status == .active` state.  Set by `applyStepState` during
+    /// snapshot restore so that a cold-start always hits the gateway at least once.
+    public var needsReverification: Bool = false
 
     public init(
         email: String = "",
@@ -17,6 +21,7 @@ public struct BetaAccessState: Equatable, Sendable {
         reason: BetaAccessReason = .missingInput,
         isVerifying: Bool = false,
         isComplete: Bool = false,
+        needsReverification: Bool = false,
     ) {
         self.email = email
         self.token = token
@@ -24,6 +29,7 @@ public struct BetaAccessState: Equatable, Sendable {
         self.reason = reason
         self.isVerifying = isVerifying
         self.isComplete = isComplete
+        self.needsReverification = needsReverification
     }
 
     public var canSubmit: Bool {

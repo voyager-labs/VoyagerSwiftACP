@@ -64,6 +64,7 @@ struct OnboardingState: Equatable {
         if betaAccess.isComplete {
             betaAccess.status = .active
             betaAccess.reason = .none
+            betaAccess.needsReverification = true
             if let email = stepState.betaAccessEmail, !email.isEmpty {
                 betaAccess.email = email
             }

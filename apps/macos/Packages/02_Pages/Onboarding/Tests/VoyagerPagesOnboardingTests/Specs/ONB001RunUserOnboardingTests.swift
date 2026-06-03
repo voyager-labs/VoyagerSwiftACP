@@ -704,7 +704,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.currentStep = .permissions
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyRestoredBetaAccess(state: &state)
         }
 
         await store.finish()
@@ -776,7 +776,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         // permissions 완료 → 선행 단계 모두 완료 → .complete 직접 복원
         await store.send(.onAppear) { state in
             state.currentStep = .complete
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
         }
 
@@ -854,7 +854,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.currentStep = .permissions
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyRestoredBetaAccess(state: &state)
         }
 
         let saved = saveRecorder.value
@@ -1008,7 +1008,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.send(.onAppear) { state in
             state.currentStep = .complete
             state.welcome.isComplete = true
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
             state.complete.isComplete = true
         }
@@ -1319,7 +1319,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.send(.onAppear) { state in
             state.currentStep = .complete
             state.welcome.isComplete = true
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
             state.complete.isComplete = true
         }
@@ -1419,7 +1419,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.currentStep = .permissions
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyRestoredBetaAccess(state: &state)
         }
 
         XCTAssertTrue(store.state.betaAccess.isRestoredVerifiedAccess)
