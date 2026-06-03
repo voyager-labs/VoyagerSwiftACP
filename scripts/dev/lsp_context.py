@@ -79,7 +79,7 @@ def setup_context(
 def main() -> None:
     args = parse_args()
     input_paths = cast(list[str], args.path)
-    scope = cast(str | None, args.scope)
+    scope = cast("str | None", args.scope)
     dry_run = cast(bool, args.dry_run)
     json_output = cast(bool, args.json)
 

@@ -16,6 +16,7 @@ SOURCE_PACKAGES_PATH = BUILD_DIR / "SourcePackages"
 
 VOYAGER_PROJECT = "apps/macos/Voyager/Voyager.xcodeproj"
 ONBOARDING_PROJECT = "apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj"
+FILE_MANAGER_HOST_PROJECT = "apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj"
 PACKAGES_ROOT = Path("apps/macos/Packages")
 
 
@@ -49,6 +50,13 @@ CONTEXTS: dict[str, LSPContext] = {
         project_path=ONBOARDING_PROJECT,
         scheme="OnboardingHost-Dev",
         reason="OnboardingHost is a separate Xcode project with its own development scheme.",
+    ),
+    "file-manager-host": LSPContext(
+        name="file-manager-host",
+        description="FileManagerHost and FileManager package fixture integration",
+        project_path=FILE_MANAGER_HOST_PROJECT,
+        scheme="FileManagerHost-Dev",
+        reason="FileManagerHost is a separate mock-only fixture host for File Manager UI states.",
     ),
 }
 
@@ -149,11 +157,21 @@ def primary_lsp_context(paths: Iterable[Path]) -> tuple[LSPContext, list[str]]:
     if any(path_is_under(path, "apps/macos/Hosts/OnboardingHost") for path in paths):
         return CONTEXTS["onboarding"], ["An OnboardingHost path was selected."]
 
+    if any(path_is_under(path, "apps/macos/Hosts/FileManagerHost") for path in paths):
+        return CONTEXTS["file-manager-host"], ["A FileManagerHost path was selected."]
+
     if any(
         path_is_under(path, "apps/macos/Packages/02_Pages/Onboarding") for path in paths
     ):
         return CONTEXTS["onboarding"], [
             "The onboarding package is primarily exercised by OnboardingHost."
+        ]
+
+    if any(
+        path_is_under(path, "apps/macos/Packages/02_Pages/FileManager") for path in paths
+    ):
+        return CONTEXTS["file-manager-host"], [
+            "The FileManager package is directly exercised by FileManagerHost fixtures."
         ]
 
     if any(path_is_under(path, "apps/macos/Packages") for path in paths):

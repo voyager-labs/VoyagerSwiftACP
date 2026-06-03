@@ -46,6 +46,17 @@
     "save": "none",
     "tags": ["voyager-lsp"]
   },
+  {
+    "label": "Voyager LSP: FileManagerHost",
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--scope", "file-manager-host"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "none",
+    "tags": ["voyager-lsp"]
+  },
 
   // Affected verification planning and execution.
   {
