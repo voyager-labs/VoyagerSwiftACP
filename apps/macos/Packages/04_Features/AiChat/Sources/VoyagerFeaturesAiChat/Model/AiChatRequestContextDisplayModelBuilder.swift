@@ -53,7 +53,7 @@ private func aiChatCurrentContextChipDisplayModel(
         ?? aiChatCurrentContextIconSystemName(from: matchingParts)
     let iconAssetName = aiChatCurrentContextIconAssetName(for: snapshot)
     let iconFilePath = aiChatCurrentContextIconFilePath(for: snapshot)
-        ?? aiChatCurrentContextIconFilePath(from: matchingParts)
+        ?? aiChatCurrentContextLockedIconFilePathFallback(for: snapshot, matchingParts: matchingParts)
     let supportsFolderStructureMode = aiChatSupportsFolderStructureMode(for: snapshot)
         || aiChatSupportsFolderStructureMode(from: matchingParts)
     let folderStructureMode = supportsFolderStructureMode
@@ -69,6 +69,30 @@ private func aiChatCurrentContextChipDisplayModel(
         folderStructureMode: folderStructureMode,
         supportsFolderStructureMode: supportsFolderStructureMode,
     )
+}
+
+private func aiChatCurrentContextLockedIconFilePathFallback(
+    for snapshot: AiChatCurrentContextSnapshot,
+    matchingParts: [AiChatLockedContextPartSnapshot],
+) -> String? {
+    guard aiChatCurrentContextAllowsLockedFolderIconFallback(snapshot) else { return nil }
+    return aiChatCurrentContextIconFilePath(from: matchingParts)
+}
+
+private func aiChatCurrentContextAllowsLockedFolderIconFallback(_ snapshot: AiChatCurrentContextSnapshot) -> Bool {
+    if snapshot.items.count == 1 {
+        return snapshot.items[0].kind == .folder
+    }
+    if snapshot.items.count > 1 {
+        return false
+    }
+    if snapshot.attachments.count == 1 {
+        return snapshot.attachments[0].kind == .folder
+    }
+    if snapshot.attachments.count > 1 {
+        return false
+    }
+    return snapshot.references.first?.metadata["route"] == "folder"
 }
 
 private func aiChatSupportsFolderStructureMode(for snapshot: AiChatCurrentContextSnapshot) -> Bool {

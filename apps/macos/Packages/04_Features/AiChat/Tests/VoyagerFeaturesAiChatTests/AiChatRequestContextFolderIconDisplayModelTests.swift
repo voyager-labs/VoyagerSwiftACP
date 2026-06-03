@@ -15,6 +15,7 @@ final class AiChatRequestContextFolderIconDisplayModelTests: XCTestCase {
             selectedRow: catalogRows[0],
         )
         let state = AiChatFeature.State(
+            sessionID: lock.context.sessionID,
             sessionStatus: .active,
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,

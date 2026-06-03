@@ -100,12 +100,29 @@ struct AiChatStateDisplayModelBuilder {
         }
     }
 
-    var modelCatalogState: AiChatModelCatalogState { modelCatalogBuilder.modelCatalogState }
-    var modelSelectorContentState: AiChatModelSelectorContentState { modelCatalogBuilder.modelSelectorContentState }
-    var modelSelectorHasPresentableContent: Bool { modelSelectorContentState.hasPresentableContent }
-    var modelSelectorIsDisabled: Bool { modelCatalogBuilder.modelSelectorIsDisabled }
-    var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? { modelCatalogBuilder.selectedModelDisplayModel }
-    var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { modelCatalogBuilder.lockedModelDisplayModel }
+    var modelCatalogState: AiChatModelCatalogState {
+        modelCatalogBuilder.modelCatalogState
+    }
+
+    var modelSelectorContentState: AiChatModelSelectorContentState {
+        modelCatalogBuilder.modelSelectorContentState
+    }
+
+    var modelSelectorHasPresentableContent: Bool {
+        modelSelectorContentState.hasPresentableContent
+    }
+
+    var modelSelectorIsDisabled: Bool {
+        modelCatalogBuilder.modelSelectorIsDisabled
+    }
+
+    var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? {
+        modelCatalogBuilder.selectedModelDisplayModel
+    }
+
+    var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
+        modelCatalogBuilder.lockedModelDisplayModel
+    }
 
     private var modelCatalogBuilder: AiChatModelCatalogStateBuilder {
         AiChatModelCatalogStateBuilder(state: state, availableModels: availableModels)
@@ -226,10 +243,21 @@ struct AiChatStateDisplayModelBuilder {
         }
     }
 
-    var modelFieldLabel: String { "Model" }
-    var isProcessing: Bool { isVisibleRequestProcessing }
-    var resolvedSelectedModelHandle: AiModelHandle? { resolvedSelectedModel?.id }
-    var resolvedSelectedModel: AiProviderModel? { state.resolvedModel(for: state.selectedModelHandle) }
+    var modelFieldLabel: String {
+        "Model"
+    }
+
+    var isProcessing: Bool {
+        isVisibleRequestProcessing
+    }
+
+    var resolvedSelectedModelHandle: AiModelHandle? {
+        resolvedSelectedModel?.id
+    }
+
+    var resolvedSelectedModel: AiProviderModel? {
+        state.resolvedModel(for: state.selectedModelHandle)
+    }
 
     private var visibleProcessingLock: AiChatRequestLock? {
         guard case let .processing(lock) = state.executionPhase,
@@ -247,7 +275,7 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     private func isVisibleRequest(lock: AiChatRequestLock) -> Bool {
-        state.sessionID == lock.context.sessionID
+        state.sessionList.rows.isEmpty || state.sessionID == lock.context.sessionID
     }
 
     private var chatInputModelLabel: String? {
@@ -278,7 +306,9 @@ struct AiChatStateDisplayModelBuilder {
         }
     }
 
-    private var isInitialChatSurface: Bool { state.transcriptHistory.isEmpty }
+    private var isInitialChatSurface: Bool {
+        state.transcriptHistory.isEmpty
+    }
 }
 
 func aiChatTerminalErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {

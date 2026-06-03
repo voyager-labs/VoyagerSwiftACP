@@ -86,7 +86,7 @@ struct AiChatModelCatalogStateBuilder {
 
     var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
         if case let .processing(lock) = state.executionPhase,
-           state.sessionID == lock.context.sessionID
+           state.sessionList.rows.isEmpty || state.sessionID == lock.context.sessionID
         {
             return lockedModelDisplayModel(for: lock)
         }
