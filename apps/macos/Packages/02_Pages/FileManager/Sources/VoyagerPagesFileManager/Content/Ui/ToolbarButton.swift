@@ -79,8 +79,8 @@ struct ToolbarMenuButton<Content: View>: View {
     let primaryAction: (() -> Void)?
     let menuContent: () -> Content
 
-    // Menu is backed by NSMenuButton which swallows SwiftUI .onHover tracking.
-    // Use AppKit-level NSTrackingArea instead.
+    /// Menu is backed by NSMenuButton which swallows SwiftUI .onHover tracking.
+    /// Use AppKit-level NSTrackingArea instead.
     @State private var isHovered: Bool = false
 
     init(

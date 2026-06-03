@@ -35,25 +35,31 @@ public struct CollectionOpenRestorationPayload: Equatable, Sendable {
 
 public struct CollectionNavigationStatePayload: Equatable, Sendable {
     public let context: CollectionContext
+    public let includeSubfolders: Bool
     public let document: CollectionOpenedDocumentState?
     public let baseline: CollectionBaseline?
     public let composerText: String
     public let scopes: [String]
+    public let excludedScopes: [String]
     public let conditions: [Condition]
 
     public init(
         context: CollectionContext,
+        includeSubfolders: Bool? = nil,
         document: CollectionOpenedDocumentState?,
         baseline: CollectionBaseline?,
         composerText: String,
         scopes: [String],
+        excludedScopes: [String]? = nil,
         conditions: [Condition],
     ) {
         self.context = context
+        self.includeSubfolders = includeSubfolders ?? context.includeSubfolders
         self.document = document
         self.baseline = baseline
         self.composerText = composerText
         self.scopes = scopes
+        self.excludedScopes = excludedScopes ?? context.excludedScopes
         self.conditions = conditions
     }
 }

@@ -55,6 +55,8 @@ public extension CollectionState {
         collectionContext = CollectionContext(
             query: "",
             scopes: [rootScopePath],
+            excludedScopes: [],
+            includeSubfolders: true,
             conditions: [],
         )
     }
@@ -202,6 +204,7 @@ public extension CollectionState {
             trimmedQuery: trimmedQuery,
             resolved: resolved,
             isStale: isStale,
+            includeSubfolders: file.includeSubfolders,
         )
         let kind: CollectionSessionPhase.OpenKind = file.snapshotMeta == nil ? .definition : .hydratedSnapshot
 
@@ -235,10 +238,13 @@ public extension CollectionState {
         trimmedQuery: String,
         resolved: AppliedFiltersUtils.ResolutionResult,
         isStale: Bool,
+        includeSubfolders: Bool,
     ) -> CollectionContext {
         let loadedContext = CollectionContext(
             query: trimmedQuery,
             scopes: resolved.scopes,
+            excludedScopes: resolved.excludedScopes,
+            includeSubfolders: includeSubfolders,
             conditions: resolved.conditions,
         )
         if isStale,
@@ -305,9 +311,11 @@ public extension CollectionState {
 public struct CollectionSaveSnapshot: Equatable, Sendable {
     public let query: String
     public let scopes: [String]
+    public let excludedScopes: [String]
+    public let includeSubfolders: Bool
     public let conditions: [CollectionCondition]
     public let snapshotItems: [VoyagerShared.JSONValue]?
     public let definitionFingerprint: String
-    let capturedAt: Date
-    let relevanceRoots: [String]
+    public let capturedAt: Date
+    public let relevanceRoots: [String]
 }

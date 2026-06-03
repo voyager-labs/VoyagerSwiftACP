@@ -68,7 +68,7 @@ Updater는 `SPUStandardUpdaterController`를 내부에 들고 있으며,
 
 - 생성: `SPUStandardUpdaterController(startingUpdater: true, ...)`
 - 자동 다운로드 설정: `UserDefaults`에서 `SettingsKeys.automaticUpdate`를 읽어
-    - `controller.updater.automaticallyDownloadsUpdates`에 주입
+  - `controller.updater.automaticallyDownloadsUpdates`에 주입
 
 관련 코드
 
@@ -118,10 +118,10 @@ Sparkle delegate에서 relaunch를 잠시 연기(postpone)하고, install handle
 
 흐름
 
-1. Sparkle이 relaunch를 요청 → `shouldPostponeRelaunchForUpdate(... untilInvokingBlock:)`
-2. `VoyagerTerminationCoordinator.shared.begin(.sparkleRelaunch)`로 종료 사유 마킹
-3. `HelperAppClient.liveValue.stop()` 호출
-4. `installHandler()` 호출 → Sparkle이 relaunch 진행
+1) Sparkle이 relaunch를 요청 → `shouldPostponeRelaunchForUpdate(... untilInvokingBlock:)`
+2) `VoyagerTerminationCoordinator.shared.begin(.sparkleRelaunch)`로 종료 사유 마킹
+3) `HelperAppClient.liveValue.stop()` 호출
+4) `installHandler()` 호출 → Sparkle이 relaunch 진행
 
 안전장치
 
@@ -146,6 +146,6 @@ Sparkle delegate에서 relaunch를 잠시 연기(postpone)하고, install handle
 ## 트러블슈팅
 
 - 업데이트 확인이 전혀 동작하지 않음
-    - `SUFeedURL` 설정이 존재하는지 확인합니다: `apps/macos/Voyager/Voyager/01_App/Config/Info.plist`
+  - `SUFeedURL` 설정이 존재하는지 확인합니다: `apps/macos/Voyager/Voyager/01_App/Config/Info.plist`
 - relaunch가 지연되거나 멈춘 것처럼 보임
-    - Helper 종료가 지연되고 있을 수 있습니다. fail-safe(5s)가 동작하는지 로그를 확인합니다.
+  - Helper 종료가 지연되고 있을 수 있습니다. fail-safe(5s)가 동작하는지 로그를 확인합니다.

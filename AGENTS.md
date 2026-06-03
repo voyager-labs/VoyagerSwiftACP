@@ -15,19 +15,18 @@ clone 후 스크립트 하나로 개발 환경을 구성한다:
 bash scripts/setup.sh
 ```
 
-이 스크립트는 `just` 설치 → `just setup` 실행을 자동 처리한다.
+이 스크립트는 mise 설치 → `mise run setup` 실행을 자동 처리한다.
 
 ### 수동
 
 ```bash
-brew install just
-just setup
+mise run setup
 ```
 
 ### 명령 목록
 
 ```bash
-just -l
+mise tasks
 ```
 
 ## Protected local files

@@ -1,9 +1,9 @@
 import Foundation
 
 enum SearchDateUtils {
-    private nonisolated static let utcTimeZone: TimeZone = .init(secondsFromGMT: 0) ?? .gmt
+    nonisolated private static let utcTimeZone: TimeZone = .init(secondsFromGMT: 0) ?? .gmt
 
-    private nonisolated static let calendar: Calendar = {
+    nonisolated private static let calendar: Calendar = {
         var calendar = Calendar(identifier: .iso8601)
         calendar.timeZone = utcTimeZone
         return calendar

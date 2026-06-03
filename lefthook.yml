@@ -3,8 +3,14 @@
 
 post-checkout:
   commands:
+    mise-install:
+      run: mise install
+    lefthook-install:
+      run: lefthook install
     submodules:
       run: git submodule update --init --recursive
+    codegraph:
+      run: test -d .codegraph || npx -y @colbymchenry/codegraph@0.9.6 init -i
 
 post-merge:
   commands:
@@ -16,11 +22,11 @@ pre-commit:
   commands:
     swiftformat:
       glob: "apps/macos/**/*.swift"
-      run: swiftformat --config apps/macos/.swiftformat --lint {staged_files}
+      run: mise exec -- swiftformat --config apps/macos/.swiftformat --lint {staged_files}
     swiftlint:
       glob: "apps/macos/**/*.swift"
       exclude: "apps/macos/**/*Tests/**/*.swift"
-      run: swiftlint lint --config apps/macos/.swiftlint.yml --strict {staged_files}
+      run: mise exec -- swiftlint lint --config apps/macos/.swiftlint.yml --strict {staged_files}
     swiftlint-tests:
       glob: "apps/macos/**/*Tests/**/*.swift"
-      run: swiftlint lint --config apps/macos/.swiftlint-tests.yml --strict {staged_files}
+      run: mise exec -- swiftlint lint --config apps/macos/.swiftlint-tests.yml --strict {staged_files}

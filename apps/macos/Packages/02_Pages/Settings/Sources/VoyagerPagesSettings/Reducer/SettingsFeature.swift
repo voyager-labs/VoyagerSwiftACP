@@ -25,7 +25,7 @@ public struct SettingsFeature {
                 return .merge(
                     .send(.general(.loadSettings)),
                     .send(.appearance(.loadSettings)),
-                    .send(.ai(.onAppear))
+                    .send(.ai(.onAppear)),
                 )
             }
 
@@ -35,11 +35,17 @@ public struct SettingsFeature {
             }
 
             if case .closeWindow = action {
+                state.selectedSection = .general
                 return .run { _ in
                     await MainActor.run {
                         NSApp.keyWindow?.close()
                     }
                 }
+            }
+
+            if case .resetSectionForFreshOpen = action {
+                state.selectedSection = .general
+                return .none
             }
 
             if case let .ai(.delegate(.connectionsFileUpdated(file))) = action {

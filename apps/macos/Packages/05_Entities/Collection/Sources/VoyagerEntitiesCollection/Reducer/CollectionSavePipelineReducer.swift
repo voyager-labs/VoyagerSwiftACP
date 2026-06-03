@@ -136,6 +136,8 @@ private func validateCollectionContext(
         return .success(.init(
             query: query,
             scopes: context.scopes,
+            excludedScopes: context.excludedScopes,
+            includeSubfolders: context.includeSubfolders,
             conditions: conditions,
             snapshotItems: payload.snapshotItems,
             definitionFingerprint: payload.definitionFingerprint,
@@ -276,6 +278,8 @@ private func handleSaveCompleted(
             .init(
                 definitionFingerprint: file.snapshotMeta?.definitionFingerprint ?? "",
                 relevanceRoots: file.snapshotMeta?.relevanceRoots ?? file.scopes,
+                excludedScopes: file.excludedScopes,
+                includeSubfolders: file.includeSubfolders,
                 lastInvalidatedAt: nil,
             ),
         )
@@ -306,6 +310,8 @@ private func makeCollectionFile(
         updatedAt: timestamp,
         query: snapshot.query,
         scopes: snapshot.scopes,
+        excludedScopes: snapshot.excludedScopes,
+        includeSubfolders: snapshot.includeSubfolders,
         conditions: snapshot.conditions,
         snapshot: snapshot.snapshotItems.map(CollectionPersistedSnapshot.init(items:)),
         snapshotMeta: snapshot.snapshotItems.map { snapshotItems in

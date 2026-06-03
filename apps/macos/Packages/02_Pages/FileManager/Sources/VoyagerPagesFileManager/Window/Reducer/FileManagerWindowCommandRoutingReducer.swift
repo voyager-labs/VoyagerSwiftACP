@@ -2,7 +2,6 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiChat
-
 import VoyagerEntitiesEntry
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation

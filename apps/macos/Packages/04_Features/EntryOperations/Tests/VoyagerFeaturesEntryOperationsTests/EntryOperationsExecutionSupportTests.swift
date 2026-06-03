@@ -99,7 +99,7 @@ private struct ExecutionSupportTestHarness {
     typealias State = EntryOperationsState
 
     @CasePathable
-    enum Action: CasePathable, Sendable {
+    enum Action: CasePathable {
         case triggerRun(String, OperationKind, FileOpError?)
         case triggerRunParallel([String], OperationKind)
         case triggerRunParallelWithTargets([String], OperationKind, OperationKind)

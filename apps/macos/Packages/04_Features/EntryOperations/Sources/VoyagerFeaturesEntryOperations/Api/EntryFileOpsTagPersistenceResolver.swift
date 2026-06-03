@@ -1,10 +1,9 @@
 import Foundation
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
 public enum EntryFileOpsTagPersistenceResolver {
-    public nonisolated static func makeTags(
+    nonisolated public static func makeTags(
         tagNames: [String],
         existingTags: [Tag],
         favoriteTags: [Tag],

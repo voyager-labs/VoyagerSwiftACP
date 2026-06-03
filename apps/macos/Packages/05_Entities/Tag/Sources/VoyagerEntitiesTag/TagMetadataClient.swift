@@ -7,10 +7,10 @@ public enum TagMetadataClient {
         case failedToSetTags
     }
 
-    private nonisolated static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
+    nonisolated private static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
 
-    // xattr plist의 "name\ncolorCode" 형식에서 태그 색까지 복원합니다.
-    public nonisolated static func loadTags(from itemURL: URL) -> [Tag]? {
+    /// xattr plist의 "name\ncolorCode" 형식에서 태그 색까지 복원합니다.
+    nonisolated public static func loadTags(from itemURL: URL) -> [Tag]? {
         guard let rawTags = loadRawUserTags(from: itemURL) else {
             return nil
         }
@@ -19,7 +19,7 @@ public enum TagMetadataClient {
         return tags.isEmpty ? nil : tags
     }
 
-    public nonisolated static func loadRawUserTags(from itemURL: URL) -> [String]? {
+    nonisolated public static func loadRawUserTags(from itemURL: URL) -> [String]? {
         guard let tagData = loadUserTagsXattrData(from: itemURL) else {
             return nil
         }
@@ -27,12 +27,12 @@ public enum TagMetadataClient {
         return try? PropertyListSerialization.propertyList(from: tagData, format: nil) as? [String]
     }
 
-    public nonisolated static func loadTagNames(from itemURL: URL) throws -> [String] {
+    nonisolated public static func loadTagNames(from itemURL: URL) throws -> [String] {
         let values = try itemURL.resourceValues(forKeys: [.tagNamesKey])
         return values.tagNames ?? []
     }
 
-    public nonisolated static func setTagNames(_ tagNames: [String], for itemURL: URL) throws {
+    nonisolated public static func setTagNames(_ tagNames: [String], for itemURL: URL) throws {
         if tagNames.isEmpty {
             let result = removexattr(
                 itemURL.path,
@@ -65,7 +65,7 @@ public enum TagMetadataClient {
     }
 
     /// 태그를 "name\ncolorCode" 형식으로 저장합니다. 색상 정보를 보존합니다.
-    public nonisolated static func setTags(_ tags: [Tag], for itemURL: URL) throws {
+    nonisolated public static func setTags(_ tags: [Tag], for itemURL: URL) throws {
         if tags.isEmpty {
             let result = removexattr(
                 itemURL.path,
@@ -99,7 +99,7 @@ public enum TagMetadataClient {
         }
     }
 
-    public nonisolated static func toggleTag(_ tagName: String, for itemURL: URL) throws {
+    nonisolated public static func toggleTag(_ tagName: String, for itemURL: URL) throws {
         // 기존 태그 로드 (colorCode 포함)
         let existingTags = loadTags(from: itemURL) ?? []
 
@@ -119,7 +119,7 @@ public enum TagMetadataClient {
         try setTags(updatedTags, for: itemURL)
     }
 
-    private nonisolated static func loadUserTagsXattrData(from itemURL: URL) -> Data? {
+    nonisolated private static func loadUserTagsXattrData(from itemURL: URL) -> Data? {
         let size = getxattr(itemURL.path, userTagsXattrName, nil, 0, 0, XATTR_NOFOLLOW)
         guard size > 0 else {
             return nil

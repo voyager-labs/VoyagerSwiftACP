@@ -1,0 +1,137 @@
+{
+  "skill_name": "pr-review",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "large-pr-triage-coverage",
+      "prompt": "Review the local diff on branch feat/voy-900 against develop. The diff touches 247 files across apps/macos (04_Features/EntryEditor, 05_Entities/Entry, 06_Shared/PersistenceClient, 01_App/AppDelegate) with 2,180 changed lines. It introduces a new EntryEditor feature package, migrates Entry persistence from UserDefaults to file-backed JSON storage, and updates the app delegate lifecycle wiring. The PR description says: 'Migrate Entry persistence to file-backed storage and add EntryEditor feature module. Refs VOY-900.' Run the full review workflow. Simulate reading .greptile/rules.md (assume it is loaded). The actual files do not need to exist — produce the review output you would generate given this triage information and the following simulated diff context: the EntryEditor reducer uses .run effects without cancellation IDs; the persistence migration writes directly with FileManager.createFile (no temp+rename); Shared/PersistenceClient imports EntryEditorFeature to reuse EntryEditorSavePolicy. Focus on producing the complete structured output.",
+      "expected_output": "A phased review output that: (1) correctly classifies the PR as large (>200 files, >1500 lines, >3 top-level layers), (2) includes a Coverage table with Reviewed/Skipped areas and confidence levels, (3) produces P0/P1 Korean findings for the missing cancellation IDs, non-atomic storage write, and true FSD reverse dependency from Shared to Feature, (4) states the review decision as 'request changes', and (5) keeps all explanations in Korean with English code symbols.",
+      "files": [],
+      "assertions": [
+        "The output explicitly classifies the diff as large by citing at least one threshold (200 files, 1500 lines, or 3 top-level modules)",
+        "The output includes a Coverage section with a table containing at least two rows with Reviewed or Skipped status, a reason for each skipped area, and a confidence level",
+        "The output contains at least one finding written in Korean that flags the .run effects without cancellation IDs as a lifecycle risk, using P0 or P1 severity",
+        "The output contains a Korean finding that flags the direct FileManager.createFile write as a non-atomic storage risk (not a style issue), referencing the write-to-temp+rename pattern",
+        "The output flags Shared/PersistenceClient importing EntryEditorFeature as an FSD dependency direction violation, citing that Shared must not depend on higher layers",
+        "The review decision is 'request changes' (not 'approve' or 'comment')",
+        "All finding explanations are in Korean; code symbols, file paths, and type names remain in English"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "credential-storage-permissions",
+      "prompt": "Review a local diff that modifies apps/macos/Voyager/04_Features/CredentialManager/Api/CredentialStorageClient.swift and apps/macos/Voyager/05_Entities/Credential/Model/Credential.swift. The diff adds a new CredentialStorageClient that stores OAuth tokens in UserDefaults with key 'voyager.oauth.tokens', writes a plaintext JSON credential file to ~/Library/Application Support/Voyager/credentials.json using FileManager.default.createFile(atPath:contents:attributes:) with no attributes set, and has no file-locking mechanism. The Credential model adds a new 'secret' field stored as a plain String. Run the full review. Simulate that .greptile/rules.md is loaded. Produce the complete structured output.",
+      "expected_output": "A review output with at least two P0/P1 Korean findings: (1) OAuth tokens stored in UserDefaults is a secrets exposure risk, (2) non-atomic plaintext file write without restrictive permissions is a credential storage risk. The findings must reference the file-backed storage conventions and suggest concrete alternatives. The review decision must be 'request changes'.",
+      "files": [],
+      "assertions": [
+        "The output contains a P0 or P1 Korean finding that explicitly flags storing OAuth tokens in UserDefaults as a secret exposure risk, not just a style concern",
+        "The output contains a P0 or P1 Korean finding that flags the direct FileManager.createFile write without restrictive file permissions (e.g., 0o600) as a credential storage risk",
+        "The output flags the absence of atomic write-to-temp+rename for the credential file as a data integrity risk",
+        "At least one finding references the file-backed storage conventions or .greptile/rules.md storage section as the policy basis",
+        "The suggested direction for at least one finding mentions a concrete alternative such as Keychain, encrypted storage, or atomic writes with restrictive permissions",
+        "The review decision is 'request changes'"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "clean-approval-no-findings",
+      "prompt": "Review a local diff on branch fix/voy-456 against develop. The diff touches 3 files with 42 changed lines: it fixes a nil-coalescing default in Entry/Model/EntryDisplayModel.swift (changes a display string fallback from empty to the correct default), updates the corresponding test in EntryTests.swift to assert the new default, and adjusts a documentation comment in Entry/Config/Constants.swift. No architectural changes, no new types, no new effects, no storage changes, no FSD boundary changes. The existing test passes. Run the full review. Simulate that .greptile/rules.md is loaded. Produce the complete structured output.",
+      "expected_output": "A review output following the no-findings template: a Korean TL;DR summarizing the fix scope, a Findings section stating no P0/P1 issues were found (using the Korean no-findings phrasing), and a review decision of 'approve'. No fabricated findings, no P2/P3/nit comments, no generic suggestions.",
+      "files": [],
+      "assertions": [
+        "The Findings section contains the Korean no-findings statement (고신뢰 P0/P1 구조/런타임 이슈는 발견하지 못했습니다 or semantically equivalent Korean text stating no high-confidence structural/runtime issues were found)",
+        "The output does NOT contain any [P0], [P1], [P2], [P3], or 'nit' severity labels since there are no findings",
+        "The review decision is 'approve' (not 'comment' or 'request changes')",
+        "The TL;DR section is written in Korean and summarizes the fix intent and scope in 1-3 lines",
+        "The output does not fabricate or invent findings to justify the review — a clean review is the correct outcome"
+      ]
+    },
+    {
+      "id": 4,
+      "eval_name": "local-artifact-hygiene",
+      "prompt": "Review a local diff on branch feature/voy-789 against develop. The diff includes these changed files (simulated): apps/macos/Voyager/04_Features/Search/Reducer/SearchReducer.swift (adds search debouncing effect with proper cancellation), .omx/sessions/2025-01-15.json, .sisyphus/plans/sprint-3.md, apps/macos/Voyager/06_Shared/SearchClient/Api/SearchClient.swift (updates live value). The .omx and .sisyphus files contain agent session data and planning artifacts. The SearchReducer change is well-structured with correct cancellation IDs. Run the full review. Simulate that .greptile/rules.md is loaded. Produce the complete structured output.",
+      "expected_output": "A review output that: (1) produces a P0/P1 finding flagging .omx/ and .sisyphus/ paths appearing in the diff as a repository hygiene issue, (2) correctly identifies the SearchReducer change as well-structured with no architectural findings, (3) recommends removing the local artifact files from the diff/commit, and (4) sets review decision to 'request changes' due to the hygiene finding.",
+      "files": [],
+      "assertions": [
+        "The output contains a P0 or P1 Korean finding that explicitly flags .omx/ or .sisyphus/ files appearing in the diff as a repository hygiene issue",
+        "The hygiene finding explains that .omx and .sisyphus are local-only agent/runtime artifacts that must not be tracked, staged, or committed",
+        "The output does NOT fabricate findings about the SearchReducer — the cancellation handling is correct and should be acknowledged as clean or omitted without negative comment",
+        "The suggested direction for the hygiene finding removes the local artifact files from the diff or commit and does NOT recommend adding .omx/ or .sisyphus/ to .gitignore merely to hide harness output",
+        "The review decision is 'request changes' because of the hygiene finding, not 'approve'",
+        "The finding follows the required comment format with Evidence, Korean explanation, and Suggested direction sections"
+      ]
+    },
+    {
+      "id": 5,
+      "eval_name": "skip-greptile-label",
+      "prompt": "Review GitHub PR #321. The PR targets develop, changes apps/macos/Voyager/04_Features/Search/Reducer/SearchReducer.swift, and has the label 'skip-greptile'. The title is 'feat(search): add scoped query restore'. Run the pr-review workflow. Simulate that .greptile/rules.md is loaded. Produce the complete output you would return to the operator.",
+      "expected_output": "A skip response in Korean that stops before producing review findings because the PR has the skip-greptile label. The output must mention the skip reason and must not include P0/P1 findings, Coverage, Tests/QA, Risk, or a review decision such as approve/request changes.",
+      "files": [],
+      "assertions": [
+        "The output states in Korean that the review is skipped because the PR has the skip-greptile label",
+        "The output does NOT produce any [P0] or [P1] findings",
+        "The output does NOT include a Review decision of approve, comment, or request changes",
+        "The output does NOT continue into normal Coverage, Tests/QA, or Risk sections after the skip reason",
+        "The output treats .greptile/rules.md skip policy as authoritative"
+      ]
+    },
+    {
+      "id": 6,
+      "eval_name": "allowed-top-to-bottom-dependency",
+      "prompt": "Review a local diff on branch feat/voy-901 against develop. The diff touches apps/macos/Voyager/01_App/AppDelegate.swift and apps/macos/Voyager/03_Widgets/Sidebar/Ui/SidebarView.swift. AppDelegate imports SidebarWidget to mount the app-level sidebar, and SidebarView imports SharedDesignSystem. There are no async effects, no storage changes, no credential handling, no direct state mutation across features, and no test changes. Run the full review. Simulate that .greptile/rules.md is loaded. Produce the complete structured output.",
+      "expected_output": "A clean review output in Korean that recognizes 01_App importing 03_Widgets and 03_Widgets importing 06_Shared as allowed top-to-bottom dependencies. It should not fabricate an FSD finding, should state that no high-confidence P0/P1 structural/runtime issues were found, and should approve or comment according to the no-findings path.",
+      "files": [],
+      "assertions": [
+        "The output does NOT flag AppDelegate importing SidebarWidget as an FSD dependency violation",
+        "The output does NOT flag SidebarView importing SharedDesignSystem as an FSD dependency violation",
+        "The Findings section states in Korean that no high-confidence P0/P1 structural/runtime issues were found",
+        "The output does NOT contain [P0], [P1], [P2], [P3], or nit findings",
+        "The review decision is 'approve' or 'comment', not 'request changes'"
+      ]
+    },
+    {
+      "id": 7,
+      "eval_name": "environment-secret-build-settings",
+      "prompt": "Review a local diff on branch fix/voy-902 against develop. The diff modifies .env.prod, scripts/build/copy-bundled-env-files.sh, apps/macos/Voyager/Voyager/01_App/Config/Info.plist, and apps/macos/Voyager/Voyager/01_App/Api/HelperAppClient.swift. The simulated diff adds SENTRY_AUTH_TOKEN=prod-secret-token to .env.prod, changes the bundle copy script to copy .env.dev into the Release app bundle when .env.prod is missing, sets APP_ENV to dev in the Release Info.plist, and passes ProcessInfo.processInfo.environment wholesale into the helper launch environment. Run the full review. Simulate that .greptile/rules.md is loaded. Produce the complete structured output.",
+      "expected_output": "A review output with P0/P1 Korean findings for secret exposure through .env.prod or bundled .env.dev, release APP_ENV mismatch, and over-broad helper environment propagation. The review decision must be request changes, and the findings must treat these as security/runtime risks, not formatting issues.",
+      "files": [],
+      "assertions": [
+        "The output contains a P0 or P1 Korean finding that flags SENTRY_AUTH_TOKEN or another secret being committed or copied into the app bundle as a secret exposure risk",
+        "The output flags copying .env.dev into a Release bundle as a security or runtime environment risk",
+        "The output flags APP_ENV=dev in Release Info.plist as a runtime mismatch risk",
+        "The output flags passing the entire ProcessInfo environment to the helper instead of an explicit allowlist",
+        "The suggested direction mentions keeping secrets out of .env.prod/bundles and using explicit secret-free release configuration or env allowlists",
+        "The review decision is 'request changes'"
+      ]
+    },
+    {
+      "id": 8,
+      "eval_name": "helper-xpc-one-sided-contract",
+      "prompt": "Review a local diff on branch feat/voy-903 against develop. The diff modifies apps/macos/Voyager/Shared/Models/FilterSearchXPCProtocol.swift and apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Api/SearchXPCTransport.swift. The protocol adds a new searchWithOptions(_:reply:) method and the app-side transport calls it, but VoyagerHelper's XPC service implementation and helper tests are unchanged. The new transport call has no timeout handling and falls back to NotificationCenter when the helper method is unavailable. Run the full review. Simulate that .greptile/rules.md is loaded. Produce the complete structured output.",
+      "expected_output": "A review output with a P0/P1 Korean finding that the XPC contract changed only on the shared/app side while the helper implementation and failure-path tests were not updated. It should flag the missing timeout/unavailable-helper handling and NotificationCenter fallback as contract bypass risks. The review decision must be request changes.",
+      "files": [],
+      "assertions": [
+        "The output flags the one-sided FilterSearchXPCProtocol/SearchXPCTransport update without matching VoyagerHelper implementation as a helper/XPC contract risk",
+        "The output flags missing timeout or unavailable-helper handling for the new XPC method",
+        "The output flags NotificationCenter fallback as bypassing the shared helper/XPC contract when a reducer/action path or transport contract should own it",
+        "The suggested direction mentions updating both app and helper sides plus tests or fixtures for the XPC contract",
+        "The review decision is 'request changes'"
+      ]
+    },
+    {
+      "id": 9,
+      "eval_name": "package-public-boundary",
+      "prompt": "Review a local diff on branch refactor/voy-904 against develop. The diff extracts EntryFormatting into apps/macos/Packages/05_Entities/EntryEntity/Sources/EntryEntity/EntryFormatting.swift and updates apps/macos/Packages/05_Entities/EntryEntity/Package.swift. The new package source imports Voyager to reuse EntryDisplayModel, the package test uses @testable import Voyager, and the new public EntryFormatting type exposes public methods but leaves its initializer and stored configuration internal. The app currently calls it only through an internal compatibility wrapper in 04_Features/EntryEditor. Run the full review. Simulate that .greptile/rules.md is loaded. Produce the complete structured output.",
+      "expected_output": "A review output with P0/P1 Korean findings for package-to-app coupling, @testable import Voyager in package tests, and incomplete public API promotion hidden behind a compatibility wrapper. The review decision must be request changes and the suggested direction must point toward dependency inversion/lower-layer promotion and a complete public surface.",
+      "files": [],
+      "assertions": [
+        "The output flags importing Voyager from an apps/macos/Packages package as a package/public boundary violation",
+        "The output flags @testable import Voyager in package tests as app-target coupling that weakens package independence",
+        "The output flags the public type with internal initializer or stored configuration as an incomplete public API surface for real consumers",
+        "The output identifies the internal compatibility wrapper as ownership drift or wrapper-only compatibility rather than accepting it as the solution",
+        "The suggested direction mentions dependency inversion, lower-layer promotion, or completing the public initializer/properties/cases needed by consumers",
+        "The review decision is 'request changes'"
+      ]
+    }
+  ]
+}

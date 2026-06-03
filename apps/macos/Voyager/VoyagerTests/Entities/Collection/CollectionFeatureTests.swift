@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -6,10 +7,8 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 import XCTest
 
-/// 컬렉션 기능 — 레거시 키, 날짜 범위, 연산자 변경, 비활성 필터 지속성을 검증.
 @MainActor
 final class CollectionFeatureTests: XCTestCase {
-    /// testResolveDetailedMapsLegacyKeysAndUnknowns 테스트 동작을 검증한다.
     func testResolveDetailedMapsLegacyKeysAndUnknowns() {
         let registryClient = makeRegistryClient()
         let appliedFilters = AppliedFiltersPayload(
@@ -46,7 +45,63 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertFalse(unknownCondition.isActive)
     }
 
-    /// testResolveDetailedRestoresDateRangePayloadWithoutShapeLoss 테스트 동작을 검증한다.
+    func testResolveDetailedPreservesFallbackExcludedScopesWhenAppliedFiltersMissing() {
+        let fallbackCondition = makeActiveCondition()
+
+        let resolved = AppliedFiltersUtils.resolveDetailed(
+            nil,
+            fallbackScopes: ["/tmp/root"],
+            fallbackConditions: [fallbackCondition],
+            registryClient: makeRegistryClient(),
+            fallbackExcludedScopes: ["/tmp/root/excluded"],
+        )
+
+        XCTAssertEqual(resolved.scopes, ["/tmp/root"])
+        XCTAssertEqual(resolved.excludedScopes, ["/tmp/root/excluded"])
+        XCTAssertEqual(resolved.conditions, [fallbackCondition])
+        XCTAssertEqual(resolved.unknownKeys, [])
+    }
+
+    func testResolveDetailedPreservesFallbackExcludedScopesWhenAppliedPayloadOmitsKey() throws {
+        let fallbackCondition = makeActiveCondition()
+        let data = Data(
+            #"{"scopes":["/tmp/root"],"includeSubfolders":true,"conditions":[]}"#.utf8,
+        )
+        let appliedFilters = try JSONDecoder().decode(AppliedFiltersPayload.self, from: data)
+
+        let resolved = AppliedFiltersUtils.resolveDetailed(
+            appliedFilters,
+            fallbackScopes: ["/tmp/fallback"],
+            fallbackConditions: [fallbackCondition],
+            registryClient: makeRegistryClient(),
+            fallbackExcludedScopes: ["/tmp/root/excluded"],
+        )
+
+        XCTAssertEqual(resolved.scopes, ["/tmp/root"])
+        XCTAssertEqual(resolved.excludedScopes, ["/tmp/root/excluded"])
+        XCTAssertEqual(resolved.conditions, [])
+        XCTAssertEqual(resolved.unknownKeys, [])
+    }
+
+    func testResolveDetailedKeepsEmptyExcludedScopesWhenFallbackIsEmpty() throws {
+        let data = Data(
+            #"{"scopes":["/tmp/root"],"includeSubfolders":true,"conditions":[]}"#.utf8,
+        )
+        let appliedFilters = try JSONDecoder().decode(AppliedFiltersPayload.self, from: data)
+
+        let resolved = AppliedFiltersUtils.resolveDetailed(
+            appliedFilters,
+            fallbackScopes: ["/tmp/fallback"],
+            fallbackConditions: [makeActiveCondition()],
+            registryClient: makeRegistryClient(),
+        )
+
+        XCTAssertEqual(resolved.scopes, ["/tmp/root"])
+        XCTAssertEqual(resolved.excludedScopes, [])
+        XCTAssertEqual(resolved.conditions, [])
+        XCTAssertEqual(resolved.unknownKeys, [])
+    }
+
     func testResolveDetailedRestoresDateRangePayloadWithoutShapeLoss() {
         let registryClient = makeRangeDateRegistryClient()
         let appliedFilters = AppliedFiltersPayload(
@@ -75,7 +130,6 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(resolved.conditions[0].values, ["2026-02-26", "2026-02-27"])
     }
 
-    /// testApplyFiltersSkipsInactiveConditions 테스트 동작을 검증한다.
     func testApplyFiltersSkipsInactiveConditions() async {
         let recorder = FiltersRecorder()
         let conditions = [makeActiveCondition(), makeInactiveCondition()]
@@ -88,7 +142,6 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(payload?.conditions.first?.propertyKey, "name_full")
     }
 
-    /// testSetOperatorUpdatesInputContractArityForSingleRangeAndNone 테스트 동작을 검증한다.
     func testSetOperatorUpdatesInputContractArityForSingleRangeAndNone() async {
         let recorder = FiltersRecorder()
         let conditions = [makeNumberCondition(values: ["10"])]
@@ -139,7 +192,6 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertNil(payload?.conditions.first?.value)
     }
 
-    /// testSetOperatorClearsStaleValuesOnSameConditionSwitchSequence 테스트 동작을 검증한다.
     func testSetOperatorClearsStaleValuesOnSameConditionSwitchSequence() async {
         let recorder = FiltersRecorder()
         let conditions = [makeNumberCondition(values: ["10", "20"])]
@@ -192,7 +244,6 @@ final class CollectionFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.conditions[0].operatorValueArity, 0)
     }
 
-    /// testSaveToExistingOmitsInactiveConditions 테스트 동작을 검증한다.
     func testSaveToExistingOmitsInactiveConditions() async {
         let recorder = SavedCollectionsRecorder()
         let payload = makeSavePayload(conditions: [makeActiveCondition(), makeInactiveCondition()])
@@ -464,7 +515,7 @@ private func runApplyFiltersTest(
 
 private func makeSavePayload(conditions: [Condition]) -> SaveRequestPayload {
     SaveRequestPayload(
-        context: CollectionContext(query: "Report", scopes: ["/tmp"], conditions: conditions),
+        context: CollectionContext(query: "Report", scopes: ["/tmp"], includeSubfolders: true, conditions: conditions),
         isSearchLoading: false,
         isFiltersLoading: false,
         snapshotItems: nil,
@@ -573,3 +624,5 @@ private actor SavedCollectionsRecorder {
         entries.last
     }
 }
+
+// swiftlint:enable file_length

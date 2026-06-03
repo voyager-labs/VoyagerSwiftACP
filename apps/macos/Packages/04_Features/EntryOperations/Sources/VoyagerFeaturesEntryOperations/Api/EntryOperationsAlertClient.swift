@@ -22,7 +22,7 @@ public struct EntryOperationsAlertClient: Sendable {
     public var showGetInfoFailureAlert: @Sendable (_ message: String, _ suggestion: String?) async -> Void
     public var showRenameExtensionChangeAlert: @Sendable (_ oldName: String, _ newName: String) async -> Bool
 
-    public nonisolated init(
+    nonisolated public init(
         showTrashFileAlert: @escaping @Sendable (_ fileName: String, _ hasMoreFiles: Bool) async -> Bool,
         showRenameConflictAlert: @escaping @Sendable (_ itemName: String) async -> Void,
         showDeleteConfirmationAlert: @escaping @Sendable (_ itemNames: [String]) async -> Bool,
@@ -46,7 +46,7 @@ public struct EntryOperationsAlertClient: Sendable {
 }
 
 extension EntryOperationsAlertClient: DependencyKey {
-    public nonisolated static var liveValue: EntryOperationsAlertClient {
+    nonisolated public static var liveValue: EntryOperationsAlertClient {
         EntryOperationsAlertClient(
             showTrashFileAlert: { fileName, hasMoreFiles in
                 await MainActor.run {
@@ -98,7 +98,7 @@ extension EntryOperationsAlertClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: EntryOperationsAlertClient {
+    nonisolated public static var testValue: EntryOperationsAlertClient {
         EntryOperationsAlertClient(
             showTrashFileAlert: { _, _ in false },
             showRenameConflictAlert: { _ in },
@@ -110,7 +110,7 @@ extension EntryOperationsAlertClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: EntryOperationsAlertClient {
+    nonisolated public static var previewValue: EntryOperationsAlertClient {
         testValue
     }
 }

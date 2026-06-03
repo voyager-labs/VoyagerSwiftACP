@@ -10,7 +10,7 @@ public struct NotificationCenterClient: Sendable {
     public var publisher: @Sendable (Notification.Name) -> NotificationCenter.Publisher
     public var post: @Sendable (Notification.Name, NSObject?, [AnyHashable: Any]?) -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         notifications: @escaping @Sendable (Notification.Name, NSObject?) -> AsyncStream<Notification>,
         addObserver: @escaping @Sendable (Notification.Name, NSObject?, @escaping @Sendable (Notification) -> Void)
             -> NSObjectProtocol,
@@ -27,7 +27,7 @@ public struct NotificationCenterClient: Sendable {
 }
 
 extension NotificationCenterClient: DependencyKey {
-    public nonisolated static var liveValue: NotificationCenterClient {
+    nonisolated public static var liveValue: NotificationCenterClient {
         let center = NotificationCenter.default
         return NotificationCenterClient(
             notifications: { name, object in
@@ -80,7 +80,7 @@ extension NotificationCenterClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: NotificationCenterClient {
+    nonisolated public static var testValue: NotificationCenterClient {
         NotificationCenterClient(
             notifications: { _, _ in AsyncStream { _ in } },
             addObserver: { _, _, _ in NSObject() },
@@ -90,7 +90,7 @@ extension NotificationCenterClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: NotificationCenterClient {
+    nonisolated public static var previewValue: NotificationCenterClient {
         testValue
     }
 }

@@ -1,12 +1,12 @@
 import ComposableArchitecture
 import Foundation
 
-struct QuitConfirmationResult: Equatable, Sendable {
+struct QuitConfirmationResult: Equatable {
     var shouldQuit: Bool
     var isAlertBeforeQuitEnabled: Bool
 }
 
-struct QuitConfirmationClient: Sendable {
+struct QuitConfirmationClient {
     var confirmQuit: @Sendable (_ isIndexingInProgress: Bool, _ isAlertBeforeQuitEnabled: Bool) async
         -> QuitConfirmationResult
 

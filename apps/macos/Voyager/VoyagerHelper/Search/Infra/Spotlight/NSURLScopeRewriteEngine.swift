@@ -1,12 +1,13 @@
 import Foundation
+import VoyagerShared
 
-struct NSURLScopeRewriteEngine: Sendable {
+struct NSURLScopeRewriteEngine {
     private struct ScopeRewriteRule {
         let propertyKey: String
         let resolveScopes: (_ value: String, _ volumes: [VolumeInfo]) -> [String]
     }
 
-    struct VolumeInfo: Sendable {
+    struct VolumeInfo {
         let rootPath: String
         let name: String?
         let uuidString: String?

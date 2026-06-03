@@ -3,15 +3,18 @@ import Foundation
 import VoyagerShared
 
 public enum CollectionSnapshotHydration {
-    // 이 fingerprint는 저장된 snapshot과 현재 collection definition의 동등성 비교에만 사용
-    // 보안 경계가 아니라 persisted shape를 compact하고 stable하게 유지하기 위한 고정 길이 digest
+    /// 이 fingerprint는 저장된 snapshot과 현재 collection definition의 동등성 비교에만 사용
+    /// 보안 경계가 아니라 persisted shape를 compact하고 stable하게 유지하기 위한 고정 길이 digest
     public static func definitionFingerprint(
         query: String,
         scopes: [String],
+        excludedScopes: [String] = [],
+        includeSubfolders: Bool = true,
         conditions: [CollectionCondition],
     ) -> String {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedScopes = normalizePaths(scopes)
+        let normalizedExcludedScopes = normalizePaths(excludedScopes)
         let normalizedConditions = conditions
             .map { condition in
                 let value = canonicalValueString(condition.value)
@@ -22,6 +25,8 @@ public enum CollectionSnapshotHydration {
         return digest(
             query: normalizedQuery,
             scopes: normalizedScopes,
+            excludedScopes: normalizedExcludedScopes,
+            includeSubfolders: includeSubfolders,
             conditions: normalizedConditions,
         )
     }
@@ -30,6 +35,8 @@ public enum CollectionSnapshotHydration {
         definitionFingerprint(
             query: file.query,
             scopes: file.scopes,
+            excludedScopes: file.excludedScopes,
+            includeSubfolders: file.includeSubfolders,
             conditions: file.conditions,
         )
     }
@@ -37,11 +44,15 @@ public enum CollectionSnapshotHydration {
     public static func definitionFingerprint(
         query: String,
         scopes: [String],
+        excludedScopes: [String] = [],
+        includeSubfolders: Bool = true,
         conditions: [Condition],
     ) -> String {
         definitionFingerprint(
             query: query,
             scopes: scopes,
+            excludedScopes: excludedScopes,
+            includeSubfolders: includeSubfolders,
             conditions: collectionConditions(from: conditions),
         )
     }
@@ -65,6 +76,8 @@ public enum CollectionSnapshotHydration {
             itemCount: file.snapshotMeta?.itemCount ?? snapshot.items.count,
             appliedFilters: VoyagerShared.AppliedFiltersPayload(
                 scopes: file.scopes,
+                excludedScopes: file.excludedScopes,
+                includeSubfolders: file.includeSubfolders,
                 conditions: file.conditions.map {
                     VoyagerShared.SearchConditionPayload(
                         propertyKey: $0.propertyKey,
@@ -130,11 +143,15 @@ public enum CollectionSnapshotHydration {
     private static func digest(
         query: String,
         scopes: [String],
+        excludedScopes: [String],
+        includeSubfolders: Bool,
         conditions: [String],
     ) -> String {
         let canonical = [
             query,
             scopes.joined(separator: "\u{1D}"),
+            excludedScopes.joined(separator: "\u{1E}"),
+            includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
             conditions.joined(separator: "\u{1C}"),
         ].joined(separator: "\u{1B}")
 

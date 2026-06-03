@@ -1,10 +1,11 @@
 [
-  // LSP context switching. Zed task variables use shell-style names.
+  // LSP context switching via mise tasks.
+  // mise run lsp-context depends on lsp-install, so xcode-build-server is auto-installed.
   // Use args instead of interpolating paths into command strings so spaces are handled safely.
   {
     "label": "Voyager LSP: Current File",
-    "command": "python3",
-    "args": ["scripts/dev/lsp_context.py", "--path", "$ZED_FILE"],
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--path", "$ZED_FILE"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -14,8 +15,8 @@
   },
   {
     "label": "Voyager LSP: App",
-    "command": "python3",
-    "args": ["scripts/dev/lsp_context.py", "--scope", "app"],
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--scope", "app"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -25,8 +26,8 @@
   },
   {
     "label": "Voyager LSP: Helper",
-    "command": "python3",
-    "args": ["scripts/dev/lsp_context.py", "--scope", "helper"],
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--scope", "helper"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -36,8 +37,8 @@
   },
   {
     "label": "Voyager LSP: OnboardingHost",
-    "command": "python3",
-    "args": ["scripts/dev/lsp_context.py", "--scope", "onboarding"],
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--scope", "onboarding"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,

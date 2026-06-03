@@ -16,7 +16,7 @@ public struct EntryOpenClient: Sendable {
     public var defaultApplication: @Sendable (UTType) async -> ApplicationInfo?
     public var trashDirectoryPath: @Sendable () -> String?
 
-    public nonisolated init(
+    nonisolated public init(
         open: @escaping @Sendable (URL, OpenKind) async throws -> Void,
         setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
         openFinderInfo: @escaping @Sendable ([URL]) async throws -> Void,
@@ -40,7 +40,7 @@ public struct EntryOpenClient: Sendable {
 }
 
 extension EntryOpenClient: DependencyKey {
-    public nonisolated static var liveValue: EntryOpenClient {
+    nonisolated public static var liveValue: EntryOpenClient {
         EntryOpenClient(
             open: EntryOpenLive.open,
             setDefaultApp: EntryOpenLive.setDefaultApp,
@@ -54,7 +54,7 @@ extension EntryOpenClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: EntryOpenClient {
+    nonisolated public static var testValue: EntryOpenClient {
         let unimplemented = { @Sendable (_: Any...) -> Never in
             fatalError("EntryOpenClient test dependency not set.")
         }
@@ -71,7 +71,7 @@ extension EntryOpenClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: EntryOpenClient {
+    nonisolated public static var previewValue: EntryOpenClient {
         let previewInfo = ApplicationInfo(
             id: "com.apple.preview",
             name: "Preview",

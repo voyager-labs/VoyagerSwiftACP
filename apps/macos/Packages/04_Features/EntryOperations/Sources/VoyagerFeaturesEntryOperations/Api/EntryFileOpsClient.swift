@@ -1,7 +1,6 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
@@ -31,7 +30,7 @@ public struct EntryFileOpsClient: Sendable {
     public var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation)
     public var postFileSystemChanged: @Sendable ([String]) -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
@@ -83,7 +82,7 @@ public struct EntryFileOpsClient: Sendable {
 }
 
 extension EntryFileOpsClient: DependencyKey {
-    public nonisolated static var liveValue: EntryFileOpsClient {
+    nonisolated public static var liveValue: EntryFileOpsClient {
         EntryFileOpsClient(
             createFolder: EntryFileOpsLive.createFolder,
             pasteFile: EntryFileOpsLive.pasteFile,
@@ -111,7 +110,7 @@ extension EntryFileOpsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: EntryFileOpsClient {
+    nonisolated public static var testValue: EntryFileOpsClient {
         let unimplemented = { @Sendable (_: Any...) -> Never in
             fatalError("EntryFileOpsClient test dependency not set.")
         }
@@ -142,7 +141,7 @@ extension EntryFileOpsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: EntryFileOpsClient {
+    nonisolated public static var previewValue: EntryFileOpsClient {
         EntryFileOpsClient(
             createFolder: { _, _ in },
             pasteFile: { _, _ in },
@@ -234,8 +233,7 @@ enum EntryFileOpsLive {
     nonisolated static var moveToTrashAndReturnURL: @Sendable (URL) async throws -> URL {
         { url in
             try await MainActor.run {
-                let trashURL = try FileManagerClient.liveValue.trashItem(url)
-                return trashURL
+                try FileManagerClient.liveValue.trashItem(url)
             }
         }
     }

@@ -1,8 +1,8 @@
 import ComposableArchitecture
 import Foundation
 
-struct HelperExternalFileChangeEvent: Equatable, Sendable {
-    enum Source: Equatable, Sendable {
+struct HelperExternalFileChangeEvent: Equatable {
+    enum Source: Equatable {
         case live
         case replay
     }
@@ -11,7 +11,7 @@ struct HelperExternalFileChangeEvent: Equatable, Sendable {
     var source: Source
 }
 
-struct HelperExternalFileChangeClient: Sendable {
+struct HelperExternalFileChangeClient {
     var observeChangedPaths: @Sendable () -> AsyncStream<HelperExternalFileChangeEvent>
     var acknowledgeDeliveredPaths: @Sendable ([String]) async -> Void
     var updateWatchRoots: @Sendable ([String]) async -> Void

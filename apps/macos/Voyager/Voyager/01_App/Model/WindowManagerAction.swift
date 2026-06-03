@@ -29,7 +29,7 @@ enum WindowManagerAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum FileCommand: CasePathable, Sendable {
+    enum FileCommand: CasePathable {
         case newWindow(path: String? = nil)
         case newTab(path: String? = nil)
         case newFolder
@@ -40,7 +40,7 @@ enum WindowManagerAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum WindowCommand: CasePathable, Sendable {
+    enum WindowCommand: CasePathable {
         case closeFocusedWindow
         case closeAllWindows
         case goBack
@@ -51,7 +51,7 @@ enum WindowManagerAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum ViewCommand: CasePathable, Sendable {
+    enum ViewCommand: CasePathable {
         case setViewLayout(EntryViewLayoutState.Mode)
         case setGroupKey(GroupKey)
         case setSortKey(SortKey)
@@ -59,7 +59,7 @@ enum WindowManagerAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum EditCommand: CasePathable, Sendable {
+    enum EditCommand: CasePathable {
         case requestUndo
         case requestRedo
         case toggleComposer
@@ -75,7 +75,7 @@ enum WindowManagerAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum WindowEvent: CasePathable, Sendable {
+    enum WindowEvent: CasePathable {
         case focusWindow(path: String)
         case windowBecameKey(WindowManagerState.WindowID)
         case windowResignedKey(WindowManagerState.WindowID)

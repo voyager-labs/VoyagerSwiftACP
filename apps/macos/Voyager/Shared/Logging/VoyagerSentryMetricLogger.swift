@@ -15,14 +15,14 @@ enum DAUNavigationKind: String {
     case collection
 }
 
-enum DAUEntryKind: String, Sendable {
+enum DAUEntryKind: String {
     case file
     case directory
     case collection
     case mixed
 }
 
-enum DAUEntryActionKind: String, Sendable {
+enum DAUEntryActionKind: String {
     case openDefault = "open_default"
     case openWithApp = "open_with_app"
     case quickLook = "quick_look"
@@ -48,7 +48,7 @@ enum DAUEntryActionKind: String, Sendable {
 }
 
 enum VoyagerSentryMetricLogger {
-    private nonisolated static let userIdStore = UserIdStore()
+    nonisolated private static let userIdStore = UserIdStore()
 
     nonisolated static func setUserId(_ userId: String?) {
         userIdStore.set(userId)
@@ -108,7 +108,7 @@ enum VoyagerSentryMetricLogger {
         )
     }
 
-    private nonisolated static func captureDAUEvent(
+    nonisolated private static func captureDAUEvent(
         name: String,
         tags: [String: String],
     ) {
@@ -121,7 +121,7 @@ enum VoyagerSentryMetricLogger {
 
 private final class UserIdStore: @unchecked Sendable {
     private let lock = NSLock()
-    private nonisolated(unsafe) var value: String?
+    nonisolated(unsafe) private var value: String?
 
     nonisolated func set(_ value: String?) {
         lock.lock()

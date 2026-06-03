@@ -1,6 +1,5 @@
 import AppKit
 import ComposableArchitecture
-
 import VoyagerShared
 
 extension EntryFileOpsLive {

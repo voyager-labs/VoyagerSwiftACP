@@ -10,6 +10,7 @@
 		"vknabel.vscode-swiftformat",
     "vknabel.vscode-swiftlint",
     "swiftlang.swift-vscode",
+    "hverlin.mise-vscode"
 	]
 }
 

@@ -13,7 +13,21 @@ public struct Condition: Equatable, Identifiable, Hashable, Sendable {
     public var values: [String]?
     public var isActive: Bool = true
 
-    public var id: String { propertyKey }
+    public var id: String {
+        propertyKey
+    }
+
+    public var isSearchReady: Bool {
+        guard isActive else { return false }
+        guard operatorCode != nil else { return false }
+
+        if let operatorValueArity, operatorValueArity == 0 {
+            return true
+        }
+
+        guard let values, !values.isEmpty else { return false }
+        return ConditionValueEncoder.encode(condition: self, values: values) != nil
+    }
 
     public init(
         propertyKey: String,

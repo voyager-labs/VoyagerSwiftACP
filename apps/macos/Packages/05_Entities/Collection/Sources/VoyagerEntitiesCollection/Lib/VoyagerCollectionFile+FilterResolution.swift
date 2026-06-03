@@ -14,6 +14,8 @@ public extension VoyagerCollectionFile {
         }
         let appliedFilters = VoyagerShared.AppliedFiltersPayload(
             scopes: scopes,
+            excludedScopes: excludedScopes,
+            includeSubfolders: includeSubfolders,
             conditions: conditionPayloads,
         )
         return AppliedFiltersUtils.resolveDetailed(
@@ -21,6 +23,7 @@ public extension VoyagerCollectionFile {
             fallbackScopes: scopes,
             fallbackConditions: [],
             registryClient: registryClient,
+            fallbackExcludedScopes: excludedScopes,
         )
     }
 }

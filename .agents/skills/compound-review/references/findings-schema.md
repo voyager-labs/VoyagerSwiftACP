@@ -236,12 +236,3 @@ The `missing_sources` field is **optional**. It is only present when the finding
     ]
 }
 ```
-
----
-
-## Schema Version History
-
-| Version | Date       | Change                                                                                 |
-| ------- | ---------- | -------------------------------------------------------------------------------------- |
-| 1.0     | 2026-04-10 | Initial schema.                                                                        |
-| 2.0     | 2026-05-17 | Aligned with manifest v2: evidence paths updated to plan-scoped, artifact-contract v2. |

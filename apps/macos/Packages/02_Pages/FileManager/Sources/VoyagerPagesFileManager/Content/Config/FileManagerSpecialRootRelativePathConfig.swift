@@ -1,4 +1,4 @@
-public enum FileManagerSpecialRootRelativePathConfig: Sendable {
-    public nonisolated static let iCloudDrive = "Library/Mobile Documents/com~apple~CloudDocs"
-    public nonisolated static let cloudStorage = "Library/CloudStorage"
+public enum FileManagerSpecialRootRelativePathConfig {
+    nonisolated public static let iCloudDrive = "Library/Mobile Documents/com~apple~CloudDocs"
+    nonisolated public static let cloudStorage = "Library/CloudStorage"
 }

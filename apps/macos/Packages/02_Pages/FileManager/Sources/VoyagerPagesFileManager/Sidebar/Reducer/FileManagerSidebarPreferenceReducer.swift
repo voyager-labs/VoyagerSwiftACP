@@ -17,6 +17,8 @@ struct FileManagerSidebarPreferenceReducer {
                 return .none
 
             case let .view(.setSidebarWidth(width)):
+                guard state.sidebarVisible else { return .none }
+
                 let clampedWidth = max(150, min(400, width))
                 if abs(state.sidebarWidth - clampedWidth) < 0.5 {
                     return .none

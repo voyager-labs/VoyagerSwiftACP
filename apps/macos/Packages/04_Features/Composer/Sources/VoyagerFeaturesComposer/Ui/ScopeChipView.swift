@@ -1,88 +1,70 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerShared
 
-public struct ScopeChipView: View {
-    let paths: [String]
+struct ScopeChipView: View {
+    let summary: ComposerScopeSummary
     let store: StoreOf<ComposerFeature>
     let favorites: [ScopeFavoriteItem]
     let backHistory: [String]
-    @Binding var isComboBoxPresented: Bool
-    @State private var editingPath: String?
-    @State private var deleteHoverPath: String?
     @State private var dropdownHovering: Bool = false
-    @State private var nameHoverPath: String?
     @Environment(\.colorScheme)
     private var colorScheme: ColorScheme
-    @Dependency(\.entryLoadingClient)
-    private var entryLoadingClient
 
-    public init(
-        paths: [String],
-        store: StoreOf<ComposerFeature>,
-        favorites: [ScopeFavoriteItem],
-        backHistory: [String],
-        isComboBoxPresented: Binding<Bool>,
-    ) {
-        self.paths = paths
-        self.store = store
-        self.favorites = favorites
-        self.backHistory = backHistory
-        _isComboBoxPresented = isComboBoxPresented
-    }
-
-    public var body: some View {
-        let isRootPlaceholder = paths.isEmpty
-            || (paths.count == 1 && paths[0] == ComposerScopeUtils.rootScopePath)
-        HStack(spacing: isRootPlaceholder ? 1 : 4) {
+    var body: some View {
+        HStack(spacing: 4) {
             Image(systemName: "folder")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
 
-            if isRootPlaceholder {
-                Text("This Mac")
+            VStack(alignment: .leading, spacing: 1) {
+                Text(summary.primaryText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.primary)
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, 2)
-                    .frame(height: 19)
-                dropdownButton(compact: true)
-            } else {
-                ForEach(Array(paths.enumerated()), id: \.offset) { index, path in
-                    directoryNameChip(path: path, index: index)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if let secondary = summary.secondaryText {
+                    Text(secondary)
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
-                dropdownButton(compact: false)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let badge = summary.badgeText {
+                Text(badge)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(VoyagerDS.Interaction.hoverFill(for: colorScheme)),
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+
+            dropdownButton(compact: summary.primary == .rootOnly)
         }
         .padding(.horizontal, 8)
-        .frame(height: 28)
+        .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(VoyagerDS.Surface.chipContainerBackground(for: colorScheme)),
         )
-        .popover(isPresented: $isComboBoxPresented, arrowEdge: .bottom) {
-            ScopePickerView(
-                isPresented: $isComboBoxPresented,
-                oldPath: editingPath,
-                onSelect: { selectedPath in
-                    if let oldPath = editingPath {
-                        store.send(.updateScope(oldPath: oldPath, newPath: selectedPath))
-                    } else {
-                        store.send(.addScope(path: selectedPath))
-                    }
-                    editingPath = nil
-                },
-                favorites: favorites,
-                backHistory: backHistory,
-                entryLoadingClient: entryLoadingClient,
-            )
-        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(summary.accessibilityText)
+        .help(summary.accessibilityText)
     }
 
     private func dropdownButton(compact: Bool) -> some View {
         Button {
-            isComboBoxPresented = true
+            store.send(.scopeEditorOpen(editingPath: nil, favorites: favorites, backHistory: backHistory))
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: 10))
@@ -100,49 +82,77 @@ public struct ScopeChipView: View {
             dropdownHovering = hovering
         }
     }
+}
 
-    @ViewBuilder
-    private func directoryNameChip(path: String, index _: Int) -> some View {
-        let displayName = entryLoadingClient.displayName(path)
+struct ScopeTokenChipView: View {
+    let title: String
+    let path: String?
+    let onRemove: (() -> Void)?
 
-        HStack(spacing: 4) {
-            Button {
-                editingPath = path
-                isComboBoxPresented = true
-            } label: {
-                Text(displayName)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(nameHoverPath == path ? .primary : .primary.opacity(0.8))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            .buttonStyle(.borderless)
-            .onHover { hovering in
-                nameHoverPath = hovering ? path : nil
-            }
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("\u{10088A}")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 12, height: 12)
 
-            Button {
-                store.send(.removeScope(path: path))
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .medium))
-                    .foregroundColor(deleteHoverPath == path ? .primary : .secondary)
-            }
-            .buttonStyle(.borderless)
-            .onHover { hovering in
-                deleteHoverPath = hovering ? path : nil
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Remove scope \(title)")
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
+        .padding(.leading, 4)
+        .padding(.trailing, onRemove == nil ? 8 : 5)
+        .frame(height: 22)
+        .fixedSize(horizontal: false, vertical: true)
         .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(VoyagerDS.Surface.chipItemBackground(for: colorScheme)),
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(VoyagerDS.SystemColor.separator.opacity(0.9)),
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(VoyagerDS.Surface.chipItemBorder(for: colorScheme), lineWidth: 0.5),
-        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(path.map { "Scope \(title), \($0)" } ?? title)
+        .help(path ?? title)
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func `if`(_ condition: Bool, transform: (Self) -> some View) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}
+
+enum ChipItemType: Identifiable, Hashable {
+    case scopeRoot
+    case scopeBase(path: String)
+    case condition(Condition)
+    case conditionAdd
+
+    var id: String {
+        switch self {
+        case .scopeRoot:
+            "scope-root"
+        case let .scopeBase(path):
+            "scope-base-\(path)"
+        case let .condition(condition):
+            "condition-\(condition.propertyKey)"
+        case .conditionAdd:
+            "condition-add"
+        }
     }
 }

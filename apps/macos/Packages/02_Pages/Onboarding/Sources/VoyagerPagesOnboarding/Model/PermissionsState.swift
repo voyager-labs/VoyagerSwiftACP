@@ -3,7 +3,7 @@ import Foundation
 import VoyagerEntitiesAppPreferences
 
 @ObservableState
-struct PermissionsState: Equatable, Sendable {
+struct PermissionsState: Equatable {
     var isComplete: Bool = false
     var fullDiskAccessStatus: FullDiskAccessStatus = .unknown
     var helperFolderAccess: FolderAccessResult = .init(
@@ -87,7 +87,7 @@ struct PermissionsState: Equatable, Sendable {
     }
 }
 
-struct FolderAccessItem: Equatable, Identifiable, Sendable {
+struct FolderAccessItem: Equatable, Identifiable {
     let id: String
     let title: String
     let status: FolderAccessPermission

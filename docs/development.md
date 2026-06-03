@@ -24,7 +24,7 @@ Xcode 버전 고정
 
 - 고정 파일: `.xcode-version`
 - Swiftly 선택 파일: `.swift-version` (`xcode`, 현재 선택된 Xcode toolchain 사용)
-- Swift 기대 버전 파일: `.swift-toolchain-version` (`just swift-version` 검증 기준)
+- Swift 기대 버전 파일: `.swift-toolchain-version` (`mise run swift-version` 검증 기준)
 - 설치/선택 스크립트: `scripts/xcodes.sh`
 
 권장 설정 방법
@@ -38,7 +38,7 @@ Swiftly를 사용하는 shell에서는 레포 루트에서 아래 값도 확인�
 
 ```bash
 swiftly use
-just swift-version
+mise run swift-version
 ```
 
 정상 출력은 `xcode` 및 `.swift-toolchain-version`과 일치하는 Swift 6.2.1입니다.
@@ -75,6 +75,7 @@ cp .env.example .env.dev
 ### 3.1 실행(권장)
 
 - Xcode에서 `apps/macos/Voyager/Voyager.xcworkspace`를 열고 `Voyager-Dev` 스킴을 실행합니다.
+- 온보딩/설정 호스트 수동 검증은 같은 workspace에서 `OnboardingHost-Dev` 또는 `SettingsHost-Dev` 스킴을 실행합니다.
 - Helper가 백엔드 실행/인덱싱을 담당하므로, 일반적인 개발은 “앱 실행”만으로 통합 동작을 확인할 수 있습니다.
 
 CLI 빌드(필요 시)
@@ -86,7 +87,7 @@ xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -co
 참고
 
 - GUI는 `apps/macos/Voyager/Voyager.xcworkspace`로 여는 것을 권장합니다.
-- CLI(`xcodebuild`)는 현재 `-workspace`에서 scheme 노출이 안 되는 케이스가 있어 `-project`가 더 안정적입니다.
+- CLI(`xcodebuild`)는 빌드 대상을 명확히 하기 위해 각 `.xcodeproj`의 `-project` 경로를 지정하는 것이 더 안정적입니다.
 
 ### 3.2 주의사항
 

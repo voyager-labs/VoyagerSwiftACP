@@ -1,6 +1,7 @@
 import Foundation
 import Logging
 @testable import VoyagerHelper
+import VoyagerShared
 import XCTest
 
 @MainActor

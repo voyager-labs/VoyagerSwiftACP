@@ -12,7 +12,7 @@ final class VoyagerUITestsLaunchTests: XCTestCase {
     /// 다양한 UI 구성(다크/라이트 모드 등)에서 앱이 정상적으로 런치되는지 검증하는 테스트.
     /// 각 타겟 애플리케이션 UI 구성별로 실행되어 런치 스크린샷을 수집한다.
     @MainActor
-    func testLaunch() throws {
+    func testLaunch() {
         let app = XCUIApplication()
         app.launch()
 
