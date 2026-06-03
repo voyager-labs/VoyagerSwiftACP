@@ -1,0 +1,3 @@
+import VoyagerShared
+
+public typealias RelativeDateConditionLiteral = VoyagerShared.RelativeDateConditionLiteral
