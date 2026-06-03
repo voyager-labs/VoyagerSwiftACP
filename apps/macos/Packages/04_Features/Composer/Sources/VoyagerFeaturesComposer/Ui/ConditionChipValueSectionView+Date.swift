@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerShared
 
 private struct ConditionChipDateValueButtonConfig {
     let placeholderText: String
@@ -19,6 +20,26 @@ private struct ConditionChipDateButtonContext {
     let valueUIKind: String
     let valueArity: Int
     let hasError: Bool
+}
+
+private enum DateModeTab: String, Hashable {
+    case absolute
+    case relative
+}
+
+private let kDatePopoverContentWidth: CGFloat = 139
+private let kDatePopoverHorizontalPadding: CGFloat = 12
+private let kRelativeUnitPickerWidth: CGFloat = 82
+private let kRelativeInputSpacing: CGFloat = 4
+private let kRelativeAmountFieldWidth = kDatePopoverContentWidth - kRelativeUnitPickerWidth - kRelativeInputSpacing
+
+private struct DatePopoverBindings {
+    let dateModeTab: Binding<DateModeTab>
+    let dateSelection: Binding<Date>
+    let relativePreset: Binding<DateValueState.RelativePreset>
+    let relativeAmountText: Binding<String>
+    let relativeUnit: Binding<RelativeDateConditionLiteral.Unit>
+    let rawDateSelection: Binding<Date>
 }
 
 private struct ConditionChipDateButtonLabelView: View {
@@ -56,7 +77,7 @@ private struct ConditionChipDateButtonLabelView: View {
         if config.currentText.isEmpty {
             return config.placeholderText.isEmpty ? "Value" : config.placeholderText.capitalized
         }
-        return ValueNormalizerUtils.formatDateOnlyString(config.currentText) ?? config.currentText
+        return config.currentText
     }
 }
 
@@ -75,6 +96,7 @@ extension ConditionChipValueSectionView {
             pickerPropertyKey: valueViewStore.propertyKey,
             pickerPresented: valueViewStore.isPresented,
             pickerValues: valueViewStore.values,
+            pickerDateValueState: valueViewStore.dateValueState,
         )
         let context = ConditionChipDateButtonContext(
             displayedValues: displayedValues,
@@ -188,75 +210,223 @@ extension ConditionChipValueSectionView {
         config: ConditionChipDateValueButtonConfig,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            let applySelection = {
-                let formatted = ValueNormalizerUtils.formatDateOnly(tempDate)
-                valueViewStore.send(.setValue(index: config.index, text: formatted))
-                valuePickerStore.send(.commit)
-                DispatchQueue.main.async {
-                    if valueViewStore.errorMessage == nil {
-                        datePopoverIndex = nil
-                    }
+        let bindings = makeDatePopoverBindings(config: config, valueViewStore: valueViewStore)
+
+        return VStack(alignment: .center, spacing: 12) {
+            let applySelection = makeDateApplySelection(valueViewStore: valueViewStore)
+
+            if config.valueArity == 1, valueViewStore.dateValueState != nil {
+                semanticDatePopoverFields(
+                    valueViewStore: valueViewStore,
+                    dateModeTabBinding: bindings.dateModeTab,
+                    relativePresetBinding: bindings.relativePreset,
+                    relativeAmountTextBinding: bindings.relativeAmountText,
+                    relativeUnitBinding: bindings.relativeUnit,
+                )
+
+                calendarPicker(selection: bindings.dateSelection, onCommit: applySelection)
+            } else {
+                calendarPicker(selection: bindings.rawDateSelection, onCommit: applySelection)
+            }
+
+            dateApplyButton(action: applySelection)
+        }
+        .padding(.horizontal, kDatePopoverHorizontalPadding)
+        .padding(.vertical, 14)
+        .frame(width: kDatePopoverContentWidth + kDatePopoverHorizontalPadding * 2)
+    }
+
+    private func makeDatePopoverBindings(
+        config: ConditionChipDateValueButtonConfig,
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> DatePopoverBindings {
+        DatePopoverBindings(
+            dateModeTab: makeDateModeTabBinding(valueViewStore: valueViewStore),
+            dateSelection: Binding(
+                get: { valueViewStore.dateValueState?.selectedDate ?? Date() },
+                set: { valueViewStore.send(.setDateSelection($0)) },
+            ),
+            relativePreset: Binding(
+                get: { valueViewStore.dateValueState?.relativePreset ?? .custom },
+                set: { valueViewStore.send(.setRelativeDatePreset($0)) },
+            ),
+            relativeAmountText: makeRelativeAmountTextBinding(valueViewStore: valueViewStore),
+            relativeUnit: Binding(
+                get: { valueViewStore.dateValueState?.relativeUnit ?? .day },
+                set: { valueViewStore.send(.setRelativeDateUnit($0)) },
+            ),
+            rawDateSelection: Binding(
+                get: { tempDate },
+                set: { date in
+                    tempDate = date
+                    valueViewStore.send(.setValue(index: config.index, text: ValueNormalizerUtils.formatDateOnly(date)))
+                },
+            ),
+        )
+    }
+
+    private func makeDateModeTabBinding(
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> Binding<DateModeTab> {
+        Binding(
+            get: {
+                switch valueViewStore.dateValueState?.mode ?? .absolute {
+                case .absolute:
+                    .absolute
+                case .relative, .today:
+                    .relative
+                }
+            },
+            set: { tab in
+                switch tab {
+                case .absolute:
+                    valueViewStore.send(.setDateMode(.absolute))
+                case .relative:
+                    valueViewStore.send(.setDateMode(.relative))
+                }
+            },
+        )
+    }
+
+    private func makeRelativeAmountTextBinding(
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> Binding<String> {
+        Binding(
+            get: { String(valueViewStore.dateValueState?.relativeAmount ?? 1) },
+            set: { text in
+                let digits = text.filter(\.isNumber)
+                guard let amount = Int(digits), amount > 0 else { return }
+                valueViewStore.send(.setRelativeDateDirection(.past))
+                valueViewStore.send(.setRelativeDateAmount(amount))
+            },
+        )
+    }
+
+    private func makeDateApplySelection(
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+    ) -> () -> Void {
+        {
+            valuePickerStore.send(.commit)
+            DispatchQueue.main.async {
+                if valueViewStore.errorMessage == nil {
+                    datePopoverIndex = nil
                 }
             }
+        }
+    }
 
-            CalendarDatePicker(selection: $tempDate, onCommit: applySelection)
+    @ViewBuilder
+    private func semanticDatePopoverFields(
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+        dateModeTabBinding: Binding<DateModeTab>,
+        relativePresetBinding: Binding<DateValueState.RelativePreset>,
+        relativeAmountTextBinding: Binding<String>,
+        relativeUnitBinding: Binding<RelativeDateConditionLiteral.Unit>,
+    ) -> some View {
+        dateTypePicker(selection: dateModeTabBinding)
 
-            HStack {
-                Spacer()
-                Button("Apply") {
-                    applySelection()
-                }
-                .keyboardShortcut(.defaultAction)
+        if dateModeTabBinding.wrappedValue == .relative {
+            relativeDateFields(
+                valueViewStore: valueViewStore,
+                relativePresetBinding: relativePresetBinding,
+                relativeAmountTextBinding: relativeAmountTextBinding,
+                relativeUnitBinding: relativeUnitBinding,
+            )
+        }
+    }
+
+    private func dateTypePicker(selection: Binding<DateModeTab>) -> some View {
+        VStack(alignment: .center, spacing: 6) {
+            Text("Date Type")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.secondary)
+
+            Picker("Date Type", selection: selection) {
+                Text("On date").tag(DateModeTab.absolute)
+                Text("Relative").tag(DateModeTab.relative)
             }
-            .padding(.top, 4)
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: kDatePopoverContentWidth)
         }
-        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
-}
 
-private struct CalendarDatePicker: NSViewRepresentable {
-    @Binding var selection: Date
-    let onCommit: () -> Void
+    private func relativeDateFields(
+        valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
+        relativePresetBinding: Binding<DateValueState.RelativePreset>,
+        relativeAmountTextBinding: Binding<String>,
+        relativeUnitBinding: Binding<RelativeDateConditionLiteral.Unit>,
+    ) -> some View {
+        VStack(alignment: .center, spacing: 8) {
+            relativePresetPicker(selection: relativePresetBinding)
 
-    final class Coordinator: NSObject {
-        @Binding var selection: Date
-        let onCommit: () -> Void
-
-        init(selection: Binding<Date>, onCommit: @escaping () -> Void) {
-            _selection = selection
-            self.onCommit = onCommit
-        }
-
-        @objc
-        func dateChanged(_ sender: NSDatePicker) {
-            selection = sender.dateValue
-            if NSApp.currentEvent?.clickCount == 2 {
-                onCommit()
+            if relativePresetBinding.wrappedValue == .custom {
+                relativeCustomInputRow(
+                    amountText: relativeAmountTextBinding,
+                    unit: relativeUnitBinding,
+                )
             }
+
+            Text(valueViewStore.dateValueState?.displayText() ?? "Value")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection, onCommit: onCommit)
-    }
-
-    func makeNSView(context: Context) -> NSDatePicker {
-        let picker = NSDatePicker()
-        picker.datePickerStyle = .clockAndCalendar
-        picker.datePickerElements = [.yearMonthDay]
-        picker.isBordered = false
-        picker.drawsBackground = false
-        picker.focusRingType = .none
-        picker.target = context.coordinator
-        picker.action = #selector(Coordinator.dateChanged(_:))
-        picker.dateValue = selection
-        return picker
-    }
-
-    func updateNSView(_ nsView: NSDatePicker, context _: Context) {
-        if nsView.dateValue != selection {
-            nsView.dateValue = selection
+    private func relativePresetPicker(selection: Binding<DateValueState.RelativePreset>) -> some View {
+        Picker("", selection: selection) {
+            Text("Custom").tag(DateValueState.RelativePreset.custom)
+            Text("Today").tag(DateValueState.RelativePreset.today)
+            Text("Yesterday").tag(DateValueState.RelativePreset.yesterday)
+            Text("Last 7 days").tag(DateValueState.RelativePreset.last7Days)
+            Text("Last 30 days").tag(DateValueState.RelativePreset.last30Days)
+            Text("Last 3 months").tag(DateValueState.RelativePreset.last3Months)
+            Text("Last year").tag(DateValueState.RelativePreset.lastYear)
         }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: kDatePopoverContentWidth)
+    }
+
+    private func relativeCustomInputRow(
+        amountText: Binding<String>,
+        unit: Binding<RelativeDateConditionLiteral.Unit>,
+    ) -> some View {
+        HStack(spacing: kRelativeInputSpacing) {
+            TextField("1", text: amountText)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: kRelativeAmountFieldWidth)
+
+            Picker("", selection: unit) {
+                Text("Day").tag(RelativeDateConditionLiteral.Unit.day)
+                Text("Week").tag(RelativeDateConditionLiteral.Unit.week)
+                Text("Month").tag(RelativeDateConditionLiteral.Unit.month)
+                Text("Year").tag(RelativeDateConditionLiteral.Unit.year)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: kRelativeUnitPickerWidth)
+        }
+        .frame(width: kDatePopoverContentWidth)
+    }
+
+    private func calendarPicker(selection: Binding<Date>, onCommit: @escaping () -> Void) -> some View {
+        CalendarDatePicker(selection: selection, onCommit: onCommit)
+            .fixedSize()
+            .frame(width: kDatePopoverContentWidth, alignment: .center)
+    }
+
+    private func dateApplyButton(action: @escaping () -> Void) -> some View {
+        HStack {
+            Spacer()
+            Button("Apply") {
+                action()
+            }
+            .keyboardShortcut(.defaultAction)
+        }
+        .frame(width: kDatePopoverContentWidth)
+        .padding(.top, 4)
     }
 }
