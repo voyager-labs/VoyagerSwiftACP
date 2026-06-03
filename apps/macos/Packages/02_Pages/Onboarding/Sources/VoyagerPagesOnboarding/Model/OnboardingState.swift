@@ -71,6 +71,12 @@ struct OnboardingState: Equatable {
     }
 
     func lastValidStep(from step: OnboardingStep) -> OnboardingStep {
+        // If all prior required steps are complete, the persisted step is reachable —
+        // return it directly even if the step itself is incomplete.
+        if isPriorRequiredStepComplete(step) {
+            return step
+        }
+        // Fallback: walk backwards to find the last completed step.
         var candidate = step
         while !isStepComplete(candidate) {
             guard let previous = candidate.previous else {
@@ -79,5 +85,17 @@ struct OnboardingState: Equatable {
             candidate = previous
         }
         return candidate
+    }
+
+    /// Returns `true` when the immediate prior required step for the given step is complete.
+    /// - `.welcome` has no prior requirements (always `true`).
+    /// - `.betaAccess` requires `.welcome` complete.
+    /// - `.permissions` requires `.betaAccess` complete.
+    /// - `.complete` requires `.permissions` complete.
+    private func isPriorRequiredStepComplete(_ step: OnboardingStep) -> Bool {
+        guard let previous = step.previous else {
+            return true
+        }
+        return isStepComplete(previous)
     }
 }

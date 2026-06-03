@@ -169,6 +169,224 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         await store.finish()
     }
 
+    /// ONB-002:show_access_unlock_status — 검증 완료 상태에서 화면 재진입 시 재검증하지 않는지 확인한다.
+    ///
+    /// - 검증 내용: `onAppear`가 이미 `isComplete == true` && `status == .active`이면 verify를 호출하지 않아야 한다.
+    /// - 사전 조건: email/token이 채워져 있고 `status == .active`, `isComplete == true`인 검증 완료 상태.
+    /// - 기대 결과: `onAppear` 이후에도 `status == .active`, `reason == .none`, `isComplete == true`, `isVerifying == false`.
+    func testOnAppearSkipsVerificationWhenAlreadyVerified() async {
+        let counter = AttemptCounter()
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = BetaAccessClient(verify: { _, _ in
+                _ = counter.increment()
+                return BetaAccessVerifyResponse(ok: true)
+            })
+        }
+
+        await store.send(.onAppear)
+
+        XCTAssertEqual(store.state.status, .active)
+        XCTAssertEqual(store.state.reason, .none)
+        XCTAssertTrue(store.state.isComplete)
+        XCTAssertFalse(store.state.isVerifying)
+        XCTAssertEqual(counter.value, 0)
+
+        await store.finish()
+    }
+
+    /// ONB-002:show_access_unlock_status — 검증 완료 후 이메일을 변경하면 검증 상태가 무효화되는지 확인한다.
+    ///
+    /// - 검증 내용: `isComplete == true` 상태에서 email을 변경하면 `isComplete == false`가 되어야 한다.
+    /// - 사전 조건: `status == .active`, `isComplete == true`인 검증 완료 상태.
+    /// - 기대 결과: 이메일 변경 후 `isComplete == false`, `status == .notActive`, `reason == .none`.
+    func testChangingInputAfterVerifiedInvalidatesState() async {
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = .mock
+        }
+
+        await store.send(.emailChanged("new@test.com")) { state in
+            state.email = "new@test.com"
+            state.status = .notActive
+            state.reason = .none
+            state.isComplete = false
+        }
+
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertEqual(store.state.status, .notActive)
+
+        await store.finish()
+    }
+
+    /// ONB-002:show_access_unlock_status — 검증 완료 후 토큰을 변경하면 검증 상태가 무효화되는지 확인한다.
+    ///
+    /// - 검증 내용: `isComplete == true` 상태에서 token을 변경하면 `isComplete == false`가 되어야 한다.
+    /// - 사전 조건: `status == .active`, `isComplete == true`인 검증 완료 상태.
+    /// - 기대 결과: 토큰 변경 후 `isComplete == false`, `status == .notActive`, `reason == .none`.
+    func testChangingTokenAfterVerifiedInvalidatesState() async {
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = .mock
+        }
+
+        await store.send(.tokenChanged("new-token")) { state in
+            state.token = "new-token"
+            state.status = .notActive
+            state.reason = .none
+            state.isComplete = false
+        }
+
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertEqual(store.state.status, .notActive)
+
+        await store.finish()
+    }
+
+    /// ONB-002:show_access_unlock_status — 검증 완료 후 이메일을 비우면 missingInput 상태가 되는지 확인한다.
+    ///
+    /// - 검증 내용: 검증 완료 상태에서 email을 빈 문자열로 변경하면 `.missingInput`이어야 한다.
+    /// - 사전 조건: `status == .active`, `isComplete == true`인 검증 완료 상태.
+    /// - 기대 결과: `status == .notActive`, `reason == .missingInput`, `isComplete == false`.
+    func testClearingEmailAfterVerifiedSetsMissingInput() async {
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = .mock
+        }
+
+        await store.send(.emailChanged("")) { state in
+            state.email = ""
+            state.status = .notActive
+            state.reason = .missingInput
+            state.isComplete = false
+        }
+
+        XCTAssertEqual(store.state.reason, .missingInput)
+        XCTAssertFalse(store.state.isComplete)
+
+        await store.finish()
+    }
+
+    /// ONB-002:show_access_unlock_status — 검증 완료 후 이메일 변경 후 재검증이 필요한지 확인한다.
+    ///
+    /// - 검증 내용: 입력 변경으로 무효화된 상태에서 재검증 시 성공하면 다시 `isComplete == true`가 되어야 한다.
+    /// - 사전 조건: 검증 완료 → 이메일 변경 → 무효화 상태.
+    /// - 기대 결과: `checkTapped` 후 성공 응답 시 `status == .active`, `isComplete == true`.
+    func testReverificationAfterInputChangeSucceeds() async {
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = BetaAccessClientFixture.success
+        }
+
+        await store.send(.emailChanged("new@test.com")) { state in
+            state.email = "new@test.com"
+            state.status = .notActive
+            state.reason = .none
+            state.isComplete = false
+        }
+
+        await store.send(.checkTapped) { state in
+            state.isVerifying = true
+        }
+
+        await store.receive(\.verificationResponse) { state in
+            state.isVerifying = false
+            state.status = .active
+            state.reason = .none
+            state.isComplete = true
+        }
+
+        XCTAssertTrue(store.state.isComplete)
+        await store.finish()
+    }
+
+    /// ONB-002:show_access_unlock_status — 검증 완료 상태에서 같은 이메일로 다시 설정해도 무효화되는지 확인한다.
+    ///
+    /// - 검증 내용: `wasComplete`는 이전 `isComplete` 값 기준이므로 같은 값이어도 무효화됨.
+    /// - 사전 조건: `status == .active`, `isComplete == true`인 상태에서 같은 email 재설정.
+    /// - 기대 결과: `isComplete == false`, `status == .notActive`.
+    func testSettingSameEmailAfterVerifiedStillInvalidates() async {
+        let store = TestStore(initialState: BetaAccessFeature.State(
+            email: "user@test.com",
+            token: "valid-token",
+            status: .active,
+            reason: .none,
+            isComplete: true,
+        )) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = .mock
+        }
+
+        await store.send(.emailChanged("user@test.com")) { state in
+            state.email = "user@test.com"
+            state.status = .notActive
+            state.reason = .none
+            state.isComplete = false
+        }
+
+        XCTAssertFalse(store.state.isComplete)
+        await store.finish()
+    }
+
+    /// ONB-002:show_access_unlock_status — 미검증 상태에서 이메일/토큰 변경 시 invalidation이 발생하지 않는지 확인한다.
+    ///
+    /// - 검증 내용: `isComplete == false` 상태에서는 기존 handleInputChange 로직만 동작해야 한다.
+    /// - 사전 조건: 초기 상태(email/token 비어 있음).
+    /// - 기대 결과: `reason == .missingInput` 유지, `isComplete == false`.
+    func testInputChangeOnNonVerifiedStateDoesNotTriggerInvalidation() async {
+        let store = TestStore(initialState: BetaAccessFeature.State()) {
+            BetaAccessFeature()
+        } withDependencies: {
+            $0.betaAccessClient = .mock
+        }
+
+        await store.send(.emailChanged("a@b.com")) { state in
+            state.email = "a@b.com"
+        }
+
+        XCTAssertEqual(store.state.status, .notActive)
+        XCTAssertEqual(store.state.reason, .missingInput)
+        XCTAssertFalse(store.state.isComplete)
+
+        await store.finish()
+    }
+
     /// ONB-002:show_access_unlock_status — 검증 중에는 제출이 잠겨 있어야 하는지 확인한다.
     ///
     /// - 검증 내용: `isVerifying == true`이면 다시 제출할 수 없어야 한다.
