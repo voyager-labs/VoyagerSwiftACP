@@ -43,7 +43,7 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var chatInputDisplayModel: AiChatInputDisplayModel {
-        let stopEnabled = isProcessing && (cancelAffordance?.isEnabled ?? false)
+        let stopEnabled = isVisibleRequestProcessing && (cancelAffordance?.isEnabled ?? false)
         return AiChatInputDisplayModel(
             placeholder: "Ask anything…",
             contextAffordanceLabel: "+",
@@ -51,8 +51,8 @@ struct AiChatStateDisplayModelBuilder {
             effortLabel: chatInputThinkingLabel,
             submitAccessibilityLabel: "Send",
             stopAccessibilityLabel: "Stop",
-            isSubmitVisible: !isProcessing,
-            isStopVisible: isProcessing,
+            isSubmitVisible: !isVisibleRequestProcessing,
+            isStopVisible: isVisibleRequestProcessing,
             canSubmit: canSubmit,
             canStop: stopEnabled,
         )
@@ -100,26 +100,42 @@ struct AiChatStateDisplayModelBuilder {
         }
     }
 
-    var modelCatalogState: AiChatModelCatalogState { modelCatalogBuilder.modelCatalogState }
-    var modelSelectorContentState: AiChatModelSelectorContentState { modelCatalogBuilder.modelSelectorContentState }
-    var modelSelectorHasPresentableContent: Bool { modelSelectorContentState.hasPresentableContent }
-    var modelSelectorIsDisabled: Bool { modelCatalogBuilder.modelSelectorIsDisabled }
-    var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? { modelCatalogBuilder.selectedModelDisplayModel }
-    var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { modelCatalogBuilder.lockedModelDisplayModel }
+    var modelCatalogState: AiChatModelCatalogState {
+        modelCatalogBuilder.modelCatalogState
+    }
+
+    var modelSelectorContentState: AiChatModelSelectorContentState {
+        modelCatalogBuilder.modelSelectorContentState
+    }
+
+    var modelSelectorHasPresentableContent: Bool {
+        modelSelectorContentState.hasPresentableContent
+    }
+
+    var modelSelectorIsDisabled: Bool {
+        modelCatalogBuilder.modelSelectorIsDisabled
+    }
+
+    var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? {
+        modelCatalogBuilder.selectedModelDisplayModel
+    }
+
+    var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
+        modelCatalogBuilder.lockedModelDisplayModel
+    }
 
     private var modelCatalogBuilder: AiChatModelCatalogStateBuilder {
         AiChatModelCatalogStateBuilder(state: state, availableModels: availableModels)
     }
 
     private var lockedRequestContextSnapshot: AiChatLockedRequestContextSnapshot? {
-        guard state.executionPhase.isProcessing else { return nil }
-        return state.executionPhase.lock?.context.requestContext
+        visibleProcessingLock?.context.requestContext
     }
 
     var canSubmit: Bool {
         guard state.sessionStatus != .rebindRequired else { return false }
         guard !state.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        guard !isProcessing else { return false }
+        guard !hasInFlightRequest else { return false }
         guard state.pendingRequestStart == nil else { return false }
         guard case .loaded = state.modelListState else { return false }
         guard resolvedSelectedModel != nil else { return false }
@@ -135,23 +151,25 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var canRegenerate: Bool {
-        !isProcessing && state.transcriptHistory.contains(where: { $0.role == .assistant })
+        !hasInFlightRequest && state.transcriptHistory.contains(where: { $0.role == .assistant })
     }
 
     var requestStatusText: String? {
         switch state.executionPhase {
         case .idle:
-            selectedModelUnsupportedStatusText
+            return selectedModelUnsupportedStatusText
         case let .processing(lock):
-            "Processing \(lock.selectedModelRow?.displayName ?? lock.selectedModelHandle.rawValue)"
+            guard isVisibleRequest(lock: lock) else { return selectedModelUnsupportedStatusText }
+            return "Processing \(lock.selectedModelRow?.displayName ?? lock.selectedModelHandle.rawValue)"
         case .completed:
-            selectedModelUnsupportedStatusText
-        case let .failed(_, failure):
-            failure.displayMessage
+            return selectedModelUnsupportedStatusText
+        case let .failed(lock, failure):
+            guard isVisibleRequest(lock: lock) else { return selectedModelUnsupportedStatusText }
+            return failure.displayMessage
         case .cancelled:
-            "Request cancelled"
+            return "Request cancelled"
         case let .persistenceRecovery(_, failure):
-            "Finalized locally; \(failure.displayMessage)"
+            return "Finalized locally; \(failure.displayMessage)"
         }
     }
 
@@ -184,22 +202,34 @@ struct AiChatStateDisplayModelBuilder {
     }
 
     var cancelAffordance: AiChatCancelAffordance? {
-        guard state.executionPhase.isProcessing else { return nil }
+        guard isVisibleRequestProcessing else { return nil }
         return AiChatCancelAffordance(title: "Cancel request", isEnabled: true)
     }
 
     var surfaceState: AiChatSurfaceState {
         switch state.executionPhase {
         case let .processing(lock):
-            return .processing(
-                processing: AiChatProcessingState(
-                    lockedModel: modelCatalogBuilder.lockedModelDisplayModel(for: lock),
-                    cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true),
-                ),
-                summary: currentContextSummaryDisplayModel,
-                selectedModel: selectedModelDisplayModel,
-            )
-        case .completed, .failed, .cancelled, .persistenceRecovery:
+            if isVisibleRequest(lock: lock) {
+                return .processing(
+                    processing: AiChatProcessingState(
+                        lockedModel: modelCatalogBuilder.lockedModelDisplayModel(for: lock),
+                        cancelAffordance: cancelAffordance ?? .init(title: "Cancel request", isEnabled: true),
+                    ),
+                    summary: currentContextSummaryDisplayModel,
+                    selectedModel: selectedModelDisplayModel,
+                )
+            }
+        case let .failed(lock, _):
+            if isVisibleRequest(lock: lock) {
+                if let metadata = aiChatUnconnectedMetadata(for: state) {
+                    return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
+                }
+                if let metadata = aiChatTerminalErrorMetadata(for: state) {
+                    return .error(connection: metadata, summary: currentContextSummaryDisplayModel)
+                }
+                return .ready(summary: currentContextSummaryDisplayModel, selectedModel: selectedModelDisplayModel)
+            }
+        case .completed, .cancelled, .persistenceRecovery:
             if let metadata = aiChatUnconnectedMetadata(for: state) {
                 return .unconnected(connection: metadata, summary: currentContextSummaryDisplayModel)
             }
@@ -224,10 +254,40 @@ struct AiChatStateDisplayModelBuilder {
         }
     }
 
-    var modelFieldLabel: String { "Model" }
-    var isProcessing: Bool { state.executionPhase.isProcessing }
-    var resolvedSelectedModelHandle: AiModelHandle? { resolvedSelectedModel?.id }
-    var resolvedSelectedModel: AiProviderModel? { state.resolvedModel(for: state.selectedModelHandle) }
+    var modelFieldLabel: String {
+        "Model"
+    }
+
+    var isProcessing: Bool {
+        isVisibleRequestProcessing
+    }
+
+    var resolvedSelectedModelHandle: AiModelHandle? {
+        resolvedSelectedModel?.id
+    }
+
+    var resolvedSelectedModel: AiProviderModel? {
+        state.resolvedModel(for: state.selectedModelHandle)
+    }
+
+    private var visibleProcessingLock: AiChatRequestLock? {
+        guard case let .processing(lock) = state.executionPhase,
+              isVisibleRequest(lock: lock)
+        else { return nil }
+        return lock
+    }
+
+    private var isVisibleRequestProcessing: Bool {
+        visibleProcessingLock != nil
+    }
+
+    private var hasInFlightRequest: Bool {
+        state.executionPhase.isProcessing
+    }
+
+    private func isVisibleRequest(lock: AiChatRequestLock) -> Bool {
+        state.sessionList.rows.isEmpty || state.sessionID == lock.context.sessionID
+    }
 
     private var chatInputModelLabel: String? {
         if let model = resolvedSelectedModel { return model.displayName }
@@ -257,7 +317,9 @@ struct AiChatStateDisplayModelBuilder {
         }
     }
 
-    private var isInitialChatSurface: Bool { state.transcriptHistory.isEmpty }
+    private var isInitialChatSurface: Bool {
+        state.transcriptHistory.isEmpty
+    }
 }
 
 func aiChatTerminalErrorMetadata(for state: AiChatState) -> AiChatConnectionMetadata? {

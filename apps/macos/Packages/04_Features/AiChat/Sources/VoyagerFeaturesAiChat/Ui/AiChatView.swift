@@ -1,6 +1,6 @@
+import AppKit
 import ComposableArchitecture
 import Perception
-import AppKit
 import SwiftUI
 import VoyagerEntitiesAi
 
@@ -34,9 +34,9 @@ public struct AiChatView: View {
                 now: Date(),
                 query: state.sessionList.query,
                 totalRowCount: state.sessionList.allRows.count,
-                processingSessionID: state.executionPhase.isProcessing ? state.sessionID : nil,
+                processingSessionID: state.executionPhase.processingSessionID,
                 unreadCompletedSessionIDs: state.sessionList.unreadCompletedSessionIDs,
-                hiddenSessionIDs: state.hiddenEmptyDraftSessionIDs
+                hiddenSessionIDs: state.hiddenEmptyDraftSessionIDs,
             )
 
             Group {
@@ -53,7 +53,7 @@ public struct AiChatView: View {
                                         onOpenSettings: { store.send(.openSettingsTapped) },
                                         onErrorRecovery: { store.send(.errorRecoveryTapped) },
                                         onRebindContext: { store.send(.rebindContextTapped) },
-                                        onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) }
+                                        onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) },
                                     )
                                     Color.clear
                                         .frame(height: 0)
@@ -61,8 +61,8 @@ public struct AiChatView: View {
                                             AiChatTranscriptScrollObserver(
                                                 sessionID: state.sessionID,
                                                 restoreRequest: transcriptScrollRestoreRequest,
-                                                onScrollOffsetChanged: rememberTranscriptScrollOffset
-                                            )
+                                                onScrollOffsetChanged: rememberTranscriptScrollOffset,
+                                            ),
                                         )
 
                                     Color.clear
@@ -93,7 +93,7 @@ public struct AiChatView: View {
                                 isChatInputFocused: $isChatInputFocused,
                                 chatInputTextHeight: $chatInputTextHeight,
                                 isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
-                                isThinkingSelectorPresented: $isThinkingSelectorPresented
+                                isThinkingSelectorPresented: $isThinkingSelectorPresented,
                             )
                             .padding(.horizontal, 10)
                             .padding(.top, 8)
@@ -121,7 +121,7 @@ public struct AiChatView: View {
         transcriptScrollRestoreRequest = AiChatTranscriptScrollRestoreRequest(
             sessionID: sessionID,
             offsetY: offsetY,
-            sequence: transcriptScrollRestoreSequence
+            sequence: transcriptScrollRestoreSequence,
         )
     }
 
@@ -139,7 +139,8 @@ public struct AiChatView: View {
     static let transcriptScrollOffsetsKey = "voyager.aiChat.transcriptScrollOffsets"
 
     static func loadTranscriptScrollOffsets() -> [AiChatSessionID: CGFloat] {
-        guard let storedOffsets = UserDefaults.standard.dictionary(forKey: transcriptScrollOffsetsKey) as? [String: Double]
+        guard let storedOffsets = UserDefaults.standard
+            .dictionary(forKey: transcriptScrollOffsetsKey) as? [String: Double]
         else { return [:] }
 
         return storedOffsets.reduce(into: [AiChatSessionID: CGFloat]()) { result, element in
@@ -208,14 +209,15 @@ private struct AiChatTranscriptScrollObserver: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(
                     self,
                     name: NSView.boundsDidChangeNotification,
-                    object: observedClipView
+                    object: observedClipView,
                 )
             }
         }
 
         func attachScrollView(from view: NSView) {
             guard scrollView == nil else { return }
-            guard let scrollView = view.enclosingScrollView ?? view.firstEnclosingScrollViewInSuperviewChain() else { return }
+            guard let scrollView = view.enclosingScrollView ?? view.firstEnclosingScrollViewInSuperviewChain()
+            else { return }
 
             self.scrollView = scrollView
             let clipView = scrollView.contentView
@@ -225,7 +227,7 @@ private struct AiChatTranscriptScrollObserver: NSViewRepresentable {
                 self,
                 selector: #selector(boundsDidChange(_:)),
                 name: NSView.boundsDidChangeNotification,
-                object: clipView
+                object: clipView,
             )
 
             onScrollOffsetChanged?(clipView.bounds.origin.y, sessionID)
@@ -261,7 +263,8 @@ private struct AiChatTranscriptScrollObserver: NSViewRepresentable {
             }
         }
 
-        @objc private func boundsDidChange(_ notification: Notification) {
+        @objc
+        private func boundsDidChange(_ notification: Notification) {
             guard !isApplyingRestore,
                   let clipView = notification.object as? NSClipView
             else { return }

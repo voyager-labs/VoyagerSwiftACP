@@ -79,6 +79,12 @@ func aiChatCurrentContextIconSystemName(for snapshot: AiChatCurrentContextSnapsh
     if snapshot.items.count > 1 {
         return "checklist"
     }
+    if snapshot.attachments.count == 1 {
+        return aiChatContextIconSystemName(for: snapshot.attachments[0].kind)
+    }
+    if snapshot.attachments.count > 1 {
+        return "checklist"
+    }
     guard let route = snapshot.references.first?.metadata["route"] else { return nil }
     switch route {
     case "folder", "computer":
@@ -100,8 +106,17 @@ func aiChatCurrentContextIconFilePath(for snapshot: AiChatCurrentContextSnapshot
         guard item.kind == .folder else { return nil }
         return aiChatAbsoluteIconFilePath(item.metadata["path"])
     }
+    if snapshot.attachments.count == 1 {
+        let attachment = snapshot.attachments[0]
+        guard attachment.kind == .folder else { return nil }
+        return aiChatAbsoluteIconFilePath(attachment.metadata["path"])
+            ?? aiChatAbsoluteIconFilePath(attachment.metadata["filePath"])
+            ?? aiChatAbsoluteIconFilePath(attachment.subtitle)
+            ?? aiChatAbsoluteIconFilePath(attachment.identifier)
+    }
 
     guard snapshot.items.isEmpty,
+          snapshot.attachments.isEmpty,
           let reference = snapshot.references.first,
           reference.metadata["route"] == "folder"
     else { return nil }
@@ -132,7 +147,11 @@ func aiChatCurrentContextIconAssetName(for snapshot: AiChatCurrentContextSnapsho
     if snapshot.items.count == 1 {
         return aiChatContextIconAssetName(for: snapshot.items[0])
     }
+    if snapshot.attachments.count == 1 {
+        return aiChatContextIconAssetName(for: snapshot.attachments[0])
+    }
     guard snapshot.items.isEmpty,
+          snapshot.attachments.isEmpty,
           snapshot.references.first?.metadata["route"] == "collection"
     else { return nil }
     return kAiChatCollectionIconAssetName
@@ -141,6 +160,14 @@ func aiChatCurrentContextIconAssetName(for snapshot: AiChatCurrentContextSnapsho
 func aiChatContextIconAssetName(for item: AiChatContextItem) -> String? {
     guard item.kind == .file,
           let path = item.metadata["path"],
+          URL(fileURLWithPath: path).pathExtension.lowercased() == "voycoll"
+    else { return nil }
+    return kAiChatCollectionIconAssetName
+}
+
+func aiChatContextIconAssetName(for attachment: AiChatContextAttachment) -> String? {
+    guard attachment.kind == .file,
+          let path = attachment.metadata["path"] ?? attachment.metadata["filePath"],
           URL(fileURLWithPath: path).pathExtension.lowercased() == "voycoll"
     else { return nil }
     return kAiChatCollectionIconAssetName
@@ -275,7 +302,7 @@ func aiChatDisplayTitleByRemovingCollectionExtension(_ title: String) -> String 
     return strippedTitle.isEmpty ? title : strippedTitle
 }
 
-struct AiChatRequestContextChipStatus: Equatable, Sendable {
+struct AiChatRequestContextChipStatus: Equatable {
     let label: String
     let detail: String
 

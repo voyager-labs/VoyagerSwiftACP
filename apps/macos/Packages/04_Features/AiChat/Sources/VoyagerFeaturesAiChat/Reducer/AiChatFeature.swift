@@ -57,20 +57,16 @@ public struct AiChatFeature {
                 return loadSessions()
 
             case .newChatTapped:
-                state.pendingRequestStart = nil
+                let preservedExecutionPhase = state.executionPhase
                 let snapshot = startNewUnselectedChat(state: &state)
-                return .concatenate(
-                    cancelRequestLifecycle(),
-                    saveNewChat(snapshot),
-                )
+                preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+                return saveNewChat(snapshot)
 
             case .startNewChatFromRebindTapped:
-                state.pendingRequestStart = nil
+                let preservedExecutionPhase = state.executionPhase
                 let snapshot = startNewUnselectedChat(state: &state)
-                return .concatenate(
-                    cancelRequestLifecycle(),
-                    saveNewChat(snapshot),
-                )
+                preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+                return saveNewChat(snapshot)
 
             case .rebindContextTapped:
                 state.sessionStatus = .active
@@ -87,7 +83,6 @@ public struct AiChatFeature {
                 state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
                 state.sessionList.errorMessage = nil
                 if state.sessionID != sessionID {
-                    state.pendingRequestStart = nil
                     state.currentContextFolderStructureModes = [:]
                 }
 
@@ -98,27 +93,7 @@ public struct AiChatFeature {
 
                 state.mode = .sessions
                 state.restoreSessionID = sessionID
-                let shouldCancelPreviousRequestLifecycle = state.sessionID != nil && state.sessionID != sessionID
-                if case let .processing(lock) = state.executionPhase,
-                   state.sessionID != sessionID
-                {
-                    state.lockedModelHandle = nil
-                    state.streamingAssistantDraft = nil
-                    state.executionPhase = .cancelled(lock.recordingTerminal(
-                        at: currentTimestampMs(),
-                        failure: .cancelled,
-                        wasCancelled: true,
-                    ))
-                }
-
-                let restoreEffect = restoreSession(sessionID: sessionID, state: state)
-                guard shouldCancelPreviousRequestLifecycle else {
-                    return restoreEffect
-                }
-                return .concatenate(
-                    cancelRequestLifecycle(),
-                    restoreEffect,
-                )
+                return restoreSession(sessionID: sessionID, state: state)
 
             case let .deleteSessionTapped(sessionID):
                 state.sessionList.errorMessage = nil
@@ -223,21 +198,8 @@ public struct AiChatFeature {
                 return .none
 
             case .backToSessionsTapped:
-                state.pendingRequestStart = nil
                 state.mode = .sessions
-                if case let .processing(lock) = state.executionPhase {
-                    state.lockedModelHandle = nil
-                    state.streamingAssistantDraft = nil
-                    state.executionPhase = .cancelled(lock.recordingTerminal(
-                        at: currentTimestampMs(),
-                        failure: .cancelled,
-                        wasCancelled: true,
-                    ))
-                }
-                let exitEffects: Effect<Action> = .merge(
-                    cancelRequestLifecycle(),
-                    .cancel(id: CancelID.restore),
-                )
+                let exitEffects: Effect<Action> = .cancel(id: CancelID.restore)
                 if state.restoreSessionID != nil {
                     state.restoreSessionID = nil
                     state.restoreOutcome = nil
@@ -1440,6 +1402,14 @@ private extension AiChatFeature {
             }
         }
         .cancellable(id: CancelID.sessionList, cancelInFlight: true)
+    }
+
+    func preserveNavigationExecutionPhase(
+        _ executionPhase: AiChatExecutionPhase,
+        state: inout State,
+    ) {
+        guard case .processing = executionPhase else { return }
+        state.executionPhase = executionPhase
     }
 
     func startNewUnselectedChat(state: inout State) -> AiChatSessionSnapshot {

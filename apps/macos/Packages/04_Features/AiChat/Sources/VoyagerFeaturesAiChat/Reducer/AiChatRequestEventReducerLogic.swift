@@ -35,8 +35,12 @@ extension AiChatFeature {
         else {
             return .none
         }
+        let updatedLock = lock.recordingDelta(at: currentTimestampMs())
+        state.executionPhase = .processing(updatedLock)
+        guard isVisibleRequest(lock: lock, state: state) else {
+            return .none
+        }
         state.streamingAssistantDraft = (state.streamingAssistantDraft ?? "") + text
-        state.executionPhase = .processing(lock.recordingDelta(at: currentTimestampMs()))
         state.transcriptAutoScrollVersion += 1
         return .none
     }
@@ -56,9 +60,58 @@ extension AiChatFeature {
             completedAtMs: terminalTimestampMs,
         )
         let finalizedLock = lock.recordingTerminal(at: terminalTimestampMs, failure: nil, wasCancelled: false)
-        applyFinal(response: normalizedResponse, lock: finalizedLock, state: &state)
-        let snapshot = makeSessionSnapshot(state: state, lock: finalizedLock, updatedAtMs: terminalTimestampMs)
+        let snapshot: AiChatSessionSnapshot
+        if isVisibleRequest(lock: lock, state: state) {
+            applyFinal(response: normalizedResponse, lock: finalizedLock, state: &state)
+            snapshot = makeSessionSnapshot(state: state, lock: finalizedLock, updatedAtMs: terminalTimestampMs)
+        } else {
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.executionPhase = .completed(finalizedLock)
+            snapshot = makeOffscreenFinalSnapshot(
+                response: normalizedResponse,
+                lock: finalizedLock,
+                updatedAtMs: terminalTimestampMs,
+            )
+        }
         return saveFinalSnapshot(snapshot, finalizedLock: finalizedLock)
+    }
+
+    private func isVisibleRequest(lock: AiChatRequestLock, state: State) -> Bool {
+        state.sessionID == lock.context.sessionID
+    }
+
+    private func makeOffscreenFinalSnapshot(
+        response: AiChatResponse,
+        lock: AiChatRequestLock,
+        updatedAtMs: Int64,
+    ) -> AiChatSessionSnapshot {
+        var transcriptHistory = lock.request.messages
+        if let index = lock.assistantReplacementIndex,
+           transcriptHistory.indices.contains(index),
+           transcriptHistory[index].role == .assistant
+        {
+            transcriptHistory[index] = response.assistantMessage
+        } else {
+            transcriptHistory.append(response.assistantMessage)
+        }
+
+        guard let sessionID = lock.context.sessionID else {
+            preconditionFailure("Missing session ID for offscreen finalized request")
+        }
+        return AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: lock.context.provider,
+            model: lock.context.model,
+            selectedModelRow: lock.selectedModelRow,
+            selectedThinking: lock.context.selectedThinking,
+            transcriptHistory: transcriptHistory,
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: persistenceSafeRequestContext(lock.context.requestContext),
+            updatedAtMs: updatedAtMs,
+        )
     }
 
     private func saveFinalSnapshot(
@@ -93,13 +146,23 @@ extension AiChatFeature {
             return .none
         }
 
+        let failedLock = lock.recordingTerminal(
+            at: currentTimestampMs(),
+            failure: reason,
+            wasCancelled: false,
+        )
+        state.executionPhase = .failed(failedLock, reason)
+        guard isVisibleRequest(lock: lock, state: state) else {
+            state.lockedModelHandle = nil
+            return .merge(
+                .cancel(id: CancelID.request),
+                .cancel(id: CancelID.requestStartPersistence),
+            )
+        }
+
         clearStreamingDraftIfEmpty(lock: lock, state: &state)
         state.lockedModelHandle = nil
         state.lastExecutionFailure = reason
-        state.executionPhase = .failed(
-            lock.recordingTerminal(at: currentTimestampMs(), failure: reason, wasCancelled: false),
-            reason,
-        )
         state.transcriptAutoScrollVersion += 1
         return .merge(
             .cancel(id: CancelID.request),
