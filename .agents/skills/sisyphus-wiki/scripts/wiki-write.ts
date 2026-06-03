@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { CONFIDENCES, ENTRY_TYPES, STATUSES, appendGraph, ensureDir, entryPath, many, nowIso, one, parseArgs, parseCsv, parseRelation, parseTypedObject, printJson, renderEntry, repoKnowledgeRoot, requireOne, relativeToRoot, upsertIndex } from "./wiki-lib";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { CONFIDENCES, ENTRY_TYPES, STATUSES, appendGraph, ensureDir, entryPath, extractFrontmatter, many, nowIso, one, parseArgs, parseCsv, parseRelation, parseTypedObject, printJson, readIndex, renderEntry, repoKnowledgeRoot, requireOne, relativeToRoot, upsertIndex } from "./wiki-lib";
 
 const help = `Usage:
   bun .agents/skills/sisyphus-wiki/scripts/wiki-write.ts --type decision --title "..." --insight "..." [options]
@@ -42,14 +42,31 @@ try {
 
   const title = requireOne(args, "title");
   const ts = nowIso();
+  const inputId = one(args, "id") || undefined;
+  const explicitCreatedAt = one(args, "created-at");
+
+  let previousPath: string | null = null;
+  let preservedCreatedAt: string | null = null;
+  if (inputId) {
+    const index = readIndex(root);
+    const existingNode = index.nodes.find((n) => n.id === inputId);
+    if (existingNode) {
+      previousPath = join(root, existingNode.path);
+      if (existsSync(previousPath)) {
+        const fm = extractFrontmatter(readFileSync(previousPath, "utf8"));
+        preservedCreatedAt = String(fm.created_at ?? "");
+      }
+    }
+  }
+
   const bodyFile = one(args, "body-file");
   const body = bodyFile ? readFileSync(bodyFile, "utf8") : "";
   const input = {
-    id: one(args, "id") || undefined,
+    id: inputId,
     title,
     type: type as never,
     status: status as never,
-    created_at: one(args, "created-at", ts),
+    created_at: explicitCreatedAt || preservedCreatedAt || ts,
     updated_at: ts,
     confidence: confidence as never,
     tags: parseCsv(one(args, "tags")),
@@ -63,7 +80,8 @@ try {
   };
 
   const rendered = renderEntry(input);
-  const outputPath = entryPath(root, input.created_at, title);
+  const computedPath = entryPath(root, input.created_at, title);
+  const outputPath = previousPath && existsSync(previousPath) ? previousPath : computedPath;
   const relPath = relativeToRoot(root, outputPath);
   const existed = existsSync(outputPath);
   const node = { id: rendered.id, title, type, status, path: relPath, tags: input.tags };
@@ -71,6 +89,9 @@ try {
   if (!args.has("dry-run")) {
     ensureDir(dirname(outputPath));
     writeFileSync(outputPath, rendered.markdown);
+    if (previousPath && previousPath !== outputPath && existsSync(previousPath)) {
+      unlinkSync(previousPath);
+    }
     upsertIndex(root, node, input.relations, ts);
     appendGraph(root, { ts, event: existed ? "node.updated" : "node.created", id: rendered.id, path: relPath });
     for (const relation of input.relations) appendGraph(root, { ts, event: "edge.created", from: rendered.id, to: relation.target, type: relation.type });
