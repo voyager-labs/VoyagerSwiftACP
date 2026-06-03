@@ -188,6 +188,7 @@ extension AiChatFeature {
     }
 
     func applyRestoredSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        let preservedExecutionPhase = preservedNavigationExecutionPhase(for: snapshot.sessionID, state: state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .active
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -199,12 +200,21 @@ extension AiChatFeature {
         state.lastRequestContextModelHandle = snapshot.lastRequestContext == nil ? nil : snapshot.model
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
-        state.executionPhase = .idle
+        state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
     }
 
+    private func preservedNavigationExecutionPhase(
+        for _: AiChatSessionID,
+        state: State,
+    ) -> AiChatExecutionPhase? {
+        guard case let .processing(lock) = state.executionPhase else { return nil }
+        return .processing(lock)
+    }
+
     func applyNewSessionSnapshot(_ snapshot: AiChatSessionSnapshot, state: inout State) {
+        let preservedExecutionPhase = preservedNavigationExecutionPhase(for: snapshot.sessionID, state: state)
         state.sessionID = snapshot.sessionID
         state.sessionStatus = .idle
         state.currentSessionCustomTitle = snapshot.customTitle
@@ -216,7 +226,7 @@ extension AiChatFeature {
         state.lastRequestContextModelHandle = nil
         state.addedAttachments = []
         state.currentContextFolderStructureModes = [:]
-        state.executionPhase = .idle
+        state.executionPhase = preservedExecutionPhase ?? .idle
         state.selectedModelHandle = snapshot.model
         state.selectedThinking = snapshot.selectedThinking
     }

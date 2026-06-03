@@ -11,9 +11,9 @@ import XCTest
 // swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureExecutionContinuationTests: XCTestCase {
-    // 다른 session으로 전환할 때 현재 request를 cancel한 뒤 restore하는지 검증
+    // 다른 session을 열람해도 기존 request는 원 session에서 완료되는지 검증
     // swiftlint:disable:next function_body_length
-    func testSwitchingToDifferentSessionCancelsCurrentRequestBeforeRestore() async {
+    func testSwitchingToDifferentSessionPreservesCurrentRequestAndSavesOriginalSessionCompletion() async {
         let activeSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111221"))
         let targetSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222221"))
         let catalogRows = makeCatalogRows()
@@ -41,10 +41,26 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             updatedAtMs: fixedMs - 1,
         )
         let targetRow = AiChatSessionSummary(snapshot: targetSnapshot)
-        let requestStarted = LockIsolated(false)
-        let requestCancelled = LockIsolated(false)
-        let capturedRequest = LockIsolated<AiChatRequest?>(nil)
-        let persistence = AiChatSessionPersistenceSpy()
+        let activeRestoreSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            updatedAtMs: fixedMs,
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let persistence = AiChatSessionPersistenceSpy(loadHandler: { id in
+            switch id {
+            case targetSessionID:
+                targetSnapshot
+            case activeSessionID:
+                activeRestoreSnapshot
+            default:
+                nil
+            }
+        })
 
         let store = TestStore(initialState: AiChatFeature.State(
             mode: .sessions,
@@ -62,19 +78,11 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             $0.uuid = .incrementing
             $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
             $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
-                capturedRequest.setValue(request)
-                requestStarted.setValue(true)
-                return AsyncStream { continuation in
-                    continuation.onTermination = { termination in
-                        if case .cancelled = termination {
-                            requestCancelled.setValue(true)
-                        }
-                    }
-                }
+                stream.stream(for: request)
             })
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 listSessions: { _, _ in [] },
-                loadSession: { id in id == targetSessionID ? targetSnapshot : nil },
+                loadSession: { try await persistence.loadSession($0) },
                 saveSession: { snapshot in await persistence.save(snapshot) },
                 deleteSession: { _ in },
             )
@@ -87,9 +95,15 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.submitTapped)
-        await waitUntil { requestStarted.value }
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Question A")]
+            state.lockedModelHandle = selectedHandle
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.transcriptAutoScrollVersion = 1
+        }
 
-        guard let request = capturedRequest.value else {
+        guard let request = stream.requests.first else {
             XCTFail("Expected execution request")
             return
         }
@@ -105,31 +119,148 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
             state.mode = .sessions
             state.sessionList.selectedSessionID = targetSessionID
             state.restoreSessionID = targetSessionID
-            state.lockedModelHandle = nil
-            state.streamingAssistantDraft = nil
-            state.executionPhase = .cancelled(lock.recordingTerminal(
-                at: fixedMs,
-                failure: .cancelled,
-                wasCancelled: true,
-            ))
+            state.currentContextFolderStructureModes = [:]
         }
 
         await store.receive(.restoreOutcome(
             requestedSessionID: targetSessionID,
             .restored(snapshot: targetSnapshot),
             restoreFailure: nil,
-        ))
-        await store.finish()
+        )) { state in
+            state.sessionID = targetSessionID
+            state.sessionStatus = .active
+            state.transcriptHistory = targetSnapshot.transcriptHistory
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = targetSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = nil
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.executionPhase = .processing(lock)
+            state.selectedModelHandle = targetSnapshot.model
+            state.selectedThinking = targetSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: targetSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
 
-        XCTAssertTrue(requestCancelled.value)
-        XCTAssertEqual(store.state.sessionID, targetSessionID)
-        XCTAssertEqual(store.state.executionPhase, .idle)
-        XCTAssertEqual(store.state.transcriptHistory, targetSnapshot.transcriptHistory)
+        await store.send(.sessionRowTapped(activeSessionID)) { state in
+            state.mode = .sessions
+            state.sessionList.selectedSessionID = activeSessionID
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.restoreSessionID = activeSessionID
+            state.currentContextFolderStructureModes = [:]
+        }
+
+        await store.receive(.restoreOutcome(
+            requestedSessionID: activeSessionID,
+            .restored(snapshot: activeRestoreSnapshot),
+            restoreFailure: nil,
+        )) { state in
+            state.sessionID = activeSessionID
+            state.sessionStatus = .active
+            state.transcriptHistory = activeRestoreSnapshot.transcriptHistory
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = activeRestoreSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = nil
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.executionPhase = .processing(lock)
+            state.selectedModelHandle = activeRestoreSnapshot.model
+            state.selectedThinking = activeRestoreSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: activeRestoreSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+        XCTAssertEqual(store.state.surfaceState, .processing(
+            processing: AiChatProcessingState(
+                lockedModel: AiChatLockedModelDisplayModel(
+                    handle: selectedHandle,
+                    label: AiChatModelLabel(title: catalogRows[0].displayName),
+                ),
+                cancelAffordance: AiChatCancelAffordance(title: "Cancel request", isEnabled: true),
+            ),
+            summary: store.state.currentContextSummaryDisplayModel,
+            selectedModel: store.state.selectedModelDisplayModel,
+        ))
+        XCTAssertTrue(store.state.isProcessing)
+
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Original request completed")
+        let finalResponse = AiChatResponse(
+            context: request.context,
+            assistantMessage: assistantMessage,
+            completedAtMs: fixedMs,
+        )
+        stream.yield(.final(response: finalResponse))
+        stream.finish()
+
+        let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Question A"),
+                assistantMessage,
+            ]
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = lock.context.requestContext
+            state.lastRequestContextModelHandle = selectedHandle
+            state.executionPhase = .completed(finalizedLock)
+            state.transcriptAutoScrollVersion = 2
+        }
+
+        let expectedOriginalSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Question A"),
+                assistantMessage,
+            ],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let expectedOriginalSummary = AiChatSessionSummary(snapshot: expectedOriginalSnapshot)
+        await store.receive(.sessionSnapshotSaved(expectedOriginalSummary)) { state in
+            state.sessionList.replaceRow(expectedOriginalSummary)
+            state.sessionList.selectedSessionID = activeSessionID
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.finish()
+        XCTAssertEqual(store.state.sessionID, activeSessionID)
+        XCTAssertEqual(store.state.transcriptHistory, expectedOriginalSnapshot.transcriptHistory)
+        if case .processing = store.state.surfaceState {
+            XCTFail("The restored original session must leave processing after final completion")
+        }
+        XCTAssertFalse(store.state.isProcessing)
+        let expectedStartSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        XCTAssertEqual(persistence.snapshots, [expectedStartSnapshot, expectedOriginalSnapshot])
     }
 
-    // back-to-sessions가 진행 중 chat을 cancel하고 late final event를 무시하는지 검증
+    // back-to-sessions 후 같은 session 재진입과 off-chat final completion을 보존하는지 검증
     // swiftlint:disable:next function_body_length
-    func testBackToSessionsCancelsInFlightChatAndIgnoresLateFinalEvent() async {
+    func testInFlightChatContinuesFromSessionHistoryAndUpdatesSessionRow() async {
         let stream = AiChatExecutionStreamDriver()
         let persistence = AiChatSessionPersistenceSpy()
         let catalogRows = makeCatalogRows()
@@ -197,13 +328,14 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(store.state.sessionList.allRows.first?.title, "Hello while browsing history")
         XCTAssertEqual(store.state.sessionList.allRows.first?.status, .active)
 
+        let userMessage = AiChatMessage(role: .user, content: "Hello while browsing history")
         let expectedStartSnapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .active,
             provider: selectedHandle.provider,
             model: selectedHandle,
             selectedModelRow: catalogRows[0],
-            transcriptHistory: [AiChatMessage(role: .user, content: "Hello while browsing history")],
+            transcriptHistory: [userMessage],
             lastRequestID: lock.requestID,
             lastRunID: lock.runID,
             lastRequestContext: lock.context.requestContext,
@@ -237,29 +369,61 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
 
         await store.send(.backToSessionsTapped) { state in
             state.mode = .sessions
-            state.lockedModelHandle = nil
-            state.streamingAssistantDraft = nil
-            state.executionPhase = .cancelled(lock.recordingTerminal(
-                at: fixedMs,
-                failure: .cancelled,
-                wasCancelled: true,
-            ))
+        }
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+
+        await store.send(.sessionRowTapped(sessionID)) { state in
+            state.mode = .chat
+        }
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
         }
 
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Still completed")
         let finalResponse = AiChatResponse(
             context: request.context,
-            assistantMessage: AiChatMessage(role: .assistant, content: "Late completion"),
+            assistantMessage: assistantMessage,
             completedAtMs: fixedMs,
         )
         stream.yield(.final(response: finalResponse))
         stream.finish()
-        await store.finish()
 
-        XCTAssertEqual(persistence.snapshots, [expectedStartSnapshot])
-        XCTAssertEqual(
-            store.state.transcriptHistory,
-            [AiChatMessage(role: .user, content: "Hello while browsing history")],
+        let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+            state.transcriptHistory = [userMessage, assistantMessage]
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = lock.context.requestContext
+            state.lastRequestContextModelHandle = selectedHandle
+            state.executionPhase = .completed(finalizedLock)
+            state.transcriptAutoScrollVersion = 2
+        }
+
+        let expectedFinalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage, assistantMessage],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
         )
+        let expectedFinalSummary = AiChatSessionSummary(snapshot: expectedFinalSnapshot)
+        await store.receive(.sessionSnapshotSaved(expectedFinalSummary)) { state in
+            state.sessionList.allRows = [expectedFinalSummary]
+            state.sessionList.rows = [expectedFinalSummary]
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = [sessionID]
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.finish()
+        XCTAssertEqual(persistence.snapshots, [expectedStartSnapshot, expectedFinalSnapshot])
     }
 
     // session 저장 실패가 recovery state로 전환되는지 검증

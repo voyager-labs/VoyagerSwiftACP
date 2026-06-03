@@ -251,3 +251,10 @@ public enum AiChatExecutionPhase: Equatable, Sendable {
         return false
     }
 }
+
+public extension AiChatExecutionPhase {
+    var processingSessionID: AiChatSessionID? {
+        guard case let .processing(lock) = self else { return nil }
+        return lock.context.sessionID
+    }
+}
