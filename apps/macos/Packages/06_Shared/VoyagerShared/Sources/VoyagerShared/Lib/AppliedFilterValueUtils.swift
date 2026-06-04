@@ -49,6 +49,9 @@ public enum AppliedFilterValueUtils {
             if let literal = RelativeDateConditionLiteral(canonicalLiteral: text) {
                 return literal.encodedLiteral()
             }
+            if isTodayFunctionLiteral(text) {
+                return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             guard let date = DateNormalizerUtils.parseDate(text) else { return nil }
             return DateNormalizerUtils.formatDateOnly(date)
         case "rangeDate":
@@ -61,6 +64,13 @@ public enum AppliedFilterValueUtils {
 
     private static func isDateValueUIKind(_ valueUIKind: String) -> Bool {
         valueUIKind == "singleDate" || valueUIKind == "rangeDate"
+    }
+
+    private static func isTodayFunctionLiteral(_ value: String) -> Bool {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("$time.today("), text.hasSuffix(")") else { return false }
+        let offsetText = String(text.dropFirst("$time.today(".count).dropLast())
+        return Int(offsetText.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
     }
 
     private static func formatNumber(_ value: Double) -> String {
