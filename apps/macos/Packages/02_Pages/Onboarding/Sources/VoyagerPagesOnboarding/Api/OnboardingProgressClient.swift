@@ -4,13 +4,18 @@ import VoyagerShared
 
 struct OnboardingProgressClient {
     var load: @Sendable () -> LoadResult
-    var save: @Sendable (OnboardingProgressSnapshot) -> Void
+    var save: @Sendable (OnboardingProgressSnapshot) -> SaveResult
     var reset: @Sendable () -> Void
 
     enum LoadResult: Equatable {
         case empty
         case resetRequired
         case success(OnboardingProgressSnapshot)
+    }
+
+    enum SaveResult: Equatable {
+        case success
+        case failure
     }
 }
 
@@ -64,12 +69,15 @@ extension OnboardingProgressClient: DependencyKey {
             save: { snapshot in
                 @Dependency(\.userDefaultsClient)
                 var userDefaultsClient
+
+                guard let data = try? JSONEncoder().encode(snapshot.stepState) else {
+                    return .failure
+                }
+
                 userDefaultsClient.setObject(currentVersion, Keys.version)
                 userDefaultsClient.setObject(snapshot.currentStep.rawValue, Keys.currentStep)
-
-                if let data = try? JSONEncoder().encode(snapshot.stepState) {
-                    userDefaultsClient.setObject(data, Keys.stepState)
-                }
+                userDefaultsClient.setObject(data, Keys.stepState)
+                return .success
             },
             reset: {
                 @Dependency(\.userDefaultsClient)
@@ -84,7 +92,7 @@ extension OnboardingProgressClient: DependencyKey {
     nonisolated static var testValue: OnboardingProgressClient {
         OnboardingProgressClient(
             load: { .empty },
-            save: { _ in },
+            save: { _ in .success },
             reset: {},
         )
     }

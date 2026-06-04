@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 
 struct AiProviderSetupStepView: View {
     let store: StoreOf<AiProviderSetupFeature>
@@ -66,7 +67,7 @@ struct AiProviderSetupStepView: View {
     }
 
     private func rowCard(
-        row: AiProviderSetupRowState,
+        row: AiConnectionRowState,
         viewStore: ViewStore<AiProviderSetupState, AiProviderSetupAction>,
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -103,7 +104,7 @@ struct AiProviderSetupStepView: View {
 
     @ViewBuilder
     private func rowActionArea(
-        row: AiProviderSetupRowState,
+        row: AiConnectionRowState,
         viewStore: ViewStore<AiProviderSetupState, AiProviderSetupAction>,
     ) -> some View {
         switch row.connectionState {
@@ -143,7 +144,7 @@ struct AiProviderSetupStepView: View {
         }
     }
 
-    private func statusText(for row: AiProviderSetupRowState) -> String {
+    private func statusText(for row: AiConnectionRowState) -> String {
         switch row.connectionState {
         case .notVerified, .disconnected:
             "Not connected"
@@ -162,7 +163,7 @@ struct AiProviderSetupStepView: View {
         }
     }
 
-    private func statusColor(for row: AiProviderSetupRowState) -> Color {
+    private func statusColor(for row: AiConnectionRowState) -> Color {
         switch row.connectionState {
         case .connected:
             .green

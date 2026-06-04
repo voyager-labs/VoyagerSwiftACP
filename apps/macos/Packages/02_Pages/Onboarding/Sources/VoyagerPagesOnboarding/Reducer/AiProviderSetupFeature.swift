@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 
 @Reducer
 struct AiProviderSetupFeature {
@@ -34,9 +35,6 @@ struct AiProviderSetupFeature {
                 )
 
             case .setUpLaterTapped:
-                state.choice = .setUpLater
-                state.loadError = nil
-                state.refreshStatus()
                 return .none
 
             case let .bootstrapCompleted(results):
@@ -75,7 +73,7 @@ struct AiProviderSetupFeature {
             }
         }
         .forEach(\.rows, action: \.row) {
-            AiProviderSetupRowFeature()
+            AiConnectionRowReducer()
         }
     }
 
@@ -121,7 +119,7 @@ struct AiProviderSetupFeature {
         }
     }
 
-    private static func shouldReloadLatestStatus(after action: AiProviderSetupRowAction) -> Bool {
+    private static func shouldReloadLatestStatus(after action: AiConnectionRowAction) -> Bool {
         switch action {
         case .cancelButtonTapped,
              .verificationFailed,
@@ -190,5 +188,5 @@ enum AiProviderSetupAction: CasePathable, Equatable {
     case bootstrapFailed
     case retryBootstrapTapped
     case setUpLaterTapped
-    case row(IdentifiedActionOf<AiProviderSetupRowFeature>)
+    case row(IdentifiedActionOf<AiConnectionRowReducer>)
 }

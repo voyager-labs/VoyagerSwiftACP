@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 
 @ObservableState
 struct AiProviderSetupState: Equatable {
@@ -8,9 +9,9 @@ struct AiProviderSetupState: Equatable {
     var loadError: String?
     var choice: AiProviderSetupChoice = .none
     var status: AiProviderSetupStatus = .blocked
-    var rows: IdentifiedArrayOf<AiProviderSetupRowState>
+    var rows: IdentifiedArrayOf<AiConnectionRowState>
 
-    init(rows: IdentifiedArrayOf<AiProviderSetupRowState>? = nil) {
+    init(rows: IdentifiedArrayOf<AiConnectionRowState>? = nil) {
         self.rows = rows ?? Self.catalogRows()
     }
 
@@ -53,11 +54,11 @@ struct AiProviderSetupState: Equatable {
         status = .blocked
     }
 
-    private static func catalogRows() -> IdentifiedArrayOf<AiProviderSetupRowState> {
+    private static func catalogRows() -> IdentifiedArrayOf<AiConnectionRowState> {
         IdentifiedArrayOf(
             uniqueElements: ProviderDescriptor.v1Catalog
                 .sorted(by: { $0.sortOrder < $1.sortOrder })
-                .map { AiProviderSetupRowState(provider: $0.provider) },
+                .map { AiConnectionRowState(provider: $0.provider) },
         )
     }
 }
