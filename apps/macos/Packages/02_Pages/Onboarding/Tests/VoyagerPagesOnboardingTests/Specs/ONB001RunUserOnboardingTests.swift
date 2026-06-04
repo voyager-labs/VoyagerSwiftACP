@@ -366,7 +366,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         // 업데이트된 스냅샷으로 save가 호출되어야 함
         let saved = saveRecorder.value
         XCTAssertNotNil(saved)
-        // swiftlint:disable:next force_unwrapping
         XCTAssertTrue(try XCTUnwrap(saved?.stepState.betaAccessComplete))
 
         await store.finish()
@@ -637,16 +636,54 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
+    /// ONB-001-go_back_onboarding_step: betaAccess가 이미 verified 상태일 때 Back으로 돌아가면 재검증 없이 verified 상태를 유지한다.
+    /// 이미 완료된 betaAccess 단계로 뒤로 이동해도 `onAppear`가 재검증을 트리거하지 않음을 검증합니다.
+    /// - 검증 내용: `isComplete = true`, `status = .active` 상태에서 `backTapped` 후
+    ///   `onAppear`가 호출되어도 `isVerifying`이 `false`로 유지됩니다.
+    /// - 사전 조건: `currentStep = .permissions`, betaAccess가 verified(`isComplete = true`, `status = .active`) 상태입니다.
+    /// - 기대 결과: `backTapped` 후 `currentStep = .betaAccess`이고, `onAppear` 후에도
+    ///   `isVerifying = false`, `status = .active`가 유지됩니다.
+    func testGoBackToBetaAccessPreservesVerifiedStateWithoutReverification() async {
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .permissions
+        StateMutation.applyActiveBetaAccess(state: &initialState)
+        initialState.permissions.isComplete = true
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.noOp
+        }
+
+        await store.send(.backTapped) { state in
+            state.currentStep = .betaAccess
+        }
+
+        XCTAssertTrue(store.state.betaAccess.isComplete)
+        XCTAssertEqual(store.state.betaAccess.status, .active)
+        XCTAssertFalse(store.state.betaAccess.isVerifying)
+
+        await store.send(.betaAccess(.onAppear))
+
+        XCTAssertFalse(
+            store.state.betaAccess.isVerifying,
+            "onAppear should not trigger re-verification when already verified",
+        )
+        XCTAssertEqual(store.state.betaAccess.status, .active)
+
+        await store.finish()
+    }
+
     // MARK: - ONB-001-resume_onboarding_session
 
     // 세션 이어서 진행: 저장된 스냅샷에서 세션 복원, 미완료 단계의 fallback-to-last-valid-step,
     // 리셋 필요 시 세션 초기화, 복원 후 스냅샷 저장을 검증합니다.
 
-    /// ONB-001-resume_onboarding_session: 유효한 persisted snapshot이 있을 때 앱이 재시작되면 마지막 유효 step에서 재개한다.
+    /// ONB-001-resume_onboarding_session: 유효한 persisted snapshot이 있을 때 앱이 재시작되면 마지막 방문 reachable step에서 재개한다.
     /// 저장된 스냅샷에서 세션을 이어서 진행할 때 상태가 올바르게 복원되는지 검증합니다.
     /// - 검증 내용: `load`가 `.success(snapshot)`를 반환하면 reducer가 스냅샷 기반으로 상태를 복원합니다.
     /// - 사전 조건: snapshot에 `currentStep = .permissions`, welcome/betaAccess 완료, permissions/complete 미완료가 저장되어 있습니다.
-    /// - 기대 결과: `onAppear` 후 마지막 완료 단계인 `.betaAccess`로 복원되고,
+    /// - 기대 결과: `onAppear` 후 선행 단계(betaAccess)가 완료되어 `.permissions`를 직접 복원합니다.
     ///   welcome/betaAccess는 완료, permissions/complete는 미완료 상태입니다.
     func testResumeFromPersistedState() async {
         let snapshot = OnboardingProgressSnapshot(
@@ -666,11 +703,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         await store.send(.onAppear) { state in
-            state.currentStep = .betaAccess
-            state.welcome.isComplete = true
-            StateMutation.applyActiveBetaAccess(state: &state)
-            state.permissions.isComplete = false
-            state.complete.isComplete = false
+            state.currentStep = .permissions
+            StateMutation.applyRestoredBetaAccess(state: &state)
         }
 
         await store.finish()
@@ -682,7 +716,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 검증 내용: `currentStep = .permissions`이지만 betaAccess가 미완료이면 welcome으로 되돌아갑니다.
     /// - 사전 조건: snapshot에 `permissions`가 currentStep이지만 betaAccess/permissions 미완료입니다.
     ///   초기 상태를 `.complete`/완료로 설정하여 mutation 관찰이 가능합니다.
-    /// - 기대 결과: `onAppear` 후 `currentStep = .welcome`, `complete.isComplete = false`로 복원됩니다.
+    /// - 기대 결과: `onAppear` 후 `currentStep = .betaAccess`, `complete.isComplete = false`로 복원됩니다.
     func testResumeWithIncompleteCurrentStepFallsBack() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .permissions,
@@ -705,23 +739,60 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
-        // permissions 미완료 → lastValidStep이 welcome으로 되돌아감
+        // betaAccess 미완료 → lastValidStep이 betaAccess로 되돌아감
         await store.send(.onAppear) { state in
-            state.currentStep = .welcome
+            state.currentStep = .betaAccess
             state.complete.isComplete = false
         }
 
-        XCTAssertEqual(store.state.currentStep, .welcome)
+        XCTAssertEqual(store.state.currentStep, .betaAccess)
 
         await store.finish()
     }
 
-    /// ONB-001-resume_onboarding_session: 이전 step들이 완료된 snapshot일 때 resume하면 완료 상태를 보존하고 다음 유효 step을 표시한다.
+    /// ONB-001-resume_onboarding_session: snapshot에 currentStep == .complete이지만 중간 선행 단계가 미완료면 복원하지 않는다.
+    /// `currentStep = .complete`, `permissionsComplete = true`, `betaAccessComplete = false`인 불일치 snapshot에서
+    /// complete 단계로 직접 복원하지 않고 가장 마지막 완료 단계인 welcome으로 되돌아갑니다.
+    /// - 사전 조건: snapshot에 welcome만 완료, betaAccess 미완료, permissions 완료(불일치), currentStep = .complete.
+    /// - 기대 결과: `onAppear` 후 `currentStep = .betaAccess`으로 fallback (welcome은 완료이므로 betaAccess부터 재개).
+    func testResumeCompleteStepWithIncompleteBetaAccessFallsBack() async {
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .complete,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                betaAccessComplete: false,
+                permissionsComplete: true,
+                completeComplete: false,
+            ),
+        )
+
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .complete
+        initialState.complete.isComplete = true
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
+        }
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .betaAccess
+            state.permissions.isComplete = true
+            state.complete.isComplete = false
+        }
+
+        XCTAssertEqual(store.state.currentStep, .betaAccess)
+
+        await store.finish()
+    }
+
+    /// ONB-001-resume_onboarding_session: 이전 step들이 완료된 snapshot일 때 resume하면 완료 상태를 보존하고 방문했던 complete step을 직접 복원한다.
     /// complete 이전의 모든 단계가 완료된 상태로 이어서 진행 시
-    /// 마지막 완료 단계인 permissions에 위치해야 함을 검증합니다.
-    /// - 검증 내용: `currentStep = .complete`이지만 `complete` 미완료 시 `permissions`로 fallback합니다.
+    /// persisted `currentStep = .complete`가 직접 복원됨을 검증합니다.
+    /// - 검증 내용: `currentStep = .complete`이고 permissions가 완료이면 `.complete`를 직접 복원합니다.
     /// - 사전 조건: snapshot에 welcome/betaAccess/permissions 완료, `completeComplete = false`가 저장되어 있습니다.
-    /// - 기대 결과: `onAppear` 후 `currentStep = .permissions`, 모든 선행 단계는 완료, `complete.isComplete = false`입니다.
+    /// - 기대 결과: `onAppear` 후 `currentStep = .complete`, 모든 선행 단계는 완료, `complete.isComplete = false`입니다.
     func testResumeWithCompletedPriorSteps() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .complete,
@@ -739,26 +810,25 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
-        // complete 미완료 → lastValidStep이 permissions(완료됨)로 되돌아감
+        // permissions 완료 → 선행 단계 모두 완료 → .complete 직접 복원
         await store.send(.onAppear) { state in
-            state.currentStep = .permissions
-            state.welcome.isComplete = true
-            StateMutation.applyActiveBetaAccess(state: &state)
+            state.currentStep = .complete
+            StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
-            state.complete.isComplete = false
         }
 
-        XCTAssertEqual(store.state.currentStep, .permissions)
+        XCTAssertEqual(store.state.currentStep, .complete)
 
         await store.finish()
     }
 
-    /// ONB-001-resume_onboarding_session: welcome만 완료된 snapshot일 때 resume하면 betaAccess 진입 준비 상태로 복원한다.
-    /// 저장된 스냅샷에서 welcome만 완료된 경우 welcome 단계가 표시되어야 함을 검증합니다.
-    /// - 검증 내용: betaAccess 미완료 시 fallback-to-last-valid-step이 welcome을 선택합니다.
+    /// ONB-001-resume_onboarding_session: welcome만 완료된 snapshot일 때 resume하면 betaAccess step을 직접 복원한다.
+    /// 저장된 스냅샷에서 welcome만 완료된 경우, 선행 단계(welcome)가 완료이므로
+    /// `.betaAccess`가 직접 복원됨을 검증합니다.
+    /// - 검증 내용: betaAccess 미완료라도 welcome(선행 단계)이 완료이면 `.betaAccess`를 직접 복원합니다.
     /// - 사전 조건: snapshot에 `currentStep = .betaAccess`, welcome만 완료, 나머지 미완료입니다.
     ///   초기 상태를 `.complete`/완료로 설정하여 mutation 관찰이 가능합니다.
-    /// - 기대 결과: `onAppear` 후 `currentStep = .welcome`, `complete.isComplete = false`로 복원됩니다.
+    /// - 기대 결과: `onAppear` 후 `currentStep = .betaAccess`, `complete.isComplete = false`로 복원됩니다.
     func testResumeWithOnlyWelcomeComplete() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .betaAccess,
@@ -781,23 +851,23 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
-        // betaAccess 미완료 → welcome(완료됨)으로 대체
+        // welcome 완료 → 선행 단계 충족 → .betaAccess 직접 복원
         await store.send(.onAppear) { state in
-            state.currentStep = .welcome
+            state.currentStep = .betaAccess
             state.complete.isComplete = false
         }
 
-        XCTAssertEqual(store.state.currentStep, .welcome)
+        XCTAssertEqual(store.state.currentStep, .betaAccess)
 
         await store.finish()
     }
 
-    /// ONB-001-resume_onboarding_session: resume 중 snapshot 보정이 필요할 때 복원 로직이 실행되면 보정된 진행 상태를 다시 저장한다.
+    /// ONB-001-resume_onboarding_session: resume 중 snapshot 보정이 필요하지 않을 때 복원 로직이 실행되면 persisted step을 그대로 저장한다.
     /// 이어서 진행 시 단계 상태 적용 후 업데이트된 스냅샷이 저장됨을 검증합니다.
-    /// - 검증 내용: 복원된 상태(보정된 단계 포함)가 `save()`를 통해 올바르게 저장됩니다.
+    /// - 검증 내용: 복원된 상태(persisted step 유지)가 `save()`를 통해 올바르게 저장됩니다.
     /// - 사전 조건: snapshot에 `currentStep = .permissions`, welcome/betaAccess 완료가 저장되어 있습니다.
     ///   `saveRecorder`로 저장 호출을 캡처합니다.
-    /// - 기대 결과: 저장된 스냅샷의 `currentStep`이 보정된 `.betaAccess`(permissions 아님)를 반영합니다.
+    /// - 기대 결과: 저장된 스냅샷의 `currentStep`이 `.permissions`(선행 단계 완료로 직접 복원)를 반영합니다.
     func testResumeSavesUpdatedSnapshot() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
         let snapshot = OnboardingProgressSnapshot(
@@ -820,17 +890,14 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         await store.send(.onAppear) { state in
-            state.currentStep = .betaAccess
-            state.welcome.isComplete = true
-            StateMutation.applyActiveBetaAccess(state: &state)
-            state.permissions.isComplete = false
-            state.complete.isComplete = false
+            state.currentStep = .permissions
+            StateMutation.applyRestoredBetaAccess(state: &state)
         }
 
         let saved = saveRecorder.value
         XCTAssertNotNil(saved)
-        // 저장된 스냅샷은 보정된 단계(betaAccess, permissions 아님)를 반영해야 함
-        XCTAssertEqual(saved?.currentStep, .betaAccess)
+        // 선행 단계(betaAccess)가 완료되어 permissions가 직접 복원됨
+        XCTAssertEqual(saved?.currentStep, .permissions)
 
         await store.finish()
     }
@@ -873,7 +940,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// 마지막 유효 단계로 대체됨을 검증합니다.
     /// - 검증 내용: complete/betaAccess/permissions가 모두 미완료이면 welcome으로 fallback합니다.
     /// - 사전 조건: snapshot에 `currentStep = .complete`, welcome만 완료, 나머지 미완료가 저장되어 있습니다.
-    /// - 기대 결과: `onAppear` 후 `currentStep = .welcome`, welcome만 완료, betaAccess 미완료입니다.
+    /// - 기대 결과: `onAppear` 후 `currentStep = .betaAccess`, welcome만 완료, betaAccess 미완료입니다.
     func testResumeFromUnknownStepFallsBackToLastValidStep() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .complete,
@@ -891,11 +958,12 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
         }
 
-        // complete ✗ → permissions ✗ → betaAccess ✗ → welcome ✓
-        // 적용된 상태가 기본값과 동일하므로 클로저 불필요
-        await store.send(.onAppear)
+        // complete ✗ → permissions ✗ → betaAccess: prior chain (welcome) complete → .betaAccess
+        await store.send(.onAppear) { state in
+            state.currentStep = .betaAccess
+        }
 
-        XCTAssertEqual(store.state.currentStep, .welcome)
+        XCTAssertEqual(store.state.currentStep, .betaAccess)
         XCTAssertTrue(store.state.isStepComplete(.welcome))
         XCTAssertFalse(store.state.isStepComplete(.betaAccess))
 
@@ -918,6 +986,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     func testCompleteOpensWindowAndSavesProgress() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
         let pathRecorder = PathRecorder()
+        let closeRecorder = CloseRecorder()
 
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
@@ -926,7 +995,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
-            $0.onboardingWindowClient = WindowClient.recording(pathRecorder: pathRecorder)
+            $0.onboardingWindowClient = WindowClient.recording(
+                pathRecorder: pathRecorder,
+                closeRecorder: closeRecorder,
+            )
         }
 
         await store.send(.complete(.startUsingTapped)) { state in
@@ -944,6 +1016,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(openedPaths[0], .defaultTabPath)
         let savedSnapshot = saveRecorder.value
         XCTAssertEqual(savedSnapshot?.stepState.completeComplete, true)
+        let closeCount = await closeRecorder.snapshot()
+        XCTAssertEqual(closeCount, 1, "closeWindow should be called once after successful open")
         await store.finish()
     }
 
@@ -972,7 +1046,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.send(.onAppear) { state in
             state.currentStep = .complete
             state.welcome.isComplete = true
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
             state.complete.isComplete = true
         }
@@ -988,6 +1062,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 기대 결과: 저장된 스냅샷의 `completeComplete = true`, `currentStep = .complete`입니다.
     func testCompletionSavesCompleteStepState() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        let closeRecorder = CloseRecorder()
 
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
@@ -996,7 +1071,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
-            $0.onboardingWindowClient = WindowClient.successMock
+            $0.onboardingWindowClient = WindowClient.recording(
+                pathRecorder: PathRecorder(),
+                closeRecorder: closeRecorder,
+            )
         }
 
         await store.send(.complete(.startUsingTapped)) { state in
@@ -1013,6 +1091,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertNotNil(saved)
         XCTAssertEqual(saved?.stepState.completeComplete, true)
         XCTAssertEqual(saved?.currentStep, .complete)
+        let closeCount = await closeRecorder.snapshot()
+        XCTAssertEqual(closeCount, 1, "closeWindow should be called after successful completion")
 
         await store.finish()
     }
@@ -1025,6 +1105,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 기대 결과: `openWindowResponse` 수신 후 `isOpeningWindow = false`,
     ///   `openWindowError`에 에러 메시지가 설정됩니다.
     func testCompletionOpenWindowFailureShowsError() async {
+        let closeRecorder = CloseRecorder()
+        let pathRecorder = PathRecorder()
+
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
 
@@ -1032,7 +1115,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
-            $0.onboardingWindowClient = WindowClient.failureMock
+            $0.onboardingWindowClient = WindowClient.recordingFailure(
+                pathRecorder: pathRecorder,
+                closeRecorder: closeRecorder,
+            )
         }
 
         await store.send(.complete(.startUsingTapped)) { state in
@@ -1048,6 +1134,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         XCTAssertNotNil(store.state.complete.openWindowError)
         XCTAssertFalse(store.state.complete.isOpeningWindow)
+        let closeCount = await closeRecorder.snapshot()
+        XCTAssertEqual(closeCount, 0, "closeWindow should NOT be called when openMainWindow fails")
 
         await store.finish()
     }
@@ -1061,6 +1149,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 기대 결과: 재시도 성공 후 `openWindowError = nil`, `pathRecorder`에 1개의 경로가 기록됩니다.
     func testCompletionRetryAfterFailure() async {
         let pathRecorder = PathRecorder()
+        let closeRecorder = CloseRecorder()
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
         initialState.complete.isComplete = true
@@ -1070,7 +1159,10 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
-            $0.onboardingWindowClient = WindowClient.recording(pathRecorder: pathRecorder)
+            $0.onboardingWindowClient = WindowClient.recording(
+                pathRecorder: pathRecorder,
+                closeRecorder: closeRecorder,
+            )
         }
 
         await store.send(.complete(.retryTapped)) { state in
@@ -1082,10 +1174,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        // 성공적인 재시도 후 에러가 초기화되어야 함
         XCTAssertNil(store.state.complete.openWindowError)
         let paths = await pathRecorder.snapshot()
         XCTAssertEqual(paths.count, 1)
+        let closeCount = await closeRecorder.snapshot()
+        XCTAssertEqual(closeCount, 1, "closeWindow should be called after successful retry")
 
         await store.finish()
     }
@@ -1097,6 +1190,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 기대 결과: 두 시도 모두 창을 열어(`paths.count = 2`), 최종적으로 `isComplete = true`입니다.
     func testIdempotentCompletion() async {
         let pathRecorder = PathRecorder()
+        let closeRecorder = CloseRecorder()
+
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
 
@@ -1104,10 +1199,12 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
-            $0.onboardingWindowClient = WindowClient.recording(pathRecorder: pathRecorder)
+            $0.onboardingWindowClient = WindowClient.recording(
+                pathRecorder: pathRecorder,
+                closeRecorder: closeRecorder,
+            )
         }
 
-        // 첫 번째 완료
         await store.send(.complete(.startUsingTapped)) { state in
             state.complete.isComplete = true
             state.complete.isOpeningWindow = true
@@ -1117,7 +1214,6 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        // 두 번째 완료 시도 (멱등)
         await store.send(.complete(.startUsingTapped)) { state in
             state.complete.isOpeningWindow = true
             state.complete.openWindowError = nil
@@ -1126,10 +1222,110 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.complete.isOpeningWindow = false
         }
 
-        // 두 시도 모두 창을 열어야 함
         let paths = await pathRecorder.snapshot()
         XCTAssertEqual(paths.count, 2)
         XCTAssertTrue(store.state.complete.isComplete)
+        let closeCount = await closeRecorder.snapshot()
+        XCTAssertEqual(closeCount, 2, "closeWindow should be called for each successful completion")
+
+        await store.finish()
+    }
+
+    /// ONB-001-complete_onboarding_session: 완료 시 save → openMainWindow → closeWindow 순서로 호출된다.
+    /// Parent reducer가 save, openMainWindow, closeWindow를 올바른 순서로 실행하는지 검증합니다.
+    /// - 검증 내용: `startUsingTapped` 후 save가 먼저 실행되고, openMainWindow가 호출된 뒤 closeWindow가 호출됩니다.
+    /// - 사전 조건: `currentStep = .complete` 상태입니다.
+    /// - 기대 결과: saveRecorder에 `completeComplete = true` 스냅샷, pathRecorder에 `.defaultTabPath`,
+    ///   closeRecorder에 1회 close가 순서대로 기록됩니다.
+    func testOrderedSequenceSaveOpenClose() async {
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        let pathRecorder = PathRecorder()
+        let closeRecorder = CloseRecorder()
+        let eventLog = EventLogSyncBox()
+
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .complete
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.recording(
+                saveRecorder: saveRecorder,
+                eventLog: eventLog,
+            )
+            $0.onboardingWindowClient = WindowClient.recording(
+                pathRecorder: pathRecorder,
+                closeRecorder: closeRecorder,
+                eventLog: eventLog,
+            )
+        }
+
+        await store.send(.complete(.startUsingTapped)) { state in
+            state.complete.isComplete = true
+            state.complete.isOpeningWindow = true
+            state.complete.openWindowError = nil
+        }
+
+        await store.receive(\.complete.openWindowResponse) { state in
+            state.complete.isOpeningWindow = false
+        }
+
+        let savedSnapshot = saveRecorder.value
+        XCTAssertNotNil(savedSnapshot, "Snapshot should be saved before opening main window")
+        XCTAssertEqual(savedSnapshot?.stepState.completeComplete, true)
+
+        let openedPaths = await pathRecorder.snapshot()
+        XCTAssertEqual(openedPaths.count, 1, "openMainWindow should be called once")
+        XCTAssertEqual(openedPaths[0], .defaultTabPath)
+
+        let closeCount = await closeRecorder.snapshot()
+        XCTAssertEqual(closeCount, 1, "closeWindow should be called after successful openMainWindow")
+
+        XCTAssertEqual(
+            eventLog.snapshot(),
+            ["save", "open", "close"],
+            "save → openMainWindow → closeWindow 순서로 실행되어야 합니다",
+        )
+
+        await store.finish()
+    }
+
+    /// ONB-001-complete_onboarding_session: openMainWindow가 실패하면 closeWindow가 호출되지 않는다.
+    /// 실패 시 온보딩 창이 닫히지 않음을 검증합니다.
+    /// - 검증 내용: `openMainWindow`가 `false`를 반환하면 `closeWindow`가 호출되지 않습니다.
+    /// - 사전 조건: `currentStep = .complete` 상태입니다. `openMainWindow`가 `false`를 반환합니다.
+    /// - 기대 결과: `closeRecorder.snapshot() == 0`, 에러 상태가 설정됩니다.
+    func testFailureDoesNotCloseOnboardingWindow() async {
+        let closeRecorder = CloseRecorder()
+        let pathRecorder = PathRecorder()
+
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .complete
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.noOp
+            $0.onboardingWindowClient = WindowClient.recordingFailure(
+                pathRecorder: pathRecorder,
+                closeRecorder: closeRecorder,
+            )
+        }
+
+        await store.send(.complete(.startUsingTapped)) { state in
+            state.complete.isComplete = true
+            state.complete.isOpeningWindow = true
+            state.complete.openWindowError = nil
+        }
+
+        await store.receive(\.complete.openWindowResponse) { state in
+            state.complete.isOpeningWindow = false
+            state.complete.openWindowError = "We couldn't open a file manager window. Please try again."
+        }
+
+        let closeCount = await closeRecorder.snapshot()
+        XCTAssertEqual(closeCount, 0, "closeWindow must NOT be called when openMainWindow returns false")
+        XCTAssertNotNil(store.state.complete.openWindowError)
 
         await store.finish()
     }
@@ -1161,7 +1357,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.send(.onAppear) { state in
             state.currentStep = .complete
             state.welcome.isComplete = true
-            StateMutation.applyActiveBetaAccess(state: &state)
+            StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
             state.complete.isComplete = true
         }
@@ -1170,5 +1366,151 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(store.state.currentStep, .complete)
 
         await store.finish()
+    }
+
+    // MARK: - ONB-001-credential_persistence
+
+    // BetaAccess 이메일/토큰의 스냅샷 저장 및 복원을 검증합니다.
+    // 검증 완료 후 자격 증명이 스냅샷에 포함되어 저장되고,
+    // 복원 시 이전에 입력한 이메일/토큰이 복구되는지 확인합니다.
+
+    /// ONB-001:credential_persistence — betaAccess가 완료된 상태에서 snapshot을 생성하면 email/token이 snapshot에 포함된다.
+    func testProgressSnapshotIncludesCredentialsWhenBetaAccessComplete() {
+        var state = OnboardingFeature.State()
+        state.betaAccess.email = "user@test.com"
+        state.betaAccess.token = "valid-token"
+        state.betaAccess.isComplete = true
+        state.betaAccess.status = .active
+
+        let snapshot = state.progressSnapshot
+
+        XCTAssertEqual(snapshot.stepState.betaAccessEmail, "user@test.com")
+        XCTAssertEqual(snapshot.stepState.betaAccessToken, "valid-token")
+    }
+
+    /// ONB-001:credential_persistence — betaAccess가 미완료 상태에서 snapshot을 생성하면 email/token이 nil이다.
+    func testProgressSnapshotExcludesCredentialsWhenBetaAccessIncomplete() {
+        var state = OnboardingFeature.State()
+        state.betaAccess.email = "user@test.com"
+        state.betaAccess.token = "valid-token"
+
+        let snapshot = state.progressSnapshot
+
+        XCTAssertNil(snapshot.stepState.betaAccessEmail)
+        XCTAssertNil(snapshot.stepState.betaAccessToken)
+    }
+
+    /// ONB-001:credential_persistence — 자격 증명이 포함된 snapshot에서 복원하면 email/token이 복구된다.
+    func testResumeFromSnapshotWithCredentialsRestoresEmailAndToken() async {
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .permissions,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                betaAccessComplete: true,
+                permissionsComplete: false,
+                completeComplete: false,
+                betaAccessEmail: "user@test.com",
+                betaAccessToken: "valid-token",
+            ),
+        )
+
+        let store = TestStore(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
+        }
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .permissions
+            StateMutation.applyActiveBetaAccess(
+                state: &state,
+                email: "user@test.com",
+                token: "valid-token",
+            )
+        }
+
+        XCTAssertEqual(store.state.betaAccess.email, "user@test.com")
+        XCTAssertEqual(store.state.betaAccess.token, "valid-token")
+        XCTAssertFalse(store.state.betaAccess.isRestoredVerifiedAccess)
+
+        await store.finish()
+    }
+
+    /// ONB-001:credential_persistence — 자격 증명이 없는 이전 snapshot에서 복원하면 email/token이 비어 있고 isRestoredVerifiedAccess가
+    /// true이다.
+    func testResumeFromLegacySnapshotWithoutCredentialsShowsRestoredVerified() async {
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .permissions,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                betaAccessComplete: true,
+                permissionsComplete: false,
+                completeComplete: false,
+            ),
+        )
+
+        let store = TestStore(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resuming(from: snapshot)
+        }
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .permissions
+            StateMutation.applyRestoredBetaAccess(state: &state)
+        }
+
+        XCTAssertTrue(store.state.betaAccess.isRestoredVerifiedAccess)
+        XCTAssertEqual(store.state.betaAccess.email, "")
+        XCTAssertEqual(store.state.betaAccess.token, "")
+
+        await store.finish()
+    }
+
+    /// ONB-001:credential_persistence — 검증 완료 후 진행 상태를 저장하면 snapshot에 email/token이 포함된다.
+    func testStepStateUpdateSavesCredentialsInSnapshot() async {
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+
+        var initialState = OnboardingFeature.State()
+        initialState.betaAccess.email = "user@test.com"
+        initialState.betaAccess.token = "valid-token"
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+        }
+
+        await store.send(.betaAccess(.verificationResponse(BetaAccessVerificationResult(status: .active)))) { state in
+            state.betaAccess.status = .active
+            state.betaAccess.reason = .none
+            state.betaAccess.isComplete = true
+        }
+
+        let saved = saveRecorder.value
+        XCTAssertNotNil(saved)
+        XCTAssertEqual(saved?.stepState.betaAccessEmail, "user@test.com")
+        XCTAssertEqual(saved?.stepState.betaAccessToken, "valid-token")
+
+        await store.finish()
+    }
+
+    /// ONB-001:credential_persistence — credential 필드가 nil인 이전 JSON도 안전하게 디코딩된다.
+    func testOldSnapshotWithoutCredentialFieldsDecodesSafely() throws {
+        let json = """
+        {
+            "welcomeComplete": true,
+            "betaAccessComplete": true,
+            "permissionsComplete": false,
+            "completeComplete": false
+        }
+        """
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let stepState = try JSONDecoder().decode(OnboardingStepState.self, from: data)
+
+        XCTAssertTrue(stepState.welcomeComplete)
+        XCTAssertTrue(stepState.betaAccessComplete)
+        XCTAssertNil(stepState.betaAccessEmail)
+        XCTAssertNil(stepState.betaAccessToken)
     }
 }

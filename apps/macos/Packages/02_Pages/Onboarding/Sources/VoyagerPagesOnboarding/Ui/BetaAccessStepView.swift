@@ -14,48 +14,11 @@ struct BetaAccessStepView: View {
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
             VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Email")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        TextField(
-                            "email@example.com",
-                            text: viewStore.binding(
-                                get: \.email,
-                                send: { .emailChanged($0) },
-                            ),
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: .infinity)
-                        .controlSize(.large)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Token")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        TextField(
-                            "Paste your token here",
-                            text: viewStore.binding(
-                                get: \.token,
-                                send: { .tokenChanged($0) },
-                            ),
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: .infinity)
-                        .controlSize(.large)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Enter the email and token from your invite.")
-                    }
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                if viewStore.isRestoredVerifiedAccess {
+                    restoredVerifiedContent
+                } else {
+                    inputFieldsContent(viewStore: viewStore)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 8) {
                     statusChip(viewStore.statusTitle, tone: statusTone(for: viewStore.status))
@@ -80,6 +43,61 @@ struct BetaAccessStepView: View {
                 viewStore.send(.onAppear)
             }
         })
+    }
+
+    private var restoredVerifiedContent: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Beta access verified")
+                .font(.system(size: 13, weight: .semibold))
+            Text("Beta access is already verified for this device. Re-enter your credentials if needed.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func inputFieldsContent(viewStore: ViewStoreOf<BetaAccessFeature>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Email")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                TextField(
+                    "email@example.com",
+                    text: viewStore.binding(
+                        get: \.email,
+                        send: { .emailChanged($0) },
+                    ),
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+                .controlSize(.large)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Token")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                TextField(
+                    "Paste your token here",
+                    text: viewStore.binding(
+                        get: \.token,
+                        send: { .tokenChanged($0) },
+                    ),
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+                .controlSize(.large)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Enter the email and token from your invite.")
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func statusChip(_ text: String, tone: ChipTone) -> some View {
