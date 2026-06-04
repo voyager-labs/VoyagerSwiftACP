@@ -56,11 +56,71 @@ final class FileManagerContentComposerSeedingTests: XCTestCase {
 
         await store.receive(\.composer.internal.applyCollectionDraftRestore)
 
-        XCTAssertEqual(store.state.composer.conditions.count, 1)
+        XCTAssertEqual(store.state.composer.conditions.count, 2)
         XCTAssertEqual(store.state.composer.conditions.first?.propertyKey, "last_used_date")
         XCTAssertEqual(store.state.composer.conditions.first?.values, ["$time.today(-1000000)"])
+        XCTAssertEqual(store.state.composer.conditions.last?.propertyKey, "content_type_tree")
+        XCTAssertEqual(store.state.composer.conditions.last?.operatorCode, "neq")
+        XCTAssertEqual(store.state.composer.conditions.last?.values, ["public.folder"])
         XCTAssertTrue(store.state.composer.scopeEditor.selection.isRootOnly)
         XCTAssertEqual(store.state.navigation.navigationState, .recents)
+    }
+
+    func testComposerOpenReplacesStaleFolderSeedWithRecentsVirtualContext() async {
+        var initialState = makeInitialState()
+        initialState.navigation.navigationState = .recents
+        initialState.composer.isPresented = false
+        initialState.composer.scopeEditor.selection = .fromLegacyScopes(["/tmp/voyager"])
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.registryClient = .live(snapshot: .load())
+        }
+        store.exhaustivity = .off
+
+        await store.send(FileManagerContentAction.composer(.view(.setPresented(true)))) {
+            $0.composer.isPresented = true
+        }
+
+        await store.receive(\.composer.internal.applyCollectionDraftRestore)
+
+        XCTAssertEqual(store.state.composer.conditions.map(\.propertyKey), ["last_used_date", "content_type_tree"])
+        XCTAssertTrue(store.state.composer.scopeEditor.selection.isRootOnly)
+        XCTAssertEqual(store.state.navigation.navigationState, .recents)
+    }
+
+    func testComposerOpenPreservesEditedDraftOnRecentsRoute() async {
+        var initialState = makeInitialState()
+        initialState.navigation.navigationState = .recents
+        initialState.composer.isPresented = false
+        initialState.composer.scopeEditor.selection = .fromLegacyScopes(["/tmp/voyager"])
+        initialState.composer.text = "kind:image"
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.registryClient = .live(snapshot: .load())
+        }
+
+        await store.send(FileManagerContentAction.composer(.view(.setPresented(true)))) {
+            $0.composer.isPresented = true
+        }
+
+        XCTAssertTrue(store.state.composer.conditions.isEmpty)
+        XCTAssertEqual(store.state.composer.scopeEditor.selection.legacyScopePaths, ["/tmp/voyager"])
     }
 
     func testComposerOpenSeedsTagsVirtualContextWhenPristine() async {

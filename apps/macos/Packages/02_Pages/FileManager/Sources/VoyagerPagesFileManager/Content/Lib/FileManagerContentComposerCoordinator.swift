@@ -203,35 +203,33 @@ enum FileManagerContentComposerCoordinator {
             nil,
         )
 
-        guard state.composer.scopeEditor.selection.isRootOnly,
-              state.composer.conditions.isEmpty,
-              state.composer.text.isEmpty,
-              state.composer.collectionContext == nil,
-              state.composer.pendingSearchQuery == nil
-        else {
-            return .none
-        }
-
         switch state.navigation.navigationState {
         case let .tags(tagName):
-            guard let context = FileManagerVirtualCollectionContextFactory.collectionContext(
-                for: .tags(tagName),
-                registryClient: dependencies.registryClient,
-            ) else {
+            guard canApplyVirtualRouteSeed(to: state.composer),
+                  let context = FileManagerVirtualCollectionContextFactory.collectionContext(
+                      for: .tags(tagName),
+                      registryClient: dependencies.registryClient,
+                  )
+            else {
                 return .none
             }
             return .send(.composer(.applyCollectionDraftRestore(.init(context: context, openedURL: nil))))
 
         case .recents:
-            guard let context = FileManagerVirtualCollectionContextFactory.collectionContext(
-                for: .recents,
-                registryClient: dependencies.registryClient,
-            ) else {
+            guard canApplyVirtualRouteSeed(to: state.composer),
+                  let context = FileManagerVirtualCollectionContextFactory.collectionContext(
+                      for: .recents,
+                      registryClient: dependencies.registryClient,
+                  )
+            else {
                 return .none
             }
             return .send(.composer(.applyCollectionDraftRestore(.init(context: context, openedURL: nil))))
 
         case let .folder(path):
+            guard canApplyFolderRouteSeed(to: state.composer) else {
+                return .none
+            }
             return .send(.composer(.scopeEditorSeedCurrentPath(path)))
 
         case .computer, .collection:
@@ -324,6 +322,39 @@ enum FileManagerContentComposerCoordinator {
             ),
         )
     }
+}
+
+private func canApplyFolderRouteSeed(to composer: ComposerFeature.State) -> Bool {
+    composer.scopeEditor.selection.isRootOnly && isComposerDraftEmpty(composer)
+}
+
+private func canApplyVirtualRouteSeed(to composer: ComposerFeature.State) -> Bool {
+    guard isComposerDraftEmpty(composer) else {
+        return false
+    }
+    return composer.scopeEditor.selection.isRootOnly || hasOnlyAutomaticRouteScopeSeed(composer)
+}
+
+private func isComposerDraftEmpty(_ composer: ComposerFeature.State) -> Bool {
+    composer.conditions.isEmpty
+        && composer.text.isEmpty
+        && composer.collectionContext == nil
+        && composer.pendingSearchQuery == nil
+}
+
+private func hasOnlyAutomaticRouteScopeSeed(_ composer: ComposerFeature.State) -> Bool {
+    !composer.scopeEditor.selection.isRootOnly
+        && !composer.scopeEditor.isPresented
+        && !composer.canUndo
+        && !composer.hasSubmittedInSession
+        && composer.submittedSearchFilters == nil
+        && composer.lastSearchResponse == nil
+        && composer.lastFiltersResponse == nil
+        && !composer.isLoadingSearch
+        && !composer.isLoadingFilters
+        && !composer.isFilteringInFlight
+        && composer.activeSearchRequestID == nil
+        && composer.activeFiltersRequestID == nil
 }
 
 private func searchResultPaths(from items: [VoyagerShared.JSONValue]) -> [String] {
