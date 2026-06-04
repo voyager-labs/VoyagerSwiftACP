@@ -11,16 +11,16 @@ enum FileManagerVirtualCollectionContextFactory {
         for route: ContentPageNavigationRoute,
         registryClient: RegistryClient,
     ) -> CollectionContext? {
-        let conditionPayload: SearchConditionPayload? = switch route {
+        let conditionPayloads: [SearchConditionPayload] = switch route {
         case let .tags(tagName):
-            makeTagConditionPayload(tagName: tagName)
+            [makeTagConditionPayload(tagName: tagName)]
         case .recents:
-            makeRecentsConditionPayload()
+            makeRecentsConditionPayloads()
         case .folder, .computer, .collection:
-            nil
+            []
         }
 
-        guard let conditionPayload else {
+        guard conditionPayloads.isEmpty == false else {
             return nil
         }
 
@@ -28,7 +28,7 @@ enum FileManagerVirtualCollectionContextFactory {
             scopes: [rootScopePath],
             excludedScopes: [],
             includeSubfolders: true,
-            conditions: [conditionPayload],
+            conditions: conditionPayloads,
         )
         let resolved = AppliedFiltersUtils.resolveDetailed(
             appliedFilters,
@@ -54,11 +54,18 @@ enum FileManagerVirtualCollectionContextFactory {
         )
     }
 
-    private static func makeRecentsConditionPayload() -> SearchConditionPayload {
-        SearchConditionPayload(
-            propertyKey: "last_used_date",
-            operator: "gt",
-            value: .string(recentsSinceAnyOpenedLiteral),
-        )
+    private static func makeRecentsConditionPayloads() -> [SearchConditionPayload] {
+        [
+            SearchConditionPayload(
+                propertyKey: "last_used_date",
+                operator: "gt",
+                value: .string(recentsSinceAnyOpenedLiteral),
+            ),
+            SearchConditionPayload(
+                propertyKey: "content_type_tree",
+                operator: "neq",
+                value: .string("public.folder"),
+            ),
+        ]
     }
 }

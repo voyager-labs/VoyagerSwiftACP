@@ -42,17 +42,31 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
         XCTAssertEqual(context.scopes, ["/"])
         XCTAssertEqual(context.excludedScopes, [])
         XCTAssertTrue(context.includeSubfolders)
-        let condition = try XCTUnwrap(context.conditions.first)
-        XCTAssertEqual(condition.propertyKey, "last_used_date")
-        XCTAssertEqual(condition.propertyLabel, "Registry Last Used Label")
-        XCTAssertEqual(condition.propertyType, "date")
-        XCTAssertEqual(condition.operatorCode, "gt")
-        XCTAssertEqual(condition.operatorLabel, "Registry Greater Than Label")
-        XCTAssertEqual(condition.operatorValueArity, 1)
-        XCTAssertEqual(condition.operatorValueUIKind, "singleDate")
-        XCTAssertEqual(condition.valueType, "date")
-        XCTAssertEqual(condition.values, [FileManagerVirtualCollectionContextFactory.recentsSinceAnyOpenedLiteral])
-        XCTAssertTrue(condition.isActive)
+        XCTAssertEqual(context.conditions.count, 2)
+        let recentCondition = try XCTUnwrap(context.conditions.first { $0.propertyKey == "last_used_date" })
+        XCTAssertEqual(recentCondition.propertyLabel, "Registry Last Used Label")
+        XCTAssertEqual(recentCondition.propertyType, "date")
+        XCTAssertEqual(recentCondition.operatorCode, "gt")
+        XCTAssertEqual(recentCondition.operatorLabel, "Registry Greater Than Label")
+        XCTAssertEqual(recentCondition.operatorValueArity, 1)
+        XCTAssertEqual(recentCondition.operatorValueUIKind, "singleDate")
+        XCTAssertEqual(recentCondition.valueType, "date")
+        XCTAssertEqual(
+            recentCondition.values,
+            [FileManagerVirtualCollectionContextFactory.recentsSinceAnyOpenedLiteral],
+        )
+        XCTAssertTrue(recentCondition.isActive)
+
+        let directoryExclusion = try XCTUnwrap(context.conditions.first { $0.propertyKey == "content_type_tree" })
+        XCTAssertEqual(directoryExclusion.propertyLabel, "Registry Content Type Tree Label")
+        XCTAssertEqual(directoryExclusion.propertyType, "string")
+        XCTAssertEqual(directoryExclusion.operatorCode, "neq")
+        XCTAssertEqual(directoryExclusion.operatorLabel, "Registry Not Equal Label")
+        XCTAssertEqual(directoryExclusion.operatorValueArity, 1)
+        XCTAssertEqual(directoryExclusion.operatorValueUIKind, "singleText")
+        XCTAssertEqual(directoryExclusion.valueType, "string")
+        XCTAssertEqual(directoryExclusion.values, ["public.folder"])
+        XCTAssertTrue(directoryExclusion.isActive)
     }
 
     func testFolderComputerAndCollectionRoutesDoNotSeedVirtualContext() {
@@ -83,7 +97,7 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
             labelForKey: Self.registryLabel(for:),
             propertyTypeString: Self.registryType(for:),
             propertyUnitSpec: { _ in nil },
-            operatorCodes: { _ in ["any", "gt"] },
+            operatorCodes: { _ in ["any", "gt", "neq"] },
             operatorDefinition: Self.registryOperatorDefinition(for:),
             operatorValueUIKind: Self.registryOperatorUIKind(for:typeKey:),
             resolvePropertyKey: { .canonical($0) },
@@ -94,6 +108,7 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
         switch key {
         case "tag_names": "Registry Tag Label"
         case "last_used_date": "Registry Last Used Label"
+        case "content_type_tree": "Registry Content Type Tree Label"
         default: key
         }
     }
@@ -102,6 +117,7 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
         switch key {
         case "tag_names": "categorical"
         case "last_used_date": "date"
+        case "content_type_tree": "string"
         default: "unknown"
         }
     }
@@ -118,6 +134,11 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
                 uiLabel: "Registry Greater Than Label",
                 uiValueKind: ["date": "singleDate"],
             )
+        case "neq":
+            OperatorDefinition(
+                uiLabel: "Registry Not Equal Label",
+                uiValueKind: ["string": "singleText"],
+            )
         default:
             OperatorDefinition(uiLabel: code, uiValueKind: ["unknown": "singleText"])
         }
@@ -129,6 +150,8 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
             "listText"
         case ("gt", "date"):
             "singleDate"
+        case ("neq", "string"):
+            "singleText"
         default:
             "singleText"
         }
