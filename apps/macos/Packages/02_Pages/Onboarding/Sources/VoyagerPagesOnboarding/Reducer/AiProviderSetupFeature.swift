@@ -14,66 +14,70 @@ struct AiProviderSetupFeature {
     var verificationClient
 
     var body: some Reducer<State, Action> {
-        Reduce { state, action in
-            switch action {
-            case .onAppear:
-                guard !state.didBootstrap else { return .none }
-                state.didBootstrap = true
-                state.bootstrapPhase = .loading
-                state.loadError = nil
-                return Self.bootstrapEffect(
-                    connectionsFileClient: connectionsFileClient,
-                    verificationClient: verificationClient,
-                )
+        CombineReducers {
+            EmptyReducer()
+                .forEach(\.rows, action: \.row) {
+                    AiConnectionRowReducer()
+                }
 
-            case .retryBootstrapTapped:
-                state.bootstrapPhase = .loading
-                state.loadError = nil
-                return Self.bootstrapEffect(
-                    connectionsFileClient: connectionsFileClient,
-                    verificationClient: verificationClient,
-                )
-
-            case .setUpLaterTapped:
-                return .none
-
-            case let .bootstrapCompleted(results):
-                Self.applyBootstrapResults(results, to: &state)
-                state.bootstrapPhase = .loaded
-                state.loadError = nil
-                state.refreshStatus()
-                return .none
-
-            case let .bootstrapVerificationCompleted(results):
-                Self.applyBootstrapResults(results, to: &state)
-                state.bootstrapPhase = .loaded
-                state.loadError = nil
-                state.refreshStatus()
-                return .none
-
-            case .bootstrapFailed:
-                state.bootstrapPhase = .failed
-                state.loadError = "Failed to load AI connections."
-                state.refreshStatus()
-                return .none
-
-            case let .row(.element(id: _, action: rowAction)):
-                state.refreshStatus()
-                if Self.shouldReloadLatestStatus(after: rowAction) {
+            Reduce { state, action in
+                switch action {
+                case .onAppear:
+                    guard !state.didBootstrap else { return .none }
+                    state.didBootstrap = true
+                    state.bootstrapPhase = .loading
+                    state.loadError = nil
                     return Self.bootstrapEffect(
                         connectionsFileClient: connectionsFileClient,
                         verificationClient: verificationClient,
                     )
-                }
-                return .none
 
-            case .row:
-                state.refreshStatus()
-                return .none
+                case .retryBootstrapTapped:
+                    state.bootstrapPhase = .loading
+                    state.loadError = nil
+                    return Self.bootstrapEffect(
+                        connectionsFileClient: connectionsFileClient,
+                        verificationClient: verificationClient,
+                    )
+
+                case .setUpLaterTapped:
+                    return .none
+
+                case let .bootstrapCompleted(results):
+                    Self.applyBootstrapResults(results, to: &state)
+                    state.bootstrapPhase = .loaded
+                    state.loadError = nil
+                    state.refreshStatus()
+                    return .none
+
+                case let .bootstrapVerificationCompleted(results):
+                    Self.applyBootstrapResults(results, to: &state)
+                    state.bootstrapPhase = .loaded
+                    state.loadError = nil
+                    state.refreshStatus()
+                    return .none
+
+                case .bootstrapFailed:
+                    state.bootstrapPhase = .failed
+                    state.loadError = "Failed to load AI connections."
+                    state.refreshStatus()
+                    return .none
+
+                case let .row(.element(id: _, action: rowAction)):
+                    state.refreshStatus()
+                    if Self.shouldReloadLatestStatus(after: rowAction) {
+                        return Self.bootstrapEffect(
+                            connectionsFileClient: connectionsFileClient,
+                            verificationClient: verificationClient,
+                        )
+                    }
+                    return .none
+
+                case .row:
+                    state.refreshStatus()
+                    return .none
+                }
             }
-        }
-        .forEach(\.rows, action: \.row) {
-            AiConnectionRowReducer()
         }
     }
 
