@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class SpotlightQueryCompilerTodayTests: XCTestCase {
-    func testCompilePlanPushesDownTagNamesToUserTags() throws {
+    func testCompilePlanPushesDownCategoricalTagNamesToColoredUserTags() throws {
         let compiler = try makeCompiler()
         let condition = SearchConditionPayload(
             propertyKey: "tag_names",
@@ -16,6 +16,22 @@ final class SpotlightQueryCompilerTodayTests: XCTestCase {
         let plan = try compiler.compilePlan(conditions: [condition])
 
         XCTAssertEqual(plan.pushdownConditions.count, 1)
+        XCTAssertTrue(plan.predicate.contains("kMDItemUserTags == \"Work\"c"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemUserTags == \"Work\n*\"c"))
+    }
+
+    func testCompilePlanPushesDownCategoricalTagNamesNoneToColoredUserTagsNegation() throws {
+        let compiler = try makeCompiler()
+        let condition = SearchConditionPayload(
+            propertyKey: "tag_names",
+            operator: "none",
+            value: .array([.string("Work")]),
+        )
+
+        let plan = try compiler.compilePlan(conditions: [condition])
+
+        XCTAssertEqual(plan.pushdownConditions.count, 1)
+        XCTAssertTrue(plan.predicate.contains("!("))
         XCTAssertTrue(plan.predicate.contains("kMDItemUserTags == \"Work\"c"))
         XCTAssertTrue(plan.predicate.contains("kMDItemUserTags == \"Work\n*\"c"))
     }

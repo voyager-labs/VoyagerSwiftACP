@@ -19,6 +19,30 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         return (path, showHidden)
     }
 
+    private func extractLoadRecentItems(from action: FileManagerContentAction) -> Bool? {
+        let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)
+        let eoAction = evAction.flatMap { (/EntryViewLayoutFeature.Action.entryOperations).extract(from: $0) }
+        let loadingAction = eoAction.flatMap { (/EntryOperationsAction.loading).extract(from: $0) }
+        guard let loadingAction, case let .loadRecentItems(showHidden) = loadingAction else { return nil }
+        return showHidden
+    }
+
+    private func extractLoadTagItems(from action: FileManagerContentAction) -> (tagName: String, showHidden: Bool)? {
+        let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)
+        let eoAction = evAction.flatMap { (/EntryViewLayoutFeature.Action.entryOperations).extract(from: $0) }
+        let loadingAction = eoAction.flatMap { (/EntryOperationsAction.loading).extract(from: $0) }
+        guard let loadingAction, case let .loadTagItems(tagName, showHidden) = loadingAction else { return nil }
+        return (tagName, showHidden)
+    }
+
+    private func isLoadComputerItems(_ action: FileManagerContentAction) -> Bool {
+        let evAction = (/FileManagerContentAction.entryViewLayout).extract(from: action)
+        let eoAction = evAction.flatMap { (/EntryViewLayoutFeature.Action.entryOperations).extract(from: $0) }
+        let loadingAction = eoAction.flatMap { (/EntryOperationsAction.loading).extract(from: $0) }
+        guard let loadingAction, case .loadComputerItems = loadingAction else { return false }
+        return true
+    }
+
     /// testFileSystemChangedReloadsCurrentFolderForDirectChildPath 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testFileSystemChangedReloadsCurrentFolderForDirectChildPath() async {
         var initialState = FileManagerContentState()
@@ -89,8 +113,8 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
         await store.finish()
     }
 
-    /// testFileSystemChangedDoesNotReloadRecentsRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
-    func testFileSystemChangedDoesNotReloadRecentsRoute() async {
+    /// testFileSystemChangedReloadsRecentsRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testFileSystemChangedReloadsRecentsRoute() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .recents
 
@@ -98,12 +122,17 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             FileManagerContentFeature()
         }
 
+        store.exhaustivity = .off
+
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
-        await store.finish()
+        await store.receive { action in
+            guard let showHidden = self.extractLoadRecentItems(from: action) else { return false }
+            return !showHidden
+        }
     }
 
-    /// testFileSystemChangedDoesNotReloadTagRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
-    func testFileSystemChangedDoesNotReloadTagRoute() async {
+    /// testFileSystemChangedReloadsTagRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testFileSystemChangedReloadsTagRoute() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .tags("blue")
 
@@ -111,12 +140,17 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             FileManagerContentFeature()
         }
 
+        store.exhaustivity = .off
+
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
-        await store.finish()
+        await store.receive { action in
+            guard let result = self.extractLoadTagItems(from: action) else { return false }
+            return result.tagName == "blue" && !result.showHidden
+        }
     }
 
-    /// testFileSystemChangedDoesNotReloadComputerRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
-    func testFileSystemChangedDoesNotReloadComputerRoute() async {
+    /// testFileSystemChangedReloadsComputerRoute 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testFileSystemChangedReloadsComputerRoute() async {
         var initialState = FileManagerContentState()
         initialState.navigation.navigationState = .computer
 
@@ -124,7 +158,11 @@ final class FileManagerContentExternalReloadTests: XCTestCase {
             FileManagerContentFeature()
         }
 
+        store.exhaustivity = .off
+
         await store.send(.externalFileSystemChanged(["/tmp/voyager/a.txt"]))
-        await store.finish()
+        await store.receive { action in
+            self.isLoadComputerItems(action)
+        }
     }
 }
