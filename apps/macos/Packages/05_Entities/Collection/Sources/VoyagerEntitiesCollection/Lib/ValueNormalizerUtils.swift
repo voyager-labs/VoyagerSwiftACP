@@ -25,8 +25,8 @@ public enum ValueNormalizerUtils {
 
     public static func canonicalSingleDateString(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let relativeDate = canonicalRelativeDateLiteral(trimmed) {
-            return relativeDate
+        if let literal = RelativeDateConditionLiteral(canonicalLiteral: trimmed) {
+            return literal.encodedLiteral()
         }
         return formatDateOnlyString(trimmed)
     }
@@ -133,24 +133,6 @@ public enum ValueNormalizerUtils {
     private static func requireNonEmpty(_ texts: [String]) -> [String]? {
         let trimmed = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         return trimmed.contains(where: \.isEmpty) ? nil : trimmed
-    }
-
-    private static func canonicalRelativeDateLiteral(_ text: String) -> String? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = trimmed.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 6,
-              parts[0] == "voyager.relativeDate",
-              parts[1] == "v1",
-              ["past", "future"].contains(parts[2]),
-              let amount = Int(parts[3]),
-              amount > 0,
-              ["day", "week", "month", "year"].contains(parts[4]),
-              let anchorDate = DateNormalizerUtils.parseDate(parts[5]),
-              DateNormalizerUtils.formatDateOnly(anchorDate) == parts[5]
-        else {
-            return nil
-        }
-        return parts.joined(separator: ":")
     }
 
     private static func splitList(_ text: String) -> [String] {

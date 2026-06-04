@@ -1,40 +1,10 @@
 import Foundation
+import VoyagerShared
 
 enum SearchDateUtils {
-    private enum RelativeDirection: String {
-        case past
-        case future
-    }
+    private static let utcTimeZone: TimeZone = .init(secondsFromGMT: 0) ?? .gmt
 
-    private enum RelativeUnit: String {
-        case day
-        case week
-        case month
-        case year
-
-        var calendarComponent: Calendar.Component {
-            switch self {
-            case .day:
-                .day
-            case .week:
-                .weekOfYear
-            case .month:
-                .month
-            case .year:
-                .year
-            }
-        }
-    }
-
-    private struct RelativeDateLiteral {
-        let direction: RelativeDirection
-        let amount: Int
-        let unit: RelativeUnit
-    }
-
-    private nonisolated static let utcTimeZone: TimeZone = .init(secondsFromGMT: 0) ?? .gmt
-
-    private nonisolated static let calendar: Calendar = {
+    private static let calendar: Calendar = {
         var calendar = Calendar(identifier: .iso8601)
         calendar.timeZone = utcTimeZone
         return calendar
@@ -53,8 +23,8 @@ enum SearchDateUtils {
             return resolveTodayOffset(offset, now: now)
         }
 
-        if let relative = parseRelativeDateLiteral(text) {
-            return resolveRelativeDateLiteral(relative, now: now)
+        if let relative = RelativeDateConditionLiteral.parse(text) {
+            return relative.resolve(now: now, calendar: calendar)
         }
 
         return parseAbsoluteDateLiteral(text)
@@ -68,7 +38,7 @@ enum SearchDateUtils {
             return Int(rawOffset.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
-        guard let relative = parseRelativeDateLiteral(text) else {
+        guard let relative = RelativeDateConditionLiteral.parse(text) else {
             return nil
         }
 
@@ -122,29 +92,6 @@ enum SearchDateUtils {
     private static func resolveTodayOffset(_ offset: Int, now: Date) -> Date? {
         let start = calendar.startOfDay(for: now)
         return calendar.date(byAdding: .day, value: offset, to: start)
-    }
-
-    private static func resolveRelativeDateLiteral(_ literal: RelativeDateLiteral, now: Date) -> Date? {
-        let start = calendar.startOfDay(for: now)
-        let signedAmount = literal.direction == .past ? -literal.amount : literal.amount
-        return calendar.date(byAdding: literal.unit.calendarComponent, value: signedAmount, to: start)
-    }
-
-    private static func parseRelativeDateLiteral(_ text: String) -> RelativeDateLiteral? {
-        let parts = text.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 6,
-              parts[0] == "voyager.relativeDate",
-              parts[1] == "v1",
-              let direction = RelativeDirection(rawValue: parts[2]),
-              let amount = Int(parts[3]),
-              amount > 0,
-              let unit = RelativeUnit(rawValue: parts[4]),
-              isDateOnlyLiteral(parts[5])
-        else {
-            return nil
-        }
-
-        return RelativeDateLiteral(direction: direction, amount: amount, unit: unit)
     }
 
     private static func normalizeTimeLiteral(_ literal: String) -> String {

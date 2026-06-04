@@ -46,8 +46,8 @@ public enum AppliedFilterValueUtils {
     private static func normalizeDateString(_ text: String, valueUIKind: String) -> String? {
         switch valueUIKind {
         case "singleDate":
-            if let relativeDate = canonicalRelativeDateLiteral(text) {
-                return relativeDate
+            if let literal = RelativeDateConditionLiteral(canonicalLiteral: text) {
+                return literal.encodedLiteral()
             }
             guard let date = DateNormalizerUtils.parseDate(text) else { return nil }
             return DateNormalizerUtils.formatDateOnly(date)
@@ -61,24 +61,6 @@ public enum AppliedFilterValueUtils {
 
     private static func isDateValueUIKind(_ valueUIKind: String) -> Bool {
         valueUIKind == "singleDate" || valueUIKind == "rangeDate"
-    }
-
-    private static func canonicalRelativeDateLiteral(_ text: String) -> String? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = trimmed.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 6,
-              parts[0] == "voyager.relativeDate",
-              parts[1] == "v1",
-              ["past", "future"].contains(parts[2]),
-              let amount = Int(parts[3]),
-              amount > 0,
-              ["day", "week", "month", "year"].contains(parts[4]),
-              let anchorDate = DateNormalizerUtils.parseDate(parts[5]),
-              DateNormalizerUtils.formatDateOnly(anchorDate) == parts[5]
-        else {
-            return nil
-        }
-        return parts.joined(separator: ":")
     }
 
     private static func formatNumber(_ value: Double) -> String {
