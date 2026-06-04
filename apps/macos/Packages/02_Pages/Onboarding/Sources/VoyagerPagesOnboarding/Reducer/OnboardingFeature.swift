@@ -23,6 +23,9 @@ struct OnboardingFeature {
         Scope(state: \.permissions, action: \.permissions) {
             PermissionsFeature()
         }
+        Scope(state: \.aiProviderSetup, action: \.aiProviderSetup) {
+            AiProviderSetupFeature()
+        }
         Scope(state: \.complete, action: \.complete) {
             CompleteFeature()
         }
@@ -89,7 +92,7 @@ struct OnboardingFeature {
             case .complete(.openWindowResponse(false)):
                 return .none
 
-            case .welcome, .betaAccess, .permissions, .complete:
+            case .welcome, .betaAccess, .permissions, .aiProviderSetup, .complete:
                 let snapshot = state.progressSnapshot
                 return .run { _ in
                     progressClient.save(snapshot)

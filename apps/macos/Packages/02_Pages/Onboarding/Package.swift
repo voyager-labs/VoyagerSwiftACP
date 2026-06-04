@@ -12,6 +12,7 @@ let kPackage = Package(
     dependencies: [
         .package(name: "VoyagerFeaturesBetaAccess", path: "../../04_Features/BetaAccess"),
         .package(path: "../../05_Entities/AppPreferences"),
+        .package(path: "../../05_Entities/Ai"),
         .package(path: "../../06_Shared/VoyagerShared"),
         .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.7.2"),
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.22.3"),
@@ -23,6 +24,7 @@ let kPackage = Package(
             name: "VoyagerPagesOnboarding",
             dependencies: [
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
+                .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "VoyagerFeaturesBetaAccess", package: "VoyagerFeaturesBetaAccess"),
                 .product(name: "CasePaths", package: "swift-case-paths"),
@@ -37,6 +39,7 @@ let kPackage = Package(
             dependencies: [
                 "VoyagerPagesOnboarding",
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
+                .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerFeaturesBetaAccess", package: "VoyagerFeaturesBetaAccess"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),

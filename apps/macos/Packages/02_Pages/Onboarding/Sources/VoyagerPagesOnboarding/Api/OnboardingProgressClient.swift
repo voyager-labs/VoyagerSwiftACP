@@ -15,13 +15,14 @@ struct OnboardingProgressClient {
 }
 
 extension OnboardingProgressClient: DependencyKey {
-    nonisolated private enum Keys {
+    // swiftlint:disable:next modifier_order
+    private nonisolated enum Keys {
         static let version = "onboardingProgressVersion"
         static let currentStep = "onboardingCurrentStep"
         static let stepState = "onboardingStepState"
     }
 
-    nonisolated static let currentVersion = 1.1
+    nonisolated static let currentVersion = 1.2
 
     nonisolated static var liveValue: OnboardingProgressClient {
         OnboardingProgressClient(
