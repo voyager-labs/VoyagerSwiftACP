@@ -34,6 +34,35 @@ final class SpotlightQueryCompilerTodayTests: XCTestCase {
         XCTAssertTrue(plan.predicate.contains("kMDItemLastUsedDate > $time.today(-1000000)"))
     }
 
+    func testTodayOffsetLiteralUsesDayBoundsForDateEquality() throws {
+        let compiler = try makeCompiler()
+        let condition = SearchConditionPayload(
+            propertyKey: "creation_date",
+            operator: "eq",
+            value: .string("$time.today(0)"),
+        )
+
+        let plan = try compiler.compilePlan(conditions: [condition])
+
+        XCTAssertTrue(plan.predicate.contains("kMDItemContentCreationDate >= $time.today(0)"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemContentCreationDate < $time.today(1)"))
+        XCTAssertFalse(plan.predicate.contains("kMDItemContentCreationDate == $time.today(0)"))
+    }
+
+    func testTodayOffsetLiteralUsesNextDayBoundForGreaterThan() throws {
+        let compiler = try makeCompiler()
+        let condition = SearchConditionPayload(
+            propertyKey: "creation_date",
+            operator: "gt",
+            value: .string("$time.today(0)"),
+        )
+
+        let plan = try compiler.compilePlan(conditions: [condition])
+
+        XCTAssertTrue(plan.predicate.contains("kMDItemContentCreationDate >= $time.today(1)"))
+        XCTAssertFalse(plan.predicate.contains("kMDItemContentCreationDate > $time.today(0)"))
+    }
+
     func testTodayOffsetLiteralParsesIntoSignedOffset() {
         XCTAssertEqual(SearchDateUtils.todayOffset(for: "$time.today(-1000000)"), -1_000_000)
         XCTAssertNotNil(SearchDateUtils.parseDateLiteral("$time.today(-1000000)"))

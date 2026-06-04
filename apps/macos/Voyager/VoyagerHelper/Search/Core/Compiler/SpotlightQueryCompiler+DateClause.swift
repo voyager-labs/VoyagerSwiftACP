@@ -68,7 +68,11 @@ extension SpotlightQueryCompiler {
             operatorCode: condition.operator,
         )
 
-        if isTodayFunctionLiteral(literal) {
+        if isRecentsTodayPushdownLiteral(
+            literal,
+            propertyKey: condition.propertyKey,
+            operatorCode: condition.operator,
+        ) {
             return buildTodayDateComparisonClause(
                 attribute: attribute,
                 literal: literal,
@@ -143,9 +147,14 @@ extension SpotlightQueryCompiler {
         }
     }
 
-    private func isTodayFunctionLiteral(_ literal: String) -> Bool {
-        let text = literal.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.hasPrefix("$time.today(") && text.hasSuffix(")")
+    private func isRecentsTodayPushdownLiteral(
+        _ literal: String,
+        propertyKey: String,
+        operatorCode: String,
+    ) -> Bool {
+        literal.trimmingCharacters(in: .whitespacesAndNewlines) == "$time.today(-1000000)"
+            && propertyKey == "last_used_date"
+            && operatorCode == "gt"
     }
 
     private func buildTodayClause(attribute: String) -> String {
