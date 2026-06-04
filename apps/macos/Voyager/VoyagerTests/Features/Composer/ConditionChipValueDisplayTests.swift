@@ -51,6 +51,19 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         XCTAssertEqual(displayed, ["2026-02-01", "2026-02-10"])
     }
 
+    /// testDisplayedValuesForDateMapsRecentsTodayOffsetToFriendlyText 테스트 동작을 검증한다.
+    func testDisplayedValuesForDateMapsRecentsTodayOffsetToFriendlyText() {
+        let displayed = ConditionChipDisplayUtils.displayedValuesForDate(
+            conditionValues: ["$time.today(-1000000)"],
+            conditionPropertyKey: "last_used_date",
+            pickerPropertyKey: nil,
+            pickerPresented: false,
+            pickerValues: [],
+        )
+
+        XCTAssertEqual(displayed, ["Ever opened"])
+    }
+
     /// testFormattedValueTextForDateRangeUsesHyphen 테스트 동작을 검증한다.
     func testFormattedValueTextForDateRangeUsesHyphen() {
         let text = ConditionChipDisplayUtils.displayValueText(for: makeCondition(
@@ -71,6 +84,17 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         ))
 
         XCTAssertEqual(text, "2026-02-01")
+    }
+
+    /// testFormattedValueTextForRecentsTodayOffsetUsesEverOpenedText 테스트 동작을 검증한다.
+    func testFormattedValueTextForRecentsTodayOffsetUsesEverOpenedText() {
+        let text = ConditionChipDisplayUtils.displayValueText(for: makeCondition(
+            propertyKey: "last_used_date",
+            valueType: "date",
+            values: ["$time.today(-1000000)"],
+        ))
+
+        XCTAssertEqual(text, "Ever opened")
     }
 
     /// testFormattedValueTextForNumberRangeUsesHyphen 테스트 동작을 검증한다.

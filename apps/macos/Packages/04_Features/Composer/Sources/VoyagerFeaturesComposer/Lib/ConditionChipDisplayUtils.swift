@@ -7,9 +7,9 @@ enum ConditionChipDisplayUtils {
         guard let values, !values.isEmpty else { return "Value" }
 
         if condition.valueType == "date" || condition.valueType == "datetime" {
-            let first = ValueNormalizerUtils.formatDateOnlyString(values[0]) ?? values[0]
+            let first = displayDateValueText(values[0])
             if values.count >= 2 {
-                let second = ValueNormalizerUtils.formatDateOnlyString(values[1]) ?? values[1]
+                let second = displayDateValueText(values[1])
                 if first == second {
                     return first
                 }
@@ -44,9 +44,18 @@ enum ConditionChipDisplayUtils {
         pickerPresented: Bool,
         pickerValues: [String],
     ) -> [String]? {
-        if pickerPresented, pickerPropertyKey == conditionPropertyKey {
-            return pickerValues
+        let values = if pickerPresented, pickerPropertyKey == conditionPropertyKey {
+            pickerValues
+        } else {
+            conditionValues
         }
-        return conditionValues
+        return values?.map(displayDateValueText)
+    }
+
+    static func displayDateValueText(_ value: String) -> String {
+        if value == "$time.today(-1000000)" {
+            return "Ever opened"
+        }
+        return ValueNormalizerUtils.formatDateOnlyString(value) ?? value
     }
 }
