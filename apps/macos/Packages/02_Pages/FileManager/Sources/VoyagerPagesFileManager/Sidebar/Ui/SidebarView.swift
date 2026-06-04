@@ -56,7 +56,6 @@ struct SidebarView: View {
             }
             .clipped()
         }
-        .frame(minWidth: 150)
         .background(Color.clear)
         .onAppear {
             store.send(.internal(.startObservingSystemNotifications))
@@ -65,13 +64,5 @@ struct SidebarView: View {
             store.send(.internal(.stopObservingSystemNotifications))
         }
         .navigationSplitViewColumnWidth(ideal: store.sidebarWidth)
-        .background(
-            GeometryReader { geometry in
-                Color.clear
-                    .onChange(of: geometry.size.width) { newWidth in
-                        store.send(.view(.setSidebarWidth(newWidth)))
-                    }
-            },
-        )
     }
 }

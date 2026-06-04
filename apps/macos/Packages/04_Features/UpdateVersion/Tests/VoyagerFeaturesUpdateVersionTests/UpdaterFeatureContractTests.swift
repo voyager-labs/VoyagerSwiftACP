@@ -115,8 +115,13 @@ final class UpdaterFeatureContractTests: XCTestCase {
     func testSetAutomaticUpdateCallsClient() async {
         actor ValueHolder {
             var value: Bool?
-            func set(_ newValue: Bool) { value = newValue }
-            func get() -> Bool? { value }
+            func set(_ newValue: Bool) {
+                value = newValue
+            }
+
+            func get() -> Bool? {
+                value
+            }
         }
         let holder = ValueHolder()
 

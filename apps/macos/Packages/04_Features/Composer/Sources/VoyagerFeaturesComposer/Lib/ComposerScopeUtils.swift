@@ -12,7 +12,7 @@ public enum ComposerScopeUtils {
         public let locationIdentifier: String?
         public let secondaryText: String?
 
-        public nonisolated init(
+        nonisolated public init(
             id: String,
             path: String,
             name: String,
@@ -47,7 +47,7 @@ public enum ComposerScopeUtils {
         let options: FileManager.DirectoryEnumerationOptions
     }
 
-    public nonisolated static let rootScopePath = "/"
+    nonisolated public static let rootScopePath = "/"
 
     nonisolated static func applyCandidateDisambiguationPolicy(_ items: [DirectoryItem]) -> [DirectoryItem] {
         let groups = Dictionary(grouping: items.enumerated(), by: { $0.element.name })
@@ -180,7 +180,7 @@ public enum ComposerScopeUtils {
         return result
     }
 
-    private nonisolated static func isTraversalExcluded(_ path: String, currentDepth: Int) -> Bool {
+    nonisolated private static func isTraversalExcluded(_ path: String, currentDepth: Int) -> Bool {
         if currentDepth == 0 {
             let systemPrefixes = ["/System", "/Library", "/private", "/usr", "/bin", "/sbin", "/var"]
             if systemPrefixes.contains(where: { path.hasPrefix($0) }) {
@@ -193,11 +193,11 @@ public enum ComposerScopeUtils {
             return true
         }
 
-        let excludedNames: Set<String> = ["build", "DerivedData", "node_modules"]
+        let excludedNames: Set = ["build", "DerivedData", "node_modules"]
         return excludedNames.contains(name)
     }
 
-    private nonisolated static func processDirectoryItem(
+    nonisolated private static func processDirectoryItem(
         at fullPath: String,
         quickName: String,
         results: inout [DirectoryItem],
@@ -229,7 +229,7 @@ public enum ComposerScopeUtils {
         )
     }
 
-    private nonisolated static func makeSearchPaths(homeDir: String) -> [String] {
+    nonisolated private static func makeSearchPaths(homeDir: String) -> [String] {
         var searchPaths = [
             FileManager.default.currentDirectoryPath,
             homeDir,
@@ -242,7 +242,7 @@ public enum ComposerScopeUtils {
         return searchPaths
     }
 
-    private nonisolated static func shouldStopSearch(
+    nonisolated private static func shouldStopSearch(
         resultsCount: Int,
         context: SearchExecutionContext,
     ) -> Bool {
@@ -251,7 +251,7 @@ public enum ComposerScopeUtils {
         return resultsCount >= context.match.candidateLimit
     }
 
-    private nonisolated static func shouldSkipNode(
+    nonisolated private static func shouldSkipNode(
         _ node: (path: String, depth: Int),
         seenPaths: inout Set<String>,
         context: SearchExecutionContext,
@@ -261,7 +261,7 @@ public enum ComposerScopeUtils {
         return isTraversalExcluded(node.path, currentDepth: node.depth)
     }
 
-    private nonisolated static func directoryContents(
+    nonisolated private static func directoryContents(
         at path: String,
         entryLoadingClient: EntryLoadingClient,
         context: SearchExecutionContext,
@@ -270,7 +270,7 @@ public enum ComposerScopeUtils {
         return try? entryLoadingClient.contentsOfDirectory(pathURL, context.resourceKeys, context.options)
     }
 
-    private nonisolated static func processDirectoryContents(
+    nonisolated private static func processDirectoryContents(
         _ contents: [URL],
         currentDepth: Int,
         queue: inout [(path: String, depth: Int)],
@@ -301,7 +301,7 @@ public enum ComposerScopeUtils {
         }
     }
 
-    private nonisolated static func bfsSearchDirectories(
+    nonisolated private static func bfsSearchDirectories(
         searchPaths: [String],
         context: SearchExecutionContext,
         entryLoadingClient: EntryLoadingClient,

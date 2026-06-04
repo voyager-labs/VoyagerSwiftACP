@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -16,6 +17,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)
     case applyAppPreferences(AppPreferencesState)
+    case aiConnectionsFileUpdated(AIConnectionsFile)
 
     case onAppear
     case onDisappear
@@ -40,6 +42,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case requestUndo
         case requestRedo
         case toggleComposer
+        case openContextualAiChat
+        case presentContextualAiChat
         case cut
         case copy
         case paste
@@ -54,5 +58,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     public enum Delegate: Sendable {
         case openPathInNewWindow(String)
         case openPathInNewTab(String)
+        case openAISettings
+        case requestAttachmentPicker
     }
 }

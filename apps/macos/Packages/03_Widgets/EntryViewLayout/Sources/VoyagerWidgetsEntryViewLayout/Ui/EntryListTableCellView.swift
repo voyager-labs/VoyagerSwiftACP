@@ -1,5 +1,4 @@
 @preconcurrency import AppKit
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
@@ -40,7 +39,7 @@ private enum EntryListCellDateFormatting {
     }
 
     private static let lock = NSLock()
-    private nonisolated(unsafe) static var cache: [CacheKey: DateFormatter] = [:]
+    nonisolated(unsafe) private static var cache: [CacheKey: DateFormatter] = [:]
 
     static func template(forWidth width: CGFloat) -> String {
         guard width.isFinite, width > 0 else { return "yMd" }

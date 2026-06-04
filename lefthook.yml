@@ -3,6 +3,10 @@
 
 post-checkout:
   commands:
+    mise-install:
+      run: mise install
+    lefthook-install:
+      run: lefthook install
     submodules:
       run: git submodule update --init --recursive
     codegraph:
@@ -16,6 +20,14 @@ post-merge:
 pre-commit:
   parallel: true
   commands:
+    sisyphus-artifacts-guard:
+      run: |
+        staged=$(git diff --cached --name-only)
+        if echo "$staged" | grep -qE '^\.sisyphus/'; then
+          echo "ERROR: .sisyphus/ paths are staged for commit. These are local-only agent harness artifacts." >&2
+          echo "Run: git reset HEAD -- .sisyphus/" >&2
+          exit 1
+        fi
     swiftformat:
       glob: "apps/macos/**/*.swift"
       run: mise exec -- swiftformat --config apps/macos/.swiftformat --lint {staged_files}

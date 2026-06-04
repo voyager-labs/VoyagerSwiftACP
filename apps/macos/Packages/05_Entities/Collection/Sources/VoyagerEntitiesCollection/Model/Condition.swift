@@ -13,7 +13,9 @@ public struct Condition: Equatable, Identifiable, Hashable, Sendable {
     public var values: [String]?
     public var isActive: Bool = true
 
-    public var id: String { propertyKey }
+    public var id: String {
+        propertyKey
+    }
 
     public var isSearchReady: Bool {
         guard isActive else { return false }

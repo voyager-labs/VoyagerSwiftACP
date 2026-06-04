@@ -4,7 +4,7 @@ import VoyagerFeaturesUpdateVersion
 import VoyagerPagesSettings
 
 @CasePathable
-enum AppRootAction: CasePathable, Sendable {
+enum AppRootAction: CasePathable {
     case lifecycle(AppLifecycleFeature.Action)
     case appDidBecomeActive
     case startHelperExternalFileBridge
@@ -14,6 +14,7 @@ enum AppRootAction: CasePathable, Sendable {
     case pendingReplayLoaded([String])
     case registerHelperWatchRootsIfNeeded
     case registerHelperWatchRoots([String])
+    case openAISettings
     case appPreferences(AppPreferencesFeature.Action)
     case windowManager(WindowManagerFeature.Action)
     case updater(UpdaterFeature.Action)

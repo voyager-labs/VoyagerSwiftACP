@@ -1,3 +1,4 @@
+// swiftlint:disable type_name
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesCollection
@@ -30,3 +31,5 @@ final class ContentThumbnailOwnershipTests: XCTestCase {
         XCTAssertEqual(store.state.entryViewLayout.entryThumbnail.readyPaths, ["/tmp/file1.txt"])
     }
 }
+
+// swiftlint:enable type_name

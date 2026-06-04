@@ -57,6 +57,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case openPathInNewTab(String)
         case startRename(item: EntryModel, text: String)
         case saveScrollOffset(CGPoint, forPath: String)
+        case selectionChanged
     }
 
     @CasePathable

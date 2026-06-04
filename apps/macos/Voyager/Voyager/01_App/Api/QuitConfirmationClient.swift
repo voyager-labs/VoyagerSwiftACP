@@ -1,11 +1,12 @@
 import ComposableArchitecture
+import Foundation
 
-struct QuitConfirmationResult: Equatable, Sendable {
+struct QuitConfirmationResult: Equatable {
     var shouldQuit: Bool
     var isAlertBeforeQuitEnabled: Bool
 }
 
-struct QuitConfirmationClient: Sendable {
+struct QuitConfirmationClient {
     var confirmQuit: @Sendable (_ isIndexingInProgress: Bool, _ isAlertBeforeQuitEnabled: Bool) async
         -> QuitConfirmationResult
 
@@ -53,5 +54,38 @@ extension DependencyValues {
     nonisolated var quitConfirmationClient: QuitConfirmationClient {
         get { self[QuitConfirmationClient.self] }
         set { self[QuitConfirmationClient.self] = newValue }
+    }
+}
+
+struct AttachmentPickerClient: Sendable {
+    var pickAttachments: @Sendable () async -> [URL]
+
+    nonisolated init(pickAttachments: @escaping @Sendable () async -> [URL]) {
+        self.pickAttachments = pickAttachments
+    }
+}
+
+extension AttachmentPickerClient: DependencyKey {
+    nonisolated static var liveValue: AttachmentPickerClient {
+        .init(pickAttachments: {
+            await MainActor.run {
+                AttachmentPickerPresenter.pickAttachments()
+            }
+        })
+    }
+
+    nonisolated static var testValue: AttachmentPickerClient {
+        .init(pickAttachments: { [] })
+    }
+
+    nonisolated static var previewValue: AttachmentPickerClient {
+        testValue
+    }
+}
+
+extension DependencyValues {
+    nonisolated var attachmentPickerClient: AttachmentPickerClient {
+        get { self[AttachmentPickerClient.self] }
+        set { self[AttachmentPickerClient.self] = newValue }
     }
 }

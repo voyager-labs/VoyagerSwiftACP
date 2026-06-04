@@ -2,7 +2,7 @@ import ComposableArchitecture
 import VoyagerFeaturesBetaAccess
 
 @CasePathable
-enum OnboardingAction: CasePathable, Sendable {
+enum OnboardingAction: CasePathable {
     case onAppear
     case backTapped
     case nextTapped

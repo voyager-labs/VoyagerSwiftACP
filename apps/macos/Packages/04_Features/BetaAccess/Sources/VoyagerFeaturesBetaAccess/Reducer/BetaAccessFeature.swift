@@ -19,15 +19,26 @@ public struct BetaAccessFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
+                if state.needsReverification {
+                    state.needsReverification = false
+                    return verify(&state)
+                }
+                if state.isComplete, state.status == .active {
+                    return .none
+                }
                 return verify(&state)
 
             case let .emailChanged(email):
+                let wasComplete = state.isComplete
+                let didChange = state.email != email
                 state.email = email
-                return handleInputChange(&state)
+                return handleInputChange(&state, wasComplete: wasComplete, didChange: didChange)
 
             case let .tokenChanged(token):
+                let wasComplete = state.isComplete
+                let didChange = state.token != token
                 state.token = token
-                return handleInputChange(&state)
+                return handleInputChange(&state, wasComplete: wasComplete, didChange: didChange)
 
             case .checkTapped, .retryTapped:
                 return verify(&state)
@@ -40,7 +51,12 @@ public struct BetaAccessFeature {
         }
     }
 
-    private func handleInputChange(_ state: inout State) -> Effect<Action> {
+    private func handleInputChange(
+        _ state: inout State, wasComplete: Bool, didChange: Bool,
+    ) -> Effect<Action> {
+        if wasComplete, didChange {
+            state.updateStatus(.notActive, reason: .none)
+        }
         if state.email.isEmpty || state.token.isEmpty {
             state.updateStatus(.notActive, reason: .missingInput)
         } else if state.status == .notActive, state.reason == .missingInput {

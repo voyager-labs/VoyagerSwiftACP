@@ -44,6 +44,16 @@ Use this file to accumulate Voyager-local development heuristics that are reusab
 - Normalize transient states at bootstrap — reset in-progress states (e.g., `connectInProgress` → `notVerified`, `disconnecting` → `disconnected`) to stable equivalents. Transient states from previous sessions should not persist across app launches.
 - Keep transient process/UI states from becoming durable semantic state at restore, effect-completion, cancellation, teardown, and view-disappear boundaries. Convert them to stable state or discard them at the owning reducer boundary.
 - Apply `@ObservableState` on the actual struct definition, not on a typealias. See `../../../../../rules/30-macos/02-tca-observation-lifecycle.md` for TCA observation patterns.
+- For reducers, wrappers, and child features that can all reach the same persistence client, choose one persistence owner. Route other layers through actions or delegate events instead of saving the same durable state twice.
+- When a feature defines delegate actions, every case should either be emitted by the reducer, consumed by a documented parent route, or removed. Reserved future delegate cases need a short Korean comment explaining the planned use.
+- Extract time-based and fallback behavior into named policy values or small policy types before the values become migration points. Avoid inline TTL, grace-period, retry, or cache-window arithmetic in reducer logic.
+- Keep fallback behavior intentionally narrow. A cached or synthetic success path should name the error categories that allow it; configuration, decoding, authorization, and invariant failures should normally surface rather than silently falling back.
+- For cross-system contracts, add at least one test that decodes or resolves a real/captured fixture shape. Mocks that use the app's model names are not enough to prove API field names, URL keys, or config resolution.
+- Use tiered config resolution for URL-like dependencies: feature-specific key first, shared base key second, neutral invalid fallback last. Never hardcode production URLs in dependency live values.
+- Keep credential and snapshot persistence separate by data sensitivity. Tokens, refresh credentials, license secrets, and provider secrets belong in secure storage; status snapshots, expiry metadata, and non-sensitive cache state may use ordinary persistence.
+- Prefer explicit action-chain observability for async results. If one handler should trigger another behavior, emit the downstream action with `.send(...)` unless there is a clear reason to keep the call private and unobservable.
+- Mock-first implementation seams must name the live replacement condition near the seam. Do not let a synthetic client response look like verified live behavior.
+- For foreground refresh or lifecycle refresh, prefer reducer-owned system observation plus signed-out no-op semantics over timer polling or view-owned service calls.
 
 ## Promotion test
 

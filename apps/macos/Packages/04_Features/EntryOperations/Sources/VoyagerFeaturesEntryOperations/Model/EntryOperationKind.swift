@@ -20,7 +20,7 @@ public enum OperationKind: Equatable, Hashable, Sendable {
     case extract
     case setTags
 
-    public nonisolated var isUndoable: Bool {
+    nonisolated public var isUndoable: Bool {
         switch self {
         case .createFolder,
              .createAlias,

@@ -1,12 +1,13 @@
 import Foundation
-
 import VoyagerShared
 
 public struct EntryArrangementMenuItem<Key: Hashable & Equatable & Sendable>: Identifiable, Equatable, Sendable {
     public let key: Key
     public let title: String
 
-    public var id: Key { key }
+    public var id: Key {
+        key
+    }
 }
 
 public typealias EntryArrangementSortMenuItem = EntryArrangementMenuItem<SortKey>

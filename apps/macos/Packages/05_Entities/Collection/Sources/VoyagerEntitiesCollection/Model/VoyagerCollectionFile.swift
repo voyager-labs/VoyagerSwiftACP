@@ -1,16 +1,16 @@
 import Foundation
 import VoyagerShared
 
-public nonisolated struct SchemaVersion: Codable, Equatable, Comparable, Sendable {
+nonisolated public struct SchemaVersion: Codable, Equatable, Comparable, Sendable {
     public let major: Int
     public let minor: Int
 
-    public nonisolated init(major: Int, minor: Int) {
+    nonisolated public init(major: Int, minor: Int) {
         self.major = major
         self.minor = minor
     }
 
-    public nonisolated init(legacyInt: Int) {
+    nonisolated public init(legacyInt: Int) {
         switch legacyInt {
         case 1:
             self.init(major: 1, minor: 0)
@@ -21,7 +21,7 @@ public nonisolated struct SchemaVersion: Codable, Equatable, Comparable, Sendabl
         }
     }
 
-    public nonisolated static func < (lhs: SchemaVersion, rhs: SchemaVersion) -> Bool {
+    nonisolated public static func < (lhs: SchemaVersion, rhs: SchemaVersion) -> Bool {
         lhs.major == rhs.major ? lhs.minor < rhs.minor : lhs.major < rhs.major
     }
 
@@ -30,7 +30,7 @@ public nonisolated struct SchemaVersion: Codable, Equatable, Comparable, Sendabl
         case minor
     }
 
-    public nonisolated init(from decoder: Decoder) throws {
+    nonisolated public init(from decoder: Decoder) throws {
         if let singleValue = try? decoder.singleValueContainer(),
            let intVersion = try? singleValue.decode(Int.self)
         {
@@ -45,7 +45,7 @@ public nonisolated struct SchemaVersion: Codable, Equatable, Comparable, Sendabl
         )
     }
 
-    public nonisolated func encode(to encoder: Encoder) throws {
+    nonisolated public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(major, forKey: .major)
         try container.encode(minor, forKey: .minor)
@@ -83,7 +83,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         case appVersion
     }
 
-    public nonisolated init(from decoder: Decoder) throws {
+    nonisolated public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try container.decode(SchemaVersion.self, forKey: .schemaVersion)
         id = try container.decode(String.self, forKey: .id)
@@ -100,7 +100,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         appVersion = try container.decodeIfPresent(String.self, forKey: .appVersion)
     }
 
-    public nonisolated func encode(to encoder: Encoder) throws {
+    nonisolated public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(schemaVersion, forKey: .schemaVersion)
         try container.encode(id, forKey: .id)
@@ -117,7 +117,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         try container.encodeIfPresent(appVersion, forKey: .appVersion)
     }
 
-    public nonisolated init(
+    nonisolated public init(
         schemaVersion: SchemaVersion,
         id: String,
         name: String,
@@ -147,7 +147,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         self.appVersion = appVersion
     }
 
-    public nonisolated init(
+    nonisolated public init(
         id: String,
         name: String,
         createdAt: Date,
@@ -182,18 +182,18 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
     }
 }
 
-public nonisolated struct CollectionPersistedSnapshot: Codable, Equatable, Sendable {
+nonisolated public struct CollectionPersistedSnapshot: Codable, Equatable, Sendable {
     public let items: [VoyagerShared.JSONValue]
 
     private enum CodingKeys: String, CodingKey {
         case items
     }
 
-    public nonisolated init(items: [VoyagerShared.JSONValue]) {
+    nonisolated public init(items: [VoyagerShared.JSONValue]) {
         self.items = items
     }
 
-    public nonisolated init(from decoder: Decoder) throws {
+    nonisolated public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let items = try container.decode([VoyagerShared.JSONValue].self, forKey: .items)
         guard items.allSatisfy({
@@ -209,7 +209,7 @@ public nonisolated struct CollectionPersistedSnapshot: Codable, Equatable, Senda
         self.items = items
     }
 
-    public nonisolated func encode(to encoder: Encoder) throws {
+    nonisolated public func encode(to encoder: Encoder) throws {
         guard items.allSatisfy({
             if case .string = $0 { return true }
             return false
@@ -227,13 +227,13 @@ public nonisolated struct CollectionPersistedSnapshot: Codable, Equatable, Senda
     }
 }
 
-public nonisolated struct CollectionSnapshotMeta: Codable, Equatable, Sendable {
+nonisolated public struct CollectionSnapshotMeta: Codable, Equatable, Sendable {
     public let definitionFingerprint: String
     public let capturedAt: Date
     public let itemCount: Int
     public let relevanceRoots: [String]
 
-    public nonisolated init(
+    nonisolated public init(
         definitionFingerprint: String,
         capturedAt: Date,
         itemCount: Int,

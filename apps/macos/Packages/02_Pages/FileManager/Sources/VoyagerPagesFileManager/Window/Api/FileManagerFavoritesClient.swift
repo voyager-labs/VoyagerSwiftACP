@@ -9,7 +9,7 @@ public struct FileManagerFavoritesClient: Sendable {
     public var loadFavorites: @Sendable (EntryLoadingClient, UserDefaultsClient) async -> [SidebarItems.FavoriteItem]
     public var saveFavorites: @Sendable ([SidebarItems.FavoriteItem], UserDefaultsClient) -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         loadFavorites: @escaping @Sendable (EntryLoadingClient, UserDefaultsClient) async
             -> [SidebarItems.FavoriteItem],
         saveFavorites: @escaping @Sendable ([SidebarItems.FavoriteItem], UserDefaultsClient) -> Void,
@@ -20,7 +20,7 @@ public struct FileManagerFavoritesClient: Sendable {
 }
 
 extension FileManagerFavoritesClient: DependencyKey {
-    public nonisolated static var liveValue: FileManagerFavoritesClient {
+    nonisolated public static var liveValue: FileManagerFavoritesClient {
         FileManagerFavoritesClient(
             loadFavorites: { entryLoadingClient, userDefaultsClient in
                 let defaultFavorites = await Self.initializeDefaultFavorites(entryLoadingClient: entryLoadingClient)
@@ -119,14 +119,14 @@ extension FileManagerFavoritesClient: DependencyKey {
         }
     }
 
-    public nonisolated static var testValue: FileManagerFavoritesClient {
+    nonisolated public static var testValue: FileManagerFavoritesClient {
         FileManagerFavoritesClient(
             loadFavorites: { _, _ in [] },
             saveFavorites: { _, _ in },
         )
     }
 
-    public nonisolated static var previewValue: FileManagerFavoritesClient {
+    nonisolated public static var previewValue: FileManagerFavoritesClient {
         testValue
     }
 }

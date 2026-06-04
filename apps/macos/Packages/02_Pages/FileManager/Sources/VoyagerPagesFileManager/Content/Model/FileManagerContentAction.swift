@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
@@ -24,6 +25,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case handleKeyCommand(KeyCommand)
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
+        case openContextualAiChatTapped
         case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
         case discardCollectionChanges
@@ -54,5 +56,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case openPathInNewWindow(String)
         case openPathInNewTab(String)
         case closeWindow
+        case openContextualAiChat
+        case currentContextChanged(AiChatCurrentContextSnapshot)
     }
 }

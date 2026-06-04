@@ -13,6 +13,8 @@ enum FileManagerWindowChrome {
         static let defaultWindowSize = NSSize(width: 960, height: 510)
     }
 
+    static let frameAutosaveName = NSWindow.FrameAutosaveName("VoyagerMainWindow")
+
     // MARK: - Appearance Helpers
 
     static var currentIsDark: Bool {
@@ -62,21 +64,23 @@ enum FileManagerWindowChrome {
         initialWindowSizeProvider: (() -> NSSize?)?,
         reservesSidebarWidth: Bool = false,
     ) {
-        window.setFrameAutosaveName("VoyagerMainWindow")
+        window.setFrameAutosaveName(frameAutosaveName)
         let minimumInitialWidth = minimumInitialWidth(reservesSidebarWidth: reservesSidebarWidth)
 
-        if !window.setFrameUsingName("VoyagerMainWindow") {
-            let desiredSize = constrainedInitialSize(
-                initialWindowSizeProvider?() ?? Constants.defaultWindowSize,
+        if let initialWindowSize = initialWindowSizeProvider?() {
+            applyCenteredInitialSize(
+                initialWindowSize,
+                to: window,
                 minimumWidth: minimumInitialWidth,
                 minimumHeight: window.minSize.height,
             )
-            let screenFrame = NSScreen.main?.visibleFrame ?? .zero
-            let origin = NSPoint(
-                x: screenFrame.midX - desiredSize.width / 2,
-                y: screenFrame.midY - desiredSize.height / 2,
+        } else if !window.setFrameUsingName(frameAutosaveName) {
+            applyCenteredInitialSize(
+                Constants.defaultWindowSize,
+                to: window,
+                minimumWidth: minimumInitialWidth,
+                minimumHeight: window.minSize.height,
             )
-            window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
         }
 
         expandInitialFrameIfNeeded(
@@ -84,6 +88,10 @@ enum FileManagerWindowChrome {
             minimumWidth: minimumInitialWidth,
             minimumHeight: window.minSize.height,
         )
+    }
+
+    static func saveFrame(_ window: NSWindow) {
+        window.saveFrame(usingName: frameAutosaveName)
     }
 
     static func minimumInitialWidth(reservesSidebarWidth: Bool) -> CGFloat {
@@ -151,6 +159,25 @@ enum FileManagerWindowChrome {
             return "New Collection"
         }
         return makeWindowTitle(titlePath)
+    }
+
+    private static func applyCenteredInitialSize(
+        _ size: NSSize,
+        to window: NSWindow,
+        minimumWidth: CGFloat,
+        minimumHeight: CGFloat,
+    ) {
+        let desiredSize = constrainedInitialSize(
+            size,
+            minimumWidth: minimumWidth,
+            minimumHeight: minimumHeight,
+        )
+        let screenFrame = NSScreen.main?.visibleFrame ?? .zero
+        let origin = NSPoint(
+            x: screenFrame.midX - desiredSize.width / 2,
+            y: screenFrame.midY - desiredSize.height / 2,
+        )
+        window.setFrame(NSRect(origin: origin, size: desiredSize), display: false)
     }
 
     private static func expandInitialFrameIfNeeded(

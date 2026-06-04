@@ -2,7 +2,7 @@ import ComposableArchitecture
 import VoyagerEntitiesAppPreferences
 
 @CasePathable
-enum PermissionsAction: CasePathable, Sendable {
+enum PermissionsAction: CasePathable {
     case onAppear
     case onDisappear
     case appDidBecomeActive

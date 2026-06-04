@@ -216,7 +216,7 @@ private struct EntryOperationsBridgeHarness: Reducer {
         var content: FileManagerContentState
     }
 
-    enum Action: Sendable {
+    enum Action {
         case bridge(EntryOperationsAction)
         case forwarded(FileManagerContentAction)
     }

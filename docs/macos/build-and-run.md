@@ -35,6 +35,8 @@ chmod +x scripts/xcodes.sh
     - 온보딩 전용 호스트 앱의 독립적인 Xcode 프로젝트입니다
 - SettingsHost Project (별도): `apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj`
     - 설정 전용 호스트 앱의 독립적인 Xcode 프로젝트입니다
+- FileManagerHost Project (별도): `apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj`
+    - File Manager Window mock-only fixture/smoke 호스트 앱의 독립적인 Xcode 프로젝트입니다
 
 Workspace는 여러 Xcode 프로젝트를 한 창에서 열기 위한 컨테이너입니다. GUI/SweetPad 실행은 workspace를 권장하고, CLI/CI에서는 빌드 대상을 명확히 하기 위해 `-project` 사용을 권장합니다.
 
@@ -79,6 +81,16 @@ SettingsHost는 별도의 Xcode 프로젝트입니다. `-project` 경로를 명�
 ```bash
 xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug
 ```
+
+### 4.1.3 개발 빌드 (FileManagerHost)
+
+FileManagerHost는 전체 Voyager 앱 bootstrap 없이 실제 File Manager Window UI 조합을 deterministic mock state로 확인하는 mock-only 호스트입니다. `-project` 경로를 명시적으로 지정합니다.
+
+```bash
+xcodebuild -project apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj -scheme FileManagerHost-Dev -configuration Debug build
+```
+
+기본 실행은 별도 catalog 없이 기본 mock state로 실제 File Manager view controller를 띄웁니다. smoke 모드는 `FILE_MANAGER_HOST_SMOKE=1`로 view controller mount 가능 여부를 빠르게 확인합니다.
 
 워크스페이스 기준(참고)
 

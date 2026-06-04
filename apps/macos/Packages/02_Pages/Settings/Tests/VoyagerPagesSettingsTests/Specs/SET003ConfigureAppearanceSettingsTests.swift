@@ -31,8 +31,8 @@ import XCTest
 
 @MainActor
 final class SET003ConfigureAppearanceSettingsTests: XCTestCase {
-    private nonisolated(unsafe) var storage: InMemoryStorage!
-    private nonisolated(unsafe) var themeRecorder: ThemeApplyRecorder!
+    nonisolated(unsafe) private var storage: InMemoryStorage!
+    nonisolated(unsafe) private var themeRecorder: ThemeApplyRecorder!
 
     override func setUp() {
         super.setUp()

@@ -1,12 +1,12 @@
 import Foundation
 
-enum ComposerScopeChangeFeedbackPhase: Equatable, Sendable {
+enum ComposerScopeChangeFeedbackPhase: Equatable {
     case visible
     case delayed
     case failed
 }
 
-enum ComposerScopeChangeFeedbackOrigin: Equatable, Sendable {
+enum ComposerScopeChangeFeedbackOrigin: Equatable {
     case addBase
     case removeBase
     case replaceBase
@@ -15,17 +15,17 @@ enum ComposerScopeChangeFeedbackOrigin: Equatable, Sendable {
     case includeSubfolders
 }
 
-enum ScopeFeedbackPendingRequest: Equatable, Sendable {
+enum ScopeFeedbackPendingRequest: Equatable {
     case search(UUID)
     case filters(UUID)
 }
 
-struct ComposerScopeSnapshot: Equatable, Sendable {
+struct ComposerScopeSnapshot: Equatable {
     let scopeSelection: ComposerScopeSelection
     let includeSubfolders: Bool
 }
 
-struct ComposerScopeChangeFeedback: Equatable, Sendable {
+struct ComposerScopeChangeFeedback: Equatable {
     let id: UUID
     let beforeScope: ComposerScopeSnapshot
     let afterScope: ComposerScopeSnapshot

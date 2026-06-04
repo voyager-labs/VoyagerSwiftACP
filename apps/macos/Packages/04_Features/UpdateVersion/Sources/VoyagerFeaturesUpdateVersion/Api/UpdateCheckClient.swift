@@ -7,7 +7,7 @@ import VoyagerShared
 public struct UpdateCheckClient: Sendable {
     public var startAtLaunch: @Sendable () async -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         startAtLaunch: @escaping @Sendable () async -> Void,
     ) {
         self.startAtLaunch = startAtLaunch
@@ -15,15 +15,15 @@ public struct UpdateCheckClient: Sendable {
 }
 
 extension UpdateCheckClient: DependencyKey {
-    public nonisolated static var liveValue: UpdateCheckClient {
+    nonisolated public static var liveValue: UpdateCheckClient {
         UpdateCheckClient(startAtLaunch: {})
     }
 
-    public nonisolated static var testValue: UpdateCheckClient {
+    nonisolated public static var testValue: UpdateCheckClient {
         UpdateCheckClient(startAtLaunch: {})
     }
 
-    public nonisolated static var previewValue: UpdateCheckClient {
+    nonisolated public static var previewValue: UpdateCheckClient {
         UpdateCheckClient(startAtLaunch: {})
     }
 }

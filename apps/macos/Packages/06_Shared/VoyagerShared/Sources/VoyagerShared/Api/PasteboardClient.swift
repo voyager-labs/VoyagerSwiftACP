@@ -14,7 +14,7 @@ public struct PasteboardClient: Sendable {
     public var setString: @Sendable (String, NSPasteboard.PasteboardType) -> Bool
     public var string: @Sendable (NSPasteboard.PasteboardType) -> String?
 
-    public nonisolated init(
+    nonisolated public init(
         changeCount: @escaping @Sendable () -> Int,
         clearContents: @escaping @Sendable () -> Void,
         writeObjects: @escaping @Sendable ([any NSPasteboardWriting]) -> Bool,
@@ -35,7 +35,7 @@ public struct PasteboardClient: Sendable {
 }
 
 extension PasteboardClient: DependencyKey {
-    public nonisolated static var liveValue: PasteboardClient {
+    nonisolated public static var liveValue: PasteboardClient {
         nonisolated(unsafe) let pasteboard = NSPasteboard.general
         return PasteboardClient(
             changeCount: {
@@ -59,7 +59,7 @@ extension PasteboardClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: PasteboardClient {
+    nonisolated public static var testValue: PasteboardClient {
         PasteboardClient(
             changeCount: { 0 },
             clearContents: {},
@@ -70,7 +70,7 @@ extension PasteboardClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: PasteboardClient {
+    nonisolated public static var previewValue: PasteboardClient {
         testValue
     }
 }

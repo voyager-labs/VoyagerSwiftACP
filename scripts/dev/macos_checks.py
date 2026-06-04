@@ -71,6 +71,7 @@ def parse_args() -> argparse.Namespace:
             "helper",
             "helper-tests",
             "onboarding",
+            "file-manager-host",
             "packages",
         ],
         help="Explicit check scope.",
@@ -153,6 +154,16 @@ def plan_for_scope(scope: str) -> list[CommandRecord]:
                 "Validate OnboardingHost integration.",
             )
         ]
+    if scope == "file-manager-host":
+        ctx = CONTEXTS["file-manager-host"]
+        return [
+            record(
+                "xcode-build-file-manager-host",
+                "Build FileManagerHost",
+                xcode_scheme_command(ctx.project_path, ctx.scheme, "build"),
+                "Validate FileManagerHost fixture integration.",
+            )
+        ]
     if scope == "packages":
         package_dirs = sorted(
             path.relative_to(ROOT_DIR)
@@ -218,6 +229,8 @@ def plan_for_paths(
                         "This package is consumed by OnboardingHost.",
                     ),
                 )
+            if path_is_under(package_dir, "apps/macos/Packages/02_Pages/FileManager"):
+                add_unique(commands, seen, plan_for_scope("file-manager-host")[0])
             continue
 
         if path_is_under(path, "apps/macos/Voyager/VoyagerHelperTests"):
@@ -237,6 +250,8 @@ def plan_for_paths(
             )
         elif path_is_under(path, "apps/macos/Hosts/OnboardingHost"):
             add_unique(commands, seen, plan_for_scope("onboarding")[0])
+        elif path_is_under(path, "apps/macos/Hosts/FileManagerHost"):
+            add_unique(commands, seen, plan_for_scope("file-manager-host")[0])
         elif path_is_under(path, "apps/macos/Voyager/VoyagerTests") or path_is_under(
             path, "apps/macos/Voyager/VoyagerUITests"
         ):
@@ -252,6 +267,8 @@ def lsp_for_scope(scope: str) -> dict[str, object]:
         context = CONTEXTS["helper"]
     elif scope == "onboarding":
         context = CONTEXTS["onboarding"]
+    elif scope == "file-manager-host":
+        context = CONTEXTS["file-manager-host"]
     else:
         context = CONTEXTS["app"]
     return {
@@ -279,7 +296,7 @@ def main() -> None:
     args = parse_args()
     input_paths = cast(list[str], args.path)
     changed = cast(bool, args.changed)
-    scope = cast(str | None, args.scope)
+    scope = cast("str | None", args.scope)
     run_checks = cast(bool, args.run)
     json_output = cast(bool, args.json)
 

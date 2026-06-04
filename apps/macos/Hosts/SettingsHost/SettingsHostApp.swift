@@ -37,15 +37,17 @@ private enum SmokeMode {
         let sectionAfter = state.selectedSection.rawValue
         print("selectedSectionAfter=\(sectionAfter)")
 
-        feature.reduce(into: &state, action: .selectSection(.general))
-
         feature.reduce(into: &state, action: .closeWindow)
         print("closeActionDispatched=true")
+
+        let sectionAfterClose = state.selectedSection.rawValue
+        print("selectedSectionAfterClose=\(sectionAfterClose)")
 
         let (valid, failureReason) = validateContract(
             initialSection: initialSection,
             sectionBefore: sectionBefore,
             sectionAfter: sectionAfter,
+            sectionAfterClose: sectionAfterClose,
         )
 
         if valid {
@@ -62,6 +64,7 @@ private enum SmokeMode {
         initialSection: String,
         sectionBefore: String,
         sectionAfter: String,
+        sectionAfterClose: String,
     ) -> (Bool, String?) {
         var failures: [String] = []
 
@@ -73,6 +76,9 @@ private enum SmokeMode {
         }
         if sectionAfter != "appearance" {
             failures.append("selectedSectionAfter expected appearance, got \(sectionAfter)")
+        }
+        if sectionAfterClose != "general" {
+            failures.append("selectedSectionAfterClose expected general, got \(sectionAfterClose)")
         }
 
         if failures.isEmpty {

@@ -70,6 +70,13 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .startRename(item, text):
             let entryOperationsAction = EntryOperationsAction.edit(.startRename(item: item, text: text))
             return sendEntryOperations(entryOperationsAction)
+
+        case .selectionChanged:
+            let currentContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state)
+            return .concatenate(
+                sendEntryOperations(.lifecycle(.syncSelectedEntryIDs(state.entryViewLayout.selectedIds))),
+                .send(.delegate(.currentContextChanged(currentContext))),
+            )
         }
     }
 

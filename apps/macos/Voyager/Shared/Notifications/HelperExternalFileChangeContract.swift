@@ -15,7 +15,7 @@ nonisolated enum HelperExternalFileChangeUserInfoKey {
     static let consume = "consume"
 }
 
-nonisolated struct HelperExternalFileChangeReplayRequest: Codable, Equatable, Sendable {
+nonisolated struct HelperExternalFileChangeReplayRequest: Codable, Equatable {
     let schemaVersion: Int
     let consume: Bool
 
@@ -45,14 +45,14 @@ nonisolated struct HelperExternalFileChangeReplayRequest: Codable, Equatable, Se
         return Self(schemaVersion: schemaVersion, consume: consume)
     }
 
-    private nonisolated static func parseInt(_ value: Any?) -> Int? {
+    nonisolated private static func parseInt(_ value: Any?) -> Int? {
         if let intValue = value as? Int { return intValue }
         if let number = value as? NSNumber { return number.intValue }
         if let stringValue = value as? String { return Int(stringValue) }
         return nil
     }
 
-    private nonisolated static func parseBool(_ value: Any?) -> Bool? {
+    nonisolated private static func parseBool(_ value: Any?) -> Bool? {
         if let boolValue = value as? Bool { return boolValue }
         if let number = value as? NSNumber { return number.boolValue }
         if let stringValue = value as? String { return Bool(stringValue) }
@@ -60,7 +60,7 @@ nonisolated struct HelperExternalFileChangeReplayRequest: Codable, Equatable, Se
     }
 }
 
-nonisolated struct HelperExternalFileChangePayload: Codable, Equatable, Sendable {
+nonisolated struct HelperExternalFileChangePayload: Codable, Equatable {
     let schemaVersion: Int
     let generatedAt: Date
     let paths: [String]
@@ -124,14 +124,14 @@ nonisolated struct HelperExternalFileChangePayload: Codable, Equatable, Sendable
         Array(Set(paths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })).sorted()
     }
 
-    private nonisolated static func parseInt(_ value: Any?) -> Int? {
+    nonisolated private static func parseInt(_ value: Any?) -> Int? {
         if let intValue = value as? Int { return intValue }
         if let number = value as? NSNumber { return number.intValue }
         if let stringValue = value as? String { return Int(stringValue) }
         return nil
     }
 
-    private nonisolated static func parseDouble(_ value: Any?) -> Double? {
+    nonisolated private static func parseDouble(_ value: Any?) -> Double? {
         if let doubleValue = value as? Double { return doubleValue }
         if let number = value as? NSNumber { return number.doubleValue }
         if let stringValue = value as? String { return Double(stringValue) }

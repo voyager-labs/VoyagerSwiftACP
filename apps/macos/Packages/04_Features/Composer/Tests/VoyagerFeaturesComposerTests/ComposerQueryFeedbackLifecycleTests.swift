@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
-    func testChangedFiltersContinueToApplyFiltersWithoutShowingToast() async {
+    func testChangedFiltersContinueToApplyFiltersWithoutShowingToast() {
         let activeRequestID = UUID()
         let searchResponse = VoyagerShared.SearchResponsePayload(
             itemCount: 0,
@@ -49,7 +49,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertNotNil(state.activeFiltersRequestID)
     }
 
-    func testNoOpSearchSkipsApplyFiltersWithoutShowingFeedback() async {
+    func testNoOpSearchSkipsApplyFiltersWithoutShowingFeedback() {
         let activeRequestID = UUID()
         let searchResponse = VoyagerShared.SearchResponsePayload(
             itemCount: 0,
@@ -77,7 +77,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertFalse(state.isFilteringInFlight)
     }
 
-    func testSearchFailureShowsPolicyErrorFeedback() async {
+    func testSearchFailureShowsPolicyErrorFeedback() {
         let activeRequestID = UUID()
         var initialState = ComposerState()
         initialState.scopes = ["/tmp"]
