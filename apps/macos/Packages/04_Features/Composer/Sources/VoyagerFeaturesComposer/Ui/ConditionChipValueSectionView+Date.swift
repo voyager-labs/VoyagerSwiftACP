@@ -304,7 +304,6 @@ extension ConditionChipValueSectionView {
             set: { text in
                 let digits = text.filter(\.isNumber)
                 guard let amount = Int(digits), amount > 0 else { return }
-                valueViewStore.send(.setRelativeDateDirection(.past))
                 valueViewStore.send(.setRelativeDateAmount(amount))
             },
         )

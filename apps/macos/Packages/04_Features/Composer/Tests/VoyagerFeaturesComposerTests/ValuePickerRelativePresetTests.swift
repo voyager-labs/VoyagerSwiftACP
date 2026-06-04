@@ -56,6 +56,43 @@ final class ValuePickerRelativePresetTests: XCTestCase {
         }
     }
 
+    func testRelativeAmountEditPreservesFutureDirection() async {
+        var initialState = ValuePickerState()
+        initialState.propertyKey = "modified_date"
+        initialState.operatorCode = "eq"
+        initialState.isPresented = true
+        initialState.valueType = "date"
+        initialState.valueUIKind = "singleDate"
+        initialState.valueArity = 1
+        initialState.values = [""]
+        initialState.editingIndex = 0
+        initialState.dateValueState = DateValueState(
+            mode: .relative,
+            selectedDate: Date(),
+            relativeDirection: .future,
+            relativeAmount: 2,
+            relativeUnit: .week,
+        )
+
+        let store = TestStore(initialState: initialState) {
+            ValuePickerFeature()
+        } withDependencies: {
+            $0.registryClient = makeRegistryClient()
+        }
+
+        let threeWeeksAhead = ValueNormalizerUtils.parseDate(
+            ValueNormalizerUtils.formatDateOnly(
+                Calendar.current.date(byAdding: .weekOfYear, value: 3, to: Date()) ?? Date(),
+            ),
+        ) ?? Date()
+        await store.send(.setRelativeDateAmount(3)) {
+            $0.dateValueState?.relativePreset = .custom
+            $0.dateValueState?.relativeAmount = 3
+            $0.dateValueState?.relativeDirection = .future
+            $0.dateValueState?.selectedDate = threeWeeksAhead
+        }
+    }
+
     private func makeRegistryClient() -> RegistryClient {
         .init(
             allProperties: { [] },
