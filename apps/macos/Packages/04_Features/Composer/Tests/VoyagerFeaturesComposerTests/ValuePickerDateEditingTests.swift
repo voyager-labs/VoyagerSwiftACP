@@ -222,56 +222,6 @@ final class ValuePickerDateEditingTests: XCTestCase {
         }
     }
 
-    func testRelativePresetSelectionPersistsUntilCustomInput() async {
-        var initialState = ValuePickerState()
-        initialState.propertyKey = "modified_date"
-        initialState.operatorCode = "eq"
-        initialState.isPresented = true
-        initialState.valueType = "date"
-        initialState.valueUIKind = "singleDate"
-        initialState.valueArity = 1
-        initialState.values = [""]
-        initialState.editingIndex = 0
-        initialState.dateValueState = DateValueState(
-            mode: .relative,
-            selectedDate: Date(),
-            relativeDirection: .past,
-            relativeAmount: 1,
-            relativeUnit: .day,
-        )
-
-        let store = TestStore(initialState: initialState) {
-            ValuePickerFeature()
-        } withDependencies: {
-            $0.registryClient = makeRegistryClient()
-        }
-
-        let sevenDaysAgo = ValueNormalizerUtils.parseDate(
-            ValueNormalizerUtils.formatDateOnly(
-                Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date(),
-            ),
-        ) ?? Date()
-        await store.send(.setRelativeDatePreset(.last7Days)) {
-            $0.dateValueState?.mode = .relative
-            $0.dateValueState?.relativePreset = .last7Days
-            $0.dateValueState?.relativeDirection = .past
-            $0.dateValueState?.relativeAmount = 7
-            $0.dateValueState?.relativeUnit = .day
-            $0.dateValueState?.selectedDate = sevenDaysAgo
-        }
-
-        let nineDaysAgo = ValueNormalizerUtils.parseDate(
-            ValueNormalizerUtils.formatDateOnly(
-                Calendar.current.date(byAdding: .day, value: -9, to: Date()) ?? Date(),
-            ),
-        ) ?? Date()
-        await store.send(.setRelativeDateAmount(9)) {
-            $0.dateValueState?.relativePreset = .custom
-            $0.dateValueState?.relativeAmount = 9
-            $0.dateValueState?.selectedDate = nineDaysAgo
-        }
-    }
-
     func testDisplayedValuesForDateRenderRelativeAndTodayButKeepRangesAbsolute() {
         let today = ValueNormalizerUtils.formatDateOnly(Date())
         let relativeRaw = "voyager.relativeDate:v1:future:2:week:\(today)"

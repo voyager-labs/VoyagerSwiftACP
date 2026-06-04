@@ -89,14 +89,14 @@ private extension DateValueState.RelativePreset {
             "Today"
         case .yesterday:
             "Yesterday"
-        case .last7Days:
-            "Last 7 days"
-        case .last30Days:
-            "Last 30 days"
-        case .last3Months:
-            "Last 3 months"
-        case .lastYear:
-            "Last year"
+        case .daysAgo7:
+            "7 days ago"
+        case .daysAgo30:
+            "30 days ago"
+        case .monthsAgo3:
+            "3 months ago"
+        case .yearAgo1:
+            "1 year ago"
         }
     }
 }

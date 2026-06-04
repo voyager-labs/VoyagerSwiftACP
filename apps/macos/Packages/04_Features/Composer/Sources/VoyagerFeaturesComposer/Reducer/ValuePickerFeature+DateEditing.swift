@@ -19,25 +19,25 @@ func applyRelativePreset(_ preset: DateValueState.RelativePreset, to dateValueSt
         dateValueState.relativeAmount = 1
         dateValueState.relativeUnit = .day
         syncRelativeSelectedDate(&dateValueState)
-    case .last7Days:
+    case .daysAgo7:
         dateValueState.mode = .relative
         dateValueState.relativeDirection = .past
         dateValueState.relativeAmount = 7
         dateValueState.relativeUnit = .day
         syncRelativeSelectedDate(&dateValueState)
-    case .last30Days:
+    case .daysAgo30:
         dateValueState.mode = .relative
         dateValueState.relativeDirection = .past
         dateValueState.relativeAmount = 30
         dateValueState.relativeUnit = .day
         syncRelativeSelectedDate(&dateValueState)
-    case .last3Months:
+    case .monthsAgo3:
         dateValueState.mode = .relative
         dateValueState.relativeDirection = .past
         dateValueState.relativeAmount = 3
         dateValueState.relativeUnit = .month
         syncRelativeSelectedDate(&dateValueState)
-    case .lastYear:
+    case .yearAgo1:
         dateValueState.mode = .relative
         dateValueState.relativeDirection = .past
         dateValueState.relativeAmount = 1

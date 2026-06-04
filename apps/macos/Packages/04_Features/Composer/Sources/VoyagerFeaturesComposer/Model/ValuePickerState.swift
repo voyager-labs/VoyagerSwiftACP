@@ -36,10 +36,10 @@ public struct DateValueState: Equatable {
         case custom
         case today
         case yesterday
-        case last7Days
-        case last30Days
-        case last3Months
-        case lastYear
+        case daysAgo7
+        case daysAgo30
+        case monthsAgo3
+        case yearAgo1
     }
 
     public var mode: Mode
