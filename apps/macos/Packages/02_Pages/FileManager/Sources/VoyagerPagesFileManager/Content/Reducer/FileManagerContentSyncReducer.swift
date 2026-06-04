@@ -31,10 +31,7 @@ struct FileManagerContentSyncReducer {
                     )
 
                 case .recents, .tags, .computer:
-                    return reloadEntryItemsEffect(
-                        navigationState: state.navigation.navigationState,
-                        showHidden: state.entryViewLayout.showHiddenFiles,
-                    )
+                    return .none
                 }
 
             default:
