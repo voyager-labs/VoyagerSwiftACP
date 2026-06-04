@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesSettings
 import XCTest
 

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 
 @ObservableState
 public struct AiSettingsState: Equatable {
@@ -10,7 +11,7 @@ public struct AiSettingsState: Equatable {
     public init(
         didBootstrap: Bool = false,
         bootstrapPhase: AiSettingsBootstrapPhase = .idle,
-        rows: IdentifiedArrayOf<AiConnectionRowState>? = nil
+        rows: IdentifiedArrayOf<AiConnectionRowState>? = nil,
     ) {
         self.didBootstrap = didBootstrap
         self.bootstrapPhase = bootstrapPhase
@@ -24,7 +25,7 @@ public struct AiSettingsState: Equatable {
                 .sorted { $0.sortOrder < $1.sortOrder }
                 .map { descriptor in
                     AiConnectionRowState(provider: descriptor.provider)
-                }
+                },
         )
     }
 }
