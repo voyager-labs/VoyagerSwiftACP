@@ -1,0 +1,63 @@
+import Foundation
+@testable import VoyagerHelper
+import VoyagerShared
+import XCTest
+
+@MainActor
+final class SpotlightQueryCompilerTodayTests: XCTestCase {
+    func testCompilePlanPushesDownTagNamesToUserTags() throws {
+        let compiler = try makeCompiler()
+        let condition = SearchConditionPayload(
+            propertyKey: "tag_names",
+            operator: "any",
+            value: .array([.string("Work")]),
+        )
+
+        let plan = try compiler.compilePlan(conditions: [condition])
+
+        XCTAssertEqual(plan.pushdownConditions.count, 1)
+        XCTAssertTrue(plan.predicate.contains("kMDItemUserTags == \"Work\"c"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemUserTags == \"Work\n*\"c"))
+    }
+
+    func testCompilePlanPreservesTodayLiteralForRecentComparison() throws {
+        let compiler = try makeCompiler()
+        let condition = SearchConditionPayload(
+            propertyKey: "last_used_date",
+            operator: "gt",
+            value: .string("$time.today(-1000000)"),
+        )
+
+        let plan = try compiler.compilePlan(conditions: [condition])
+
+        XCTAssertEqual(plan.pushdownConditions.count, 1)
+        XCTAssertTrue(plan.predicate.contains("kMDItemLastUsedDate > $time.today(-1000000)"))
+    }
+
+    func testTodayOffsetLiteralParsesIntoSignedOffset() {
+        XCTAssertEqual(SearchDateUtils.todayOffset(for: "$time.today(-1000000)"), -1_000_000)
+        XCTAssertNotNil(SearchDateUtils.parseDateLiteral("$time.today(-1000000)"))
+    }
+}
+
+private extension SpotlightQueryCompilerTodayTests {
+    func makeCompiler() throws -> SpotlightQueryCompiler {
+        let conditionRegistry: PropertyConditionRegistry =
+            try loadRegistry(fileName: "property_condition_registry.json")
+        let systemRegistry: SystemPropertyRegistry = try loadRegistry(fileName: "system_property_registry.json")
+        let builder = SearchConditionBuilder(registry: conditionRegistry, systemRegistry: systemRegistry)
+        return SpotlightQueryCompiler(conditionBuilder: builder)
+    }
+
+    func loadRegistry<T: Decodable>(fileName: String) throws -> T {
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fileURL = rootURL.appendingPathComponent("shared").appendingPathComponent(fileName)
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+}

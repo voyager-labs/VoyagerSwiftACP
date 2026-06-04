@@ -1,9 +1,9 @@
 import Foundation
 
 enum SearchDateUtils {
-    nonisolated private static let utcTimeZone: TimeZone = .init(secondsFromGMT: 0) ?? .gmt
+    private static let utcTimeZone: TimeZone = .init(secondsFromGMT: 0) ?? .gmt
 
-    nonisolated private static let calendar: Calendar = {
+    private static let calendar: Calendar = {
         var calendar = Calendar(identifier: .iso8601)
         calendar.timeZone = utcTimeZone
         return calendar
@@ -13,6 +13,10 @@ enum SearchDateUtils {
         var text = literal.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("$time.iso("), text.hasSuffix(")") {
             text = String(text.dropFirst(10).dropLast())
+        }
+
+        if let resolvedToday = resolveTodayLiteral(text) {
+            return resolvedToday
         }
 
         if isDateOnlyLiteral(text) {
@@ -50,6 +54,24 @@ enum SearchDateUtils {
             return nil
         }
         return (start, end)
+    }
+
+    static func todayOffset(for literal: String) -> Int? {
+        let text = literal.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("$time.today("), text.hasSuffix(")") else {
+            return nil
+        }
+        let offsetText = String(text.dropFirst("$time.today(".count).dropLast())
+        return Int(offsetText)
+    }
+
+    static func resolveTodayLiteral(_ literal: String, now: Date = Date()) -> Date? {
+        guard let offset = todayOffset(for: literal),
+              let start = dayRange(for: now)?.0
+        else {
+            return nil
+        }
+        return calendar.date(byAdding: .day, value: offset, to: start)
     }
 
     static func dayLiteral(_ date: Date) -> String {

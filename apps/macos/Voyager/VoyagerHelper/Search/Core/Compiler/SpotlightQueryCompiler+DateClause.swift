@@ -65,10 +65,59 @@ extension SpotlightQueryCompiler {
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
         )
-        let dayRange = try resolveDayRange(
+
+        if SearchDateUtils.todayOffset(for: literal) != nil {
+            return buildTodayDateComparisonClause(
+                attribute: attribute,
+                literal: literal,
+                dateMdqueryOperator: dateMdqueryOperator,
+            )
+        }
+
+        return try buildResolvedDateComparisonClause(
+            attribute: attribute,
             literal: literal,
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
+            dateMdqueryOperator: dateMdqueryOperator,
+        )
+    }
+
+    private func buildTodayDateComparisonClause(
+        attribute: String,
+        literal: String,
+        dateMdqueryOperator: DateMdqueryOperator,
+    ) -> String {
+        let expression = dateExpression(literal)
+        switch dateMdqueryOperator {
+        case .eq:
+            return "(\(attribute) == \(expression))"
+        case .neq:
+            return "(\(attribute) != \(expression))"
+        case .gt:
+            return "\(attribute) > \(expression)"
+        case .gte:
+            return "\(attribute) >= \(expression)"
+        case .lt:
+            return "\(attribute) < \(expression)"
+        case .lte:
+            return "\(attribute) <= \(expression)"
+        case .range, .notRange:
+            preconditionFailure("Today comparison clause does not support range operators")
+        }
+    }
+
+    private func buildResolvedDateComparisonClause(
+        attribute: String,
+        literal: String,
+        propertyKey: String,
+        operatorCode: String,
+        dateMdqueryOperator: DateMdqueryOperator,
+    ) throws -> String {
+        let dayRange = try resolveDayRange(
+            literal: literal,
+            propertyKey: propertyKey,
+            operatorCode: operatorCode,
         )
 
         let startExpr = dateExpression(SearchDateUtils.dayLiteral(dayRange.start))
@@ -89,8 +138,8 @@ extension SpotlightQueryCompiler {
             return "\(attribute) < \(endExpr)"
         case .range, .notRange:
             throw CompileError.unsupportedOperator(
-                propertyKey: condition.propertyKey,
-                operatorCode: condition.operator,
+                propertyKey: propertyKey,
+                operatorCode: operatorCode,
             )
         }
     }
