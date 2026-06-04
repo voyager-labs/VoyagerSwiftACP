@@ -218,6 +218,8 @@ extension ConditionChipValueSectionView {
             let applySelection = makeDateApplySelection(valueViewStore: valueViewStore)
 
             if config.valueArity == 1, valueViewStore.dateValueState != nil {
+                let isRelativePreview = bindings.dateModeTab.wrappedValue == .relative
+
                 semanticDatePopoverFields(
                     valueViewStore: valueViewStore,
                     dateModeTabBinding: bindings.dateModeTab,
@@ -226,7 +228,11 @@ extension ConditionChipValueSectionView {
                     relativeUnitBinding: bindings.relativeUnit,
                 )
 
-                calendarPicker(selection: bindings.dateSelection, onCommit: applySelection)
+                calendarPicker(
+                    selection: bindings.dateSelection,
+                    onCommit: applySelection,
+                    isPreviewOnly: isRelativePreview,
+                )
             } else {
                 calendarPicker(selection: bindings.rawDateSelection, onCommit: applySelection)
             }
@@ -405,10 +411,25 @@ extension ConditionChipValueSectionView {
         .frame(width: kDatePopoverContentWidth)
     }
 
-    private func calendarPicker(selection: Binding<Date>, onCommit: @escaping () -> Void) -> some View {
-        CalendarDatePicker(selection: selection, onCommit: onCommit)
-            .fixedSize()
-            .frame(width: kDatePopoverContentWidth, alignment: .center)
+    private func calendarPicker(
+        selection: Binding<Date>,
+        onCommit: @escaping () -> Void,
+        isPreviewOnly: Bool = false,
+    ) -> some View {
+        VStack(alignment: .center, spacing: 4) {
+            CalendarDatePicker(selection: selection, onCommit: onCommit)
+                .fixedSize()
+                .allowsHitTesting(!isPreviewOnly)
+                .opacity(isPreviewOnly ? 0.72 : 1)
+                .frame(width: kDatePopoverContentWidth, alignment: .center)
+
+            if isPreviewOnly {
+                Text("Preview based on today")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
     }
 
     private func dateApplyButton(action: @escaping () -> Void) -> some View {
