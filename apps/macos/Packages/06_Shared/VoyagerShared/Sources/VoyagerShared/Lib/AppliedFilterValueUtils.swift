@@ -5,6 +5,10 @@ public enum AppliedFilterValueUtils {
         guard let value else { return nil }
         switch value {
         case let .string(text):
+            if isDateValueUIKind(valueUIKind) {
+                guard let normalized = normalizeDateString(text, valueUIKind: valueUIKind) else { return nil }
+                return [normalized]
+            }
             return [normalizeDateString(text, valueUIKind: valueUIKind) ?? text]
         case let .number(number):
             return [formatNumber(number)]
@@ -12,6 +16,9 @@ public enum AppliedFilterValueUtils {
             return [flag ? "true" : "false"]
         case let .array(values):
             let strings = values.compactMap { stringValue(from: $0, valueUIKind: valueUIKind) }
+            if isDateValueUIKind(valueUIKind), strings.count != values.count {
+                return nil
+            }
             return strings.isEmpty ? nil : strings
         case .object, .null:
             return nil
@@ -21,13 +28,16 @@ public enum AppliedFilterValueUtils {
     public static func stringValue(from value: JSONValue, valueUIKind: String) -> String? {
         switch value {
         case let .string(text):
-            normalizeDateString(text, valueUIKind: valueUIKind) ?? text
+            if isDateValueUIKind(valueUIKind) {
+                return normalizeDateString(text, valueUIKind: valueUIKind)
+            }
+            return normalizeDateString(text, valueUIKind: valueUIKind) ?? text
         case let .number(number):
-            formatNumber(number)
+            return formatNumber(number)
         case let .bool(flag):
-            flag ? "true" : "false"
+            return flag ? "true" : "false"
         case .array, .object, .null:
-            nil
+            return nil
         }
     }
 
@@ -35,12 +45,22 @@ public enum AppliedFilterValueUtils {
 
     private static func normalizeDateString(_ text: String, valueUIKind: String) -> String? {
         switch valueUIKind {
-        case "singleDate", "rangeDate":
+        case "singleDate":
+            if let literal = RelativeDateConditionLiteral(canonicalLiteral: text) {
+                return literal.encodedLiteral()
+            }
+            guard let date = DateNormalizerUtils.parseDate(text) else { return nil }
+            return DateNormalizerUtils.formatDateOnly(date)
+        case "rangeDate":
             guard let date = DateNormalizerUtils.parseDate(text) else { return nil }
             return DateNormalizerUtils.formatDateOnly(date)
         default:
             return nil
         }
+    }
+
+    private static func isDateValueUIKind(_ valueUIKind: String) -> Bool {
+        valueUIKind == "singleDate" || valueUIKind == "rangeDate"
     }
 
     private static func formatNumber(_ value: Double) -> String {
