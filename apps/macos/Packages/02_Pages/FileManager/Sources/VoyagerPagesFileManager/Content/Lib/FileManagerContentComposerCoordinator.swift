@@ -11,6 +11,7 @@ enum FileManagerContentComposerCoordinator {
     struct Dependencies {
         let collectionAlertClient: CollectionAlertClient
         let metricsClient: MetricsClient
+        let registryClient: RegistryClient
     }
 
     static func reduce(
@@ -202,18 +203,40 @@ enum FileManagerContentComposerCoordinator {
             nil,
         )
 
-        guard case let .folder(path) = state.navigation.navigationState else {
+        guard state.composer.scopeEditor.selection.isRootOnly,
+              state.composer.conditions.isEmpty,
+              state.composer.text.isEmpty,
+              state.composer.collectionContext == nil,
+              state.composer.pendingSearchQuery == nil
+        else {
             return .none
         }
 
-        if state.composer.scopeEditor.selection.isRootOnly,
-           state.composer.conditions.isEmpty,
-           state.composer.text.isEmpty
-        {
-            return .send(.composer(.scopeEditorSeedCurrentPath(path)))
-        }
+        switch state.navigation.navigationState {
+        case let .tags(tagName):
+            guard let context = FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .tags(tagName),
+                registryClient: dependencies.registryClient,
+            ) else {
+                return .none
+            }
+            return .send(.composer(.applyCollectionDraftRestore(.init(context: context, openedURL: nil))))
 
-        return .none
+        case .recents:
+            guard let context = FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .recents,
+                registryClient: dependencies.registryClient,
+            ) else {
+                return .none
+            }
+            return .send(.composer(.applyCollectionDraftRestore(.init(context: context, openedURL: nil))))
+
+        case let .folder(path):
+            return .send(.composer(.scopeEditorSeedCurrentPath(path)))
+
+        case .computer, .collection:
+            return .none
+        }
     }
 
     private static func handleSetText(
