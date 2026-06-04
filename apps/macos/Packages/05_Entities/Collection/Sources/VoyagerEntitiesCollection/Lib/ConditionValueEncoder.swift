@@ -26,6 +26,7 @@ public enum ConditionValueEncoder {
             values: values,
             valueType: valueType,
             operatorCode: operatorCode,
+            operatorValueUIKind: operatorValueUIKind,
         )
     }
 
@@ -46,6 +47,7 @@ public enum ConditionValueEncoder {
         values: [String],
         valueType: String,
         operatorCode: String?,
+        operatorValueUIKind: String?,
     ) -> VoyagerShared.JSONValue? {
         switch valueType {
         case "number":
@@ -55,7 +57,7 @@ public enum ConditionValueEncoder {
             encodeBooleanValue(values)
 
         case "date", "datetime":
-            encodeDateValues(values)
+            encodeDateValues(values, kind: operatorValueUIKind)
 
         case "string_list", "categorical", "string", "unknown":
             encodeStringValues(values, operatorCode: operatorCode)
@@ -85,10 +87,23 @@ public enum ConditionValueEncoder {
         return nil
     }
 
-    private static func encodeDateValues(_ values: [String]) -> VoyagerShared.JSONValue? {
-        let formattedValues = values.map { value in
-            ValueNormalizerUtils.formatDateOnlyString(value) ?? value
+    private static func encodeDateValues(_ values: [String], kind: String?) -> VoyagerShared.JSONValue? {
+        let formattedValues: [String] = switch kind {
+        case "singleDate":
+            values.compactMap { value in
+                ValueNormalizerUtils.canonicalSingleDateString(value)
+            }
+        case "rangeDate":
+            values.compactMap { value in
+                ValueNormalizerUtils.canonicalAbsoluteDateString(value)
+            }
+        default:
+            values.compactMap { value in
+                ValueNormalizerUtils.canonicalAbsoluteDateString(value)
+            }
         }
+
+        guard formattedValues.count == values.count else { return nil }
         if formattedValues.count == 1 {
             return .string(formattedValues[0])
         }

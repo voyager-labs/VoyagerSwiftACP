@@ -23,6 +23,18 @@ public enum ValueNormalizerUtils {
         return DateNormalizerUtils.formatDateOnly(date)
     }
 
+    public static func canonicalSingleDateString(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let literal = RelativeDateConditionLiteral(canonicalLiteral: trimmed) {
+            return literal.encodedLiteral()
+        }
+        return formatDateOnlyString(trimmed)
+    }
+
+    public static func canonicalAbsoluteDateString(_ text: String) -> String? {
+        formatDateOnlyString(text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     public static func parseDate(_ text: String) -> Date? {
         DateNormalizerUtils.parseDate(text)
     }
@@ -215,10 +227,10 @@ public enum ValueNormalizerUtils {
         guard let trimmed = requireNonEmpty([rawValues.first ?? ""]) else {
             return .init(values: nil, errorMessage: "Value is required.", resetIndices: [0])
         }
-        guard parseDate(trimmed[0]) != nil else {
+        guard let canonicalDate = canonicalSingleDateString(trimmed[0]) else {
             return .init(values: nil, errorMessage: "Enter a valid date.", resetIndices: [0])
         }
-        return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+        return .init(values: [canonicalDate], errorMessage: nil, resetIndices: [])
     }
 
     private static func normalizeRangeDate(
@@ -227,12 +239,14 @@ public enum ValueNormalizerUtils {
     ) -> ValueNormalizeResult {
         let values = rawValues + Array(repeating: "", count: max(0, 2 - rawValues.count))
         let trimmed = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let parsed = trimmed.map(parseDate)
+        let canonicalDates = trimmed.map { text in
+            text.isEmpty ? nil : canonicalAbsoluteDateString(text)
+        }
         let emptyIndices = trimmed.enumerated().compactMap { index, text in
             text.isEmpty ? index : nil
         }
-        let invalidIndices = parsed.enumerated().compactMap { index, date in
-            trimmed[index].isEmpty || date != nil ? nil : index
+        let invalidIndices = canonicalDates.enumerated().compactMap { index, canonicalDate in
+            trimmed[index].isEmpty || canonicalDate != nil ? nil : index
         }
 
         if invalidIndices.isEmpty == false {
@@ -254,7 +268,7 @@ public enum ValueNormalizerUtils {
             return .init(values: nil, errorMessage: "Value is required.", resetIndices: emptyIndices)
         }
 
-        return .init(values: trimmed, errorMessage: nil, resetIndices: [])
+        return .init(values: canonicalDates.compactMap(\.self), errorMessage: nil, resetIndices: [])
     }
 
     private static func normalizeToggle(rawValues: [String]) -> ValueNormalizeResult {

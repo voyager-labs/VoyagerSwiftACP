@@ -127,6 +127,7 @@ extension SpotlightQueryCompiler {
         case lte = "<="
         case range = "RANGE"
         case notRange = "NOT_RANGE"
+        case today = "TODAY"
     }
 
     private struct ValidatedCondition {
