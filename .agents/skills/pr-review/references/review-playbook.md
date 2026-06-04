@@ -11,14 +11,15 @@ lives in `.greptile/rules.md`.
 
 Use these to gather the raw material for triage and review.
 
-| Command                                                       | When to use                                  | What it gives you                                            |
-| ------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------ |
-| `git diff --stat origin/develop...HEAD`                       | Every review — first pass                    | File list with insertions/deletions per file                 |
-| `git diff --name-only origin/develop...HEAD`                  | Triage — file count and layer classification | Clean file path list (no stats)                              |
-| `git diff --stat origin/develop...HEAD \| wc -l`              | Large-PR threshold check                     | Approximate changed-file count (subtract 1 for summary line) |
-| `git diff --shortstat origin/develop...HEAD`                  | Triage — total changed lines                 | `N files changed, M insertions(+), D deletions(-)`           |
-| `git log --oneline origin/develop..HEAD`                      | Intent — commit story                        | Ordered commit list with subjects                            |
-| `git show --name-status --pretty=format:'COMMIT %h %s' <sha>` | Per-commit impact                            | Files changed per commit with status (A/M/D/R)               |
+| Command                                                       | When to use                                                                                                                                                                                 | What it gives you                                                                                                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git diff --stat origin/develop...HEAD`                       | Every review — first pass                                                                                                                                                                   | File list with insertions/deletions per file                                                                                                       |
+| `git diff --name-only origin/develop...HEAD`                  | Triage — file count and layer classification                                                                                                                                                | Clean file path list (no stats)                                                                                                                    |
+| `git diff --stat origin/develop...HEAD \| wc -l`              | Large-PR threshold check                                                                                                                                                                    | Approximate changed-file count (subtract 1 for summary line)                                                                                       |
+| `git diff --shortstat origin/develop...HEAD`                  | Triage — total changed lines                                                                                                                                                                | `N files changed, M insertions(+), D deletions(-)`                                                                                                 |
+| `git log --oneline origin/develop..HEAD`                      | Intent — commit story                                                                                                                                                                       | Ordered commit list with subjects                                                                                                                  |
+| `git show --name-status --pretty=format:'COMMIT %h %s' <sha>` | Per-commit impact                                                                                                                                                                           | Files changed per commit with status (A/M/D/R)                                                                                                     |
+| GitHub PR                                                     | `gh pr view <N> --json additions,deletions,changedFiles,baseRefName,headRefName,headRefOid` (metadata)<br>`gh pr diff <N> --name-only` (file list)<br>`gh pr diff <N> --patch` (full patch) | PR metadata + diff via GitHub CLI. No local checkout needed. **Note:** `gh pr diff --stat` is not currently supported — use `--name-only` instead. |
 
 For local diffs (no PR yet), replace `origin/develop...HEAD` with the
 appropriate merge base:
@@ -69,9 +70,36 @@ Fields:
 - **Why skipped**: Concrete reason. Never leave blank for a skipped area.
 - **Confidence**: `high`, `medium`, or `low`. Low confidence requires an explicit caveat in the Risk section.
 
+**Confidence adjustment:** If CodeGraph was unavailable for a review area that
+would benefit from symbol-level analysis (e.g., transitive impact, caller
+tracing, cross-language contract verification), lower that area's confidence by
+one level and note "CodeGraph unavailable" in the Why skipped column or a
+footnote.
+
+---
+
+### Verification Evidence Policy
+
+pr-review는 verification 스킬이 아니다. Local 검증은 선택적.
+
+**PR-provided evidence가 충분한 경우:**
+
+- 변경이 단일 패키지/단일 feature에 한정
+- 검증 명령이 변경 파일과 직접 연결
+- 리뷰 목적이 구조적 P0/P1 탐지이며 CI 대체가 아님
+
+**Local 검증을 직접 실행해야 하는 경우:**
+
+- PR 설명에 검증 증거가 없음
+- reducer lifecycle, persistence, storage, helper/XPC contract처럼 runtime regression 위험 높음
+- diff 분석 중 type-level uncertainty 발생
+- PR head/local checkout을 기준으로 강한 review decision 필요
+
 ---
 
 ## Review Methods per Area
+
+> **CodeGraph prerequisite:** If `.codegraph/` index exists (check with `mise run codegraph-status`), prefer CodeGraph tools below. Fall back to grep if index unavailable.
 
 Each subsection gives procedural commands and patterns. Policy details
 (e.g., "what to flag") are in `.greptile/rules.md` under the referenced section
@@ -87,6 +115,10 @@ heading.
     ```
 2. For each changed file in a higher layer, check imports:
     ```bash
+    # Preferred: CodeGraph
+    codegraph_explore  # top-level module overview
+    codegraph_context("<ModuleName>")  # module symbols/dependencies
+    # Fallback: grep
     grep -rn 'import.*\(Pages\|Widgets\|Features\|Entities\|Shared\)' <file>
     ```
 3. Verify top-to-bottom direction. Flag reverse dependencies.
@@ -107,6 +139,12 @@ heading.
     grep -nE '(URLSession\.\w+|FileManager\.default|NSXPCConnection)' <reducer-file>
     ```
 4. Verify state/action types are in `Model/`, not scattered across segments.
+5. Check action dispatch ownership:
+    ```bash
+    # Preferred: CodeGraph (action dispatch site 추적)
+    codegraph_callers(symbol: "<Reducer>.Action")
+    codegraph_callees(symbol: "<View>.body")
+    ```
 
 ### Reuse and Duplicate Detection
 
@@ -116,6 +154,10 @@ heading.
 1. For each new type, function, or helper in the diff, search for existing
    equivalents:
     ```bash
+    # Preferred: CodeGraph (symbol-level, 간접 참조 추적)
+    codegraph_search(query: "<TypeName>")
+    codegraph_callers(symbol: "<ExistingSymbol>")
+    # Fallback: grep
     grep -rn '<TypeName>' --include='*.swift' apps/macos/
     ```
 2. Compare naming: two types representing the same domain concept with
@@ -141,6 +183,22 @@ heading.
     ```bash
     grep -nE 'teardown|onDisappear|cancel|reset|cleanup' <reducer-file>
     ```
+
+### Swift Concurrency Review
+
+**정책 참조:** `.greptile/rules.md` §Async lifecycle and cancellation
+
+**체크 항목:**
+
+1. `@MainActor` vs `actor` vs `nonisolated` 사용이 의도적이고 일관적인지
+2. `Task.detached` 사용에 정당성이 있는지 (structured concurrency 선호)
+3. Strict concurrency 설정 (`SWIFT_STRICT_CONCURRENCY`, `SWIFT_DEFAULT_ACTOR_ISOLATION`)이 프로젝트 정책과 일치
+4. Effect cancellation ID가 모든 async effect에 존재
+5. `Sendable` conformance가 실제로 thread-safe한지 (단순 annotation이 아닌)
+
+```bash
+grep -nE 'Task\.detached|@MainActor|nonisolated|actor ' <changed-file>
+```
 
 ### File-backed Storage and Credentials
 
@@ -226,6 +284,9 @@ heading.
     ```
 2. Search package code for app-target coupling or upper-layer imports:
     ```bash
+    # Preferred: CodeGraph (transitive impact)
+    codegraph_impact(symbol: "<PackageOrSymbol>", depth: 2)
+    # Fallback: grep
     grep -nE '(@testable import Voyager|import Voyager|import .*Pages|import .*Widgets|import .*Features)' <package-file>
     ```
 3. For promoted public APIs, check that the required initializer, stored
@@ -268,8 +329,27 @@ heading.
     - View-to-view communication for domain behavior.
     - Global notification routing when a reducer action path exists:
     ```bash
+    # Preferred: CodeGraph (실제 호출 경로)
+    codegraph_trace("<ViewAction>", "<TargetHandler>")
+    # Fallback: grep
     grep -nE 'NotificationCenter|UserDefaults\.standard|NSApplication\.shared' <changed-file>
     ```
+
+### Backend API Contracts
+
+**Policy reference:** `.greptile/rules.md` §Backend API contracts
+
+1. Identify gateway/API changes in the diff:
+    ```bash
+    git diff --name-only origin/develop...HEAD | grep -E '(Gateway|ApiClient|Route|Endpoint)'
+    ```
+2. For Swift–Python cross-language contract changes:
+    ```bash
+    # Preferred: CodeGraph (Swift→Python cross-language)
+    codegraph_trace("<SwiftGateway>", "<PythonRoute>")
+    ```
+3. Verify request/response schema alignment between Swift client and Python route.
+4. Flag missing error handling, mismatched field names, or divergent enum cases.
 
 ### Test Review
 
