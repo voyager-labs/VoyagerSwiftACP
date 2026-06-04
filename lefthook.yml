@@ -6,7 +6,7 @@ post-checkout:
     mise-install:
       run: mise install
     lefthook-install:
-      run: lefthook install
+      run: test -f "$(git rev-parse --git-path hooks/post-checkout)" || lefthook install
     submodules:
       run: git submodule update --init --recursive
     codegraph:
