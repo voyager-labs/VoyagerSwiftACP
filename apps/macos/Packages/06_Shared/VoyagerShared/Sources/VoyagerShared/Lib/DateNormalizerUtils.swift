@@ -3,14 +3,14 @@ import Foundation
 public enum DateNormalizerUtils {
     // MARK: - Formatters (private, used internally)
 
-    private nonisolated(unsafe) static let isoFormatter: ISO8601DateFormatter = {
+    nonisolated(unsafe) private static let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
 
-    private nonisolated(unsafe) static let dateOnlyFormatter: DateFormatter = {
+    nonisolated(unsafe) private static let dateOnlyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -18,7 +18,7 @@ public enum DateNormalizerUtils {
         return formatter
     }()
 
-    private nonisolated(unsafe) static let dateTimeFormatter: DateFormatter = {
+    nonisolated(unsafe) private static let dateTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -26,7 +26,7 @@ public enum DateNormalizerUtils {
         return formatter
     }()
 
-    private nonisolated(unsafe) static let dateTimeSpaceFormatter: DateFormatter = {
+    nonisolated(unsafe) private static let dateTimeSpaceFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)

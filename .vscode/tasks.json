@@ -173,6 +173,42 @@
         "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
       }
     },
+
+    {
+      "type": "sweetpad",
+      "action": "debugging-launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "FileManagerHost Dev: Launch (Debug)",
+      "detail": "Build and Run FileManagerHost from Voyager.xcworkspace on Debug mode",
+      "isBackground": true,
+      "scheme": "FileManagerHost-Dev",
+      "configuration": "Debug",
+      "launchEnv": {
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+      }
+    },
+    {
+      "type": "sweetpad",
+      "action": "launch",
+      "problemMatcher": [
+        "$sweetpad-watch",
+        "$sweetpad-xcodebuild-default",
+        "$sweetpad-xcbeautify-errors",
+        "$sweetpad-xcbeautify-warnings"
+      ],
+      "label": "FileManagerHost Dev: Launch (Release)",
+      "detail": "Build and Run FileManagerHost from Voyager.xcworkspace on Release mode",
+      "scheme": "FileManagerHost-Dev",
+      "configuration": "Release",
+      "launchEnv": {
+        "VOYAGER_PROJECT_ROOT": "${workspaceFolder}"
+      }
+    },
     {
       "label": "Voyager LSP: Current File",
       "type": "shell",
@@ -199,6 +235,14 @@
       "type": "shell",
       "command": "python3",
       "args": ["scripts/dev/lsp_context.py", "--scope", "onboarding"],
+      "problemMatcher": []
+    },
+
+    {
+      "label": "Voyager LSP: FileManagerHost",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/dev/lsp_context.py", "--scope", "file-manager-host"],
       "problemMatcher": []
     },
     {

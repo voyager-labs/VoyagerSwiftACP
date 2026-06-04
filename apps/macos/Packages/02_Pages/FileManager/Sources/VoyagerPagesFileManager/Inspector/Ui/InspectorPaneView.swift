@@ -1,147 +1,148 @@
-import AppKit
 import ComposableArchitecture
 import SwiftUI
-import VoyagerShared
+import VoyagerEntitiesAi
+import VoyagerFeaturesAiChat
 
-// TODO: AppKit으로 변경 및 점검 필요
 struct InspectorPaneView: View {
     let store: StoreOf<FileManagerInspectorFeature>
-    @State private var chatInput: String = ""
+
     @Environment(\.colorScheme)
-    var colorScheme
+    private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Spacer()
-                Button {
-                    // TODO: 메뉴 기능 구현
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .foregroundColor(.secondary)
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.plain)
+            header
+            Divider()
 
-                Button {
-                    store.send(.toggleInspector)
-                } label: {
-                    Image(systemName: "xmark")
-                        .foregroundColor(.secondary)
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.plain)
+            if store.activeMode == .chat {
+                AiChatView(store: store.scope(state: \.aiChat, action: \.aiChat))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            Spacer()
-
-            chatInputArea
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(.thickMaterial)
+        .overlay(inspectorMaterialTint)
     }
 
-    private var chatInputArea: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                // folderScopeChip
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
+    private var header: some View {
+        HStack(spacing: store.aiChat.mode == .chat ? 4 : 8) {
+            if store.aiChat.mode == .sessions {
+                Text("Sessions")
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
 
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $chatInput)
-                    .scrollContentBackground(.hidden)
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-                    .frame(minHeight: singleLineHeight, maxHeight: maxHeight)
-                    .fixedSize(horizontal: false, vertical: !chatInput.isEmpty)
+                Spacer(minLength: 0)
 
-                if chatInput.isEmpty {
-                    Text("Ask anything...")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                        .allowsHitTesting(false)
-                        .padding(.leading, 4)
+                Button {
+                    store.send(.sessionHeaderNewChatTapped)
+                } label: {
+                    newChatButtonLabel
                 }
-            }
-            .frame(height: chatInput.isEmpty ? singleLineHeight : nil)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+                .buttonStyle(.borderless)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .help("Start New Chat")
+                .accessibilityLabel("Start New Chat")
+            } else {
+                Button {
+                    store.send(.sessionHeaderBackTapped)
+                } label: {
+                    backButtonLabel
+                }
+                .buttonStyle(.borderless)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+                .help("Back to Sessions")
+                .accessibilityLabel("Back to Sessions")
 
-            HStack(spacing: 8) {
-                Spacer()
-                submitButton
+                Text(chatHeaderTitle)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 4)
-            .padding(.bottom, 8)
+
+            Button {
+                store.send(.closeChat)
+            } label: {
+                closeButtonLabel
+            }
+            .buttonStyle(.borderless)
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+            .help("Close AI Chat")
+            .accessibilityLabel("Close AI Chat")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: VoyagerDS.Radius.control)
-                .fill(VoyagerDS.Surface.chatInputBackground(for: colorScheme))
-                .overlay(
-                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.control)
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1),
-                ),
-        )
-        .padding(.horizontal, 8)
+        .padding(.leading, store.aiChat.mode == .chat ? 8 : 16)
+        .padding(.trailing, 16)
+        .frame(height: 40)
     }
 
-    private var submitButton: some View {
-        Button(action: submitMessage) {
-            Image(systemName: "arrow.up")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.black)
-                .frame(width: 24, height: 24)
-                .background(
-                    Circle()
-                        .fill(VoyagerDS.BrandSecondaryColor.c500),
-                )
+    private var newChatButtonLabel: some View {
+        Text("New Chat")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06)),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.primary.opacity(0.10), lineWidth: 1),
+            )
+    }
+
+    private var chatHeaderTitle: String {
+        if let selectedSessionID = store.aiChat.sessionList.selectedSessionID,
+           let selectedSummary = store.aiChat.sessionList.allRows.first(where: { $0.sessionID == selectedSessionID })
+        {
+            return selectedSummary.title
         }
-        .buttonStyle(.plain)
-        .disabled(chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
 
-    private func submitMessage() {
-        guard !chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        // TODO: 메시지 전송 로직 구현
-        print("Submitting message: \(chatInput)")
-        chatInput = ""
-    }
-
-    private var folderScopeChip: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "folder")
-                .font(.system(size: 11))
-            // 임시 주석 처리
-            // Text(folderDisplayName)
-            //     .font(.system(size: 12, weight: .light))
+        if let sessionID = store.aiChat.sessionID,
+           let currentSummary = store.aiChat.sessionList.allRows.first(where: { $0.sessionID == sessionID })
+        {
+            return currentSummary.title
         }
-        .foregroundColor(VoyagerDS.Surface.statusButtonText(for: colorScheme))
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
-                .fill(VoyagerDS.Surface.statusButtonBackground(for: colorScheme))
-                .overlay(
-                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipItem)
-                        .strokeBorder(VoyagerDS.Surface.statusButtonBorder(for: colorScheme), lineWidth: 1),
-                ),
+
+        if let firstUserMessage = store.aiChat.transcriptHistory.first(where: { $0.role == .user }) {
+            let normalizedTitle = firstUserMessage.content
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+            if !normalizedTitle.isEmpty {
+                return String(normalizedTitle.prefix(80))
+            }
+        }
+
+        return "New Chat"
+    }
+
+    private var backButtonLabel: some View {
+        ToolbarHoverButtonLabel(
+            systemName: "chevron.left",
+            isEnabled: true,
+            font: nil,
         )
     }
 
-    private var singleLineHeight: CGFloat {
-        let font = NSFont.systemFont(ofSize: 13)
-        let lineHeight = font.ascender - font.descender + font.leading
-        return ceil(lineHeight)
+    private var closeButtonLabel: some View {
+        ToolbarHoverButtonLabel(
+            systemName: "sidebar.trailing",
+            isEnabled: true,
+            font: nil,
+        )
     }
 
-    private var maxHeight: CGFloat {
-        singleLineHeight * 7
+    @ViewBuilder private var inspectorMaterialTint: some View {
+        if colorScheme == .dark {
+            Color.white.opacity(0.06)
+                .allowsHitTesting(false)
+        } else {
+            Color.clear
+                .allowsHitTesting(false)
+        }
     }
 }

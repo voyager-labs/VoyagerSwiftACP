@@ -1,3 +1,4 @@
+// swiftlint:disable single_test_class
 import ComposableArchitecture
 import Foundation
 @testable import Voyager

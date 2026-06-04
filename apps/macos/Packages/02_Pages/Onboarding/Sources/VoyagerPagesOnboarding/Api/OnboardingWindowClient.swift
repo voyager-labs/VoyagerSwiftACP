@@ -32,7 +32,7 @@ public struct OnboardingWindowClient: Sendable {
     public var openMainWindow: @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool
     public var resetStoredProgress: @Sendable () -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         isRequired: @escaping @Sendable () -> Bool,
         showIfNeeded: @escaping @Sendable () -> Bool,
         showWindow: @escaping @Sendable () async -> Void,
@@ -50,13 +50,13 @@ public struct OnboardingWindowClient: Sendable {
 }
 
 extension OnboardingWindowClient: DependencyKey {
-    public nonisolated static var liveValue: OnboardingWindowClient {
+    nonisolated public static var liveValue: OnboardingWindowClient {
         makeLive(openMainWindow: { _ in
             fatalError("onboardingWindowClient.openMainWindow live dependency is not configured")
         })
     }
 
-    public nonisolated static func makeLive(
+    nonisolated public static func makeLive(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
     ) -> OnboardingWindowClient {
         makeClient(
@@ -117,7 +117,7 @@ extension OnboardingWindowClient: DependencyKey {
         )
     }
 
-    private nonisolated static func isOnboardingRequired(_ progressClient: OnboardingProgressClient) -> Bool {
+    nonisolated private static func isOnboardingRequired(_ progressClient: OnboardingProgressClient) -> Bool {
         switch progressClient.load() {
         case let .success(snapshot):
             !snapshot.stepState.completeComplete
@@ -126,7 +126,7 @@ extension OnboardingWindowClient: DependencyKey {
         }
     }
 
-    public nonisolated static var testValue: OnboardingWindowClient {
+    nonisolated public static var testValue: OnboardingWindowClient {
         OnboardingWindowClient(
             isRequired: {
                 fatalError("onboardingWindowClient.isRequired test dependency is not configured")
@@ -149,7 +149,7 @@ extension OnboardingWindowClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: OnboardingWindowClient {
+    nonisolated public static var previewValue: OnboardingWindowClient {
         testValue
     }
 }

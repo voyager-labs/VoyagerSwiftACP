@@ -1,5 +1,4 @@
 @preconcurrency import AppKit
-
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 
@@ -21,14 +20,13 @@ extension EntryGridCoordinator {
 
     func openWithApplications(selectedEntries: [EntryModel]) -> [ApplicationInfo] {
         let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        let applications: [ApplicationInfo] = if selectedFiles.count > 1 {
+        return if selectedFiles.count > 1 {
             state.entryOperations.commonApplicationsForSelectedFiles
         } else if let file = selectedFiles.first {
             state.entryOperations.applicationsForItems[file.fullPath] ?? []
         } else {
             []
         }
-        return applications
     }
 
     func updateContextMenuAnchor(_ event: NSEvent) {

@@ -14,6 +14,7 @@ struct FileManagerWindowPreferencesReducer {
             case let .applyAppPreferences(preferences):
                 state.sidebar.sidebarVisible = preferences.sidebarVisible
                 state.sidebar.sidebarWidth = preferences.sidebarWidth
+                state.inspector.inspectorWidth = preferences.inspectorWidth
 
                 state.content.entryViewLayout.mode = .init(rawValue: preferences.viewLayoutMode.rawValue) ?? .list
                 state.content.entryViewLayout.listIconSize = preferences.listIconSize

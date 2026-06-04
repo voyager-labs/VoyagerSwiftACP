@@ -4,13 +4,13 @@ import ComposableArchitecture
 public struct SystemSettingsClient: Sendable {
     public var openFullDiskAccess: @Sendable () -> Bool
 
-    public nonisolated init(openFullDiskAccess: @escaping @Sendable () -> Bool) {
+    nonisolated public init(openFullDiskAccess: @escaping @Sendable () -> Bool) {
         self.openFullDiskAccess = openFullDiskAccess
     }
 }
 
 extension SystemSettingsClient: DependencyKey {
-    public nonisolated static var liveValue: SystemSettingsClient {
+    nonisolated public static var liveValue: SystemSettingsClient {
         SystemSettingsClient(openFullDiskAccess: {
             guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
             else {
@@ -20,11 +20,11 @@ extension SystemSettingsClient: DependencyKey {
         })
     }
 
-    public nonisolated static var testValue: SystemSettingsClient {
+    nonisolated public static var testValue: SystemSettingsClient {
         SystemSettingsClient(openFullDiskAccess: { false })
     }
 
-    public nonisolated static var previewValue: SystemSettingsClient {
+    nonisolated public static var previewValue: SystemSettingsClient {
         SystemSettingsClient(openFullDiskAccess: { false })
     }
 }

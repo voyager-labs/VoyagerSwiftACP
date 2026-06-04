@@ -1,6 +1,6 @@
 import Foundation
 
-struct ComposerScopeChangeFeedbackDisplay: Equatable, Sendable {
+struct ComposerScopeChangeFeedbackDisplay: Equatable {
     let title: String
     let message: String
     let phaseLabel: String

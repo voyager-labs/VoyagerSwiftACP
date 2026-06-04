@@ -6,9 +6,6 @@ struct CompleteFeature {
     typealias State = CompleteState
     typealias Action = CompleteAction
 
-    @Dependency(\.onboardingWindowClient)
-    private var onboardingWindowClient
-
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -16,21 +13,14 @@ struct CompleteFeature {
                 state.isComplete = true
                 state.isOpeningWindow = true
                 state.openWindowError = nil
-                return .run { [onboardingWindowClient] send in
-                    let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
-                    await send(.openWindowResponse(opened))
-                }
+                return .none
 
             case let .openWindowResponse(opened):
                 state.isOpeningWindow = false
                 if !opened {
                     state.openWindowError = "We couldn't open a file manager window. Please try again."
-                    return .none
                 }
-
-                return .run { [onboardingWindowClient] _ in
-                    await onboardingWindowClient.closeWindow()
-                }
+                return .none
             }
         }
     }

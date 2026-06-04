@@ -20,7 +20,7 @@ struct SidebarTagItemView: View {
     private var keyCommandFocusCoordinator
     @State private var isDropTarget = false
 
-    @ViewBuilder private var backgroundView: some View {
+    private var backgroundView: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(backgroundColor)
             .overlay(

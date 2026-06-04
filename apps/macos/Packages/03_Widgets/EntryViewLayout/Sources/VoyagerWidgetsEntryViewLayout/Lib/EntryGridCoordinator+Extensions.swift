@@ -261,6 +261,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
                 self?.sendEntryOperations(.edit(.cancelRename))
             },
         ))
+        item.isSelected = collectionView.selectionIndexPaths.contains(indexPath)
 
         return item
     }

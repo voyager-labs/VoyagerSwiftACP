@@ -63,6 +63,15 @@ struct EditMenuCommands: Commands {
             }
             .keyboardShortcut("f", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
+
+            let contextualAiChatTitle = viewStore.isContextualAiChatPresented
+                ? "Close Contextual AI Chat"
+                : "Open Contextual AI Chat"
+            Button(contextualAiChatTitle) {
+                sendEditCommand(.openContextualAiChat)
+            }
+            .keyboardShortcut("l", modifiers: .command)
+            .disabled(!viewStore.hasFocusedWindow)
         }
 
         CommandGroup(replacing: .pasteboard) {

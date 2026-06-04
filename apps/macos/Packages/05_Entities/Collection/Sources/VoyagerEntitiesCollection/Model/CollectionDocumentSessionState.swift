@@ -66,12 +66,6 @@ public struct CollectionDocumentSessionState: Equatable, Sendable {
         self.metadata = metadata
     }
 
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.phase == rhs.phase
-            && lhs.document == rhs.document
-            && lhs.metadata == rhs.metadata
-    }
-
     public mutating func captureReopenContext(_ context: CollectionContext?) {
         metadata.reopenContext = context
     }

@@ -3,7 +3,7 @@ import VoyagerEntitiesTag
 import VoyagerShared
 
 public enum EntryModelConverterLive {
-    public nonisolated static func convertURLToEntry(
+    nonisolated public static func convertURLToEntry(
         _ itemURL: URL,
         entryLoadingClient: EntryLoadingClient,
         workspaceClient: WorkspaceClient,
@@ -61,7 +61,7 @@ public enum EntryModelConverterLive {
         )
     }
 
-    private nonisolated static func entryTags(from itemURL: URL) -> [Tag]? {
+    nonisolated private static func entryTags(from itemURL: URL) -> [Tag]? {
         if let tags = TagMetadataClient.loadTags(from: itemURL) {
             return tags
         }
@@ -76,7 +76,7 @@ public enum EntryModelConverterLive {
         return nil
     }
 
-    private nonisolated static func entrySupplementaryMetadata(
+    nonisolated private static func entrySupplementaryMetadata(
         url: URL,
         isDirectory: Bool,
         entryLoadingClient: EntryLoadingClient,

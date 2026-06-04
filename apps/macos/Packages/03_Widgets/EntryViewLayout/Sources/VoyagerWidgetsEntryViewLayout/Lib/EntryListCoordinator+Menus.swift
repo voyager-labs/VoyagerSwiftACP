@@ -1,6 +1,5 @@
 @preconcurrency import AppKit
 import ComposableArchitecture
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerFeaturesEntryOperations
@@ -67,14 +66,13 @@ extension EntryListCoordinator {
 
     func openWithApplications(selectedEntries: [EntryModel]) -> [ApplicationInfo] {
         let selectedFiles = selectedEntries.filter { !$0.isFolder }
-        let applications: [ApplicationInfo] = if selectedFiles.count > 1 {
+        return if selectedFiles.count > 1 {
             state.entryOperations.commonApplicationsForSelectedFiles
         } else if let file = selectedFiles.first {
             state.entryOperations.applicationsForItems[file.fullPath] ?? []
         } else {
             [] as [ApplicationInfo]
         }
-        return applications
     }
 
     func entryForRow(_ row: Int?) -> EntryModel? {

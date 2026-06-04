@@ -13,7 +13,7 @@ public struct FilterSnapshot: Equatable {
         scopeSelection: ComposerScopeSelection,
         conditions: [Condition],
         conditionDisplayByKey: [String: ConditionDisplayState],
-        includeSubfolders: Bool
+        includeSubfolders: Bool,
     ) {
         self.scopeSelection = scopeSelection
         self.conditions = conditions
@@ -25,13 +25,13 @@ public struct FilterSnapshot: Equatable {
         scopes: [String],
         conditions: [Condition],
         conditionDisplayByKey: [String: ConditionDisplayState],
-        includeSubfolders: Bool = true
+        includeSubfolders: Bool = true,
     ) {
         self.init(
             scopeSelection: ComposerScopeSelection.fromLegacyScopes(scopes),
             conditions: conditions,
             conditionDisplayByKey: conditionDisplayByKey,
-            includeSubfolders: includeSubfolders
+            includeSubfolders: includeSubfolders,
         )
     }
 }
@@ -95,8 +95,13 @@ public struct ComposerState: Equatable {
 
     public init() {}
 
-    public var canUndo: Bool { !history.isEmpty }
-    public var canRedo: Bool { !redoHistory.isEmpty }
+    public var canUndo: Bool {
+        !history.isEmpty
+    }
+
+    public var canRedo: Bool {
+        !redoHistory.isEmpty
+    }
 
     public func collectionContext(query: String) -> CollectionContext {
         CollectionContext(

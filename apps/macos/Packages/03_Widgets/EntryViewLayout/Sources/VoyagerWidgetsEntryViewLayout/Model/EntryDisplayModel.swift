@@ -1,8 +1,7 @@
 import Foundation
-
 import VoyagerEntitiesEntry
 
-struct EntryDisplayModel: Sendable {
+struct EntryDisplayModel {
     let entry: EntryModel
 
     var formattedSize: String {

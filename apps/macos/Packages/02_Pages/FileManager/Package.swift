@@ -11,10 +11,12 @@ let kPackage = Package(
     ],
     dependencies: [
         // Local packages
+        .package(path: "../../04_Features/AiChat"),
         .package(path: "../../04_Features/Composer"),
         .package(path: "../../04_Features/ContentPageNavigation"),
         .package(path: "../../04_Features/EntryArrangements"),
         .package(path: "../../04_Features/EntryOperations"),
+        .package(path: "../../05_Entities/Ai"),
         .package(path: "../../05_Entities/AppPreferences"),
         .package(path: "../../05_Entities/Collection"),
         .package(path: "../../05_Entities/Entry"),
@@ -32,10 +34,12 @@ let kPackage = Package(
         .target(
             name: "VoyagerPagesFileManager",
             dependencies: [
+                .product(name: "VoyagerFeaturesAiChat", package: "AiChat"),
                 .product(name: "VoyagerFeaturesComposer", package: "Composer"),
                 .product(name: "VoyagerFeaturesContentPageNavigation", package: "ContentPageNavigation"),
                 .product(name: "VoyagerFeaturesEntryArrangements", package: "EntryArrangements"),
                 .product(name: "VoyagerFeaturesEntryOperations", package: "EntryOperations"),
+                .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerEntitiesCollection", package: "Collection"),
                 .product(name: "VoyagerEntitiesEntry", package: "Entry"),
@@ -54,6 +58,7 @@ let kPackage = Package(
             name: "VoyagerPagesFileManagerTests",
             dependencies: [
                 "VoyagerPagesFileManager",
+                .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerEntitiesEntry", package: "Entry"),
                 .product(name: "VoyagerWidgetsEntryViewLayout", package: "EntryViewLayout"),

@@ -82,6 +82,7 @@ struct FileManagerContentChromeProps: Equatable {
     let breadcrumbRoots: FileManagerBreadcrumbRoots
     let pathDisplayNames: [String: String]
     let specialDirectoryIconNames: [String: String]
+    let isContextualAiChatPresented: Bool
 }
 
 struct FileManagerContentOverlayProps: Equatable {

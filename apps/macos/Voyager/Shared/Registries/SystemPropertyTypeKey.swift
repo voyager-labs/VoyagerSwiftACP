@@ -1,6 +1,6 @@
 import Foundation
 
-enum SystemPropertyTypeKey: String, Equatable, Sendable {
+enum SystemPropertyTypeKey: String, Equatable {
     case string
     case number
     case date

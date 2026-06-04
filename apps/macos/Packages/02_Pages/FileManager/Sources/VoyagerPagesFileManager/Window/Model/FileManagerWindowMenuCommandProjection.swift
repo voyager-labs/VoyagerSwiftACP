@@ -19,6 +19,7 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
     public let canRedo: Bool
     public let selectedItemCount: Int
     public let isComposerPresented: Bool
+    public let isContextualAiChatPresented: Bool
 }
 
 public extension FileManagerWindowState {
@@ -42,6 +43,9 @@ public extension FileManagerWindowState {
             canRedo: content.entryViewLayout.entryOperations.canRedoEntryAction,
             selectedItemCount: selectedIds.count,
             isComposerPresented: content.composer.isPresented,
+            isContextualAiChatPresented: inspector.inspectorVisible
+                && inspector.inspectorPaneExists
+                && inspector.activeMode == .chat,
         )
     }
 }

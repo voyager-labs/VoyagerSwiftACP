@@ -167,7 +167,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
     ) -> CGFloat {
         guard splitView === windowSplitView else { return proposedMinimumPosition }
         switch dividerIndex {
-        case 0: return FileManagerSidebarSync.sidebarMinWidth
+        case 0: return 0
         default: return proposedMinimumPosition
         }
     }
@@ -181,6 +181,20 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         switch dividerIndex {
         case 0: return FileManagerSidebarSync.sidebarMaxWidth
         default: return proposedMaximumPosition
+        }
+    }
+
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainSplitPosition proposedPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int,
+    ) -> CGFloat {
+        guard splitView === windowSplitView else { return proposedPosition }
+        switch dividerIndex {
+        case 0:
+            return FileManagerSidebarSync.constrainedSidebarDividerPosition(proposedPosition: proposedPosition)
+        default:
+            return proposedPosition
         }
     }
 
@@ -243,6 +257,10 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
         case .hideSidebar:
             syncSidebarVisibilityToStore(false)
+
+        case let .showSidebar(width):
+            syncSidebarVisibilityToStore(true)
+            syncSidebarWidthToStore(width)
 
         case .restoreSidebar:
             applySidebarState(
@@ -309,7 +327,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
                sidebarView: sidebarView,
            )
         {
-            splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth, ofDividerAt: 0)
+            splitView.setPosition(store.sidebar.sidebarWidth, ofDividerAt: 0)
             splitView.adjustSubviews()
         }
 

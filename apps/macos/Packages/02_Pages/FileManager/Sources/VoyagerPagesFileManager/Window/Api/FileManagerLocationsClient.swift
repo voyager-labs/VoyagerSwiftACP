@@ -5,7 +5,7 @@ import VoyagerEntitiesEntry
 public struct FileManagerLocationsClient: Sendable {
     public var loadLocations: @Sendable (EntryLoadingClient) async -> [SidebarItems.LocationItem]
 
-    public nonisolated init(
+    nonisolated public init(
         loadLocations: @escaping @Sendable (EntryLoadingClient) async -> [SidebarItems.LocationItem],
     ) {
         self.loadLocations = loadLocations
@@ -13,7 +13,7 @@ public struct FileManagerLocationsClient: Sendable {
 }
 
 extension FileManagerLocationsClient: DependencyKey {
-    public nonisolated static var liveValue: FileManagerLocationsClient {
+    nonisolated public static var liveValue: FileManagerLocationsClient {
         FileManagerLocationsClient(
             loadLocations: { entryLoadingClient in
                 await MainActor.run {
@@ -116,13 +116,13 @@ extension FileManagerLocationsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: FileManagerLocationsClient {
+    nonisolated public static var testValue: FileManagerLocationsClient {
         FileManagerLocationsClient(
             loadLocations: { _ in [] },
         )
     }
 
-    public nonisolated static var previewValue: FileManagerLocationsClient {
+    nonisolated public static var previewValue: FileManagerLocationsClient {
         testValue
     }
 }

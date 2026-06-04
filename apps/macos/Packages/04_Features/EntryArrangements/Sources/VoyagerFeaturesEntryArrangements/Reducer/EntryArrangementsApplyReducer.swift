@@ -1,6 +1,5 @@
 import ComposableArchitecture
 import Foundation
-
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
@@ -261,7 +260,7 @@ private extension EntryArrangementsApplyReducer {
         }
     }
 
-    private nonisolated(unsafe) static let sizeRangeFormatter: ByteCountFormatter = {
+    nonisolated(unsafe) private static let sizeRangeFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .file

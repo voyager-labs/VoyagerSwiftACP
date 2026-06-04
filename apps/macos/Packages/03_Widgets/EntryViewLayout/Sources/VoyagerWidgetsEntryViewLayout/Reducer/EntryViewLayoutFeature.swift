@@ -35,37 +35,49 @@ public struct EntryViewLayoutFeature {
         Reduce { state, action in
             switch action {
             case let .internal(.setSelectionState(ids, lastSelectedId, rangeAnchorId, shouldScrollToSelection)):
+                let previousSelection = state.selectedIds
                 state.selectedIds = ids
                 state.lastSelectedId = lastSelectedId
                 state.rangeAnchorId = rangeAnchorId
                 state.shouldScrollToSelection = shouldScrollToSelection
 
+                var effects: [Effect<Action>] = []
                 if let renamingId = state.entryOperations.renamingItemId {
                     let isRenamingItemSelected = ids == [renamingId]
                     if !isRenamingItemSelected {
-                        return .send(.entryOperations(.edit(.cancelRename)))
+                        effects.append(.send(.entryOperations(.edit(.cancelRename))))
                     }
                 }
 
-                return .none
+                if previousSelection != ids {
+                    effects.append(.send(.delegate(.selectionChanged)))
+                }
+
+                return .merge(effects)
 
             case let .internal(.applySelectAll(orderedItemIds)):
+                let previousSelection = state.selectedIds
+                let selectedIds = Set(orderedItemIds)
                 let lastSelectedId = orderedItemIds.last
-                state.selectedIds = Set(orderedItemIds)
+                state.selectedIds = selectedIds
                 state.lastSelectedId = lastSelectedId
                 state.rangeAnchorId = lastSelectedId
                 state.shouldScrollToSelection = false
-                return .none
+                guard previousSelection != selectedIds else { return .none }
+                return .send(.delegate(.selectionChanged))
 
             case .internal(.applyClearSelection):
+                let previousSelection = state.selectedIds
                 state.selectedIds = []
                 state.lastSelectedId = nil
                 state.rangeAnchorId = nil
                 state.shouldScrollToSelection = false
-                return .none
+                guard !previousSelection.isEmpty else { return .none }
+                return .send(.delegate(.selectionChanged))
 
             case let .internal(.applySelectionOffset(offset, isShiftPressed, orderedItemIds)):
                 guard !orderedItemIds.isEmpty else { return .none }
+                let previousSelection = state.selectedIds
 
                 guard let currentId = state.lastSelectedId,
                       let currentIndex = orderedItemIds.firstIndex(of: currentId)
@@ -76,7 +88,8 @@ public struct EntryViewLayoutFeature {
                     state.lastSelectedId = itemId
                     state.rangeAnchorId = itemId
                     state.shouldScrollToSelection = true
-                    return .none
+                    guard previousSelection != state.selectedIds else { return .none }
+                    return .send(.delegate(.selectionChanged))
                 }
 
                 let targetIndex: Int
@@ -114,7 +127,8 @@ public struct EntryViewLayoutFeature {
 
                 state.lastSelectedId = targetItemId
                 state.shouldScrollToSelection = true
-                return .none
+                guard previousSelection != state.selectedIds else { return .none }
+                return .send(.delegate(.selectionChanged))
 
             case let .internal(.updateGridColumnCount(count)):
                 state.gridColumnCount = max(1, count)
@@ -235,7 +249,6 @@ public struct EntryViewLayoutFeature {
                 }
 
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: Array(remainingItems))
-                Self.reconcileSelectionAfterCollectionMutation(&state)
                 return Self.updateEntriesAndReapply(&state)
 
             case .internal(.clearCollectionPresentation):
@@ -281,17 +294,25 @@ public struct EntryViewLayoutFeature {
 
     static func updateEntriesAndReapply(_ state: inout State) -> Effect<Action> {
         state.entries = state.displayOrderItems
+        reconcileSelectionWithEntries(&state)
         return .send(.entryArrangements(.reapply))
     }
 
-    static func reconcileSelectionAfterCollectionMutation(_ state: inout State) {
-        let remainingIds = Set(state.collectionItems.map(\.id))
+    static func reconcileSelectionWithEntries(_ state: inout State) {
+        let remainingIds = Set(state.entries.map(\.id))
         state.selectedIds = state.selectedIds.intersection(remainingIds)
 
-        if let lastSelectedId = state.lastSelectedId, !remainingIds.contains(lastSelectedId) {
-            state.lastSelectedId = state.collectionItems.first { state.selectedIds.contains($0.id) }?.id
+        guard !state.selectedIds.isEmpty else {
+            state.lastSelectedId = nil
+            state.rangeAnchorId = nil
+            state.shouldScrollToSelection = false
+            return
         }
-        if let rangeAnchorId = state.rangeAnchorId, !remainingIds.contains(rangeAnchorId) {
+
+        if state.lastSelectedId.map(state.selectedIds.contains) != true {
+            state.lastSelectedId = state.entries.first { state.selectedIds.contains($0.id) }?.id
+        }
+        if state.rangeAnchorId.map(state.selectedIds.contains) != true {
             state.rangeAnchorId = state.lastSelectedId
         }
         state.shouldScrollToSelection = false

@@ -18,10 +18,16 @@ enum ProgressClient {
         )
     }
 
-    static func recording(saveRecorder: LockIsolated<OnboardingProgressSnapshot?>) -> OnboardingProgressClient {
+    static func recording(
+        saveRecorder: LockIsolated<OnboardingProgressSnapshot?>,
+        eventLog: EventLogSyncBox? = nil,
+    ) -> OnboardingProgressClient {
         OnboardingProgressClient(
             load: { .empty },
-            save: { snapshot in saveRecorder.setValue(snapshot) },
+            save: { snapshot in
+                eventLog?.record("save")
+                saveRecorder.setValue(snapshot)
+            },
             reset: {},
         )
     }

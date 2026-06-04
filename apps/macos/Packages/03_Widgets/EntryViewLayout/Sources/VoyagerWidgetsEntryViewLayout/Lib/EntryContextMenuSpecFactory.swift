@@ -1,5 +1,4 @@
 import Foundation
-
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerFeaturesEntryOperations
@@ -16,7 +15,7 @@ enum EntryContextMenuTagSelection {
     case mixed
 }
 
-// 더 좋은 구조 생각
+/// 더 좋은 구조 생각
 struct EntryContextMenuSpec {
     let selectedCount: Int
     let rowEntryPathForOpenInNewTab: String?

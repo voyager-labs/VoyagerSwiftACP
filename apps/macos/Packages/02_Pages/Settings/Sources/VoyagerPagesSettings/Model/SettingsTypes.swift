@@ -4,8 +4,11 @@ import Foundation
 public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     case general
     case appearance
+    case ai
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var title: String {
         switch self {
@@ -13,6 +16,8 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
             "General"
         case .appearance:
             "Appearance"
+        case .ai:
+            "AI"
         }
     }
 
@@ -22,6 +27,8 @@ public enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
             "gear"
         case .appearance:
             "paintbrush"
+        case .ai:
+            "cpu"
         }
     }
 }

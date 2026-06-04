@@ -1,6 +1,6 @@
 import Foundation
 
-struct ParsedSystemKey: Sendable {
+struct ParsedSystemKey {
     let prefix: String
     let symbol: String
 }
