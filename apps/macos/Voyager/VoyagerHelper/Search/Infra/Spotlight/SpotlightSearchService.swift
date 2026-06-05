@@ -87,12 +87,8 @@ struct SpotlightSearchService: SearchExecutionServicing {
         }
 
         let items = makeJSONItems(from: filteredPaths)
-        let pushdownCount = compiledPlan.pushdownConditions.count
 
-        logger.info(
-            "MDQuery applyFilters completed: id=\(requestId) scopes=\(scopeURLs.count) "
-                + "pushdown_conditions=\(pushdownCount) items=\(items.count)",
-        )
+        logger.info("MDQuery applyFilters completed: id=\(requestId) items=\(items.count)")
 
         return SearchResponsePayload(
             itemCount: items.count,
