@@ -1,16 +1,24 @@
 #!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { ensureDir, nowIso, one, parseArgs, printJson, repoKnowledgeRoot, requireOne, slugify } from "./wiki-lib";
+import { ensureDir, nowIso, one, parseArgs, printJson, repoKnowledgeRoot, requireOne } from "./wiki-lib";
+
+function sessionFilename(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "unknown-session";
+}
 
 const help = `Usage:
-  bun .agents/skills/sisyphus-wiki/scripts/wiki-session-event.ts --session-id <id> --event knowledge.candidate --summary "..."
+  bun .agents/skills/sisyphus-wiki/scripts/wiki-session-event.ts --session-id <id> --event turn.user --summary "..."
 
 Options:
   --root <path>           Knowledge root (default: .sisyphus/knowledge)
   --session-id <id>       Session identifier
-  --event <name>          Event name (default: knowledge.candidate)
-  --summary <text>        Event summary
+  --event <name>          Turn event name (default: turn.assistant)
+  --summary <text>        Turn summary text
   --tags <a,b,c>          Optional comma-separated tags
   --candidate             Also append to inbox/pending-extractions.jsonl
 `;
@@ -23,12 +31,12 @@ try {
   }
   const root = repoKnowledgeRoot(args);
   const sessionId = requireOne(args, "session-id");
-  const event = one(args, "event", "knowledge.candidate");
+  const event = one(args, "event", "turn.assistant");
   const summary = requireOne(args, "summary");
   const ts = nowIso();
-  const payload = { ts, event, session_id: sessionId, summary, tags: one(args, "tags") };
+  const payload = { ts, event, session_id: sessionId, text: summary, capture: args.has("candidate") ? "candidate" : "observed", tags: one(args, "tags") };
 
-  const safeName = slugify(sessionId);
+  const safeName = sessionFilename(sessionId);
   const sessionsDir = join(root, "sessions");
   ensureDir(sessionsDir);
   appendFileSync(join(sessionsDir, `${safeName}.jsonl`), `${JSON.stringify(payload)}\n`);
