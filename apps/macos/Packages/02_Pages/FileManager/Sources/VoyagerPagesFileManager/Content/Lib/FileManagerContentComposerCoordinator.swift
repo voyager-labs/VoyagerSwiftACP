@@ -11,6 +11,7 @@ enum FileManagerContentComposerCoordinator {
     struct Dependencies {
         let collectionAlertClient: CollectionAlertClient
         let metricsClient: MetricsClient
+        let registryClient: RegistryClient
     }
 
     static func reduce(
@@ -202,18 +203,7 @@ enum FileManagerContentComposerCoordinator {
             nil,
         )
 
-        guard case let .folder(path) = state.navigation.navigationState else {
-            return .none
-        }
-
-        if state.composer.scopeEditor.selection.isRootOnly,
-           state.composer.conditions.isEmpty,
-           state.composer.text.isEmpty
-        {
-            return .send(.composer(.scopeEditorSeedCurrentPath(path)))
-        }
-
-        return .none
+        return composerOpenedSeedEffect(state: &state, dependencies: dependencies)
     }
 
     private static func handleSetText(
@@ -301,6 +291,112 @@ enum FileManagerContentComposerCoordinator {
             ),
         )
     }
+}
+
+private func composerOpenedSeedEffect(
+    state: inout FileManagerContentState,
+    dependencies: FileManagerContentComposerCoordinator.Dependencies,
+) -> Effect<FileManagerContentAction> {
+    switch state.navigation.navigationState {
+    case let .tags(tagName):
+        virtualRouteSeedEffect(for: .tags(tagName), composer: state.composer, dependencies: dependencies)
+
+    case .recents:
+        virtualRouteSeedEffect(for: .recents, composer: state.composer, dependencies: dependencies)
+
+    case let .folder(path):
+        folderRouteSeedEffect(path: path, state: &state)
+
+    case .computer, .collection:
+        .none
+    }
+}
+
+private func virtualRouteSeedEffect(
+    for route: ContentPageNavigationRoute,
+    composer: ComposerFeature.State,
+    dependencies: FileManagerContentComposerCoordinator.Dependencies,
+) -> Effect<FileManagerContentAction> {
+    guard canApplyVirtualRouteSeed(to: composer),
+          let context = FileManagerVirtualCollectionContextFactory.collectionContext(
+              for: route,
+              registryClient: dependencies.registryClient,
+          )
+    else {
+        return .none
+    }
+    return .send(.composer(.applyCollectionDraftRestore(.init(context: context, openedURL: nil))))
+}
+
+private func folderRouteSeedEffect(
+    path: String,
+    state: inout FileManagerContentState,
+) -> Effect<FileManagerContentAction> {
+    if hasOnlyAutomaticVirtualRouteSeed(state.composer) {
+        let wasPresented = state.composer.isPresented
+        state.resetComposer()
+        state.composer.isPresented = wasPresented
+        return .send(.composer(.scopeEditorSeedCurrentPath(path)))
+    }
+    guard canApplyFolderRouteSeed(to: state.composer) else {
+        return .none
+    }
+    return .send(.composer(.scopeEditorSeedCurrentPath(path)))
+}
+
+private func canApplyFolderRouteSeed(to composer: ComposerFeature.State) -> Bool {
+    composer.scopeEditor.selection.isRootOnly && isComposerDraftEmpty(composer)
+}
+
+private func canApplyVirtualRouteSeed(to composer: ComposerFeature.State) -> Bool {
+    if hasOnlyAutomaticVirtualRouteSeed(composer) {
+        return true
+    }
+    guard isComposerDraftEmpty(composer) else {
+        return false
+    }
+    return composer.scopeEditor.selection.isRootOnly || hasOnlyAutomaticRouteScopeSeed(composer)
+}
+
+private func isComposerDraftEmpty(_ composer: ComposerFeature.State) -> Bool {
+    composer.conditions.isEmpty
+        && composer.text.isEmpty
+        && composer.collectionContext == nil
+        && composer.pendingSearchQuery == nil
+}
+
+private func hasOnlyAutomaticRouteScopeSeed(_ composer: ComposerFeature.State) -> Bool {
+    !composer.scopeEditor.selection.isRootOnly
+        && !composer.scopeEditor.isPresented
+        && !composer.canUndo
+        && !composer.hasSubmittedInSession
+        && composer.submittedSearchFilters == nil
+        && composer.lastSearchResponse == nil
+        && composer.lastFiltersResponse == nil
+        && !composer.isLoadingSearch
+        && !composer.isLoadingFilters
+        && !composer.isFilteringInFlight
+        && composer.activeSearchRequestID == nil
+        && composer.activeFiltersRequestID == nil
+}
+
+private func hasOnlyAutomaticVirtualRouteSeed(_ composer: ComposerFeature.State) -> Bool {
+    composer.scopeEditor.selection.isRootOnly
+        && composer.text.isEmpty
+        && composer.collectionContext == nil
+        && composer.pendingSearchQuery == nil
+        && !composer.scopeEditor.isPresented
+        && !composer.canUndo
+        && !composer.hasSubmittedInSession
+        && composer.submittedSearchFilters == nil
+        && composer.lastSearchResponse == nil
+        && composer.lastFiltersResponse == nil
+        && !composer.isLoadingSearch
+        && !composer.isLoadingFilters
+        && !composer.isFilteringInFlight
+        && composer.activeSearchRequestID == nil
+        && composer.activeFiltersRequestID == nil
+        && FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(composer.conditions)
 }
 
 private func searchResultPaths(from items: [VoyagerShared.JSONValue]) -> [String] {

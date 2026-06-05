@@ -22,12 +22,14 @@ struct ComposerHistoryReducer {
                     conditions: state.conditions,
                     conditionDisplayByKey: state.conditionDisplayByKey,
                     includeSubfolders: state.scopeEditor.includeSubfolders,
+                    includeDirectories: state.includeDirectories,
                 )
                 state.redoHistory.append(current)
                 state.scopeEditor.selection = previous.scopeSelection
                 state.conditions = previous.conditions
                 state.conditionDisplayByKey = previous.conditionDisplayByKey
                 state.scopeEditor.includeSubfolders = previous.includeSubfolders
+                state.includeDirectories = previous.includeDirectories
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
                 if before != after, state.shouldAutoApplyScopeChange {
@@ -44,12 +46,14 @@ struct ComposerHistoryReducer {
                     conditions: state.conditions,
                     conditionDisplayByKey: state.conditionDisplayByKey,
                     includeSubfolders: state.scopeEditor.includeSubfolders,
+                    includeDirectories: state.includeDirectories,
                 )
                 state.history.append(current)
                 state.scopeEditor.selection = next.scopeSelection
                 state.conditions = next.conditions
                 state.conditionDisplayByKey = next.conditionDisplayByKey
                 state.scopeEditor.includeSubfolders = next.includeSubfolders
+                state.includeDirectories = next.includeDirectories
                 updateOperatorOptions(state: &state, registryClient: registryClient)
                 let after = buildFilters(from: state)
                 if before != after, state.shouldAutoApplyScopeChange {

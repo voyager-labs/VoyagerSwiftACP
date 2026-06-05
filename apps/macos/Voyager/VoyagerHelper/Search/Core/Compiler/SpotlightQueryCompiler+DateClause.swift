@@ -67,10 +67,63 @@ extension SpotlightQueryCompiler {
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
         )
-        let (startExpr, endExpr) = try resolveSingleDateExpressions(
+
+        if isRecentsTodayPushdownLiteral(
+            literal,
+            propertyKey: condition.propertyKey,
+            operatorCode: condition.operator,
+        ) {
+            return buildTodayDateComparisonClause(
+                attribute: attribute,
+                literal: literal,
+                dateMdqueryOperator: dateMdqueryOperator,
+            )
+        }
+
+        return try buildResolvedDateComparisonClause(
+            attribute: attribute,
             literal: literal,
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
+            dateMdqueryOperator: dateMdqueryOperator,
+        )
+    }
+
+    private func buildTodayDateComparisonClause(
+        attribute: String,
+        literal: String,
+        dateMdqueryOperator: DateMdqueryOperator,
+    ) -> String {
+        let expression = dateExpression(literal)
+        switch dateMdqueryOperator {
+        case .eq:
+            return "(\(attribute) == \(expression))"
+        case .neq:
+            return "(\(attribute) != \(expression))"
+        case .gt:
+            return "\(attribute) > \(expression)"
+        case .gte:
+            return "\(attribute) >= \(expression)"
+        case .lt:
+            return "\(attribute) < \(expression)"
+        case .lte:
+            return "\(attribute) <= \(expression)"
+        case .range, .notRange, .today:
+            preconditionFailure("Today comparison clause does not support this operator")
+        }
+    }
+
+    private func buildResolvedDateComparisonClause(
+        attribute: String,
+        literal: String,
+        propertyKey: String,
+        operatorCode: String,
+        dateMdqueryOperator: DateMdqueryOperator,
+    ) throws -> String {
+        let (startExpr, endExpr) = try resolveSingleDateExpressions(
+            literal: literal,
+            propertyKey: propertyKey,
+            operatorCode: operatorCode,
         )
 
         switch dateMdqueryOperator {
@@ -88,10 +141,20 @@ extension SpotlightQueryCompiler {
             return "\(attribute) < \(endExpr)"
         case .range, .notRange, .today:
             throw CompileError.unsupportedOperator(
-                propertyKey: condition.propertyKey,
-                operatorCode: condition.operator,
+                propertyKey: propertyKey,
+                operatorCode: operatorCode,
             )
         }
+    }
+
+    private func isRecentsTodayPushdownLiteral(
+        _ literal: String,
+        propertyKey: String,
+        operatorCode: String,
+    ) -> Bool {
+        literal.trimmingCharacters(in: .whitespacesAndNewlines) == SearchDateUtils.recentsTodayLiteral
+            && propertyKey == "last_used_date"
+            && operatorCode == "gt"
     }
 
     private func buildTodayClause(attribute: String) -> String {
@@ -152,6 +215,6 @@ extension SpotlightQueryCompiler {
     }
 
     private func todayExpression(_ offset: Int) -> String {
-        "$time.today(\(offset))"
+        SearchDateUtils.todayLiteral(offset: offset)
     }
 }

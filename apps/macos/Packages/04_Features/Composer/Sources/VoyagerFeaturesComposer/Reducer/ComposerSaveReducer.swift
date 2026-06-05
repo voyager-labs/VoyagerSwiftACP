@@ -47,6 +47,7 @@ private func makeSavePayload(from state: ComposerState, currentDate: Date) -> Sa
             scopes: scopes,
             excludedScopes: excludedScopes,
             includeSubfolders: context?.includeSubfolders ?? true,
+            includeDirectories: context?.includeDirectories ?? false,
             conditions: conditions,
         ),
         capturedAt: currentDate,

@@ -17,7 +17,7 @@ enum ConditionChipDisplayUtils {
                 return first + " ~ " + second
             }
 
-            return displayedDateText(values[0])
+            return displayDateValueText(values[0])
         }
 
         if values.count >= 2 {
@@ -54,18 +54,23 @@ enum ConditionChipDisplayUtils {
             if pickerValues.count >= 2 {
                 return pickerValues.map(absoluteDateText)
             }
-            return pickerValues.map(displayedDateText)
+            return pickerValues.map(displayDateValueText)
         }
+
         guard let conditionValues else { return nil }
         if conditionValues.count >= 2 {
             return conditionValues.map(absoluteDateText)
         }
-        return conditionValues.map(displayedDateText)
+        return conditionValues.map(displayDateValueText)
     }
 
-    static func displayedDateText(_ value: String) -> String {
+    static func displayDateValueText(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
+
+        if trimmed == AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral {
+            return "Ever opened"
+        }
 
         if let literal = RelativeDateConditionLiteral(canonicalLiteral: trimmed) {
             return literal.displayText()

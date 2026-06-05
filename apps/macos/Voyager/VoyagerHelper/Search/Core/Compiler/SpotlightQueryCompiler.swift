@@ -340,12 +340,16 @@ extension SpotlightQueryCompiler {
                 propertyKey: condition.propertyKey,
                 operatorCode: condition.operator,
             )
-            let comparisons = values
-                .map { token(for: $0, propertyKey: condition.propertyKey) }
-                .map { "\(attribute) == \"\(escapeLiteral($0))\"" }
+            let comparisons = values.map { value in
+                categoricalMembershipClause(
+                    attribute: attribute,
+                    value: token(for: value, propertyKey: condition.propertyKey),
+                    propertyKey: condition.propertyKey,
+                )
+            }
             if condition.operator == "none" {
                 return "(" + comparisons
-                    .map { $0.replacingOccurrences(of: "==", with: "!=") }
+                    .map { "!(\($0))" }
                     .joined(separator: " && ") + ")"
             }
             return "(" + comparisons.joined(separator: " || ") + ")"
@@ -368,22 +372,26 @@ extension SpotlightQueryCompiler {
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
         )
-        let comparisons = values
-            .map { token(for: $0, propertyKey: condition.propertyKey) }
-            .map { "\(attribute) == \"\(escapeLiteral($0))\"" }
+        let comparisons = values.map { value in
+            stringListMembershipClause(
+                attribute: attribute,
+                value: token(for: value, propertyKey: condition.propertyKey),
+                propertyKey: condition.propertyKey,
+            )
+        }
 
         switch condition.operator {
         case "any":
             return "(" + comparisons.joined(separator: " || ") + ")"
         case "none":
             return "(" + comparisons
-                .map { $0.replacingOccurrences(of: "==", with: "!=") }
+                .map { "!(\($0))" }
                 .joined(separator: " && ") + ")"
         case "all":
             return "(" + comparisons.joined(separator: " && ") + ")"
         case "miss":
             return "(" + comparisons
-                .map { $0.replacingOccurrences(of: "==", with: "!=") }
+                .map { "!(\($0))" }
                 .joined(separator: " || ") + ")"
         default:
             throw CompileError.unsupportedOperator(
@@ -391,6 +399,35 @@ extension SpotlightQueryCompiler {
                 operatorCode: condition.operator,
             )
         }
+    }
+
+    private func categoricalMembershipClause(
+        attribute: String,
+        value: String,
+        propertyKey: String,
+    ) -> String {
+        guard propertyKey == "tag_names" else {
+            return "\(attribute) == \"\(escapeLiteral(value))\""
+        }
+
+        return tagNameMembershipClause(attribute: attribute, value: value)
+    }
+
+    private func stringListMembershipClause(
+        attribute: String,
+        value: String,
+        propertyKey: String,
+    ) -> String {
+        guard propertyKey == "tag_names" else {
+            return "\(attribute) == \"\(escapeLiteral(value))\""
+        }
+
+        return tagNameMembershipClause(attribute: attribute, value: value)
+    }
+
+    private func tagNameMembershipClause(attribute: String, value: String) -> String {
+        let escaped = escapeLiteral(value)
+        return "(\(attribute) == \"\(escaped)\"c || \(attribute) == \"\(escaped)\n*\"c)"
     }
 
     private func buildNumberClause(

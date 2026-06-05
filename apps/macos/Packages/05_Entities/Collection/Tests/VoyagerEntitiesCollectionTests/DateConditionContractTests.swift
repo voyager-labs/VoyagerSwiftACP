@@ -5,6 +5,7 @@ import XCTest
 
 final class DateConditionContractTests: XCTestCase {
     private let relativeLiteral = "voyager.relativeDate:v1:past:3:day:2025-05-17"
+    private let todayOffsetLiteral = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
 
     func testRegistryIncludesTodayAsZeroArityDateOperator() throws {
         let registry = try loadConditionRegistry()
@@ -24,6 +25,18 @@ final class DateConditionContractTests: XCTestCase {
         )
 
         XCTAssertEqual(result.values, [relativeLiteral])
+        XCTAssertNil(result.errorMessage)
+        XCTAssertEqual(result.resetIndices, [])
+    }
+
+    func testNormalizeSingleDatePreservesTodayOffsetLiteral() {
+        let result = ValueNormalizerUtils.normalize(
+            kind: "singleDate",
+            rawValues: ["  \(todayOffsetLiteral)  "],
+            editingIndex: nil,
+        )
+
+        XCTAssertEqual(result.values, [todayOffsetLiteral])
         XCTAssertNil(result.errorMessage)
         XCTAssertEqual(result.resetIndices, [])
     }
@@ -49,6 +62,17 @@ final class DateConditionContractTests: XCTestCase {
         )
 
         XCTAssertEqual(encoded, .string(relativeLiteral))
+    }
+
+    func testEncodeSingleDatePreservesTodayOffsetLiteral() {
+        let encoded = ConditionValueEncoder.encodeValues(
+            values: [todayOffsetLiteral],
+            valueType: "date",
+            operatorCode: "gt",
+            operatorValueUIKind: "singleDate",
+        )
+
+        XCTAssertEqual(encoded, .string(todayOffsetLiteral))
     }
 
     func testEncodeRangeDateCanonicalizesAbsoluteDatesOnly() throws {

@@ -28,6 +28,9 @@ public enum ValueNormalizerUtils {
         if let literal = RelativeDateConditionLiteral(canonicalLiteral: trimmed) {
             return literal.encodedLiteral()
         }
+        if AppliedFilterValueUtils.isTodayFunctionLiteral(trimmed) {
+            return trimmed
+        }
         return formatDateOnlyString(trimmed)
     }
 

@@ -144,6 +144,7 @@ func handleClearAll(
     )
     state.scopeEditor.treeNeighborhoodSeedItems = []
     state.conditions = []
+    state.includeDirectories = false
     state.conditionDisplayByKey = [:]
     state.operatorOptionsByKey = [:]
     state.propertyPicker = .init()

@@ -88,6 +88,13 @@ final class AppliedFilterValueUtilsTests: XCTestCase {
         XCTAssertEqual(result, [literal])
     }
 
+    /// singleDate UI kind은 $time.today offset literal도 그대로 유지하는지 검증
+    func testTodayOffsetStringWithSingleDateKindReturnsLiteral() {
+        let literal = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
+        let result = AppliedFilterValueUtils.stringValues(from: .string(literal), valueUIKind: "singleDate")
+        XCTAssertEqual(result, [literal])
+    }
+
     /// rangeDate UI kind은 상대 날짜 literal을 허용하지 않는지 검증
     func testRelativeDateStringWithRangeDateKindReturnsNil() {
         let literal = "voyager.relativeDate:v1:past:3:day:2025-05-17"

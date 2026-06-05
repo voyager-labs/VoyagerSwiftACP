@@ -1,3 +1,4 @@
+// swiftformat:disable modifierOrder
 import Foundation
 import VoyagerShared
 
@@ -62,6 +63,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
     public let scopes: [String]
     public let excludedScopes: [String]
     public let includeSubfolders: Bool
+    public let includeDirectories: Bool
     public let conditions: [CollectionCondition]
     public let snapshot: CollectionPersistedSnapshot?
     public let snapshotMeta: CollectionSnapshotMeta?
@@ -77,6 +79,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         case scopes
         case excludedScopes
         case includeSubfolders
+        case includeDirectories
         case conditions
         case snapshot
         case snapshotMeta
@@ -94,6 +97,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         scopes = try container.decode([String].self, forKey: .scopes)
         excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
         includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
+        includeDirectories = try container.decodeIfPresent(Bool.self, forKey: .includeDirectories) ?? false
         conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
         snapshot = try container.decodeIfPresent(CollectionPersistedSnapshot.self, forKey: .snapshot)
         snapshotMeta = try container.decodeIfPresent(CollectionSnapshotMeta.self, forKey: .snapshotMeta)
@@ -111,6 +115,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         try container.encode(scopes, forKey: .scopes)
         try container.encode(excludedScopes, forKey: .excludedScopes)
         try container.encode(includeSubfolders, forKey: .includeSubfolders)
+        try container.encode(includeDirectories, forKey: .includeDirectories)
         try container.encode(conditions, forKey: .conditions)
         try container.encodeIfPresent(snapshot, forKey: .snapshot)
         try container.encodeIfPresent(snapshotMeta, forKey: .snapshotMeta)
@@ -127,6 +132,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         scopes: [String],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false, // swiftlint:disable:this function_default_parameter_at_end
         conditions: [CollectionCondition],
         snapshot: CollectionPersistedSnapshot?,
         snapshotMeta: CollectionSnapshotMeta?,
@@ -141,6 +147,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         self.scopes = scopes
         self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
+        self.includeDirectories = includeDirectories
         self.conditions = conditions
         self.snapshot = snapshot
         self.snapshotMeta = snapshotMeta
@@ -156,6 +163,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
         scopes: [String],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false, // swiftlint:disable:this function_default_parameter_at_end
         conditions: [CollectionCondition],
         snapshot: CollectionPersistedSnapshot?,
         snapshotMeta: CollectionSnapshotMeta?,
@@ -174,6 +182,7 @@ public struct VoyagerCollectionFile: Codable, Equatable, Sendable {
             scopes: scopes,
             excludedScopes: excludedScopes,
             includeSubfolders: includeSubfolders,
+            includeDirectories: includeDirectories,
             conditions: conditions,
             snapshot: snapshot,
             snapshotMeta: snapshotMeta,

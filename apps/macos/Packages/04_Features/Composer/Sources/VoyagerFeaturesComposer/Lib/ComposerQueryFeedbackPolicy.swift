@@ -20,6 +20,7 @@ public enum ComposerQueryFeedbackPolicy {
             scopes: appliedFilters?.scopes ?? baseline.scopes,
             excludedScopes: excludedScopes,
             includeSubfolders: appliedFilters?.includeSubfolders ?? baseline.includeSubfolders,
+            includeDirectories: appliedFilters?.includeDirectories ?? baseline.includeDirectories,
             conditions: appliedFilters?.conditions ?? baseline.conditions,
         )
     }

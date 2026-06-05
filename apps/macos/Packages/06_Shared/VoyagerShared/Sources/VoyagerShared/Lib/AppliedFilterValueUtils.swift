@@ -1,6 +1,29 @@
 import Foundation
 
 public enum AppliedFilterValueUtils {
+    public static let recentsSinceAnyOpenedOffset = -1_000_000
+    public static let recentsSinceAnyOpenedLiteral = todayFunctionLiteral(offset: recentsSinceAnyOpenedOffset)
+
+    private static let todayFunctionPrefix = "$time.today("
+    private static let functionSuffix = ")"
+
+    public static func todayFunctionLiteral(offset: Int) -> String {
+        "\(todayFunctionPrefix)\(offset)\(functionSuffix)"
+    }
+
+    public static func todayFunctionOffset(for value: String) -> Int? {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix(todayFunctionPrefix), text.hasSuffix(functionSuffix) else {
+            return nil
+        }
+        let offsetText = String(text.dropFirst(todayFunctionPrefix.count).dropLast())
+        return Int(offsetText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    public static func isTodayFunctionLiteral(_ value: String) -> Bool {
+        todayFunctionOffset(for: value) != nil
+    }
+
     public static func stringValues(from value: JSONValue?, valueUIKind: String) -> [String]? {
         guard let value else { return nil }
         switch value {
@@ -48,6 +71,9 @@ public enum AppliedFilterValueUtils {
         case "singleDate":
             if let literal = RelativeDateConditionLiteral(canonicalLiteral: text) {
                 return literal.encodedLiteral()
+            }
+            if isTodayFunctionLiteral(text) {
+                return text.trimmingCharacters(in: .whitespacesAndNewlines)
             }
             guard let date = DateNormalizerUtils.parseDate(text) else { return nil }
             return DateNormalizerUtils.formatDateOnly(date)
