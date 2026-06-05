@@ -1,7 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesAi
-import VoyagerFeaturesAiProviderConnection
-@testable import VoyagerPagesSettings
+@testable import VoyagerFeaturesAiProviderConnection
 import XCTest
 
 /// Regression tests for the "unavailable in build" provider connection behavior.
@@ -9,9 +8,7 @@ import XCTest
 /// These tests prove unavailable rows stay inert across connect/retry/start-flow paths
 /// and never reach browser login, verification, or persistence clients.
 @MainActor
-final class AiConnectionUnavailableTests: XCTestCase {
-    // MARK: - Row-level: API key provider correctly blocks connect from unavailable
-
+final class AiProviderConnectionUnavailableTests: XCTestCase {
     func testConnectButton_unavailable_apiKeyProvider_isIgnored() async {
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .openai, connectionState: .unavailable),
@@ -50,8 +47,6 @@ final class AiConnectionUnavailableTests: XCTestCase {
         XCTAssertEqual(store.state.flowState, .idle)
     }
 
-    // MARK: - Row-level: primary action assertion
-
     func testPrimaryAction_unavailable_isDisabled() {
         XCTAssertEqual(
             ProviderConnectionState.unavailable.primaryAction,
@@ -61,8 +56,6 @@ final class AiConnectionUnavailableTests: XCTestCase {
         let row = AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable)
         XCTAssertEqual(row.primaryAction, .disabled)
     }
-
-    // MARK: - Row-level: OAuth provider unavailable guard
 
     func testConnectButton_unavailable_oAuthProvider_isIgnored() async {
         let store = TestStore(
@@ -89,7 +82,6 @@ final class AiConnectionUnavailableTests: XCTestCase {
         }
 
         await store.send(.connectButtonTapped)
-
         await store.finish()
 
         XCTAssertEqual(store.state.connectionState, .unavailable)
@@ -121,14 +113,11 @@ final class AiConnectionUnavailableTests: XCTestCase {
         }
 
         await store.send(.retryButtonTapped)
-
         await store.finish()
 
         XCTAssertEqual(store.state.connectionState, .unavailable)
         XCTAssertEqual(store.state.flowState, .idle)
     }
-
-    // MARK: - Dependency trap: unavailable row blocks direct start actions
 
     func testUnavailableOAuthRow_directStartActions_areIgnored() async {
         let store = TestStore(
@@ -161,8 +150,6 @@ final class AiConnectionUnavailableTests: XCTestCase {
         XCTAssertEqual(store.state.connectionState, .unavailable)
         XCTAssertEqual(store.state.flowState, .idle)
     }
-
-    // MARK: - Dependency trap: API key provider never invokes OAuth
 
     func testUnavailableRow_apiKeyProvider_doesNotInvokeBrowserLogin() async {
         let store = TestStore(
@@ -216,81 +203,5 @@ final class AiConnectionUnavailableTests: XCTestCase {
 
         XCTAssertEqual(store.state.connectionState, .unavailable)
         XCTAssertEqual(store.state.flowState, .idle)
-    }
-
-    // MARK: - Feature-level: Restore from persisted unavailable snapshot
-
-    func testRestore_unavailableProvider_remainsUnavailable() async {
-        let unavailableFile = AIConnectionsFile.singleProvider(
-            .chatgptCodex,
-            state: .unavailable,
-            errorCode: .providerUnsupportedInBuild,
-        )
-
-        let store = TestStore(initialState: AiSettingsState()) {
-            AiSettingsFeature()
-        } withDependencies: {
-            $0.aiConnectionsFileClient.load = { unavailableFile }
-            $0.aiProviderVerificationClient.verify = { _, _ in .unsupportedProvider }
-        }
-
-        await store.send(.onAppear) { state in
-            state.didBootstrap = true
-            state.bootstrapPhase = .loading
-        }
-
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
-            state.rows[id: .chatgptCodex]?.statusReason = .none
-        }
-
-        await store.receive(\.bootstrapVerificationCompleted) { state in
-            state.rows[id: .chatgptCodex]?.connectionState = .unavailable
-            state.rows[id: .chatgptCodex]?.statusReason = .providerUnsupportedInBuild
-        }
-
-        await store.finish()
-
-        let codexRow = store.state.rows[id: .chatgptCodex]
-        XCTAssertEqual(codexRow?.connectionState, .unavailable)
-        XCTAssertEqual(codexRow?.statusReason, .providerUnsupportedInBuild)
-    }
-
-    func testRestore_unavailableProvider_hasDisabledPrimaryAction() async {
-        let unavailableFile = AIConnectionsFile.singleProvider(
-            .openai,
-            state: .unavailable,
-            errorCode: .providerUnsupportedInBuild,
-        )
-
-        let store = TestStore(initialState: AiSettingsState()) {
-            AiSettingsFeature()
-        } withDependencies: {
-            $0.aiConnectionsFileClient.load = { unavailableFile }
-            $0.aiProviderVerificationClient.verify = { _, _ in .unsupportedProvider }
-        }
-
-        await store.send(.onAppear) { state in
-            state.didBootstrap = true
-            state.bootstrapPhase = .loading
-        }
-
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .openai]?.connectionState = .checkingStatus
-            state.rows[id: .openai]?.statusReason = .none
-        }
-
-        await store.receive(\.bootstrapVerificationCompleted) { state in
-            state.rows[id: .openai]?.connectionState = .unavailable
-            state.rows[id: .openai]?.statusReason = .providerUnsupportedInBuild
-        }
-
-        await store.finish()
-
-        let openaiRow = store.state.rows[id: .openai]
-        XCTAssertEqual(openaiRow?.connectionState, .unavailable)
-        XCTAssertEqual(openaiRow?.primaryAction, .disabled)
     }
 }

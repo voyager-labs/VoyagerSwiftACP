@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 
 struct AiSettingsView: View {
     let store: StoreOf<AiSettingsFeature>

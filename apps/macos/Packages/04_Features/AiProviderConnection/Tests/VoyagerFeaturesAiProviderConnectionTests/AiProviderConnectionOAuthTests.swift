@@ -2,8 +2,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
-import VoyagerFeaturesAiProviderConnection
-@testable import VoyagerPagesSettings
+@testable import VoyagerFeaturesAiProviderConnection
 import XCTest
 
 private final class BrowserLoginStreamController: @unchecked Sendable {

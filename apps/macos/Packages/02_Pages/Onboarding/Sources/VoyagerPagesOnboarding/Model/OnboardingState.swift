@@ -8,6 +8,7 @@ struct OnboardingState: Equatable {
     var welcome: WelcomeFeature.State = .init()
     var betaAccess: BetaAccessFeature.State = .init()
     var permissions: PermissionsFeature.State = .init()
+    var aiProviderSetup: AiProviderSetupFeature.State = .init()
     var complete: CompleteFeature.State = .init()
 
     var totalSteps: Int {
@@ -37,6 +38,10 @@ struct OnboardingState: Equatable {
                 welcomeComplete: welcome.isComplete,
                 betaAccessComplete: betaAccess.isComplete,
                 permissionsComplete: permissions.isComplete,
+                aiProviderSetupComplete: aiProviderSetup.isComplete,
+                aiProviderSetupSkipped: aiProviderSetup.status == .skipped,
+                aiProviderSetupChoice: aiProviderSetup.choice,
+                aiProviderSetupStatus: aiProviderSetup.status,
                 completeComplete: complete.isComplete,
                 betaAccessEmail: betaAccess.isComplete ? betaAccess.email : nil,
                 betaAccessToken: betaAccess.isComplete ? betaAccess.token : nil,
@@ -52,6 +57,8 @@ struct OnboardingState: Equatable {
             betaAccess.isComplete
         case .permissions:
             permissions.isComplete
+        case .aiProviderSetup:
+            aiProviderSetup.isComplete
         case .complete:
             complete.isComplete
         }
@@ -76,6 +83,11 @@ struct OnboardingState: Equatable {
             betaAccess.reason = .missingInput
         }
         permissions.isComplete = stepState.permissionsComplete
+        aiProviderSetup.choice = stepState.aiProviderSetupChoice
+        aiProviderSetup.status = stepState.aiProviderSetupStatus
+        aiProviderSetup.loadError = stepState.aiProviderSetupStatus == .error ? "Failed to load AI connections." : nil
+        aiProviderSetup.refreshStatus()
+        aiProviderSetup.status = stepState.aiProviderSetupStatus
         complete.isComplete = stepState.completeComplete
     }
 
@@ -102,7 +114,8 @@ struct OnboardingState: Equatable {
     /// - `.welcome` has no prior requirements (always `true`).
     /// - `.betaAccess` requires `.welcome` complete.
     /// - `.permissions` requires `.welcome` + `.betaAccess` complete.
-    /// - `.complete` requires `.welcome` + `.betaAccess` + `.permissions` complete.
+    /// - `.aiProviderSetup` requires `.welcome` + `.betaAccess` + `.permissions` complete.
+    /// - `.complete` requires `.welcome` + `.betaAccess` + `.permissions` + `.aiProviderSetup` complete.
     private func isPriorRequiredStepComplete(_ step: OnboardingStep) -> Bool {
         // Walk the entire chain from .welcome up to (but not including) `step`.
         for priorStep in OnboardingStep.allCases {

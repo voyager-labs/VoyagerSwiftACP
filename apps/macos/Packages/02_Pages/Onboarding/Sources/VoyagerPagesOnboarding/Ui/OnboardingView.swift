@@ -155,7 +155,7 @@ struct OnboardingView: View {
             .tint(accentColor)
             .keyboardShortcut(.return, modifiers: [])
             .disabled(viewStore.complete.isOpeningWindow)
-        case .welcome, .permissions:
+        case .welcome, .permissions, .aiProviderSetup:
             nextButton(viewStore: viewStore)
         }
     }
@@ -229,6 +229,8 @@ struct OnboardingView: View {
             BetaAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
+        case .aiProviderSetup:
+            AiProviderSetupStepView(store: store.scope(state: \.aiProviderSetup, action: \.aiProviderSetup))
         case .complete:
             CompleteStepView(store: store.scope(state: \.complete, action: \.complete))
         }
@@ -237,7 +239,15 @@ struct OnboardingView: View {
     private func nextDisabledMessage(
         from viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
     ) -> String? {
-        guard viewStore.currentStep == .permissions, !viewStore.canGoNext else { return nil }
-        return viewStore.permissions.nextDisabledMessage
+        switch viewStore.currentStep {
+        case .permissions:
+            guard !viewStore.canGoNext else { return nil }
+            return viewStore.permissions.nextDisabledMessage
+        case .aiProviderSetup:
+            guard !viewStore.canGoNext else { return nil }
+            return viewStore.aiProviderSetup.nextDisabledMessage
+        default:
+            return nil
+        }
     }
 }
