@@ -28,6 +28,7 @@ enum FileManagerVirtualCollectionContextFactory {
             scopes: [rootScopePath],
             excludedScopes: [],
             includeSubfolders: true,
+            includeDirectories: route.includesDirectoriesInVirtualCollection,
             conditions: conditionPayloads,
         )
         let resolved = AppliedFiltersUtils.resolveDetailed(
@@ -42,6 +43,7 @@ enum FileManagerVirtualCollectionContextFactory {
             scopes: resolved.scopes,
             excludedScopes: resolved.excludedScopes,
             includeSubfolders: appliedFilters.includeSubfolders ?? true,
+            includeDirectories: appliedFilters.includeDirectories ?? false,
             conditions: resolved.conditions,
         )
     }
@@ -67,5 +69,14 @@ enum FileManagerVirtualCollectionContextFactory {
                 value: .string("public.folder"),
             ),
         ]
+    }
+}
+
+private extension ContentPageNavigationRoute {
+    var includesDirectoriesInVirtualCollection: Bool {
+        if case .tags = self {
+            return true
+        }
+        return false
     }
 }

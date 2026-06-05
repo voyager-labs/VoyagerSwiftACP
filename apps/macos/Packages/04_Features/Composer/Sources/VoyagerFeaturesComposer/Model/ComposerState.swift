@@ -8,17 +8,20 @@ public struct FilterSnapshot: Equatable {
     public let conditions: [Condition]
     public let conditionDisplayByKey: [String: ConditionDisplayState]
     let includeSubfolders: Bool
+    let includeDirectories: Bool
 
     init(
         scopeSelection: ComposerScopeSelection,
         conditions: [Condition],
         conditionDisplayByKey: [String: ConditionDisplayState],
         includeSubfolders: Bool,
+        includeDirectories: Bool,
     ) {
         self.scopeSelection = scopeSelection
         self.conditions = conditions
         self.conditionDisplayByKey = conditionDisplayByKey
         self.includeSubfolders = includeSubfolders
+        self.includeDirectories = includeDirectories
     }
 
     init(
@@ -26,12 +29,14 @@ public struct FilterSnapshot: Equatable {
         conditions: [Condition],
         conditionDisplayByKey: [String: ConditionDisplayState],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false,
     ) {
         self.init(
             scopeSelection: ComposerScopeSelection.fromLegacyScopes(scopes),
             conditions: conditions,
             conditionDisplayByKey: conditionDisplayByKey,
             includeSubfolders: includeSubfolders,
+            includeDirectories: includeDirectories,
         )
     }
 }
@@ -61,6 +66,7 @@ public struct ComposerState: Equatable {
     public var openedCollectionCompatibility: CollectionFileCompatibilityMetadata?
     public var isCollectionMode: Bool = false
     public var pendingSearchQuery: String?
+    public var includeDirectories: Bool = false
 
     public var text: String = ""
     public var scopes: [String] {
@@ -109,6 +115,7 @@ public struct ComposerState: Equatable {
             scopes: scopeEditor.selection.legacyScopePaths,
             excludedScopes: scopeEditor.selection.exceptions.map(\.path),
             includeSubfolders: scopeEditor.effectiveIncludeSubfolders,
+            includeDirectories: includeDirectories,
             conditions: conditions,
         )
     }
@@ -180,6 +187,7 @@ public struct ComposerState: Equatable {
                 conditions: conditions,
                 conditionDisplayByKey: conditionDisplayByKey,
                 includeSubfolders: scopeEditor.includeSubfolders,
+                includeDirectories: includeDirectories,
             ),
         )
         if history.count > 100 {
@@ -223,6 +231,7 @@ public struct ComposerState: Equatable {
         )
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.context.includeSubfolders
+        includeDirectories = payload.context.includeDirectories
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -241,6 +250,7 @@ public struct ComposerState: Equatable {
         )
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.includeSubfolders
+        includeDirectories = payload.includeDirectories
         conditions = payload.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -261,6 +271,7 @@ public struct ComposerState: Equatable {
         )
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.context.includeSubfolders
+        includeDirectories = payload.context.includeDirectories
         conditions = payload.context.conditions
         propertyPicker = ConditionPropertyPickerFeature.State()
         operatorPicker = OperatorPickerFeature.State()
@@ -272,6 +283,7 @@ public struct ComposerState: Equatable {
                 scopes: filters.scopes,
                 excludedScopes: filters.excludedScopes,
                 includeSubfolders: filters.includeSubfolders,
+                includeDirectories: filters.includeDirectories,
                 conditions: filters.conditions,
             ),
             state: &self,

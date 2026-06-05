@@ -138,6 +138,7 @@ private func validateCollectionContext(
             scopes: context.scopes,
             excludedScopes: context.excludedScopes,
             includeSubfolders: context.includeSubfolders,
+            includeDirectories: context.includeDirectories,
             conditions: conditions,
             snapshotItems: payload.snapshotItems,
             definitionFingerprint: payload.definitionFingerprint,
@@ -312,6 +313,7 @@ private func makeCollectionFile(
         scopes: snapshot.scopes,
         excludedScopes: snapshot.excludedScopes,
         includeSubfolders: snapshot.includeSubfolders,
+        includeDirectories: snapshot.includeDirectories,
         conditions: snapshot.conditions,
         snapshot: snapshot.snapshotItems.map(CollectionPersistedSnapshot.init(items:)),
         snapshotMeta: snapshot.snapshotItems.map { snapshotItems in

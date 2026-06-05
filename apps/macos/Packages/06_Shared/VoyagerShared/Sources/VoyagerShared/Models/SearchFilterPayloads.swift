@@ -1,3 +1,4 @@
+// swiftformat:disable modifierOrder
 import Foundation
 
 nonisolated public struct SearchRequestPayload: Codable, Equatable, Sendable {
@@ -14,12 +15,14 @@ nonisolated public struct SearchFiltersPayload: Codable, Equatable, Sendable {
     public let scopes: [String]
     public let excludedScopes: [String]
     public let includeSubfolders: Bool
+    public let includeDirectories: Bool
     public let conditions: [SearchConditionPayload]
 
     public enum CodingKeys: String, CodingKey {
         case scopes
         case excludedScopes
         case includeSubfolders
+        case includeDirectories
         case conditions
     }
 
@@ -27,11 +30,13 @@ nonisolated public struct SearchFiltersPayload: Codable, Equatable, Sendable {
         scopes: [String],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false, // swiftlint:disable:this function_default_parameter_at_end
         conditions: [SearchConditionPayload],
     ) {
         self.scopes = scopes
         self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
+        self.includeDirectories = includeDirectories
         self.conditions = conditions
     }
 
@@ -40,6 +45,7 @@ nonisolated public struct SearchFiltersPayload: Codable, Equatable, Sendable {
         scopes = try container.decode([String].self, forKey: .scopes)
         excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
         includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
+        includeDirectories = try container.decodeIfPresent(Bool.self, forKey: .includeDirectories) ?? false
         conditions = try container.decode([SearchConditionPayload].self, forKey: .conditions)
     }
 
@@ -48,6 +54,7 @@ nonisolated public struct SearchFiltersPayload: Codable, Equatable, Sendable {
         try container.encode(scopes, forKey: .scopes)
         try container.encode(excludedScopes, forKey: .excludedScopes)
         try container.encode(includeSubfolders, forKey: .includeSubfolders)
+        try container.encode(includeDirectories, forKey: .includeDirectories)
         try container.encode(conditions, forKey: .conditions)
     }
 }
@@ -101,12 +108,14 @@ nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
     public let scopes: [String]?
     public let excludedScopes: [String]
     public let includeSubfolders: Bool?
+    public let includeDirectories: Bool?
     public let conditions: [SearchConditionPayload]?
 
     public enum CodingKeys: String, CodingKey {
         case scopes
         case excludedScopes
         case includeSubfolders
+        case includeDirectories
         case conditions
     }
 
@@ -114,11 +123,13 @@ nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
         scopes: [String]? = nil,
         excludedScopes: [String] = [],
         includeSubfolders: Bool? = nil,
+        includeDirectories: Bool? = nil,
         conditions: [SearchConditionPayload]? = nil,
     ) {
         self.scopes = scopes
         self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
+        self.includeDirectories = includeDirectories
         self.conditions = conditions
     }
 
@@ -127,6 +138,7 @@ nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
         scopes = try container.decodeIfPresent([String].self, forKey: .scopes)
         excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
         includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders)
+        includeDirectories = try container.decodeIfPresent(Bool.self, forKey: .includeDirectories)
         conditions = try container.decodeIfPresent([SearchConditionPayload].self, forKey: .conditions)
     }
 
@@ -135,6 +147,7 @@ nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
         try container.encodeIfPresent(scopes, forKey: .scopes)
         try container.encode(excludedScopes, forKey: .excludedScopes)
         try container.encodeIfPresent(includeSubfolders, forKey: .includeSubfolders)
+        try container.encodeIfPresent(includeDirectories, forKey: .includeDirectories)
         try container.encodeIfPresent(conditions, forKey: .conditions)
     }
 }

@@ -314,12 +314,10 @@ private func handleApplyFilters(
 }
 
 private func feedbackBaseline(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
-    state.submittedSearchFilters ?? VoyagerShared.SearchFiltersPayload(
-        scopes: state.scopeEditor.selection.legacyScopePaths,
-        excludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
-        includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
-        conditions: buildFilters(from: state).conditions,
-    )
+    if let submittedSearchFilters = state.submittedSearchFilters {
+        return submittedSearchFilters
+    }
+    return buildFilters(from: state)
 }
 
 private func feedbackAppliedFilters(
@@ -334,6 +332,7 @@ private func feedbackAppliedFilters(
         scopes: normalizedFilters.scopes,
         excludedScopes: normalizedFilters.excludedScopes,
         includeSubfolders: normalizedFilters.includeSubfolders,
+        includeDirectories: normalizedFilters.includeDirectories,
         conditions: normalizedFilters.conditions,
     )
 }

@@ -60,6 +60,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         let fingerprint = CollectionSnapshotHydration.definitionFingerprint(
             query: query,
             scopes: scopes,
+            includeDirectories: true,
             conditions: conditions,
         )
 
@@ -70,6 +71,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
             updatedAt: Date.distantPast,
             query: query,
             scopes: scopes,
+            includeDirectories: true,
             conditions: conditions,
             snapshot: .init(items: [VoyagerShared.JSONValue.string("/tmp/report.txt")]),
             snapshotMeta: .init(
@@ -87,6 +89,7 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertEqual(response?.itemCount, 1)
         XCTAssertEqual(response?.items, [VoyagerShared.JSONValue.string("/tmp/report.txt")])
         XCTAssertEqual(response?.appliedFilters?.scopes, scopes)
+        XCTAssertEqual(response?.appliedFilters?.includeDirectories, true)
         XCTAssertEqual(response?.appliedFilters?.conditions, [
             .init(propertyKey: "name_full", operator: "eq", value: .string("report")),
         ])
@@ -120,5 +123,27 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         let fp2 = CollectionSnapshotHydration.definitionFingerprint(file: file)
 
         XCTAssertEqual(fp1, fp2)
+    }
+
+    /// directory 포함 정책이 다르면 snapshot fingerprint도 달라지는지 검증
+    func testDefinitionFingerprintIncludesDirectoryPolicy() {
+        let conditions: [CollectionCondition] = [
+            .init(propertyKey: "tag_names", operatorCode: "any", value: .array([.string("Work")])),
+        ]
+
+        let excludingDirectories = CollectionSnapshotHydration.definitionFingerprint(
+            query: "",
+            scopes: ["/"],
+            includeDirectories: false,
+            conditions: conditions,
+        )
+        let includingDirectories = CollectionSnapshotHydration.definitionFingerprint(
+            query: "",
+            scopes: ["/"],
+            includeDirectories: true,
+            conditions: conditions,
+        )
+
+        XCTAssertNotEqual(excludingDirectories, includingDirectories)
     }
 }

@@ -1,3 +1,4 @@
+// swiftformat:disable modifierOrder
 import ComposableArchitecture
 import Foundation
 import Logging
@@ -402,6 +403,7 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
         scopes: state.scopeEditor.selection.legacyScopePaths,
         excludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
         includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
+        includeDirectories: state.includeDirectories,
         conditions: conditionPayloads,
     )
 }

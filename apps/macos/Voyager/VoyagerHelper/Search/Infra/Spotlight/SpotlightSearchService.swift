@@ -1,3 +1,4 @@
+// swiftformat:disable modifierOrder
 import CoreServices
 import Darwin
 import Foundation
@@ -59,22 +60,12 @@ struct SpotlightSearchService: SearchExecutionServicing {
 
         let scopeURLs = resolveFilterScopeURLs(prepared.scopes)
         let normalizedFilterScopes = SearchScopeNormalizer.normalizeScopes(prepared.scopes)
-        let paths: [String] = if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
-            try executionEngine.loadPaths(
-                queryString: compiledPlan.predicate,
-                scopes: scopeURLs,
-                limit: maxCandidates,
-            )
-        } else {
-            try executionEngine.loadPaths(
-                queryString: compiledPlan.predicate,
-                scopes: scopeURLs,
-                limit: maxCandidates,
-                shouldIncludePath: { path in
-                    pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
-                },
-            )
-        }
+        let paths = try loadFilterCandidatePaths(
+            filters: filters,
+            compiledPlan: compiledPlan,
+            scopeURLs: scopeURLs,
+            normalizedFilterScopes: normalizedFilterScopes,
+        )
         let filteredPaths = filterPaths(
             paths,
             scopes: prepared.scopes,
@@ -88,8 +79,11 @@ struct SpotlightSearchService: SearchExecutionServicing {
 
         let items = makeJSONItems(from: filteredPaths)
 
-        logger.info(
-            "MDQuery applyFilters completed: id=\(requestId) scopes=\(scopeURLs.count) pushdown_conditions=\(compiledPlan.pushdownConditions.count) items=\(items.count)",
+        logApplyFiltersCompleted(
+            requestId: requestId,
+            scopeCount: scopeURLs.count,
+            pushdownConditionCount: compiledPlan.pushdownConditions.count,
+            itemCount: items.count,
         )
 
         return SearchResponsePayload(
@@ -98,10 +92,51 @@ struct SpotlightSearchService: SearchExecutionServicing {
                 scopes: filters.scopes,
                 excludedScopes: filters.excludedScopes,
                 includeSubfolders: filters.includeSubfolders,
+                includeDirectories: filters.includeDirectories,
                 conditions: filters.conditions,
             ),
             items: items,
             error: nil,
+        )
+    }
+
+    private func loadFilterCandidatePaths(
+        filters: SearchFiltersPayload,
+        compiledPlan: SpotlightQueryCompiler.CompilePlan,
+        scopeURLs: [URL],
+        normalizedFilterScopes: [String],
+    ) throws -> [String] {
+        if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
+            return try executionEngine.loadPaths(
+                queryString: compiledPlan.predicate,
+                scopes: scopeURLs,
+                limit: maxCandidates,
+                includeDirectories: filters.includeDirectories,
+            )
+        }
+
+        return try executionEngine.loadPaths(
+            queryString: compiledPlan.predicate,
+            scopes: scopeURLs,
+            limit: maxCandidates,
+            includeDirectories: filters.includeDirectories,
+            shouldIncludePath: { path in
+                pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
+            },
+        )
+    }
+
+    private func logApplyFiltersCompleted(
+        requestId: String,
+        scopeCount: Int,
+        pushdownConditionCount: Int,
+        itemCount: Int,
+    ) {
+        logger.info(
+            "MDQuery applyFilters completed: id=\(requestId) "
+                + "scopes=\(scopeCount) "
+                + "pushdown_conditions=\(pushdownConditionCount) "
+                + "items=\(itemCount)",
         )
     }
 

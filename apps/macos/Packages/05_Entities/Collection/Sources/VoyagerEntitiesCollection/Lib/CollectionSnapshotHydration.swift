@@ -10,6 +10,7 @@ public enum CollectionSnapshotHydration {
         scopes: [String],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false, // swiftlint:disable:this function_default_parameter_at_end
         conditions: [CollectionCondition],
     ) -> String {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -27,6 +28,7 @@ public enum CollectionSnapshotHydration {
             scopes: normalizedScopes,
             excludedScopes: normalizedExcludedScopes,
             includeSubfolders: includeSubfolders,
+            includeDirectories: includeDirectories,
             conditions: normalizedConditions,
         )
     }
@@ -37,6 +39,7 @@ public enum CollectionSnapshotHydration {
             scopes: file.scopes,
             excludedScopes: file.excludedScopes,
             includeSubfolders: file.includeSubfolders,
+            includeDirectories: file.includeDirectories,
             conditions: file.conditions,
         )
     }
@@ -46,6 +49,7 @@ public enum CollectionSnapshotHydration {
         scopes: [String],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false, // swiftlint:disable:this function_default_parameter_at_end
         conditions: [Condition],
     ) -> String {
         definitionFingerprint(
@@ -53,6 +57,7 @@ public enum CollectionSnapshotHydration {
             scopes: scopes,
             excludedScopes: excludedScopes,
             includeSubfolders: includeSubfolders,
+            includeDirectories: includeDirectories,
             conditions: collectionConditions(from: conditions),
         )
     }
@@ -78,6 +83,7 @@ public enum CollectionSnapshotHydration {
                 scopes: file.scopes,
                 excludedScopes: file.excludedScopes,
                 includeSubfolders: file.includeSubfolders,
+                includeDirectories: file.includeDirectories,
                 conditions: file.conditions.map {
                     VoyagerShared.SearchConditionPayload(
                         propertyKey: $0.propertyKey,
@@ -145,6 +151,7 @@ public enum CollectionSnapshotHydration {
         scopes: [String],
         excludedScopes: [String],
         includeSubfolders: Bool,
+        includeDirectories: Bool,
         conditions: [String],
     ) -> String {
         let canonical = [
@@ -152,6 +159,7 @@ public enum CollectionSnapshotHydration {
             scopes.joined(separator: "\u{1D}"),
             excludedScopes.joined(separator: "\u{1E}"),
             includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
+            includeDirectories ? "includeDirectories:true" : "includeDirectories:false",
             conditions.joined(separator: "\u{1C}"),
         ].joined(separator: "\u{1B}")
 

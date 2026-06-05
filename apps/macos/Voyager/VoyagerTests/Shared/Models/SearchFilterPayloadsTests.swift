@@ -15,6 +15,7 @@ final class SearchFilterPayloadsTests: XCTestCase {
         XCTAssertEqual(decoded.scopes, ["/Users/test/Documents"])
         XCTAssertEqual(decoded.excludedScopes, [])
         XCTAssertTrue(decoded.includeSubfolders)
+        XCTAssertFalse(decoded.includeDirectories)
         XCTAssertEqual(decoded.conditions, [])
     }
 
@@ -23,6 +24,7 @@ final class SearchFilterPayloadsTests: XCTestCase {
             scopes: ["/Users/test/Documents"],
             excludedScopes: ["/Users/test/Documents/Receipts"],
             includeSubfolders: true,
+            includeDirectories: true,
             conditions: [],
         )
 
@@ -42,6 +44,7 @@ final class SearchFilterPayloadsTests: XCTestCase {
         XCTAssertEqual(decoded.scopes, ["/Users/test/Documents"])
         XCTAssertEqual(decoded.excludedScopes, [])
         XCTAssertNil(decoded.includeSubfolders)
+        XCTAssertNil(decoded.includeDirectories)
         XCTAssertEqual(decoded.conditions, [])
     }
 
@@ -50,6 +53,7 @@ final class SearchFilterPayloadsTests: XCTestCase {
             scopes: ["/Users/test/Documents"],
             excludedScopes: ["/Users/test/Documents/Receipts"],
             includeSubfolders: false,
+            includeDirectories: true,
             conditions: [],
         )
 

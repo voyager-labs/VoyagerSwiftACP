@@ -14,24 +14,35 @@ struct SpotlightQueryEngine {
         self.maxCandidates = max(1, maxCandidates)
     }
 
-    func loadPaths(queryString: String, scopes: [URL]) throws -> [String] {
+    func loadPaths(queryString: String, scopes: [URL], includeDirectories: Bool = false) throws -> [String] {
         let query = try makeQuery(queryString: queryString, scopes: scopes)
-        return loadPaths(query: query, limit: maxCandidates)
-    }
-
-    func loadPaths(queryString: String, scopes: [URL], limit: Int) throws -> [String] {
-        let query = try makeQuery(queryString: queryString, scopes: scopes)
-        return loadPaths(query: query, limit: max(1, limit))
+        return loadPaths(query: query, limit: maxCandidates, includeDirectories: includeDirectories)
     }
 
     func loadPaths(
         queryString: String,
         scopes: [URL],
         limit: Int,
+        includeDirectories: Bool = false,
+    ) throws -> [String] {
+        let query = try makeQuery(queryString: queryString, scopes: scopes)
+        return loadPaths(query: query, limit: max(1, limit), includeDirectories: includeDirectories)
+    }
+
+    func loadPaths(
+        queryString: String,
+        scopes: [URL],
+        limit: Int,
+        includeDirectories: Bool = false,
         shouldIncludePath: (String) -> Bool,
     ) throws -> [String] {
         let query = try makeQuery(queryString: queryString, scopes: scopes)
-        return loadPaths(query: query, limit: max(1, limit), shouldIncludePath: shouldIncludePath)
+        return loadPaths(
+            query: query,
+            limit: max(1, limit),
+            includeDirectories: includeDirectories,
+            shouldIncludePath: shouldIncludePath,
+        )
     }
 
     func loadMatches(
@@ -65,7 +76,7 @@ private extension SpotlightQueryEngine {
         return query
     }
 
-    func loadPaths(query: MDQuery, limit: Int) -> [String] {
+    func loadPaths(query: MDQuery, limit: Int, includeDirectories: Bool) -> [String] {
         let resultCount = Int(MDQueryGetResultCount(query))
         let upperBound = min(resultCount, limit)
 
@@ -83,7 +94,9 @@ private extension SpotlightQueryEngine {
             }
 
             let standardizedPath = URL(fileURLWithPath: rawPath).standardizedFileURL.path
-            if isDirectory(mdItem: mdItem, path: standardizedPath) {
+            if !includeDirectories,
+               isDirectory(mdItem: mdItem, path: standardizedPath)
+            {
                 continue
             }
             guard seen.insert(standardizedPath).inserted else {
@@ -95,7 +108,12 @@ private extension SpotlightQueryEngine {
         return paths
     }
 
-    func loadPaths(query: MDQuery, limit: Int, shouldIncludePath: (String) -> Bool) -> [String] {
+    func loadPaths(
+        query: MDQuery,
+        limit: Int,
+        includeDirectories: Bool,
+        shouldIncludePath: (String) -> Bool,
+    ) -> [String] {
         let resultCount = Int(MDQueryGetResultCount(query))
         let acceptedLimit = max(0, limit)
 
@@ -114,7 +132,9 @@ private extension SpotlightQueryEngine {
             }
 
             let standardizedPath = URL(fileURLWithPath: rawPath).standardizedFileURL.path
-            if isDirectory(mdItem: mdItem, path: standardizedPath) {
+            if !includeDirectories,
+               isDirectory(mdItem: mdItem, path: standardizedPath)
+            {
                 continue
             }
             guard shouldIncludePath(standardizedPath) else {

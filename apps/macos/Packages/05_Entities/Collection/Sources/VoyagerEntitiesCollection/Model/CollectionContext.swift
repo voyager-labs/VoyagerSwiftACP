@@ -5,6 +5,7 @@ public struct CollectionContext: Equatable, Sendable {
     public var scopes: [String]
     public var excludedScopes: [String]
     public var includeSubfolders: Bool
+    public var includeDirectories: Bool
     public var conditions: [Condition]
 
     public init(
@@ -12,12 +13,14 @@ public struct CollectionContext: Equatable, Sendable {
         scopes: [String] = [],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false,
         conditions: [Condition] = [],
     ) {
         self.query = query
         self.scopes = scopes
         self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
+        self.includeDirectories = includeDirectories
         self.conditions = conditions
     }
 }
