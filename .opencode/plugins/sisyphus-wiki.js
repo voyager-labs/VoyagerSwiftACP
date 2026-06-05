@@ -61,7 +61,6 @@ function sessionId(event) {
     event?.properties?.sessionId,
     event?.properties?.session?.id,
     event?.properties?.info?.sessionID,
-    event?.properties?.info?.id,
     event?.properties?.part?.sessionID
   ];
   return candidates.find((candidate) => typeof candidate === "string" && candidate.length > 0) || "unknown-session";
