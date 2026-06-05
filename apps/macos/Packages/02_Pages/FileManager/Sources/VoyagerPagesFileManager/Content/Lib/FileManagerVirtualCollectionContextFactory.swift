@@ -5,6 +5,7 @@ import VoyagerShared
 
 enum FileManagerVirtualCollectionContextFactory {
     static let recentsSinceAnyOpenedLiteral = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
+    private static let allIndexedScopes: [String] = []
     private static let rootScopePath = "/"
 
     static func collectionContext(
@@ -25,7 +26,7 @@ enum FileManagerVirtualCollectionContextFactory {
         }
 
         let appliedFilters = AppliedFiltersPayload(
-            scopes: [rootScopePath],
+            scopes: allIndexedScopes,
             excludedScopes: [],
             includeSubfolders: true,
             includeDirectories: route.includesDirectoriesInVirtualCollection,
@@ -33,7 +34,7 @@ enum FileManagerVirtualCollectionContextFactory {
         )
         let resolved = AppliedFiltersUtils.resolveDetailed(
             appliedFilters,
-            fallbackScopes: [rootScopePath],
+            fallbackScopes: allIndexedScopes,
             fallbackConditions: [],
             registryClient: registryClient,
         )

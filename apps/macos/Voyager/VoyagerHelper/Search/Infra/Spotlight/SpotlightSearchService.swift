@@ -81,7 +81,7 @@ struct SpotlightSearchService: SearchExecutionServicing {
 
         logApplyFiltersCompleted(
             requestId: requestId,
-            scopeCount: scopeURLs.count,
+            scopeCount: scopeURLs?.count ?? 0,
             pushdownConditionCount: compiledPlan.pushdownConditions.count,
             itemCount: items.count,
         )
@@ -103,7 +103,7 @@ struct SpotlightSearchService: SearchExecutionServicing {
     private func loadFilterCandidatePaths(
         filters: SearchFiltersPayload,
         compiledPlan: SpotlightQueryCompiler.CompilePlan,
-        scopeURLs: [URL],
+        scopeURLs: [URL]?,
         normalizedFilterScopes: [String],
     ) throws -> [String] {
         if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
@@ -219,10 +219,10 @@ extension SpotlightSearchService {
         return "kMDItemUserTags == \"\(escapedTag)\"c || kMDItemUserTags == \"*\(escapedTag)*\"c"
     }
 
-    func resolveFilterScopeURLs(_ scopes: [String]) -> [URL] {
+    func resolveFilterScopeURLs(_ scopes: [String]) -> [URL]? {
         let normalized = SearchScopeNormalizer.normalizeScopes(scopes)
         if normalized.isEmpty {
-            return [defaultScopeURL().standardizedFileURL]
+            return nil
         }
         return normalized.map { URL(fileURLWithPath: $0).standardizedFileURL }
     }

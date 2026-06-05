@@ -14,7 +14,7 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
         )
 
         XCTAssertEqual(context.query, "")
-        XCTAssertEqual(context.scopes, ["/"])
+        XCTAssertEqual(context.scopes, [])
         XCTAssertEqual(context.excludedScopes, [])
         XCTAssertTrue(context.includeSubfolders)
         XCTAssertTrue(context.includeDirectories)
@@ -40,7 +40,7 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
         )
 
         XCTAssertEqual(context.query, "")
-        XCTAssertEqual(context.scopes, ["/"])
+        XCTAssertEqual(context.scopes, [])
         XCTAssertEqual(context.excludedScopes, [])
         XCTAssertTrue(context.includeSubfolders)
         XCTAssertFalse(context.includeDirectories)
@@ -70,7 +70,6 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
         XCTAssertEqual(directoryExclusion.values, ["public.folder"])
         XCTAssertTrue(directoryExclusion.isActive)
     }
-
 
     func testRecognizesRecentsVirtualRouteSeedConditionSet() throws {
         let context = try XCTUnwrap(
