@@ -5,7 +5,24 @@ public struct LicenseAuthClient: Sendable {
     public var restoreSession: @Sendable () async throws -> LicenseAuthSession?
     public var fetchAccessStatus: @Sendable () async throws -> LicenseAuthStatusResponse
     public var signOut: @Sendable () async throws -> Void
+    public var exchangeAppHandoff: @Sendable (_ ticket: String, _ state: String,
+                                              _ context: AppHandoffContext) async throws -> LicenseAuthSession
 
+    public nonisolated init(
+        restoreSession: @escaping @Sendable () async throws -> LicenseAuthSession?,
+        fetchAccessStatus: @escaping @Sendable () async throws -> LicenseAuthStatusResponse,
+        signOut: @escaping @Sendable () async throws -> Void,
+        exchangeAppHandoff: @escaping @Sendable (_ ticket: String, _ state: String,
+                                                 _ context: AppHandoffContext) async throws -> LicenseAuthSession,
+    ) {
+        self.restoreSession = restoreSession
+        self.fetchAccessStatus = fetchAccessStatus
+        self.signOut = signOut
+        self.exchangeAppHandoff = exchangeAppHandoff
+    }
+
+    /// 기존 3-arg 호출 사이트 호환용 convenience init.
+    /// exchangeAppHandoff는 notConfigured 에러를 던진다.
     public nonisolated init(
         restoreSession: @escaping @Sendable () async throws -> LicenseAuthSession?,
         fetchAccessStatus: @escaping @Sendable () async throws -> LicenseAuthStatusResponse,
@@ -14,6 +31,7 @@ public struct LicenseAuthClient: Sendable {
         self.restoreSession = restoreSession
         self.fetchAccessStatus = fetchAccessStatus
         self.signOut = signOut
+        exchangeAppHandoff = { _, _, _ in throw LicenseAuthError.notConfigured }
     }
 }
 
@@ -27,6 +45,7 @@ public extension LicenseAuthClient {
                 LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
             },
             signOut: {},
+            exchangeAppHandoff: { _, _, _ in throw LicenseAuthError.notConfigured },
         )
     }
 }
@@ -39,11 +58,17 @@ extension LicenseAuthClient: DependencyKey {
             restoreSession: { throw LicenseAuthError.notConfigured },
             fetchAccessStatus: { throw LicenseAuthError.notConfigured },
             signOut: { throw LicenseAuthError.notConfigured },
+            exchangeAppHandoff: { _, _, _ in throw LicenseAuthError.notConfigured },
         )
     }
 
-    public nonisolated static var testValue: LicenseAuthClient { .mock }
-    public nonisolated static var previewValue: LicenseAuthClient { .mock }
+    public nonisolated static var testValue: LicenseAuthClient {
+        .mock
+    }
+
+    public nonisolated static var previewValue: LicenseAuthClient {
+        .mock
+    }
 }
 
 // MARK: - Mock Sign-In State Holder
@@ -79,6 +104,26 @@ public extension LicenseAuthClient {
                 LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
             },
             signOut: { signInState.setSession(nil) },
+            exchangeAppHandoff: { _, _, _ in throw LicenseAuthError.notConfigured },
+        )
+    }
+
+    nonisolated static func handoffBacked(
+        sessionHolder: MockSignInState,
+        exchangeClient: AppHandoffExchangeClient,
+        fetchAccessStatus: @escaping @Sendable () async throws -> LicenseAuthStatusResponse = {
+            throw LicenseAuthError.notConfigured
+        },
+    ) -> LicenseAuthClient {
+        LicenseAuthClient(
+            restoreSession: { sessionHolder.session },
+            fetchAccessStatus: fetchAccessStatus,
+            signOut: { sessionHolder.setSession(nil) },
+            exchangeAppHandoff: { ticket, state, context in
+                let session = try await exchangeClient.exchange(ticket, state, context)
+                sessionHolder.setSession(session)
+                return session
+            },
         )
     }
 }

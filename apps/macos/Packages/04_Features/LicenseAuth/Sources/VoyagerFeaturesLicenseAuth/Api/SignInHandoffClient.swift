@@ -1,17 +1,18 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 
-/// Mock sign-in handoff 결과
+/// 인증 handoff 결과
 public enum SignInHandoffResult: Sendable, Equatable {
     case success(callbackURL: URL)
+    case awaitingCallback(state: String)
     case failure
     case cancelled
 }
 
-/// Mock sign-in handoff를 수행하는 dependency.
-/// Mock-first 빌드에서 외부 브라우저 로그인 플로우를 대체한다.
-/// Handoff는 지연을 시뮬레이션한 후 reducer가 기존 callback → restoreSession → fetchAccessStatus 경로로
-/// 처리할 결과를 반환한다.
+/// 인증 handoff를 수행하는 dependency.
+/// Mock 경로에서는 즉시 callback URL을 반환하고,
+/// 실제 live 경로에서는 외부 브라우저를 열고 콜백 대기 상태로 진입한다.
 public struct SignInHandoffClient: Sendable {
     public var performHandoff: @Sendable () async -> SignInHandoffResult
 
@@ -22,9 +23,38 @@ public struct SignInHandoffClient: Sendable {
 
 extension SignInHandoffClient: DependencyKey {
     public nonisolated static var liveValue: SignInHandoffClient {
-        // 실제 구현에서는 외부 브라우저 열기 등의 실제 인증 플로우를 수행한다.
-        // 현재는 notConfigured 상태이다.
-        SignInHandoffClient { .failure }
+        SignInHandoffClient {
+            guard let webBaseURL = ProcessInfo.processInfo.environment["PUBLIC_WEB_BASE_URL"],
+                  !webBaseURL.isEmpty
+            else {
+                return .failure
+            }
+
+            let state = AppHandoffStateGenerator.generate()
+            let context = AppHandoffContext.onboarding
+
+            let builder = AppHandoffURLBuilder(
+                webBaseURL: webBaseURL,
+                gatewayURL: ProcessInfo.processInfo.environment["PUBLIC_GATEWAY_URL"] ?? "",
+            )
+
+            guard let loginURL = builder.buildLoginURL(state: state, context: context) else {
+                return .failure
+            }
+
+            let pending = PendingAppHandoff(
+                state: state,
+                context: context,
+                createdAt: Date(),
+            )
+            await AppHandoffStateStore.shared.store(pending)
+
+            await MainActor.run {
+                _ = NSWorkspace.shared.open(loginURL)
+            }
+
+            return .awaitingCallback(state: state)
+        }
     }
 
     public nonisolated static var testValue: SignInHandoffClient {
