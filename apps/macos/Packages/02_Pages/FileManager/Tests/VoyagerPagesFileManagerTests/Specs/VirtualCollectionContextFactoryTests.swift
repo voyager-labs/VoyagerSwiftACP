@@ -71,6 +71,42 @@ final class VirtualCollectionContextFactoryTests: XCTestCase {
         XCTAssertTrue(directoryExclusion.isActive)
     }
 
+
+    func testRecognizesRecentsVirtualRouteSeedConditionSet() throws {
+        let context = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .recents,
+                registryClient: makeRegistryClient(),
+            ),
+        )
+
+        XCTAssertTrue(FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(context.conditions))
+    }
+
+    func testRecognizesTagVirtualRouteSeedConditionSet() throws {
+        let context = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .tags("Work"),
+                registryClient: makeRegistryClient(),
+            ),
+        )
+
+        XCTAssertTrue(FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(context.conditions))
+    }
+
+    func testRejectsEditedVirtualRouteSeedConditionSet() throws {
+        let context = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .recents,
+                registryClient: makeRegistryClient(),
+            ),
+        )
+        var conditions = context.conditions
+        conditions[0].operatorCode = "eq"
+
+        XCTAssertFalse(FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(conditions))
+    }
+
     func testFolderComputerAndCollectionRoutesDoNotSeedVirtualContext() {
         let registryClient = makeRegistryClient()
         XCTAssertNil(FileManagerVirtualCollectionContextFactory.collectionContext(

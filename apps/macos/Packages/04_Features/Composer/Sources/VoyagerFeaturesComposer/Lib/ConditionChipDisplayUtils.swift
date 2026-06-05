@@ -68,7 +68,7 @@ enum ConditionChipDisplayUtils {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        if trimmed == "$time.today(-1000000)" {
+        if trimmed == AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral {
             return "Ever opened"
         }
 

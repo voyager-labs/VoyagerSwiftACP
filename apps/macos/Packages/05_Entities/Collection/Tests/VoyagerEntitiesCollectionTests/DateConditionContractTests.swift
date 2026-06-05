@@ -5,7 +5,7 @@ import XCTest
 
 final class DateConditionContractTests: XCTestCase {
     private let relativeLiteral = "voyager.relativeDate:v1:past:3:day:2025-05-17"
-    private let todayOffsetLiteral = "$time.today(-1000000)"
+    private let todayOffsetLiteral = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
 
     func testRegistryIncludesTodayAsZeroArityDateOperator() throws {
         let registry = try loadConditionRegistry()

@@ -144,7 +144,7 @@ struct SpotlightSearchService: SearchExecutionServicing {
     }
 
     func searchRecent(_ request: RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload {
-        let predicate = "kMDItemLastUsedDate > $time.today(-1000000)"
+        let predicate = "kMDItemLastUsedDate > \(AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral)"
         let matches = try executionEngine.loadMatches(
             queryString: predicate,
             scopes: resolveMetadataScopeURLs(mode: request.scopeMode, scopes: request.scopes),

@@ -2,6 +2,9 @@ import Foundation
 import VoyagerShared
 
 enum SearchDateUtils {
+    static let recentsTodayOffset = AppliedFilterValueUtils.recentsSinceAnyOpenedOffset
+    static let recentsTodayLiteral = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
+
     private static let utcTimeZone: TimeZone = .init(secondsFromGMT: 0) ?? .gmt
 
     private static let calendar: Calendar = {
@@ -23,7 +26,7 @@ enum SearchDateUtils {
     static func resolveDateLiteral(_ literal: String, now: Date = Date()) -> Date? {
         let text = normalizeTimeLiteral(literal)
 
-        if let offset = todayOffset(for: text), isTodayLiteral(text) {
+        if let offset = todayFunctionOffset(text) {
             return resolveTodayOffset(offset, now: now)
         }
 
@@ -37,9 +40,8 @@ enum SearchDateUtils {
     static func todayOffset(for literal: String) -> Int? {
         let text = normalizeTimeLiteral(literal)
 
-        if isTodayLiteral(text) {
-            let rawOffset = String(text.dropFirst("$time.today(".count).dropLast())
-            return Int(rawOffset.trimmingCharacters(in: .whitespacesAndNewlines))
+        if let offset = todayFunctionOffset(text) {
+            return offset
         }
 
         guard let relative = RelativeDateConditionLiteral.parse(text) else {
@@ -74,12 +76,14 @@ enum SearchDateUtils {
 
     static func resolveTodayLiteral(_ literal: String, now: Date = Date()) -> Date? {
         let text = normalizeTimeLiteral(literal)
-        guard isTodayLiteral(text),
-              let offset = todayOffset(for: text)
-        else {
+        guard let offset = todayFunctionOffset(text) else {
             return nil
         }
         return resolveTodayOffset(offset, now: now)
+    }
+
+    static func todayLiteral(offset: Int) -> String {
+        AppliedFilterValueUtils.todayFunctionLiteral(offset: offset)
     }
 
     static func dayLiteral(_ date: Date) -> String {
@@ -103,8 +107,8 @@ enum SearchDateUtils {
         return true
     }
 
-    private static func isTodayLiteral(_ text: String) -> Bool {
-        text.hasPrefix("$time.today(") && text.hasSuffix(")")
+    private static func todayFunctionOffset(_ text: String) -> Int? {
+        AppliedFilterValueUtils.todayFunctionOffset(for: text)
     }
 
     private static func resolveTodayOffset(_ offset: Int, now: Date) -> Date? {

@@ -396,28 +396,7 @@ private func hasOnlyAutomaticVirtualRouteSeed(_ composer: ComposerFeature.State)
         && !composer.isFilteringInFlight
         && composer.activeSearchRequestID == nil
         && composer.activeFiltersRequestID == nil
-        && isVirtualRouteSeedConditionSet(composer.conditions)
-}
-
-private func isVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
-    isRecentsVirtualRouteSeedConditionSet(conditions) || isTagVirtualRouteSeedConditionSet(conditions)
-}
-
-private func isRecentsVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
-    guard conditions.count == 2 else { return false }
-    let keys = conditions.map(\.propertyKey)
-    return keys == ["last_used_date", "content_type_tree"]
-        && conditions[0].operatorCode == "gt"
-        && conditions[0].values == ["$time.today(-1000000)"]
-        && conditions[1].operatorCode == "neq"
-        && conditions[1].values == ["public.folder"]
-}
-
-private func isTagVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
-    guard conditions.count == 1, let condition = conditions.first else { return false }
-    return condition.propertyKey == "tag_names"
-        && condition.operatorCode == "any"
-        && condition.values?.count == 1
+        && FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(composer.conditions)
 }
 
 private func searchResultPaths(from items: [VoyagerShared.JSONValue]) -> [String] {

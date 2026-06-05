@@ -90,7 +90,7 @@ final class AppliedFilterValueUtilsTests: XCTestCase {
 
     /// singleDate UI kind은 $time.today offset literal도 그대로 유지하는지 검증
     func testTodayOffsetStringWithSingleDateKindReturnsLiteral() {
-        let literal = "$time.today(-1000000)"
+        let literal = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
         let result = AppliedFilterValueUtils.stringValues(from: .string(literal), valueUIKind: "singleDate")
         XCTAssertEqual(result, [literal])
     }

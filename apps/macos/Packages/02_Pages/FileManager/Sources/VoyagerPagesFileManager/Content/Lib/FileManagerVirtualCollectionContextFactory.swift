@@ -4,7 +4,7 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
 enum FileManagerVirtualCollectionContextFactory {
-    static let recentsSinceAnyOpenedLiteral = "$time.today(-1000000)"
+    static let recentsSinceAnyOpenedLiteral = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
     private static let rootScopePath = "/"
 
     static func collectionContext(
@@ -48,12 +48,33 @@ enum FileManagerVirtualCollectionContextFactory {
         )
     }
 
+    static func isVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
+        isRecentsVirtualRouteSeedConditionSet(conditions) || isTagVirtualRouteSeedConditionSet(conditions)
+    }
+
     private static func makeTagConditionPayload(tagName: String) -> SearchConditionPayload {
         SearchConditionPayload(
             propertyKey: "tag_names",
             operator: "any",
             value: .array([.string(tagName)]),
         )
+    }
+
+    private static func isRecentsVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
+        guard conditions.count == 2 else { return false }
+        let keys = conditions.map(\.propertyKey)
+        return keys == ["last_used_date", "content_type_tree"]
+            && conditions[0].operatorCode == "gt"
+            && conditions[0].values == [recentsSinceAnyOpenedLiteral]
+            && conditions[1].operatorCode == "neq"
+            && conditions[1].values == ["public.folder"]
+    }
+
+    private static func isTagVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
+        guard conditions.count == 1, let condition = conditions.first else { return false }
+        return condition.propertyKey == "tag_names"
+            && condition.operatorCode == "any"
+            && condition.values?.count == 1
     }
 
     private static func makeRecentsConditionPayloads() -> [SearchConditionPayload] {
