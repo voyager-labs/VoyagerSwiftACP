@@ -107,6 +107,58 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 
+    func testRetryBootstrapCancelsInFlightBootstrapBeforeApplyingLatestResult() async {
+        let provider = AiProvider.openai
+        let firstLoadStarted = LockIsolated(false)
+        let firstLoadCancelled = LockIsolated(false)
+        let latestFile = AIConnectionsFile.connectedAPIKeyFixture(provider: provider)
+        let store = TestStore(initialState: AiProviderSetupState()) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                if !firstLoadStarted.value {
+                    firstLoadStarted.setValue(true)
+                    try await withTaskCancellationHandler {
+                        while true {
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 1_000_000_000)
+                        }
+                    } onCancel: {
+                        firstLoadCancelled.setValue(true)
+                    }
+                    return AIConnectionsFile.empty()
+                }
+                return latestFile
+            }
+            $0.aiConnectionsFileClient.save = { .success($0) }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+        await Self.waitUntil { firstLoadStarted.value }
+
+        await store.send(.retryBootstrapTapped)
+        await Self.waitUntil { firstLoadCancelled.value }
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: provider]?.connectionState = .checkingStatus
+            state.rows[id: provider]?.statusReason = .none
+            state.status = .pending
+        }
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: provider]?.connectionState = .connected
+            state.rows[id: provider]?.statusReason = .none
+            state.choice = .providerConnected
+            state.status = .complete
+        }
+
+        await store.finish()
+    }
+
     func testCompleteStepSaveKeepsProviderSetupCompleteDuringReverification() async {
         let provider = AiProvider.openai
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
@@ -141,6 +193,20 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         XCTAssertEqual(saved?.stepState.aiProviderSetupStatus, .complete)
 
         await store.finish()
+    }
+}
+
+private extension ONB004ConfigureAIProviderDuringOnboardingTests {
+    static func waitUntil(
+        _ condition: @escaping @Sendable () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) async {
+        for _ in 0 ..< 100 {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Condition was not met in time", file: file, line: line)
     }
 }
 

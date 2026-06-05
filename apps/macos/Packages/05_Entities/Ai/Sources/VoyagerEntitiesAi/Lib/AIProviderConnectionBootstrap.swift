@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Foundation
 
 public struct AIProviderBootstrapResult: Equatable, Sendable {
@@ -16,7 +17,102 @@ public struct AIProviderBootstrapResult: Equatable, Sendable {
     }
 }
 
+public enum AIProviderBootstrapEvent: Sendable {
+    case completed([AIProviderBootstrapResult])
+    case verificationCompleted([AIProviderBootstrapResult])
+    case connectionsFileUpdated(AIConnectionsFile)
+    case failed
+}
+
 public enum AIProviderConnectionBootstrap {
+    public static func effect<Action: Sendable>(
+        connectionsFileClient: AIConnectionsFileClient,
+        verificationClient: AIProviderVerificationClient,
+        mapEvent: @escaping @Sendable (AIProviderBootstrapEvent) -> Action?,
+    ) -> Effect<Action> {
+        .run { send in
+            let file: AIConnectionsFile
+            do {
+                file = try await connectionsFileClient.load()
+            } catch {
+                if let action = mapEvent(.failed) {
+                    await send(action)
+                }
+                return
+            }
+
+            if let action = mapEvent(.completed(initialResults(from: file))) {
+                await send(action)
+            }
+
+            let verificationResults = await verificationResults(
+                from: file,
+                verificationClient: verificationClient,
+            )
+            guard !verificationResults.isEmpty else { return }
+
+            if let action = mapEvent(.verificationCompleted(verificationResults)) {
+                await send(action)
+            }
+
+            guard let savedFile = await persistVerificationResults(
+                verificationResults,
+                file: file,
+                connectionsFileClient: connectionsFileClient,
+            ),
+                let action = mapEvent(.connectionsFileUpdated(savedFile))
+            else { return }
+
+            await send(action)
+        }
+    }
+
+    public static func verificationResults(
+        from file: AIConnectionsFile,
+        verificationClient: AIProviderVerificationClient,
+    ) async -> [AIProviderBootstrapResult] {
+        var results: [AIProviderBootstrapResult] = []
+
+        for descriptor in ProviderDescriptor.v1Catalog {
+            guard let record = file.providers[descriptor.provider.rawValue],
+                  shouldVerify(snapshotState: record.snapshot.lastKnownStatus),
+                  let credential = record.credential
+            else { continue }
+
+            let verification = await verificationClient.verify(descriptor.provider, credential)
+            results.append(
+                verifiedResult(
+                    for: descriptor.provider,
+                    verification: verification,
+                ),
+            )
+        }
+
+        return results
+    }
+
+    public static func persistVerificationResults(
+        _ results: [AIProviderBootstrapResult],
+        file: AIConnectionsFile,
+        connectionsFileClient: AIConnectionsFileClient,
+    ) async -> AIConnectionsFile? {
+        guard let latestFile = try? await connectionsFileClient.load(),
+              let updatedFile = updatedConnectionsFile(
+                  verificationSourceFile: file,
+                  latestFile: latestFile,
+                  applying: results,
+              )
+        else { return nil }
+
+        let mutationResult = await (try? connectionsFileClient.save(updatedFile))
+        switch mutationResult {
+        case let .success(savedFile), let .partialSuccess(savedFile, _):
+            return savedFile
+        case .fileSystemError, nil:
+            return nil
+        }
+    }
+
     public static func initialResults(from file: AIConnectionsFile) -> [AIProviderBootstrapResult] {
         ProviderDescriptor.v1Catalog.map { descriptor in
             let record = file.providers[descriptor.provider.rawValue]

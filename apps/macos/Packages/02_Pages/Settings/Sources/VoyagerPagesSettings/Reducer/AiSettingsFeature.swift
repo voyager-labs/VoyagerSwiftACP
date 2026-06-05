@@ -15,6 +15,10 @@ public struct AiSettingsFeature {
 
     public init() {}
 
+    private enum CancelID: Hashable {
+        case bootstrap
+    }
+
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -78,76 +82,21 @@ public struct AiSettingsFeature {
         connectionsFileClient: AIConnectionsFileClient,
         verificationClient: AIProviderVerificationClient,
     ) -> Effect<Action> {
-        .run { send in
-            let file: AIConnectionsFile
-            do {
-                file = try await connectionsFileClient.load()
-            } catch {
-                await send(.bootstrapFailed)
-                return
-            }
-            await send(.bootstrapCompleted(AIProviderConnectionBootstrap.initialResults(from: file)))
-
-            let verificationResults = await Self.bootstrapVerificationResults(
-                from: file,
-                verificationClient: verificationClient,
-            )
-            if !verificationResults.isEmpty {
-                await send(.bootstrapVerificationCompleted(verificationResults))
-                await Self.persistBootstrapVerificationResults(
-                    verificationResults,
-                    file: file,
-                    connectionsFileClient: connectionsFileClient,
-                    send: send,
-                )
+        AIProviderConnectionBootstrap.effect(
+            connectionsFileClient: connectionsFileClient,
+            verificationClient: verificationClient,
+        ) { event in
+            switch event {
+            case let .completed(results):
+                .bootstrapCompleted(results)
+            case let .verificationCompleted(results):
+                .bootstrapVerificationCompleted(results)
+            case let .connectionsFileUpdated(file):
+                .delegate(.connectionsFileUpdated(file))
+            case .failed:
+                .bootstrapFailed
             }
         }
-    }
-
-    private static func bootstrapVerificationResults(
-        from file: AIConnectionsFile,
-        verificationClient: AIProviderVerificationClient,
-    ) async -> [AIProviderBootstrapResult] {
-        var results: [AIProviderBootstrapResult] = []
-
-        for descriptor in ProviderDescriptor.v1Catalog {
-            guard let record = file.providers[descriptor.provider.rawValue],
-                  AIProviderConnectionBootstrap.shouldVerify(snapshotState: record.snapshot.lastKnownStatus),
-                  let credential = record.credential
-            else { continue }
-
-            let verification = await verificationClient.verify(descriptor.provider, credential)
-            results.append(
-                AIProviderConnectionBootstrap.verifiedResult(
-                    for: descriptor.provider,
-                    verification: verification,
-                ),
-            )
-        }
-
-        return results
-    }
-
-    private static func persistBootstrapVerificationResults(
-        _ results: [AIProviderBootstrapResult],
-        file: AIConnectionsFile,
-        connectionsFileClient: AIConnectionsFileClient,
-        send: Send<Action>,
-    ) async {
-        guard let latestFile = try? await connectionsFileClient.load(),
-              let updatedFile = AIProviderConnectionBootstrap.updatedConnectionsFile(
-                  verificationSourceFile: file,
-                  latestFile: latestFile,
-                  applying: results,
-              )
-        else { return }
-
-        let mutationResult = await (try? connectionsFileClient.save(updatedFile))
-        switch mutationResult {
-        case let .success(savedFile), let .partialSuccess(savedFile, _):
-            await send(.delegate(.connectionsFileUpdated(savedFile)))
-        case .fileSystemError, nil:
-            break
-        }
+        .cancellable(id: CancelID.bootstrap, cancelInFlight: true)
     }
 }
