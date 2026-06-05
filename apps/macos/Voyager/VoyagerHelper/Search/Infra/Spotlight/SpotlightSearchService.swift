@@ -133,10 +133,13 @@ struct SpotlightSearchService: SearchExecutionServicing {
         itemCount: Int,
     ) {
         logger.info(
-            "MDQuery applyFilters completed: id=\(requestId) "
-                + "scopes=\(scopeCount) "
-                + "pushdown_conditions=\(pushdownConditionCount) "
-                + "items=\(itemCount)",
+            "MDQuery applyFilters completed",
+            metadata: [
+                "id": .string(requestId),
+                "scopes": .stringConvertible(scopeCount),
+                "pushdown_conditions": .stringConvertible(pushdownConditionCount),
+                "items": .stringConvertible(itemCount),
+            ],
         )
     }
 
