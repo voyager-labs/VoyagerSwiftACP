@@ -118,6 +118,16 @@ private enum SmokeMode {
     }
 }
 
+private enum OnboardingHostAuthMode: String {
+    case mock
+    case live
+
+    static var current: OnboardingHostAuthMode {
+        let rawValue = ProcessInfo.processInfo.environment["ONBOARDING_HOST_AUTH_MODE"]?.lowercased()
+        return rawValue.flatMap(OnboardingHostAuthMode.init(rawValue:)) ?? .live
+    }
+}
+
 @main
 struct OnboardingHostApp: App {
     @NSApplicationDelegateAdaptor(OnboardingHostAppDelegate.self)
@@ -155,33 +165,11 @@ struct OnboardingHostApp: App {
 
 @MainActor
 final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
-    private let mockSignInState = MockSignInState()
+    private let sessionHolder = MockSignInState()
     private let debugStore = OnboardingHostDebugStore(initialScenario: .allGranted)
     private var debugPanel: NSPanel?
 
-    private lazy var onboardingWindowClient = OnboardingWindowClient.makeLive(
-        openMainWindow: { _ in
-            await MainActor.run {
-                NSApp.terminate(nil)
-            }
-            return true
-        },
-        licenseAuthClient: .mockSignInBacked(by: mockSignInState),
-        signInHandoffClient: SignInHandoffClient { [mockSignInState] in
-            let mockSession = LicenseAuthSession(
-                accessToken: "mock-onboarding-token",
-                status: .coreLicenseActive,
-            )
-            mockSignInState.setSession(mockSession)
-            guard let callbackURL = URL(string: "voyager://auth/callback") else {
-                return .failure
-            }
-            return .success(callbackURL: callbackURL)
-        },
-        permissionDebugScenario: { [debugStore] in
-            debugStore.currentScenario
-        },
-    )
+    private lazy var onboardingWindowClient = makeOnboardingWindowClient()
 
     func applicationDidFinishLaunching(_: Notification) {
         debugStore.onScenarioChanged = { [weak self] in
@@ -190,6 +178,77 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         resetOnboardingProgress()
         _ = onboardingWindowClient.showIfNeeded()
         showDebugPanel()
+    }
+
+    func application(_: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        guard url.scheme == "voyager",
+              url.host == "auth",
+              url.path == "/callback"
+        else {
+            return
+        }
+
+        VoyagerPagesOnboarding.routeAuthCallbackToUnlockSurface(url)
+    }
+
+    private func makeOnboardingWindowClient() -> OnboardingWindowClient {
+        let authClients = makeAuthClients()
+
+        return OnboardingWindowClient.makeLive(
+            openMainWindow: { _ in
+                await MainActor.run {
+                    NSApp.terminate(nil)
+                }
+                return true
+            },
+            licenseAuthClient: authClients.licenseAuthClient,
+            signInHandoffClient: authClients.signInHandoffClient,
+            permissionDebugScenario: { [debugStore] in
+                debugStore.currentScenario
+            },
+        )
+    }
+
+    private func makeAuthClients() -> (licenseAuthClient: LicenseAuthClient, signInHandoffClient: SignInHandoffClient) {
+        switch OnboardingHostAuthMode.current {
+        case .mock:
+            (
+                licenseAuthClient: .mockSignInBacked(by: sessionHolder),
+                signInHandoffClient: makeMockSignInHandoffClient(),
+            )
+        case .live:
+            (
+                licenseAuthClient: makeLiveLicenseAuthClient(),
+                signInHandoffClient: .liveValue,
+            )
+        }
+    }
+
+    private func makeMockSignInHandoffClient() -> SignInHandoffClient {
+        SignInHandoffClient { [sessionHolder] in
+            let mockSession = LicenseAuthSession(
+                accessToken: "mock-onboarding-token",
+                status: .coreLicenseActive,
+            )
+            sessionHolder.setSession(mockSession)
+            guard let callbackURL = URL(string: "voyager://auth/callback") else {
+                return .failure
+            }
+            return .success(callbackURL: callbackURL)
+        }
+    }
+
+    private func makeLiveLicenseAuthClient() -> LicenseAuthClient {
+        LicenseAuthClient.handoffBacked(
+            sessionHolder: sessionHolder,
+            exchangeClient: .liveValue,
+            fetchAccessStatus: {
+                // Host live auth 검증: entitlement 백엔드 미구현이므로 활성 상태 반환
+                // TODO(VOY-334): 실제 entitlement API 연동 후 교체
+                LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+            },
+        )
     }
 
     func showDebugPanel() {
@@ -236,7 +295,7 @@ private final class OnboardingHostDebugStore: ObservableObject, @unchecked Senda
 
     var onScenarioChanged: (@MainActor () -> Void)?
 
-    private nonisolated(unsafe) let lock = NSLock()
+    private let lock = NSLock()
     private nonisolated(unsafe) var lockedScenario: OnboardingPermissionDebugScenario
 
     init(initialScenario: OnboardingPermissionDebugScenario) {
