@@ -7,6 +7,7 @@
 ## Moved content
 
 - `architecture/` — legacy architecture notes
+- `features/` — legacy feature docs (search, indexing, onboarding, settings, etc.)
 - `integration/` — legacy integration notes
 - `macos/` — legacy macOS runtime/build notes
 - `development.md`, `testing.md`, `deployment.md`, `troubleshooting.md` — legacy workflow notes
