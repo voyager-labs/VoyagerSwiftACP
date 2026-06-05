@@ -121,11 +121,8 @@ struct AiProviderSetupFeature {
 
     private static func shouldReloadLatestStatus(after action: AiConnectionRowAction) -> Bool {
         switch action {
-        case .cancelButtonTapped,
-             .verificationFailed,
-             .browserLoginFailed,
-             .deviceAuthFailed,
-             .connectionResponse:
+        case .connectionResponse,
+             .disconnectResponse:
             true
         default:
             false

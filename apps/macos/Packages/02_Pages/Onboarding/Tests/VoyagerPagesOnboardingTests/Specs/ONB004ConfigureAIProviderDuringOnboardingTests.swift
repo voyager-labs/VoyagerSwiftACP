@@ -107,6 +107,34 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 
+    func testBrowserLoginFailureKeepsSharedRowFailureStateWithoutReloadingBootstrap() async {
+        var initialState = AiProviderSetupState()
+        initialState.bootstrapPhase = .loaded
+        initialState.rows[id: .chatgptCodex]?.connectionState = .connectInProgress
+        initialState.rows[id: .chatgptCodex]?.flowState = .browserLoginInProgress
+
+        let store = TestStore(initialState: initialState) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                XCTFail("Failure-only row actions must not reload bootstrap state")
+                return .empty(updatedAtMs: 1)
+            }
+        }
+
+        await store.send(.row(.element(
+            id: .chatgptCodex,
+            action: .browserLoginFailed(.timeout),
+        ))) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connectionFailed
+            state.rows[id: .chatgptCodex]?.flowState = .idle
+            state.rows[id: .chatgptCodex]?.statusReason = .networkUnavailable
+            state.status = .blocked
+        }
+
+        await store.finish()
+    }
+
     func testRetryBootstrapCancelsInFlightBootstrapBeforeApplyingLatestResult() async {
         let provider = AiProvider.openai
         let firstLoadStarted = LockIsolated(false)
