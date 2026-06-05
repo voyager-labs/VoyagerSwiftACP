@@ -44,6 +44,7 @@ let kPackage = Package(
                 .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerFeaturesAiProviderConnection", package: "AiProviderConnection"),
                 .product(name: "VoyagerFeaturesBetaAccess", package: "VoyagerFeaturesBetaAccess"),
+                .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
             ],

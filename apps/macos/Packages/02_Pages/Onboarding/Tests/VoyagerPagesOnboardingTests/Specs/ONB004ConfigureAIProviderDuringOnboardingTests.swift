@@ -1,3 +1,5 @@
+// swiftlint:disable file_length
+
 import ComposableArchitecture
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiProviderConnection
@@ -116,13 +118,70 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 
+    /// ONB-004-show_onboarding_ai_provider_setup: Retry bootstrap은 진행 중인 bootstrap을 취소하고 최신 결과만 반영한다.
+    /// 사용자가 catalog/status reload를 다시 요청했을 때 이전 bootstrap 결과가 늦게 도착해 setup 상태를 덮지 않는지 검증한다.
+    /// - 검증 내용: `.retryBootstrapTapped`가 in-flight bootstrap effect를 cancelInFlight하고 두 번째 load 결과만 complete 상태로 반영한다.
+    /// - 사전 조건: 첫 번째 load는 취소 전까지 완료되지 않고 두 번째 load는 connected OpenAI file을 반환한다.
+    /// - 기대 결과: 첫 번째 load cancellation이 관측되고 최신 bootstrap/reverification 결과만 `providerConnected/complete` 상태로 남는다.
+    func testRetryBootstrapCancelsInFlightBootstrapBeforeApplyingLatestResult() async {
+        let provider = AiProvider.openai
+        let firstLoadStarted = LockIsolated(false)
+        let firstLoadCancelled = LockIsolated(false)
+        let latestFile = AIConnectionsFile.connectedAPIKeyFixture(provider: provider)
+        let store = TestStore(initialState: AiProviderSetupState()) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                if !firstLoadStarted.value {
+                    firstLoadStarted.setValue(true)
+                    try await withTaskCancellationHandler {
+                        while true {
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 1_000_000_000)
+                        }
+                    } onCancel: {
+                        firstLoadCancelled.setValue(true)
+                    }
+                    return AIConnectionsFile.empty()
+                }
+                return latestFile
+            }
+            $0.aiConnectionsFileClient.save = { .success($0) }
+            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+        }
+
+        await store.send(.onAppear) { state in
+            state.didBootstrap = true
+            state.bootstrapPhase = .loading
+        }
+        await Self.waitUntil { firstLoadStarted.value }
+
+        await store.send(.retryBootstrapTapped)
+        await Self.waitUntil { firstLoadCancelled.value }
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: provider]?.connectionState = .checkingStatus
+            state.rows[id: provider]?.statusReason = .none
+            state.status = .pending
+        }
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: provider]?.connectionState = .connected
+            state.rows[id: provider]?.statusReason = .none
+            state.choice = .providerConnected
+            state.status = .complete
+        }
+
+        await store.finish()
+    }
+
     // MARK: - ONB-004-start_ai_provider_connection_from_onboarding
 
     /// ONB-004-start_ai_provider_connection_from_onboarding: OAuth provider Connect가 SET-007 shared row flow로 라우팅된다.
     /// 사용자가 ChatGPT Codex row의 Connect를 누를 때 onboarding이 자체 연결 로직을 갖지 않고 shared row reducer를 실행하는지 검증한다.
     /// - 검증 내용: `.connectButtonTapped`가 child reducer의 `.startBrowserLogin` action을 emit하고 setup 상태를 pending으로 해석한다.
     /// - 사전 조건: ChatGPT Codex row는 `notVerified`이고 native browser login은 즉시 cancelled 실패를 반환한다.
-    /// - 기대 결과: row가 `connectInProgress/browserLoginInProgress`로 전환된 뒤 취소 실패와 bootstrap reload를 거쳐 blocked 상태로 복귀한다.
+    /// - 기대 결과: row가 `connectInProgress/browserLoginInProgress`로 전환된 뒤 취소 실패 상태를 row reducer가 보존하고 blocked 상태로 복귀한다.
     func testStartConnectionRoutesOAuthProviderThroughSharedRowReducer() async {
         let store = TestStore(initialState: AiProviderSetupState()) {
             AiProviderSetupFeature()
@@ -133,7 +192,6 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
                     continuation.finish()
                 }
             }
-            $0.aiConnectionsFileClient.load = { .empty(updatedAtMs: 1) }
         }
 
         await store.send(.row(.element(id: .chatgptCodex, action: .connectButtonTapped)))
@@ -151,11 +209,38 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             state.status = .blocked
         }
 
-        await store.receive(\.bootstrapCompleted) { state in
-            state.bootstrapPhase = .loaded
-            state.rows[id: .chatgptCodex]?.connectionState = .notVerified
-            state.rows[id: .openai]?.connectionState = .notVerified
-            state.rows[id: .anthropic]?.connectionState = .notVerified
+        await store.finish()
+    }
+
+    /// ONB-004-start_ai_provider_connection_from_onboarding: 실패-only row action은 bootstrap reload 없이 shared row 실패 상태를
+    /// 보존한다.
+    /// OAuth 로그인 실패나 검증 실패가 저장 파일을 바꾸지 않는 경우 onboarding이 stale file 상태로 row 실패 상태를 덮지 않는지 검증한다.
+    /// - 검증 내용: `.browserLoginFailed` 처리 중 `aiConnectionsFileClient.load`가 호출되지 않고 row의 retry 가능한 실패 상태가 유지된다.
+    /// - 사전 조건: ChatGPT Codex row는 browser login 진행 중이며 connection file은 변경되지 않는다.
+    /// - 기대 결과: row는 `connectionFailed/idle`과 `.networkUnavailable` reason을 유지하고 setup은 blocked 상태다.
+    func testBrowserLoginFailureKeepsSharedRowFailureStateWithoutReloadingBootstrap() async {
+        var initialState = AiProviderSetupState()
+        initialState.bootstrapPhase = .loaded
+        initialState.rows[id: .chatgptCodex]?.connectionState = .connectInProgress
+        initialState.rows[id: .chatgptCodex]?.flowState = .browserLoginInProgress
+
+        let store = TestStore(initialState: initialState) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                XCTFail("Failure-only row actions must not reload bootstrap state")
+                return .empty(updatedAtMs: 1)
+            }
+        }
+
+        await store.send(.row(.element(
+            id: .chatgptCodex,
+            action: .browserLoginFailed(.timeout),
+        ))) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connectionFailed
+            state.rows[id: .chatgptCodex]?.flowState = .idle
+            state.rows[id: .chatgptCodex]?.statusReason = .networkUnavailable
+            state.status = .blocked
         }
 
         await store.finish()
@@ -163,7 +248,8 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
 
     /// ONB-004-start_ai_provider_connection_from_onboarding: 연결 취소 후 AI Provider Setup 단계가 blocked로 복귀한다.
     /// 사용자가 진행 중인 연결 flow를 취소했을 때 onboarding surface가 Connect와 Set up later 선택 상태로 되돌아오는지 검증한다.
-    /// - 검증 내용: shared row `.cancelButtonTapped`가 row transient state를 초기화하고 parent setup status를 재계산한다.
+    /// - 검증 내용: shared row `.cancelButtonTapped`가 row transient state를 초기화하고 bootstrap reload 없이 parent setup status를
+    /// 재계산한다.
     /// - 사전 조건: ChatGPT Codex row는 browser login 진행 중이며 setup status는 pending이다.
     /// - 기대 결과: row는 `notVerified/idle`, setup은 `choice=.none`, `status=.blocked`, `isComplete=false` 상태다.
     func testStartConnectionCancelReturnsToBlockedSetupState() async {
@@ -180,7 +266,6 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             $0.codexNativeAuthClient.cancelCurrentFlow = {
                 cancelRecorder.setValue(true)
             }
-            $0.aiConnectionsFileClient.load = { .empty(updatedAtMs: 1) }
         }
 
         await store.send(.row(.element(id: .chatgptCodex, action: .cancelButtonTapped))) { state in
@@ -188,8 +273,6 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             state.rows[id: .chatgptCodex]?.flowState = .idle
             state.status = .blocked
         }
-
-        await store.receive(\.bootstrapCompleted)
 
         XCTAssertTrue(cancelRecorder.value)
         XCTAssertEqual(store.state.choice, .none)
@@ -461,6 +544,20 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
 }
 
 // swiftlint:enable type_body_length
+
+private extension ONB004ConfigureAIProviderDuringOnboardingTests {
+    static func waitUntil(
+        _ condition: @escaping @Sendable () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) async {
+        for _ in 0 ..< 100 {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Condition was not met in time", file: file, line: line)
+    }
+}
 
 private extension AIConnectionsFile {
     static func fixture(records: [AiProvider: ProviderRecordFile]) -> AIConnectionsFile {
