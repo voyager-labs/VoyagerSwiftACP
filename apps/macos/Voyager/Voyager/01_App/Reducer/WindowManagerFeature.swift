@@ -282,7 +282,6 @@ struct WindowManagerFeature {
         )))
     }
 
-
     private func sendCommandToFocusedWindow(
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,

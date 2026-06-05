@@ -11,7 +11,7 @@ public struct HelperAppClient: Sendable {
     public var terminationEvents: @Sendable () -> AsyncStream<Void>
     public var ensureRunning: @Sendable () async -> Void
 
-    nonisolated public init(
+    public nonisolated init(
         start: @escaping @Sendable () async -> Void,
         stop: @escaping @Sendable () async -> Void,
         isRunning: @escaping @Sendable () async -> Bool,
@@ -27,7 +27,7 @@ public struct HelperAppClient: Sendable {
 }
 
 extension HelperAppClient: DependencyKey {
-    nonisolated public static var liveValue: HelperAppClient {
+    public nonisolated static var liveValue: HelperAppClient {
         HelperAppClient(
             start: {
                 await MainActor.run {
@@ -101,7 +101,7 @@ extension HelperAppClient: DependencyKey {
         )
     }
 
-    nonisolated public static var testValue: HelperAppClient {
+    public nonisolated static var testValue: HelperAppClient {
         HelperAppClient(
             start: {
                 fatalError("helperAppClient.start test dependency is not configured")
@@ -115,7 +115,7 @@ extension HelperAppClient: DependencyKey {
         )
     }
 
-    nonisolated public static var previewValue: HelperAppClient {
+    public nonisolated static var previewValue: HelperAppClient {
         HelperAppClient(
             start: {
                 fatalError("helperAppClient.start preview dependency is not configured")
@@ -324,7 +324,7 @@ private func findHelperPID() -> pid_t? {
         .processIdentifier
 }
 
-nonisolated private func monitorProcessTermination(pid: pid_t, logger _: Logger) {
+private nonisolated func monitorProcessTermination(pid: pid_t, logger _: Logger) {
     let kq = kqueue()
     guard kq != -1 else {
         return

@@ -11,7 +11,7 @@ public struct HelperStateClient: Sendable {
     public var resolve: @Sendable () async -> HelperState?
     public var observe: @Sendable () -> AsyncStream<HelperState>
 
-    nonisolated public init(
+    public nonisolated init(
         resolve: @escaping @Sendable () async -> HelperState?,
         observe: @escaping @Sendable () -> AsyncStream<HelperState>,
     ) {
@@ -21,7 +21,7 @@ public struct HelperStateClient: Sendable {
 }
 
 extension HelperStateClient: DependencyKey {
-    nonisolated public static var liveValue: HelperStateClient {
+    public nonisolated static var liveValue: HelperStateClient {
         let resolver = HelperStateResolver()
         return HelperStateClient(
             resolve: {
@@ -35,11 +35,11 @@ extension HelperStateClient: DependencyKey {
         )
     }
 
-    nonisolated public static var testValue: HelperStateClient {
+    public nonisolated static var testValue: HelperStateClient {
         HelperStateClient(resolve: { nil }, observe: { AsyncStream { $0.finish() } })
     }
 
-    nonisolated public static var previewValue: HelperStateClient {
+    public nonisolated static var previewValue: HelperStateClient {
         HelperStateClient(resolve: { nil }, observe: { AsyncStream { $0.finish() } })
     }
 }
@@ -219,7 +219,7 @@ private actor HelperStateResolver {
     }
 
     /// 알림 payload를 HelperState로 파싱한다
-    nonisolated private static func parseState(from info: [AnyHashable: Any]?) -> HelperState? {
+    private nonisolated static func parseState(from info: [AnyHashable: Any]?) -> HelperState? {
         let info = info ?? [:]
 
         if let schemaVersion = Parser.parseInt(from: info[HelperStateUserInfoKey.schemaVersion]),
@@ -237,7 +237,7 @@ private actor HelperStateResolver {
     }
 
     /// 로그 출력용으로 userInfo 타입 정보를 요약한다
-    nonisolated private static func describeUserInfo(_ info: [AnyHashable: Any]?) -> String {
+    private nonisolated static func describeUserInfo(_ info: [AnyHashable: Any]?) -> String {
         guard let info else {
             return "userInfo=nil"
         }
@@ -260,7 +260,7 @@ private struct NotificationObserver: @unchecked Sendable {
 }
 
 /// 숫자형 파싱 유틸 모음
-nonisolated private enum Parser {
+private nonisolated enum Parser {
     /// 숫자형 Int 변환 유틸
     static func parseInt(from value: Any?) -> Int? {
         if let intValue = value as? Int {

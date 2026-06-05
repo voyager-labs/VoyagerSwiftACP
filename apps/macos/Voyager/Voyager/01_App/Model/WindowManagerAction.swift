@@ -5,7 +5,7 @@ import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
 @CasePathable
-enum WindowManagerAction: CasePathable, Sendable {
+enum WindowManagerAction: CasePathable {
     case delegate(Delegate)
     case lifecycle(Lifecycle)
     case file(FileCommand)
@@ -16,12 +16,12 @@ enum WindowManagerAction: CasePathable, Sendable {
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable
-    enum Delegate: Sendable {
+    enum Delegate {
         case openAISettings
     }
 
     @CasePathable
-    enum Lifecycle: CasePathable, Sendable {
+    enum Lifecycle: CasePathable {
         case openInitialWindowIfNeeded
         case reopenWindowIfNeeded(hasVisibleWindows: Bool)
         case applyAppPreferences(AppPreferencesState)

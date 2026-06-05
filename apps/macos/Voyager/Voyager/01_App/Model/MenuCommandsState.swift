@@ -66,7 +66,7 @@ struct MenuCommandsState: Equatable {
         let windowState = window.window
 
         hasFocusedWindow = true
-let projection = windowState.menuCommandProjection
+        let projection = windowState.menuCommandProjection
         canOpen = projection.canOpen
         canQuickLook = projection.canQuickLook
         canGoBack = projection.canGoBack
