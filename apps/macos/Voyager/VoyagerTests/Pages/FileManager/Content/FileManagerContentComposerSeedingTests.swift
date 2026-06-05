@@ -123,6 +123,69 @@ final class FileManagerContentComposerSeedingTests: XCTestCase {
         XCTAssertEqual(store.state.composer.scopeEditor.selection.legacyScopePaths, ["/tmp/voyager"])
     }
 
+    func testComposerOpenReplacesStaleRecentsVirtualContextWithFolderSeed() async {
+        var initialState = makeInitialState()
+        initialState.navigation.navigationState = .folder("/tmp/voyager")
+        initialState.composer.isPresented = false
+        initialState.composer.conditions = makeRecentsVirtualConditions()
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.registryClient = .live(snapshot: .load())
+        }
+        store.exhaustivity = .off
+
+        await store.send(FileManagerContentAction.composer(.view(.setPresented(true)))) {
+            $0.composer = .init()
+            $0.composer.isPresented = true
+        }
+
+        await store.receive { action in
+            guard case let .composer(.internal(.scopeEditorSeedCurrentPath(path))) = action else {
+                return false
+            }
+            return path == "/tmp/voyager"
+        }
+
+        XCTAssertTrue(store.state.composer.conditions.isEmpty)
+        XCTAssertEqual(store.state.composer.scopeEditor.selection.legacyScopePaths, ["/tmp/voyager"])
+    }
+
+    func testComposerOpenPreservesEditedVirtualDraftOnFolderRoute() async {
+        var initialState = makeInitialState()
+        initialState.navigation.navigationState = .folder("/tmp/voyager")
+        initialState.composer.isPresented = false
+        initialState.composer.conditions = makeRecentsVirtualConditions()
+        initialState.composer.text = "kind:image"
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = CollectionAlertClient.testValue
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+            $0.registryClient = .live(snapshot: .load())
+        }
+
+        await store.send(FileManagerContentAction.composer(.view(.setPresented(true)))) {
+            $0.composer.isPresented = true
+        }
+
+        XCTAssertEqual(store.state.composer.conditions.map(\.propertyKey), ["last_used_date", "content_type_tree"])
+        XCTAssertEqual(store.state.composer.text, "kind:image")
+        XCTAssertTrue(store.state.composer.scopeEditor.selection.isRootOnly)
+    }
+
     func testComposerOpenSeedsTagsVirtualContextWhenPristine() async {
         var initialState = makeInitialState()
         initialState.navigation.navigationState = .tags("Work")
@@ -185,5 +248,32 @@ final class FileManagerContentComposerSeedingTests: XCTestCase {
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath("/tmp/voyager")
         return state
+    }
+
+    private func makeRecentsVirtualConditions() -> [Condition] {
+        [
+            Condition(
+                propertyKey: "last_used_date",
+                propertyLabel: "Last opened",
+                propertyType: "date",
+                operatorCode: "gt",
+                operatorLabel: "After",
+                operatorValueArity: 1,
+                operatorValueUIKind: "singleDate",
+                valueType: "date",
+                values: ["$time.today(-1000000)"],
+            ),
+            Condition(
+                propertyKey: "content_type_tree",
+                propertyLabel: "Content type tree",
+                propertyType: "string",
+                operatorCode: "neq",
+                operatorLabel: "Not equal",
+                operatorValueArity: 1,
+                operatorValueUIKind: "singleText",
+                valueType: "string",
+                values: ["public.folder"],
+            ),
+        ]
     }
 }

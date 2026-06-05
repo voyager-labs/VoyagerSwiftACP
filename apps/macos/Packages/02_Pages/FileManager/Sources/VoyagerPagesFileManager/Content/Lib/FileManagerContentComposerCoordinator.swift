@@ -203,38 +203,7 @@ enum FileManagerContentComposerCoordinator {
             nil,
         )
 
-        switch state.navigation.navigationState {
-        case let .tags(tagName):
-            guard canApplyVirtualRouteSeed(to: state.composer),
-                  let context = FileManagerVirtualCollectionContextFactory.collectionContext(
-                      for: .tags(tagName),
-                      registryClient: dependencies.registryClient,
-                  )
-            else {
-                return .none
-            }
-            return .send(.composer(.applyCollectionDraftRestore(.init(context: context, openedURL: nil))))
-
-        case .recents:
-            guard canApplyVirtualRouteSeed(to: state.composer),
-                  let context = FileManagerVirtualCollectionContextFactory.collectionContext(
-                      for: .recents,
-                      registryClient: dependencies.registryClient,
-                  )
-            else {
-                return .none
-            }
-            return .send(.composer(.applyCollectionDraftRestore(.init(context: context, openedURL: nil))))
-
-        case let .folder(path):
-            guard canApplyFolderRouteSeed(to: state.composer) else {
-                return .none
-            }
-            return .send(.composer(.scopeEditorSeedCurrentPath(path)))
-
-        case .computer, .collection:
-            return .none
-        }
+        return composerOpenedSeedEffect(state: &state, dependencies: dependencies)
     }
 
     private static func handleSetText(
@@ -324,11 +293,65 @@ enum FileManagerContentComposerCoordinator {
     }
 }
 
+private func composerOpenedSeedEffect(
+    state: inout FileManagerContentState,
+    dependencies: FileManagerContentComposerCoordinator.Dependencies,
+) -> Effect<FileManagerContentAction> {
+    switch state.navigation.navigationState {
+    case let .tags(tagName):
+        virtualRouteSeedEffect(for: .tags(tagName), composer: state.composer, dependencies: dependencies)
+
+    case .recents:
+        virtualRouteSeedEffect(for: .recents, composer: state.composer, dependencies: dependencies)
+
+    case let .folder(path):
+        folderRouteSeedEffect(path: path, state: &state)
+
+    case .computer, .collection:
+        .none
+    }
+}
+
+private func virtualRouteSeedEffect(
+    for route: ContentPageNavigationRoute,
+    composer: ComposerFeature.State,
+    dependencies: FileManagerContentComposerCoordinator.Dependencies,
+) -> Effect<FileManagerContentAction> {
+    guard canApplyVirtualRouteSeed(to: composer),
+          let context = FileManagerVirtualCollectionContextFactory.collectionContext(
+              for: route,
+              registryClient: dependencies.registryClient,
+          )
+    else {
+        return .none
+    }
+    return .send(.composer(.applyCollectionDraftRestore(.init(context: context, openedURL: nil))))
+}
+
+private func folderRouteSeedEffect(
+    path: String,
+    state: inout FileManagerContentState,
+) -> Effect<FileManagerContentAction> {
+    if hasOnlyAutomaticVirtualRouteSeed(state.composer) {
+        let wasPresented = state.composer.isPresented
+        state.resetComposer()
+        state.composer.isPresented = wasPresented
+        return .send(.composer(.scopeEditorSeedCurrentPath(path)))
+    }
+    guard canApplyFolderRouteSeed(to: state.composer) else {
+        return .none
+    }
+    return .send(.composer(.scopeEditorSeedCurrentPath(path)))
+}
+
 private func canApplyFolderRouteSeed(to composer: ComposerFeature.State) -> Bool {
     composer.scopeEditor.selection.isRootOnly && isComposerDraftEmpty(composer)
 }
 
 private func canApplyVirtualRouteSeed(to composer: ComposerFeature.State) -> Bool {
+    if hasOnlyAutomaticVirtualRouteSeed(composer) {
+        return true
+    }
     guard isComposerDraftEmpty(composer) else {
         return false
     }
@@ -355,6 +378,46 @@ private func hasOnlyAutomaticRouteScopeSeed(_ composer: ComposerFeature.State) -
         && !composer.isFilteringInFlight
         && composer.activeSearchRequestID == nil
         && composer.activeFiltersRequestID == nil
+}
+
+private func hasOnlyAutomaticVirtualRouteSeed(_ composer: ComposerFeature.State) -> Bool {
+    composer.scopeEditor.selection.isRootOnly
+        && composer.text.isEmpty
+        && composer.collectionContext == nil
+        && composer.pendingSearchQuery == nil
+        && !composer.scopeEditor.isPresented
+        && !composer.canUndo
+        && !composer.hasSubmittedInSession
+        && composer.submittedSearchFilters == nil
+        && composer.lastSearchResponse == nil
+        && composer.lastFiltersResponse == nil
+        && !composer.isLoadingSearch
+        && !composer.isLoadingFilters
+        && !composer.isFilteringInFlight
+        && composer.activeSearchRequestID == nil
+        && composer.activeFiltersRequestID == nil
+        && isVirtualRouteSeedConditionSet(composer.conditions)
+}
+
+private func isVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
+    isRecentsVirtualRouteSeedConditionSet(conditions) || isTagVirtualRouteSeedConditionSet(conditions)
+}
+
+private func isRecentsVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
+    guard conditions.count == 2 else { return false }
+    let keys = conditions.map(\.propertyKey)
+    return keys == ["last_used_date", "content_type_tree"]
+        && conditions[0].operatorCode == "gt"
+        && conditions[0].values == ["$time.today(-1000000)"]
+        && conditions[1].operatorCode == "neq"
+        && conditions[1].values == ["public.folder"]
+}
+
+private func isTagVirtualRouteSeedConditionSet(_ conditions: [Condition]) -> Bool {
+    guard conditions.count == 1, let condition = conditions.first else { return false }
+    return condition.propertyKey == "tag_names"
+        && condition.operatorCode == "any"
+        && condition.values?.count == 1
 }
 
 private func searchResultPaths(from items: [VoyagerShared.JSONValue]) -> [String] {
