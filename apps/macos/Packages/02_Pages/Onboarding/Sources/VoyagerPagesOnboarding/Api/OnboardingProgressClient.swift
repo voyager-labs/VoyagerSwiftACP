@@ -51,9 +51,6 @@ extension OnboardingProgressClient: DependencyKey {
                     return .resetRequired
                 }
 
-                guard version == currentVersion else {
-                    return .resetRequired
-                }
                 guard let step = OnboardingStep(rawValue: currentStepRaw) else {
                     return .resetRequired
                 }
@@ -64,20 +61,25 @@ extension OnboardingProgressClient: DependencyKey {
                     return .resetRequired
                 }
 
+                if version != currentVersion {
+                    guard let snapshot = Self.migratedSnapshot(
+                        version: version,
+                        currentStep: step,
+                        stepState: stepState,
+                    ) else { return .resetRequired }
+                    guard Self.persist(snapshot, userDefaultsClient: userDefaultsClient) == .success else {
+                        return .resetRequired
+                    }
+                    return .success(snapshot)
+                }
+
                 return .success(OnboardingProgressSnapshot(currentStep: step, stepState: stepState))
             },
             save: { snapshot in
                 @Dependency(\.userDefaultsClient)
                 var userDefaultsClient
 
-                guard let data = try? JSONEncoder().encode(snapshot.stepState) else {
-                    return .failure
-                }
-
-                userDefaultsClient.setObject(currentVersion, Keys.version)
-                userDefaultsClient.setObject(snapshot.currentStep.rawValue, Keys.currentStep)
-                userDefaultsClient.setObject(data, Keys.stepState)
-                return .success
+                return Self.persist(snapshot, userDefaultsClient: userDefaultsClient)
             },
             reset: {
                 @Dependency(\.userDefaultsClient)
@@ -87,6 +89,39 @@ extension OnboardingProgressClient: DependencyKey {
                 userDefaultsClient.setObject(nil, Keys.stepState)
             },
         )
+    }
+
+    nonisolated static func migratedSnapshot(
+        version: Double,
+        currentStep: OnboardingStep,
+        stepState: OnboardingStepState,
+    ) -> OnboardingProgressSnapshot? {
+        guard version == 1.1 else { return nil }
+
+        var migratedStepState = stepState
+        if migratedStepState.completeComplete {
+            migratedStepState.aiProviderSetupComplete = true
+            migratedStepState.aiProviderSetupSkipped = true
+            migratedStepState.aiProviderSetupChoice = .setUpLater
+            migratedStepState.aiProviderSetupStatus = .skipped
+        }
+
+        return OnboardingProgressSnapshot(currentStep: currentStep, stepState: migratedStepState)
+    }
+
+    // swiftlint:disable:next modifier_order
+    private nonisolated static func persist(
+        _ snapshot: OnboardingProgressSnapshot,
+        userDefaultsClient: UserDefaultsClient,
+    ) -> OnboardingProgressClient.SaveResult {
+        guard let data = try? JSONEncoder().encode(snapshot.stepState) else {
+            return .failure
+        }
+
+        userDefaultsClient.setObject(currentVersion, Keys.version)
+        userDefaultsClient.setObject(snapshot.currentStep.rawValue, Keys.currentStep)
+        userDefaultsClient.setObject(data, Keys.stepState)
+        return .success
     }
 
     nonisolated static var testValue: OnboardingProgressClient {
