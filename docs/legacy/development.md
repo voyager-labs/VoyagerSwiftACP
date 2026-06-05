@@ -4,10 +4,10 @@
 
 관련 문서
 
-- 실행/ENV 로딩 규칙: `docs/architecture/environment.md`
-- 아키텍처 개요: `docs/architecture/overview.md`
-- macOS 앱 구조: `docs/architecture/macos-app.md`
-- 트러블슈팅: `docs/troubleshooting.md`
+- 실행/ENV 로딩 규칙: `docs/legacy/architecture/environment.md`
+- 아키텍처 개요: `docs/legacy/architecture/overview.md`
+- macOS 앱 구조: `docs/legacy/architecture/macos-app.md`
+- 트러블슈팅: `docs/legacy/troubleshooting.md`
 
 ---
 
@@ -66,7 +66,7 @@ Voyager는 macOS 앱/Helper/Backend가 같은 키 체계를 공유하도록 설�
 cp .env.example .env.dev
 ```
 
-세부 로딩 규칙/우선순위는 `docs/architecture/environment.md`를 참고합니다.
+세부 로딩 규칙/우선순위는 `docs/legacy/architecture/environment.md`를 참고합니다.
 
 ---
 
@@ -132,10 +132,10 @@ uv run pytest
 4. Helper가 포트를 예약하고 준비 상태를 검증
 5. 앱이 Helper 상태를 수신 후 API 호출
 
-통합/부트스트랩 상세는 `docs/macos/voyager-helper.md`, `docs/integration/backend-bootstrap.md`를 참고합니다.
+통합/부트스트랩 상세는 `docs/legacy/macos/voyager-helper.md`, `docs/legacy/integration/backend-bootstrap.md`를 참고합니다.
 
 ---
 
 ## 6. 흔한 문제
 
-- 백엔드가 뜨지 않음 / 포트 연결 실패 / 인덱싱이 진행되지 않음 등의 문제는 `docs/troubleshooting.md`를 우선 확인합니다.
+- 백엔드가 뜨지 않음 / 포트 연결 실패 / 인덱싱이 진행되지 않음 등의 문제는 `docs/legacy/troubleshooting.md`를 우선 확인합니다.

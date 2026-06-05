@@ -4,11 +4,11 @@
 
 관련 문서
 
-- `docs/architecture/overview.md`
-- `docs/architecture/source-tree.md`
-- `docs/architecture/macos-app.md`
-- `docs/architecture/environment.md`
-- `docs/architecture/coding-standards.md`
+- `docs/legacy/architecture/overview.md`
+- `docs/legacy/architecture/source-tree.md`
+- `docs/legacy/architecture/macos-app.md`
+- `docs/legacy/architecture/environment.md`
+- `docs/legacy/architecture/coding-standards.md`
 
 ---
 
@@ -61,7 +61,7 @@ Voyager는 가능한 범위에서 버전을 고정해 재현 가능한 개발/�
     - 상태/이펙트/의존성 주입을 한 패턴으로 통일
     - 기능 단위(Feature)로 분해하기 쉬워, FSD 스타일 구조와 궁합이 좋음
 - 주의점
-    - Feature가 커지면 Reducer/Action이 비대해지기 쉬우므로, `docs/architecture/macos-app.md`의 분해/오케스트레이터 패턴을 우선
+    - Feature가 커지면 Reducer/Action이 비대해지기 쉬우므로, `docs/legacy/architecture/macos-app.md`의 분해/오케스트레이터 패턴을 우선
     - async Effect는 취소/경합 관리가 설계 품질에 직접 영향
 - 버전: `1.22.3` (SPM lock: `Package.resolved`)
 

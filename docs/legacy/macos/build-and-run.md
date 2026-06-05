@@ -4,10 +4,10 @@
 
 관련 문서
 
-- ENV 로딩/키 목록: `docs/architecture/environment.md`
-- macOS 구조(TCA/FSD): `docs/architecture/macos-app.md`
-- Helper 상세(인덱싱/상태 브로드캐스트): `docs/macos/voyager-helper.md`
-- 트러블슈팅: `docs/troubleshooting.md`
+- ENV 로딩/키 목록: `docs/legacy/architecture/environment.md`
+- macOS 구조(TCA/FSD): `docs/legacy/architecture/macos-app.md`
+- Helper 상세(인덱싱/상태 브로드캐스트): `docs/legacy/macos/voyager-helper.md`
+- 트러블슈팅: `docs/legacy/troubleshooting.md`
 
 ---
 
@@ -48,7 +48,7 @@ Voyager는 `APP_ENV` 축으로 실행 환경이 결정됩니다.
 
 dotenv 로딩은 `APP_ENV`에 따라 `.env.{APP_ENV}`만 사용합니다.
 
-세부 규칙은 `docs/architecture/environment.md`를 SSOT로 봅니다.
+세부 규칙은 `docs/legacy/architecture/environment.md`를 SSOT로 봅니다.
 
 ---
 
@@ -128,4 +128,4 @@ xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-De
 log stream --predicate 'subsystem == "com.voyager.app"'
 ```
 
-추가적으로 Helper/Backend 통합 흐름, 포트 예약, 인덱싱 문제 등은 `docs/macos/voyager-helper.md`와 `docs/troubleshooting.md`를 함께 참고합니다.
+추가적으로 Helper/Backend 통합 흐름, 포트 예약, 인덱싱 문제 등은 `docs/legacy/macos/voyager-helper.md`와 `docs/legacy/troubleshooting.md`를 함께 참고합니다.

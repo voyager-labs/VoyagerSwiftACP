@@ -9,6 +9,6 @@
 
 ## Legacy reference
 
-- [Legacy docs](legacy/index.md) — 이전 architecture, macOS, integration, development, testing, deployment, troubleshooting 문서.
+- [Legacy docs](legacy/index.md) — 이전 architecture, features, macOS, integration, development, testing, deployment, troubleshooting 문서.
 
 Legacy 문서는 stale일 수 있다. 새 기술 문서는 `canonical/ENGINEERING/`에 작성하고, legacy의 유효한 내용은 필요할 때 active engineering 문서로 이관한다.
