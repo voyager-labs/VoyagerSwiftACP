@@ -4,8 +4,8 @@
 
 관련 문서
 
-- 개발 환경: `docs/development.md`
-- macOS 빌드/실행: `docs/macos/build-and-run.md`
+- 개발 환경: `docs/legacy/development.md`
+- macOS 빌드/실행: `docs/legacy/macos/build-and-run.md`
 
 ---
 
@@ -67,7 +67,7 @@ uv run ruff check
 
 - Xcode 버전은 레포 루트의 `.xcode-version`과 일치해야 합니다.
 - Helper/Backend 통합이 포함된 테스트는 환경변수/포트 상태에 영향을 받을 수 있습니다.
-  - 관련 문서: `docs/architecture/environment.md`, `docs/troubleshooting.md`
+    - 관련 문서: `docs/legacy/architecture/environment.md`, `docs/legacy/troubleshooting.md`
 
 ### 2.1 전체 테스트
 
@@ -122,4 +122,4 @@ OnboardingHost는 현재 별도의 테스트 타겟이 없습니다.
 - scheme 목록 확인: `xcodebuild -list -project apps/macos/Voyager/Voyager.xcodeproj`
 - Helper 로그 확인: `log stream --predicate 'subsystem == "com.voyager.app"'`
 
-추가 힌트는 `docs/troubleshooting.md`를 참고합니다.
+추가 힌트는 `docs/legacy/troubleshooting.md`를 참고합니다.
