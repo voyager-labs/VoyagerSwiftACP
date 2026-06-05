@@ -10,6 +10,7 @@ public enum UnlockLicenseAuthAction: CasePathable, Sendable {
     case loginTapped
     case signInHandoffCompleted(SignInHandoffResult)
     case loginCallbackReceived(URL)
+    case _handoffExchangeCompleted(Result<LicenseAuthSession, AppHandoffExchangeError>)
     case _onAppearSessionRestored(Bool)
     case _loginSessionRestored(Bool)
     case licenseAuthStatusResponse(generation: Int, result: Result<LicenseAuthStatusResponse, LicenseAuthError>)

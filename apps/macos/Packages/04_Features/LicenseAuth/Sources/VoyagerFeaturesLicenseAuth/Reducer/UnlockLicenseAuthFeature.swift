@@ -51,6 +51,9 @@ public struct UnlockLicenseAuthFeature {
             case let .loginCallbackReceived(url):
                 return handleLoginCallbackReceived(&state, url: url)
 
+            case let ._handoffExchangeCompleted(result):
+                return handleHandoffExchangeCompleted(&state, result: result)
+
             case let ._onAppearSessionRestored(hasSession):
                 return handleOnAppearSessionRestored(&state, hasSession: hasSession)
 
@@ -146,11 +149,13 @@ public struct UnlockLicenseAuthFeature {
     ) -> Effect<Action> {
         switch result {
         case let .success(callbackURL):
-            // 성공: 기존 callback → restoreSession → fetchAccessStatus 경로로 진입
             return .send(.loginCallbackReceived(callbackURL))
 
+        case let .awaitingCallback(handoffState):
+            state.handoffPendingState = handoffState
+            return .none
+
         case .failure, .cancelled:
-            // 실패/취소: 동일하게 처리
             state.isSignInInProgress = false
             state.didSignInFail = true
             return .none
@@ -158,9 +163,16 @@ public struct UnlockLicenseAuthFeature {
     }
 
     private func handleLoginCallbackReceived(_ state: inout State, url: URL) -> Effect<Action> {
-        guard isValidAuthCallback(url) else {
+        // real handoff callback: AppHandoffCallback이 파싱되면 exchange 경로
+        if let callback = AppHandoffCallback(url: url) {
+            return handleRealHandoffCallback(&state, callback: callback)
+        }
+
+        // legacy mock callback: 기존 scheme/host/path + query 없음 → restoreSession 경로
+        guard isValidAuthCallback(url), !hasQueryItems(url) else {
             state.isSignInInProgress = false
             state.didSignInFail = true
+            state.handoffPendingState = nil
             return .none
         }
 
@@ -168,6 +180,73 @@ public struct UnlockLicenseAuthFeature {
             let session = try? await licenseAuthClient.restoreSession()
             await send(._loginSessionRestored(session != nil))
         }
+    }
+
+    private func handleRealHandoffCallback(
+        _ state: inout State,
+        callback: AppHandoffCallback,
+    ) -> Effect<Action> {
+        guard let pendingState = state.handoffPendingState else {
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            return .none
+        }
+
+        guard callback.state == pendingState else {
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.handoffPendingState = nil
+            return .none
+        }
+
+        let expectedContext: AppHandoffContext = .onboarding
+        guard callback.context == expectedContext else {
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.handoffPendingState = nil
+            return .none
+        }
+
+        state.handoffPendingState = nil
+
+        return .run { [licenseAuthClient] send in
+            let result: Result<LicenseAuthSession, AppHandoffExchangeError>
+            do {
+                let session = try await licenseAuthClient.exchangeAppHandoff(
+                    callback.ticket, callback.state, callback.context,
+                )
+                result = .success(session)
+            } catch let error as AppHandoffExchangeError {
+                result = .failure(error)
+            } catch {
+                result = .failure(.networkFailure)
+            }
+            await send(._handoffExchangeCompleted(result))
+        }
+    }
+
+    private func handleHandoffExchangeCompleted(
+        _ state: inout State,
+        result: Result<LicenseAuthSession, AppHandoffExchangeError>,
+    ) -> Effect<Action> {
+        switch result {
+        case .success:
+            state.isSignInInProgress = false
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.fetchGeneration += 1
+            return fetchAccessStatusEffect(generation: state.fetchGeneration)
+
+        case .failure:
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            return .none
+        }
+    }
+
+    private func hasQueryItems(_ url: URL) -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+        return !(components.queryItems?.isEmpty ?? true)
     }
 
     private func handleLoginSessionRestored(_ state: inout State, hasSession: Bool) -> Effect<Action> {
@@ -190,7 +269,9 @@ public struct UnlockLicenseAuthFeature {
         guard url.path == "/callback" else { return false }
         return true
     }
+}
 
+private extension UnlockLicenseAuthFeature {
     // MARK: - ONB-002-start_access_unlock_recovery
 
     private func handleRefreshAccessTapped(_ state: inout State) -> Effect<Action> {

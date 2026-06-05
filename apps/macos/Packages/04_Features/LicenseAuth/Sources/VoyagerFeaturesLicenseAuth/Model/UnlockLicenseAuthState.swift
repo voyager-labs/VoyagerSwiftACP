@@ -13,6 +13,8 @@ public struct UnlockLicenseAuthState: Equatable {
     public var isSignInInProgress: Bool = false
     public var didSignInFail: Bool = false
     public var fetchGeneration: Int = 0
+    /// 현재 대기 중인 handoff state. awaitingCallback에서 설정, callback 처리 후 초기화.
+    public var handoffPendingState: String?
 
     public init() {}
 
