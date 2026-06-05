@@ -37,7 +37,7 @@ struct SearchQueryService {
         self.logger = logger
     }
 
-    nonisolated private func makeErrorResponse(
+    private nonisolated func makeErrorResponse(
         code: String,
         details: String?,
         fallbackFilters: SearchFiltersPayload,
@@ -55,7 +55,7 @@ struct SearchQueryService {
         )
     }
 
-    nonisolated private func resolveScopes(
+    private nonisolated func resolveScopes(
         queryScopes: [String]?,
         chipsScopes: [String],
     ) -> [String] {
@@ -69,7 +69,7 @@ struct SearchQueryService {
         return chipsScopes
     }
 
-    nonisolated private func cleanScopes(_ scopes: [String]) -> [String] {
+    private nonisolated func cleanScopes(_ scopes: [String]) -> [String] {
         scopes
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.isEmpty == false }

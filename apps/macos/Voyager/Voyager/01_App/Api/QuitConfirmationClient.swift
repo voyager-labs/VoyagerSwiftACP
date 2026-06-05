@@ -57,12 +57,8 @@ extension DependencyValues {
     }
 }
 
-struct AttachmentPickerClient: Sendable {
+struct AttachmentPickerClient {
     var pickAttachments: @Sendable () async -> [URL]
-
-    nonisolated init(pickAttachments: @escaping @Sendable () async -> [URL]) {
-        self.pickAttachments = pickAttachments
-    }
 }
 
 extension AttachmentPickerClient: DependencyKey {

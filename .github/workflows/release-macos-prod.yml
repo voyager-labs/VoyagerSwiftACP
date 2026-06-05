@@ -3,6 +3,7 @@ name: release-macos-prod
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 concurrency:
   group: release-macos-prod-${{ github.ref }}
