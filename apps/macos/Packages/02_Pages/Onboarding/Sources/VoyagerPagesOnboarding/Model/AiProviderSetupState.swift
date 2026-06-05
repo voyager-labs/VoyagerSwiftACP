@@ -31,6 +31,12 @@ struct AiProviderSetupState: Equatable {
             return
         }
 
+        if choice == .providerConnected && rows.contains(where: { $0.connectionState == .checkingStatus }) {
+            status = .complete
+            loadError = nil
+            return
+        }
+
         if choice == .setUpLater {
             status = .skipped
             loadError = nil
@@ -44,7 +50,11 @@ struct AiProviderSetupState: Equatable {
 
         if bootstrapPhase == .loading
             || rows
-            .contains(where: { $0.connectionState == .connectInProgress || $0.isVerifying || $0.flowState != .idle
+            .contains(where: {
+                $0.connectionState == .checkingStatus
+                    || $0.connectionState == .connectInProgress
+                    || $0.isVerifying
+                    || $0.flowState != .idle
             })
         {
             status = .pending

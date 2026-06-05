@@ -95,7 +95,6 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.receive(\.bootstrapCompleted) { state in
             state.rows[id: provider]?.connectionState = .checkingStatus
             state.rows[id: provider]?.statusReason = .none
-            state.status = .blocked
         }
 
         await store.receive(\.bootstrapVerificationCompleted) { state in
@@ -104,6 +103,42 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             state.choice = .providerConnected
             state.status = .complete
         }
+
+        await store.finish()
+    }
+
+    func testCompleteStepSaveKeepsProviderSetupCompleteDuringReverification() async {
+        let provider = AiProvider.openai
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .complete
+        initialState.welcome.isComplete = true
+        initialState.betaAccess.isComplete = true
+        initialState.betaAccess.status = .active
+        initialState.permissions.isComplete = true
+        initialState.aiProviderSetup.choice = .providerConnected
+        initialState.aiProviderSetup.status = .complete
+        initialState.aiProviderSetup.rows[id: provider]?.connectionState = .connected
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+        }
+
+        await store.send(.aiProviderSetup(.bootstrapCompleted([
+            AIProviderBootstrapResult(provider: provider, connectionState: .checkingStatus),
+        ]))) { state in
+            state.aiProviderSetup.bootstrapPhase = .loaded
+            state.aiProviderSetup.rows[id: provider]?.connectionState = .checkingStatus
+            state.aiProviderSetup.rows[id: provider]?.statusReason = .none
+        }
+
+        let saved = saveRecorder.value
+        XCTAssertEqual(saved?.currentStep, .complete)
+        XCTAssertEqual(saved?.stepState.aiProviderSetupComplete, true)
+        XCTAssertEqual(saved?.stepState.aiProviderSetupChoice, .providerConnected)
+        XCTAssertEqual(saved?.stepState.aiProviderSetupStatus, .complete)
 
         await store.finish()
     }
