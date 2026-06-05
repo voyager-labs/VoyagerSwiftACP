@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
-
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 @Reducer
 struct EntryOperationsLifecycleReducer {

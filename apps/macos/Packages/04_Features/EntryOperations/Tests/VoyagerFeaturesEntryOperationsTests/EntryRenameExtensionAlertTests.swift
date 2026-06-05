@@ -2,12 +2,13 @@ import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 @MainActor
 final class EntryRenameExtensionAlertTests: XCTestCase {
-    // MARK: - Helpers
+    // MARK: - 도우미
 
     private func makeFileEntry(
         id: String,
@@ -65,7 +66,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         }
     }
 
-    // MARK: - Same extension bypasses warning
+    // MARK: - 동일 확장자는 경고를 건너뜀
 
     func testBasenameRenameWithSameExtensionCommitsWithoutWarning() async {
         let entry = makeFileEntry(id: "/tmp/report.txt", name: "report.txt")
@@ -95,7 +96,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         XCTAssertEqual(store.state.undoRecords.first?.targets.first?.afterPath, "/tmp/notes.txt")
     }
 
-    // MARK: - Extension added
+    // MARK: - 확장자 추가됨
 
     func testExtensionAddedShowsWarningAndCancelPreservesState() async {
         let entry = makeFileEntry(id: "/tmp/README", name: "README")
@@ -109,7 +110,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         XCTAssertEqual(store.state.renamingText, "README.md")
     }
 
-    // MARK: - Extension removed
+    // MARK: - 확장자 제거됨
 
     func testExtensionRemovedShowsWarningAndCancelPreservesState() async {
         let entry = makeFileEntry(id: "/tmp/report.txt", name: "report.txt")
@@ -123,7 +124,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         XCTAssertEqual(store.state.renamingText, "report")
     }
 
-    // MARK: - Extension changed — cancel
+    // MARK: - 확장자 변경 — 취소
 
     func testExtensionChangedCancelPreservesRenameState() async {
         let entry = makeFileEntry(id: "/tmp/report.txt", name: "report.txt")
@@ -137,7 +138,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         XCTAssertEqual(store.state.renamingText, "report.pdf")
     }
 
-    // MARK: - Extension changed — continue
+    // MARK: - 확장자 변경 — 계속
 
     func testExtensionChangedContinueProceedsToRename() async {
         let entry = makeFileEntry(id: "/tmp/report.txt", name: "report.txt")
@@ -164,7 +165,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         XCTAssertEqual(store.state.undoRecords.first?.targets.first?.afterPath, "/tmp/report.pdf")
     }
 
-    // MARK: - Folder skips extension alert
+    // MARK: - 폴더는 확장자 경고를 건너뜀
 
     func testFolderRenameSkipsExtensionAlert() async {
         let folder = EntryModel.temporaryFolder(id: "/tmp/MyFolder", name: "MyFolder")
@@ -210,7 +211,7 @@ final class EntryRenameExtensionAlertTests: XCTestCase {
         XCTAssertEqual(store.state.undoRecords.first?.targets.first?.afterPath, "/tmp/MyFolder.backup")
     }
 
-    // MARK: - Conflict after confirmed extension change
+    // MARK: - 확장자 변경 확인 후 충돌
 
     func testConflictAlertStillRunsAfterConfirmedExtensionChange() async {
         let entry = makeFileEntry(id: "/tmp/report.txt", name: "report.txt")

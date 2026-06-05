@@ -1,9 +1,9 @@
 # Skill / Harness Draft Schema
 
-**Version:** 1.0  
-**Path:** `.sisyphus/drafts/{plan_slug}/{run_id}/skill-draft.md`  
-**Family:** Skill / Harness Draft  
-**Output type:** Future skill or harness proposal  
+**Version:** 1.1
+**Path:** `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md`
+**Family:** Skill / Harness Draft
+**Output type:** Future skill or harness proposal
 **Source of truth:** Artifact Contract §Output 4
 
 ---
@@ -69,6 +69,10 @@ The subtype is declared in the `Proposed Target` section.
 
 {Draft status and what is needed for adoption.}
 
+### Creation Justification
+
+This proposal needs a distinct skill/rule because the finding recurs across multiple runs and cannot be captured as a short reference update to an existing skill.
+
 ### Source-Artifact Linkage
 
 | Source Finding | Dedup Key | Severity | Issue |
@@ -88,9 +92,11 @@ The subtype is declared in the `Proposed Target` section.
 | `Source Findings`         | yes      | Bulleted list of finding IDs with dedupe_keys and source facets.                           |
 | `Proposed Scope`          | yes      | Bulleted list of what the skill/rules will do, read, and verify.                           |
 | `Does NOT`                | no       | Bulleted list of what is explicitly out of scope for this proposal.                        |
-| `Target File`             | yes      | Exact path to the proposed file (e.g., `.agents/skills/grid-drop-harness/SKILL.md`).       |
+| `Target File`             | yes      | Exact path to the proposed file (e.g., `.agents/skills/{proposed-skill-name}/SKILL.md`).   |
 | `Non-Goals`               | yes      | Bulleted list of what other skills/systems handle (to avoid overlap).                      |
 | `Readiness`               | yes      | Draft status. One of: `Draft only`, `Needs human review`, `Ready for adoption`, `Adopted`. |
+| `Promotion Gate`          | yes      | Explicit recommendation: promote target, confidence, blast radius, prerequisites, and catch-next-time. |
+| `Creation Justification`  | yes      | Why this is not simply an update to an existing skill/reference. If it can be absorbed, set `promote_to: none`. |
 | `Source-Artifact Linkage` | yes      | Table linking each source finding to its dedupe_key, severity, and the issue it addresses. |
 
 ---
@@ -126,7 +132,7 @@ OR when the operator explicitly requests a draft regardless of threshold.
 
 **Run:** 2026-04-10-181500
 **Generated:** 2026-04-10T18:15:00Z
-**Proposed Target:** `.agents/skills/grid-drop-harness/` (new skill, not yet created)
+**Proposed Target:** `.agents/skills/{proposed-skill-name}/` (new skill, not yet created)
 
 ---
 
@@ -143,7 +149,7 @@ Repeated finding across f2 code quality reviews: coordinator drag/drop state cle
 
 ### Proposed Scope
 
-- New skill: `.agents/skills/grid-drop-harness/SKILL.md`
+- New skill: `.agents/skills/{proposed-skill-name}/SKILL.md`
 - Reads: `EntryGridCoordinator+Extensions.swift`, `EntryViewLayoutAutoscrollAcceleration.swift`
 - Verifies: single-owner highlight clearing, correct `shouldClearAfterSessionEnd` semantics
 - Asserts that `acceptDrop` success branches do NOT call `setDropTargetEntryId(nil)` or `setDropTargeted(false)`
@@ -151,17 +157,17 @@ Repeated finding across f2 code quality reviews: coordinator drag/drop state cle
 
 ### Does NOT
 
-- Execute XCTest suites (test-runner handles that)
+- Execute XCTest suites (the active Work-phase verification skill handles that)
 - Create or modify PRs (pr-execution handles that)
 - Trigger automatic Work loops
 
 ### Target File
 
-`.agents/skills/grid-drop-harness/SKILL.md`
+`.agents/skills/{proposed-skill-name}/SKILL.md`
 
 ### Non-Goals
 
-- No test execution (test-runner handles that)
+- No test execution (the active Work-phase verification skill handles that)
 - No PR creation (pr-execution handles that)
 - No automatic Work loops
 - No cross-repo artifact resolution
@@ -169,6 +175,14 @@ Repeated finding across f2 code quality reviews: coordinator drag/drop state cle
 ### Readiness
 
 Draft only. Requires human review before adoption.
+
+### Promotion Gate
+
+- promote_to: skill
+- confidence: medium
+- blast_radius: package
+- prerequisites_met: no
+- catch_next_time: Require explicit lifecycle branch verification before implementation.
 
 ### Source-Artifact Linkage
 
@@ -221,6 +235,14 @@ F1 and F2 findings confirm that multiple components (coordinator + reducer) both
 
 Draft only. Requires human review before adoption.
 
+### Promotion Gate
+
+- promote_to: rule
+- confidence: medium
+- blast_radius: package
+- prerequisites_met: no
+- catch_next_time: Require explicit lifecycle branch verification before implementation.
+
 ### Source-Artifact Linkage
 
 | Source Finding | Dedup Key                                   | Severity | Issue                                    |
@@ -235,3 +257,4 @@ Draft only. Requires human review before adoption.
 | Version | Date       | Change          |
 | ------- | ---------- | --------------- |
 | 1.0     | 2026-04-10 | Initial schema. |
+| 1.1     | 2026-05-17 | Added Promotion Gate and Creation Justification. |

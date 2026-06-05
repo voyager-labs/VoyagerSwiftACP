@@ -3,11 +3,11 @@ import XCTest
 
 final class VoyagerTests: XCTestCase {
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+        // setup 코드를 여기에 작성하세요. 이 메서드는 클래스의 각 테스트 메서드가 실행되기 전에 호출됩니다.
     }
 
     override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+        // teardown 코드를 여기에 작성하세요. 이 메서드는 클래스의 각 테스트 메서드 실행 후에 호출됩니다.
     }
 
     func testTemplatePlaceholder() throws {

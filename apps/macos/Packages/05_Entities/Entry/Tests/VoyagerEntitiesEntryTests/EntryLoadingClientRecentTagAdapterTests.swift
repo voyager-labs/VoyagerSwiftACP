@@ -1,13 +1,16 @@
 import Foundation
 @testable import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 import XCTest
 
 @MainActor
 final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
+    /// 최근 항목 검색 payload가 EntryModel과 facets로 정확히 매핑되는지 검증
     func testRecentAdapterMapsHelperPayloadIntoEntryModel() async {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let recentSearchClient = RecentSearchClient(
+        let items = await EntryLoadingLive.loadRecentItemsViaSearch(
+            showHidden: false,
             search: { request in
                 XCTAssertEqual(request.scopeMode, .allIndexed)
                 XCTAssertEqual(request.resultCap, 100)
@@ -35,34 +38,31 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
             },
         )
 
-        let items = await EntryLoadingLive.loadRecentItemsViaSearch(
-            showHidden: false,
-            recentSearchClient: recentSearchClient,
-        )
-
         XCTAssertEqual(items.map(\.fullPath), ["/tmp/Recent.txt"])
         XCTAssertEqual(items.first?.facets.lastOpenedDate, date)
         XCTAssertEqual(items.first?.facets.tags, [Tag(name: "Work", colorCode: 4)])
         XCTAssertEqual(items.first?.facets.creatorApplication, "TextEdit")
     }
 
+    /// 보조 검색 실패 시 태그 로딩이 빈 배열로 폴백되는지 검증
     func testTagAdapterReturnsEmptyArrayOnHelperFailure() async {
         struct StubError: Error {}
-
-        let tagSearchClient = TagSearchClient(search: { _ in throw StubError() })
 
         let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
             tag: "Work",
             showHidden: false,
-            tagSearchClient: tagSearchClient,
+            search: { _ in throw StubError() },
         )
 
         XCTAssertEqual(items, [])
     }
 
+    /// 태그 검색 payload의 색상 코드가 EntryModel 태그로 보존되는지 검증
     func testTagAdapterMapsHelperPayloadIntoEntryModel() async {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let tagSearchClient = TagSearchClient(
+        let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
+            tag: "Green",
+            showHidden: false,
             search: { request in
                 XCTAssertEqual(request.requestedTag, "Green")
                 XCTAssertTrue(request.exactTagVerification)
@@ -88,12 +88,6 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
                     ],
                 )
             },
-        )
-
-        let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
-            tag: "Green",
-            showHidden: false,
-            tagSearchClient: tagSearchClient,
         )
 
         XCTAssertEqual(items.map(\.fullPath), ["/tmp/Tagged.txt"])

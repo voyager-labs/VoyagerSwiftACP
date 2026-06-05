@@ -20,12 +20,8 @@ echo "🔧 Using Xcode version: $VERSION"
 
 # xcodes 설치 여부 확인
 if ! command -v xcodes >/dev/null 2>&1; then
-  echo "ℹ️  xcodes CLI not found. Installing via Homebrew..."
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "❌ Homebrew is not installed. Install Homebrew first."
-    exit 1
-  fi
-  brew install xcodes
+  echo "❌ xcodes CLI not found. Run: mise install xcodes"
+  exit 1
 fi
 
 echo "📦 Installing Xcode $VERSION if needed..."

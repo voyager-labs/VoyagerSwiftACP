@@ -5,9 +5,9 @@ public struct LaunchAtLoginClient: Sendable {
     public var isEnabled: @Sendable () -> Bool
     public var setEnabled: @Sendable (Bool) throws -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         isEnabled: @escaping @Sendable () -> Bool,
-        setEnabled: @escaping @Sendable (Bool) throws -> Void
+        setEnabled: @escaping @Sendable (Bool) throws -> Void,
     ) {
         self.isEnabled = isEnabled
         self.setEnabled = setEnabled
@@ -15,7 +15,7 @@ public struct LaunchAtLoginClient: Sendable {
 }
 
 extension LaunchAtLoginClient: DependencyKey {
-    public nonisolated static var liveValue: LaunchAtLoginClient {
+    nonisolated public static var liveValue: LaunchAtLoginClient {
         LaunchAtLoginClient(
             isEnabled: {
                 let appService = SMAppService.mainApp
@@ -28,21 +28,21 @@ extension LaunchAtLoginClient: DependencyKey {
                 } else {
                     try appService.unregister()
                 }
-            }
+            },
         )
     }
 
-    public nonisolated static var testValue: LaunchAtLoginClient {
+    nonisolated public static var testValue: LaunchAtLoginClient {
         LaunchAtLoginClient(
             isEnabled: { false },
-            setEnabled: { _ in }
+            setEnabled: { _ in },
         )
     }
 
-    public nonisolated static var previewValue: LaunchAtLoginClient {
+    nonisolated public static var previewValue: LaunchAtLoginClient {
         LaunchAtLoginClient(
             isEnabled: { false },
-            setEnabled: { _ in }
+            setEnabled: { _ in },
         )
     }
 }

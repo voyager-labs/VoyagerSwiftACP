@@ -1,0 +1,25 @@
+{
+  "skill_name": "docs-sync-planner",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Find the right README insertion point for a new Zed LSP task section and identify nearby docs that must stay in sync. Do not edit files.",
+      "expected_output": "A docs sync plan with a primary insertion point, must-update references, maybe-update references, and verification notes.",
+      "assertions": [
+        "Output identifies a primary insertion point",
+        "Output separates must-update from maybe-update references",
+        "Output stays read-only and does not draft unrelated edits"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We changed a developer command in mise.toml. Plan which docs should be updated without duplicating policy text.",
+      "expected_output": "A concise plan that distinguishes canonical human docs from agent-only rules and proposes link/path verification.",
+      "assertions": [
+        "Output checks human-facing docs separately from agent rules",
+        "Output warns against duplicating long policy text",
+        "Output includes docs-only verification steps"
+      ]
+    }
+  ]
+}

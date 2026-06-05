@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerFeaturesUpdateVersion
 import VoyagerPagesSettings
 
 @ObservableState

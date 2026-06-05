@@ -2,8 +2,8 @@
 import ComposableArchitecture
 import Foundation
 import OSLog
-
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 @Reducer
 struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_length
@@ -532,7 +532,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         return trashURL.path
     }
 
-    private nonisolated static let logger = Logger(
+    nonisolated private static let logger = Logger(
         subsystem: "fm.voyager",
         category: "entry-undo-redo-operations",
     )

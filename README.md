@@ -54,7 +54,7 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
 
 - macOS App
     - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
-        - Workspace에 Voyager.xcodeproj와 OnboardingHost.xcodeproj가 모두 포함되어 있습니다
+        - Workspace에 Voyager.xcodeproj, OnboardingHost.xcodeproj, SettingsHost.xcodeproj가 포함되어 있습니다
     - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
     - VSCode 류 IDE(Sweetpad Extension)에서 실행:
         - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
@@ -67,21 +67,43 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `Voyager Prod: Launch (Release)` - 프로덕션 환경 Release 모드로 빌드 및 실행
                 - `OnboardingHost Dev: Launch (Debug)` - 온보딩 호스트 Debug 모드로 빌드 및 실행
                 - `OnboardingHost Dev: Launch (Release)` - 온보딩 호스트 Release 모드로 빌드 및 실행
+                - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
+                - `SettingsHost Dev: Launch (Release)` - 설정 호스트 Release 모드로 빌드 및 실행
             - 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
+    - Zed에서 LSP context/검증 태스크 실행:
+        - `cmd-shift-p`로 Command Palette를 열고 `task: spawn`을 실행합니다.
+        - `.zed/tasks.json`에는 아래 Voyager 전용 태스크가 정의되어 있습니다.
+        - LSP context 전환 태스크:
+            - `Voyager LSP: Current File` - 현재 파일 경로로 적절한 SourceKit-LSP build context를 추론해 `buildServer.json`을 갱신
+            - `Voyager LSP: App` - `Voyager-Dev` 기준 app context로 전환
+            - `Voyager LSP: Helper` - `VoyagerHelper-Dev` 기준 helper context로 전환
+            - `Voyager LSP: OnboardingHost` - `OnboardingHost-Dev` 기준 onboarding host context로 전환
+        - Affected verification 태스크:
+            - `Voyager Checks: Current File (Plan)` - 현재 파일 기준으로 실행할 검증 명령을 JSON으로 출력
+            - `Voyager Checks: Current File (Run)` - 현재 파일 기준 검증 명령을 실제 실행
+            - `Voyager Checks: Changed Files (Plan)` - Git 변경 파일 기준으로 실행할 검증 명령을 JSON으로 출력
+            - `Voyager Checks: Changed Files (Run)` - Git 변경 파일 기준 검증 명령을 실제 실행
+        - Zed는 프로젝트 루트의 `buildServer.json`을 자동 탐지합니다. 별도 `.zed/settings.json`은 두지 않으며, LSP context 전환은 위 태스크 또는 `python3 scripts/dev/lsp_context.py ...` 명령으로 수행합니다.
     - Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
     - Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
     - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
     - OnboardingHost Build (CLI): `xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug`
+    - SettingsHost Build (CLI): `xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug`
 
 ### Xcode 버전 관리
 
 이 레포에서는 루트 디렉터리의 `.xcode-version` 파일로 **공식 Xcode 버전**을 고정해서 사용합니다.
+현재 기준 버전은 Xcode 26.1이며, 이 Xcode가 제공하는 Swift 6.2.1을 사용합니다.
+Swift 기대 버전은 루트 `.swift-toolchain-version`에 별도로 명시합니다.
 모든 로컬 개발 환경과 CI는 이 버전에 맞추는 것을 원칙으로 합니다.
+
+`swiftly`를 사용하는 환경을 위해 루트 `.swift-version`은 `xcode`로 고정합니다.
+`.swift-version`은 swiftly가 읽는 toolchain 선택 파일이고, `.swift-toolchain-version`은 이 레포가 기대하는 Swift 버전을 검증하기 위한 파일입니다.
+따라서 `swiftly`가 PATH에서 먼저 잡히더라도 레포 안에서는 현재 선택된 Xcode toolchain을 사용하고, 그 결과가 Swift 6.2.1인지 `mise run swift-version`으로 확인합니다.
 
 #### 사전 준비
 
 - macOS
-- [Homebrew](https://brew.sh) 설치
 - Xcode 설치 및 업데이트 권한
 
 #### 이 프로젝트용 Xcode 설정 방법
@@ -96,9 +118,18 @@ chmod +x scripts/xcodes.sh   # 최초 1회만 필요 (이미 실행 권한이 �
 이 스크립트는 다음 작업을 수행합니다.
 
 1. 레포 루트의 `.xcode-version` 파일을 읽어, 필요한 Xcode 버전을 확인합니다.
-2. `xcodes` CLI가 설치되어 있지 않으면 Homebrew로 설치합니다.
+2. `xcodes` CLI가 설치되어 있지 않으면 설치합니다.
 3. `xcodes install <버전>`으로 해당 Xcode 버전을 설치합니다. (이미 설치되어 있다면 건너뜁니다)
 4. `xcodes select <버전>`으로 해당 버전을 현재 macOS의 활성 Xcode로 설정합니다.
+
+`swiftly`를 별도로 쓰는 경우에는 아래 명령으로 레포 기준 Swift toolchain도 확인할 수 있습니다.
+
+```bash
+swiftly use
+mise run swift-version
+```
+
+정상이라면 `swiftly use`는 `xcode`, `mise run swift-version`은 `.swift-toolchain-version`과 일치하는 Swift 6.2.1을 출력합니다.
 
 설정이 제대로 되었는지 확인하려면:
 
@@ -119,7 +150,7 @@ xcodebuild -version
 처음 클론한 후(그리고 새로운 머신에서) **레포 루트에서 한 번만** 실행하세요:
 
 ```bash
-make bootstrap
+bash scripts/setup.sh
 ```
 
 이 설정은 repo-local git config(`core.hooksPath`)에 저장되며, 동일 레포에서 생성한 worktree에도 그대로 적용되는 것을 목표로 합니다.
@@ -136,18 +167,18 @@ make bootstrap
 `opencode` 세션에서 사용하려면 각 개발자 로컬 환경에 `cupertino` 바이너리가 먼저 설치되어 있어야 합니다.
 
 - 지원 플랫폼: macOS 15+
-- 설치(권장):
+- 설치(upstream installer 권장):
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/mihaelamj/cupertino/main/install.sh)
+```
+
+- 또는 Homebrew 사용:
 
 ```bash
 brew tap mihaelamj/tap
 brew install cupertino
 cupertino setup
-```
-
-- 또는 upstream installer 사용:
-
-```bash
-bash <(curl -sSL https://raw.githubusercontent.com/mihaelamj/cupertino/main/install.sh)
 ```
 
 설치 후에는 아래 명령으로 경로를 확인하세요.
@@ -204,11 +235,14 @@ which cupertino
 
 ## Documentation for Agents
 
-- Entry point: `docs/index.md` (PRD / Architecture / Frontend Spec 샤드 인덱스)
-- Architecture quick refs loaded by tools:
-    - `docs/architecture/coding-standards.md`
-    - `docs/architecture/tech-stack.md`
-    - `docs/architecture/source-tree.md`
+- 진입점: `docs/index.md`
+- Active engineering 문서: `docs/canonical/ENGINEERING/index.md`
+- Canonical product/docs SSOT: `docs/canonical/README.md`
+- Legacy app 문서: `docs/legacy/index.md`
+- Legacy architecture quick refs (이관 대기):
+    - `docs/legacy/architecture/coding-standards.md`
+    - `docs/legacy/architecture/tech-stack.md`
+    - `docs/legacy/architecture/source-tree.md`
 
 ## Back to Docs
 

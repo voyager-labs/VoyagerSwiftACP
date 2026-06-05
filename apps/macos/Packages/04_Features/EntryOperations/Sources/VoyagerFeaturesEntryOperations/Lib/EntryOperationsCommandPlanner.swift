@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
-
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 public enum EntryOperationsCommand: Sendable {
     case navigation(EntryOperationsNavigationCommand)

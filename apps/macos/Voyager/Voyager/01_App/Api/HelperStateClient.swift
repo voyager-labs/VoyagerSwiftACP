@@ -11,7 +11,7 @@ public struct HelperStateClient: Sendable {
     public var resolve: @Sendable () async -> HelperState?
     public var observe: @Sendable () -> AsyncStream<HelperState>
 
-    public nonisolated init(
+    nonisolated public init(
         resolve: @escaping @Sendable () async -> HelperState?,
         observe: @escaping @Sendable () -> AsyncStream<HelperState>,
     ) {
@@ -21,7 +21,7 @@ public struct HelperStateClient: Sendable {
 }
 
 extension HelperStateClient: DependencyKey {
-    public nonisolated static var liveValue: HelperStateClient {
+    nonisolated public static var liveValue: HelperStateClient {
         let resolver = HelperStateResolver()
         return HelperStateClient(
             resolve: {
@@ -35,11 +35,11 @@ extension HelperStateClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: HelperStateClient {
+    nonisolated public static var testValue: HelperStateClient {
         HelperStateClient(resolve: { nil }, observe: { AsyncStream { $0.finish() } })
     }
 
-    public nonisolated static var previewValue: HelperStateClient {
+    nonisolated public static var previewValue: HelperStateClient {
         HelperStateClient(resolve: { nil }, observe: { AsyncStream { $0.finish() } })
     }
 }
@@ -51,7 +51,7 @@ public extension DependencyValues {
     }
 }
 
-// Helper 상태 요청/응답 흐름을 관리하는 리졸버
+/// Helper 상태 요청/응답 흐름을 관리하는 리졸버
 private actor HelperStateResolver {
     private let logger = Logger(label: "Voyager")
     private var cachedState: HelperState?
@@ -68,7 +68,7 @@ private actor HelperStateResolver {
         }
     }
 
-    // Helper 상태를 요청하고 응답을 반환한다
+    /// Helper 상태를 요청하고 응답을 반환한다
     func resolveState() async -> HelperState? {
         await ensureObserver()
         await sendRequest()
@@ -109,7 +109,7 @@ private actor HelperStateResolver {
         }
     }
 
-    // 응답 상태를 처리하고 캐시/대기자를 갱신한다
+    /// 응답 상태를 처리하고 캐시/대기자를 갱신한다
     private func handle(state: HelperState?, userInfoSummary: String) async {
         guard let state else {
             logger.error("Failed to parse helper state notification: \(userInfoSummary)")
@@ -127,7 +127,7 @@ private actor HelperStateResolver {
         }
     }
 
-    // 타임아웃/재시도 타이머를 등록한다
+    /// 타임아웃/재시도 타이머를 등록한다
     private func scheduleTimeoutAndRetry() {
         guard timeoutTask == nil else { return }
         timeoutTask = Task { [weak self] in
@@ -136,7 +136,7 @@ private actor HelperStateResolver {
         }
     }
 
-    // 1차 타임아웃 처리: 재요청을 예약한다
+    /// 1차 타임아웃 처리: 재요청을 예약한다
     private func handleTimeout() async {
         guard cachedState == nil else {
             timeoutTask = nil
@@ -156,7 +156,7 @@ private actor HelperStateResolver {
         }
     }
 
-    // 재시도 이후에도 미응답일 때 처리한다
+    /// 재시도 이후에도 미응답일 때 처리한다
     private func handleRetryTimeout() async {
         guard cachedState == nil else {
             retryTask = nil
@@ -175,7 +175,7 @@ private actor HelperStateResolver {
         retryTask = nil
     }
 
-    // 타임아웃/재시도 타이머를 정리한다
+    /// 타임아웃/재시도 타이머를 정리한다
     private func cancelTimeouts() {
         timeoutTask?.cancel()
         timeoutTask = nil
@@ -187,7 +187,7 @@ private actor HelperStateResolver {
         stateContinuations[id] = nil
     }
 
-    // 알림 옵저버를 보장한다
+    /// 알림 옵저버를 보장한다
     private func ensureObserver() async {
         guard observer == nil else { return }
         let token = await MainActor.run {
@@ -207,7 +207,7 @@ private actor HelperStateResolver {
         observer = token
     }
 
-    // Helper 상태 요청 알림을 전송한다
+    /// Helper 상태 요청 알림을 전송한다
     private func sendRequest() async {
         await MainActor.run {
             DistributedNotificationCenter.default().post(
@@ -218,8 +218,8 @@ private actor HelperStateResolver {
         }
     }
 
-    // 알림 payload를 HelperState로 파싱한다
-    private nonisolated static func parseState(from info: [AnyHashable: Any]?) -> HelperState? {
+    /// 알림 payload를 HelperState로 파싱한다
+    nonisolated private static func parseState(from info: [AnyHashable: Any]?) -> HelperState? {
         let info = info ?? [:]
 
         if let schemaVersion = Parser.parseInt(from: info[HelperStateUserInfoKey.schemaVersion]),
@@ -236,8 +236,8 @@ private actor HelperStateResolver {
         return HelperState(helperReady: helperReady, helperBundleVersion: helperBundleVersion)
     }
 
-    // 로그 출력용으로 userInfo 타입 정보를 요약한다
-    private nonisolated static func describeUserInfo(_ info: [AnyHashable: Any]?) -> String {
+    /// 로그 출력용으로 userInfo 타입 정보를 요약한다
+    nonisolated private static func describeUserInfo(_ info: [AnyHashable: Any]?) -> String {
         guard let info else {
             return "userInfo=nil"
         }
@@ -254,14 +254,14 @@ private actor HelperStateResolver {
     }
 }
 
-// 알림 옵저버 토큰 래퍼
+/// 알림 옵저버 토큰 래퍼
 private struct NotificationObserver: @unchecked Sendable {
     let token: NSObjectProtocol
 }
 
-// 숫자형 파싱 유틸 모음
-private nonisolated enum Parser {
-    // 숫자형 Int 변환 유틸
+/// 숫자형 파싱 유틸 모음
+nonisolated private enum Parser {
+    /// 숫자형 Int 변환 유틸
     static func parseInt(from value: Any?) -> Int? {
         if let intValue = value as? Int {
             return intValue

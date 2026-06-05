@@ -1,9 +1,13 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesUpdateVersion
 import XCTest
 
+/// 메뉴 명령 기능 — 앱/보기/편집/작업 명령의 델리게이트 라우팅을 검증.
 @MainActor
 final class MenuCommandsFeatureTests: XCTestCase {
+    /// testAppCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
     func testAppCommandRoutesToWindowManagerDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -18,6 +22,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// testAppCommandRoutesToUpdaterDelegate 테스트 동작을 검증한다.
     func testAppCommandRoutesToUpdaterDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -32,6 +37,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// testViewCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
     func testViewCommandRoutesToWindowManagerDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -46,6 +52,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// testEditCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
     func testEditCommandRoutesToWindowManagerDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
@@ -60,6 +67,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    /// testTask3EntryCommandsRouteToWindowManagerDelegate 테스트 동작을 검증한다.
     func testTask3EntryCommandsRouteToWindowManagerDelegate() async {
         let appCases: [(MenuCommandItem.AppCommand, WindowManagerAction)] = [
             (.open, .file(.open)),
@@ -73,6 +81,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let editCases: [(MenuCommandItem.EditCommand, WindowManagerAction)] = [
             (.cut, .edit(.cut)),
             (.copy, .edit(.copy)),
+            (.openContextualAiChat, .edit(.openContextualAiChat)),
             (.paste, .edit(.paste)),
             (.duplicate, .edit(.duplicate)),
             (.makeAlias, .edit(.makeAlias)),
@@ -96,6 +105,46 @@ final class MenuCommandsFeatureTests: XCTestCase {
             return true
         }
         await store.finish()
+    }
+
+    func testMenuCommandStateReflectsFocusedWindowContextualAiChatPresentation() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000041")
+        let unfocusedID = makeUUID("00000000-0000-0000-0000-000000000042")
+
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.inspector.inspectorVisible = true
+        focusedWindow.inspector.inspectorPaneExists = true
+        focusedWindow.inspector.activeMode = .chat
+
+        var unfocusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Downloads")
+        unfocusedWindow.inspector.inspectorVisible = false
+        unfocusedWindow.inspector.activeMode = .chat
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+            WindowSessionState(id: unfocusedID, window: unfocusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertTrue(MenuCommandsState(state: appState).isContextualAiChatPresented)
+
+        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = false
+
+        XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
+
+        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorPaneExists = true
+        appState.windowManager.windows[id: focusedID]?.window.inspector.inspectorVisible = false
+
+        XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
+    }
+
+    private func makeUUID(_ rawValue: String) -> UUID {
+        guard let uuid = UUID(uuidString: rawValue) else {
+            XCTFail("Invalid UUID fixture: \(rawValue)")
+            return UUID()
+        }
+        return uuid
     }
 
     private func assertAppCommand(
@@ -136,6 +185,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             switch (action, expected) {
             case (.edit(.cut), .edit(.cut)),
                  (.edit(.copy), .edit(.copy)),
+                 (.edit(.openContextualAiChat), .edit(.openContextualAiChat)),
                  (.edit(.paste), .edit(.paste)),
                  (.edit(.duplicate), .edit(.duplicate)),
                  (.edit(.makeAlias), .edit(.makeAlias)),

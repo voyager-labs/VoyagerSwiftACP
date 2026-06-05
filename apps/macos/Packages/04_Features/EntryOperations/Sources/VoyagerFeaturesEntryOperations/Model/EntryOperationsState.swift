@@ -1,8 +1,8 @@
 import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
-
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 
 @ObservableState
 public struct EntryOperationsState: Equatable {

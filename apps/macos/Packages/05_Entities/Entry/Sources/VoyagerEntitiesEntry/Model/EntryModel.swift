@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesTag
 
 public enum EntrySupplementaryMetadata: Equatable, Sendable {
     case folderItemCount(Int)
@@ -15,7 +16,7 @@ public struct EntryFacets: Equatable, Sendable {
     public let tags: [Tag]?
     public let supplementaryMetadata: EntrySupplementaryMetadata?
 
-    public nonisolated init(
+    nonisolated public init(
         createdDate: Date,
         addedDate: Date,
         lastOpenedDate: Date?,
@@ -35,8 +36,6 @@ public struct EntryFacets: Equatable, Sendable {
 }
 
 public struct EntryModel: Identifiable, Sendable {
-    public typealias ID = String
-
     public let name: String
     public let fullPath: String
     public let isFolder: Bool
@@ -46,7 +45,7 @@ public struct EntryModel: Identifiable, Sendable {
     public let fileExtension: String
     public let facets: EntryFacets
 
-    public nonisolated init(
+    nonisolated public init(
         name: String,
         fullPath: String,
         isFolder: Bool,
@@ -66,7 +65,9 @@ public struct EntryModel: Identifiable, Sendable {
         self.facets = facets
     }
 
-    public var id: ID { fullPath }
+    public var id: String {
+        fullPath
+    }
 }
 
 extension EntryModel: Equatable {

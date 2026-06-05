@@ -1,8 +1,11 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+/// 컬렉션 스냅샷 파일 계약 — 저장/로드, 스키마 버전, 인코딩 엣지 케이스를 검증.
 @MainActor
 final class CollectionSnapshotFileContractTests: XCTestCase {
     private let fileManager = FileManager.default
@@ -18,6 +21,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
             updatedAt: .distantFuture,
             query: "report",
             scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
             conditions: [
                 .init(propertyKey: "name_full", operatorCode: "eq", value: .string("report")),
             ],
@@ -41,6 +45,30 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         let loaded = try await CollectionFileClient.liveValue.load(url)
         XCTAssertEqual(loaded.file, file)
         XCTAssertEqual(loaded.containerFormat, .package)
+    }
+
+    func testEncodeDecodePreservesExcludedScopes() throws {
+        let file = VoyagerCollectionFile(
+            id: "excluded-file",
+            name: "Excluded File",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "report",
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/ignored"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: "1.0",
+        )
+
+        let decoded = try PropertyListDecoder().decode(
+            VoyagerCollectionFile.self,
+            from: PropertyListEncoder().encode(file),
+        )
+
+        XCTAssertEqual(decoded.excludedScopes, ["/tmp/ignored"])
+        XCTAssertEqual(decoded, file)
     }
 
     func testLoadLegacySingleFileRoundTrips() async throws {
@@ -67,6 +95,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         let loaded = try await CollectionFileClient.liveValue.load(url)
         XCTAssertEqual(loaded.file, file)
+        XCTAssertEqual(loaded.file.excludedScopes, [])
         XCTAssertEqual(loaded.containerFormat, .legacySingleFile)
     }
 
@@ -76,9 +105,10 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 
-        await XCTAssertThrowsErrorAsync(
-            try CollectionFileClient.liveValue.load(url),
-        )
+        do {
+            _ = try await CollectionFileClient.liveValue.load(url)
+            XCTFail("Expected error to be thrown")
+        } catch {}
     }
 
     func testEncodeDecodeV2SnapshotFileRoundTrips() throws {
@@ -108,6 +138,62 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertEqual(decoded, file)
     }
 
+    func testDecodeLegacyFileDefaultsIncludeSubfoldersToTrue() throws {
+        struct LegacyFile: Codable {
+            let schemaVersion: Int
+            let id: String
+            let name: String
+            let createdAt: Date
+            let updatedAt: Date
+            let query: String
+            let scopes: [String]
+            let conditions: [CollectionCondition]
+            let snapshot: CollectionPersistedSnapshot?
+            let snapshotMeta: CollectionSnapshotMeta?
+            let appVersion: String?
+        }
+
+        let legacy = LegacyFile(
+            schemaVersion: 1,
+            id: "legacy-file",
+            name: "Legacy File",
+            createdAt: .distantPast,
+            updatedAt: .distantPast,
+            query: "",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        let data = try PropertyListEncoder().encode(legacy)
+        let decoded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+
+        XCTAssertTrue(decoded.includeSubfolders)
+    }
+
+    func testEncodeDecodePreservesIncludeSubfoldersFalse() throws {
+        let file = VoyagerCollectionFile(
+            id: "exact-only",
+            name: "Exact Only",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "report",
+            scopes: ["/tmp"],
+            includeSubfolders: false,
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        let data = try PropertyListEncoder().encode(file)
+        let decoded = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
+
+        XCTAssertFalse(decoded.includeSubfolders)
+    }
+
     func testDecodeDefinitionOnlyFileLeavesSnapshotNil() throws {
         let file = VoyagerCollectionFile(
             id: "legacy",
@@ -127,9 +213,10 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
 
         XCTAssertNil(decoded.snapshot)
         XCTAssertNil(decoded.snapshotMeta)
-        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertEqual(decoded.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
     }
 
+    /// testDecodeDropsMalformedSnapshotInsteadOfFailingWholeFile 테스트 동작을 검증한다.
     func testDecodeDropsMalformedSnapshotInsteadOfFailingWholeFile() throws {
         struct InvalidFile: Codable {
             let schemaVersion: Int
@@ -172,6 +259,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertNil(decoded.snapshotMeta)
     }
 
+    /// testLoadMalformedSnapshotPackageFallsBackToDefinitionOnly 테스트 동작을 검증한다.
     func testLoadMalformedSnapshotPackageFallsBackToDefinitionOnly() async throws {
         struct InvalidFile: Codable {
             let schemaVersion: Int
@@ -220,6 +308,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertNil(loaded.file.snapshotMeta)
     }
 
+    /// testSaveNormalizesLegacyFileToCurrentSchemaVersion 테스트 동작을 검증한다.
     func testSaveNormalizesLegacyFileToCurrentSchemaVersion() async throws {
         let url = makeTemporaryCollectionURL(name: "normalize-save")
         defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }
@@ -245,6 +334,7 @@ final class CollectionSnapshotFileContractTests: XCTestCase {
         XCTAssertEqual(loaded.schemaVersion, CollectionFileSchemaVersion.definitionOnlyCurrent)
     }
 
+    /// testSavePreservesCurrentSchemaVersionWithoutAdditionalMigration 테스트 동작을 검증한다.
     func testSavePreservesCurrentSchemaVersionWithoutAdditionalMigration() async throws {
         let url = makeTemporaryCollectionURL(name: "preserve-current-save")
         defer { try? fileManager.removeItem(at: url.deletingLastPathComponent()) }

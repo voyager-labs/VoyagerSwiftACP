@@ -1,14 +1,19 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+@testable import VoyagerFeaturesComposer
 import XCTest
 
+/// 연산자/타입 입력 매트릭스 — 완전한 조합의 입력 동작과 실패 케이스를 검증.
 @MainActor
 final class ValueInputMatrixExhaustiveTests: XCTestCase {
+    /// testRegistryOperatorTypeMatrixCountIsExpected 테스트 동작을 검증한다.
     func testRegistryOperatorTypeMatrixCountIsExpected() {
         let matrix = makeMatrixEntries()
         XCTAssertEqual(matrix.count, 33)
     }
 
+    /// testRegistryOperatorTypeMatrixValidInputsNormalizeSuccessfully 테스트 동작을 검증한다.
     func testRegistryOperatorTypeMatrixValidInputsNormalizeSuccessfully() {
         let matrix = makeMatrixEntries()
 
@@ -32,6 +37,7 @@ final class ValueInputMatrixExhaustiveTests: XCTestCase {
         }
     }
 
+    /// testRegistryOperatorTypeMatrixInvalidInputsMatchExpectedFailureBehavior 테스트 동작을 검증한다.
     func testRegistryOperatorTypeMatrixInvalidInputsMatchExpectedFailureBehavior() {
         let matrix = makeMatrixEntries()
 

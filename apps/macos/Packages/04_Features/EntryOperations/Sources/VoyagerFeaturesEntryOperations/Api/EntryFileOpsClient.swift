@@ -1,8 +1,8 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 
 public struct EntryFileOpsClient: Sendable {
@@ -30,7 +30,7 @@ public struct EntryFileOpsClient: Sendable {
     public var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation)
     public var postFileSystemChanged: @Sendable ([String]) -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         createFolder: @escaping @Sendable (URL, String) async throws -> Void,
         pasteFile: @escaping @Sendable (URL, URL) async throws -> Void,
         moveFile: @escaping @Sendable (URL, URL) async throws -> Void,
@@ -82,7 +82,7 @@ public struct EntryFileOpsClient: Sendable {
 }
 
 extension EntryFileOpsClient: DependencyKey {
-    public nonisolated static var liveValue: EntryFileOpsClient {
+    nonisolated public static var liveValue: EntryFileOpsClient {
         EntryFileOpsClient(
             createFolder: EntryFileOpsLive.createFolder,
             pasteFile: EntryFileOpsLive.pasteFile,
@@ -110,7 +110,7 @@ extension EntryFileOpsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: EntryFileOpsClient {
+    nonisolated public static var testValue: EntryFileOpsClient {
         let unimplemented = { @Sendable (_: Any...) -> Never in
             fatalError("EntryFileOpsClient test dependency not set.")
         }
@@ -141,7 +141,7 @@ extension EntryFileOpsClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: EntryFileOpsClient {
+    nonisolated public static var previewValue: EntryFileOpsClient {
         EntryFileOpsClient(
             createFolder: { _, _ in },
             pasteFile: { _, _ in },
@@ -233,8 +233,7 @@ enum EntryFileOpsLive {
     nonisolated static var moveToTrashAndReturnURL: @Sendable (URL) async throws -> URL {
         { url in
             try await MainActor.run {
-                let trashURL = try FileManagerClient.liveValue.trashItem(url)
-                return trashURL
+                try FileManagerClient.liveValue.trashItem(url)
             }
         }
     }
@@ -424,80 +423,6 @@ enum EntryFileOpsLive {
             } catch {
                 throw error
             }
-        }
-    }
-
-    nonisolated static var fileExists: @Sendable (String) -> Bool {
-        { path in
-            FileManagerClient.liveValue.fileExists(path)
-        }
-    }
-
-    nonisolated static var saveDragPaths: @Sendable ([String]) -> Void {
-        { paths in
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
-            pasteboard.clearContents()
-            let pathString = paths.joined(separator: "\n")
-            pasteboard.setString(pathString, forType: .string)
-        }
-    }
-
-    nonisolated static var loadDragPaths: @Sendable () -> [String] {
-        {
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
-            guard let pathString = pasteboard.string(forType: .string),
-                  !pathString.isEmpty
-            else {
-                return []
-            }
-            return pathString.split(separator: "\n").map(String.init)
-        }
-    }
-
-    nonisolated static var saveDragWithOption: @Sendable (Bool) -> Void {
-        { isOptionPressed in
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
-            pasteboard.setString(
-                isOptionPressed ? "true" : "false",
-                forType: NSPasteboard.PasteboardType("VoyagerDragOption"),
-            )
-        }
-    }
-
-    nonisolated static var loadDragWithOption: @Sendable () -> Bool {
-        {
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("VoyagerDragDrop"))
-            let optionString = pasteboard.string(forType: NSPasteboard.PasteboardType("VoyagerDragOption"))
-            return optionString == "true"
-        }
-    }
-
-    nonisolated static var loadClipboardPaths: @Sendable () -> ([String], ClipboardOperation) {
-        {
-            let pasteboardClient = PasteboardClient.liveValue
-
-            guard let objects = pasteboardClient.readObjects([NSURL.self], nil),
-                  let urls = objects as? [URL]
-            else {
-                return ([], .copy)
-            }
-
-            let paths = urls.map(\.path)
-            let opString = pasteboardClient
-                .string(NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"))
-            let operation: ClipboardOperation = opString == "cut" ? .cut : .copy
-
-            return (paths, operation)
-        }
-    }
-
-    nonisolated static var postFileSystemChanged: @Sendable ([String]) -> Void {
-        { paths in
-            NotificationCenter.default.post(
-                name: EntryWatchingLive.fileSystemChangedNotificationName,
-                object: nil,
-                userInfo: ["paths": paths],
-            )
         }
     }
 }

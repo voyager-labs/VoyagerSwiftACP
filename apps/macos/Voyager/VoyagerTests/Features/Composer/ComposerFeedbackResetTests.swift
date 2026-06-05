@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+@testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
@@ -37,6 +38,46 @@ final class ComposerFeedbackResetTests: XCTestCase {
             $0.activeSearchRequestID = nil
             $0.queryRenderPhase = .idle
         }
+    }
+
+    func testClearAllClearsScopeChangeFeedback() async {
+        let requestID = UUID()
+        let addedSelection = ComposerScopeSelection.explicit(
+            bases: [ComposerScopeBase(path: "/tmp")],
+            exceptions: [],
+        )
+        var initialState = ComposerState()
+        initialState.scopeEditor.selection = addedSelection
+        initialState.isLoadingFilters = true
+        initialState.activeFiltersRequestID = requestID
+        initialState.lastScopeChangeFeedback = ComposerScopeChangeFeedback(
+            id: UUID(),
+            beforeScope: ComposerScopeSnapshot(
+                scopeSelection: .rootOnly,
+                includeSubfolders: true,
+            ),
+            afterScope: ComposerScopeSnapshot(
+                scopeSelection: addedSelection,
+                includeSubfolders: true,
+            ),
+            origin: .addBase,
+            phase: .delayed,
+            pendingResultRequest: .filters(requestID),
+            historyDepthAfterCommit: 1,
+            redoDepthAfterCommit: 0,
+        )
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.clearAll)
+
+        XCTAssertNil(store.state.lastScopeChangeFeedback)
+        XCTAssertNil(store.state.lastScopeChangeFeedbackDisplay)
+        XCTAssertFalse(store.state.isLoadingFilters)
+        XCTAssertNil(store.state.activeFiltersRequestID)
+        XCTAssertTrue(store.state.scopeEditor.selection.isRootOnly)
     }
 
     func testDuplicateFailureKeepsExistingFeedbackAndTimer() async {

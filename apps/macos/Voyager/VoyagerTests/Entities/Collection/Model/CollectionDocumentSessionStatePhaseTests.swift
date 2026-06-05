@@ -1,33 +1,37 @@
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
 import XCTest
 
+/// 컬렉션 문서 세션 페이즈 — 전환 헬퍼와 상태 변환을 검증.
 @MainActor
 final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
+    /// testPhaseDerivesLegacyLifecycleBools 테스트 동작을 검증한다.
     func testPhaseDerivesLegacyLifecycleBools() {
         var session = CollectionDocumentSessionState()
 
         session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .refreshingHydratedSnapshot)
-        XCTAssertFalse(session.isOpening)
-        XCTAssertTrue(session.isStale)
-        XCTAssertEqual(session.openKind, .hydratedSnapshot)
-        XCTAssertEqual(session.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertFalse(session.phase.isOpening)
+        XCTAssertTrue(session.phase.isStale)
+        XCTAssertEqual(session.phase.openKind, .hydratedSnapshot)
+        XCTAssertEqual(session.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(session.phase.inflightStatus, .writingBackRefreshedSnapshot)
 
         session.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .writingBackRefreshedSnapshot)
-        XCTAssertTrue(session.isStale)
-        XCTAssertEqual(session.openKind, .hydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertTrue(session.phase.isStale)
+        XCTAssertEqual(session.phase.openKind, .hydratedSnapshot)
+        XCTAssertNotEqual(session.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertEqual(session.phase.inflightStatus, .writingBackRefreshedSnapshot)
 
         session.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
-        XCTAssertTrue(session.isOpening)
-        XCTAssertFalse(session.isStale)
-        XCTAssertNotEqual(session.openKind, .hydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertTrue(session.phase.isOpening)
+        XCTAssertFalse(session.phase.isStale)
+        XCTAssertNotEqual(session.phase.openKind, .hydratedSnapshot)
+        XCTAssertNotEqual(session.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(session.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
+    /// testExplicitPhaseHelpersTranslateToPhaseTransitions 테스트 동작을 검증한다.
     func testExplicitPhaseHelpersTranslateToPhaseTransitions() {
         var phase = CollectionSessionPhase.idle
 
@@ -59,6 +63,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertEqual(phase, .opened(kind: .definition, base: .ready, inflight: .none))
     }
 
+    /// testReopeningPhaseIgnoresBaseKindAndInflightRewritesUntilOpenCompletes 테스트 동작을 검증한다.
     func testReopeningPhaseIgnoresBaseKindAndInflightRewritesUntilOpenCompletes() {
         var phase: CollectionSessionPhase = .reopening(kind: .definition, base: .ready, inflight: .none)
 
@@ -70,6 +75,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertEqual(phase, .opened(kind: .definition, base: .ready, inflight: .none))
     }
 
+    /// testTransientRefreshStatusesReturnToStaleUntilExplicitlyCleared 테스트 동작을 검증한다.
     func testTransientRefreshStatusesReturnToStaleUntilExplicitlyCleared() {
         var session = CollectionDocumentSessionState()
 
@@ -93,6 +99,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertEqual(session.phase, .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none))
     }
 
+    /// testRefreshFailureBecomesExplicitFailedPhase 테스트 동작을 검증한다.
     func testRefreshFailureBecomesExplicitFailedPhase() {
         var session = CollectionDocumentSessionState()
 
@@ -100,12 +107,13 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         session.failRefreshOrWriteBack()
 
         XCTAssertEqual(session.phase, .refreshFailed(kind: .hydratedSnapshot))
-        XCTAssertTrue(session.isStale)
-        XCTAssertEqual(session.openKind, .hydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(session.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertTrue(session.phase.isStale)
+        XCTAssertEqual(session.phase.openKind, .hydratedSnapshot)
+        XCTAssertNotEqual(session.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(session.phase.inflightStatus, .writingBackRefreshedSnapshot)
     }
 
+    /// testEqualityTracksPhaseIdentityDirectly 테스트 동작을 검증한다.
     func testEqualityTracksPhaseIdentityDirectly() {
         var lhs = CollectionDocumentSessionState()
         var rhs = CollectionDocumentSessionState()
@@ -116,6 +124,7 @@ final class CollectionDocumentSessionStatePhaseTests: XCTestCase {
         XCTAssertNotEqual(lhs, rhs)
     }
 
+    /// testReopeningPreservesHydrationAndStaleSignalsUntilOpenCommits 테스트 동작을 검증한다.
     func testReopeningPreservesHydrationAndStaleSignalsUntilOpenCommits() {
         var phase: CollectionSessionPhase = .reopening(kind: .definition, base: .ready, inflight: .none)
 

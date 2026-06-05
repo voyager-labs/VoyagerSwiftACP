@@ -1,11 +1,12 @@
 import Foundation
+import VoyagerEntitiesTag
 
 public enum EntryModelTagColorNormalizer {
-    public nonisolated static func normalize(_ entries: [EntryModel], favoriteTags: [Tag]) -> [EntryModel] {
+    nonisolated public static func normalize(_ entries: [EntryModel], favoriteTags: [Tag]) -> [EntryModel] {
         entries.map { normalize($0, favoriteTags: favoriteTags) }
     }
 
-    public nonisolated static func normalize(_ entry: EntryModel, favoriteTags: [Tag]) -> EntryModel {
+    nonisolated public static func normalize(_ entry: EntryModel, favoriteTags: [Tag]) -> EntryModel {
         let normalizedTags = TagColorFallbackResolver.normalizedTags(entry.facets.tags, favoriteTags: favoriteTags)
         guard normalizedTags != entry.facets.tags else {
             return entry

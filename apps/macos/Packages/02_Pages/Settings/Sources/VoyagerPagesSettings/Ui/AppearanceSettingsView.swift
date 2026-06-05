@@ -47,7 +47,7 @@ struct ThemePreviewCard: View {
                                     .fill(Color(red: 0.2, green: 0.3, blue: 0.5))
                                     .frame(width: 35, height: 42)
                             }
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: 8)),
                         )
                         .overlay(
                             HStack(spacing: 0) {
@@ -55,21 +55,21 @@ struct ThemePreviewCard: View {
                                     .frame(width: 35, height: 42)
                                 buildPopupWindow(isLight: false, showAllTrafficLights: false)
                                     .frame(width: 35, height: 42)
-                            }
+                            },
                         )
                 } else {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(contentBackgroundColor)
                         .frame(width: 70, height: 42)
                         .overlay(
-                            buildPopupWindow(isLight: theme == .light, showAllTrafficLights: true)
+                            buildPopupWindow(isLight: theme == .light, showAllTrafficLights: true),
                         )
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
-                    .frame(width: 70, height: 42)
+                    .frame(width: 70, height: 42),
             )
 
             Text(theme.displayName)
@@ -119,7 +119,7 @@ struct ThemePreviewCard: View {
                     }
                     .padding(.leading, 4)
                     .padding(.top, 2),
-                    alignment: .topLeading
+                    alignment: .topLeading,
                 )
                 .offset(x: startX, y: startY)
         }
@@ -144,7 +144,9 @@ struct AppearanceSettingsView: View {
         case large
         case mixed
 
-        var id: String { rawValue }
+        var id: String {
+            rawValue
+        }
 
         var title: String {
             switch self {
@@ -189,7 +191,7 @@ struct AppearanceSettingsView: View {
             set: { preset in
                 guard let preset else { return }
                 applyOverallPreset(preset)
-            }
+            },
         )
     }
 
@@ -198,7 +200,7 @@ struct AppearanceSettingsView: View {
             get: { listPreset },
             set: { preset in
                 applyListPreset(preset)
-            }
+            },
         )
     }
 
@@ -207,7 +209,7 @@ struct AppearanceSettingsView: View {
             get: { iconPreset },
             set: { preset in
                 applyIconPreset(preset)
-            }
+            },
         )
     }
 
@@ -232,21 +234,21 @@ struct AppearanceSettingsView: View {
                     HStack(spacing: 8) {
                         ThemePreviewCard(
                             theme: .system,
-                            isSelected: store.theme == .system
+                            isSelected: store.theme == .system,
                         ) {
                             store.send(.setTheme(.system))
                         }
 
                         ThemePreviewCard(
                             theme: .light,
-                            isSelected: store.theme == .light
+                            isSelected: store.theme == .light,
                         ) {
                             store.send(.setTheme(.light))
                         }
 
                         ThemePreviewCard(
                             theme: .dark,
-                            isSelected: store.theme == .dark
+                            isSelected: store.theme == .dark,
                         ) {
                             store.send(.setTheme(.dark))
                         }
@@ -260,8 +262,8 @@ struct AppearanceSettingsView: View {
                     "Show Hidden Files",
                     isOn: Binding(
                         get: { store.showHiddenFiles },
-                        set: { store.send(.setShowHiddenFiles($0)) }
-                    )
+                        set: { store.send(.setShowHiddenFiles($0)) },
+                    ),
                 )
             }
 

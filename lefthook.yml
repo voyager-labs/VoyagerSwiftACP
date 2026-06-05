@@ -1,0 +1,40 @@
+# Lefthook configuration for voyager-app
+# Install: lefthook install
+
+post-checkout:
+  commands:
+    mise-install:
+      run: mise install
+    lefthook-install:
+      run: test -f "$(git rev-parse --git-path hooks/post-checkout)" || lefthook install
+    submodules:
+      run: git submodule update --init --recursive
+    codegraph:
+      run: test -d .codegraph || npx -y @colbymchenry/codegraph@0.9.6 init -i
+
+post-merge:
+  commands:
+    submodules:
+      run: git submodule update --init --recursive
+
+pre-commit:
+  parallel: true
+  commands:
+    sisyphus-artifacts-guard:
+      run: |
+        staged=$(git diff --cached --name-only)
+        if echo "$staged" | grep -qE '^\.sisyphus/'; then
+          echo "ERROR: .sisyphus/ paths are staged for commit. These are local-only agent harness artifacts." >&2
+          echo "Run: git reset HEAD -- .sisyphus/" >&2
+          exit 1
+        fi
+    swiftformat:
+      glob: "apps/macos/**/*.swift"
+      run: mise exec -- swiftformat --config apps/macos/.swiftformat --lint {staged_files}
+    swiftlint:
+      glob: "apps/macos/**/*.swift"
+      exclude: "apps/macos/**/*Tests/**/*.swift"
+      run: mise exec -- swiftlint lint --config apps/macos/.swiftlint.yml --strict {staged_files}
+    swiftlint-tests:
+      glob: "apps/macos/**/*Tests/**/*.swift"
+      run: mise exec -- swiftlint lint --config apps/macos/.swiftlint-tests.yml --strict {staged_files}

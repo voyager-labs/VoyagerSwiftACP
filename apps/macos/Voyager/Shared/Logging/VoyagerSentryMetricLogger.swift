@@ -48,13 +48,13 @@ enum DAUEntryActionKind: String {
 }
 
 enum VoyagerSentryMetricLogger {
-    private static let userIdStore = UserIdStore()
+    nonisolated private static let userIdStore = UserIdStore()
 
-    static func setUserId(_ userId: String?) {
+    nonisolated static func setUserId(_ userId: String?) {
         userIdStore.set(userId)
     }
 
-    static func logMetric(
+    nonisolated static func logMetric(
         _ name: String,
         value: Double,
         tags: [String: String]? = nil,
@@ -88,14 +88,14 @@ enum VoyagerSentryMetricLogger {
         }
     }
 
-    static func logDAUNavigation(kind: DAUNavigationKind) {
+    nonisolated static func logDAUNavigation(kind: DAUNavigationKind) {
         captureDAUEvent(
             name: "dau.navigation",
             tags: ["nav.kind": kind.rawValue],
         )
     }
 
-    static func logDAUEntryAction(
+    nonisolated static func logDAUEntryAction(
         actionKind: DAUEntryActionKind,
         entryKind: DAUEntryKind,
     ) {
@@ -108,7 +108,7 @@ enum VoyagerSentryMetricLogger {
         )
     }
 
-    private static func captureDAUEvent(
+    nonisolated private static func captureDAUEvent(
         name: String,
         tags: [String: String],
     ) {
@@ -121,7 +121,7 @@ enum VoyagerSentryMetricLogger {
 
 private final class UserIdStore: @unchecked Sendable {
     private let lock = NSLock()
-    private nonisolated(unsafe) var value: String?
+    nonisolated(unsafe) private var value: String?
 
     nonisolated func set(_ value: String?) {
         lock.lock()

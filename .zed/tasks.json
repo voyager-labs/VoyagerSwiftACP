@@ -1,0 +1,106 @@
+[
+  // LSP context switching via mise tasks.
+  // mise run lsp-context depends on lsp-install, so xcode-build-server is auto-installed.
+  // Use args instead of interpolating paths into command strings so spaces are handled safely.
+  {
+    "label": "Voyager LSP: Current File",
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--path", "$ZED_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "current",
+    "tags": ["voyager-lsp"]
+  },
+  {
+    "label": "Voyager LSP: App",
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--scope", "app"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "none",
+    "tags": ["voyager-lsp"]
+  },
+  {
+    "label": "Voyager LSP: Helper",
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--scope", "helper"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "none",
+    "tags": ["voyager-lsp"]
+  },
+  {
+    "label": "Voyager LSP: OnboardingHost",
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--scope", "onboarding"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "none",
+    "tags": ["voyager-lsp"]
+  },
+  {
+    "label": "Voyager LSP: FileManagerHost",
+    "command": "mise",
+    "args": ["run", "lsp-context", "--", "--scope", "file-manager-host"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "none",
+    "tags": ["voyager-lsp"]
+  },
+
+  // Affected verification planning and execution.
+  {
+    "label": "Voyager Checks: Current File (Plan)",
+    "command": "python3",
+    "args": ["scripts/dev/macos_checks.py", "--path", "$ZED_FILE", "--json"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "current",
+    "tags": ["voyager-checks"]
+  },
+  {
+    "label": "Voyager Checks: Current File (Run)",
+    "command": "python3",
+    "args": ["scripts/dev/macos_checks.py", "--path", "$ZED_FILE", "--run"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "current",
+    "tags": ["voyager-checks"]
+  },
+  {
+    "label": "Voyager Checks: Changed Files (Plan)",
+    "command": "python3",
+    "args": ["scripts/dev/macos_checks.py", "--changed", "--json"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "all",
+    "tags": ["voyager-checks"]
+  },
+  {
+    "label": "Voyager Checks: Changed Files (Run)",
+    "command": "python3",
+    "args": ["scripts/dev/macos_checks.py", "--changed", "--run"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "save": "all",
+    "tags": ["voyager-checks"]
+  }
+]

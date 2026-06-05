@@ -3,19 +3,10 @@ name: release-macos-prod
 on:
   release:
     types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag (e.g. v0.4.0)"
-        required: true
-        type: string
 
 concurrency:
   group: release-macos-prod-${{ github.ref }}
   cancel-in-progress: false
-
-env:
-  TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
   fetch-sparkle-baseline:
@@ -33,8 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
 
       - name: Prepare Sparkle baseline directory
         shell: bash
@@ -120,8 +109,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
+
+      - name: Install mise tools
+        uses: jdx/mise-action@v4
 
       - name: Resolve version from tag
         id: version
@@ -211,8 +201,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
 
       - name: Download artifacts
         uses: actions/download-artifact@v4

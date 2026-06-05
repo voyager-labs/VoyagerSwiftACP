@@ -1,16 +1,17 @@
 import ComposableArchitecture
+import VoyagerFeaturesUpdateVersion
 
-enum MenuCommandsAction: ViewAction, Sendable {
+enum MenuCommandsAction: ViewAction {
     case view(View)
     case delegate(Delegate)
 
-    enum View: Sendable {
+    enum View {
         case app(MenuCommandItem.AppCommand)
         case viewCommand(MenuCommandItem.ViewCommand)
         case edit(MenuCommandItem.EditCommand)
     }
 
-    enum Delegate: Sendable {
+    enum Delegate {
         case windowManager(WindowManagerAction)
         case updater(UpdaterAction)
     }

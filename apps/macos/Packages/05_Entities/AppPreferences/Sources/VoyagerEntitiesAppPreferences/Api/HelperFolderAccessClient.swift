@@ -6,9 +6,9 @@ public struct HelperFolderAccessClient: Sendable {
     public var checkAccess: @Sendable () async -> FolderAccessResult
     public var requestAccess: @Sendable () async -> FolderAccessResult
 
-    public nonisolated init(
+    nonisolated public init(
         checkAccess: @escaping @Sendable () async -> FolderAccessResult,
-        requestAccess: @escaping @Sendable () async -> FolderAccessResult
+        requestAccess: @escaping @Sendable () async -> FolderAccessResult,
     ) {
         self.checkAccess = checkAccess
         self.requestAccess = requestAccess
@@ -16,7 +16,7 @@ public struct HelperFolderAccessClient: Sendable {
 }
 
 extension HelperFolderAccessClient: DependencyKey {
-    public nonisolated static var liveValue: HelperFolderAccessClient {
+    nonisolated public static var liveValue: HelperFolderAccessClient {
         let resolver = HelperFolderAccessResolver()
         return HelperFolderAccessClient(
             checkAccess: {
@@ -24,23 +24,23 @@ extension HelperFolderAccessClient: DependencyKey {
             },
             requestAccess: {
                 await resolver.resolve(mode: .request)
-            }
+            },
         )
     }
 
-    public nonisolated static var testValue: HelperFolderAccessClient {
+    nonisolated public static var testValue: HelperFolderAccessClient {
         let fallback = FolderAccessResult(
             desktop: .notGranted,
             documents: .notGranted,
-            downloads: .notGranted
+            downloads: .notGranted,
         )
         return HelperFolderAccessClient(
             checkAccess: { fallback },
-            requestAccess: { fallback }
+            requestAccess: { fallback },
         )
     }
 
-    public nonisolated static var previewValue: HelperFolderAccessClient {
+    nonisolated public static var previewValue: HelperFolderAccessClient {
         testValue
     }
 }
@@ -61,7 +61,7 @@ private actor HelperFolderAccessResolver {
     private let fallbackResult = FolderAccessResult(
         desktop: .notGranted,
         documents: .notGranted,
-        downloads: .notGranted
+        downloads: .notGranted,
     )
 
     private var waiters: [CheckedContinuation<FolderAccessResult, Never>] = []
@@ -99,7 +99,7 @@ private actor HelperFolderAccessResolver {
             let token = DistributedNotificationCenter.default().addObserver(
                 forName: HelperFolderAccessContract.responseName,
                 object: nil,
-                queue: .main
+                queue: .main,
             ) { [weak self] notification in
                 guard let self else { return }
                 let result = Self.parseResult(from: notification.userInfo)
@@ -107,7 +107,7 @@ private actor HelperFolderAccessResolver {
                 Task {
                     await self.handleResponse(
                         result: result ?? self.fallbackResult,
-                        mode: mode
+                        mode: mode,
                     )
                 }
             }
@@ -125,7 +125,7 @@ private actor HelperFolderAccessResolver {
                 userInfo: [
                     HelperFolderAccessUserInfoKey.schemaVersion: 1,
                     HelperFolderAccessUserInfoKey.mode: mode.rawValue,
-                ]
+                ],
             )
         }
     }
@@ -137,7 +137,7 @@ private actor HelperFolderAccessResolver {
             await self?.resolveAll(with: self?.fallbackResult ?? FolderAccessResult(
                 desktop: .notGranted,
                 documents: .notGranted,
-                downloads: .notGranted
+                downloads: .notGranted,
             ))
         }
     }
@@ -169,7 +169,7 @@ private actor HelperFolderAccessResolver {
         currentWaiters.forEach { $0.resume(returning: result) }
     }
 
-    private nonisolated static func parseResult(from userInfo: [AnyHashable: Any]?) -> FolderAccessResult? {
+    nonisolated private static func parseResult(from userInfo: [AnyHashable: Any]?) -> FolderAccessResult? {
         guard let userInfo else { return nil }
 
         if let schemaVersion = parseInt(userInfo[HelperFolderAccessUserInfoKey.schemaVersion]), schemaVersion != 1 {
@@ -187,14 +187,14 @@ private actor HelperFolderAccessResolver {
         return FolderAccessResult(desktop: desktop, documents: documents, downloads: downloads)
     }
 
-    private nonisolated static func parseMode(from userInfo: [AnyHashable: Any]?) -> Mode? {
+    nonisolated private static func parseMode(from userInfo: [AnyHashable: Any]?) -> Mode? {
         guard let rawValue = userInfo?[HelperFolderAccessUserInfoKey.mode] as? String else {
             return nil
         }
         return Mode(rawValue: rawValue)
     }
 
-    private nonisolated static func parsePermission(_ value: Any?) -> FolderAccessPermission? {
+    nonisolated private static func parsePermission(_ value: Any?) -> FolderAccessPermission? {
         guard let rawValue = value as? String else { return nil }
         switch rawValue {
         case FolderAccessPermission.granted.rawValue:
@@ -206,7 +206,7 @@ private actor HelperFolderAccessResolver {
         }
     }
 
-    private nonisolated static func parseInt(_ value: Any?) -> Int? {
+    nonisolated private static func parseInt(_ value: Any?) -> Int? {
         if let intValue = value as? Int {
             return intValue
         }

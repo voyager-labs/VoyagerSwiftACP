@@ -5,6 +5,7 @@ import XCTest
 
 @MainActor
 final class EntryThumbnailCacheEvictionTests: XCTestCase {
+    /// undo된 rename이 이전/이후 경로의 썸네일을 모두 비우는지 검증
     func testUndoRenameEvictsOldAndNewThumbnailPaths() async throws {
         let recordId = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000099"))
         let record = EntryActionRecord(

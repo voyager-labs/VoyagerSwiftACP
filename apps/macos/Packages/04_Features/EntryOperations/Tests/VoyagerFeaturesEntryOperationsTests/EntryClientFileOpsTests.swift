@@ -1,8 +1,10 @@
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 @testable import VoyagerFeaturesEntryOperations
 import XCTest
 
 final class EntryClientFileOpsTests: XCTestCase {
+    /// 임시 디렉터리 안에서 폴더 생성이 실제 파일 시스템에 반영되는지 검증
     func testCreateFolderInTemporaryDirectory() async throws {
         let tempDirectory = try TempDirectory()
         defer { tempDirectory.cleanup() }
@@ -14,6 +16,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: folderURL.path))
     }
 
+    /// 파일 이동이 source 삭제와 destination 생성으로 정확히 이어지는지 검증
     func testMoveFileInTemporaryDirectory() async throws {
         let tempDirectory = try TempDirectory()
         defer { tempDirectory.cleanup() }
@@ -27,6 +30,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationURL.path))
     }
 
+    /// 파일 이름 변경이 기존 파일을 새 경로로 옮기는지 검증
     func testRenameFileInTemporaryDirectory() async throws {
         let tempDirectory = try TempDirectory()
         defer { tempDirectory.cleanup() }
@@ -40,6 +44,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: destinationURL.path))
     }
 
+    /// 즉시 삭제가 파일 시스템에서 실제 파일을 제거하는지 검증
     func testDeleteFileInTemporaryDirectory() async throws {
         let tempDirectory = try TempDirectory()
         defer { tempDirectory.cleanup() }
@@ -51,6 +56,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
     }
 
+    /// 기존 태그가 있으면 색상 코드를 그대로 보존하는지 검증
     func testMakeTagsForPersistence_PreservesExistingColorCode() {
         let tags = EntryFileOpsTagPersistenceResolver.makeTags(
             tagNames: ["Work"],
@@ -61,6 +67,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         XCTAssertEqual(tags, [Tag(name: "Work", colorCode: 4)])
     }
 
+    /// 즐겨찾기 태그 색상을 새 태그의 기본 색상으로 사용하는지 검증
     func testMakeTagsForPersistence_UsesFavoriteTagColorForNewTag() {
         let tags = EntryFileOpsTagPersistenceResolver.makeTags(
             tagNames: ["Urgent"],
@@ -71,6 +78,7 @@ final class EntryClientFileOpsTests: XCTestCase {
         XCTAssertEqual(tags, [Tag(name: "Urgent", colorCode: 6)])
     }
 
+    /// 즐겨찾기 태그가 없을 때 중립 색상으로 폴백하는지 검증
     func testMakeTagsForPersistence_FallsBackToNeutralColorWhenFavoriteTagIsMissing() {
         let tags = EntryFileOpsTagPersistenceResolver.makeTags(
             tagNames: ["Adhoc"],

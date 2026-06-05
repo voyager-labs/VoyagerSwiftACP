@@ -1,11 +1,18 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
+/// FileManager에서 staleness 복구/재오픈 시 페이지 상태 계약이 유지되는지 검증한다.
 @MainActor
 final class CollectionReopenStaleTests: XCTestCase {
+    /// testOpenCollectionFileRestoresStaleStateFromStalenessClient 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenCollectionFileRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -39,15 +46,21 @@ final class CollectionReopenStaleTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.navigation(.view(.openCollectionFile(url))))
+        await assertOpenCollectionFileRequestSequence(store: store, url: url)
         await store.receive { action in
             guard case .navigation(.internal(.collectionFileLoaded(.success))) = action else {
                 return false
             }
-            return store.state.content.collectionSession.isStale
+            return store.state.content.collection.collectionSession.phase.isStale
         }
+        await assertCollectionModeNavigation(store: store)
+
+        assertComposerSyncedWithCollectionState(store.state)
+
         await store.finish()
     }
 
+    /// testCollectionFileLoadedRestoresStaleStateFromStalenessClient 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCollectionFileLoadedRestoresStaleStateFromStalenessClient() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -80,25 +93,30 @@ final class CollectionReopenStaleTests: XCTestCase {
             file,
             sourceSchemaVersion: nil,
         )))))) {
-            $0.content.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
+            $0.content.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
             $0.content.composer.isPresented = false
             $0.content.composer.pendingSearchQuery = nil
             $0.content.composer.text = ""
             $0.content.composer.scopes = ["/tmp/voyager"]
             $0.content.composer.conditions = []
-            $0.content.collectionSession.baseline = .init(
+            $0.content.collection.collectionSession.metadata.baseline = .init(
                 context: .init(query: "", scopes: ["/tmp/voyager"], conditions: []),
             )
         }
 
-        XCTAssertTrue(store.state.content.collectionSession.isStale)
-        XCTAssertNotEqual(store.state.content.collectionSession.openKind, .hydratedSnapshot)
-        XCTAssertFalse(store.state.content.shouldRefreshOnOpen)
+        XCTAssertTrue(store.state.content.collection.collectionSession.phase.isStale)
+        XCTAssertNotEqual(store.state.content.collection.collectionSession.phase.openKind, .hydratedSnapshot)
+        XCTAssertFalse(store.state.content.isCollectionMode && store.state.content.collection.collectionSession.phase
+            .isStale)
         await assertCollectionModeNavigation(store: store)
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
+
+        assertComposerSyncedWithCollectionState(store.state)
+
         await store.finish()
     }
 
+    /// testOpenStaleCollectionDoesNotAutoSearch 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenStaleCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = VoyagerCollectionFile(
@@ -132,17 +150,23 @@ final class CollectionReopenStaleTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.navigation(.view(.openCollectionFile(url))))
+        await assertOpenCollectionFileRequestSequence(store: store, url: url)
         await store.receive { action in
             guard case .navigation(.internal(.collectionFileLoaded(.success))) = action else {
                 return false
             }
-            return store.state.content.collectionSession.isStale
+            return store.state.content.collection.collectionSession.phase.isStale
         }
+        await assertCollectionModeNavigation(store: store)
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
+
+        assertComposerSyncedWithCollectionState(store.state)
+
         await store.finish()
     }
 
+    /// testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testOpenStaleDefinitionOnlyCollectionDoesNotAutoSearch() async {
         let url = URL(fileURLWithPath: "/tmp/voyager/sample.voycoll")
         let file = makeDefinitionOnlyCollectionFile(query: "needle")
@@ -169,69 +193,74 @@ final class CollectionReopenStaleTests: XCTestCase {
             file,
             sourceSchemaVersion: nil,
         )))))) {
-            $0.content.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
+            $0.content.collection.collectionSession.phase = .opened(kind: .definition, base: .stale, inflight: .none)
             $0.content.composer.isPresented = false
             $0.content.composer.pendingSearchQuery = reopenContext.query
             $0.content.composer.text = reopenContext.query
             $0.content.composer.scopes = ["/tmp/voyager"]
             $0.content.composer.conditions = []
-            $0.content.collectionSession.baseline = .init(
+            $0.content.collection.collectionSession.metadata.baseline = .init(
                 context: reopenContext,
             )
         }
 
-        XCTAssertTrue(store.state.content.collectionSession.isStale)
-        XCTAssertNotEqual(store.state.content.collectionSession.openKind, .hydratedSnapshot)
-        XCTAssertFalse(store.state.content.shouldRefreshOnOpen)
+        XCTAssertTrue(store.state.content.collection.collectionSession.phase.isStale)
+        XCTAssertNotEqual(store.state.content.collection.collectionSession.phase.openKind, .hydratedSnapshot)
+        XCTAssertFalse(store.state.content.isCollectionMode && store.state.content.collection.collectionSession.phase
+            .isStale)
         await assertCollectionModeNavigation(store: store)
         XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
         XCTAssertNil(store.state.content.composer.lastFiltersResponse)
         XCTAssertNil(store.state.content.composer.lastSearchResponse)
+
+        assertComposerSyncedWithCollectionState(store.state)
+
         await store.finish()
     }
 
+    /// testNavigateToCollectionRestoresOpenedCompatibilityFromHistoryNavigation 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testNavigateToCollectionRestoresOpenedCompatibilityFromHistoryNavigation() async {
-        let compatibility = CollectionFileCompatibilityMetadata(
-            sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
-            migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
-            warnings: [.droppedMalformedSnapshot],
-            usedDefinitionFallback: true,
-            writeBackAllowed: false,
-            writeBackReason: .blockedDefinitionFallback,
-        )
-        let navigation = ContentPageCollectionNavigation(
-            kind: .file(url: URL(fileURLWithPath: "/tmp/history.voycoll"), name: "history"),
-            context: .init(query: "report", scopes: ["/tmp"], conditions: []),
-            sortKey: .name,
-            sortOrder: .ascending,
-            viewLayout: .list,
-            compatibility: compatibility,
-        )
+        let compatibility = makeHistoryCompatibility()
+        let navigation = makeHistoryNavigation(compatibility: compatibility)
+        let store = makeHistoryNavigationStore()
 
-        let store = TestStore(initialState: FileManagerWindowState()) {
-            FileManagerFeature()
-        } withDependencies: {
-            $0.collectionAlertClient = .init(
-                showUnsavedNavigationAlert: { .save },
-                showCollectionOpenErrorAlert: { _, _ in },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.date = .constant(.distantFuture)
+        await store.send(.navigation(.internal(.navigateToCollection(navigation))))
+        await store.receive { action in
+            guard case .content(.collection(.navigationStateApplied)) = action else { return false }
+            return true
+        } assert: {
+            $0.content.collection.collectionSession.document?.compatibility = compatibility
+            $0.content.collection.collectionSession.metadata.baseline = .init(context: navigation.context)
+            $0.content.collection.collectionContext = navigation.context
         }
-        store.exhaustivity = .off
-
-        await store.send(.navigation(.internal(.navigateToCollection(navigation)))) {
-            $0.content.collectionSession.openedCompatibility = compatibility
-            $0.content.collectionSession.baseline = .init(context: navigation.context)
-            $0.content.collectionContext = navigation.context
-            $0.content.composer.collectionContext = navigation.context
+        await store.receive { action in
+            guard case .content(.composer(.internal(.applyCollectionNavigationComposer))) = action else { return false }
+            return true
+        } assert: {
             $0.content.composer.pendingSearchQuery = "report"
             $0.content.composer.text = "report"
             $0.content.composer.scopes = ["/tmp"]
             $0.content.composer.conditions = []
         }
+        await store.receive { action in
+            guard case .content(.composer(.internal(.syncCollectionState))) = action else { return false }
+            return true
+        } assert: {
+            $0.content.composer.collectionContext = navigation.context
+            $0.content.composer.openedCollectionURL = URL(fileURLWithPath: "/tmp/history.voycoll")
+            $0.content.composer.openedCollectionCompatibility = compatibility
+            $0.content.composer.isCollectionMode = true
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryArrangements(.reapply))) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .content(.composer(.view(.submit))) = action else { return false }
+            return true
+        }
 
-        XCTAssertEqual(store.state.content.collectionSession.openedCompatibility, compatibility)
+        assertHistoryNavigationState(store.state, compatibility: compatibility)
     }
 }
 
@@ -250,6 +279,100 @@ private func makeDefinitionOnlyCollectionFile(query: String) -> VoyagerCollectio
     )
 }
 
+private func makeHistoryCompatibility() -> CollectionFileCompatibilityMetadata {
+    CollectionFileCompatibilityMetadata(
+        sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+        migrationPath: [.currentSchemaV2, .definitionFallbackFromMalformedSnapshot],
+        warnings: [.droppedMalformedSnapshot],
+        usedDefinitionFallback: true,
+        writeBackAllowed: false,
+        writeBackReason: .blockedDefinitionFallback,
+    )
+}
+
+private func makeHistoryNavigation(
+    compatibility: CollectionFileCompatibilityMetadata,
+) -> ContentPageCollectionNavigation {
+    ContentPageCollectionNavigation(
+        kind: .file(url: URL(fileURLWithPath: "/tmp/history.voycoll"), name: "history"),
+        context: .init(query: "report", scopes: ["/tmp"], conditions: []),
+        sortKey: .name,
+        sortOrder: .ascending,
+        viewLayout: .list,
+        compatibility: compatibility,
+    )
+}
+
+@MainActor
+private func makeHistoryNavigationStore() -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
+    let store = TestStore(initialState: FileManagerWindowState()) {
+        FileManagerFeature()
+    } withDependencies: {
+        $0.collectionAlertClient = .init(
+            showUnsavedNavigationAlert: { .save },
+            showCollectionOpenErrorAlert: { _, _ in },
+        )
+        $0.userDefaultsClient = .testValue
+        $0.date = .constant(.distantFuture)
+    }
+    store.exhaustivity = .off
+    return store
+}
+
+@MainActor
+private func assertHistoryNavigationState(
+    _ state: FileManagerWindowState,
+    compatibility: CollectionFileCompatibilityMetadata,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+) {
+    XCTAssertEqual(
+        state.content.collection.collectionSession.document?.compatibility,
+        compatibility,
+        file: file,
+        line: line,
+    )
+    XCTAssertTrue(state.content.entryViewLayout.isCollectionMode, file: file, line: line)
+    XCTAssertEqual(
+        state.content.composer.openedCollectionCompatibility,
+        compatibility,
+        file: file,
+        line: line,
+    )
+}
+
+@MainActor
+private func assertComposerSyncedWithCollectionState(
+    _ state: FileManagerWindowState,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+) {
+    XCTAssertEqual(
+        state.content.composer.openedCollectionURL,
+        state.content.collection.collectionSession.document?.url,
+        file: file,
+        line: line,
+    )
+    XCTAssertEqual(
+        state.content.composer.collectionContext,
+        state.content.collection.collectionContext,
+        file: file,
+        line: line,
+    )
+    XCTAssertEqual(
+        state.content.composer.openedCollectionCompatibility,
+        state.content.collection.collectionSession.document?.compatibility,
+        file: file,
+        line: line,
+    )
+    XCTAssertEqual(
+        state.content.composer.isCollectionMode,
+        state.content.isCollectionMode,
+        file: file,
+        line: line,
+    )
+}
+
 @MainActor
 private func makeDefinitionOnlyStore(
     openedURL: URL,
@@ -257,10 +380,13 @@ private func makeDefinitionOnlyStore(
     reopenContext: CollectionContext? = nil,
 ) -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
     var state = FileManagerWindowState()
-    state.content.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
-    state.content.collectionSession.openedURL = openedURL
-    state.content.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
-    state.content.collectionSession.captureReopenContext(reopenContext)
+    state.content.collection.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
+    state.content.collection.collectionSession.document = .init(
+        url: openedURL,
+        name: openedURL.deletingPathExtension().lastPathComponent,
+        compatibility: nil,
+    )
+    state.content.collection.collectionSession.captureReopenContext(reopenContext)
 
     return TestStore(initialState: state) {
         FileManagerFeature()
@@ -283,8 +409,11 @@ private func makeOpenCollectionStore(
     stalenessClient: CollectionStalenessClient,
 ) -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
     var state = FileManagerWindowState()
-    state.content.collectionSession.openedURL = openedURL
-    state.content.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
+    state.content.collection.collectionSession.document = .init(
+        url: openedURL,
+        name: openedURL.deletingPathExtension().lastPathComponent,
+        compatibility: nil,
+    )
 
     return TestStore(initialState: state) {
         FileManagerFeature()
@@ -318,6 +447,21 @@ private func makeCollectionLoadResult(
 }
 
 @MainActor
+private func assertOpenCollectionFileRequestSequence(
+    store: TestStore<FileManagerWindowState, FileManagerWindowAction>,
+    url: URL,
+) async {
+    await store.receive { action in
+        guard case let .content(.collection(.openRequested(receivedURL, _, _))) = action else { return false }
+        return receivedURL.path == url.path
+    }
+    await store.receive { action in
+        guard case let .navigation(.internal(.prepareCollectionFileOpen(receivedURL))) = action else { return false }
+        return receivedURL.path == url.path
+    }
+}
+
+@MainActor
 private func assertCollectionModeNavigation(
     store: TestStore<FileManagerWindowState, FileManagerWindowAction>,
 ) async {
@@ -335,6 +479,12 @@ private func assertCollectionModeNavigation(
     }
     await store.receive {
         guard case .content(.entryViewLayout(.internal(.setCollectionMode(true)))) = $0 else {
+            return false
+        }
+        return true
+    }
+    await store.receive {
+        guard case .content(.composer(.internal(.syncCollectionState))) = $0 else {
             return false
         }
         return true

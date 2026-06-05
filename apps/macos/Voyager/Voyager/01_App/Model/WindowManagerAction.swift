@@ -1,7 +1,12 @@
 import ComposableArchitecture
+import VoyagerEntitiesAi
+import VoyagerFeaturesEntryArrangements
+import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @CasePathable
 enum WindowManagerAction: CasePathable, Sendable {
+    case delegate(Delegate)
     case lifecycle(Lifecycle)
     case file(FileCommand)
     case window(WindowCommand)
@@ -11,14 +16,20 @@ enum WindowManagerAction: CasePathable, Sendable {
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable
+    enum Delegate: Sendable {
+        case openAISettings
+    }
+
+    @CasePathable
     enum Lifecycle: CasePathable, Sendable {
         case openInitialWindowIfNeeded
         case reopenWindowIfNeeded(hasVisibleWindows: Bool)
         case applyAppPreferences(AppPreferencesState)
+        case aiConnectionsFileUpdated(AIConnectionsFile)
     }
 
     @CasePathable
-    enum FileCommand: CasePathable, Sendable {
+    enum FileCommand: CasePathable {
         case newWindow(path: String? = nil)
         case newTab(path: String? = nil)
         case newFolder
@@ -29,7 +40,7 @@ enum WindowManagerAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum WindowCommand: CasePathable, Sendable {
+    enum WindowCommand: CasePathable {
         case closeFocusedWindow
         case closeAllWindows
         case goBack
@@ -40,18 +51,19 @@ enum WindowManagerAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum ViewCommand: CasePathable, Sendable {
+    enum ViewCommand: CasePathable {
         case setViewLayout(EntryViewLayoutState.Mode)
         case setGroupKey(GroupKey)
         case setSortKey(SortKey)
-        case setSortOrder(SortOrder)
+        case setSortOrder(VoyagerShared.SortOrder)
     }
 
     @CasePathable
-    enum EditCommand: CasePathable, Sendable {
+    enum EditCommand: CasePathable {
         case requestUndo
         case requestRedo
         case toggleComposer
+        case openContextualAiChat
         case cut
         case copy
         case paste
@@ -63,7 +75,7 @@ enum WindowManagerAction: CasePathable, Sendable {
     }
 
     @CasePathable
-    enum WindowEvent: CasePathable, Sendable {
+    enum WindowEvent: CasePathable {
         case focusWindow(path: String)
         case windowBecameKey(WindowManagerState.WindowID)
         case windowResignedKey(WindowManagerState.WindowID)

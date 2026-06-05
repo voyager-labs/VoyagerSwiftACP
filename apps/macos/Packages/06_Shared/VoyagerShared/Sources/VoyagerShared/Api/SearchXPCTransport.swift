@@ -2,13 +2,13 @@ import Foundation
 import Logging
 
 public enum SearchXPCTransport {
-    private nonisolated static let logger = Logger(label: "Voyager.FilterSearchXPC")
-    private nonisolated static let filterTimeoutSeconds: TimeInterval = 20
-    private nonisolated static let queryTimeoutSeconds: TimeInterval = 25
-    private nonisolated static let recentTimeoutSeconds: TimeInterval = 20
-    private nonisolated static let tagTimeoutSeconds: TimeInterval = 20
+    nonisolated private static let logger = Logger(label: "Voyager.FilterSearchXPC")
+    nonisolated private static let filterTimeoutSeconds: TimeInterval = 20
+    nonisolated private static let queryTimeoutSeconds: TimeInterval = 25
+    nonisolated private static let recentTimeoutSeconds: TimeInterval = 20
+    nonisolated private static let tagTimeoutSeconds: TimeInterval = 20
 
-    public nonisolated static func applyFilters(
+    nonisolated public static func applyFilters(
         _ request: FiltersOnlyRequestPayload,
     ) async throws -> SearchResponsePayload {
         let requestId = UUID().uuidString
@@ -26,7 +26,7 @@ public enum SearchXPCTransport {
         }
     }
 
-    public nonisolated static func querySearch(
+    nonisolated public static func querySearch(
         _ request: SearchRequestPayload,
     ) async throws -> SearchResponsePayload {
         let requestId = UUID().uuidString
@@ -44,7 +44,7 @@ public enum SearchXPCTransport {
         }
     }
 
-    public nonisolated static func recentSearch(
+    nonisolated public static func recentSearch(
         _ request: RecentSearchRequestPayload,
     ) async throws -> RecentSearchResponsePayload {
         let requestId = UUID().uuidString
@@ -64,7 +64,7 @@ public enum SearchXPCTransport {
         }
     }
 
-    public nonisolated static func tagSearch(
+    nonisolated public static func tagSearch(
         _ request: TagSearchRequestPayload,
     ) async throws -> TagSearchResponsePayload {
         let requestId = UUID().uuidString
@@ -164,9 +164,9 @@ private extension SearchXPCTransport {
         private let decodeResponse: @Sendable (Data) throws -> Response
         private let lock = NSLock()
 
-        private nonisolated(unsafe) var continuation: CheckedContinuation<Response, Error>?
-        private nonisolated(unsafe) var connection: NSXPCConnection?
-        private nonisolated(unsafe) var timeoutWorkItem: DispatchWorkItem?
+        nonisolated(unsafe) private var continuation: CheckedContinuation<Response, Error>?
+        nonisolated(unsafe) private var connection: NSXPCConnection?
+        nonisolated(unsafe) private var timeoutWorkItem: DispatchWorkItem?
 
         nonisolated init(
             requestId: String,
@@ -197,7 +197,7 @@ private extension SearchXPCTransport {
             startOperation(kind: .tag, requestData: requestData, timeout: timeout)
         }
 
-        private nonisolated func startOperation(
+        nonisolated private func startOperation(
             kind: OperationKind,
             requestData: Data,
             timeout: TimeInterval,
@@ -240,7 +240,7 @@ private extension SearchXPCTransport {
             }
         }
 
-        private nonisolated func makeConnection(operationLabel: String) -> NSXPCConnection {
+        nonisolated private func makeConnection(operationLabel: String) -> NSXPCConnection {
             let connection = NSXPCConnection(serviceName: FilterSearchXPCServiceConstants.machServiceName)
             storeConnection(connection)
             connection.remoteObjectInterface = NSXPCInterface(with: FilterSearchXPCServiceProtocol.self)
@@ -255,7 +255,7 @@ private extension SearchXPCTransport {
             return connection
         }
 
-        private nonisolated func scheduleTimeout(timeout: TimeInterval, operationLabel: String) {
+        nonisolated private func scheduleTimeout(timeout: TimeInterval, operationLabel: String) {
             let timeoutWorkItem = DispatchWorkItem { [self] in
                 logger.warning("\(operationLabel) helper timeout: id=\(requestId)")
                 finish(.failure(HelperSearchError(code: "HELPER_TIMEOUT", message: nil)))
@@ -264,7 +264,7 @@ private extension SearchXPCTransport {
             queue.asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
         }
 
-        private nonisolated func makeProxy(
+        nonisolated private func makeProxy(
             connection: NSXPCConnection,
             operationLabel: String,
         ) -> FilterSearchXPCServiceProtocol? {
@@ -279,7 +279,7 @@ private extension SearchXPCTransport {
             return proxy
         }
 
-        private nonisolated func handleReply(
+        nonisolated private func handleReply(
             responseData: Data?,
             error: NSError?,
             operationLabel: String,
@@ -304,7 +304,7 @@ private extension SearchXPCTransport {
             }
         }
 
-        private nonisolated func finish(_ result: Result<Response, Error>) {
+        nonisolated private func finish(_ result: Result<Response, Error>) {
             lock.lock()
             let currentContinuation = continuation
             let currentConnection = connection
@@ -326,13 +326,13 @@ private extension SearchXPCTransport {
             }
         }
 
-        private nonisolated func storeConnection(_ connection: NSXPCConnection) {
+        nonisolated private func storeConnection(_ connection: NSXPCConnection) {
             lock.lock()
             self.connection = connection
             lock.unlock()
         }
 
-        private nonisolated func storeTimeoutWorkItem(_ timeoutWorkItem: DispatchWorkItem) {
+        nonisolated private func storeTimeoutWorkItem(_ timeoutWorkItem: DispatchWorkItem) {
             lock.lock()
             self.timeoutWorkItem = timeoutWorkItem
             lock.unlock()

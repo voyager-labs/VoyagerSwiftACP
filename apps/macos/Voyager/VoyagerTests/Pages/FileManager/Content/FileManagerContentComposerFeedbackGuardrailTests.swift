@@ -1,11 +1,19 @@
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
+/// FileManager composer 실패 경로에서 collection 경보/모달 핸들링 경계를 검증한다.
 @MainActor
 final class ComposerFeedbackGuardrailTests: XCTestCase {
+    /// testInteractiveComposerFailureDoesNotInvokeCollectionAlert 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testInteractiveComposerFailureDoesNotInvokeCollectionAlert() async {
         let alerts = CollectionAlertRecorder()
         let requestID = UUID()
@@ -26,7 +34,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
                 },
             )
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
@@ -43,13 +51,14 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(alerts.count(), 0)
-        XCTAssertFalse(store.state.collectionSession.isOpening)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isOpening)
         XCTAssertEqual(
             store.state.composer.transientFeedback?.message,
             ComposerQueryFeedbackPolicy.executionFailureMessage,
         )
     }
 
+    /// testCollectionOpenFailureStillShowsModalAlertAndRollsBack 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCollectionOpenFailureStillShowsModalAlertAndRollsBack() async {
         let alerts = CollectionAlertRecorder()
         let requestID = UUID()
@@ -66,7 +75,7 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
                 },
             )
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = ThumbnailGeneratorClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
             $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
             $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
@@ -81,15 +90,16 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
 
         XCTAssertEqual(alerts.count(), 1)
         XCTAssertEqual(alerts.lastTitle(), "Unable to Run Collection Search")
-        XCTAssertFalse(store.state.collectionSession.phase.isOpening)
-        XCTAssertNil(store.state.collectionSession.document?.name)
-        XCTAssertNil(store.state.collectionSession.document?.url)
-        XCTAssertNil(store.state.collectionSession.metadata.baseline)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isOpening)
+        XCTAssertNil(store.state.collection.collectionSession.document?.name)
+        XCTAssertNil(store.state.collection.collectionSession.document?.url)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.baseline)
         XCTAssertFalse(store.state.entryViewLayout.isCollectionMode)
-        XCTAssertNil(store.state.collectionContext)
+        XCTAssertNil(store.state.collection.collectionContext)
     }
 }
 
+@MainActor
 private func assertCollectionOpenFailureRollback(
     store: TestStore<FileManagerContentState, FileManagerContentAction>,
 ) async {
@@ -124,8 +134,8 @@ private func assertCollectionOpenFailureRollback(
 @MainActor
 private func makeCollectionOpeningState(requestID: UUID) -> FileManagerContentState {
     var state = FileManagerContentState()
-    state.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
-    state.collectionSession.document = .init(
+    state.collection.collectionSession.phase = .reopening(kind: .definition, base: .ready, inflight: .none)
+    state.collection.collectionSession.document = .init(
         url: URL(fileURLWithPath: "/tmp/saved-search.voyager-collection"),
         name: "Saved Search",
         compatibility: nil,

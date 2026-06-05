@@ -1,8 +1,8 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-
 import VoyagerEntitiesEntry
+import VoyagerEntitiesTag
 import VoyagerShared
 
 @Reducer

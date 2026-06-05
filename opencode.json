@@ -1,5 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    ".agents/rules/00-core/*.md",
+    ".agents/rules/10-routing/*.md",
+    ".agents/rules/99-agent/01-agent-harness-artifacts.md"
+  ],
   "mcp": {
     "cupertino": {
       "type": "local",
@@ -14,6 +19,11 @@
     "XcodeBuildMCP": {
       "type": "local",
       "command": ["npx", "-y", "xcodebuildmcp@latest", "mcp"],
+      "enabled": true
+    },
+    "codegraph": {
+      "type": "local",
+      "command": ["npx", "-y", "@colbymchenry/codegraph@0.9.6", "serve", "--mcp"],
       "enabled": true
     }
   },

@@ -54,13 +54,13 @@ public struct FolderAccessResult: Equatable, Codable, Sendable {
 public struct FolderAccessClient: Sendable {
     public var requestAccess: @Sendable () async -> FolderAccessResult
 
-    public nonisolated init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
+    nonisolated public init(requestAccess: @escaping @Sendable () async -> FolderAccessResult) {
         self.requestAccess = requestAccess
     }
 }
 
 extension FolderAccessClient: DependencyKey {
-    public nonisolated static var liveValue: FolderAccessClient {
+    nonisolated public static var liveValue: FolderAccessClient {
         FolderAccessClient(requestAccess: {
             await MainActor.run {
                 let fileManager = FileManager.default
@@ -75,28 +75,28 @@ extension FolderAccessClient: DependencyKey {
                 return FolderAccessResult(
                     desktop: desktopStatus,
                     documents: documentsStatus,
-                    downloads: downloadsStatus
+                    downloads: downloadsStatus,
                 )
             }
         })
     }
 
-    public nonisolated static var testValue: FolderAccessClient {
+    nonisolated public static var testValue: FolderAccessClient {
         FolderAccessClient(requestAccess: {
             FolderAccessResult(
                 desktop: .notGranted,
                 documents: .notGranted,
-                downloads: .notGranted
+                downloads: .notGranted,
             )
         })
     }
 
-    public nonisolated static var previewValue: FolderAccessClient {
+    nonisolated public static var previewValue: FolderAccessClient {
         FolderAccessClient(requestAccess: {
             FolderAccessResult(
                 desktop: .notGranted,
                 documents: .notGranted,
-                downloads: .notGranted
+                downloads: .notGranted,
             )
         })
     }
@@ -115,7 +115,7 @@ private func requestFolderAccess(_ url: URL?) -> FolderAccessPermission {
         _ = try FileManager.default.contentsOfDirectory(
             at: url,
             includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
+            options: [.skipsHiddenFiles],
         )
         return .granted
     } catch {

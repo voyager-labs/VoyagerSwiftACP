@@ -1,7 +1,8 @@
 import Foundation
 import Logging
+import VoyagerShared
 
-struct GatewayQueryConverter: Sendable {
+struct GatewayQueryConverter {
     private let logger: Logger
     private let conditionRegistry: PropertyConditionRegistry?
     private let conditionSanitizer: SearchConditionSanitizer?

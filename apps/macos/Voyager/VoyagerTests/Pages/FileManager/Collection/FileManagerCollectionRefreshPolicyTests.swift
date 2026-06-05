@@ -1,11 +1,17 @@
+import Clocks
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
+@testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
 
+/// FileManager collection refresh/write-back 정책이 content/page 계약을 지키는지 검증한다.
 @MainActor
 final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
+    /// testRefreshSuccessStartsWriteBackWhenCollectionIsClean 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshSuccessStartsWriteBackWhenCollectionIsClean() async {
         let recorder = SavedCollectionsRecorder()
         let requestID = UUID()
@@ -24,18 +30,67 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         )
         store.exhaustivity = .off
 
-        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
-            $0.composer.lastFiltersResponse = response
-            $0.composer.isLoadingFilters = false
-            $0.collectionSession.phase = .opened(
-                kind: .hydratedSnapshot,
-                base: .stale,
-                inflight: .writingBackRefreshedSnapshot,
-            )
-        }
-        XCTAssertEqual(store.state.refreshBlockingReason, .writeBackInFlight)
+        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response)))))
+        await receiveSuccessfulRefreshEffects(
+            store,
+            response: response,
+            expectedContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
+            openedURL: url,
+            wasDirtyBeforeApplyingResponse: false,
+            shouldWriteBack: true,
+        )
+        await receiveWriteBackSaveEffects(store)
+
+        let saved = await recorder.last()
+        XCTAssertEqual(saved?.url, url)
+        XCTAssertEqual(saved?.file.query, "report")
+        XCTAssertEqual(saved?.file.scopes, ["/tmp"])
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
     }
 
+    /// testRefreshWriteBackUsesComposerStateSyncedFromAppliedFilters 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testRefreshWriteBackUsesComposerStateSyncedFromAppliedFilters() async {
+        let recorder = SavedCollectionsRecorder()
+        let requestID = UUID()
+        let url = URL(fileURLWithPath: "/tmp/refresh-applied-filters.voycoll")
+        let response = makeFiltersResponse(
+            paths: ["/tmp/applied/report.txt"],
+            appliedScopes: ["/tmp/applied"],
+        )
+
+        let store = makeContentStore(
+            initialState: makeRefreshingState(
+                requestID: requestID,
+                openedURL: url,
+                query: "report",
+                scopes: ["/tmp/requested"],
+                collectionContext: .init(query: "report", scopes: ["/tmp/requested"], conditions: []),
+            ),
+            recorder: recorder,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response)))))
+        await receiveSuccessfulRefreshEffects(
+            store,
+            response: response,
+            expectedContext: .init(query: "report", scopes: ["/tmp/applied"], conditions: []),
+            openedURL: url,
+            wasDirtyBeforeApplyingResponse: false,
+            shouldWriteBack: true,
+        )
+        await receiveWriteBackSaveEffects(store)
+
+        let saved = await recorder.last()
+        XCTAssertEqual(saved?.url, url)
+        XCTAssertEqual(saved?.file.scopes, ["/tmp/applied"])
+        XCTAssertEqual(store.state.composer.collectionContext?.scopes, ["/tmp/applied"])
+        XCTAssertEqual(store.state.collection.collectionContext?.scopes, ["/tmp/applied"])
+    }
+
+    /// testRefreshFailureKeepsStaleAndClearsRefreshFlag 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshFailureKeepsStaleAndClearsRefreshFlag() async {
         struct RefreshError: Error {}
 
@@ -52,18 +107,22 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         )
         store.exhaustivity = .off
 
-        await store.send(.composer(.internal(.filtersResponse(requestID, .failure(RefreshError()))))) {
-            $0.collectionSession.phase = .refreshFailed(kind: .hydratedSnapshot)
-        }
-        await store.finish()
+        await store.send(.composer(.internal(.filtersResponse(requestID, .failure(RefreshError())))))
+        await store.receive(\.collection.refreshFailed)
+        await store.receive(\.delegate.composerCollectionSearchFailed)
 
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
-        XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
-        XCTAssertEqual(store.state.refreshBlockingReason, .missingBaseline)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertTrue(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
+        XCTAssertEqual(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ), .missingBaseline)
     }
 
+    /// testRefreshSuccessSkipsWriteBackWhenCollectionIsDirty 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshSuccessSkipsWriteBackWhenCollectionIsDirty() async {
         let requestID = UUID()
         let response = makeFiltersResponse(paths: ["/tmp/report.txt"])
@@ -81,22 +140,30 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         )
         store.exhaustivity = .off
 
-        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
-            $0.composer.lastFiltersResponse = response
-            $0.composer.isLoadingFilters = false
-            $0.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
-        }
-        await store.finish()
+        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response)))))
+        await receiveSuccessfulRefreshEffects(
+            store,
+            response: response,
+            expectedContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
+            openedURL: URL(fileURLWithPath: "/tmp/dirty.voycoll"),
+            wasDirtyBeforeApplyingResponse: true,
+            shouldWriteBack: false,
+        )
 
         let saved = await recorder.last()
         XCTAssertNil(saved)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .refreshingHydratedSnapshot)
-        XCTAssertNotEqual(store.state.collectionSession.inflightStatus, .writingBackRefreshedSnapshot)
-        XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
-        XCTAssertNil(store.state.refreshBlockingReason)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .refreshingHydratedSnapshot)
+        XCTAssertNotEqual(store.state.collection.collectionSession.phase.inflightStatus, .writingBackRefreshedSnapshot)
+        XCTAssertTrue(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
+        XCTAssertNil(store.state.collection.refreshBlockingReason(
+            isCollectionMode: store.state.isCollectionMode,
+            isDirty: store.state.isOpenedCollectionDirty,
+            isSearching: store.state.composer.isCollectionSearching,
+        ))
     }
 
+    /// testRefreshSuccessSkipsWriteBackWhenCompatibilityBlocksWriteBack 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testRefreshSuccessSkipsWriteBackWhenCompatibilityBlocksWriteBack() async {
         let requestID = UUID()
         let response = makeFiltersResponse(paths: ["/tmp/report.txt"])
@@ -121,19 +188,23 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         )
         store.exhaustivity = .off
 
-        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response))))) {
-            $0.composer.lastFiltersResponse = response
-            $0.composer.isLoadingFilters = false
-            $0.collectionSession.phase = .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
-        }
-        await store.finish()
+        await store.send(.composer(.internal(.filtersResponse(requestID, .success(response)))))
+        await receiveSuccessfulRefreshEffects(
+            store,
+            response: response,
+            expectedContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
+            openedURL: URL(fileURLWithPath: "/tmp/fallback.voycoll"),
+            wasDirtyBeforeApplyingResponse: false,
+            shouldWriteBack: false,
+        )
 
         let saved = await recorder.last()
         XCTAssertNil(saved)
-        XCTAssertTrue(store.state.collectionSession.isStale)
-        XCTAssertNil(store.state.collectionSession.lastRefreshAt)
+        XCTAssertTrue(store.state.collection.collectionSession.phase.isStale)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.lastRefreshAt)
     }
 
+    /// testCompleteWriteBackUpdatesCompatibilityForDefinitionOnlyCollection 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCompleteWriteBackUpdatesCompatibilityForDefinitionOnlyCollection() {
         let url = URL(fileURLWithPath: "/tmp/definition-only.voycoll")
         let completion = CollectionSaveCompletion(
@@ -154,14 +225,15 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
         )
 
         var state = FileManagerContentState()
-        state.collectionContext = .init(query: "report", scopes: ["/tmp"], conditions: [])
+        state.collection.collectionContext = .init(query: "report", scopes: ["/tmp"], conditions: [])
+        state.collection.collectionSession.document = .init(url: url, name: "definition-only", compatibility: nil)
 
         _ = state.collection.completeWriteBack(completion)
 
-        XCTAssertEqual(state.collectionSession.openedCompatibility?.warnings, [])
-        XCTAssertFalse(state.collectionSession.openedCompatibility?.usedDefinitionFallback ?? true)
-        XCTAssertTrue(state.collectionSession.openedCompatibility?.writeBackAllowed ?? false)
-        XCTAssertEqual(state.collectionSession.openedCompatibility?.writeBackReason, .allowed)
+        XCTAssertEqual(state.collection.collectionSession.document?.compatibility?.warnings, [])
+        XCTAssertFalse(state.collection.collectionSession.document?.compatibility?.usedDefinitionFallback ?? true)
+        XCTAssertFalse(state.collection.collectionSession.document?.compatibility?.writeBackAllowed ?? true)
+        XCTAssertEqual(state.collection.collectionSession.document?.compatibility?.writeBackReason, .allowed)
     }
 }
 
@@ -204,7 +276,67 @@ private func makeContentStore(
         $0.userDefaultsClient = .testValue
         $0.collectionStalenessClient = .testValue
         $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        $0.continuousClock = ImmediateClock()
     }
+}
+
+@MainActor
+private func receiveSuccessfulRefreshEffects(
+    _ store: TestStore<FileManagerContentState, FileManagerContentAction>,
+    response _: VoyagerShared.SearchResponsePayload,
+    expectedContext: CollectionContext,
+    openedURL: URL,
+    wasDirtyBeforeApplyingResponse _: Bool,
+    shouldWriteBack: Bool,
+) async {
+    await store.receive(\.composer.internal.updateLastFiltersResponse)
+    await store.receive(\.collection.refreshResponseReceived) {
+        $0.collection.collectionSession.phase = shouldWriteBack
+            ? .opened(kind: .hydratedSnapshot, base: .stale, inflight: .writingBackRefreshedSnapshot)
+            : .opened(kind: .hydratedSnapshot, base: .stale, inflight: .none)
+    }
+    await store.receive(\.composer.internal.clearPendingSearchQuery) {
+        $0.composer.pendingSearchQuery = nil
+    }
+    await store.receive(\.collection.searchSucceeded) {
+        $0.collection.collectionContext = expectedContext
+    }
+    await store.receive(\.entryViewLayout.internal.setCollectionMode) {
+        $0.entryViewLayout.isCollectionMode = true
+    }
+    await store.receive(\.entryViewLayout.internal.applyCollectionSearchPaths)
+    await store.receive(\.composer.internal.syncCollectionState) {
+        $0.composer.collectionContext = expectedContext
+        $0.composer.openedCollectionURL = openedURL
+        $0.composer.openedCollectionCompatibility = $0.collection.collectionSession.document?.compatibility
+        $0.composer.isCollectionMode = true
+    }
+    await store.receive(\.delegate.composerCollectionSearchSucceeded)
+    if shouldWriteBack {
+        await store.receive(\.composer.view.saveCollection)
+    }
+}
+
+@MainActor
+private func receiveWriteBackSaveEffects(
+    _ store: TestStore<FileManagerContentState, FileManagerContentAction>,
+) async {
+    await store.receive(\.composer.delegate.saveToExisting)
+    await store.receive(\.collection.saveToExisting) {
+        $0.collection.isSaving = true
+    }
+    await store.receive(\.collection.saveCompleted) {
+        $0.collection.isSaving = false
+        $0.collection.pendingSave = nil
+    }
+    await store.receive(\.collection.writeBackCompleted)
+}
+
+private func searchResultPath(from item: VoyagerShared.JSONValue) -> String? {
+    guard case let .object(fields) = item,
+          case let .string(path)? = fields["fullPath"]
+    else { return nil }
+    return path
 }
 
 @MainActor
@@ -226,18 +358,23 @@ private func makeRefreshingState(
 ) -> FileManagerContentState {
     var state = FileManagerContentState()
     state.entryViewLayout.isCollectionMode = true
-    state.collectionSession.phase = .opened(
+    state.collection.collectionSession.phase = .opened(
         kind: .hydratedSnapshot,
         base: .stale,
         inflight: .refreshingHydratedSnapshot,
     )
-    state.collectionSession.openedURL = openedURL
-    state.collectionSession.openedName = openedURL.deletingPathExtension().lastPathComponent
-    state.collectionSession.openedCompatibility = compatibility
-    state.collectionSession.baseline = baselineContext.map(CollectionBaseline.init(context:))
-    state.collectionContext = collectionContext
+    state.collection.collectionSession.document = .init(
+        url: openedURL,
+        name: openedURL.deletingPathExtension().lastPathComponent,
+        compatibility: compatibility,
+    )
+    state.collection.collectionSession.metadata.baseline = baselineContext.map(CollectionBaseline.init(context:))
+    state.collection.collectionContext = collectionContext
     state.composer.scopes = scopes
     state.composer.conditions = []
+    state.composer.isLoadingFilters = true
+    state.composer.isFilteringInFlight = true
+    state.composer.activeFiltersRequestID = requestID
     state.composer.lastAcceptedFiltersRequestID = requestID
     state.composer.pendingSearchQuery = query
     return state
@@ -260,10 +397,13 @@ private actor SavedCollectionsRecorder {
     }
 }
 
-private func makeFiltersResponse(paths: [String]) -> VoyagerShared.SearchResponsePayload {
+private func makeFiltersResponse(
+    paths: [String],
+    appliedScopes: [String] = ["/tmp"],
+) -> VoyagerShared.SearchResponsePayload {
     VoyagerShared.SearchResponsePayload(
         itemCount: paths.count,
-        appliedFilters: .init(scopes: ["/tmp"], conditions: []),
+        appliedFilters: .init(scopes: appliedScopes, conditions: []),
         items: paths.map { path in
             .object(["fullPath": .string(path)])
         },

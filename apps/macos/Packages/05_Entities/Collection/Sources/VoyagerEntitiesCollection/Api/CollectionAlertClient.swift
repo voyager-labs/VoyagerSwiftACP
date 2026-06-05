@@ -1,0 +1,74 @@
+import AppKit
+import ComposableArchitecture
+
+public struct CollectionAlertClient: Sendable {
+    public var showUnsavedNavigationAlert: @Sendable () async -> CollectionNavigationChoice
+    public var showCollectionOpenErrorAlert: @Sendable (_ title: String, _ message: String) async -> Void
+
+    nonisolated public init(
+        showUnsavedNavigationAlert: @escaping @Sendable () async -> CollectionNavigationChoice,
+        showCollectionOpenErrorAlert: @escaping @Sendable (_ title: String, _ message: String) async -> Void,
+    ) {
+        self.showUnsavedNavigationAlert = showUnsavedNavigationAlert
+        self.showCollectionOpenErrorAlert = showCollectionOpenErrorAlert
+    }
+}
+
+extension CollectionAlertClient: DependencyKey {
+    nonisolated public static var liveValue: CollectionAlertClient {
+        CollectionAlertClient(
+            showUnsavedNavigationAlert: {
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "Unsaved Filters"
+                    alert.informativeText = "You have unsaved filter changes. What would you like to do?"
+                    alert.addButton(withTitle: "Save")
+                    alert.addButton(withTitle: "Don't Save")
+                    alert.addButton(withTitle: "Cancel")
+
+                    let response = alert.runModal()
+                    switch response {
+                    case .alertFirstButtonReturn:
+                        return .save
+                    case .alertSecondButtonReturn:
+                        return .discard
+                    default:
+                        return .cancel
+                    }
+                }
+            },
+            showCollectionOpenErrorAlert: { title, message in
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = title
+                    alert.informativeText = message
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+            },
+        )
+    }
+
+    nonisolated public static var testValue: CollectionAlertClient {
+        CollectionAlertClient(
+            showUnsavedNavigationAlert: { .cancel },
+            showCollectionOpenErrorAlert: { _, _ in },
+        )
+    }
+
+    nonisolated public static var previewValue: CollectionAlertClient {
+        CollectionAlertClient(
+            showUnsavedNavigationAlert: { .cancel },
+            showCollectionOpenErrorAlert: { _, _ in },
+        )
+    }
+}
+
+public extension DependencyValues {
+    nonisolated var collectionAlertClient: CollectionAlertClient {
+        get { self[CollectionAlertClient.self] }
+        set { self[CollectionAlertClient.self] = newValue }
+    }
+}

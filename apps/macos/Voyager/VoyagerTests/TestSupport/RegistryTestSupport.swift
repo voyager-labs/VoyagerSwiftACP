@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 #if canImport(Voyager)
 @testable import Voyager
@@ -16,8 +17,8 @@ enum RegistryTestSupport {
     private static let registryOperatorDefinition = OperatorDefinition(
         uiLabel: "Equals",
         mdqueryOperator: nil as String?,
-        valueShape: nil as ValueShape?,
-        valueCount: nil as ValueCount?,
+        valueShape: nil as VoyagerEntitiesCollection.ValueShape?,
+        valueCount: nil as VoyagerEntitiesCollection.ValueCount?,
         allowedTypes: nil as [String]?,
         inverseOf: nil as String?,
         aliases: nil as [String]?,
@@ -63,13 +64,13 @@ enum RegistryTestSupport {
         }
     }
 
-    private nonisolated static func registryUnitSpecs() -> [String: SystemPropertyUnitSpec] {
+    nonisolated private static func registryUnitSpecs() -> [String: VoyagerEntitiesCollection.SystemPropertyUnitSpec] {
         MainActor.assumeIsolated {
             registrySnapshot().propertyKeyToUnitSpec
         }
     }
 
-    private nonisolated static func registryUIKind(for typeKey: String) -> String {
+    nonisolated private static func registryUIKind(for typeKey: String) -> String {
         switch typeKey {
         case "number":
             "singleNumber"
@@ -82,7 +83,7 @@ enum RegistryTestSupport {
         }
     }
 
-    private nonisolated static func registryResolution(for key: String) -> PropertyKeyResolution {
+    nonisolated private static func registryResolution(for key: String) -> PropertyKeyResolution {
         switch key {
         case "name_full":
             .canonical(key)

@@ -38,6 +38,8 @@ struct OnboardingState: Equatable {
                 betaAccessComplete: betaAccess.isComplete,
                 permissionsComplete: permissions.isComplete,
                 completeComplete: complete.isComplete,
+                betaAccessEmail: betaAccess.isComplete ? betaAccess.email : nil,
+                betaAccessToken: betaAccess.isComplete ? betaAccess.token : nil,
             ),
         )
     }
@@ -62,6 +64,13 @@ struct OnboardingState: Equatable {
         if betaAccess.isComplete {
             betaAccess.status = .active
             betaAccess.reason = .none
+            betaAccess.needsReverification = true
+            if let email = stepState.betaAccessEmail, !email.isEmpty {
+                betaAccess.email = email
+            }
+            if let token = stepState.betaAccessToken, !token.isEmpty {
+                betaAccess.token = token
+            }
         } else {
             betaAccess.status = .notActive
             betaAccess.reason = .missingInput
@@ -71,13 +80,35 @@ struct OnboardingState: Equatable {
     }
 
     func lastValidStep(from step: OnboardingStep) -> OnboardingStep {
+        // If all prior required steps are complete, the persisted step is reachable —
+        // return it directly even if the step itself is incomplete.
+        if isPriorRequiredStepComplete(step) {
+            return step
+        }
+        // Fallback: walk backwards to find the first step whose entire prior chain is complete.
         var candidate = step
-        while !isStepComplete(candidate) {
+        while true {
+            if isPriorRequiredStepComplete(candidate) {
+                return candidate
+            }
             guard let previous = candidate.previous else {
                 return .welcome
             }
             candidate = previous
         }
-        return candidate
+    }
+
+    /// Returns `true` when **all** prior required steps for the given step are complete.
+    /// - `.welcome` has no prior requirements (always `true`).
+    /// - `.betaAccess` requires `.welcome` complete.
+    /// - `.permissions` requires `.welcome` + `.betaAccess` complete.
+    /// - `.complete` requires `.welcome` + `.betaAccess` + `.permissions` complete.
+    private func isPriorRequiredStepComplete(_ step: OnboardingStep) -> Bool {
+        // Walk the entire chain from .welcome up to (but not including) `step`.
+        for priorStep in OnboardingStep.allCases {
+            if priorStep == step { break }
+            if !isStepComplete(priorStep) { return false }
+        }
+        return true
     }
 }

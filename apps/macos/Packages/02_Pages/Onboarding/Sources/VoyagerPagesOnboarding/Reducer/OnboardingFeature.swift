@@ -10,6 +10,9 @@ struct OnboardingFeature {
     @Dependency(\.onboardingProgressClient)
     var onboardingProgressClient
 
+    @Dependency(\.onboardingWindowClient)
+    var onboardingWindowClient
+
     var body: some Reducer<State, Action> {
         Scope(state: \.welcome, action: \.welcome) {
             WelcomeFeature()
@@ -69,6 +72,22 @@ struct OnboardingFeature {
                 return .run { _ in
                     progressClient.save(snapshot)
                 }
+
+            case .complete(.startUsingTapped), .complete(.retryTapped):
+                let snapshot = state.progressSnapshot
+                return .run { send in
+                    progressClient.save(snapshot)
+                    let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
+                    await send(.complete(.openWindowResponse(opened)))
+                }
+
+            case .complete(.openWindowResponse(true)):
+                return .run { _ in
+                    await onboardingWindowClient.closeWindow()
+                }
+
+            case .complete(.openWindowResponse(false)):
+                return .none
 
             case .welcome, .betaAccess, .permissions, .complete:
                 let snapshot = state.progressSnapshot

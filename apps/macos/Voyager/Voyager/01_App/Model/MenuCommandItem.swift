@@ -1,9 +1,13 @@
+import VoyagerFeaturesEntryArrangements
+import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
+
 struct MenuCommandItem: Identifiable, Equatable {
     let id: String
     let title: String
     let command: Command
 
-    enum AppCommand: Equatable, Sendable {
+    enum AppCommand: Equatable {
         case newWindow(path: String? = nil)
         case newTab(path: String? = nil)
 
@@ -25,19 +29,20 @@ struct MenuCommandItem: Identifiable, Equatable {
         case setAutomaticUpdate(enabled: Bool)
     }
 
-    enum ViewCommand: Equatable, Sendable {
+    enum ViewCommand: Equatable {
         case toggleSidebar
         case toggleShowHiddenFiles
         case setViewLayout(EntryViewLayoutState.Mode)
         case setGroupKey(GroupKey)
         case setSortKey(SortKey)
-        case setSortOrder(SortOrder)
+        case setSortOrder(VoyagerShared.SortOrder)
     }
 
-    enum EditCommand: Equatable, Sendable {
+    enum EditCommand: Equatable {
         case requestUndo
         case requestRedo
         case toggleComposer
+        case openContextualAiChat
 
         case cut
         case copy
@@ -50,7 +55,7 @@ struct MenuCommandItem: Identifiable, Equatable {
         case copyURLs
     }
 
-    enum Command: Equatable, Sendable {
+    enum Command: Equatable {
         case app(AppCommand)
         case view(ViewCommand)
         case edit(EditCommand)

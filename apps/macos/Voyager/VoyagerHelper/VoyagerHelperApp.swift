@@ -54,7 +54,7 @@ class VoyagerHelperApp {
         stateBroadcaster.postCurrentState()
     }
 
-    // 로깅 핸들러 구성
+    /// 로깅 핸들러 구성
     private static func bootstrapLogging() {
         LoggingSystem.bootstrap { label in
             let oslogHandler = VoyagerOSLogHandler(label: label)

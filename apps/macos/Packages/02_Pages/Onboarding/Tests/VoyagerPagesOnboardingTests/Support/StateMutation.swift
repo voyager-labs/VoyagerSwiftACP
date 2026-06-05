@@ -1,0 +1,38 @@
+import VoyagerFeaturesBetaAccess
+@testable import VoyagerPagesOnboarding
+
+// MARK: - 상태 변이 헬퍼
+
+/// 테스트에서 반복 사용하는 상태 변이 패턴을 네임스페이스로 제공합니다.
+enum StateMutation {
+    /// betaAccess 상태를 active/none/true로 설정합니다.
+    /// verificationResponse(.active) 수신 후의 상태 변이와 동일합니다.
+    static func applyActiveBetaAccess(state: inout OnboardingFeature.State) {
+        state.betaAccess.status = .active
+        state.betaAccess.reason = .none
+        state.betaAccess.isComplete = true
+    }
+
+    /// applyStepState(snapshot restore) 경로를 시뮬레이션합니다.
+    /// needsReverification = true로 설정하여 onAppear에서 re-verify가 트리거되도록 합니다.
+    static func applyRestoredBetaAccess(state: inout OnboardingFeature.State) {
+        state.betaAccess.status = .active
+        state.betaAccess.reason = .none
+        state.betaAccess.isComplete = true
+        state.betaAccess.needsReverification = true
+    }
+
+    /// applyStepState(snapshot restore) 경로에서 email/token도 복원합니다.
+    static func applyActiveBetaAccess(
+        state: inout OnboardingFeature.State,
+        email: String,
+        token: String,
+    ) {
+        state.betaAccess.email = email
+        state.betaAccess.token = token
+        state.betaAccess.status = .active
+        state.betaAccess.reason = .none
+        state.betaAccess.isComplete = true
+        state.betaAccess.needsReverification = true
+    }
+}

@@ -1,11 +1,15 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesEntry
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import XCTest
 
+/// 엔트리 조작 계약 접근자 — 윈도우/이름 변경 메타데이터 접근을 검증.
 @MainActor
 final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
+    /// testItemsAccessibleViaLoadingContext 테스트 동작을 검증한다.
     func testItemsAccessibleViaLoadingContext() {
         var state = EntryViewLayoutState()
         let item = EntryModel.temporaryFolder(id: "/tmp/test.txt", name: "test.txt")
@@ -17,6 +21,7 @@ final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
         XCTAssertEqual(state.entryOperations.items.first?.id, item.id)
     }
 
+    /// testWindowIDSetThroughLifecycleAction 테스트 동작을 검증한다.
     func testWindowIDSetThroughLifecycleAction() async {
         let windowID = UUID()
         let store = TestStore(initialState: EntryOperationsState()) {
@@ -30,6 +35,7 @@ final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
         }
     }
 
+    /// testRenamingItemIdAccessibleViaApprovedAccessor 테스트 동작을 검증한다.
     func testRenamingItemIdAccessibleViaApprovedAccessor() {
         var state = EntryViewLayoutState()
         let itemId = "test-item-id"
@@ -40,6 +46,7 @@ final class EntryViewLayoutEntryOpsContractTests: XCTestCase {
         XCTAssertEqual(state.entryOperations.renamingItemId, itemId)
     }
 
+    /// testRenamingItemStoredOnStartRename 테스트 동작을 검증한다.
     func testRenamingItemStoredOnStartRename() {
         var state = EntryViewLayoutState()
         let item = EntryModel.temporaryFolder(id: "/tmp/test.txt", name: "test.txt")

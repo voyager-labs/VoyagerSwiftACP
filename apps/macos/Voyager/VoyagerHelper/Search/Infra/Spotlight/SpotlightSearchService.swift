@@ -4,9 +4,10 @@ import Foundation
 import ImageIO
 import Logging
 import UniformTypeIdentifiers
+import VoyagerShared
 
-struct SpotlightSearchService: Sendable, SearchExecutionServicing {
-    private nonisolated static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
+struct SpotlightSearchService: SearchExecutionServicing {
+    nonisolated private static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
     private let logger: Logger
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
@@ -57,16 +58,35 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
         let compiledPlan = try compiler.compilePlan(conditions: prepared.conditions)
 
         let scopeURLs = resolveFilterScopeURLs(prepared.scopes)
-        let paths = try executionEngine.loadPaths(
-            queryString: compiledPlan.predicate,
-            scopes: scopeURLs,
+        let normalizedFilterScopes = SearchScopeNormalizer.normalizeScopes(prepared.scopes)
+        let paths: [String] = if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
+            try executionEngine.loadPaths(
+                queryString: compiledPlan.predicate,
+                scopes: scopeURLs,
+                limit: maxCandidates,
+            )
+        } else {
+            try executionEngine.loadPaths(
+                queryString: compiledPlan.predicate,
+                scopes: scopeURLs,
+                limit: maxCandidates,
+                shouldIncludePath: { path in
+                    pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
+                },
+            )
+        }
+        let filteredPaths = filterPaths(
+            paths,
+            scopes: prepared.scopes,
+            includeSubfolders: filters.includeSubfolders,
+            excludedScopes: filters.excludedScopes,
         )
 
         if paths.count == maxCandidates {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates): id=\(requestId)")
         }
 
-        let items = makeJSONItems(from: paths)
+        let items = makeJSONItems(from: filteredPaths)
 
         logger.info(
             "MDQuery applyFilters completed: id=\(requestId) scopes=\(scopeURLs.count) pushdown_conditions=\(compiledPlan.pushdownConditions.count) items=\(items.count)",
@@ -76,6 +96,8 @@ struct SpotlightSearchService: Sendable, SearchExecutionServicing {
             itemCount: items.count,
             appliedFilters: AppliedFiltersPayload(
                 scopes: filters.scopes,
+                excludedScopes: filters.excludedScopes,
+                includeSubfolders: filters.includeSubfolders,
                 conditions: filters.conditions,
             ),
             items: items,
@@ -180,6 +202,50 @@ extension SpotlightSearchService {
         }
     }
 
+    func filterPaths(
+        _ paths: [String],
+        scopes: [String],
+        includeSubfolders: Bool,
+        excludedScopes: [String] = [],
+    ) -> [String] {
+        let normalizedScopes = SearchScopeNormalizer.normalizeScopes(scopes)
+        let normalizedExcludedScopes = includeSubfolders
+            ? SearchScopeNormalizer.normalizeScopes(excludedScopes)
+            : []
+
+        return paths.filter { path in
+            let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+
+            if includeSubfolders == false,
+               normalizedScopes.isEmpty == false,
+               pathMatchesExactFolderScope(normalizedPath, normalizedScopes: normalizedScopes) == false
+            {
+                return false
+            }
+
+            if normalizedExcludedScopes.contains(where: { pathIsDescendantOrEqual(normalizedPath, scope: $0) }) {
+                return false
+            }
+
+            return true
+        }
+    }
+
+    func pathMatchesExactFolderScope(_ path: String, normalizedScopes: [String]) -> Bool {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let parentPath = URL(fileURLWithPath: normalizedPath).deletingLastPathComponent().standardizedFileURL.path
+        return normalizedScopes.contains(parentPath == "/" ? "/" : parentPath)
+    }
+
+    func pathIsDescendantOrEqual(_ path: String, scope: String) -> Bool {
+        if path == scope {
+            return true
+        }
+
+        let prefix = scope == "/" ? "/" : scope + "/"
+        return path.hasPrefix(prefix)
+    }
+
     func makeJSONItems(from paths: [String]) -> [JSONValue] {
         var items: [JSONValue] = []
         items.reserveCapacity(paths.count)
@@ -277,7 +343,7 @@ extension SpotlightSearchService {
         return (try? PropertyListSerialization.propertyList(from: tagData, format: nil) as? [String]) ?? []
     }
 
-    private nonisolated static func loadRawUserTagsXattrData(from url: URL) -> Data? {
+    nonisolated private static func loadRawUserTagsXattrData(from url: URL) -> Data? {
         let size = getxattr(url.path, userTagsXattrName, nil, 0, 0, XATTR_NOFOLLOW)
         guard size > 0 else {
             return nil

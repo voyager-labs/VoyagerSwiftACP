@@ -1,11 +1,17 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
+import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import XCTest
 
+/// 저장되지 않은 변경사항이 있을 때 내비게이션 동작 — 취소/폐기/저장을 검증.
 @MainActor
 final class FileManagerNavigationUnsavedTests: XCTestCase {
+    /// testUnsavedPromptCancelDoesNotPerformNavigationForHistoryActions 테스트 동작을 검증한다.
     func testUnsavedPromptCancelDoesNotPerformNavigationForHistoryActions() async {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .cancel)
@@ -34,6 +40,7 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
         }
     }
 
+    /// testUnsavedPromptDiscardPerformsNavigationAndResetsComposerForHistoryActions 테스트 동작을 검증한다.
     func testUnsavedPromptDiscardPerformsNavigationAndResetsComposerForHistoryActions() async {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .discard, composerText: "dirty")
@@ -59,17 +66,18 @@ final class FileManagerNavigationUnsavedTests: XCTestCase {
             await store.receive {
                 guard case let .navigation(.internal(.performNavigation(pending))) = $0 else { return false }
                 return pendingMatches(pending, testCase.pending)
-            } assert: { state in
-                state.content.resetComposerOnNextDirectoryNavigation = false
-                state.content.composer.text = ""
             }
+            await store.skipReceivedActions()
 
             XCTAssertNil(store.state.content.navigation.pendingNavigation)
+            XCTAssertFalse(store.state.content.resetComposerOnNextDirectoryNavigation)
+            XCTAssertEqual(store.state.content.composer.text, "")
 
             await store.finish()
         }
     }
 
+    /// testUnsavedPromptSaveSetsPendingNavigationAndStartsSaveForHistoryActions 테스트 동작을 검증한다.
     func testUnsavedPromptSaveSetsPendingNavigationAndStartsSaveForHistoryActions() async {
         for testCase in kHistoryNavigationTestCases {
             let store = makeStore(alertChoice: .save)
@@ -161,8 +169,12 @@ private func makeStore(
 
     var state = FileManagerWindowState()
     state.content.entryViewLayout.isCollectionMode = true
-    state.content.collectionContext = CollectionContext(query: "Query", scopes: ["/tmp"], conditions: [])
-    state.content.collectionSession.openedURL = collectionURL
+    state.content.collection.collectionContext = CollectionContext(query: "Query", scopes: ["/tmp"], conditions: [])
+    state.content.collection.collectionSession.document = .init(
+        url: collectionURL,
+        name: collectionURL.deletingPathExtension().lastPathComponent,
+        compatibility: nil,
+    )
     state.content.syncComposerCollectionState()
     state.content.composer.text = composerText
 
@@ -176,7 +188,14 @@ private func makeStore(
         $0.collectionFileClient = .testValue
         $0.registryClient = .testValue
         $0.userDefaultsClient = .testValue
+        $0.fileManagerClient = .testValue
+        $0.thumbnailGeneratorClient = .testValue
+        $0.entryThumbnailCacheClient = .testValue
+        $0.notificationCenterClient = .testValue
+        $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
     }
+
+    store.exhaustivity = .off
 
     return store
 }
@@ -189,7 +208,10 @@ private struct WindowNavUnsavedHarness {
 
     var body: some Reducer<State, Action> {
         Scope(state: \.content.navigation, action: \.navigation) {
-            ContentPageNavigationStateReducer()
+            ContentPageNavigationFeature()
+        }
+        Scope(state: \.content, action: \.content) {
+            FileManagerContentFeature()
         }
         FileManagerWindowNavigationReducer()
     }

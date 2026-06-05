@@ -1,7 +1,11 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAiChat
+import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
+import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
+import VoyagerWidgetsEntryViewLayout
 
 typealias FileManagerWindowFeature = FileManagerFeature
 
@@ -10,11 +14,25 @@ struct WindowManagerFeature {
     typealias State = WindowManagerState
     typealias Action = WindowManagerAction
 
+    let pickAttachments: @Sendable () async -> [URL]
+
+    init(
+        pickAttachments: @escaping @Sendable () async -> [URL] = {
+            await MainActor.run {
+                AttachmentPickerPresenter.pickAttachments()
+            }
+        },
+    ) {
+        self.pickAttachments = pickAttachments
+    }
+
     @Dependency(\.onboardingWindowClient)
     private var onboardingWindowClient
 
     @Dependency(\.fileManagerWindowClient)
     private var fileManagerWindowClient
+    @Dependency(\.attachmentPickerClient)
+    private var attachmentPickerClient
 
     @Dependency(\.uuid)
     private var uuid
@@ -45,8 +63,21 @@ struct WindowManagerFeature {
             case let .lifecycle(.applyAppPreferences(preferences)):
                 state.appPreferences = preferences
                 return .merge(
+                    state.windows.map { windowSession in
+                        let packagePreferences = windowSession.window.appPreferencesPreservingSidebarState(
+                            from: preferences.toPackageState(),
+                        )
+                        return .send(.windows(.element(
+                            id: windowSession.id,
+                            action: .window(.applyAppPreferences(packagePreferences)),
+                        )))
+                    },
+                )
+
+            case let .lifecycle(.aiConnectionsFileUpdated(file)):
+                return .merge(
                     state.windows.ids.map { id in
-                        .send(.windows(.element(id: id, action: .window(.applyAppPreferences(preferences)))))
+                        .send(.windows(.element(id: id, action: .window(.aiConnectionsFileUpdated(file)))))
                     },
                 )
 
@@ -107,6 +138,9 @@ struct WindowManagerFeature {
             case .edit(.toggleComposer):
                 return sendCommandToFocusedWindow(state, .toggleComposer)
 
+            case .edit(.openContextualAiChat):
+                return sendCommandToFocusedWindow(state, .openContextualAiChat)
+
             case .edit(.cut):
                 return sendCommandToFocusedWindow(state, .cut)
 
@@ -160,7 +194,17 @@ struct WindowManagerFeature {
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewTab(path))))):
                 return .send(.file(.newTab(path: path)))
 
-            case .windows:
+            case let .windows(.element(id: _, action: .window(.inspector(.setInspectorWidth(width))))):
+                state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
+                return .none
+
+            case let .windows(.element(id: id, action: .window(.delegate(.requestAttachmentPicker)))):
+                return requestAttachmentPicker(for: id)
+
+            case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
+                return .send(.delegate(.openAISettings))
+
+            case .delegate, .windows:
                 return .none
             }
         }
@@ -172,52 +216,14 @@ struct WindowManagerFeature {
     private func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
         case let .file(.newWindow(path)):
-            if onboardingWindowClient.showIfNeeded() {
-                return .none
+            return openWindowSession(path: path, state: &state) { id in
+                await fileManagerWindowClient.open(id)
             }
-            let windowSession = makeWindowSession(path: path)
-
-            state.windows.append(windowSession)
-            state.focusedWindowID = windowSession.id
-
-            return .concatenate(
-                .send(.windows(.element(
-                    id: windowSession.id,
-                    action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowSession
-                            .id)))))),
-                ))),
-                .send(.windows(.element(
-                    id: windowSession.id,
-                    action: .window(.applyAppPreferences(state.appPreferences)),
-                ))),
-                .run { [id = windowSession.id] _ in
-                    await fileManagerWindowClient.open(id)
-                },
-            )
 
         case let .file(.newTab(path)):
-            if onboardingWindowClient.showIfNeeded() {
-                return .none
+            return openWindowSession(path: path, state: &state) { id in
+                await fileManagerWindowClient.openTab(id)
             }
-            let windowSession = makeWindowSession(path: path)
-
-            state.windows.append(windowSession)
-            state.focusedWindowID = windowSession.id
-
-            return .concatenate(
-                .send(.windows(.element(
-                    id: windowSession.id,
-                    action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowSession
-                            .id)))))),
-                ))),
-                .send(.windows(.element(
-                    id: windowSession.id,
-                    action: .window(.applyAppPreferences(state.appPreferences)),
-                ))),
-                .run { [id = windowSession.id] _ in
-                    await fileManagerWindowClient.openTab(id)
-                },
-            )
 
         case .window(.closeFocusedWindow):
             guard let id = state.focusedWindowID else { return .none }
@@ -236,6 +242,46 @@ struct WindowManagerFeature {
             return .none
         }
     }
+
+    private func openWindowSession(
+        path: String?,
+        state: inout State,
+        open: @escaping @Sendable (UUID) async -> Void,
+    ) -> Effect<Action> {
+        if onboardingWindowClient.showIfNeeded() {
+            return .none
+        }
+        let windowSession = makeWindowSession(path: path)
+
+        state.windows.append(windowSession)
+        state.focusedWindowID = windowSession.id
+
+        return .concatenate(
+            windowIDChangedEffect(for: windowSession.id),
+            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
+            .run { [id = windowSession.id] _ in
+                await open(id)
+            },
+        )
+    }
+
+    private func windowIDChangedEffect(for id: UUID) -> Effect<Action> {
+        .send(.windows(.element(
+            id: id,
+            action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(id)))))),
+        )))
+    }
+
+    private func appPreferencesEffect(
+        for id: UUID,
+        preferences: AppPreferencesFeature.State,
+    ) -> Effect<Action> {
+        .send(.windows(.element(
+            id: id,
+            action: .window(.applyAppPreferences(preferences.toPackageState())),
+        )))
+    }
+
 
     private func sendCommandToFocusedWindow(
         _ state: State,
@@ -261,7 +307,7 @@ struct WindowSessionFeature {
     }
 
     @CasePathable
-    enum Action: Sendable {
+    enum Action {
         case window(FileManagerWindowFeature.Action)
     }
 
@@ -280,3 +326,19 @@ struct WindowSessionFeature {
 }
 
 typealias WindowSessionState = WindowSessionFeature.State
+
+private extension WindowManagerFeature {
+    func requestAttachmentPicker(for windowID: WindowManagerState.WindowID) -> Effect<Action> {
+        .run { [attachmentPickerClient] send in
+            let urls = await attachmentPickerClient.pickAttachments()
+            guard !urls.isEmpty else { return }
+            let action = await MainActor.run {
+                Action.windows(.element(
+                    id: windowID,
+                    action: .window(.inspector(.aiChat(.attachmentPickerSelection(urls)))),
+                ))
+            }
+            await send(action)
+        }
+    }
+}

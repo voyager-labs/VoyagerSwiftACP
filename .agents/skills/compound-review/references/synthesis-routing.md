@@ -29,7 +29,7 @@ The synthesis phase consumes four categories of input:
 | Category          | Artifacts                                                                                | Evidence Weight                                    |
 | ----------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | **Facets**        | `f1-plan-compliance.md`, `f2-code-quality.md`, `f3-manual-qa.md`, `f4-scope-fidelity.md` | Primary — structured review output                 |
-| **Task Evidence** | `task-{N}-{slug}.*` files                                                                | Supporting — per-task execution proof              |
+| **Task Evidence** | `task-{N}-*.*` files                                                                | Supporting — per-task execution proof              |
 | **Notepad**       | `learnings.md`, `decisions.md`, `issues.md`, `problems.md`                               | Contextual — operational context and known issues  |
 | **Plan**          | The completed plan `.md` file                                                            | Structural — defines scope and acceptance criteria |
 
@@ -107,7 +107,7 @@ The `dedupe_key` is a lowercase-hyphenated string that uniquely identifies the i
     "category": "drag-drop-lifecycle",
     "title": "acceptDrop success branches preserve drop highlight",
     "description": "acceptDrop success branches do not clear isDropTargeted; redundant read-write in reducer noted",
-    "source_artifacts": [".sisyphus/evidence/f2-code-quality.md", ".sisyphus/evidence/f3-manual-qa.md", ".sisyphus/notepads/grid-drop-folder-thumbnail-ux-naturalization/issues.md"],
+    "source_artifacts": [".sisyphus/evidence/{plan_slug}/f2-code-quality.md", ".sisyphus/evidence/{plan_slug}/f3-manual-qa.md", ".sisyphus/notepads/grid-drop-folder-thumbnail-ux-naturalization/issues.md"],
     "dedupe_key": "drop-highlight-persists-after-failed-copy",
     "verdict": "APPROVE",
     "collapsed_from": ["FIND-007", "FIND-012"]

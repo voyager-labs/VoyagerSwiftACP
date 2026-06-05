@@ -1,7 +1,7 @@
 // swift-tools-version:6.0
 import PackageDescription
 
-let package = Package(
+let kPackage = Package(
     name: "VoyagerPagesSettings",
     platforms: [
         .macOS(.v13),
@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "VoyagerPagesSettings", targets: ["VoyagerPagesSettings"]),
     ],
     dependencies: [
+        .package(path: "../../05_Entities/Ai"),
         .package(path: "../../05_Entities/AppPreferences"),
         .package(path: "../../06_Shared/VoyagerShared"),
         .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.7.2"),
@@ -20,21 +21,24 @@ let package = Package(
         .target(
             name: "VoyagerPagesSettings",
             dependencies: [
+                .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "CasePaths", package: "swift-case-paths"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Perception", package: "swift-perception"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerPagesSettingsTests",
             dependencies: [
                 "VoyagerPagesSettings",
+                .product(name: "VoyagerEntitiesAi", package: "Ai"),
+                .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
-            ]
+            ],
         ),
-    ]
+    ],
 )
