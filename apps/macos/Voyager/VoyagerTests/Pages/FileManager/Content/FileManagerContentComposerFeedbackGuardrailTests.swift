@@ -97,6 +97,47 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         XCTAssertFalse(store.state.entryViewLayout.isCollectionMode)
         XCTAssertNil(store.state.collection.collectionContext)
     }
+
+    func testCollectionSaveFeedbackBridgesToComposerToast() async {
+        var initialState = FileManagerContentState()
+        let feedback = CollectionSaveFeedback(
+            stage: .saveBlocked,
+            category: .futureMinorReadOnly,
+            title: "Unable to Save Collection",
+            message: "Collections opened from a newer minor schema version are read-only and cannot be saved.",
+            recoveryHint: "Open the collection in the matching app version or make a writable copy.",
+            isRetryable: false,
+        )
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .cancel },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+        }
+        store.exhaustivity = .off
+
+        await store.send(.collection(.delegate(.saveFeedback(feedback)))) {
+            $0.composer.transientFeedback = ComposerTransientFeedback(
+                id: $0.composer.transientFeedback?.id ?? UUID(),
+                kind: .error,
+                stage: .save,
+                category: .saveBlocked,
+                message: "\(feedback.title)\n\(feedback.message)",
+                recoveryHint: feedback.recoveryHint,
+            )
+        }
+        XCTAssertEqual(store.state.composer.transientFeedback?.stage, .save)
+        XCTAssertEqual(store.state.composer.transientFeedback?.category, .saveBlocked)
+        XCTAssertEqual(store.state.composer.transientFeedback?.recoveryHint, feedback.recoveryHint)
+    }
 }
 
 @MainActor
