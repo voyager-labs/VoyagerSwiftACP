@@ -49,6 +49,36 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertNotNil(state.activeFiltersRequestID)
     }
 
+    func testScopeOnlyGeneratedChangeSetContinuesToApplyFiltersWithoutShowingToast() {
+        let activeRequestID = UUID()
+        let searchResponse = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: ["/tmp/new"], conditions: []),
+            items: nil,
+            error: nil,
+            queryConversion: VoyagerShared.SearchQueryConversionMetadataPayload(outcome: .generatedChangeSet),
+        )
+
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp/old"]
+        initialState.isLoadingSearch = true
+        initialState.queryRenderPhase = .searching
+        initialState.submittedSearchFilters = VoyagerShared.SearchFiltersPayload(scopes: ["/tmp/old"], conditions: [])
+        initialState.activeSearchRequestID = activeRequestID
+
+        var state = initialState
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)),
+        )
+
+        XCTAssertNil(state.transientFeedback)
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(state.queryRenderPhase, .chipsAppliedPendingList)
+        XCTAssertNotNil(state.activeFiltersRequestID)
+    }
+
     func testNoOpSearchSkipsApplyFiltersWithoutShowingFeedback() {
         let activeRequestID = UUID()
         let searchResponse = VoyagerShared.SearchResponsePayload(
