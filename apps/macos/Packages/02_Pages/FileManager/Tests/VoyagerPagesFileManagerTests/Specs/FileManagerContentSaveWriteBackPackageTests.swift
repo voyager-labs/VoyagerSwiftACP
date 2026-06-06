@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
@@ -67,6 +68,38 @@ final class FileManagerContentSaveWriteBackPackageTests: XCTestCase {
         XCTAssertFalse(collectionStatus.showsUnsavedIndicator)
         XCTAssertFalse(collectionStatus.showsStaleIndicator)
         XCTAssertEqual(store.state.navigation.currentPath, "saved")
+    }
+
+    func testSaveFeedbackPresentsComposerWhenClosed() async {
+        var initialState = makeWriteBackState()
+        initialState.composer.isPresented = false
+        let feedback = CollectionSaveFeedback(
+            stage: .saveFailed,
+            category: .saveFailed,
+            title: "Unable to Save Collection",
+            message: "Permission denied",
+            recoveryHint: "Check the file location or try again.",
+            isRetryable: true,
+        )
+
+        let store = makeStore(initialState: initialState)
+
+        await store.send(.collection(.delegate(.saveFeedback(feedback)))) {
+            $0.composer.isPresented = true
+            $0.composer.transientFeedback = ComposerTransientFeedback(
+                id: $0.composer.transientFeedback?.id ?? UUID(),
+                kind: .error,
+                message: "Unable to Save Collection\nPermission denied",
+                stage: .save,
+                category: .saveFailed,
+                recoveryHint: "Check the file location or try again.",
+            )
+        }
+
+        XCTAssertTrue(store.state.composer.isPresented)
+        XCTAssertEqual(store.state.composer.transientFeedback?.stage, .save)
+        XCTAssertEqual(store.state.composer.transientFeedback?.category, .saveFailed)
+        await store.finish()
     }
 
     func testFileBackedNavigationCountsAsOpenedCollectionWhenSessionDocumentLags() {

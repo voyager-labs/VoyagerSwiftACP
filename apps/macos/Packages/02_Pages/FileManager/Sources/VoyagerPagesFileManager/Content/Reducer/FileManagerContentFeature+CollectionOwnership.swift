@@ -164,6 +164,7 @@ extension FileManagerContentFeature {
             category: payload.stage == .saveBlocked ? .saveBlocked : .saveFailed,
             recoveryHint: payload.recoveryHint,
         )
+        state.composer.isPresented = true
         state.composer.transientFeedback = feedback
         return .concatenate(
             .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
