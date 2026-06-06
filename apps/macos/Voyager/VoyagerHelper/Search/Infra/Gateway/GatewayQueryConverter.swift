@@ -75,14 +75,11 @@ struct GatewayQueryConverter {
                 return GatewayQueryResult(conditions: [], scopes: nil, error: outputError)
             }
 
-            let normalizedConditions = conditionSanitizer.normalizeAndValidate(output.conditions ?? [])
-            let fallbackConditions = conditionSanitizer.normalizeAndValidate(visibleExistingConditions)
-            let finalConditions = normalizedConditions.isEmpty ? fallbackConditions : normalizedConditions
-
-            return GatewayQueryResult(
-                conditions: finalConditions,
-                scopes: output.scopes,
-                error: nil,
+            return resolveGatewayQueryResult(
+                output: output,
+                existingFilters: existingFilters,
+                visibleExistingConditions: visibleExistingConditions,
+                conditionSanitizer: conditionSanitizer,
             )
         } catch {
             logger.error("[GatewayQueryConverter] conversion failed: \(error)")

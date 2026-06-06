@@ -170,16 +170,80 @@ private struct GatewayChatMessage: Encodable {
     let content: String
 }
 
-struct GatewayOutput: Decodable {
+nonisolated struct GatewayOutput: Decodable {
     let conditions: [SearchConditionPayload]?
     let scopes: [String]?
     let error: String?
 }
 
-struct GatewayQueryResult {
+nonisolated struct GatewayQueryResult {
     let conditions: [SearchConditionPayload]
     let scopes: [String]?
     let error: String?
+    let queryOutcome: SearchQueryOutcome?
+
+    init(
+        conditions: [SearchConditionPayload],
+        scopes: [String]?,
+        error: String?,
+        queryOutcome: SearchQueryOutcome? = nil,
+    ) {
+        self.conditions = conditions
+        self.scopes = scopes
+        self.error = error
+        self.queryOutcome = queryOutcome
+    }
+}
+
+nonisolated func resolveGatewayQueryResult(
+    output: GatewayOutput,
+    existingFilters: SearchFiltersPayload,
+    visibleExistingConditions: [SearchConditionPayload],
+    conditionSanitizer: SearchConditionSanitizer,
+) -> GatewayQueryResult {
+    let rawConditions = output.conditions ?? []
+    let normalizedConditions = conditionSanitizer.normalizeAndValidate(rawConditions)
+    let fallbackConditions = conditionSanitizer.normalizeAndValidate(visibleExistingConditions)
+    let explicitOutputScopes = SearchScopeNormalizer.normalizeScopes(output.scopes ?? [])
+        .filter { $0 != "/" }
+    let baselineExplicitScopes = SearchScopeNormalizer.normalizeScopes(existingFilters.scopes)
+        .filter { $0 != "/" }
+    let hasScopeChange = explicitOutputScopes.isEmpty == false
+        && explicitOutputScopes != baselineExplicitScopes
+
+    if rawConditions.isEmpty {
+        let outcome: SearchQueryOutcome = hasScopeChange ? .convertedChanged : .unchangedResult
+        return GatewayQueryResult(
+            conditions: fallbackConditions,
+            scopes: output.scopes,
+            error: nil,
+            queryOutcome: outcome,
+        )
+    }
+
+    if normalizedConditions.isEmpty {
+        let outcome: SearchQueryOutcome = if hasScopeChange {
+            .convertedChanged
+        } else if fallbackConditions.isEmpty == false {
+            .fallbackReuse
+        } else {
+            .unchangedResult
+        }
+
+        return GatewayQueryResult(
+            conditions: fallbackConditions,
+            scopes: output.scopes,
+            error: nil,
+            queryOutcome: outcome,
+        )
+    }
+
+    return GatewayQueryResult(
+        conditions: normalizedConditions,
+        scopes: output.scopes,
+        error: nil,
+        queryOutcome: .convertedChanged,
+    )
 }
 
 enum GatewayQueryError: Error {
