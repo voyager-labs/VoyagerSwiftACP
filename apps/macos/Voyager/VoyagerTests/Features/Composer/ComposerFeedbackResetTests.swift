@@ -86,7 +86,7 @@ final class ComposerFeedbackResetTests: XCTestCase {
         let initialFeedback = ComposerTransientFeedback(
             id: UUID(),
             kind: .error,
-            message: "Search couldn't be completed. Check Helper/Gateway and try again.",
+            message: "Search couldn't be completed. Check AI provider and Helper status, then try again.",
         )
         var initialState = ComposerState()
         initialState.transientFeedback = initialFeedback
