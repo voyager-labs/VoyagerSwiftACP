@@ -90,18 +90,27 @@ nonisolated public struct SearchResponsePayload: Codable, Equatable, Sendable {
     public let appliedFilters: AppliedFiltersPayload?
     public let items: [JSONValue]?
     public let error: SearchErrorPayload?
+    public let queryOutcome: SearchQueryOutcome?
 
     public init(
         itemCount: Int,
         appliedFilters: AppliedFiltersPayload? = nil,
         items: [JSONValue]? = nil,
         error: SearchErrorPayload? = nil,
+        queryOutcome: SearchQueryOutcome? = nil,
     ) {
         self.itemCount = itemCount
         self.appliedFilters = appliedFilters
         self.items = items
         self.error = error
+        self.queryOutcome = queryOutcome
     }
+}
+
+nonisolated public enum SearchQueryOutcome: String, Codable, Equatable, Sendable {
+    case convertedChanged = "converted_changed"
+    case unchangedResult = "unchanged_result"
+    case fallbackReuse = "fallback_reuse"
 }
 
 nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
