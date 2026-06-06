@@ -223,6 +223,8 @@ extension FileManagerContentFeature {
             ),
         )
 
+        state.navigation.navigationState = nextNavigationState
+
         var navigationEffects: [Effect<Action>] = [
             .send(.internal(.requestNavigation(.internal(.setNavigationState(nextNavigationState))))),
         ]
@@ -251,7 +253,7 @@ extension FileManagerContentFeature {
         if let pending = state.navigation.pendingNavigation {
             return .concatenate(
                 .concatenate(navigationEffects),
-                syncComposerCollectionStateEffect(state),
+                syncComposerCollectionStateEffect(payload: payload, isCollectionMode: state.isCollectionMode),
                 .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
                 .send(.internal(.performPendingNavigation(pending))),
             )
@@ -259,8 +261,27 @@ extension FileManagerContentFeature {
 
         return .concatenate(
             .concatenate(navigationEffects),
-            syncComposerCollectionStateEffect(state),
+            syncComposerCollectionStateEffect(payload: payload, isCollectionMode: state.isCollectionMode),
         )
+    }
+
+    private func syncComposerCollectionStateEffect(
+        payload: CollectionWriteBackNavigationPayload,
+        isCollectionMode: Bool,
+    ) -> Effect<Action> {
+        let openedURL: URL?
+        switch payload.nextNavigation.kind {
+        case .temporary:
+            openedURL = nil
+        case let .file(url, _):
+            openedURL = url
+        }
+        return .send(.composer(.syncCollectionState(
+            context: payload.nextNavigation.context,
+            url: openedURL,
+            compatibility: payload.nextNavigation.compatibility,
+            isCollectionMode: isCollectionMode,
+        )))
     }
 
     func syncComposerCollectionStateEffect(_ state: State) -> Effect<Action> {
