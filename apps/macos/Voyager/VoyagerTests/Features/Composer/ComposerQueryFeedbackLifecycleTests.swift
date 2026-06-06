@@ -80,6 +80,88 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertNil(store.state.lastScopeChangeFeedback?.pendingResultRequest)
     }
 
+    func testFallbackReuseSearchShowsInfoFeedbackWithoutApplyingFilters() {
+        let activeRequestID = UUID()
+        let searchResponse = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(
+                scopes: ["/tmp"],
+                excludedScopes: ["/tmp/excluded"],
+                includeSubfolders: true,
+                includeDirectories: true,
+                conditions: [
+                    VoyagerShared.SearchConditionPayload(
+                        propertyKey: "name",
+                        operator: "contains",
+                        value: .string("draft"),
+                    ),
+                ],
+            ),
+            items: nil,
+            error: nil,
+            queryOutcome: .fallbackReuse,
+        )
+
+        var initialState = searchLoadingState(activeRequestID: activeRequestID)
+        initialState.submittedSearchFilters = VoyagerShared.SearchFiltersPayload(
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/excluded"],
+            includeSubfolders: true,
+            includeDirectories: true,
+            conditions: [],
+        )
+
+        var state = initialState
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)),
+        )
+
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertEqual(state.transientFeedback?.kind, .info)
+        XCTAssertEqual(state.transientFeedback?.message, ComposerQueryFeedbackPolicy.fallbackReuseMessage)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+    }
+
+    func testLegacyOutcomeNilStillAppliesFilters() {
+        let activeRequestID = UUID()
+        let searchResponse = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(
+                scopes: ["/tmp"],
+                conditions: [
+                    VoyagerShared.SearchConditionPayload(
+                        propertyKey: "name",
+                        operator: "contains",
+                        value: .string("draft"),
+                    ),
+                ],
+            ),
+            items: nil,
+            error: nil,
+            queryOutcome: nil,
+        )
+
+        var initialState = searchLoadingState(activeRequestID: activeRequestID)
+        initialState.submittedSearchFilters = VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: [])
+
+        var state = initialState
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)),
+            )
+        }
+
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(state.queryRenderPhase, .chipsAppliedPendingList)
+        XCTAssertNotNil(state.activeFiltersRequestID)
+    }
+
     func testCancelSearchResolvesDelayedScopeFeedback() async {
         let activeRequestID = UUID()
         let initialState = searchLoadingState(activeRequestID: activeRequestID)
@@ -315,15 +397,23 @@ private func changedFiltersSearchResponse() -> VoyagerShared.SearchResponsePaylo
         ),
         items: nil,
         error: nil,
+        queryOutcome: .convertedChanged,
     )
 }
 
 private func noOpSearchResponse() -> VoyagerShared.SearchResponsePayload {
     VoyagerShared.SearchResponsePayload(
         itemCount: 0,
-        appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: ["/tmp"], conditions: []),
+        appliedFilters: VoyagerShared.AppliedFiltersPayload(
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/excluded"],
+            includeSubfolders: true,
+            includeDirectories: true,
+            conditions: [],
+        ),
         items: nil,
         error: nil,
+        queryOutcome: .unchangedResult,
     )
 }
 
@@ -356,6 +446,8 @@ private extension VoyagerShared.SearchFiltersPayload {
         VoyagerShared.AppliedFiltersPayload(
             scopes: scopes,
             excludedScopes: excludedScopes,
+            includeSubfolders: includeSubfolders,
+            includeDirectories: includeDirectories,
             conditions: conditions,
         )
     }

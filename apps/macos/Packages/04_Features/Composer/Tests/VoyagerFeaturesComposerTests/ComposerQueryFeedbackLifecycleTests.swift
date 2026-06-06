@@ -23,6 +23,7 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
             ),
             items: nil,
             error: nil,
+            queryOutcome: .convertedChanged,
         )
 
         var initialState = ComposerState()
@@ -53,9 +54,16 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         let activeRequestID = UUID()
         let searchResponse = VoyagerShared.SearchResponsePayload(
             itemCount: 0,
-            appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: ["/tmp"], conditions: []),
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(
+                scopes: ["/tmp"],
+                excludedScopes: ["/tmp/excluded"],
+                includeSubfolders: true,
+                includeDirectories: true,
+                conditions: [],
+            ),
             items: nil,
             error: nil,
+            queryOutcome: .unchangedResult,
         )
 
         var initialState = ComposerState()
@@ -75,6 +83,96 @@ final class ComposerQueryFeedbackLifecycleTests: XCTestCase {
         XCTAssertNil(state.transientFeedback)
         XCTAssertFalse(state.isLoadingFilters)
         XCTAssertFalse(state.isFilteringInFlight)
+    }
+
+    func testFallbackReuseSearchShowsInfoFeedbackWithoutApplyingFilters() {
+        let activeRequestID = UUID()
+        let searchResponse = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(
+                scopes: ["/tmp"],
+                excludedScopes: ["/tmp/excluded"],
+                includeSubfolders: true,
+                includeDirectories: true,
+                conditions: [
+                    VoyagerShared.SearchConditionPayload(
+                        propertyKey: "name",
+                        operator: "contains",
+                        value: .string("draft"),
+                    ),
+                ],
+            ),
+            items: nil,
+            error: nil,
+            queryOutcome: .fallbackReuse,
+        )
+
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.isLoadingSearch = true
+        initialState.queryRenderPhase = .searching
+        initialState.submittedSearchFilters = VoyagerShared.SearchFiltersPayload(
+            scopes: ["/tmp"],
+            excludedScopes: ["/tmp/excluded"],
+            includeSubfolders: true,
+            includeDirectories: true,
+            conditions: [],
+        )
+        initialState.activeSearchRequestID = activeRequestID
+
+        var state = initialState
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)),
+        )
+
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertEqual(state.transientFeedback?.kind, .info)
+        XCTAssertEqual(state.transientFeedback?.message, ComposerQueryFeedbackPolicy.fallbackReuseMessage)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+    }
+
+    func testLegacyOutcomeNilStillAppliesFilters() {
+        let activeRequestID = UUID()
+        let searchResponse = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(
+                scopes: ["/tmp"],
+                conditions: [
+                    VoyagerShared.SearchConditionPayload(
+                        propertyKey: "name",
+                        operator: "contains",
+                        value: .string("draft"),
+                    ),
+                ],
+            ),
+            items: nil,
+            error: nil,
+            queryOutcome: nil,
+        )
+
+        var initialState = ComposerState()
+        initialState.scopes = ["/tmp"]
+        initialState.isLoadingSearch = true
+        initialState.queryRenderPhase = .searching
+        initialState.submittedSearchFilters = VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: [])
+        initialState.activeSearchRequestID = activeRequestID
+
+        var state = initialState
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: ComposerAction.searchResponse(activeRequestID, .success(searchResponse)),
+            )
+        }
+
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(state.queryRenderPhase, .chipsAppliedPendingList)
+        XCTAssertNotNil(state.activeFiltersRequestID)
     }
 
     func testSearchFailureShowsPolicyErrorFeedback() {
