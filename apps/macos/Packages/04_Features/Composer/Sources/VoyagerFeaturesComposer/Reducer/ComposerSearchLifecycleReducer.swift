@@ -57,7 +57,7 @@ struct ComposerSearchLifecycleReducer {
                     let startedAt = state.searchStartedAt
                     state.searchStartedAt = nil
                     switch queryOutcome {
-                    case .fallbackReuse:
+                    case .fallbackReuse where state.openedCollectionURL == nil:
                         state.isLoadingFilters = false
                         state.isFilteringInFlight = false
                         state.activeFiltersRequestID = nil
@@ -87,7 +87,7 @@ struct ComposerSearchLifecycleReducer {
                             clock: clock,
                         )
 
-                    case .unchangedResult:
+                    case .unchangedResult where state.openedCollectionURL == nil:
                         state.isLoadingFilters = false
                         state.isFilteringInFlight = false
                         state.activeFiltersRequestID = nil
@@ -112,7 +112,7 @@ struct ComposerSearchLifecycleReducer {
                         kComposerSearchLifecycleLogger.debug("Composer query search resolved to unchanged result")
                         return .none
 
-                    case .convertedChanged, nil:
+                    case .convertedChanged, .fallbackReuse, .unchangedResult, nil:
                         let baselineFilters = feedbackBaseline(from: state)
                         let normalizedAppliedFilters = feedbackAppliedFilters(
                             appliedFilters: response.appliedFilters,
@@ -144,7 +144,7 @@ struct ComposerSearchLifecycleReducer {
                             from: .search(requestID),
                             to: .filters(filtersRequestID),
                         )
-                        return .run { send in
+                        let applyEffect: Effect<ComposerFeature.Action> = .run { send in
                             do {
                                 let executionResponse = try await searchClient.applyFilters(
                                     .init(filters: executionFilters),
@@ -158,6 +158,19 @@ struct ComposerSearchLifecycleReducer {
                             }
                         }
                         .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
+
+                        if queryOutcome == .fallbackReuse {
+                            return .merge(
+                                applyEffect,
+                                presentTransientFeedback(
+                                    kind: .info,
+                                    message: ComposerQueryFeedbackPolicy.fallbackReuseMessage,
+                                    state: &state,
+                                    clock: clock,
+                                ),
+                            )
+                        }
+                        return applyEffect
                     }
 
                 case let .failure(error):
