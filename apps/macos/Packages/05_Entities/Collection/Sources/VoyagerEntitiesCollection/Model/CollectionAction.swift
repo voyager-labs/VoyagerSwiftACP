@@ -74,10 +74,16 @@ public struct SaveRequestPayload: Equatable, Sendable {
 public struct CollectionSaveCompletion: Equatable, Sendable {
     public let url: URL
     public let file: VoyagerCollectionFile
+    public let savedContext: CollectionContext?
 
-    public init(url: URL, file: VoyagerCollectionFile) {
+    public init(
+        url: URL,
+        file: VoyagerCollectionFile,
+        savedContext: CollectionContext? = nil,
+    ) {
         self.url = url
         self.file = file
+        self.savedContext = savedContext
     }
 }
 

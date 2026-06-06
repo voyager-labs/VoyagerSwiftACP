@@ -229,6 +229,7 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
 private func resetPendingSave(_ state: inout CollectionState) {
     state.isSaving = false
     state.pendingSave = nil
+    state.pendingSaveContext = nil
 }
 
 private func canStartSave(
@@ -252,6 +253,7 @@ private func handleSaveRequested(
         return showSaveError(failure)
     case let .success(result):
         state.pendingSave = result.snapshot
+        state.pendingSaveContext = result.context
         state.isSaving = true
         return .run { send in
             let initialDirectory = await collectionSavePanelClient.defaultSaveDirectory(
@@ -281,6 +283,7 @@ private func handleSaveToExisting(
         state.isSaving = true
         return performSave(
             snapshot: result.snapshot,
+            savedContext: result.context,
             url: url,
             collectionFileClient: collectionFileClient,
             collectionStalenessClient: collectionStalenessClient,
@@ -294,13 +297,17 @@ private func handleSavePanelResponse(
     collectionFileClient: CollectionFileClient,
     collectionStalenessClient: CollectionStalenessClient,
 ) -> Effect<CollectionAction> {
-    guard let selectedURL, let snapshot = state.pendingSave else {
+    guard let selectedURL,
+          let snapshot = state.pendingSave,
+          let savedContext = state.pendingSaveContext
+    else {
         resetPendingSave(&state)
         return .none
     }
 
     return performSave(
         snapshot: snapshot,
+        savedContext: savedContext,
         url: selectedURL,
         collectionFileClient: collectionFileClient,
         collectionStalenessClient: collectionStalenessClient,
@@ -400,6 +407,7 @@ private func showSaveError(_ failure: CollectionSaveFailure) -> Effect<Collectio
 
 private func performSave(
     snapshot: CollectionSaveSnapshot,
+    savedContext: CollectionContext,
     url: URL,
     collectionFileClient: CollectionFileClient,
     collectionStalenessClient: CollectionStalenessClient,
@@ -416,6 +424,7 @@ private func performSave(
 
     return executeSave(
         request: request,
+        savedContext: savedContext,
         collectionFileClient: collectionFileClient,
     )
 }
@@ -446,12 +455,17 @@ private func buildSaveRequest(
 
 private func executeSave(
     request: CollectionSaveRequest,
+    savedContext: CollectionContext,
     collectionFileClient: CollectionFileClient,
 ) -> Effect<CollectionAction> {
     .run { send in
         do {
             try await collectionFileClient.save(request.file, request.url)
-            await send(.saveCompleted(.success(.init(url: request.url, file: request.file))))
+            await send(.saveCompleted(.success(.init(
+                url: request.url,
+                file: request.file,
+                savedContext: savedContext,
+            ))))
         } catch {
             await send(.saveCompleted(.failure(error)))
         }
