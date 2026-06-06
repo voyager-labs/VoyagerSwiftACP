@@ -1,14 +1,14 @@
 import Foundation
 import VoyagerShared
 
-struct SearchConditionSanitizer {
+nonisolated struct SearchConditionSanitizer {
     private let conditionBuilder: SearchConditionBuilder
 
     init(conditionBuilder: SearchConditionBuilder) {
         self.conditionBuilder = conditionBuilder
     }
 
-    func isVisiblePropertyKey(_ key: String) -> Bool {
+    nonisolated func isVisiblePropertyKey(_ key: String) -> Bool {
         guard let canonicalKey = canonicalPropertyKey(for: key),
               let mapping = conditionBuilder.propertyMap[canonicalKey]
         else {
@@ -17,7 +17,7 @@ struct SearchConditionSanitizer {
         return mapping.uiHidden == false
     }
 
-    func normalizeAndValidate(_ conditions: [SearchConditionPayload]) -> [SearchConditionPayload] {
+    nonisolated func normalizeAndValidate(_ conditions: [SearchConditionPayload]) -> [SearchConditionPayload] {
         var result: [SearchConditionPayload] = []
         result.reserveCapacity(conditions.count)
 
@@ -36,7 +36,7 @@ struct SearchConditionSanitizer {
 }
 
 private extension SearchConditionSanitizer {
-    func normalize(_ condition: SearchConditionPayload) -> SearchConditionPayload? {
+    nonisolated func normalize(_ condition: SearchConditionPayload) -> SearchConditionPayload? {
         guard let canonicalKey = canonicalPropertyKey(for: condition.propertyKey),
               let canonicalOperator = conditionBuilder.canonicalOperatorCode(for: condition.operator)
         else {
@@ -70,11 +70,11 @@ private extension SearchConditionSanitizer {
         )
     }
 
-    func canonicalPropertyKey(for rawKey: String) -> String? {
+    nonisolated func canonicalPropertyKey(for rawKey: String) -> String? {
         conditionBuilder.canonicalVisiblePropertyKey(for: rawKey)
     }
 
-    func isValid(_ condition: SearchConditionPayload) -> Bool {
+    nonisolated func isValid(_ condition: SearchConditionPayload) -> Bool {
         guard let mapping = conditionBuilder.propertyMap[condition.propertyKey],
               mapping.uiHidden == false
         else {
