@@ -205,9 +205,7 @@ nonisolated func resolveGatewayQueryResult(
     let normalizedConditions = conditionSanitizer.normalizeAndValidate(rawConditions)
     let fallbackConditions = conditionSanitizer.normalizeAndValidate(visibleExistingConditions)
     let explicitOutputScopes = SearchScopeNormalizer.normalizeScopes(output.scopes ?? [])
-        .filter { $0 != "/" }
     let baselineExplicitScopes = SearchScopeNormalizer.normalizeScopes(existingFilters.scopes)
-        .filter { $0 != "/" }
     let hasScopeChange = explicitOutputScopes.isEmpty == false
         && explicitOutputScopes != baselineExplicitScopes
 

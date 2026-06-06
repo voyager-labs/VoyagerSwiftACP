@@ -419,6 +419,32 @@ final class GatewayQueryResolutionTests: XCTestCase {
         XCTAssertEqual(result.scopes, ["/"])
     }
 
+    func testResolveGatewayQueryResultMarksConvertedChangedWhenOutputMovesFromSubScopeToRoot() throws {
+        let sanitizer = try makeSanitizer()
+        let baseline = SearchFiltersPayload(
+            scopes: ["/tmp"],
+            excludedScopes: [],
+            includeSubfolders: true,
+            includeDirectories: true,
+            conditions: [SearchConditionPayload(propertyKey: "name", operator: "contains", value: .string("draft"))],
+        )
+
+        let result = resolveGatewayQueryResult(
+            output: GatewayOutput(
+                conditions: [],
+                scopes: ["/"],
+                error: nil,
+            ),
+            existingFilters: baseline,
+            visibleExistingConditions: baseline.conditions,
+            conditionSanitizer: sanitizer,
+        )
+
+        XCTAssertEqual(result.queryOutcome, .convertedChanged)
+        XCTAssertEqual(result.conditions, baseline.conditions)
+        XCTAssertEqual(result.scopes, ["/"])
+    }
+
     private func makeSanitizer() throws -> SearchConditionSanitizer {
         let conditionRegistry: PropertyConditionRegistry =
             try loadRegistry(fileName: "property_condition_registry.json")
