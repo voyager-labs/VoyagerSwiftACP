@@ -343,6 +343,7 @@ private extension JSONValue {
 
 struct AnthropicStreamEvent: Decodable {
     let type: String
+    let index: Int?
     let delta: AnthropicStreamDelta?
     let message: AnthropicMessageResponse?
     let contentBlock: AnthropicContentBlock?
@@ -350,6 +351,7 @@ struct AnthropicStreamEvent: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case type
+        case index
         case delta
         case message
         case contentBlock = "content_block"
@@ -398,4 +400,11 @@ enum AnthropicStreamParsingError: Error, Equatable {
 struct AnthropicStreamDelta: Decodable {
     let type: String?
     let text: String?
+    let partialJSON: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case partialJSON = "partial_json"
+    }
 }
