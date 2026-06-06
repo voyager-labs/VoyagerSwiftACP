@@ -6,6 +6,7 @@ protocol FilterSearchXPCServiceProtocol {
     nonisolated func querySearch(_ requestData: Data, withReply reply: @escaping (Data?, NSError?) -> Void)
     nonisolated func recentSearch(_ requestData: Data, withReply reply: @escaping (Data?, NSError?) -> Void)
     nonisolated func tagSearch(_ requestData: Data, withReply reply: @escaping (Data?, NSError?) -> Void)
+    nonisolated func warmUpAIModelCatalog(_ requestData: Data, withReply reply: @escaping (Data?, NSError?) -> Void)
 }
 
 enum FilterSearchXPCServiceConstants {
