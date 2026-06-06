@@ -3,11 +3,11 @@ import Logging
 
 public enum SearchXPCTransport {
     private nonisolated static let logger = Logger(label: "Voyager.FilterSearchXPC")
-    private nonisolated static let filterTimeoutSeconds: TimeInterval = 20
-    private nonisolated static let queryTimeoutSeconds: TimeInterval = 25
-    private nonisolated static let recentTimeoutSeconds: TimeInterval = 20
-    private nonisolated static let tagTimeoutSeconds: TimeInterval = 20
-    private nonisolated static let modelCatalogWarmupTimeoutSeconds: TimeInterval = 20
+    private nonisolated static let filterTimeoutSeconds = SearchXPCTransportTimeoutPolicy.deterministicSearchSeconds
+    private nonisolated static let queryTimeoutSeconds = SearchXPCTransportTimeoutPolicy.providerBackedQuerySeconds
+    private nonisolated static let recentTimeoutSeconds = SearchXPCTransportTimeoutPolicy.deterministicSearchSeconds
+    private nonisolated static let tagTimeoutSeconds = SearchXPCTransportTimeoutPolicy.deterministicSearchSeconds
+    private nonisolated static let modelCatalogWarmupTimeoutSeconds = SearchXPCTransportTimeoutPolicy.warmupSeconds
 
     public nonisolated static func applyFilters(
         _ request: FiltersOnlyRequestPayload,
@@ -372,6 +372,19 @@ private extension SearchXPCTransport {
             lock.unlock()
         }
     }
+}
+
+enum SearchXPCTransportTimeoutPolicy {
+    static let deterministicSearchSeconds: TimeInterval = 20
+    static let providerModelListSeconds: TimeInterval = 30
+    static let providerStreamingExecutionSeconds: TimeInterval = 300
+    static let providerBackedQueryEnvelopeBufferSeconds: TimeInterval = 30
+    static let warmupSeconds: TimeInterval = 20
+
+    /// provider-backed querySearch는 model list 조회와 streaming provider 실행을 같은 XPC 요청 안에서 수행합니다.
+    static let providerBackedQuerySeconds: TimeInterval = providerModelListSeconds
+        + providerStreamingExecutionSeconds
+        + providerBackedQueryEnvelopeBufferSeconds
 }
 
 private struct HelperSearchError: LocalizedError {
