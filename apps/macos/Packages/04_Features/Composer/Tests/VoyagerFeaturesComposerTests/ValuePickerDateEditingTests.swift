@@ -226,8 +226,8 @@ final class ValuePickerDateEditingTests: XCTestCase {
         let today = ValueNormalizerUtils.formatDateOnly(Date())
         let relativeRaw = "voyager.relativeDate:v1:future:2:week:\(today)"
 
-        XCTAssertEqual(ConditionChipDisplayUtils.displayedDateText(relativeRaw), "In 2 weeks")
-        XCTAssertEqual(ConditionChipDisplayUtils.displayedDateText(today), "Today")
+        XCTAssertEqual(ConditionChipDisplayUtils.displayDateValueText(relativeRaw), "In 2 weeks")
+        XCTAssertEqual(ConditionChipDisplayUtils.displayDateValueText(today), "Today")
         XCTAssertEqual(
             ConditionChipDisplayUtils.displayedValuesForDate(
                 conditionValues: ["2025-05-01", "2025-05-31"],
