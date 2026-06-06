@@ -1,12 +1,15 @@
 import Foundation
+import VoyagerShared
 
-struct AnthropicMessagesCreateRequest: Encodable, Sendable {
+struct AnthropicMessagesCreateRequest: Encodable {
     let model: String
     let maxTokens: Int
     let messages: [AnthropicMessageInput]
     let system: String?
     let thinking: AnthropicThinkingRequest?
     let outputConfig: AnthropicOutputConfig?
+    let tools: [AnthropicToolDefinition]?
+    let toolChoice: AnthropicToolChoice?
     let stream: Bool
 
     init(payload: AiChatProviderRequestPayload) {
@@ -16,6 +19,8 @@ struct AnthropicMessagesCreateRequest: Encodable, Sendable {
         messages = AnthropicMessageInput.makeMessages(from: payload)
         thinking = AnthropicThinkingRequest(payload: payload.thinking)
         outputConfig = AnthropicOutputConfig(payload: payload.thinking)
+        tools = payload.responseContract.map { [AnthropicToolDefinition(contract: $0)] }
+        toolChoice = payload.responseContract.map(AnthropicToolChoice.init(contract:))
         stream = true
     }
 
@@ -26,11 +31,40 @@ struct AnthropicMessagesCreateRequest: Encodable, Sendable {
         case system
         case thinking
         case outputConfig = "output_config"
+        case tools
+        case toolChoice = "tool_choice"
         case stream
     }
 }
 
-struct AnthropicMessageInput: Encodable, Sendable {
+struct AnthropicToolDefinition: Encodable {
+    let name: String
+    let description: String
+    let inputSchema: [String: JSONValue]
+
+    init(contract: AiChatProviderResponseContract) {
+        name = contract.name
+        description = "Return the structured response for this request."
+        inputSchema = contract.schema
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case description
+        case inputSchema = "input_schema"
+    }
+}
+
+struct AnthropicToolChoice: Encodable {
+    let type = "tool"
+    let name: String
+
+    init(contract: AiChatProviderResponseContract) {
+        name = contract.name
+    }
+}
+
+struct AnthropicMessageInput: Encodable {
     let role: String
     let content: [AnthropicInputContent]
 
@@ -52,7 +86,7 @@ struct AnthropicMessageInput: Encodable, Sendable {
                 return AnthropicMessageInput(
                     role: "user",
                     text: message.content,
-                    appendedContent: index == targetUserIndex ? nativeAttachmentContent : []
+                    appendedContent: index == targetUserIndex ? nativeAttachmentContent : [],
                 )
             case .assistant:
                 return AnthropicMessageInput(role: "assistant", text: message.content)
@@ -62,7 +96,9 @@ struct AnthropicMessageInput: Encodable, Sendable {
         }
     }
 
-    private static func nativeAttachmentContentBlocks(from payload: AiChatProviderRequestPayload) -> [AnthropicInputContent] {
+    private static func nativeAttachmentContentBlocks(from payload: AiChatProviderRequestPayload)
+        -> [AnthropicInputContent]
+    {
         payload.context.requestContext.parts.compactMap { part in
             nativeAttachmentContentBlock(from: part, payload: payload)
         }
@@ -82,7 +118,7 @@ struct AnthropicMessageInput: Encodable, Sendable {
             fileExtension: preferredFileExtension(filename: filename, metadata: metadata),
             detectedMIMEType: declaredMIMEType,
             detectedContentTypeIdentifier: metadata["contentTypeIdentifier"],
-            sizeBytes: preferredByteCount(part: part, metadata: metadata)
+            sizeBytes: preferredByteCount(part: part, metadata: metadata),
         ))
         guard case let .providerNativeUpload(capabilityKind, normalizedMIMEType) = capability.disposition,
               capabilityKind == kind
@@ -180,10 +216,17 @@ struct AnthropicMessageInput: Encodable, Sendable {
     }
 }
 
-enum AnthropicInputContent: Encodable, Sendable {
+enum AnthropicInputContent: Encodable {
     case text(String)
     case image(mediaType: String, data: String)
     case document(mediaType: String, data: String, title: String)
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case source
+        case title
+    }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -200,16 +243,9 @@ enum AnthropicInputContent: Encodable, Sendable {
             try container.encode(AnthropicBase64Source(mediaType: mediaType, data: data), forKey: .source)
         }
     }
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case text
-        case source
-        case title
-    }
 }
 
-struct AnthropicBase64Source: Encodable, Sendable {
+struct AnthropicBase64Source: Encodable {
     let type = "base64"
     let mediaType: String
     let data: String
@@ -221,7 +257,7 @@ struct AnthropicBase64Source: Encodable, Sendable {
     }
 }
 
-struct AnthropicOutputConfig: Encodable, Sendable {
+struct AnthropicOutputConfig: Encodable {
     let effort: String
 
     init?(payload: AiChatProviderThinkingPayload?) {
@@ -237,7 +273,7 @@ struct AnthropicOutputConfig: Encodable, Sendable {
     }
 }
 
-struct AnthropicThinkingRequest: Encodable, Sendable {
+struct AnthropicThinkingRequest: Encodable {
     let type: String
     let budgetTokens: Int?
     let display: String?
@@ -270,7 +306,7 @@ struct AnthropicThinkingRequest: Encodable, Sendable {
     }
 }
 
-struct AnthropicMessageResponse: Decodable, Sendable {
+struct AnthropicMessageResponse: Decodable {
     let content: [AnthropicContentBlock]
 
     var resolvedText: String? {
@@ -279,16 +315,33 @@ struct AnthropicMessageResponse: Decodable, Sendable {
             .compactMap(\.text)
             .joined()
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : text
+        if text.isEmpty == false {
+            return text
+        }
+
+        for block in content where block.type == "tool_use" {
+            if let inputText = block.input?.jsonObjectString(), inputText.isEmpty == false {
+                return inputText
+            }
+        }
+        return nil
     }
 }
 
-struct AnthropicContentBlock: Decodable, Sendable {
+struct AnthropicContentBlock: Decodable {
     let type: String
     let text: String?
+    let input: JSONValue?
 }
 
-struct AnthropicStreamEvent: Decodable, Sendable {
+private extension JSONValue {
+    func jsonObjectString() -> String? {
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
+struct AnthropicStreamEvent: Decodable {
     let type: String
     let delta: AnthropicStreamDelta?
     let message: AnthropicMessageResponse?
@@ -304,7 +357,7 @@ struct AnthropicStreamEvent: Decodable, Sendable {
     }
 }
 
-struct AnthropicStreamError: Decodable, Sendable, Equatable {
+struct AnthropicStreamError: Decodable, Equatable {
     let type: String?
     let message: String?
 }
@@ -332,7 +385,8 @@ enum AnthropicStreamParsingError: Error, Equatable {
             default:
                 if let message = error?.message?.lowercased(),
                    message.contains("credit") || message.contains("quota") || message.contains("billing")
-                   || message.contains("balance") || message.contains("payment") {
+                   || message.contains("balance") || message.contains("payment")
+                {
                     return .quotaExceeded
                 }
                 return .invalidRequest
@@ -341,7 +395,7 @@ enum AnthropicStreamParsingError: Error, Equatable {
     }
 }
 
-struct AnthropicStreamDelta: Decodable, Sendable {
+struct AnthropicStreamDelta: Decodable {
     let type: String?
     let text: String?
 }
