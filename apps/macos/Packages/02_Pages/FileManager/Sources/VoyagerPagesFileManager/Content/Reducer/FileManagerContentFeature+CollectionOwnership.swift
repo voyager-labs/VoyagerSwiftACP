@@ -53,6 +53,9 @@ extension FileManagerContentFeature {
         case let .collection(.delegate(.writeBackNavigationPrepared(payload))):
             handleCollectionWriteBackPrepared(payload: payload, state: &state)
 
+        case let .collection(.delegate(.saveFeedback(payload))):
+            handleCollectionSaveFeedback(payload: payload, state: &state)
+
         case let .collection(.delegate(delegateAction)):
             handleCollectionDelegateAction(delegateAction, state: &state)
 
@@ -144,7 +147,34 @@ extension FileManagerContentFeature {
 
         case .writeBackNavigationPrepared:
             .none
+
+        case .saveFeedback:
+            .none
         }
+    }
+
+    private func handleCollectionSaveFeedback(
+        payload: CollectionSaveFeedback,
+        state: inout State,
+    ) -> Effect<Action> {
+        let feedback = ComposerTransientFeedback(
+            id: UUID(),
+            kind: .error,
+            message: "\(payload.title)\n\(payload.message)",
+            stage: .save,
+            category: payload.stage == .saveBlocked ? .saveBlocked : .saveFailed,
+            recoveryHint: payload.recoveryHint,
+        )
+        state.composer.isPresented = true
+        state.composer.transientFeedback = feedback
+        return .concatenate(
+            .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
+            .run { [feedbackID = feedback.id] send in
+                try await Task.sleep(for: .seconds(4))
+                await send(.composer(.dismissTransientFeedback(id: feedbackID)))
+            }
+            .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true),
+        )
     }
 
     private func handleCollectionSearchResultPrepared(
@@ -195,6 +225,8 @@ extension FileManagerContentFeature {
             ),
         )
 
+        state.navigation.navigationState = nextNavigationState
+
         var navigationEffects: [Effect<Action>] = [
             .send(.internal(.requestNavigation(.internal(.setNavigationState(nextNavigationState))))),
         ]
@@ -223,7 +255,7 @@ extension FileManagerContentFeature {
         if let pending = state.navigation.pendingNavigation {
             return .concatenate(
                 .concatenate(navigationEffects),
-                syncComposerCollectionStateEffect(state),
+                syncComposerCollectionStateEffect(payload: payload, isCollectionMode: state.isCollectionMode),
                 .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
                 .send(.internal(.performPendingNavigation(pending))),
             )
@@ -231,8 +263,26 @@ extension FileManagerContentFeature {
 
         return .concatenate(
             .concatenate(navigationEffects),
-            syncComposerCollectionStateEffect(state),
+            syncComposerCollectionStateEffect(payload: payload, isCollectionMode: state.isCollectionMode),
         )
+    }
+
+    private func syncComposerCollectionStateEffect(
+        payload: CollectionWriteBackNavigationPayload,
+        isCollectionMode: Bool,
+    ) -> Effect<Action> {
+        let openedURL: URL? = switch payload.nextNavigation.kind {
+        case .temporary:
+            nil
+        case let .file(url, _):
+            url
+        }
+        return .send(.composer(.syncCollectionState(
+            context: payload.nextNavigation.context,
+            url: openedURL,
+            compatibility: payload.nextNavigation.compatibility,
+            isCollectionMode: isCollectionMode,
+        )))
     }
 
     func syncComposerCollectionStateEffect(_ state: State) -> Effect<Action> {

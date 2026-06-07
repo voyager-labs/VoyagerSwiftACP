@@ -32,6 +32,7 @@
         "gte",
         "lt",
         "lte",
+        "today",
         "btw",
         "nbtw"
       ]
@@ -233,6 +234,21 @@
       "ui_value_kind": {
         "number": "singleNumber",
         "date": "singleDate"
+      }
+    },
+    "today": {
+      "ui_label": "Is today",
+      "mdquery_operator": "TODAY",
+      "value_shape": "none",
+      "value_count": 0,
+      "allowed_types": [
+        "date"
+      ],
+      "aliases": [
+        "today"
+      ],
+      "ui_value_kind": {
+        "date": "none"
       }
     },
     "btw": {

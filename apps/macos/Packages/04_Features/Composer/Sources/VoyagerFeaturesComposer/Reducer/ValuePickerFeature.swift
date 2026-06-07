@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerEntitiesTag
+import VoyagerShared
 
 @Reducer
 public struct ValuePickerFeature {
@@ -96,6 +97,12 @@ public struct ValuePickerFeature {
                     state.unitValueState = nil
                 }
 
+                state.dateValueState = prepareDateValueState(
+                    values: state.values,
+                    valueType: state.valueType,
+                    valueArity: state.valueArity,
+                )
+
                 state.isPresented = true
                 return .none
 
@@ -103,16 +110,92 @@ public struct ValuePickerFeature {
                 ensureEditableValues(state: &state)
                 guard state.values.indices.contains(index) else { return .none }
                 state.values[index] = text
+                if index == 0,
+                   isSingleDateEditing(state),
+                   let parsed = ValueNormalizerUtils.parseDate(text)
+                {
+                    state.dateValueState?.selectedDate = parsed
+                    state.dateValueState?.mode = isToday(parsed) ? .today : .absolute
+                }
+                return .none
+
+            case let .setDateMode(mode):
+                guard var dateValueState = state.dateValueState else { return .none }
+                dateValueState.mode = mode
+                switch mode {
+                case .absolute:
+                    break
+                case .relative:
+                    dateValueState.relativePreset = .custom
+                    syncRelativeSelectedDate(&dateValueState)
+                case .today:
+                    dateValueState.relativePreset = .today
+                    dateValueState.selectedDate = DateNormalizerUtils.normalizedDay(Date())
+                }
+                state.dateValueState = dateValueState
+                state.errorMessage = nil
+                return .none
+
+            case let .setDateSelection(date):
+                guard var dateValueState = state.dateValueState else { return .none }
+                if dateValueState.mode == .relative {
+                    syncRelativeSelectedDate(&dateValueState)
+                    state.dateValueState = dateValueState
+                    state.errorMessage = nil
+                    return .none
+                }
+                let normalized = DateNormalizerUtils.normalizedDay(date)
+                dateValueState.selectedDate = normalized
+                dateValueState.mode = isToday(normalized) ? .today : .absolute
+                state.dateValueState = dateValueState
+                state.errorMessage = nil
+                return .none
+
+            case let .setRelativeDateDirection(direction):
+                guard var dateValueState = state.dateValueState else { return .none }
+                dateValueState.relativeDirection = direction
+                dateValueState.mode = .relative
+                dateValueState.relativePreset = .custom
+                syncRelativeSelectedDate(&dateValueState)
+                state.dateValueState = dateValueState
+                state.errorMessage = nil
+                return .none
+
+            case let .setRelativeDateAmount(amount):
+                guard var dateValueState = state.dateValueState else { return .none }
+                dateValueState.relativeAmount = max(1, amount)
+                dateValueState.mode = .relative
+                dateValueState.relativePreset = .custom
+                syncRelativeSelectedDate(&dateValueState)
+                state.dateValueState = dateValueState
+                state.errorMessage = nil
+                return .none
+
+            case let .setRelativeDateUnit(unit):
+                guard var dateValueState = state.dateValueState else { return .none }
+                dateValueState.relativeUnit = unit
+                dateValueState.mode = .relative
+                dateValueState.relativePreset = .custom
+                syncRelativeSelectedDate(&dateValueState)
+                state.dateValueState = dateValueState
+                state.errorMessage = nil
+                return .none
+
+            case let .setRelativeDatePreset(preset):
+                guard var dateValueState = state.dateValueState else { return .none }
+                applyRelativePreset(preset, to: &dateValueState)
+                state.dateValueState = dateValueState
+                state.errorMessage = nil
                 return .none
 
             case let .selectUnit(unitCode):
                 guard let propertyKey = state.propertyKey,
-                      let spec = resolvedUnitSpec(
+                      resolvedUnitSpec(
                           propertyKey: propertyKey,
                           valueType: state.valueType,
                           tokenMode: false,
                           registryClient: registryClient,
-                      ),
+                      ) != nil,
                       let unitValueState = state.unitValueState,
                       unitValueState.availableUnitCodes.contains(unitCode)
                 else {
@@ -157,6 +240,10 @@ public struct ValuePickerFeature {
                       state.operatorCode != nil
                 else {
                     return .none
+                }
+
+                if let dateCommitEffect = commitSemanticDateIfNeeded(state: &state, propertyKey: propertyKey) {
+                    return dateCommitEffect
                 }
 
                 let tokenMode = ValuePickerTokenUtils.isTokenMode(
@@ -257,6 +344,7 @@ private func resetValuePickerState(state: inout ValuePickerState) {
     state.valueType = "string"
     state.valueUIKind = "singleText"
     state.valueArity = 1
+    state.dateValueState = nil
 }
 
 private func ensureEditableValues(state: inout ValuePickerState) {

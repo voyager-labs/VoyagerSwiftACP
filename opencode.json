@@ -20,11 +20,6 @@
       "type": "local",
       "command": ["npx", "-y", "xcodebuildmcp@latest", "mcp"],
       "enabled": true
-    },
-    "codegraph": {
-      "type": "local",
-      "command": ["npx", "-y", "@colbymchenry/codegraph@0.9.6", "serve", "--mcp"],
-      "enabled": true
     }
   },
   "formatter": {

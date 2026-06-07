@@ -20,6 +20,8 @@ extension SpotlightQueryCompiler {
                 condition: condition,
                 dateMdqueryOperator: dateMdqueryOperator,
             )
+        case .today:
+            buildTodayClause(attribute: attribute)
         }
     }
 
@@ -65,14 +67,64 @@ extension SpotlightQueryCompiler {
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
         )
-        let dayRange = try resolveDayRange(
+
+        if isRecentsTodayPushdownLiteral(
+            literal,
+            propertyKey: condition.propertyKey,
+            operatorCode: condition.operator,
+        ) {
+            return buildTodayDateComparisonClause(
+                attribute: attribute,
+                literal: literal,
+                dateMdqueryOperator: dateMdqueryOperator,
+            )
+        }
+
+        return try buildResolvedDateComparisonClause(
+            attribute: attribute,
             literal: literal,
             propertyKey: condition.propertyKey,
             operatorCode: condition.operator,
+            dateMdqueryOperator: dateMdqueryOperator,
         )
+    }
 
-        let startExpr = dateExpression(SearchDateUtils.dayLiteral(dayRange.start))
-        let endExpr = dateExpression(SearchDateUtils.dayLiteral(dayRange.endExclusive))
+    private func buildTodayDateComparisonClause(
+        attribute: String,
+        literal: String,
+        dateMdqueryOperator: DateMdqueryOperator,
+    ) -> String {
+        let expression = dateExpression(literal)
+        switch dateMdqueryOperator {
+        case .eq:
+            return "(\(attribute) == \(expression))"
+        case .neq:
+            return "(\(attribute) != \(expression))"
+        case .gt:
+            return "\(attribute) > \(expression)"
+        case .gte:
+            return "\(attribute) >= \(expression)"
+        case .lt:
+            return "\(attribute) < \(expression)"
+        case .lte:
+            return "\(attribute) <= \(expression)"
+        case .range, .notRange, .today:
+            preconditionFailure("Today comparison clause does not support this operator")
+        }
+    }
+
+    private func buildResolvedDateComparisonClause(
+        attribute: String,
+        literal: String,
+        propertyKey: String,
+        operatorCode: String,
+        dateMdqueryOperator: DateMdqueryOperator,
+    ) throws -> String {
+        let (startExpr, endExpr) = try resolveSingleDateExpressions(
+            literal: literal,
+            propertyKey: propertyKey,
+            operatorCode: operatorCode,
+        )
 
         switch dateMdqueryOperator {
         case .eq:
@@ -87,12 +139,50 @@ extension SpotlightQueryCompiler {
             return "\(attribute) < \(startExpr)"
         case .lte:
             return "\(attribute) < \(endExpr)"
-        case .range, .notRange:
+        case .range, .notRange, .today:
             throw CompileError.unsupportedOperator(
-                propertyKey: condition.propertyKey,
-                operatorCode: condition.operator,
+                propertyKey: propertyKey,
+                operatorCode: operatorCode,
             )
         }
+    }
+
+    private func isRecentsTodayPushdownLiteral(
+        _ literal: String,
+        propertyKey: String,
+        operatorCode: String,
+    ) -> Bool {
+        literal.trimmingCharacters(in: .whitespacesAndNewlines) == SearchDateUtils.recentsTodayLiteral
+            && propertyKey == "last_used_date"
+            && operatorCode == "gt"
+    }
+
+    private func buildTodayClause(attribute: String) -> String {
+        let startExpr = todayExpression(0)
+        let endExpr = todayExpression(1)
+        return "(\(attribute) >= \(startExpr) && \(attribute) < \(endExpr))"
+    }
+
+    private func resolveSingleDateExpressions(
+        literal: String,
+        propertyKey: String,
+        operatorCode: String,
+    ) throws -> (startExpr: String, endExpr: String) {
+        if let offset = SearchDateUtils.todayOffset(for: literal) {
+            return (todayExpression(offset), todayExpression(offset + 1))
+        }
+
+        guard let resolved = SearchDateUtils.resolveDateLiteral(literal) else {
+            throw CompileError.invalidValue(propertyKey: propertyKey, operatorCode: operatorCode)
+        }
+        guard let dayRange = SearchDateUtils.dayRange(for: resolved) else {
+            throw CompileError.invalidValue(propertyKey: propertyKey, operatorCode: operatorCode)
+        }
+
+        return (
+            dateExpression(SearchDateUtils.dayLiteral(dayRange.0)),
+            dateExpression(SearchDateUtils.dayLiteral(dayRange.1)),
+        )
     }
 
     private func resolveDayRange(
@@ -122,5 +212,9 @@ extension SpotlightQueryCompiler {
         }
 
         return "\"\(escapeLiteral(trimmed))\""
+    }
+
+    private func todayExpression(_ offset: Int) -> String {
+        SearchDateUtils.todayLiteral(offset: offset)
     }
 }

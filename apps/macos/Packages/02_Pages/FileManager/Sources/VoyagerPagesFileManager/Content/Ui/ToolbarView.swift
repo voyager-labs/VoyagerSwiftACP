@@ -162,7 +162,7 @@ struct ToolbarView: View {
                     openedCollectionName: state.collection.collectionSession.document?.name,
                     collectionStatus: .init(
                         isCollectionMode: state.isCollectionMode,
-                        openedCollectionURLExists: state.collection.collectionSession.document?.url != nil,
+                        openedCollectionURLExists: state.openedCollectionURLExists,
                         isOpenedCollectionDirty: state.isOpenedCollectionDirty,
                         isOpenedCollectionStale: state.isCollectionMode && state.collection.collectionSession.phase
                             .isStale,
@@ -284,10 +284,7 @@ struct ToolbarView: View {
     private func titleContent(viewStore: ViewStore<ViewState, FileManagerContentFeature.Action>) -> some View {
         let isShowingCollection = viewStore
             .isCollectionMode || (viewStore.isOpeningCollectionFile && viewStore.openedCollectionName != nil)
-        let titleText = viewStore.openedCollectionName
-            ?? (viewStore.isCollectionMode
-                ? "New Collection"
-                : viewStore.toolbarTitle)
+        let titleText = viewStore.openedCollectionName ?? viewStore.toolbarTitle
         let composeSuffix = "/ Compose a filter"
         let showUnsavedIndicator = viewStore.collectionStatus.showsUnsavedIndicator
         let showStaleIndicator = viewStore.collectionStatus.showsStaleIndicator

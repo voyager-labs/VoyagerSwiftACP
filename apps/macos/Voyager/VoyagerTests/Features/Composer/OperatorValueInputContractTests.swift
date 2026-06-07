@@ -139,6 +139,66 @@ final class OperatorValueInputContractTests: XCTestCase {
         }
     }
 
+    func testRemoveSeededTagConditionResetsIncludeDirectories() async {
+        var initial = makeTagSeedState()
+        let store = TestStore(initialState: initial) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.registryClient = makeTagRegistryClient()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.removeCondition(propertyKey: "tag_names"))
+
+        XCTAssertFalse(store.state.includeDirectories)
+        XCTAssertTrue(store.state.conditions.isEmpty)
+    }
+
+    func testReplacingSeededTagConditionResetsIncludeDirectories() async {
+        let store = TestStore(initialState: makeTagSeedState()) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.registryClient = makeTagRegistryClient()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.replaceConditionProperty(originalKey: "tag_names", propertyKey: "name_stem"))
+
+        XCTAssertFalse(store.state.includeDirectories)
+        XCTAssertEqual(store.state.conditions.first?.propertyKey, "name_stem")
+        XCTAssertNil(store.state.conditions.first?.operatorCode)
+        XCTAssertNil(store.state.conditions.first?.values)
+    }
+
+    func testChangingSeededTagOperatorAwayFromAnyResetsIncludeDirectories() async {
+        let store = TestStore(initialState: makeTagSeedState()) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.registryClient = makeTagRegistryClient()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.setOperator(propertyKey: "tag_names", operatorCode: "eq"))
+
+        XCTAssertFalse(store.state.includeDirectories)
+        XCTAssertEqual(store.state.conditions.first?.propertyKey, "tag_names")
+        XCTAssertEqual(store.state.conditions.first?.operatorCode, "eq")
+    }
+
+    func testClearingSeededTagValuesResetsIncludeDirectories() async {
+        let store = TestStore(initialState: makeTagSeedState()) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.registryClient = makeTagRegistryClient()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.setValue(propertyKey: "tag_names", values: []))
+
+        XCTAssertFalse(store.state.includeDirectories)
+        XCTAssertEqual(store.state.conditions.first?.values, [])
+    }
+
     private func makeState() -> ComposerState {
         var state = ComposerState()
         state.scopes = ["/tmp"]
@@ -156,6 +216,51 @@ final class OperatorValueInputContractTests: XCTestCase {
             ),
         ]
         return state
+    }
+
+    private func makeTagSeedState() -> ComposerState {
+        var state = ComposerState()
+        state.includeDirectories = true
+        state.conditions = [makeTagCondition()]
+        return state
+    }
+
+    private func makeTagCondition() -> Condition {
+        .init(
+            propertyKey: "tag_names",
+            propertyLabel: "Tags",
+            propertyType: "categorical",
+            operatorCode: "any",
+            operatorLabel: "Any",
+            operatorValueArity: 1,
+            operatorValueUIKind: "tokenList",
+            valueType: "string",
+            values: ["Work"],
+        )
+    }
+
+    private func makeTagRegistryClient() -> RegistryClient {
+        .init(
+            allProperties: { [] },
+            labelForKey: { key in key == "tag_names" ? "Tags" : "Name" },
+            propertyTypeString: { key in key == "tag_names" ? "categorical" : "string" },
+            propertyUnitSpec: { _ in nil },
+            operatorCodes: { key in key == "tag_names" ? ["any", "eq"] : ["contains"] },
+            operatorDefinition: { code in
+                .init(
+                    uiLabel: code == "any" ? "Any" : code,
+                    mdqueryOperator: nil,
+                    valueShape: .single,
+                    valueCount: .fixed(1),
+                    allowedTypes: nil,
+                    inverseOf: nil,
+                    aliases: nil,
+                    uiValueKind: ["categorical": "tokenList", "string": "singleText"],
+                )
+            },
+            operatorValueUIKind: { code, _ in code == "any" ? "tokenList" : "singleText" },
+            resolvePropertyKey: { .canonical($0) },
+        )
     }
 
     private func makeRegistryClient() -> RegistryClient {

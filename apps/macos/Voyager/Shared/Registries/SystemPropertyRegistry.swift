@@ -1,6 +1,6 @@
 import Foundation
 
-struct SystemPropertyDefinition: Decodable, Equatable {
+nonisolated struct SystemPropertyDefinition: Decodable, Equatable {
     let uiLabel: String?
     let description: String
     let type: String
@@ -28,7 +28,7 @@ struct SystemPropertyDefinition: Decodable, Equatable {
     }
 }
 
-struct SystemPropertyUnitSpec: Decodable, Equatable {
+nonisolated struct SystemPropertyUnitSpec: Decodable, Equatable {
     let canonicalUnit: String
     let units: [SystemPropertyUnitOption]
     let defaultDisplayUnit: String
@@ -40,7 +40,7 @@ struct SystemPropertyUnitSpec: Decodable, Equatable {
     }
 }
 
-struct SystemPropertyUnitOption: Decodable, Equatable {
+nonisolated struct SystemPropertyUnitOption: Decodable, Equatable {
     let code: String
     let label: String
     let factorToCanonical: String
@@ -52,7 +52,7 @@ struct SystemPropertyUnitOption: Decodable, Equatable {
     }
 }
 
-struct SystemPropertyRegistry: Decodable {
+nonisolated struct SystemPropertyRegistry: Decodable {
     let kind: String?
     let version: String?
     let categories: [String: [String: SystemPropertyDefinition]]

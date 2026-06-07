@@ -36,6 +36,7 @@ public struct CollectionOpenRestorationPayload: Equatable, Sendable {
 public struct CollectionNavigationStatePayload: Equatable, Sendable {
     public let context: CollectionContext
     public let includeSubfolders: Bool
+    public let includeDirectories: Bool
     public let document: CollectionOpenedDocumentState?
     public let baseline: CollectionBaseline?
     public let composerText: String
@@ -45,16 +46,18 @@ public struct CollectionNavigationStatePayload: Equatable, Sendable {
 
     public init(
         context: CollectionContext,
-        includeSubfolders: Bool? = nil,
+        includeSubfolders: Bool? = nil, // swiftlint:disable:this function_default_parameter_at_end
+        includeDirectories: Bool? = nil, // swiftlint:disable:this function_default_parameter_at_end
         document: CollectionOpenedDocumentState?,
         baseline: CollectionBaseline?,
         composerText: String,
         scopes: [String],
-        excludedScopes: [String]? = nil,
+        excludedScopes: [String]? = nil, // swiftlint:disable:this function_default_parameter_at_end
         conditions: [Condition],
     ) {
         self.context = context
         self.includeSubfolders = includeSubfolders ?? context.includeSubfolders
+        self.includeDirectories = includeDirectories ?? context.includeDirectories
         self.document = document
         self.baseline = baseline
         self.composerText = composerText
