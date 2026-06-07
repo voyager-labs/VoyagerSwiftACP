@@ -14,6 +14,8 @@ enum FileManagerContentComposerCoordinator {
         let registryClient: RegistryClient
     }
 
+    private static let composerOpenMetricName = "voyager_composer_open"
+
     static func reduce(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
@@ -198,7 +200,7 @@ enum FileManagerContentComposerCoordinator {
         }
 
         dependencies.metricsClient.logMetric(
-            "voyager_composer_open",
+            composerOpenMetricName,
             1,
             nil,
         )
