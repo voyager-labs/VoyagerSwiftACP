@@ -36,6 +36,7 @@ public enum CollectionAction: CasePathable, Sendable {
         case draftRestorePrepared(CollectionDraftRestorePayload)
         case searchResultPrepared(CollectionSearchResultPayload)
         case writeBackNavigationPrepared(CollectionWriteBackNavigationPayload)
+        case saveFeedback(CollectionSaveFeedback)
     }
 }
 
@@ -73,9 +74,56 @@ public struct SaveRequestPayload: Equatable, Sendable {
 public struct CollectionSaveCompletion: Equatable, Sendable {
     public let url: URL
     public let file: VoyagerCollectionFile
+    public let savedContext: CollectionContext?
 
-    public init(url: URL, file: VoyagerCollectionFile) {
+    public init(
+        url: URL,
+        file: VoyagerCollectionFile,
+        savedContext: CollectionContext? = nil,
+    ) {
         self.url = url
         self.file = file
+        self.savedContext = savedContext
+    }
+}
+
+public struct CollectionSaveFeedback: Equatable, Sendable {
+    public enum Stage: Equatable, Sendable {
+        case saveBlocked
+        case saveFailed
+    }
+
+    public enum Category: Equatable, Sendable {
+        case emptyContent
+        case incompleteCondition
+        case invalidConditionValue
+        case futureMinorReadOnly
+        case saveFailed
+    }
+
+    public let stage: Stage
+    public let category: Category
+    public let title: String
+    public let message: String
+    public let recoveryHint: String?
+    public let propertyLabel: String?
+    public let isRetryable: Bool
+
+    public init(
+        stage: Stage,
+        category: Category,
+        title: String,
+        message: String,
+        recoveryHint: String? = nil,
+        propertyLabel: String? = nil,
+        isRetryable: Bool,
+    ) {
+        self.stage = stage
+        self.category = category
+        self.title = title
+        self.message = message
+        self.recoveryHint = recoveryHint
+        self.propertyLabel = propertyLabel
+        self.isRetryable = isRetryable
     }
 }

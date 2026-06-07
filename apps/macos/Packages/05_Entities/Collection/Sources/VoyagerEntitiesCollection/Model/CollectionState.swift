@@ -5,6 +5,7 @@ import VoyagerShared
 @ObservableState
 public struct CollectionState: Equatable {
     public var pendingSave: CollectionSaveSnapshot?
+    public var pendingSaveContext: CollectionContext?
     public var isSaving: Bool = false
 
     public var collectionSession: CollectionDocumentSessionState = .init()
@@ -12,11 +13,13 @@ public struct CollectionState: Equatable {
 
     public init(
         pendingSave: CollectionSaveSnapshot? = nil,
+        pendingSaveContext: CollectionContext? = nil,
         isSaving: Bool = false,
         collectionSession: CollectionDocumentSessionState = .init(),
         collectionContext: CollectionContext? = nil,
     ) {
         self.pendingSave = pendingSave
+        self.pendingSaveContext = pendingSaveContext
         self.isSaving = isSaving
         self.collectionSession = collectionSession
         self.collectionContext = collectionContext
@@ -162,29 +165,20 @@ public extension CollectionState {
     mutating func completeWriteBack(_ completion: CollectionSaveCompletion) -> CollectionWriteBackNavigationPayload {
         let previousURL = collectionSession.document?.url
         let previousHistoryNavigation = makeBaselineHistoryNavigationPresentationPayload()
-        let shouldAppendHistory = previousURL?.path != completion.url.path
+        let shouldAppendHistory = previousURL != nil && previousURL?.path != completion.url.path
         let compatibility = VoyagerCollectionFileCompatibilityOwner.compatibilityForCurrentFile(completion.file)
 
-        if completion.file.snapshotMeta != nil,
-           collectionSession.phase.openKind == .hydratedSnapshot,
-           collectionSession.document?.url.standardizedFileURL.path == completion.url.standardizedFileURL.path
-        {
-            let refreshedAt = completion.file.snapshotMeta?.capturedAt ?? completion.file.updatedAt
-            collectionSession.completeWriteBackSuccess(at: refreshedAt)
-        }
+        let refreshedAt = completion.file.snapshotMeta?.capturedAt ?? completion.file.updatedAt
 
-        if collectionSession.document == nil {
-            collectionSession.document = .init(
-                url: completion.url,
-                name: completion.url.deletingPathExtension().lastPathComponent,
-                compatibility: compatibility,
-            )
-        } else {
-            collectionSession.document?.url = completion.url
-            collectionSession.document?.name = completion.url.deletingPathExtension().lastPathComponent
-            collectionSession.document?.compatibility = compatibility
-        }
-        collectionSession.metadata.baseline = collectionContext.map(CollectionBaseline.init(context:))
+        collectionSession.document = .init(
+            url: completion.url,
+            name: completion.url.deletingPathExtension().lastPathComponent,
+            compatibility: compatibility,
+        )
+        let savedContext = completion.savedContext ?? collectionContext
+        collectionSession.metadata.baseline = savedContext.map(CollectionBaseline.init(context:))
+        collectionContext = savedContext
+        collectionSession.completeWriteBackSuccess(at: refreshedAt)
 
         return CollectionWriteBackNavigationPayload(
             nextNavigation: makeNavigationPresentationPayload(compatibility: compatibility),

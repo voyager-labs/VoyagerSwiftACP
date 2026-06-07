@@ -58,7 +58,7 @@ enum FileManagerContentChromePropsBuilder {
                 && state.content.collection.collectionSession.metadata.baseline != nil
                 && state.content.isOpenedCollectionDirty,
             canSaveCollection: state.content.canSaveCollection,
-            isTemporaryCollection: state.content.collection.collectionSession.document?.url == nil,
+            isTemporaryCollection: !state.content.openedCollectionURLExists,
         )
     }
 
