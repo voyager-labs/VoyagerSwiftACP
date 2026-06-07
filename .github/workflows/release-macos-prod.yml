@@ -160,31 +160,6 @@ jobs:
             ${{ env.BUILD_DIR }}/Voyager-${{ steps.version.outputs.version }}.zip
             ${{ env.BUILD_DIR }}/appcast.xml
 
-      - name: Cleanup temp signing keychain
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          keychain="${SIGNING_KEYCHAIN}"
-          keychain_file="${keychain}.keychain"
-          keychain_db="${keychain}.keychain-db"
-
-          security delete-keychain "${keychain}" 2>/dev/null || true
-          security delete-keychain "${keychain_file}" 2>/dev/null || true
-          security delete-keychain "${keychain_db}" 2>/dev/null || true
-          security delete-keychain "${HOME}/Library/Keychains/${keychain}" 2>/dev/null || true
-          security delete-keychain "${HOME}/Library/Keychains/${keychain_file}" 2>/dev/null || true
-          security delete-keychain "${HOME}/Library/Keychains/${keychain_db}" 2>/dev/null || true
-
-          rm -f \
-            "${keychain}" \
-            "${keychain_file}" \
-            "${keychain_db}" \
-            "${HOME}/Library/Keychains/${keychain}" \
-            "${HOME}/Library/Keychains/${keychain_file}" \
-            "${HOME}/Library/Keychains/${keychain_db}" \
-            || true
-
   upload-release:
     name: Upload release artifacts (prod)
     needs: build-notarize
