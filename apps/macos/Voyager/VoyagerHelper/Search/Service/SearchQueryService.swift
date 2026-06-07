@@ -44,12 +44,7 @@ struct SearchQueryService {
     ) -> SearchResponsePayload {
         SearchResponsePayload(
             itemCount: 0,
-            appliedFilters: AppliedFiltersPayload(
-                scopes: fallbackFilters.scopes,
-                excludedScopes: fallbackFilters.excludedScopes,
-                includeSubfolders: fallbackFilters.includeSubfolders,
-                conditions: fallbackFilters.conditions,
-            ),
+            appliedFilters: fallbackAppliedFilters(from: fallbackFilters),
             items: [],
             error: SearchErrorPayload(code: code, details: details),
         )
@@ -60,19 +55,23 @@ struct SearchQueryService {
         chipsScopes: [String],
     ) -> [String] {
         if let queryScopes {
-            let cleanedQueryScopes = cleanScopes(queryScopes)
-            if cleanedQueryScopes.isEmpty == false {
-                return cleanedQueryScopes
+            let normalizedQueryScopes = SearchScopeNormalizer.normalizeScopes(queryScopes)
+            if normalizedQueryScopes.isEmpty == false {
+                return normalizedQueryScopes
             }
         }
 
-        return chipsScopes
+        return SearchScopeNormalizer.normalizeScopes(chipsScopes)
     }
 
-    private nonisolated func cleanScopes(_ scopes: [String]) -> [String] {
-        scopes
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.isEmpty == false }
+    private nonisolated func fallbackAppliedFilters(from filters: SearchFiltersPayload) -> AppliedFiltersPayload {
+        AppliedFiltersPayload(
+            scopes: filters.scopes,
+            excludedScopes: filters.excludedScopes,
+            includeSubfolders: filters.includeSubfolders,
+            includeDirectories: filters.includeDirectories,
+            conditions: filters.conditions,
+        )
     }
 
     nonisolated func querySearch(
@@ -83,14 +82,10 @@ struct SearchQueryService {
         guard trimmedQuery.isEmpty == false else {
             return SearchResponsePayload(
                 itemCount: 0,
-                appliedFilters: AppliedFiltersPayload(
-                    scopes: request.filters.scopes,
-                    excludedScopes: request.filters.excludedScopes,
-                    includeSubfolders: request.filters.includeSubfolders,
-                    conditions: request.filters.conditions,
-                ),
+                appliedFilters: fallbackAppliedFilters(from: request.filters),
                 items: nil,
                 error: nil,
+                queryOutcome: .unchangedResult,
             )
         }
 
@@ -107,7 +102,7 @@ struct SearchQueryService {
             )
         }
 
-        let chipsScopes = cleanScopes(request.filters.scopes)
+        let chipsScopes = SearchScopeNormalizer.normalizeScopes(request.filters.scopes)
         let resolvedScopes = resolveScopes(
             queryScopes: conversion.scopes,
             chipsScopes: chipsScopes,
@@ -117,19 +112,29 @@ struct SearchQueryService {
             scopes: resolvedScopes,
             excludedScopes: request.filters.excludedScopes,
             includeSubfolders: request.filters.includeSubfolders,
+            includeDirectories: request.filters.includeDirectories,
             conditions: conversion.conditions,
         )
 
-        return SearchResponsePayload(
-            itemCount: 0,
-            appliedFilters: AppliedFiltersPayload(
+        let successFilters: AppliedFiltersPayload = switch conversion.queryOutcome {
+        case .fallbackReuse, .unchangedResult:
+            fallbackAppliedFilters(from: request.filters)
+        case .convertedChanged, nil:
+            AppliedFiltersPayload(
                 scopes: plannedFilters.scopes,
                 excludedScopes: plannedFilters.excludedScopes,
                 includeSubfolders: plannedFilters.includeSubfolders,
+                includeDirectories: plannedFilters.includeDirectories,
                 conditions: plannedFilters.conditions,
-            ),
+            )
+        }
+
+        return SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: successFilters,
             items: nil,
             error: nil,
+            queryOutcome: conversion.queryOutcome,
         )
     }
 

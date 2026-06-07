@@ -5,6 +5,7 @@ import VoyagerShared
 public enum ComposerQueryFeedbackPolicy {
     public static let conversionFailureMessage = "Couldn't interpret that query. Try being more specific."
     public static let executionFailureMessage = "Couldn't complete that search. Please try again."
+    public static let fallbackReuseMessage = "No new filters were generated, so Voyager kept the current filters."
 
     public static func failureMessage(for error: any Error) -> String {
         let code = parseErrorCode(from: error.localizedDescription)
@@ -30,6 +31,15 @@ public enum ComposerQueryFeedbackPolicy {
         appliedFilters: VoyagerShared.AppliedFiltersPayload?,
     ) -> Bool {
         normalizedFilters(appliedFilters: appliedFilters, fallback: baseline) == baseline
+    }
+
+    public static func shouldApplyFilters(for outcome: SearchQueryOutcome?) -> Bool {
+        switch outcome {
+        case .convertedChanged, nil:
+            true
+        case .unchangedResult, .fallbackReuse:
+            false
+        }
     }
 
     private static func parseErrorCode(from localizedDescription: String) -> String {

@@ -11,6 +11,9 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
     func testIdenticalBaselineAndAppliedFiltersAreNoOp() {
         let baseline = VoyagerShared.SearchFiltersPayload(
             scopes: ["/tmp"],
+            excludedScopes: ["/tmp/excluded"],
+            includeSubfolders: true,
+            includeDirectories: true,
             conditions: [
                 VoyagerShared.SearchConditionPayload(
                     propertyKey: "name",
@@ -22,6 +25,9 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
 
         let applied = VoyagerShared.AppliedFiltersPayload(
             scopes: ["/tmp"],
+            excludedScopes: ["/tmp/excluded"],
+            includeSubfolders: true,
+            includeDirectories: true,
             conditions: [
                 VoyagerShared.SearchConditionPayload(
                     propertyKey: "name",
@@ -48,6 +54,17 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
         XCTAssertEqual(
             ComposerQueryFeedbackPolicy.executionFailureMessage,
             "Couldn't complete that search. Please try again.",
+        )
+    }
+
+    func testShouldApplyFiltersTreatsFallbackReuseAndUnchangedAsNoOp() {
+        XCTAssertFalse(ComposerQueryFeedbackPolicy.shouldApplyFilters(for: .fallbackReuse))
+        XCTAssertFalse(ComposerQueryFeedbackPolicy.shouldApplyFilters(for: .unchangedResult))
+        XCTAssertTrue(ComposerQueryFeedbackPolicy.shouldApplyFilters(for: .convertedChanged))
+        XCTAssertTrue(ComposerQueryFeedbackPolicy.shouldApplyFilters(for: nil))
+        XCTAssertEqual(
+            ComposerQueryFeedbackPolicy.fallbackReuseMessage,
+            "No new filters were generated, so Voyager kept the current filters.",
         )
     }
 

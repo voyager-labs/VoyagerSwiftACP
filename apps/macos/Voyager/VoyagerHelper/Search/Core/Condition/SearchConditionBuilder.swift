@@ -1,6 +1,6 @@
 import Foundation
 
-struct SearchConditionBuilder {
+nonisolated struct SearchConditionBuilder {
     let registry: PropertyConditionRegistry
     let propertyMap: [String: PropertyMapping]
     let legacyKeyMap: [String: String]
@@ -21,7 +21,7 @@ struct SearchConditionBuilder {
         let uiHidden: Bool
     }
 
-    init(bundle: Bundle = .main) throws {
+    nonisolated init(bundle: Bundle = .main) throws {
         registry = try RegistryLoader.load(resourceName: "property_condition_registry", bundle: bundle)
         let systemRegistry: SystemPropertyRegistry = try RegistryLoader.load(
             resourceName: "system_property_registry",
@@ -32,14 +32,14 @@ struct SearchConditionBuilder {
         operatorAliasMap = SearchConditionBuilder.buildOperatorAliasMap(registry: registry)
     }
 
-    init(registry: PropertyConditionRegistry, systemRegistry: SystemPropertyRegistry) {
+    nonisolated init(registry: PropertyConditionRegistry, systemRegistry: SystemPropertyRegistry) {
         self.registry = registry
         propertyMap = SearchConditionBuilder.buildPropertyMap(systemRegistry: systemRegistry)
         legacyKeyMap = SearchConditionBuilder.buildLegacyKeyMap(systemRegistry: systemRegistry)
         operatorAliasMap = SearchConditionBuilder.buildOperatorAliasMap(registry: registry)
     }
 
-    func canonicalOperatorCode(for rawOperator: String) -> String? {
+    nonisolated func canonicalOperatorCode(for rawOperator: String) -> String? {
         let normalized = rawOperator
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
@@ -48,7 +48,7 @@ struct SearchConditionBuilder {
 }
 
 private extension SearchConditionBuilder {
-    static func buildOperatorAliasMap(registry: PropertyConditionRegistry) -> [String: String] {
+    nonisolated static func buildOperatorAliasMap(registry: PropertyConditionRegistry) -> [String: String] {
         var map: [String: String] = [:]
         for (operatorCode, definition) in registry.operators {
             let normalizedCode = operatorCode.lowercased()
