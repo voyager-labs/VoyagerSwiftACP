@@ -1,9 +1,10 @@
 import Foundation
 @testable import VoyagerEntitiesAi
+import VoyagerShared
 import XCTest
 
 final class AiChatProviderExecutionRequestTests: XCTestCase {
-    func testCodexArguments_includeReasoningEffortWhenSelected() throws {
+    func testCodexArguments_includeReasoningEffortWhenSelected() {
         let outputURL = URL(fileURLWithPath: "/tmp/codex-output.txt")
 
         let arguments = AiChatProviderExecutionClient.codexArguments(
@@ -27,7 +28,7 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         ])
     }
 
-    func testCodexArguments_includeReasoningNoneWhenSupported() throws {
+    func testCodexArguments_includeReasoningNoneWhenSupported() {
         let outputURL = URL(fileURLWithPath: "/tmp/codex-output.txt")
 
         let arguments = AiChatProviderExecutionClient.codexArguments(
@@ -73,6 +74,72 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         accumulator.append(Data("second stderr chunk".utf8))
 
         XCTAssertEqual(accumulator.stringValue(), "first stderr chunk\nsecond stderr chunk")
+    }
+
+    func testOpenAIRequestEncodesStructuredOutputContractWhenProvided() throws {
+        let payload = try makePayload(
+            provider: .openai,
+            rawModelID: "gpt-test",
+            responseContract: .init(
+                name: "search_conditions_output",
+                schema: [
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                ],
+                strict: true,
+            ),
+        )
+
+        let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
+            payload: payload,
+            credential: .apiKey("secret"),
+        )
+        let body = try decodeOpenAIRequestBody(request)
+
+        XCTAssertEqual(body.text?.format.type, "json_schema")
+        XCTAssertEqual(body.text?.format.name, "search_conditions_output")
+        XCTAssertEqual(body.text?.format.strict, true)
+        XCTAssertEqual(body.text?.format.schema["type"], .string("object"))
+        XCTAssertEqual(body.text?.format.schema["additionalProperties"], .bool(false))
+    }
+
+    func testOpenAIRequestOmitsStructuredOutputContractByDefault() throws {
+        let payload = try makePayload(provider: .openai, rawModelID: "gpt-test")
+
+        let request = try AiChatProviderExecutionClient.makeOpenAIRequest(
+            payload: payload,
+            credential: .apiKey("secret"),
+        )
+        let body = try decodeOpenAIRequestBody(request)
+
+        XCTAssertNil(body.text)
+    }
+
+    func testAnthropicRequestEncodesForcedToolForStructuredOutputContract() throws {
+        let payload = try makePayload(
+            provider: .anthropic,
+            rawModelID: "claude-test",
+            responseContract: .init(
+                name: "search_conditions_output",
+                schema: [
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                ],
+                strict: true,
+            ),
+        )
+
+        let request = try AiChatProviderExecutionClient.makeAnthropicRequest(
+            payload: payload,
+            credential: .apiKey("secret"),
+        )
+        let body = try decodeAnthropicRequestBody(request)
+
+        XCTAssertEqual(body.tools?.first?.name, "search_conditions_output")
+        XCTAssertEqual(body.tools?.first?.inputSchema["type"], .string("object"))
+        XCTAssertEqual(body.tools?.first?.inputSchema["additionalProperties"], .bool(false))
+        XCTAssertEqual(body.toolChoice?.type, "tool")
+        XCTAssertEqual(body.toolChoice?.name, "search_conditions_output")
     }
 
     private func makeLockedAttachmentResolutionFixtures() -> [AiChatAttachmentSnapshot] {
@@ -132,6 +199,7 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
         provider: AiProvider,
         rawModelID: String,
         thinking: AiChatProviderThinkingPayload? = nil,
+        responseContract: AiChatProviderResponseContract? = nil,
         messages: [AiChatProviderMessage] = [
             AiChatProviderMessage(role: .user, content: "Hello"),
         ],
@@ -156,6 +224,7 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
                 submittedAtMs: 1_700_000_000_000,
             ),
             thinking: thinking,
+            responseContract: responseContract,
         )
     }
 
@@ -173,6 +242,18 @@ final class AiChatProviderExecutionRequestTests: XCTestCase {
 private struct CapturedOpenAIRequestBody: Decodable {
     let input: [CapturedOpenAIInputItem]
     let reasoning: CapturedOpenAIReasoning?
+    let text: CapturedOpenAIText?
+}
+
+private struct CapturedOpenAIText: Decodable {
+    let format: CapturedOpenAITextFormat
+}
+
+private struct CapturedOpenAITextFormat: Decodable {
+    let type: String
+    let name: String
+    let schema: [String: JSONValue]
+    let strict: Bool
 }
 
 private struct CapturedOpenAIInputItem: Decodable {
@@ -252,6 +333,30 @@ private struct CapturedOpenAIReasoning: Decodable {
 private struct CapturedAnthropicRequestBody: Decodable {
     let messages: [CapturedAnthropicMessage]
     let system: String?
+    let tools: [CapturedAnthropicTool]?
+    let toolChoice: CapturedAnthropicToolChoice?
+
+    enum CodingKeys: String, CodingKey {
+        case messages
+        case system
+        case tools
+        case toolChoice = "tool_choice"
+    }
+}
+
+private struct CapturedAnthropicTool: Decodable {
+    let name: String
+    let inputSchema: [String: JSONValue]
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case inputSchema = "input_schema"
+    }
+}
+
+private struct CapturedAnthropicToolChoice: Decodable {
+    let type: String
+    let name: String
 }
 
 private struct CapturedAnthropicMessage: Decodable {

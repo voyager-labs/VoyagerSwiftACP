@@ -1,5 +1,6 @@
 import Foundation
 @testable import VoyagerEntitiesAi
+import VoyagerShared
 import XCTest
 
 final class AiChatProviderPreflightTests: XCTestCase {
@@ -63,6 +64,25 @@ final class AiChatProviderPreflightTests: XCTestCase {
             XCTAssertEqual(AiChatProviderExecutionFailureMapper.map(error), expectedFailure)
         }
     }
+
+    func testPrepare_preservesResponseContractInLoweredPayload() throws {
+        let responseContract = AiChatProviderResponseContract(
+            name: "search_conditions_output",
+            schema: ["type": .string("object")],
+        )
+        let request = makeRequest(
+            provider: .openai,
+            modelHandle: AiModelHandle(provider: .openai, rawValue: "gpt-4o-mini"),
+            responseContract: responseContract,
+        )
+
+        let result = try AiChatProviderPreflight.prepare(
+            request,
+            credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
+        )
+
+        XCTAssertEqual(result.payload.responseContract, responseContract)
+    }
 }
 
 private extension AiChatProviderPreflightTests {
@@ -73,6 +93,7 @@ private extension AiChatProviderPreflightTests {
         selectedThinking: AiThinkingSelection? = AiThinkingSelection.none,
         capability: AiModelThinkingCapability? = nil,
         supportsThinkingNone: Bool = false,
+        responseContract: AiChatProviderResponseContract? = nil,
     ) -> AiChatRequest {
         let resolvedModel = selectedModel ?? AiProviderModel(
             id: AiModelHandle(provider: provider, rawValue: modelHandle?.rawValue ?? "test-model"),
@@ -100,6 +121,7 @@ private extension AiChatProviderPreflightTests {
                 submittedAtMs: 1,
             ),
             messages: [AiChatMessage(role: .user, content: "Ping")],
+            responseContract: responseContract,
         )
     }
 }

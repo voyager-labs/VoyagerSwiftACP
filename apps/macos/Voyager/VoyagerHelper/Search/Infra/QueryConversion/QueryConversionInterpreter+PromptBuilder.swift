@@ -1,24 +1,24 @@
 import Foundation
 import VoyagerShared
 
-extension GatewayQueryConverter {
+extension QueryConversionInterpreter {
     func buildSystemPrompt() throws -> String {
         guard let promptURL = resourceBundle.url(
             forResource: "compose_filter_system",
             withExtension: "md",
         ) else {
-            throw GatewayQueryError.promptTemplateMissing("compose_filter_system.md")
+            throw QueryConversionError.promptTemplateMissing("compose_filter_system.md")
         }
 
         let template: String
         do {
             template = try String(contentsOf: promptURL, encoding: .utf8)
         } catch {
-            throw GatewayQueryError.promptTemplateLoadFailed(error.localizedDescription)
+            throw QueryConversionError.promptTemplateLoadFailed(error.localizedDescription)
         }
 
         guard template.contains("{home_dir}") else {
-            throw GatewayQueryError.promptTemplateInvalid("missing {home_dir}")
+            throw QueryConversionError.promptTemplateInvalid("missing {home_dir}")
         }
 
         return template
@@ -90,7 +90,7 @@ extension GatewayQueryConverter {
         query: String,
         existingConditions: [SearchConditionPayload],
     ) -> [String: [String]] {
-        var candidates = GatewayQueryConfig.coreKeys
+        var candidates = QueryConversionConfig.coreKeys
         for condition in existingConditions {
             candidates.insert(condition.propertyKey)
         }
@@ -157,7 +157,7 @@ extension GatewayQueryConverter {
         let lower = query.lowercased()
         var scopes: [String] = []
 
-        for pattern in GatewayQueryConfig.scopePatterns {
+        for pattern in QueryConversionConfig.scopePatterns {
             guard containsWordPattern(pattern.pattern, in: lower) else {
                 continue
             }

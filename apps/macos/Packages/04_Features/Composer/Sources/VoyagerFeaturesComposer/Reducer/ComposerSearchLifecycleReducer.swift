@@ -49,14 +49,40 @@ struct ComposerSearchLifecycleReducer {
                 state.lastAcceptedSearchRequestID = requestID
                 switch response {
                 case let .success(response):
+                    if let error = response.error {
+                        state.isLoadingSearch = false
+                        state.activeSearchRequestID = nil
+                        state.resolveScopeChangeFeedback(.search(requestID), phase: .failed)
+                        let feedback = ComposerQueryFeedbackPolicy.feedback(for: response)
+                        let failureMessage = ComposerQueryFeedbackPolicy.failureMessage(for: error)
+                        let feedbackEffect = presentTransientFeedback(
+                            kind: feedback?.kind ?? .error,
+                            message: feedback?.message ?? failureMessage,
+                            state: &state,
+                            clock: clock,
+                        )
+                        applyQueryPhaseTransition(.searchFailed, state: &state)
+                        composerMetricClient.logMetric(
+                            "voyager_search_result",
+                            value: 1,
+                            tags: ["result": "error"],
+                            level: .warn,
+                        )
+                        state.searchStartedAt = nil
+                        kComposerSearchLifecycleLogger.warning(
+                            "Composer query search returned error payload: \(feedback?.message ?? failureMessage)",
+                        )
+                        return feedbackEffect
+                    }
+
                     let baselineFilters = feedbackBaseline(from: state)
                     let normalizedAppliedFilters = feedbackAppliedFilters(
                         appliedFilters: response.appliedFilters,
                         baseline: baselineFilters,
                     )
-                    let isNoOpResponse = ComposerQueryFeedbackPolicy.isNoOp(
+                    let shouldSkipApplyFilters = ComposerQueryFeedbackPolicy.shouldSkipApplyFilters(
+                        response: response,
                         baseline: baselineFilters,
-                        appliedFilters: response.appliedFilters,
                     )
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
@@ -76,7 +102,7 @@ struct ComposerSearchLifecycleReducer {
                         tags: ["result": response.itemCount > 0 ? "success" : "empty"],
                     )
                     state.searchStartedAt = nil
-                    if isNoOpResponse, state.openedCollectionURL == nil {
+                    if shouldSkipApplyFilters, state.openedCollectionURL == nil {
                         kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
                         state.isLoadingFilters = false
                         state.isFilteringInFlight = false
@@ -85,6 +111,14 @@ struct ComposerSearchLifecycleReducer {
                         state.pendingSearchQuery = nil
                         applyQueryPhaseTransition(.reset, state: &state)
                         state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
+                        if let feedback = ComposerQueryFeedbackPolicy.feedback(for: response) {
+                            return presentTransientFeedback(
+                                kind: feedback.kind,
+                                message: feedback.message,
+                                state: &state,
+                                clock: clock,
+                            )
+                        }
                         return .none
                     }
                     state.isLoadingFilters = true

@@ -4,11 +4,17 @@ import VoyagerShared
 
 final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
     private let service: any SearchExecutionServicing
+    private let modelCatalogCache: AIProviderModelCatalogCache
     private let logger: Logger
 
-    nonisolated init(service: any SearchExecutionServicing, logger: Logger) {
+    nonisolated init(
+        service: any SearchExecutionServicing,
+        logger: Logger,
+        modelCatalogCache: AIProviderModelCatalogCache = AIProviderModelCatalogCache(),
+    ) {
         self.service = service
         self.logger = logger
+        self.modelCatalogCache = modelCatalogCache
     }
 
     nonisolated func applyFilters(
@@ -21,9 +27,8 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
         Task { @MainActor in
             do {
                 let request = try Self.decodeRequest(from: requestData)
-                let queryService = SearchQueryService(searchService: service)
                 let response = try await Task.detached(priority: .userInitiated) {
-                    try await queryService.executeQuery(request.filters)
+                    try await service.applyFilters(request.filters)
                 }
                 .value
                 let responseData = try Self.encodeResponse(response)
@@ -88,10 +93,18 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
         let replyBox = ReplyBox(reply)
         let service = service
         let logger = logger
+        let modelCatalogCache = modelCatalogCache
         Task { @MainActor in
             do {
                 let request = try Self.decodeQueryRequest(from: requestData)
-                let queryService = SearchQueryService(searchService: service)
+                let queryService = SearchQueryService(
+                    searchService: service,
+                    converter: ProviderAwareQueryConverter(
+                        queryConversionInterpreter: QueryConversionInterpreter(logger: logger),
+                        modelCatalogCache: modelCatalogCache,
+                    ),
+                    logger: logger,
+                )
                 let response = await Task.detached(priority: .userInitiated) {
                     await queryService.querySearch(request)
                 }
@@ -100,6 +113,27 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
                 replyBox.call(responseData, nil)
             } catch {
                 logger.error("Query search XPC failed: \(error)")
+                replyBox.call(nil, Self.makeNSError(from: error))
+            }
+        }
+    }
+
+    nonisolated func warmUpAIModelCatalog(
+        _: Data,
+        withReply reply: @escaping (Data?, NSError?) -> Void,
+    ) {
+        let replyBox = ReplyBox(reply)
+        let modelCatalogCache = modelCatalogCache
+        let logger = logger
+        Task { @MainActor in
+            do {
+                try await Task.detached(priority: .utility) {
+                    try await modelCatalogCache.warmUp()
+                }
+                .value
+                replyBox.call(Data(), nil)
+            } catch {
+                logger.error("AI model catalog warmup XPC failed: \(error)")
                 replyBox.call(nil, Self.makeNSError(from: error))
             }
         }
@@ -137,7 +171,7 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
         }
     }
 
-    private static func makeNSError(from error: Error) -> NSError {
+    private nonisolated static func makeNSError(from error: Error) -> NSError {
         if let serviceError = error as? ServiceError {
             return serviceError.asNSError
         }

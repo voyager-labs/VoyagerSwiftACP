@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 public enum AiChatProviderRequestLoweringError: Error, Equatable, Sendable {
     case modelProviderMismatch(requestProvider: AiProvider, modelProvider: AiProvider)
@@ -58,6 +59,7 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
     public let messages: [AiChatProviderMessage]
     public let context: AiChatProviderContextBundle
     public let thinking: AiChatProviderThinkingPayload?
+    public let responseContract: AiChatProviderResponseContract?
 
     public init(
         provider: AiProvider,
@@ -65,12 +67,14 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
         messages: [AiChatProviderMessage],
         context: AiChatProviderContextBundle,
         thinking: AiChatProviderThinkingPayload?,
+        responseContract: AiChatProviderResponseContract? = nil,
     ) {
         self.provider = provider
         self.rawModelID = rawModelID
         self.messages = messages
         self.context = context
         self.thinking = thinking
+        self.responseContract = responseContract
     }
 
     public static func lower(_ request: AiChatRequest) throws -> AiChatProviderRequestPayload {
@@ -131,6 +135,7 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
                 submittedAtMs: request.context.submittedAtMs,
             ),
             thinking: thinking,
+            responseContract: request.responseContract,
         )
     }
 
@@ -145,5 +150,21 @@ public struct AiChatProviderRequestPayload: Equatable, Sendable, Codable {
         case let .some(.tokenBudget(value)):
             .tokenBudget(value)
         }
+    }
+}
+
+public struct AiChatProviderResponseContract: Equatable, Sendable, Codable {
+    public let name: String
+    public let schema: [String: JSONValue]
+    public let strict: Bool
+
+    public init(
+        name: String,
+        schema: [String: JSONValue],
+        strict: Bool = true,
+    ) {
+        self.name = name
+        self.schema = schema
+        self.strict = strict
     }
 }

@@ -121,6 +121,32 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         )
         XCTAssertEqual(state.response.finalText, "Hi")
     }
+
+    func testAnthropicStreamConsumption_accumulatesToolInputJSONDeltas() throws {
+        var state = AnthropicStreamConsumptionState()
+        let decoder = JSONDecoder()
+        let payloads = [
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"search_conditions_output","input":{}}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"conditions\":"}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"[],\"scopes\":null"}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":",\"error\":null}"}}"#,
+            #"{"type":"content_block_stop","index":0}"#,
+            #"{"type":"message_stop"}"#,
+        ]
+
+        for payload in payloads {
+            XCTAssertNil(try AiChatProviderExecutionClient.consumeAnthropicPayload(
+                payload,
+                decoder: decoder,
+                state: &state,
+            ))
+        }
+
+        XCTAssertEqual(
+            state.response.finalText,
+            #"{"conditions":[],"scopes":null,"error":null}"#,
+        )
+    }
 }
 
 private extension AiChatProviderExecutionClientTests {
@@ -753,7 +779,9 @@ private final class OpenAIExecutionURLProtocol: URLProtocol, @unchecked Sendable
         set { currentHandler = newValue }
     }
 
-    static var requestCount: Int { count }
+    static var requestCount: Int {
+        count
+    }
 
     static func reset() {
         count = 0
