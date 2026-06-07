@@ -97,6 +97,7 @@ public struct ComposerState: Equatable {
     public var lastFiltersResponse: VoyagerShared.SearchResponsePayload?
     public var searchStartedAt: Date?
     public var filtersStartedAt: Date?
+    var activeFiltersMetricSource: String?
     public var hasSubmittedInSession: Bool = false
 
     public init() {}
