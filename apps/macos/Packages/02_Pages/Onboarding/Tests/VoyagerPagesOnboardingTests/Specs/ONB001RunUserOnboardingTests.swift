@@ -1,10 +1,11 @@
+// swiftlint:disable file_length
 import ComposableArchitecture
 import VoyagerFeaturesBetaAccess
 @testable import VoyagerPagesOnboarding
 import XCTest
 
 @MainActor
-final class ONB001RunUserOnboardingTests: XCTestCase {
+final class ONB001RunUserOnboardingTests: XCTestCase { // swiftlint:disable:this type_body_length
     // MARK: - ONB-001-start_onboarding_session
 
     // 온보딩 세션 시작 상호작용을 검증합니다.
@@ -30,6 +31,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertTrue(store.state.welcome.isComplete)
         XCTAssertFalse(store.state.betaAccess.isComplete)
         XCTAssertFalse(store.state.permissions.isComplete)
+        XCTAssertFalse(store.state.aiProviderSetup.isComplete)
         XCTAssertFalse(store.state.complete.isComplete)
 
         // canGoNext가 true인지 확인 (welcome은 기본적으로 완료 상태)
@@ -85,6 +87,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertTrue(store.state.welcome.isComplete)
         XCTAssertFalse(store.state.betaAccess.isComplete)
         XCTAssertFalse(store.state.permissions.isComplete)
+        XCTAssertFalse(store.state.aiProviderSetup.isComplete)
         XCTAssertFalse(store.state.complete.isComplete)
 
         // 올바른 초기 상태로 스냅샷이 저장되었는지 확인
@@ -116,6 +119,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(savedSnapshot?.stepState.welcomeComplete, true)
         XCTAssertEqual(savedSnapshot?.stepState.betaAccessComplete, false)
         XCTAssertEqual(savedSnapshot?.stepState.permissionsComplete, false)
+        XCTAssertEqual(savedSnapshot?.stepState.aiProviderSetupComplete, false)
         XCTAssertEqual(savedSnapshot?.stepState.completeComplete, false)
 
         await store.finish()
@@ -146,7 +150,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(store.state.currentStep.title, "Welcome")
         XCTAssertEqual(store.state.currentStep.subtitle, "A quick setup before you dive in.")
         XCTAssertEqual(store.state.currentStepIndex, 1)
-        XCTAssertEqual(store.state.totalSteps, 4)
+        XCTAssertEqual(store.state.totalSteps, 5)
 
         await store.finish()
     }
@@ -205,12 +209,12 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001-show_onboarding_step: required permissions가 완료되었을 때 Next를 누르면 complete step을 현재 step으로 표시한다.
-    /// 모든 이전 단계(welcome, betaAccess, permissions)가 완료되면 complete 단계가 표시되는지 검증합니다.
-    /// - 검증 내용: 선행 단계 모두 완료 시 `nextTapped`가 complete 단계로 전환합니다.
+    /// ONB-001-show_onboarding_step: required permissions가 완료되었을 때 Next를 누르면 aiProviderSetup step을 현재 step으로 표시한다.
+    /// 모든 이전 단계(welcome, betaAccess, permissions)가 완료되면 aiProviderSetup 단계가 표시되는지 검증합니다.
+    /// - 검증 내용: 선행 단계 모두 완료 시 `nextTapped`가 aiProviderSetup 단계로 전환합니다.
     /// - 사전 조건: welcome, betaAccess(`.active`), permissions 모두 `isComplete = true`이고 `currentStep = .permissions`입니다.
-    /// - 기대 결과: `currentStep`은 `.complete`, title "Start your voyage", 인덱스 4, `canGoNext`는 `false`(마지막 단계)입니다.
-    func testShowCompleteStepAfterPermissions() async {
+    /// - 기대 결과: `currentStep`은 `.aiProviderSetup`, title "AI Provider", 인덱스 4입니다.
+    func testShowAIProviderSetupStepAfterPermissions() async {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .permissions
         initialState.welcome.isComplete = true
@@ -226,12 +230,46 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         await store.send(.nextTapped) { state in
+            state.currentStep = .aiProviderSetup
+        }
+
+        XCTAssertEqual(store.state.currentStep, .aiProviderSetup)
+        XCTAssertEqual(store.state.currentStep.title, "AI Provider")
+        XCTAssertEqual(store.state.currentStepIndex, 4)
+
+        await store.finish()
+    }
+
+    /// ONB-001-show_onboarding_step: aiProviderSetup가 완료되었을 때 Next를 누르면 complete step을 현재 step으로 표시한다.
+    /// AI Provider Setup 단계를 완료한 뒤 complete 단계가 표시되는지 검증합니다.
+    /// - 검증 내용: `nextTapped`가 aiProviderSetup 이후 complete 단계로 전환합니다.
+    /// - 사전 조건: `currentStep = .aiProviderSetup`, provider setup이 완료 상태입니다.
+    /// - 기대 결과: `currentStep`은 `.complete`, title "Start your voyage", 인덱스 5입니다.
+    func testShowCompleteStepAfterAIProviderSetup() async {
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .aiProviderSetup
+        initialState.welcome.isComplete = true
+        initialState.betaAccess.isComplete = true
+        initialState.betaAccess.status = .active
+        initialState.betaAccess.reason = .none
+        initialState.permissions.isComplete = true
+        initialState.aiProviderSetup.choice = .providerConnected
+        initialState.aiProviderSetup.status = .complete
+        initialState.aiProviderSetup.rows[0].connectionState = .connected
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.noOp
+        }
+
+        await store.send(.nextTapped) { state in
             state.currentStep = .complete
         }
 
         XCTAssertEqual(store.state.currentStep, .complete)
         XCTAssertEqual(store.state.currentStep.title, "Start your voyage")
-        XCTAssertEqual(store.state.currentStepIndex, 4)
+        XCTAssertEqual(store.state.currentStepIndex, 5)
         XCTAssertFalse(store.state.canGoNext)
 
         await store.finish()
@@ -245,7 +283,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// - 사전 조건: `load`가 `.empty`를 반환합니다. betaAccess는 `.active` 확인 응답으로 완료 처리합니다.
     /// - 기대 결과: welcome → betaAccess 전환 성공, permissions 미완료 시 `nextTapped` no-op, 전체 순서가 `allCases`와 일치합니다.
     func testCurrentStepAdvancesThroughCanonicalOrder() async {
-        XCTAssertEqual(OnboardingStep.allCases, [.welcome, .betaAccess, .permissions, .complete])
+        XCTAssertEqual(OnboardingStep.allCases, [.welcome, .betaAccess, .permissions, .aiProviderSetup, .complete])
 
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -800,6 +838,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
                 welcomeComplete: true,
                 betaAccessComplete: true,
                 permissionsComplete: true,
+                aiProviderSetupComplete: true,
+                aiProviderSetupChoice: .providerConnected,
+                aiProviderSetupStatus: .complete,
                 completeComplete: false,
             ),
         )
@@ -815,6 +856,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.currentStep = .complete
             StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
+            state.aiProviderSetup.choice = .providerConnected
+            state.aiProviderSetup.status = .complete
         }
 
         XCTAssertEqual(store.state.currentStep, .complete)
@@ -1033,6 +1076,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
                 welcomeComplete: true,
                 betaAccessComplete: true,
                 permissionsComplete: true,
+                aiProviderSetupComplete: true,
+                aiProviderSetupChoice: .providerConnected,
+                aiProviderSetupStatus: .complete,
                 completeComplete: true,
             ),
         )
@@ -1048,6 +1094,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.welcome.isComplete = true
             StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
+            state.aiProviderSetup.choice = .providerConnected
+            state.aiProviderSetup.status = .complete
             state.complete.isComplete = true
         }
 
@@ -1344,6 +1392,9 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
                 welcomeComplete: true,
                 betaAccessComplete: true,
                 permissionsComplete: true,
+                aiProviderSetupComplete: true,
+                aiProviderSetupChoice: .providerConnected,
+                aiProviderSetupStatus: .complete,
                 completeComplete: true,
             ),
         )
@@ -1359,6 +1410,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.welcome.isComplete = true
             StateMutation.applyRestoredBetaAccess(state: &state)
             state.permissions.isComplete = true
+            state.aiProviderSetup.choice = .providerConnected
+            state.aiProviderSetup.status = .complete
             state.complete.isComplete = true
         }
 

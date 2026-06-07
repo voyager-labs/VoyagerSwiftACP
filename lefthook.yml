@@ -3,10 +3,11 @@
 
 post-checkout:
   commands:
-    mise-install:
-      run: mise install
+    mise-trust:
+      run: |
+        mise trust -q -y 2>/dev/null || true
     lefthook-install:
-      run: lefthook install
+      run: test -f "$(git rev-parse --git-path hooks/post-checkout)" || lefthook install
     submodules:
       run: git submodule update --init --recursive
     codegraph:

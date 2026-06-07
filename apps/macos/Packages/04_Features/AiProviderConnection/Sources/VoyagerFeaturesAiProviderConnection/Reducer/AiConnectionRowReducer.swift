@@ -3,7 +3,6 @@ import Foundation
 import VoyagerEntitiesAi
 
 @Reducer
-// swiftlint:disable:next type_body_length
 public struct AiConnectionRowReducer {
     public typealias State = AiConnectionRowState
     public typealias Action = AiConnectionRowAction
@@ -15,7 +14,7 @@ public struct AiConnectionRowReducer {
     @Dependency(\.aiProviderVerificationClient)
     var verificationClient
 
-    private enum CancelID: Hashable, Sendable {
+    private enum CancelID: Hashable {
         case connectFlow
     }
 
@@ -39,7 +38,7 @@ public struct AiConnectionRowReducer {
                 let provider = state.provider
                 return .run { [connectionClient] send in
                     let result = await connectionClient.disconnect(provider)
-                    await send(._disconnectResponse(result))
+                    await send(.disconnectResponse(result))
                 }
 
             case .disconnectCancel:
@@ -56,7 +55,7 @@ public struct AiConnectionRowReducer {
                     .cancel(id: CancelID.connectFlow),
                     .run { [nativeAuthClient] _ in
                         await nativeAuthClient.cancelCurrentFlow()
-                    }
+                    },
                 )
 
             case .startBrowserLogin:
@@ -99,13 +98,13 @@ public struct AiConnectionRowReducer {
             case let .submitAPIKey(key):
                 return handleSubmitAPIKey(&state, key: key)
 
-            case let ._verificationResponse(result):
+            case let .verificationResponse(result):
                 return handleVerificationResponse(&state, result: result)
 
-            case let ._connectionResponse(result):
+            case let .connectionResponse(result):
                 return handleConnectionResponse(&state, result: result)
 
-            case let ._disconnectResponse(result):
+            case let .disconnectResponse(result):
                 state.flowState = .idle
                 switch result.state {
                 case .notVerified:
@@ -180,7 +179,7 @@ public struct AiConnectionRowReducer {
                     await send(.browserLoginFailed(.networkError("Connection failed")))
                     return
                 }
-                await send(._connectionResponse(result))
+                await send(.connectionResponse(result))
                 await send(.browserLoginCompleted(credential))
             case let .invalid(reason):
                 await send(.verificationFailed(reason))
@@ -212,7 +211,7 @@ public struct AiConnectionRowReducer {
                         await send(.deviceAuthFailed(.networkError("Connection failed")))
                         return
                     }
-                    await send(._connectionResponse(result))
+                    await send(.connectionResponse(result))
                     await send(.deviceAuthCompleted(credential))
                 case let .invalid(reason):
                     await send(.verificationFailed(reason))
@@ -232,7 +231,7 @@ public struct AiConnectionRowReducer {
 
     private func handleAuthError(
         _ state: inout State,
-        error: CodexNativeAuthError
+        error: CodexNativeAuthError,
     ) -> Effect<Action> {
         state.flowState = .idle
         state.connectionState = .connectionFailed
@@ -264,18 +263,18 @@ public struct AiConnectionRowReducer {
 
         let provider = state.provider
         let credential = StoredCredentialPayload.apiKey(
-            APIKeyCredentialFile(secret: trimmed)
+            APIKeyCredentialFile(secret: trimmed),
         )
         return .run { [verificationClient] send in
             let result = await verificationClient.verify(provider, credential)
-            await send(._verificationResponse(result))
+            await send(.verificationResponse(result))
         }
         .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
     }
 
     private func handleVerificationResponse(
         _ state: inout State,
-        result: AiProviderVerificationResult
+        result: AiProviderVerificationResult,
     ) -> Effect<Action> {
         state.isVerifying = false
         let provider = state.provider
@@ -285,9 +284,9 @@ public struct AiConnectionRowReducer {
         case .valid:
             return .run { [connectionClient] send in
                 let connectionResult = await connectionClient.connectAPIKey(
-                    provider, key, .connected
+                    provider, key, .connected,
                 )
-                await send(._connectionResponse(connectionResult))
+                await send(.connectionResponse(connectionResult))
             }
             .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
         case let .invalid(reason):
@@ -310,7 +309,7 @@ public struct AiConnectionRowReducer {
 
     private func handleConnectionResponse(
         _ state: inout State,
-        result: AiProviderConnectionResult
+        result: AiProviderConnectionResult,
     ) -> Effect<Action> {
         state.connectionState = result.state
         state.statusReason = result.reason

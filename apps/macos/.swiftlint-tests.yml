@@ -9,5 +9,11 @@ disabled_rules:
   - trailing_comma
   - file_name
   - file_length
+  - function_body_length
+  - function_default_parameter_at_end
+  - line_length
+  - modifier_order
+  - multiline_literal_brackets
+  - single_test_class
   - type_body_length
   - type_name

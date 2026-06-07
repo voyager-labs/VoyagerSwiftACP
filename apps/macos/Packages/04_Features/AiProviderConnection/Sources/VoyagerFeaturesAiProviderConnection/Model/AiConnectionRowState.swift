@@ -13,10 +13,14 @@ public struct AiConnectionRowState: Equatable, Identifiable {
     public var isVerifying: Bool
     public var isShowingDisconnectConfirmation: Bool
 
-    public var id: AiProvider { provider }
+    public var id: AiProvider {
+        provider
+    }
 
     /// Convenience: true while the disconnect effect is in flight.
-    public var isDisconnecting: Bool { flowState == .disconnecting }
+    public var isDisconnecting: Bool {
+        flowState == .disconnecting
+    }
 
     public init(
         provider: AiProvider,
@@ -25,7 +29,7 @@ public struct AiConnectionRowState: Equatable, Identifiable {
         flowState: AiConnectionFlowState = .idle,
         enteredKey: String = "",
         isVerifying: Bool = false,
-        isShowingDisconnectConfirmation: Bool = false
+        isShowingDisconnectConfirmation: Bool = false,
     ) {
         self.provider = provider
         self.connectionState = connectionState

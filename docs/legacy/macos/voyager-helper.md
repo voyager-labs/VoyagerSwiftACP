@@ -4,8 +4,8 @@ VoyagerHelper는 macOS 앱(Voyager)과 별도의 프로세스로 실행되는 He
 
 현재 역할은 아래 두 축으로 정리됩니다.
 
-1) 인덱싱/로컬 DB 관리(GRDB)
-2) 검색 런타임 보조(XPC 서비스와 상태 브로드캐스트)
+1. 인덱싱/로컬 DB 관리(GRDB)
+2. 검색 런타임 보조(XPC 서비스와 상태 브로드캐스트)
 
 로컬 FastAPI 백엔드 프로세스 실행/감시/재시작 기능은 제거되었습니다.
 
@@ -49,12 +49,12 @@ payload 스키마는 `schema_version=3`으로 관리됩니다.
 
 `VoyagerHelperApp.main()`의 흐름은 다음과 같습니다.
 
-1) 로깅 부트스트랩
-2) 환경 로딩(`EnvironmentLoader.loadEnvFiles()`)
-3) DB 초기화 + 마이그레이션
-4) 상태 브로드캐스터 준비(요청 옵저빙 시작 + 현재 상태 푸시)
-5) 인덱싱 요청 리스너 준비/시작
-6) 초기 인덱싱 완료 상태면 증분 인덱싱 가드 오픈
+1. 로깅 부트스트랩
+2. 환경 로딩(`EnvironmentLoader.loadEnvFiles()`)
+3. DB 초기화 + 마이그레이션
+4. 상태 브로드캐스터 준비(요청 옵저빙 시작 + 현재 상태 푸시)
+5. 인덱싱 요청 리스너 준비/시작
+6. 초기 인덱싱 완료 상태면 증분 인덱싱 가드 오픈
 
 관련 코드
 
@@ -67,7 +67,7 @@ Helper는 SwiftDotenv를 사용하며, 부팅 과정에서 `.env.{APP_ENV}` 파�
 - project root 우선(`VOYAGER_PROJECT_ROOT` 사용 가능)
 - 없으면 bundle resources fallback
 
-세부 로딩 규칙/키 목록은 `docs/architecture/environment.md`에 정리합니다.
+세부 로딩 규칙/키 목록은 `docs/legacy/architecture/environment.md`에 정리합니다.
 
 관련 코드
 

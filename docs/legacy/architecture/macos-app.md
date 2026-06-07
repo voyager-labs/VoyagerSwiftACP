@@ -50,7 +50,7 @@ Voyager 타깃은 메인 프론트엔드 앱입니다. TCA를 기반으로 하�
 
 ### 파일 네이밍(코딩 표준과 일치)
 
-네이밍은 `docs/architecture/coding-standards.md`의 Swift 규칙을 따릅니다.
+네이밍은 `docs/legacy/architecture/coding-standards.md`의 Swift 규칙을 따릅니다.
 
 - Reducer: `*Feature.swift` (예: `apps/macos/Voyager/Voyager/02_Pages/Onboarding/Reducer/OnboardingFeature.swift`)
 - Client: `*Client.swift` (예: `apps/macos/Voyager/Voyager/04_Features/Composer/Api/SearchClient.swift`)
@@ -436,9 +436,9 @@ Voyager는 TCA Dependencies 패턴으로 "외부 세계"를 캡슐화합니다.
 
 ## 참고
 
-- Helper/Backend 통합: `docs/macos/voyager-helper.md`
+- Helper/Backend 통합: `docs/legacy/macos/voyager-helper.md`
 
 ### 관련 문서
 
-- 코딩 표준(네이밍/테스트): `docs/architecture/coding-standards.md`
-- 소스 트리(폴더/세그먼트 정의): `docs/architecture/source-tree.md`
+- 코딩 표준(네이밍/테스트): `docs/legacy/architecture/coding-standards.md`
+- 소스 트리(폴더/세그먼트 정의): `docs/legacy/architecture/source-tree.md`

@@ -17,6 +17,7 @@ struct VoyagerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self)
     var appDelegate
 
+    // swiftlint:disable function_body_length
     @MainActor
     init() {
         let fileManagerWindowClient = makeFileManagerWindowClientLive()
@@ -115,6 +116,8 @@ struct VoyagerApp: App {
         appDelegate.configure(appRootStore: appRootStore)
         configureLogging()
     }
+
+    // swiftlint:enable function_body_length
 
     private func configureLogging() {
         LoggingSystem.bootstrap { label in

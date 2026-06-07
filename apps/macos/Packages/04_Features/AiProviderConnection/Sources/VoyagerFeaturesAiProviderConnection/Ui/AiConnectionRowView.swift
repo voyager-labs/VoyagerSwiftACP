@@ -2,12 +2,16 @@ import ComposableArchitecture
 import SwiftUI
 import VoyagerEntitiesAi
 
-struct AiConnectionRowView: View {
-    let store: StoreOf<AiConnectionRowReducer>
+public struct AiConnectionRowView: View {
+    public let store: StoreOf<AiConnectionRowReducer>
 
     private static let checkingStatusRawValue = "checkingStatus"
 
-    var body: some View {
+    public init(store: StoreOf<AiConnectionRowReducer>) {
+        self.store = store
+    }
+
+    public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             headerRow
 
@@ -30,9 +34,9 @@ struct AiConnectionRowView: View {
             "Disconnect \(store.displayName)?",
             isPresented: Binding(
                 get: { store.isShowingDisconnectConfirmation },
-                set: { _ in store.send(.disconnectCancel) }
+                set: { _ in store.send(.disconnectCancel) },
             ),
-            titleVisibility: .visible
+            titleVisibility: .visible,
         ) {
             Button("Disconnect", role: .destructive) {
                 store.send(.disconnectConfirm)
@@ -45,7 +49,6 @@ struct AiConnectionRowView: View {
         }
     }
 
-    @ViewBuilder
     private var headerRow: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -64,7 +67,6 @@ struct AiConnectionRowView: View {
         }
     }
 
-    @ViewBuilder
     private var statusBadge: some View {
         HStack(spacing: 4) {
             Circle()
@@ -99,20 +101,20 @@ struct AiConnectionRowView: View {
 
     private var connectionStateLabel: String {
         if store.connectionState.rawValue == Self.checkingStatusRawValue {
-            return "Checking status\u{2026}"
+            return "Checking status…"
         }
 
         switch store.connectionState {
         case .notVerified:
             return "Not connected"
         case .connectInProgress:
-            return "Connecting\u{2026}"
+            return "Connecting…"
         case .connected:
             return "Connected"
         case .connectionFailed:
             return "Failed"
         case .disconnecting:
-            return "Disconnecting\u{2026}"
+            return "Disconnecting…"
         case .disconnected:
             return "Disconnected"
         case .unavailable:
@@ -122,8 +124,7 @@ struct AiConnectionRowView: View {
         }
     }
 
-    @ViewBuilder
-    private var actionButton: some View {
+    @ViewBuilder private var actionButton: some View {
         if showsAPIKeyEntry {
             EmptyView()
         } else {
@@ -159,15 +160,14 @@ struct AiConnectionRowView: View {
         }
     }
 
-    @ViewBuilder
     private var apiKeyEntryRow: some View {
         HStack {
             SecureField(
                 "Enter API key",
                 text: Binding(
                     get: { store.enteredKey },
-                    set: { store.send(.enteredKeyChanged($0)) }
-                )
+                    set: { store.send(.enteredKeyChanged($0)) },
+                ),
             )
             .textFieldStyle(.roundedBorder)
             .controlSize(.small)
@@ -194,7 +194,6 @@ struct AiConnectionRowView: View {
             && store.flowState == .idle
     }
 
-    @ViewBuilder
     private var progressRow: some View {
         HStack(spacing: 8) {
             ProgressView()
@@ -216,18 +215,18 @@ struct AiConnectionRowView: View {
 
     private var progressLabel: String {
         if store.connectionState.rawValue == Self.checkingStatusRawValue {
-            return "Checking status\u{2026}"
+            return "Checking status…"
         }
 
         switch store.flowState {
         case .connecting:
-            return "Verifying\u{2026}"
+            return "Verifying…"
         case .browserLoginInProgress, .deviceAuthInProgress:
-            return "Waiting for authentication\u{2026}"
+            return "Waiting for authentication…"
         case .disconnecting:
-            return "Disconnecting\u{2026}"
+            return "Disconnecting…"
         default:
-            return "Verifying\u{2026}"
+            return "Verifying…"
         }
     }
 

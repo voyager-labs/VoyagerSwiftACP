@@ -4,6 +4,7 @@ enum OnboardingStep: String, CaseIterable, Codable {
     case welcome
     case betaAccess
     case permissions
+    case aiProviderSetup
     case complete
 
     var index: Int {
@@ -18,6 +19,8 @@ enum OnboardingStep: String, CaseIterable, Codable {
             "Beta Access"
         case .permissions:
             "Permissions"
+        case .aiProviderSetup:
+            "AI Provider"
         case .complete:
             "Start your voyage"
         }
@@ -31,6 +34,8 @@ enum OnboardingStep: String, CaseIterable, Codable {
             "Confirm your invite to continue."
         case .permissions:
             "Just a couple of permissions to get you going."
+        case .aiProviderSetup:
+            "Connect a provider now or set it up later."
         case .complete:
             "All set. You're ready to start."
         }
