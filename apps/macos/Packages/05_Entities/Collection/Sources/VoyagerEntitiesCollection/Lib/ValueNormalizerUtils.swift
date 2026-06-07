@@ -28,7 +28,7 @@ public enum ValueNormalizerUtils {
         if let literal = RelativeDateConditionLiteral(canonicalLiteral: trimmed) {
             return literal.encodedLiteral()
         }
-        if isTodayFunctionLiteral(trimmed) {
+        if AppliedFilterValueUtils.isTodayFunctionLiteral(trimmed) {
             return trimmed
         }
         return formatDateOnlyString(trimmed)
@@ -36,13 +36,6 @@ public enum ValueNormalizerUtils {
 
     public static func canonicalAbsoluteDateString(_ text: String) -> String? {
         formatDateOnlyString(text.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    public static func isTodayFunctionLiteral(_ value: String) -> Bool {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.hasPrefix("$time.today("), text.hasSuffix(")") else { return false }
-        let offsetText = String(text.dropFirst("$time.today(".count).dropLast())
-        return Int(offsetText.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
     }
 
     public static func parseDate(_ text: String) -> Date? {

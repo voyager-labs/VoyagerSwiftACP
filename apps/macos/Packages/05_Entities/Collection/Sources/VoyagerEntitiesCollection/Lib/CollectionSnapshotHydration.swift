@@ -65,11 +65,40 @@ public enum CollectionSnapshotHydration {
     public static func usableSnapshot(for file: VoyagerCollectionFile) -> CollectionPersistedSnapshot? {
         guard let snapshot = file.snapshot,
               let snapshotMeta = file.snapshotMeta,
-              snapshotMeta.definitionFingerprint == definitionFingerprint(file: file)
+              isCurrentOrLegacyFingerprint(snapshotMeta.definitionFingerprint, for: file)
         else {
             return nil
         }
         return snapshot
+    }
+
+    private static func isCurrentOrLegacyFingerprint(_ fingerprint: String, for file: VoyagerCollectionFile) -> Bool {
+        if fingerprint == definitionFingerprint(file: file) {
+            return true
+        }
+
+        guard file.includeDirectories == false else { return false }
+        return fingerprint == legacyDefinitionFingerprintBeforeDirectoryPolicy(file: file)
+    }
+
+    private static func legacyDefinitionFingerprintBeforeDirectoryPolicy(file: VoyagerCollectionFile) -> String {
+        let normalizedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedScopes = normalizePaths(file.scopes)
+        let normalizedExcludedScopes = normalizePaths(file.excludedScopes)
+        let normalizedConditions = file.conditions
+            .map { condition in
+                let value = canonicalValueString(condition.value)
+                return [condition.propertyKey, condition.operatorCode, value].joined(separator: "\u{1E}")
+            }
+            .sorted()
+
+        return legacyDigestBeforeDirectoryPolicy(
+            query: normalizedQuery,
+            scopes: normalizedScopes,
+            excludedScopes: normalizedExcludedScopes,
+            includeSubfolders: file.includeSubfolders,
+            conditions: normalizedConditions,
+        )
     }
 
     public static func syntheticSearchResponse(for file: VoyagerCollectionFile) -> VoyagerShared
@@ -144,6 +173,25 @@ public enum CollectionSnapshotHydration {
 
             return .init(propertyKey: condition.propertyKey, operatorCode: operatorCode, value: encoded)
         }
+    }
+
+    private static func legacyDigestBeforeDirectoryPolicy(
+        query: String,
+        scopes: [String],
+        excludedScopes: [String],
+        includeSubfolders: Bool,
+        conditions: [String],
+    ) -> String {
+        let canonical = [
+            query,
+            scopes.joined(separator: "\u{1D}"),
+            excludedScopes.joined(separator: "\u{1E}"),
+            includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
+            conditions.joined(separator: "\u{1C}"),
+        ].joined(separator: "\u{1B}")
+
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private static func digest(

@@ -152,7 +152,7 @@ extension SpotlightQueryCompiler {
         propertyKey: String,
         operatorCode: String,
     ) -> Bool {
-        literal.trimmingCharacters(in: .whitespacesAndNewlines) == "$time.today(-1000000)"
+        literal.trimmingCharacters(in: .whitespacesAndNewlines) == SearchDateUtils.recentsTodayLiteral
             && propertyKey == "last_used_date"
             && operatorCode == "gt"
     }
@@ -215,6 +215,6 @@ extension SpotlightQueryCompiler {
     }
 
     private func todayExpression(_ offset: Int) -> String {
-        "$time.today(\(offset))"
+        SearchDateUtils.todayLiteral(offset: offset)
     }
 }

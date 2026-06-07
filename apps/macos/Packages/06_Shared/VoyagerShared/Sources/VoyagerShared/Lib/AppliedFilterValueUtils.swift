@@ -1,6 +1,29 @@
 import Foundation
 
 public enum AppliedFilterValueUtils {
+    public static let recentsSinceAnyOpenedOffset = -1_000_000
+    public static let recentsSinceAnyOpenedLiteral = todayFunctionLiteral(offset: recentsSinceAnyOpenedOffset)
+
+    private static let todayFunctionPrefix = "$time.today("
+    private static let functionSuffix = ")"
+
+    public static func todayFunctionLiteral(offset: Int) -> String {
+        "\(todayFunctionPrefix)\(offset)\(functionSuffix)"
+    }
+
+    public static func todayFunctionOffset(for value: String) -> Int? {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix(todayFunctionPrefix), text.hasSuffix(functionSuffix) else {
+            return nil
+        }
+        let offsetText = String(text.dropFirst(todayFunctionPrefix.count).dropLast())
+        return Int(offsetText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    public static func isTodayFunctionLiteral(_ value: String) -> Bool {
+        todayFunctionOffset(for: value) != nil
+    }
+
     public static func stringValues(from value: JSONValue?, valueUIKind: String) -> [String]? {
         guard let value else { return nil }
         switch value {
@@ -64,13 +87,6 @@ public enum AppliedFilterValueUtils {
 
     private static func isDateValueUIKind(_ valueUIKind: String) -> Bool {
         valueUIKind == "singleDate" || valueUIKind == "rangeDate"
-    }
-
-    private static func isTodayFunctionLiteral(_ value: String) -> Bool {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.hasPrefix("$time.today("), text.hasSuffix(")") else { return false }
-        let offsetText = String(text.dropFirst("$time.today(".count).dropLast())
-        return Int(offsetText.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
     }
 
     private static func formatNumber(_ value: Double) -> String {

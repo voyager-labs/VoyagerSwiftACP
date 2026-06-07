@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 import VoyagerShared
 
 struct SpotlightSearchService: SearchExecutionServicing {
-    nonisolated private static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
+    private nonisolated static let userTagsXattrName = "com.apple.metadata:_kMDItemUserTags"
     private let logger: Logger
     private let maxCandidates: Int
     private let defaultScopeURL: @Sendable () -> URL
@@ -81,7 +81,7 @@ struct SpotlightSearchService: SearchExecutionServicing {
 
         logApplyFiltersCompleted(
             requestId: requestId,
-            scopeCount: scopeURLs.count,
+            scopeCount: scopeURLs?.count ?? 0,
             pushdownConditionCount: compiledPlan.pushdownConditions.count,
             itemCount: items.count,
         )
@@ -103,7 +103,7 @@ struct SpotlightSearchService: SearchExecutionServicing {
     private func loadFilterCandidatePaths(
         filters: SearchFiltersPayload,
         compiledPlan: SpotlightQueryCompiler.CompilePlan,
-        scopeURLs: [URL],
+        scopeURLs: [URL]?,
         normalizedFilterScopes: [String],
     ) throws -> [String] {
         if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
@@ -144,7 +144,7 @@ struct SpotlightSearchService: SearchExecutionServicing {
     }
 
     func searchRecent(_ request: RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload {
-        let predicate = "kMDItemLastUsedDate > $time.today(-1000000)"
+        let predicate = "kMDItemLastUsedDate > \(AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral)"
         let matches = try executionEngine.loadMatches(
             queryString: predicate,
             scopes: resolveMetadataScopeURLs(mode: request.scopeMode, scopes: request.scopes),
@@ -219,10 +219,10 @@ extension SpotlightSearchService {
         return "kMDItemUserTags == \"\(escapedTag)\"c || kMDItemUserTags == \"*\(escapedTag)*\"c"
     }
 
-    func resolveFilterScopeURLs(_ scopes: [String]) -> [URL] {
+    func resolveFilterScopeURLs(_ scopes: [String]) -> [URL]? {
         let normalized = SearchScopeNormalizer.normalizeScopes(scopes)
         if normalized.isEmpty {
-            return [defaultScopeURL().standardizedFileURL]
+            return nil
         }
         return normalized.map { URL(fileURLWithPath: $0).standardizedFileURL }
     }
@@ -381,7 +381,7 @@ extension SpotlightSearchService {
         return (try? PropertyListSerialization.propertyList(from: tagData, format: nil) as? [String]) ?? []
     }
 
-    nonisolated private static func loadRawUserTagsXattrData(from url: URL) -> Data? {
+    private nonisolated static func loadRawUserTagsXattrData(from url: URL) -> Data? {
         let size = getxattr(url.path, userTagsXattrName, nil, 0, 0, XATTR_NOFOLLOW)
         guard size > 0 else {
             return nil

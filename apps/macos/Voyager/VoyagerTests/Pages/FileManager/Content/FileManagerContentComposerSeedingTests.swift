@@ -58,7 +58,7 @@ final class FileManagerContentComposerSeedingTests: XCTestCase {
 
         XCTAssertEqual(store.state.composer.conditions.count, 2)
         XCTAssertEqual(store.state.composer.conditions.first?.propertyKey, "last_used_date")
-        XCTAssertEqual(store.state.composer.conditions.first?.values, ["$time.today(-1000000)"])
+        XCTAssertEqual(store.state.composer.conditions.first?.values, [AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral])
         XCTAssertEqual(store.state.composer.conditions.last?.propertyKey, "content_type_tree")
         XCTAssertEqual(store.state.composer.conditions.last?.operatorCode, "neq")
         XCTAssertEqual(store.state.composer.conditions.last?.values, ["public.folder"])
@@ -261,7 +261,7 @@ final class FileManagerContentComposerSeedingTests: XCTestCase {
                 operatorValueArity: 1,
                 operatorValueUIKind: "singleDate",
                 valueType: "date",
-                values: ["$time.today(-1000000)"],
+                values: [AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral],
             ),
             Condition(
                 propertyKey: "content_type_tree",

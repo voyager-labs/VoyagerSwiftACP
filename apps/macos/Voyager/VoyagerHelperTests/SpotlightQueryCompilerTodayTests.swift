@@ -41,13 +41,13 @@ final class SpotlightQueryCompilerTodayTests: XCTestCase {
         let condition = SearchConditionPayload(
             propertyKey: "last_used_date",
             operator: "gt",
-            value: .string("$time.today(-1000000)"),
+            value: .string(SearchDateUtils.recentsTodayLiteral),
         )
 
         let plan = try compiler.compilePlan(conditions: [condition])
 
         XCTAssertEqual(plan.pushdownConditions.count, 1)
-        XCTAssertTrue(plan.predicate.contains("kMDItemLastUsedDate > $time.today(-1000000)"))
+        XCTAssertTrue(plan.predicate.contains("kMDItemLastUsedDate > \(SearchDateUtils.recentsTodayLiteral)"))
     }
 
     func testTodayOffsetLiteralUsesDayBoundsForDateEquality() throws {
@@ -80,8 +80,8 @@ final class SpotlightQueryCompilerTodayTests: XCTestCase {
     }
 
     func testTodayOffsetLiteralParsesIntoSignedOffset() {
-        XCTAssertEqual(SearchDateUtils.todayOffset(for: "$time.today(-1000000)"), -1_000_000)
-        XCTAssertNotNil(SearchDateUtils.parseDateLiteral("$time.today(-1000000)"))
+        XCTAssertEqual(SearchDateUtils.todayOffset(for: SearchDateUtils.recentsTodayLiteral), SearchDateUtils.recentsTodayOffset)
+        XCTAssertNotNil(SearchDateUtils.parseDateLiteral(SearchDateUtils.recentsTodayLiteral))
     }
 }
 

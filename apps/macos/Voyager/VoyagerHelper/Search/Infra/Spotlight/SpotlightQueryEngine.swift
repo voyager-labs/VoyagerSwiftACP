@@ -14,14 +14,14 @@ struct SpotlightQueryEngine {
         self.maxCandidates = max(1, maxCandidates)
     }
 
-    func loadPaths(queryString: String, scopes: [URL], includeDirectories: Bool = false) throws -> [String] {
+    func loadPaths(queryString: String, scopes: [URL]?, includeDirectories: Bool = false) throws -> [String] {
         let query = try makeQuery(queryString: queryString, scopes: scopes)
         return loadPaths(query: query, limit: maxCandidates, includeDirectories: includeDirectories)
     }
 
     func loadPaths(
         queryString: String,
-        scopes: [URL],
+        scopes: [URL]?,
         limit: Int,
         includeDirectories: Bool = false,
     ) throws -> [String] {
@@ -31,7 +31,7 @@ struct SpotlightQueryEngine {
 
     func loadPaths(
         queryString: String,
-        scopes: [URL],
+        scopes: [URL]?,
         limit: Int,
         includeDirectories: Bool = false,
         shouldIncludePath: (String) -> Bool,

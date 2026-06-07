@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -13,7 +14,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
 
     func testConnectButton_unavailable_apiKeyProvider_isIgnored() async {
         let store = TestStore(
-            initialState: AiConnectionRowState(provider: .openai, connectionState: .unavailable)
+            initialState: AiConnectionRowState(provider: .openai, connectionState: .unavailable),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
@@ -32,7 +33,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
 
     func testRetryButton_unavailable_apiKeyProvider_isIgnored() async {
         let store = TestStore(
-            initialState: AiConnectionRowState(provider: .anthropic, connectionState: .unavailable)
+            initialState: AiConnectionRowState(provider: .anthropic, connectionState: .unavailable),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
@@ -54,7 +55,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
     func testPrimaryAction_unavailable_isDisabled() {
         XCTAssertEqual(
             ProviderConnectionState.unavailable.primaryAction,
-            .disabled
+            .disabled,
         )
 
         let row = AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable)
@@ -65,7 +66,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
 
     func testConnectButton_unavailable_oAuthProvider_isIgnored() async {
         let store = TestStore(
-            initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable)
+            initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
@@ -97,7 +98,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
 
     func testRetryButton_unavailable_oAuthProvider_isIgnored() async {
         let store = TestStore(
-            initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable)
+            initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
@@ -131,7 +132,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
 
     func testUnavailableOAuthRow_directStartActions_areIgnored() async {
         let store = TestStore(
-            initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable)
+            initialState: AiConnectionRowState(provider: .chatgptCodex, connectionState: .unavailable),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
@@ -165,7 +166,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
 
     func testUnavailableRow_apiKeyProvider_doesNotInvokeBrowserLogin() async {
         let store = TestStore(
-            initialState: AiConnectionRowState(provider: .openai, connectionState: .unavailable)
+            initialState: AiConnectionRowState(provider: .openai, connectionState: .unavailable),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
@@ -196,7 +197,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
 
     func testUnavailableRow_apiKeySubmit_isIgnored() async {
         let store = TestStore(
-            initialState: AiConnectionRowState(provider: .openai, connectionState: .unavailable)
+            initialState: AiConnectionRowState(provider: .openai, connectionState: .unavailable),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
@@ -223,7 +224,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
         let unavailableFile = AIConnectionsFile.singleProvider(
             .chatgptCodex,
             state: .unavailable,
-            errorCode: .providerUnsupportedInBuild
+            errorCode: .providerUnsupportedInBuild,
         )
 
         let store = TestStore(initialState: AiSettingsState()) {
@@ -260,7 +261,7 @@ final class AiConnectionUnavailableTests: XCTestCase {
         let unavailableFile = AIConnectionsFile.singleProvider(
             .openai,
             state: .unavailable,
-            errorCode: .providerUnsupportedInBuild
+            errorCode: .providerUnsupportedInBuild,
         )
 
         let store = TestStore(initialState: AiSettingsState()) {

@@ -64,13 +64,13 @@ enum RegistryTestSupport {
         }
     }
 
-    nonisolated private static func registryUnitSpecs() -> [String: VoyagerEntitiesCollection.SystemPropertyUnitSpec] {
+    private nonisolated static func registryUnitSpecs() -> [String: VoyagerEntitiesCollection.SystemPropertyUnitSpec] {
         MainActor.assumeIsolated {
             registrySnapshot().propertyKeyToUnitSpec
         }
     }
 
-    nonisolated private static func registryUIKind(for typeKey: String) -> String {
+    private nonisolated static func registryUIKind(for typeKey: String) -> String {
         switch typeKey {
         case "number":
             "singleNumber"
@@ -83,7 +83,7 @@ enum RegistryTestSupport {
         }
     }
 
-    nonisolated private static func registryResolution(for key: String) -> PropertyKeyResolution {
+    private nonisolated static func registryResolution(for key: String) -> PropertyKeyResolution {
         switch key {
         case "name_full":
             .canonical(key)

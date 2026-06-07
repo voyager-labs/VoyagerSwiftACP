@@ -8,10 +8,10 @@ Voyager에서 문제가 생겼을 때는 "어느 레이어에서 실패했는지
 
 관련 문서
 
-- ENV/포트/모드: `docs/architecture/environment.md`
-- Helper 상세/디버깅: `docs/macos/voyager-helper.md`
-- Backend 부트스트랩: `docs/integration/backend-bootstrap.md`
-- 검색 동작: `docs/integration/search-contract.md`
+- ENV/포트/모드: `docs/legacy/architecture/environment.md`
+- Helper 상세/디버깅: `docs/legacy/macos/voyager-helper.md`
+- Backend 부트스트랩: `docs/legacy/integration/backend-bootstrap.md`
+- 검색 동작: `docs/legacy/integration/search-contract.md`
 
 ---
 
@@ -106,7 +106,7 @@ log stream --predicate 'subsystem == "com.voyager.app"'
 
 관련 문서
 
-- `docs/integration/search-contract.md`
+- `docs/legacy/integration/search-contract.md`
 
 ### 4.2 원인 분리 방법
 
@@ -179,4 +179,4 @@ DB에서 상태를 직접 보고 싶다면
 
 관련 문서
 
-- `docs/macos/sparkle-update-runtime.md`
+- `docs/legacy/macos/sparkle-update-runtime.md`

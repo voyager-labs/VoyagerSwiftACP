@@ -2,6 +2,7 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesComposer
+import VoyagerShared
 import XCTest
 
 /// 조건 칩 값 표시 — 날짜/숫자 범위 렌더링 포맷을 검증.
@@ -54,7 +55,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
     /// testDisplayedValuesForDateMapsRecentsTodayOffsetToFriendlyText 테스트 동작을 검증한다.
     func testDisplayedValuesForDateMapsRecentsTodayOffsetToFriendlyText() {
         let displayed = ConditionChipDisplayUtils.displayedValuesForDate(
-            conditionValues: ["$time.today(-1000000)"],
+            conditionValues: [AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral],
             conditionPropertyKey: "last_used_date",
             pickerPropertyKey: nil,
             pickerPresented: false,
@@ -91,7 +92,7 @@ final class ConditionChipValueDisplayTests: XCTestCase {
         let text = ConditionChipDisplayUtils.displayValueText(for: makeCondition(
             propertyKey: "last_used_date",
             valueType: "date",
-            values: ["$time.today(-1000000)"],
+            values: [AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral],
         ))
 
         XCTAssertEqual(text, "Ever opened")
