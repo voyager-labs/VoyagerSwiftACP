@@ -115,7 +115,7 @@ public struct CollectionSaveFeedback: Equatable, Sendable {
         title: String,
         message: String,
         recoveryHint: String? = nil,
-        propertyLabel: String? = nil,
+        propertyLabel: String? = nil, // swiftlint:disable:this function_default_parameter_at_end
         isRetryable: Bool,
     ) {
         self.stage = stage

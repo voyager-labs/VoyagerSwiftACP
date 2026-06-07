@@ -147,6 +147,7 @@ extension FileManagerContentFeature {
 
         case .writeBackNavigationPrepared:
             .none
+
         case .saveFeedback:
             .none
         }
@@ -270,12 +271,11 @@ extension FileManagerContentFeature {
         payload: CollectionWriteBackNavigationPayload,
         isCollectionMode: Bool,
     ) -> Effect<Action> {
-        let openedURL: URL?
-        switch payload.nextNavigation.kind {
+        let openedURL: URL? = switch payload.nextNavigation.kind {
         case .temporary:
-            openedURL = nil
+            nil
         case let .file(url, _):
-            openedURL = url
+            url
         }
         return .send(.composer(.syncCollectionState(
             context: payload.nextNavigation.context,

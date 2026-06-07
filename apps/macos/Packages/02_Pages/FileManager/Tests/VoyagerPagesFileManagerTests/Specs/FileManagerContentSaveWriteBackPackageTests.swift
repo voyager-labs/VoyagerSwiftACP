@@ -55,7 +55,10 @@ final class FileManagerContentSaveWriteBackPackageTests: XCTestCase {
         XCTAssertEqual(store.state.collection.collectionSession.document?.url, savedURL)
         XCTAssertEqual(store.state.collection.collectionSession.document?.name, "saved")
         XCTAssertEqual(store.state.collection.collectionContext, savedContext)
-        XCTAssertEqual(store.state.collection.collectionSession.metadata.baseline, CollectionBaseline(context: savedContext))
+        XCTAssertEqual(
+            store.state.collection.collectionSession.metadata.baseline,
+            CollectionBaseline(context: savedContext),
+        )
         XCTAssertFalse(store.state.isOpenedCollectionDirty)
         XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
         let collectionStatus = ToolbarCollectionStatusViewState(

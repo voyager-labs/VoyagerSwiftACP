@@ -356,15 +356,18 @@ func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
     requestID: UUID = UUID(),
+    metricSource: String = ComposerCollectionFilterMetrics.sourceManualApply,
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = requestID
+    state.activeFiltersMetricSource = metricSource
     let filters = buildFilters(from: state)
     guard !filters.scopes.isEmpty || !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil
+        state.activeFiltersMetricSource = nil
         state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters)
     }

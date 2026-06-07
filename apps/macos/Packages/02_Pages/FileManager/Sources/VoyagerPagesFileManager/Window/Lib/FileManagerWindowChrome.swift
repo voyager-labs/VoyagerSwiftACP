@@ -150,7 +150,7 @@ enum FileManagerWindowChrome {
 
     static func makeTitle(
         openedCollectionName: String?,
-        collectionNavigationTitle: String? = nil,
+        collectionNavigationTitle: String? = nil, // swiftlint:disable:this function_default_parameter_at_end
         isCollectionMode: Bool,
         titlePath: String,
         makeWindowTitle: (String) -> String,

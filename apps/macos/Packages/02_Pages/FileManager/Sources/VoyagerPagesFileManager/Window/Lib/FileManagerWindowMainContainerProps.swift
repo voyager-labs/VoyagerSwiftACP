@@ -1,5 +1,4 @@
 import Foundation
-
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
