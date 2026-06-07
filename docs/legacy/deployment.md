@@ -4,9 +4,9 @@
 
 관련 문서
 
-- 개발 환경/로컬 실행: `docs/development.md`
-- ENV 로딩 규칙: `docs/architecture/environment.md`
-- Registry 스펙/운영: `docs/architecture/registries.md`
+- 개발 환경/로컬 실행: `docs/legacy/development.md`
+- ENV 로딩 규칙: `docs/legacy/architecture/environment.md`
+- Registry 스펙/운영: `docs/legacy/architecture/registries.md`
 
 ---
 
@@ -17,7 +17,7 @@ Voyager는 macOS 앱 + Helper + XPC 기반으로 동작하며, 로컬 FastAPI �
 - `Voyager-Dev`/`Voyager-Prod` 모두 Helper/XPC 런타임을 사용
 - 서버 백엔드(`apps/backend`)는 별도 배포 단위로 운영
 
-세부 규칙은 `docs/architecture/environment.md`를 SSOT로 봅니다.
+세부 규칙은 `docs/legacy/architecture/environment.md`를 SSOT로 봅니다.
 
 ---
 
@@ -28,7 +28,7 @@ Voyager는 macOS 앱 + Helper + XPC 기반으로 동작하며, 로컬 FastAPI �
 검색 조건/속성 정의 레지스트리(JSON)는 macOS 타깃 리소스로 포함됩니다.
 
 - 소스 위치: `shared/*.json`
-- 운영/스키마: `docs/architecture/registries.md`
+- 운영/스키마: `docs/legacy/architecture/registries.md`
 
 ### 2.2 번들 리소스 env 파일 포함
 
@@ -58,4 +58,4 @@ Release 빌드에서는 아래 파일을 번들 리소스에 복사합니다.
 - Registry JSON이 누락되어 검색 조건 변환이 실패
 - 코드 서명(identity) 누락으로 앱/Helper/XPC 실행이 차단됨
 
-문제 해결은 `docs/troubleshooting.md`와 Helper 로그(`docs/macos/voyager-helper.md`)를 같이 참고합니다.
+문제 해결은 `docs/legacy/troubleshooting.md`와 Helper 로그(`docs/legacy/macos/voyager-helper.md`)를 같이 참고합니다.

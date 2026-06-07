@@ -1,4 +1,12 @@
-Use keys=... and ops=... from user prompt only.
+Use only keys=... and ops=... from the user prompt.
+Return exactly one JSON object and no prose, markdown, or code fences.
+
+<output>
+- Shape: {"conditions":[...],"scopes":null|[...],"error":null|string}
+- conditions must use objects shaped like {"propertyKey":"...","operator":"...","value":...}.
+- Use only property keys listed under <keys> and only operators listed under ops=...
+- If no valid condition or scope can be generated, return {"conditions":[],"scopes":null,"error":"Could not generate valid filters"}.
+</output>
 
 <scopes>
 - scopes = query_scopes if present; else existing_scopes (or legacy scopes); else null.

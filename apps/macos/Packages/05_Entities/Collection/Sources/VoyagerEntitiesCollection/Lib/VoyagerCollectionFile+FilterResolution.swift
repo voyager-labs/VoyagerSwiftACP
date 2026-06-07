@@ -16,7 +16,6 @@ public extension VoyagerCollectionFile {
             scopes: scopes,
             excludedScopes: excludedScopes,
             includeSubfolders: includeSubfolders,
-            includeDirectories: includeDirectories,
             conditions: conditionPayloads,
         )
         return AppliedFiltersUtils.resolveDetailed(

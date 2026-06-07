@@ -1,7 +1,6 @@
-// swiftformat:disable modifierOrder
 import Foundation
 
-nonisolated public struct SearchRequestPayload: Codable, Equatable, Sendable {
+public nonisolated struct SearchRequestPayload: Codable, Equatable, Sendable {
     public let query: String
     public let filters: SearchFiltersPayload
 
@@ -11,33 +10,43 @@ nonisolated public struct SearchRequestPayload: Codable, Equatable, Sendable {
     }
 }
 
-nonisolated public struct SearchFiltersPayload: Codable, Equatable, Sendable {
+public nonisolated struct SearchFiltersPayload: Codable, Equatable, Sendable {
     public let scopes: [String]
     public let excludedScopes: [String]
     public let includeSubfolders: Bool
-    public let includeDirectories: Bool
     public let conditions: [SearchConditionPayload]
 
     public enum CodingKeys: String, CodingKey {
         case scopes
         case excludedScopes
         case includeSubfolders
-        case includeDirectories
         case conditions
     }
 
     public init(
         scopes: [String],
+        conditions: [SearchConditionPayload],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
-        includeDirectories: Bool = false, // swiftlint:disable:this function_default_parameter_at_end
-        conditions: [SearchConditionPayload],
     ) {
         self.scopes = scopes
         self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
-        self.includeDirectories = includeDirectories
         self.conditions = conditions
+    }
+
+    public init(
+        scopes: [String],
+        excludedScopes: [String],
+        includeSubfolders: Bool,
+        conditions: [SearchConditionPayload],
+    ) {
+        self.init(
+            scopes: scopes,
+            conditions: conditions,
+            excludedScopes: excludedScopes,
+            includeSubfolders: includeSubfolders,
+        )
     }
 
     public init(from decoder: Decoder) throws {
@@ -45,7 +54,6 @@ nonisolated public struct SearchFiltersPayload: Codable, Equatable, Sendable {
         scopes = try container.decode([String].self, forKey: .scopes)
         excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
         includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
-        includeDirectories = try container.decodeIfPresent(Bool.self, forKey: .includeDirectories) ?? false
         conditions = try container.decode([SearchConditionPayload].self, forKey: .conditions)
     }
 
@@ -54,12 +62,11 @@ nonisolated public struct SearchFiltersPayload: Codable, Equatable, Sendable {
         try container.encode(scopes, forKey: .scopes)
         try container.encode(excludedScopes, forKey: .excludedScopes)
         try container.encode(includeSubfolders, forKey: .includeSubfolders)
-        try container.encode(includeDirectories, forKey: .includeDirectories)
         try container.encode(conditions, forKey: .conditions)
     }
 }
 
-nonisolated public struct SearchConditionPayload: Codable, Equatable, Sendable {
+public nonisolated struct SearchConditionPayload: Codable, Equatable, Sendable {
     public let propertyKey: String
     public let `operator`: String
     public let value: JSONValue?
@@ -77,7 +84,7 @@ nonisolated public struct SearchConditionPayload: Codable, Equatable, Sendable {
     }
 }
 
-nonisolated public struct FiltersOnlyRequestPayload: Codable, Equatable, Sendable {
+public nonisolated struct FiltersOnlyRequestPayload: Codable, Equatable, Sendable {
     public let filters: SearchFiltersPayload
 
     public init(filters: SearchFiltersPayload) {
@@ -85,46 +92,59 @@ nonisolated public struct FiltersOnlyRequestPayload: Codable, Equatable, Sendabl
     }
 }
 
-nonisolated public struct SearchResponsePayload: Codable, Equatable, Sendable {
+public nonisolated enum SearchQueryConversionOutcomePayload: String, Codable, Equatable, Sendable {
+    case generatedChangeSet
+    case unchangedResult
+    case fallbackReuse
+    case providerNotConfigured
+    case invalidCredential
+    case providerUnavailable
+    case networkFailure
+    case conversionFailure
+}
+
+public nonisolated struct SearchQueryConversionMetadataPayload: Codable, Equatable, Sendable {
+    public let outcome: SearchQueryConversionOutcomePayload
+
+    public init(
+        outcome: SearchQueryConversionOutcomePayload,
+    ) {
+        self.outcome = outcome
+    }
+}
+
+public nonisolated struct SearchResponsePayload: Codable, Equatable, Sendable {
     public let itemCount: Int
     public let appliedFilters: AppliedFiltersPayload?
     public let items: [JSONValue]?
     public let error: SearchErrorPayload?
-    public let queryOutcome: SearchQueryOutcome?
+    public let queryConversion: SearchQueryConversionMetadataPayload?
 
     public init(
         itemCount: Int,
         appliedFilters: AppliedFiltersPayload? = nil,
         items: [JSONValue]? = nil,
         error: SearchErrorPayload? = nil,
-        queryOutcome: SearchQueryOutcome? = nil,
+        queryConversion: SearchQueryConversionMetadataPayload? = nil,
     ) {
         self.itemCount = itemCount
         self.appliedFilters = appliedFilters
         self.items = items
         self.error = error
-        self.queryOutcome = queryOutcome
+        self.queryConversion = queryConversion
     }
 }
 
-nonisolated public enum SearchQueryOutcome: String, Codable, Equatable, Sendable {
-    case convertedChanged = "converted_changed"
-    case unchangedResult = "unchanged_result"
-    case fallbackReuse = "fallback_reuse"
-}
-
-nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
+public nonisolated struct AppliedFiltersPayload: Codable, Equatable, Sendable {
     public let scopes: [String]?
     public let excludedScopes: [String]
     public let includeSubfolders: Bool?
-    public let includeDirectories: Bool?
     public let conditions: [SearchConditionPayload]?
 
     public enum CodingKeys: String, CodingKey {
         case scopes
         case excludedScopes
         case includeSubfolders
-        case includeDirectories
         case conditions
     }
 
@@ -132,13 +152,11 @@ nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
         scopes: [String]? = nil,
         excludedScopes: [String] = [],
         includeSubfolders: Bool? = nil,
-        includeDirectories: Bool? = nil,
         conditions: [SearchConditionPayload]? = nil,
     ) {
         self.scopes = scopes
         self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
-        self.includeDirectories = includeDirectories
         self.conditions = conditions
     }
 
@@ -147,7 +165,6 @@ nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
         scopes = try container.decodeIfPresent([String].self, forKey: .scopes)
         excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
         includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders)
-        includeDirectories = try container.decodeIfPresent(Bool.self, forKey: .includeDirectories)
         conditions = try container.decodeIfPresent([SearchConditionPayload].self, forKey: .conditions)
     }
 
@@ -156,12 +173,11 @@ nonisolated public struct AppliedFiltersPayload: Codable, Equatable, Sendable {
         try container.encodeIfPresent(scopes, forKey: .scopes)
         try container.encode(excludedScopes, forKey: .excludedScopes)
         try container.encodeIfPresent(includeSubfolders, forKey: .includeSubfolders)
-        try container.encodeIfPresent(includeDirectories, forKey: .includeDirectories)
         try container.encodeIfPresent(conditions, forKey: .conditions)
     }
 }
 
-nonisolated public struct SearchErrorPayload: Codable, Equatable, Sendable {
+public nonisolated struct SearchErrorPayload: Codable, Equatable, Sendable {
     public let code: String
     public let details: String?
 
@@ -171,16 +187,16 @@ nonisolated public struct SearchErrorPayload: Codable, Equatable, Sendable {
     }
 }
 
-nonisolated public enum RecentTagSearchScopeModePayload: String, Codable, Equatable, Sendable {
+public nonisolated enum RecentTagSearchScopeModePayload: String, Codable, Equatable, Sendable {
     case allIndexed
     case scopedPaths
 }
 
-nonisolated public enum RecentTagSearchSortPayload: String, Codable, Equatable, Sendable {
+public nonisolated enum RecentTagSearchSortPayload: String, Codable, Equatable, Sendable {
     case lastUsedDateDescending
 }
 
-nonisolated public struct RecentSearchRequestPayload: Codable, Equatable, Sendable {
+public nonisolated struct RecentSearchRequestPayload: Codable, Equatable, Sendable {
     public let scopeMode: RecentTagSearchScopeModePayload
     public let scopes: [String]
     public let resultCap: Int
@@ -202,7 +218,7 @@ nonisolated public struct RecentSearchRequestPayload: Codable, Equatable, Sendab
     }
 }
 
-nonisolated public struct TagSearchRequestPayload: Codable, Equatable, Sendable {
+public nonisolated struct TagSearchRequestPayload: Codable, Equatable, Sendable {
     public let requestedTag: String
     public let scopeMode: RecentTagSearchScopeModePayload
     public let scopes: [String]
@@ -230,7 +246,7 @@ nonisolated public struct TagSearchRequestPayload: Codable, Equatable, Sendable 
     }
 }
 
-nonisolated public struct SearchTagPayload: Codable, Equatable, Sendable {
+public nonisolated struct SearchTagPayload: Codable, Equatable, Sendable {
     public let name: String
     public let colorCode: Int
 
@@ -240,7 +256,7 @@ nonisolated public struct SearchTagPayload: Codable, Equatable, Sendable {
     }
 }
 
-nonisolated public enum SearchEntrySupplementaryMetadataPayload: Codable, Equatable, Sendable {
+public nonisolated enum SearchEntrySupplementaryMetadataPayload: Codable, Equatable, Sendable {
     case folderItemCount(Int)
     case imageResolution(width: Int, height: Int)
     case compressedFileSize(Int64)
@@ -292,7 +308,7 @@ nonisolated public enum SearchEntrySupplementaryMetadataPayload: Codable, Equata
     }
 }
 
-nonisolated public struct SearchEntryPayload: Codable, Equatable, Sendable {
+public nonisolated struct SearchEntryPayload: Codable, Equatable, Sendable {
     public let name: String
     public let fullPath: String
     public let isFolder: Bool
@@ -341,7 +357,7 @@ nonisolated public struct SearchEntryPayload: Codable, Equatable, Sendable {
     }
 }
 
-nonisolated public struct RecentSearchResponsePayload: Codable, Equatable, Sendable {
+public nonisolated struct RecentSearchResponsePayload: Codable, Equatable, Sendable {
     public let items: [SearchEntryPayload]
 
     public init(items: [SearchEntryPayload]) {
@@ -349,7 +365,7 @@ nonisolated public struct RecentSearchResponsePayload: Codable, Equatable, Senda
     }
 }
 
-nonisolated public struct TagSearchResponsePayload: Codable, Equatable, Sendable {
+public nonisolated struct TagSearchResponsePayload: Codable, Equatable, Sendable {
     public let requestedTag: String
     public let items: [SearchEntryPayload]
 
@@ -359,7 +375,7 @@ nonisolated public struct TagSearchResponsePayload: Codable, Equatable, Sendable
     }
 }
 
-nonisolated public enum JSONValue: Codable, Equatable, Sendable {
+public nonisolated enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)

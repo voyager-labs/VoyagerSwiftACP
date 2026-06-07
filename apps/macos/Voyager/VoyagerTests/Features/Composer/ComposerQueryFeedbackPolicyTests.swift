@@ -1,19 +1,13 @@
 import Foundation
-@testable import Voyager
 @testable import VoyagerFeaturesComposer
 import VoyagerShared
 import XCTest
 
-/// Composer 쿼리 피드백 정책 — 중복 쿼리 no-op 및 실패 코드 매핑을 검증.
 @MainActor
 final class ComposerQueryFeedbackPolicyTests: XCTestCase {
-    /// testIdenticalBaselineAndAppliedFiltersAreNoOp 테스트 동작을 검증한다.
     func testIdenticalBaselineAndAppliedFiltersAreNoOp() {
         let baseline = VoyagerShared.SearchFiltersPayload(
             scopes: ["/tmp"],
-            excludedScopes: ["/tmp/excluded"],
-            includeSubfolders: true,
-            includeDirectories: true,
             conditions: [
                 VoyagerShared.SearchConditionPayload(
                     propertyKey: "name",
@@ -25,9 +19,6 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
 
         let applied = VoyagerShared.AppliedFiltersPayload(
             scopes: ["/tmp"],
-            excludedScopes: ["/tmp/excluded"],
-            includeSubfolders: true,
-            includeDirectories: true,
             conditions: [
                 VoyagerShared.SearchConditionPayload(
                     propertyKey: "name",
@@ -40,11 +31,10 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
         XCTAssertTrue(ComposerQueryFeedbackPolicy.isNoOp(baseline: baseline, appliedFilters: applied))
     }
 
-    /// testFailureCodesMapToDistinctMessages 테스트 동작을 검증한다.
     func testFailureCodesMapToDistinctMessages() {
         XCTAssertEqual(
             ComposerQueryFeedbackPolicy
-                .failureMessage(for: MockLocalizedError("LLM_CONVERSION_FAILED: gateway timeout")),
+                .failureMessage(for: MockLocalizedError("LLM_CONVERSION_FAILED: provider timeout")),
             ComposerQueryFeedbackPolicy.conversionFailureMessage,
         )
         XCTAssertEqual(
@@ -57,72 +47,68 @@ final class ComposerQueryFeedbackPolicyTests: XCTestCase {
         )
     }
 
-    func testShouldApplyFiltersTreatsFallbackReuseAndUnchangedAsNoOp() {
-        XCTAssertFalse(ComposerQueryFeedbackPolicy.shouldApplyFilters(for: .fallbackReuse))
-        XCTAssertFalse(ComposerQueryFeedbackPolicy.shouldApplyFilters(for: .unchangedResult))
-        XCTAssertTrue(ComposerQueryFeedbackPolicy.shouldApplyFilters(for: .convertedChanged))
-        XCTAssertTrue(ComposerQueryFeedbackPolicy.shouldApplyFilters(for: nil))
-        XCTAssertEqual(
-            ComposerQueryFeedbackPolicy.fallbackReuseMessage,
-            "No new filters were generated, so Voyager kept the current filters.",
+    func testQueryConversionOutcomeMapsToExpectedFeedbackCopy() {
+        let response = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: [], conditions: []),
+            items: nil,
+            error: VoyagerShared.SearchErrorPayload(code: "AI_PROVIDER_NOT_CONFIGURED", details: "missing provider"),
+            queryConversion: VoyagerShared.SearchQueryConversionMetadataPayload(
+                outcome: VoyagerShared.SearchQueryConversionOutcomePayload.providerNotConfigured,
+            ),
         )
+
+        let feedback = ComposerQueryFeedbackPolicy.feedback(for: response)
+
+        XCTAssertEqual(feedback?.kind, .error)
+        XCTAssertEqual(feedback?.message, ComposerQueryFeedbackPolicy.providerNotConfiguredMessage)
     }
 
-    func testNormalizedFiltersPreservesExcludedScopes() {
-        let baseline = VoyagerShared.SearchFiltersPayload(
-            scopes: ["/tmp"],
-            excludedScopes: ["/tmp/ignored"],
-            includeSubfolders: true,
-            conditions: [],
-        )
-        let applied = VoyagerShared.AppliedFiltersPayload(
-            scopes: ["/tmp"],
-            excludedScopes: ["/tmp/Receipts"],
-            includeSubfolders: false,
-            conditions: [],
+    func testFallbackReuseOutcomeProducesInfoFeedback() {
+        let response = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: [], conditions: []),
+            items: nil,
+            error: nil,
+            queryConversion: VoyagerShared.SearchQueryConversionMetadataPayload(
+                outcome: VoyagerShared.SearchQueryConversionOutcomePayload.fallbackReuse,
+            ),
         )
 
-        let normalized = ComposerQueryFeedbackPolicy.normalizedFilters(appliedFilters: applied, fallback: baseline)
+        let feedback = ComposerQueryFeedbackPolicy.feedback(for: response)
 
-        XCTAssertEqual(normalized.scopes, ["/tmp"])
-        XCTAssertEqual(normalized.excludedScopes, ["/tmp/Receipts"])
-        XCTAssertFalse(normalized.includeSubfolders)
-        XCTAssertEqual(normalized.conditions, [])
+        XCTAssertEqual(feedback?.kind, .info)
+        XCTAssertEqual(feedback?.message, ComposerQueryFeedbackPolicy.fallbackReuseMessage)
     }
 
-    func testNormalizedFiltersRestoresBaselineExcludedScopesWhenAppliedPayloadOmitsKey() throws {
-        let baseline = VoyagerShared.SearchFiltersPayload(
-            scopes: ["/tmp"],
-            excludedScopes: ["/tmp/ignored"],
-            includeSubfolders: true,
-            conditions: [],
+    func testGeneratedScopeOnlyChangeDoesNotSkipApplyFilters() {
+        let baseline = VoyagerShared.SearchFiltersPayload(scopes: ["/tmp/old"], conditions: [])
+        let response = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: ["/tmp/new"], conditions: []),
+            items: nil,
+            error: nil,
+            queryConversion: VoyagerShared.SearchQueryConversionMetadataPayload(
+                outcome: VoyagerShared.SearchQueryConversionOutcomePayload.generatedChangeSet,
+            ),
         )
-        let data = Data(#"{"scopes":["/tmp"],"includeSubfolders":true,"conditions":[]}"#.utf8)
-        let applied = try JSONDecoder().decode(VoyagerShared.AppliedFiltersPayload.self, from: data)
 
-        let normalized = ComposerQueryFeedbackPolicy.normalizedFilters(appliedFilters: applied, fallback: baseline)
-
-        XCTAssertEqual(normalized.scopes, ["/tmp"])
-        XCTAssertEqual(normalized.excludedScopes, ["/tmp/ignored"])
-        XCTAssertTrue(normalized.includeSubfolders)
-        XCTAssertEqual(normalized.conditions, [])
-        XCTAssertTrue(ComposerQueryFeedbackPolicy.isNoOp(baseline: baseline, appliedFilters: applied))
+        XCTAssertFalse(ComposerQueryFeedbackPolicy.shouldSkipApplyFilters(response: response, baseline: baseline))
     }
 
-    func testBuildFiltersIncludesExcludedScopesFromSelection() {
-        var state = ComposerState()
-        state.scopeEditor.selection = .explicit(
-            bases: [ComposerScopeBase(path: "/tmp")],
-            exceptions: [ComposerScopeException(path: "/tmp/Receipts")],
+    func testSkipApplyFiltersUsesMetadataOutcome() {
+        let baseline = VoyagerShared.SearchFiltersPayload(scopes: ["/tmp"], conditions: [])
+        let response = VoyagerShared.SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: VoyagerShared.AppliedFiltersPayload(scopes: ["/tmp"], conditions: []),
+            items: nil,
+            error: nil,
+            queryConversion: VoyagerShared.SearchQueryConversionMetadataPayload(
+                outcome: VoyagerShared.SearchQueryConversionOutcomePayload.unchangedResult,
+            ),
         )
-        state.scopeEditor.includeSubfolders = true
 
-        let filters = buildFilters(from: state)
-
-        XCTAssertEqual(filters.scopes, ["/tmp"])
-        XCTAssertEqual(filters.excludedScopes, ["/tmp/Receipts"])
-        XCTAssertTrue(filters.includeSubfolders)
-        XCTAssertEqual(filters.conditions, [])
+        XCTAssertTrue(ComposerQueryFeedbackPolicy.shouldSkipApplyFilters(response: response, baseline: baseline))
     }
 }
 

@@ -19,7 +19,7 @@ final class ComposerCollectionFilterMetricsTests: XCTestCase {
         await store.send(.searchResponse(activeRequestID, .success(noOpSearchResponse())))
 
         let queryMetric = recorder.lastMetric(named: ComposerCollectionFilterMetrics.queryResult)
-        XCTAssertEqual(queryMetric?.tags["outcome"], SearchQueryOutcome.unchangedResult.rawValue)
+        XCTAssertEqual(queryMetric?.tags["outcome"], SearchQueryConversionOutcomePayload.unchangedResult.rawValue)
         XCTAssertEqual(queryMetric?.tags["opened_collection"], "false")
         XCTAssertNil(recorder.lastMetric(named: ComposerCollectionFilterMetrics.applyResult))
     }
@@ -50,7 +50,7 @@ final class ComposerCollectionFilterMetricsTests: XCTestCase {
         await store.receive(\.internal.filtersResponse)
 
         let queryMetric = recorder.lastMetric(named: ComposerCollectionFilterMetrics.queryResult)
-        XCTAssertEqual(queryMetric?.tags["outcome"], SearchQueryOutcome.unchangedResult.rawValue)
+        XCTAssertEqual(queryMetric?.tags["outcome"], SearchQueryConversionOutcomePayload.unchangedResult.rawValue)
         XCTAssertEqual(queryMetric?.tags["opened_collection"], "true")
         let applyMetric = recorder.lastMetric(named: ComposerCollectionFilterMetrics.applyResult)
         XCTAssertEqual(applyMetric?.tags["outcome"], "applied")
@@ -149,12 +149,11 @@ private func noOpSearchResponse() -> SearchResponsePayload {
             scopes: ["/tmp"],
             excludedScopes: ["/tmp/excluded"],
             includeSubfolders: true,
-            includeDirectories: true,
             conditions: [],
         ),
         items: nil,
         error: nil,
-        queryOutcome: .unchangedResult,
+        queryConversion: SearchQueryConversionMetadataPayload(outcome: .unchangedResult),
     )
 }
 
@@ -188,7 +187,6 @@ private extension SearchFiltersPayload {
             scopes: scopes,
             excludedScopes: excludedScopes,
             includeSubfolders: includeSubfolders,
-            includeDirectories: includeDirectories,
             conditions: conditions,
         )
     }

@@ -89,6 +89,17 @@ public struct ComposerFeature {
                 }
                 return .none
 
+            case let .internal(.presentTransientFeedback(feedback)):
+                state.transientFeedback = feedback
+                return .concatenate(
+                    .cancel(id: CancelID.feedbackDismiss),
+                    .run { [feedbackID = feedback.id] send in
+                        try await Task.sleep(for: .seconds(4))
+                        await send(.internal(.dismissTransientFeedback(feedbackID)))
+                    }
+                    .cancellable(id: CancelID.feedbackDismiss, cancelInFlight: true),
+                )
+
             case .view(.submit),
                  .view(.cancelSearch),
                  .view(.cancelFilters):
@@ -406,7 +417,6 @@ func buildFilters(from state: ComposerFeature.State) -> VoyagerShared.SearchFilt
         scopes: state.scopeEditor.selection.legacyScopePaths,
         excludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
         includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
-        includeDirectories: state.includeDirectories,
         conditions: conditionPayloads,
     )
 }

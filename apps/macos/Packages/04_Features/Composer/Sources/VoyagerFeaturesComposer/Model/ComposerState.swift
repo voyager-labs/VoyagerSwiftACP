@@ -284,7 +284,6 @@ public struct ComposerState: Equatable {
                 scopes: filters.scopes,
                 excludedScopes: filters.excludedScopes,
                 includeSubfolders: filters.includeSubfolders,
-                includeDirectories: filters.includeDirectories,
                 conditions: filters.conditions,
             ),
             state: &self,

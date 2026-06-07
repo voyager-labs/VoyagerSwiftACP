@@ -49,15 +49,80 @@ struct ComposerSearchLifecycleReducer {
                 state.lastAcceptedSearchRequestID = requestID
                 switch response {
                 case let .success(response):
+                    if let error = response.error {
+                        state.isLoadingSearch = false
+                        state.activeSearchRequestID = nil
+                        state.resolveScopeChangeFeedback(.search(requestID), phase: .failed)
+                        let feedback = ComposerQueryFeedbackPolicy.feedback(for: response)
+                        let failureMessage = ComposerQueryFeedbackPolicy.failureMessage(for: error)
+                        let feedbackEffect = presentTransientFeedback(
+                            kind: feedback?.kind ?? .error,
+                            message: feedback?.message ?? failureMessage,
+                            state: &state,
+                            clock: clock,
+                        )
+                        applyQueryPhaseTransition(.searchFailed, state: &state)
+                        let baselineFilters = feedbackBaseline(from: state)
+                        logSearchDurationIfNeeded(state.searchStartedAt, composerMetricClient: composerMetricClient)
+                        composerMetricClient.logMetric(
+                            ComposerCollectionFilterMetrics.queryResult,
+                            value: 1,
+                            tags: ComposerCollectionFilterMetrics.queryResultTags(
+                                queryConversion: response.queryConversion,
+                                openedCollectionURL: state.openedCollectionURL,
+                                filters: baselineFilters,
+                                itemCount: response.itemCount,
+                                reason: "conversion_error",
+                            ),
+                            level: .warn,
+                        )
+                        composerMetricClient.logMetric(
+                            ComposerCollectionFilterMetrics.legacySearchResult,
+                            value: 1,
+                            tags: ComposerCollectionFilterMetrics.legacySearchFailureTags(),
+                            level: .warn,
+                        )
+                        state.searchStartedAt = nil
+                        kComposerSearchLifecycleLogger.warning(
+                            "Composer query search returned error payload: \(feedback?.message ?? failureMessage)",
+                        )
+                        return feedbackEffect
+                    }
+
+                    let baselineFilters = feedbackBaseline(from: state)
+                    let normalizedAppliedFilters = feedbackAppliedFilters(
+                        appliedFilters: response.appliedFilters,
+                        baseline: baselineFilters,
+                    )
+                    let shouldSkipApplyFilters = ComposerQueryFeedbackPolicy.shouldSkipApplyFilters(
+                        response: response,
+                        baseline: baselineFilters,
+                    )
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
                     state.lastSearchResponse = response
                     state.lastFiltersResponse = nil
-                    let queryOutcome = response.queryOutcome
-                    let startedAt = state.searchStartedAt
+                    applyQueryPhaseTransition(.searchSucceeded, state: &state)
+                    applyAppliedFilters(normalizedAppliedFilters, state: &state, registryClient: registryClient)
+                    logSearchDurationIfNeeded(state.searchStartedAt, composerMetricClient: composerMetricClient)
+                    logCollectionFilterQueryResult(
+                        response: response,
+                        queryConversion: response.queryConversion,
+                        filters: feedbackFilters(from: normalizedAppliedFilters),
+                        openedCollectionURL: state.openedCollectionURL,
+                        composerMetricClient: composerMetricClient,
+                    )
+                    composerMetricClient.logMetric(
+                        ComposerCollectionFilterMetrics.legacySearchResult,
+                        value: 1,
+                        tags: ComposerCollectionFilterMetrics.legacySearchResultTags(
+                            itemCount: response.itemCount,
+                            queryConversion: response.queryConversion,
+                        ),
+                    )
                     state.searchStartedAt = nil
-                    switch queryOutcome {
-                    case .fallbackReuse where state.openedCollectionURL == nil:
+                    if shouldSkipApplyFilters, state.openedCollectionURL == nil {
+                        kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
                         state.isLoadingFilters = false
                         state.isFilteringInFlight = false
                         state.activeFiltersRequestID = nil
@@ -66,123 +131,54 @@ struct ComposerSearchLifecycleReducer {
                         state.pendingSearchQuery = nil
                         applyQueryPhaseTransition(.reset, state: &state)
                         state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
-                        logSearchDurationIfNeeded(startedAt, composerMetricClient: composerMetricClient)
-                        let baselineFilters = feedbackBaseline(from: state)
-                        logCollectionFilterQueryResult(
-                            response: response,
-                            queryOutcome: queryOutcome,
-                            filters: baselineFilters,
-                            openedCollectionURL: state.openedCollectionURL,
-                            composerMetricClient: composerMetricClient,
-                        )
-                        composerMetricClient.logMetric(
-                            ComposerCollectionFilterMetrics.legacySearchResult,
-                            value: 1,
-                            tags: ComposerCollectionFilterMetrics.legacySearchResultTags(
-                                itemCount: response.itemCount,
-                                queryOutcome: queryOutcome,
-                            ),
-                        )
-                        kComposerSearchLifecycleLogger.debug("Composer query search resolved to fallback reuse")
-                        return presentTransientFeedback(
-                            kind: .info,
-                            message: ComposerQueryFeedbackPolicy.fallbackReuseMessage,
-                            state: &state,
-                            clock: clock,
-                        )
-
-                    case .unchangedResult where state.openedCollectionURL == nil:
-                        state.isLoadingFilters = false
-                        state.isFilteringInFlight = false
-                        state.activeFiltersRequestID = nil
-                        state.activeFiltersMetricSource = nil
-                        state.filtersStartedAt = nil
-                        state.pendingSearchQuery = nil
-                        applyQueryPhaseTransition(.reset, state: &state)
-                        state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
-                        logSearchDurationIfNeeded(startedAt, composerMetricClient: composerMetricClient)
-                        let baselineFilters = feedbackBaseline(from: state)
-                        logCollectionFilterQueryResult(
-                            response: response,
-                            queryOutcome: queryOutcome,
-                            filters: baselineFilters,
-                            openedCollectionURL: state.openedCollectionURL,
-                            composerMetricClient: composerMetricClient,
-                        )
-                        composerMetricClient.logMetric(
-                            ComposerCollectionFilterMetrics.legacySearchResult,
-                            value: 1,
-                            tags: ComposerCollectionFilterMetrics.legacySearchResultTags(
-                                itemCount: response.itemCount,
-                                queryOutcome: queryOutcome,
-                            ),
-                        )
-                        kComposerSearchLifecycleLogger.debug("Composer query search resolved to unchanged result")
-                        return .none
-
-                    case .convertedChanged, .fallbackReuse, .unchangedResult, nil:
-                        let baselineFilters = feedbackBaseline(from: state)
-                        let normalizedAppliedFilters = feedbackAppliedFilters(
-                            appliedFilters: response.appliedFilters,
-                            baseline: baselineFilters,
-                        )
-                        applyQueryPhaseTransition(.searchSucceeded, state: &state)
-                        applyAppliedFilters(normalizedAppliedFilters, state: &state, registryClient: registryClient)
-                        logSearchDurationIfNeeded(startedAt, composerMetricClient: composerMetricClient)
-                        logCollectionFilterQueryResult(
-                            response: response,
-                            queryOutcome: queryOutcome,
-                            filters: feedbackFilters(from: normalizedAppliedFilters),
-                            openedCollectionURL: state.openedCollectionURL,
-                            composerMetricClient: composerMetricClient,
-                        )
-                        composerMetricClient.logMetric(
-                            ComposerCollectionFilterMetrics.legacySearchResult,
-                            value: 1,
-                            tags: ComposerCollectionFilterMetrics.legacySearchResultTags(
-                                itemCount: response.itemCount,
-                                queryOutcome: queryOutcome,
-                            ),
-                        )
-                        state.isLoadingFilters = true
-                        state.isFilteringInFlight = true
-                        let filtersRequestID = UUID()
-                        let executionFilters = buildFilters(from: state)
-                        state.activeFiltersRequestID = filtersRequestID
-                        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourcePostQueryApply
-                        state.filtersStartedAt = Date()
-                        state.retargetScopeChangeFeedbackPending(
-                            from: .search(requestID),
-                            to: .filters(filtersRequestID),
-                        )
-                        let applyEffect: Effect<ComposerFeature.Action> = .run { send in
-                            do {
-                                let executionResponse = try await searchClient.applyFilters(
-                                    .init(filters: executionFilters),
-                                )
-                                await send(.filtersResponse(filtersRequestID, .success(executionResponse)))
-                            } catch is CancellationError {
-                                return
-                            } catch {
-                                guard !Task.isCancelled else { return }
-                                await send(.filtersResponse(filtersRequestID, .failure(error)))
-                            }
-                        }
-                        .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
-
-                        if queryOutcome == .fallbackReuse {
-                            return .merge(
-                                applyEffect,
-                                presentTransientFeedback(
-                                    kind: .info,
-                                    message: ComposerQueryFeedbackPolicy.fallbackReuseMessage,
-                                    state: &state,
-                                    clock: clock,
-                                ),
+                        if let feedback = ComposerQueryFeedbackPolicy.feedback(for: response) {
+                            return presentTransientFeedback(
+                                kind: feedback.kind,
+                                message: feedback.message,
+                                state: &state,
+                                clock: clock,
                             )
                         }
-                        return applyEffect
+                        return .none
                     }
+                    state.isLoadingFilters = true
+                    state.isFilteringInFlight = true
+                    let filtersRequestID = UUID()
+                    let executionFilters = buildFilters(from: state)
+                    state.activeFiltersRequestID = filtersRequestID
+                    state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourcePostQueryApply
+                    state.filtersStartedAt = Date()
+                    state.retargetScopeChangeFeedbackPending(
+                        from: .search(requestID),
+                        to: .filters(filtersRequestID),
+                    )
+                    let applyEffect: Effect<ComposerFeature.Action> = .run { send in
+                        do {
+                            let executionResponse = try await searchClient.applyFilters(
+                                .init(filters: executionFilters),
+                            )
+                            await send(.filtersResponse(filtersRequestID, .success(executionResponse)))
+                        } catch is CancellationError {
+                            return
+                        } catch {
+                            guard !Task.isCancelled else { return }
+                            await send(.filtersResponse(filtersRequestID, .failure(error)))
+                        }
+                    }
+                    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
+
+                    if let feedback = ComposerQueryFeedbackPolicy.feedback(for: response) {
+                        return .merge(
+                            applyEffect,
+                            presentTransientFeedback(
+                                kind: feedback.kind,
+                                message: feedback.message,
+                                state: &state,
+                                clock: clock,
+                            ),
+                        )
+                    }
+                    return applyEffect
 
                 case let .failure(error):
                     state.isLoadingSearch = false
@@ -246,7 +242,7 @@ struct ComposerSearchLifecycleReducer {
                             outcome: "applied",
                             source: metricSource,
                             openedCollectionURL: state.openedCollectionURL,
-                            filters: buildFilters(from: state),
+                            filters: response.appliedFilters.map(feedbackFilters(from:)) ?? buildFilters(from: state),
                             itemCount: response.itemCount,
                         ),
                     )
@@ -260,6 +256,7 @@ struct ComposerSearchLifecycleReducer {
                     let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics
                         .sourceManualApply
                     state.activeFiltersMetricSource = nil
+                    let failedFilters = buildFilters(from: state)
                     logFiltersDurationIfNeeded(state.filtersStartedAt, composerMetricClient: composerMetricClient)
                     composerMetricClient.logMetric(
                         ComposerCollectionFilterMetrics.applyResult,
@@ -268,7 +265,7 @@ struct ComposerSearchLifecycleReducer {
                             outcome: "execution_failure",
                             source: metricSource,
                             openedCollectionURL: state.openedCollectionURL,
-                            filters: buildFilters(from: state),
+                            filters: failedFilters,
                             itemCount: nil,
                             reason: "execution_error",
                         ),
@@ -383,10 +380,11 @@ private func handleCancelFilters(
     composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     let requestID = state.activeFiltersRequestID
+    let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics.sourceManualApply
+    let filters = buildFilters(from: state)
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
-    let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics.sourceManualApply
     state.activeFiltersMetricSource = nil
     state.pendingSearchQuery = nil
     if let requestID {
@@ -394,21 +392,20 @@ private func handleCancelFilters(
     }
     applyQueryPhaseTransition(.reset, state: &state)
     composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacySearchCancel,
-        value: 1,
-        tags: ComposerCollectionFilterMetrics.legacyCancelTags(type: "filters"),
-    )
-    composerMetricClient.logMetric(
         ComposerCollectionFilterMetrics.applyResult,
         value: 1,
         tags: ComposerCollectionFilterMetrics.applyResultTags(
             outcome: "cancelled",
             source: metricSource,
             openedCollectionURL: state.openedCollectionURL,
-            filters: buildFilters(from: state),
+            filters: filters,
             itemCount: nil,
-            reason: "none",
         ),
+    )
+    composerMetricClient.logMetric(
+        ComposerCollectionFilterMetrics.legacySearchCancel,
+        value: 1,
+        tags: ComposerCollectionFilterMetrics.legacyCancelTags(type: "filters"),
     )
     return .cancel(id: ComposerFeature.CancelID.filters)
 }

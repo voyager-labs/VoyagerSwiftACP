@@ -131,16 +131,14 @@ Optional follow-up.
 {"ts":"2026-06-03T00:00:01+09:00","event":"edge.created","from":"kw-20260603-verdict-history-gap","to":"kw-20260603-sisyphus-wiki-proposal","type":"motivates"}
 ```
 
-## Session stream
+## Session ledger
 
-`sessions/<session-id>.jsonl` may store distilled session-level events when an agent explicitly maintains a session ledger.
+`sessions/<session-id>.jsonl` stores distilled turn-level ledger records only. It is not a raw transcript and must link back to the canonical session store by `session_id`, `message_id`, and optional `part_id`.
 
 ```jsonl
-{
-    "ts": "2026-06-03T00:00:00+09:00",
-    "event": "knowledge.candidate",
-    "summary": "User rejected __adhoc__ buckets and requested graph-like LLM Wiki."
-}
+{"ts":"2026-06-03T00:00:00+09:00","event":"turn.user","session_id":"ses_example","message_id":"msg_1","role":"user","text":"User requested graph-like LLM Wiki.","text_hash":"...","capture":"candidate"}
+{"ts":"2026-06-03T00:00:01+09:00","event":"turn.assistant","session_id":"ses_example","message_id":"msg_2","role":"assistant","text":"Recommended distilled knowledge entries instead of raw event logs.","text_hash":"...","capture":"candidate"}
+{"ts":"2026-06-03T00:00:02+09:00","event":"turn.tool","session_id":"ses_example","message_id":"msg_2","tool":"read","status":"completed","input":{"filePath":"..."},"output_preview":"...","capture":"observed"}
 ```
 
-Session streams are optional. Durable knowledge still belongs in `entries/`.
+Allowed session-ledger events are `turn.session`, `turn.user`, `turn.assistant`, `turn.tool`, and `turn.todo`. Skip token deltas, TUI toasts, file watcher events, hidden reasoning, and events without a concrete session ID. Durable knowledge still belongs in `entries/`.

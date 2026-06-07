@@ -16,13 +16,13 @@ public enum RestartDecision: Equatable, Sendable {
 /// 그레이스 윈도우(5초) 내 중복 실행을 방지한다.
 public struct HelperSupervisionPolicy: Equatable, Sendable {
     /// 60초 윈도우 내 허용 재시작 횟수
-    nonisolated(unsafe) public static let budgetLimit = 3
+    public nonisolated(unsafe) static let budgetLimit = 3
 
     /// 재시작 카운트 윈도우 (초)
-    nonisolated(unsafe) public static let windowDuration: TimeInterval = 60
+    public nonisolated(unsafe) static let windowDuration: TimeInterval = 60
 
     /// 시작 후 중복 실행 방지 그레이스 윈도우 (초)
-    nonisolated(unsafe) public static let graceWindow: TimeInterval = 5
+    public nonisolated(unsafe) static let graceWindow: TimeInterval = 5
 
     /// 윈도우 내 재시작 시각 기록
     public private(set) var restartAttempts: [Date] = []
@@ -34,24 +34,24 @@ public struct HelperSupervisionPolicy: Equatable, Sendable {
     private var cooldownStartedAt: Date?
 
     /// 현재 윈도우 내 재시작 횟수
-    nonisolated public var restartCountInWindow: Int {
+    public nonisolated var restartCountInWindow: Int {
         let now = Date()
         return restartAttempts.count(where: { now.timeIntervalSince($0) <= Self.windowDuration })
     }
 
     /// 쿨다운 중인지 여부
-    nonisolated public var isInCooldown: Bool {
+    public nonisolated var isInCooldown: Bool {
         guard let cooldownStartedAt else { return false }
         return Date().timeIntervalSince(cooldownStartedAt) <= Self.windowDuration
     }
 
     /// 그레이스 윈도우 중인지 여부
-    nonisolated public var isInGraceWindow: Bool {
+    public nonisolated var isInGraceWindow: Bool {
         guard let lastStartAt else { return false }
         return Date().timeIntervalSince(lastStartAt) <= Self.graceWindow
     }
 
-    nonisolated public init(
+    public nonisolated init(
         restartAttempts: [Date] = [],
         lastStartAt: Date? = nil,
         cooldownStartedAt: Date? = nil,
@@ -62,7 +62,7 @@ public struct HelperSupervisionPolicy: Equatable, Sendable {
     }
 
     /// 재시작 시도를 기록하고 결정을 반환한다
-    nonisolated public mutating func recordRestartAttempt(at date: Date = Date()) -> RestartDecision {
+    public nonisolated mutating func recordRestartAttempt(at date: Date = Date()) -> RestartDecision {
         if let lastStartAt,
            date.timeIntervalSince(lastStartAt) <= Self.graceWindow
         {
@@ -87,7 +87,7 @@ public struct HelperSupervisionPolicy: Equatable, Sendable {
         return .allowed
     }
 
-    nonisolated public mutating func reset() {
+    public nonisolated mutating func reset() {
         restartAttempts.removeAll()
         lastStartAt = nil
         cooldownStartedAt = nil

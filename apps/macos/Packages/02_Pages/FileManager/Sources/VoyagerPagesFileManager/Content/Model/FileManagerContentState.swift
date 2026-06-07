@@ -32,6 +32,22 @@ public struct FileManagerContentState: Equatable {
         syncComposerCollectionState()
     }
 
+    var openedCollectionURL: URL? {
+        if let url = collection.collectionSession.document?.url {
+            return url
+        }
+        if case let .collection(navigation) = navigation.navigationState,
+           case let .file(url, _) = navigation.kind
+        {
+            return url
+        }
+        return nil
+    }
+
+    var openedCollectionURLExists: Bool {
+        openedCollectionURL != nil
+    }
+
     public var canSaveCollection: Bool {
         collection.canSave(isCollectionMode: isCollectionMode)
     }

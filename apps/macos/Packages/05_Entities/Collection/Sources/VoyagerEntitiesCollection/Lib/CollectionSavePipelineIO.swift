@@ -77,6 +77,7 @@ func executeSave(
     request: CollectionSaveRequest,
     source: String,
     snapshot: CollectionSaveSnapshot,
+    savedContext: CollectionContext,
     collectionFileClient: CollectionFileClient,
     collectionMetricClient: CollectionMetricClient,
 ) -> Effect<CollectionAction> {
@@ -90,7 +91,11 @@ func executeSave(
                 snapshot: snapshot,
                 collectionMetricClient: collectionMetricClient,
             )
-            await send(.saveCompleted(.success(.init(url: request.url, file: request.file))))
+            await send(.saveCompleted(.success(.init(
+                url: request.url,
+                file: request.file,
+                savedContext: savedContext,
+            ))))
         } catch {
             logCollectionSaveResult(
                 outcome: "save_failed",

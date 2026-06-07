@@ -31,11 +31,11 @@ enum ComposerCollectionFilterMetrics {
 
     static func legacySearchResultTags(
         itemCount: Int,
-        queryOutcome: SearchQueryOutcome?,
+        queryConversion: SearchQueryConversionMetadataPayload?,
     ) -> [String: String] {
         [
             "result": itemCount > 0 ? "success" : "empty",
-            "query_outcome": queryOutcomeTag(queryOutcome),
+            "query_outcome": queryOutcomeTag(queryConversion?.outcome),
         ]
     }
 
@@ -48,7 +48,7 @@ enum ComposerCollectionFilterMetrics {
     }
 
     static func queryResultTags(
-        outcome: SearchQueryOutcome?,
+        queryConversion: SearchQueryConversionMetadataPayload?,
         openedCollectionURL: URL?,
         filters: SearchFiltersPayload,
         itemCount: Int,
@@ -57,7 +57,7 @@ enum ComposerCollectionFilterMetrics {
         commonTags(
             TagsInput(
                 stage: "query",
-                outcome: queryOutcomeTag(outcome),
+                outcome: queryOutcomeTag(queryConversion?.outcome),
                 reason: reason,
                 source: "query_submit",
                 openedCollectionURL: openedCollectionURL,
@@ -122,17 +122,8 @@ enum ComposerCollectionFilterMetrics {
         ]
     }
 
-    private static func queryOutcomeTag(_ outcome: SearchQueryOutcome?) -> String {
-        switch outcome {
-        case .convertedChanged:
-            SearchQueryOutcome.convertedChanged.rawValue
-        case .unchangedResult:
-            SearchQueryOutcome.unchangedResult.rawValue
-        case .fallbackReuse:
-            SearchQueryOutcome.fallbackReuse.rawValue
-        case nil:
-            "legacy_unknown"
-        }
+    private static func queryOutcomeTag(_ outcome: SearchQueryConversionOutcomePayload?) -> String {
+        outcome?.rawValue ?? "legacy_unknown"
     }
 
     private static func resultSetBucket(_ itemCount: Int?) -> String {

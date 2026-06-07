@@ -90,7 +90,6 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         XCTAssertEqual(response?.itemCount, 1)
         XCTAssertEqual(response?.items, [VoyagerShared.JSONValue.string("/tmp/report.txt")])
         XCTAssertEqual(response?.appliedFilters?.scopes, scopes)
-        XCTAssertEqual(response?.appliedFilters?.includeDirectories, true)
         XCTAssertEqual(response?.appliedFilters?.conditions, [
             .init(propertyKey: "name_full", operator: "eq", value: .string("report")),
         ])
@@ -233,8 +232,12 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
             .sorted()
         let canonical = [
             query.trimmingCharacters(in: .whitespacesAndNewlines),
-            scopes.map { URL(fileURLWithPath: $0).standardizedFileURL.path }.sorted().joined(separator: "\u{1D}"),
-            excludedScopes.map { URL(fileURLWithPath: $0).standardizedFileURL.path }.sorted().joined(separator: "\u{1E}"),
+            scopes.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+                .sorted()
+                .joined(separator: "\u{1D}"),
+            excludedScopes.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+                .sorted()
+                .joined(separator: "\u{1E}"),
             includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
             normalizedConditions.joined(separator: "\u{1C}"),
         ].joined(separator: "\u{1B}")
@@ -263,5 +266,4 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
             return "null"
         }
     }
-
 }

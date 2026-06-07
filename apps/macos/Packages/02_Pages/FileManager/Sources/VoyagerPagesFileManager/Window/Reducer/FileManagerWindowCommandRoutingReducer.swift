@@ -1,15 +1,15 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
-import VoyagerFeaturesAiChat
 import VoyagerEntitiesEntry
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 
 @Reducer
 struct FileManagerWindowCommandRoutingReducer {
-    private nonisolated enum CancelID: Hashable, Sendable {
+    private nonisolated enum CancelID: Hashable {
         case contextualAiChatOpen
     }
 
@@ -18,6 +18,8 @@ struct FileManagerWindowCommandRoutingReducer {
 
     @Dependency(\.aiConnectionsFileClient)
     private var aiConnectionsFileClient
+    @Dependency(\.searchClient)
+    private var searchClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -50,7 +52,10 @@ struct FileManagerWindowCommandRoutingReducer {
                 .send(.content(.entryViewLayout(.internal(.applyClearSelection))))
 
             case let .aiConnectionsFileUpdated(file):
-                forwardProviderConnectionsToOpenAiChat(file: file, state: state)
+                .merge(
+                    forwardProviderConnectionsToOpenAiChat(file: file, state: state),
+                    warmUpAIModelCatalogEffect(),
+                )
 
             default:
                 .none
@@ -241,6 +246,12 @@ struct FileManagerWindowCommandRoutingReducer {
 
         default:
             return .none
+        }
+    }
+
+    private func warmUpAIModelCatalogEffect() -> Effect<Action> {
+        .run { [searchClient] _ in
+            try? await searchClient.warmUpAIModelCatalog()
         }
     }
 

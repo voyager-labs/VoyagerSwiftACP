@@ -45,14 +45,14 @@ nonisolated struct HelperExternalFileChangeReplayRequest: Codable, Equatable {
         return Self(schemaVersion: schemaVersion, consume: consume)
     }
 
-    nonisolated private static func parseInt(_ value: Any?) -> Int? {
+    private nonisolated static func parseInt(_ value: Any?) -> Int? {
         if let intValue = value as? Int { return intValue }
         if let number = value as? NSNumber { return number.intValue }
         if let stringValue = value as? String { return Int(stringValue) }
         return nil
     }
 
-    nonisolated private static func parseBool(_ value: Any?) -> Bool? {
+    private nonisolated static func parseBool(_ value: Any?) -> Bool? {
         if let boolValue = value as? Bool { return boolValue }
         if let number = value as? NSNumber { return number.boolValue }
         if let stringValue = value as? String { return Bool(stringValue) }
@@ -124,14 +124,14 @@ nonisolated struct HelperExternalFileChangePayload: Codable, Equatable {
         Array(Set(paths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })).sorted()
     }
 
-    nonisolated private static func parseInt(_ value: Any?) -> Int? {
+    private nonisolated static func parseInt(_ value: Any?) -> Int? {
         if let intValue = value as? Int { return intValue }
         if let number = value as? NSNumber { return number.intValue }
         if let stringValue = value as? String { return Int(stringValue) }
         return nil
     }
 
-    nonisolated private static func parseDouble(_ value: Any?) -> Double? {
+    private nonisolated static func parseDouble(_ value: Any?) -> Double? {
         if let doubleValue = value as? Double { return doubleValue }
         if let number = value as? NSNumber { return number.doubleValue }
         if let stringValue = value as? String { return Double(stringValue) }

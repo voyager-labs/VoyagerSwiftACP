@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerShared
@@ -92,9 +91,16 @@ enum CollectionSaveValidationError: LocalizedError {
 }
 
 private struct CollectionSaveFailure: Equatable, Error {
-    let title: String
-    let message: String
+    let feedback: CollectionSaveFeedback
     let reason: String
+
+    var title: String {
+        feedback.title
+    }
+
+    var message: String {
+        feedback.message
+    }
 }
 
 private func validateSavePayload(
@@ -102,8 +108,14 @@ private func validateSavePayload(
 ) -> Result<(snapshot: CollectionSaveSnapshot, context: CollectionContext), CollectionSaveFailure> {
     guard let context = payload.context else {
         return .failure(.init(
-            title: "No New Collection",
-            message: "There is no active new collection to save.",
+            feedback: .init(
+                stage: .saveBlocked,
+                category: .emptyContent,
+                title: "No New Collection",
+                message: "There is no active new collection to save.",
+                recoveryHint: "Add a query, scope, or filter before saving.",
+                isRetryable: false,
+            ),
             reason: "empty_content",
         ))
     }
@@ -118,12 +130,55 @@ private func validateSavePayload(
     switch validation {
     case let .failure(error):
         return .failure(.init(
-            title: "Unable to Save Collection",
-            message: error.localizedDescription,
+            feedback: makeValidationFeedback(for: error),
             reason: CollectionFilterSaveMetrics.reason(for: error),
         ))
     case let .success(snapshot):
         return .success((snapshot: snapshot, context: context))
+    }
+}
+
+private func makeValidationFeedback(for error: CollectionSaveValidationError) -> CollectionSaveFeedback {
+    switch error {
+    case .emptyContent:
+        .init(
+            stage: .saveBlocked,
+            category: .emptyContent,
+            title: "No New Collection",
+            message: "There is no active new collection to save.",
+            recoveryHint: "Add a query, scope, or filter before saving.",
+            isRetryable: false,
+        )
+    case let .incompleteCondition(label):
+        .init(
+            stage: .saveBlocked,
+            category: .incompleteCondition,
+            title: "Unable to Save Collection",
+            message: "Complete the filter for \"\(label)\" before saving.",
+            recoveryHint: "Fix the highlighted filter and try again.",
+            propertyLabel: label,
+            isRetryable: false,
+        )
+    case let .invalidConditionValue(label):
+        .init(
+            stage: .saveBlocked,
+            category: .invalidConditionValue,
+            title: "Unable to Save Collection",
+            message: label
+                .isEmpty ? "Some filter values are invalid." : "Check the value for \"\(label)\" before saving.",
+            recoveryHint: "Correct the invalid value and try again.",
+            propertyLabel: label,
+            isRetryable: false,
+        )
+    case .saveBlockedFutureMinor:
+        .init(
+            stage: .saveBlocked,
+            category: .futureMinorReadOnly,
+            title: "Unable to Save Collection",
+            message: "Collections opened from a newer minor schema version are read-only and cannot be saved.",
+            recoveryHint: "Open the collection in the matching app version or make a writable copy.",
+            isRetryable: false,
+        )
     }
 }
 
@@ -193,6 +248,7 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
 private func resetPendingSave(_ state: inout CollectionState) {
     state.isSaving = false
     state.pendingSave = nil
+    state.pendingSaveContext = nil
 }
 
 private func canStartSave(
@@ -236,6 +292,7 @@ private func handleSaveRequested(
         return showSaveError(failure)
     case let .success(result):
         state.pendingSave = result.snapshot
+        state.pendingSaveContext = result.context
         state.isSaving = true
         return .run { send in
             let initialDirectory = await collectionSavePanelClient.defaultSaveDirectory(
@@ -285,6 +342,7 @@ private func handleSaveToExisting(
         state.isSaving = true
         return performSave(
             snapshot: result.snapshot,
+            savedContext: result.context,
             url: url,
             collectionFileClient: collectionFileClient,
             collectionStalenessClient: collectionStalenessClient,
@@ -301,7 +359,10 @@ private func handleSavePanelResponse(
     collectionStalenessClient: CollectionStalenessClient,
     collectionMetricClient: CollectionMetricClient,
 ) -> Effect<CollectionAction> {
-    guard let selectedURL, let snapshot = state.pendingSave else {
+    guard let selectedURL,
+          let snapshot = state.pendingSave,
+          let savedContext = state.pendingSaveContext
+    else {
         if let pendingSave = state.pendingSave {
             logCollectionSaveResult(
                 outcome: "cancelled",
@@ -317,6 +378,7 @@ private func handleSavePanelResponse(
 
     return performSave(
         snapshot: snapshot,
+        savedContext: savedContext,
         url: selectedURL,
         collectionFileClient: collectionFileClient,
         collectionStalenessClient: collectionStalenessClient,
@@ -354,35 +416,25 @@ private func handleSaveCompleted(
         if state.collectionSession.phase.isInflightWriteBack {
             state.collectionSession.failRefreshOrWriteBack()
         }
-        return showSaveError(.init(
+        return .send(.delegate(.saveFeedback(.init(
+            stage: .saveFailed,
+            category: .saveFailed,
             title: "Unable to Save Collection",
             message: error.localizedDescription,
-            reason: "storage_error",
-        ))
+            recoveryHint: "Check the file location or try again.",
+            isRetryable: true,
+        ))))
     }
-}
-
-@MainActor
-private func showCollectionSaveErrorAlert(title: String, message: String) {
-    let alert = NSAlert()
-    alert.alertStyle = .warning
-    alert.messageText = title
-    alert.informativeText = message
-    alert.addButton(withTitle: "OK")
-    alert.runModal()
 }
 
 private func showSaveError(_ failure: CollectionSaveFailure) -> Effect<CollectionAction> {
-    .run { _ in
-        await showCollectionSaveErrorAlert(
-            title: failure.title,
-            message: failure.message,
-        )
-    }
+    .send(.delegate(.saveFeedback(failure.feedback)))
 }
 
+// swiftlint:disable:next function_parameter_count
 private func performSave(
     snapshot: CollectionSaveSnapshot,
+    savedContext: CollectionContext,
     url: URL,
     collectionFileClient: CollectionFileClient,
     collectionStalenessClient: CollectionStalenessClient,
@@ -403,6 +455,7 @@ private func performSave(
         request: request,
         source: source,
         snapshot: snapshot,
+        savedContext: savedContext,
         collectionFileClient: collectionFileClient,
         collectionMetricClient: collectionMetricClient,
     )

@@ -10,13 +10,15 @@ protocol SearchExecutionServicing: Sendable {
 
 struct SearchQueryService {
     private let searchService: any SearchExecutionServicing
-    private let convertQuery: @Sendable (String, SearchFiltersPayload) async -> GatewayQueryResult
+    private let convertQuery: @Sendable (String, SearchFiltersPayload) async -> QueryConversionResult
     private let logger: Logger
 
     init(
         searchService: any SearchExecutionServicing,
-        converter: GatewayQueryConverter = GatewayQueryConverter(
-            logger: Logger(label: "VoyagerHelper.GatewayQueryConverter"),
+        converter: ProviderAwareQueryConverter = ProviderAwareQueryConverter(
+            queryConversionInterpreter: QueryConversionInterpreter(
+                logger: Logger(label: "VoyagerHelper.QueryConversionInterpreter"),
+            ),
         ),
         logger: Logger = Logger(label: "VoyagerHelper.SearchQueryService"),
     ) {
@@ -29,49 +31,12 @@ struct SearchQueryService {
 
     init(
         searchService: any SearchExecutionServicing,
-        convertQuery: @Sendable @escaping (String, SearchFiltersPayload) async -> GatewayQueryResult,
+        convertQuery: @Sendable @escaping (String, SearchFiltersPayload) async -> QueryConversionResult,
         logger: Logger = Logger(label: "VoyagerHelper.SearchQueryService"),
     ) {
         self.searchService = searchService
         self.convertQuery = convertQuery
         self.logger = logger
-    }
-
-    private nonisolated func makeErrorResponse(
-        code: String,
-        details: String?,
-        fallbackFilters: SearchFiltersPayload,
-    ) -> SearchResponsePayload {
-        SearchResponsePayload(
-            itemCount: 0,
-            appliedFilters: fallbackAppliedFilters(from: fallbackFilters),
-            items: [],
-            error: SearchErrorPayload(code: code, details: details),
-        )
-    }
-
-    private nonisolated func resolveScopes(
-        queryScopes: [String]?,
-        chipsScopes: [String],
-    ) -> [String] {
-        if let queryScopes {
-            let normalizedQueryScopes = SearchScopeNormalizer.normalizeScopes(queryScopes)
-            if normalizedQueryScopes.isEmpty == false {
-                return normalizedQueryScopes
-            }
-        }
-
-        return SearchScopeNormalizer.normalizeScopes(chipsScopes)
-    }
-
-    private nonisolated func fallbackAppliedFilters(from filters: SearchFiltersPayload) -> AppliedFiltersPayload {
-        AppliedFiltersPayload(
-            scopes: filters.scopes,
-            excludedScopes: filters.excludedScopes,
-            includeSubfolders: filters.includeSubfolders,
-            includeDirectories: filters.includeDirectories,
-            conditions: filters.conditions,
-        )
     }
 
     nonisolated func querySearch(
@@ -80,61 +45,25 @@ struct SearchQueryService {
         let trimmedQuery = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard trimmedQuery.isEmpty == false else {
-            return SearchResponsePayload(
-                itemCount: 0,
-                appliedFilters: fallbackAppliedFilters(from: request.filters),
-                items: nil,
-                error: nil,
-                queryOutcome: .unchangedResult,
-            )
+            return Self.emptyQueryResponse(filters: request.filters)
         }
 
         let conversion = await convertQuery(trimmedQuery, request.filters)
 
-        if let llmError = conversion.error,
-           llmError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        {
-            logger.warning("Gateway query interpretation failed: \(llmError)")
-            return makeErrorResponse(
-                code: "LLM_CONVERSION_FAILED",
-                details: llmError,
-                fallbackFilters: request.filters,
-            )
+        if let errorResponse = conversionErrorResponse(conversion, fallbackFilters: request.filters) {
+            return errorResponse
         }
 
-        let chipsScopes = SearchScopeNormalizer.normalizeScopes(request.filters.scopes)
-        let resolvedScopes = resolveScopes(
-            queryScopes: conversion.scopes,
-            chipsScopes: chipsScopes,
+        let plannedFilters = plannedFilters(conversion: conversion, baselineFilters: request.filters)
+        let finalOutcome = finalizedOutcome(
+            conversion: conversion,
+            plannedFilters: plannedFilters,
+            baselineFilters: normalizedBaselineFilters(request.filters),
         )
 
-        let plannedFilters = SearchFiltersPayload(
-            scopes: resolvedScopes,
-            excludedScopes: request.filters.excludedScopes,
-            includeSubfolders: request.filters.includeSubfolders,
-            includeDirectories: request.filters.includeDirectories,
-            conditions: conversion.conditions,
-        )
-
-        let successFilters: AppliedFiltersPayload = switch conversion.queryOutcome {
-        case .fallbackReuse, .unchangedResult:
-            fallbackAppliedFilters(from: request.filters)
-        case .convertedChanged, nil:
-            AppliedFiltersPayload(
-                scopes: plannedFilters.scopes,
-                excludedScopes: plannedFilters.excludedScopes,
-                includeSubfolders: plannedFilters.includeSubfolders,
-                includeDirectories: plannedFilters.includeDirectories,
-                conditions: plannedFilters.conditions,
-            )
-        }
-
-        return SearchResponsePayload(
-            itemCount: 0,
-            appliedFilters: successFilters,
-            items: nil,
-            error: nil,
-            queryOutcome: conversion.queryOutcome,
+        return Self.successResponse(
+            filters: plannedFilters,
+            queryConversion: queryConversionMetadata(for: conversion, outcome: finalOutcome),
         )
     }
 
@@ -142,5 +71,173 @@ struct SearchQueryService {
         _ filters: SearchFiltersPayload,
     ) async throws -> SearchResponsePayload {
         try await searchService.applyFilters(filters)
+    }
+
+    private nonisolated func conversionErrorResponse(
+        _ conversion: QueryConversionResult,
+        fallbackFilters: SearchFiltersPayload,
+    ) -> SearchResponsePayload? {
+        guard let error = conversion.error?.trimmingCharacters(in: .whitespacesAndNewlines),
+              error.isEmpty == false
+        else {
+            return nil
+        }
+
+        logger.warning("Query conversion interpretation failed: \(error)")
+        return Self.errorResponse(
+            code: conversion.errorCode ?? "LLM_CONVERSION_FAILED",
+            details: error,
+            fallbackFilters: fallbackFilters,
+            queryConversion: queryConversionMetadata(for: conversion),
+        )
+    }
+
+    private nonisolated func plannedFilters(
+        conversion: QueryConversionResult,
+        baselineFilters: SearchFiltersPayload,
+    ) -> SearchFiltersPayload {
+        SearchFiltersPayload(
+            scopes: resolveScopes(
+                queryScopes: conversion.scopes,
+                chipsScopes: Self.cleanScopes(baselineFilters.scopes),
+            ),
+            excludedScopes: baselineFilters.excludedScopes,
+            includeSubfolders: baselineFilters.includeSubfolders,
+            conditions: conversion.conditions,
+        )
+    }
+}
+
+private extension SearchQueryService {
+    nonisolated static func emptyQueryResponse(
+        filters: SearchFiltersPayload,
+    ) -> SearchResponsePayload {
+        SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: filters.scopes,
+                excludedScopes: filters.excludedScopes,
+                includeSubfolders: filters.includeSubfolders,
+                conditions: filters.conditions,
+            ),
+            items: nil,
+            error: nil,
+        )
+    }
+
+    nonisolated static func successResponse(
+        filters: SearchFiltersPayload,
+        queryConversion: SearchQueryConversionMetadataPayload,
+    ) -> SearchResponsePayload {
+        SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: filters.scopes,
+                excludedScopes: filters.excludedScopes,
+                includeSubfolders: filters.includeSubfolders,
+                conditions: filters.conditions,
+            ),
+            items: nil,
+            error: nil,
+            queryConversion: queryConversion,
+        )
+    }
+
+    nonisolated static func errorResponse(
+        code: String,
+        details: String?,
+        fallbackFilters: SearchFiltersPayload,
+        queryConversion: SearchQueryConversionMetadataPayload? = nil,
+    ) -> SearchResponsePayload {
+        SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: fallbackFilters.scopes,
+                excludedScopes: fallbackFilters.excludedScopes,
+                includeSubfolders: fallbackFilters.includeSubfolders,
+                conditions: fallbackFilters.conditions,
+            ),
+            items: [],
+            error: SearchErrorPayload(code: code, details: details),
+            queryConversion: queryConversion,
+        )
+    }
+
+    nonisolated static func cleanScopes(_ scopes: [String]) -> [String] {
+        scopes
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+    }
+}
+
+private extension SearchQueryService {
+    nonisolated func queryConversionMetadata(
+        for conversion: QueryConversionResult,
+        outcome: QueryConversionResultOutcome? = nil,
+    ) -> SearchQueryConversionMetadataPayload {
+        SearchQueryConversionMetadataPayload(
+            outcome: mapOutcome(outcome ?? conversion.outcome),
+        )
+    }
+
+    nonisolated func mapOutcome(
+        _ outcome: QueryConversionResultOutcome,
+    ) -> SearchQueryConversionOutcomePayload {
+        switch outcome {
+        case .generatedChangeSet:
+            .generatedChangeSet
+        case .unchangedResult:
+            .unchangedResult
+        case .fallbackReuse:
+            .fallbackReuse
+        case .providerNotConfigured:
+            .providerNotConfigured
+        case .invalidCredential:
+            .invalidCredential
+        case .providerUnavailable:
+            .providerUnavailable
+        case .networkFailure:
+            .networkFailure
+        case .conversionFailure:
+            .conversionFailure
+        }
+    }
+
+    nonisolated func resolveScopes(
+        queryScopes: [String]?,
+        chipsScopes: [String],
+    ) -> [String] {
+        if let queryScopes {
+            let cleanedQueryScopes = Self.cleanScopes(queryScopes)
+            if cleanedQueryScopes.isEmpty == false {
+                return cleanedQueryScopes
+            }
+        }
+
+        return chipsScopes
+    }
+
+    nonisolated func normalizedBaselineFilters(_ filters: SearchFiltersPayload) -> SearchFiltersPayload {
+        SearchFiltersPayload(
+            scopes: Self.cleanScopes(filters.scopes),
+            excludedScopes: filters.excludedScopes,
+            includeSubfolders: filters.includeSubfolders,
+            conditions: filters.conditions,
+        )
+    }
+
+    nonisolated func finalizedOutcome(
+        conversion: QueryConversionResult,
+        plannedFilters: SearchFiltersPayload,
+        baselineFilters: SearchFiltersPayload,
+    ) -> QueryConversionResultOutcome {
+        switch conversion.outcome {
+        case .generatedChangeSet, .unchangedResult:
+            plannedFilters == baselineFilters ? .unchangedResult : .generatedChangeSet
+        case .fallbackReuse:
+            plannedFilters == baselineFilters ? .fallbackReuse : .generatedChangeSet
+        case .providerNotConfigured, .invalidCredential, .providerUnavailable, .networkFailure, .conversionFailure:
+            conversion.outcome
+        }
     }
 }

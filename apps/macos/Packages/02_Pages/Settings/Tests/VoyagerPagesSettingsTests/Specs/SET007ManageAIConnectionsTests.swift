@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -97,7 +98,7 @@ final class SET007ManageAIConnectionsTests: XCTestCase {
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
-        await store.receive(\._connectionResponse) { state in
+        await store.receive(\.connectionResponse) { state in
             state.connectionState = .connected
             state.statusReason = .none
             state.flowState = .idle
@@ -120,10 +121,10 @@ final class SET007ManageAIConnectionsTests: XCTestCase {
             state.flowState = .connecting
             state.isVerifying = true
         }
-        await store.receive(\._verificationResponse) { state in
+        await store.receive(\.verificationResponse) { state in
             state.isVerifying = false
         }
-        await store.receive(\._connectionResponse) { state in
+        await store.receive(\.connectionResponse) { state in
             state.connectionState = .connected
             state.statusReason = .none
             state.flowState = .idle
@@ -146,7 +147,7 @@ final class SET007ManageAIConnectionsTests: XCTestCase {
             state.flowState = .connecting
             state.isVerifying = true
         }
-        await store.receive(\._verificationResponse) { state in
+        await store.receive(\.verificationResponse) { state in
             state.isVerifying = false
             state.connectionState = .connectionFailed
             state.statusReason = .invalidAPIKey
@@ -247,7 +248,7 @@ final class SET007ManageAIConnectionsTests: XCTestCase {
             state.rows[id: .openai]?.flowState = .disconnecting
             state.rows[id: .openai]?.connectionState = .disconnecting
         }
-        await store.receive(.row(.element(id: .openai, action: ._disconnectResponse(result)))) { state in
+        await store.receive(.row(.element(id: .openai, action: .disconnectResponse(result)))) { state in
             state.rows[id: .openai]?.flowState = .idle
             state.rows[id: .openai]?.connectionState = .notVerified
             state.rows[id: .openai]?.statusReason = .none
@@ -283,7 +284,7 @@ final class SET007ManageAIConnectionsTests: XCTestCase {
             state.flowState = .disconnecting
             state.connectionState = .disconnecting
         }
-        await store.receive(\._disconnectResponse) { state in
+        await store.receive(\.disconnectResponse) { state in
             state.flowState = .idle
             state.connectionState = .connected
             state.statusReason = .none

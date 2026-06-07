@@ -36,7 +36,7 @@ func logFiltersDurationIfNeeded(
 
 func logCollectionFilterQueryResult(
     response: SearchResponsePayload,
-    queryOutcome: SearchQueryOutcome?,
+    queryConversion: SearchQueryConversionMetadataPayload?,
     filters: SearchFiltersPayload,
     openedCollectionURL: URL?,
     composerMetricClient: ComposerMetricClient,
@@ -45,7 +45,7 @@ func logCollectionFilterQueryResult(
         ComposerCollectionFilterMetrics.queryResult,
         value: 1,
         tags: ComposerCollectionFilterMetrics.queryResultTags(
-            outcome: queryOutcome,
+            queryConversion: queryConversion,
             openedCollectionURL: openedCollectionURL,
             filters: filters,
             itemCount: response.itemCount,
@@ -60,7 +60,6 @@ func feedbackFilters(from appliedFilters: VoyagerShared.AppliedFiltersPayload) -
         scopes: appliedFilters.scopes ?? [],
         excludedScopes: appliedFilters.excludedScopes,
         includeSubfolders: appliedFilters.includeSubfolders ?? true,
-        includeDirectories: appliedFilters.includeDirectories ?? false,
         conditions: appliedFilters.conditions ?? [],
     )
 }
@@ -84,7 +83,6 @@ func feedbackAppliedFilters(
         scopes: normalizedFilters.scopes,
         excludedScopes: normalizedFilters.excludedScopes,
         includeSubfolders: normalizedFilters.includeSubfolders,
-        includeDirectories: normalizedFilters.includeDirectories,
         conditions: normalizedFilters.conditions,
     )
 }
