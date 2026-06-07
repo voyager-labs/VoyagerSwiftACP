@@ -1,12 +1,12 @@
 import Foundation
 
-enum RegistryLoader {
+nonisolated enum RegistryLoader {
     enum LoadError: Error {
         case resourceURLNotFound(name: String, fileExtension: String)
         case decodeFailed(path: String, type: String)
     }
 
-    static func load<T: Decodable>(
+    nonisolated static func load<T: Decodable>(
         resourceName: String,
         fileExtension: String = "json",
         bundle: Bundle = .main,

@@ -130,6 +130,7 @@ struct ComposerConditionEditingReducer {
                     } else {
                         resetConditionDisplayState(propertyKey: propertyKey, state: &state)
                     }
+                    syncIncludeDirectoriesAfterConditionMutation(state: &state)
                 }
                 resetValuePicker(state: &state)
                 return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
@@ -147,6 +148,7 @@ struct ComposerConditionEditingReducer {
                         state: &state,
                         registryClient: registryClient,
                     )
+                    syncIncludeDirectoriesAfterConditionMutation(state: &state)
                 }
                 resetValuePicker(state: &state)
                 return .none
@@ -184,6 +186,7 @@ private func handleAddCondition(
         values: nil,
     )
     state.conditions.append(condition)
+    syncIncludeDirectoriesAfterConditionMutation(state: &state)
     updateOperatorOptions(state: &state, registryClient: registryClient)
     state.propertyPicker.duplicateMessage = nil
     state.propertyPicker.isPresented = false
@@ -200,6 +203,7 @@ private func handleRemoveCondition(
     if state.conditions.contains(where: { $0.propertyKey == propertyKey }) {
         state.pushHistory()
         state.conditions.removeAll { $0.propertyKey == propertyKey }
+        syncIncludeDirectoriesAfterConditionMutation(state: &state)
         resetConditionDisplayState(propertyKey: propertyKey, state: &state)
         updateOperatorOptions(state: &state, registryClient: registryClient)
     }
@@ -229,6 +233,7 @@ private func handleSetOperator(
         state.conditions[idx].operatorValueUIKind = uiValueKind
         state.conditions[idx].valueType = registryClient.valueType(for: uiValueKind)
         state.conditions[idx].values = valueArity == 0 ? [] : nil
+        syncIncludeDirectoriesAfterConditionMutation(state: &state)
         syncConditionDisplayState(
             propertyKey: propertyKey,
             state: &state,
@@ -286,6 +291,7 @@ private func handleReplaceConditionProperty(
     state.conditions[idx].operatorValueUIKind = nil
     state.conditions[idx].valueType = SystemPropertyTypeKey.normalizedValueType(from: propertyType)
     state.conditions[idx].values = nil
+    syncIncludeDirectoriesAfterConditionMutation(state: &state)
     resetConditionDisplayState(propertyKey: originalKey, state: &state)
     updateOperatorOptions(state: &state, registryClient: registryClient)
     state.propertyPicker.editingConditionKey = nil
@@ -322,11 +328,27 @@ private func handleSetDisplayUnit(
 
     state.pushHistory()
     state.conditions[idx].values = canonicalValues
+    syncIncludeDirectoriesAfterConditionMutation(state: &state)
     state.conditionDisplayByKey[propertyKey] = .init(
         values: normalizedDisplayValues,
         unitValueState: UnitValuePresentationUtils.makeState(spec: spec, preferredUnitCode: unitCode),
     )
     return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+}
+
+private func syncIncludeDirectoriesAfterConditionMutation(
+    state: inout ComposerFeature.State,
+) {
+    guard state.includeDirectories else { return }
+    guard !state.conditions.contains(where: isFolderInclusiveTagCondition) else { return }
+    state.includeDirectories = false
+}
+
+private func isFolderInclusiveTagCondition(_ condition: Condition) -> Bool {
+    condition.isActive
+        && condition.propertyKey == "tag_names"
+        && condition.operatorCode == "any"
+        && !(condition.values?.isEmpty ?? true)
 }
 
 private func resetConditionDisplayState(

@@ -81,6 +81,27 @@ final class AppliedFilterValueUtilsTests: XCTestCase {
         XCTAssertEqual(result?.count, 1)
     }
 
+    /// singleDate UI kind은 상대 날짜 canonical literal을 그대로 유지하는지 검증
+    func testRelativeDateStringWithSingleDateKindReturnsCanonicalLiteral() {
+        let literal = "voyager.relativeDate:v1:past:3:day:2025-05-17"
+        let result = AppliedFilterValueUtils.stringValues(from: .string(literal), valueUIKind: "singleDate")
+        XCTAssertEqual(result, [literal])
+    }
+
+    /// singleDate UI kind은 $time.today offset literal도 그대로 유지하는지 검증
+    func testTodayOffsetStringWithSingleDateKindReturnsLiteral() {
+        let literal = AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral
+        let result = AppliedFilterValueUtils.stringValues(from: .string(literal), valueUIKind: "singleDate")
+        XCTAssertEqual(result, [literal])
+    }
+
+    /// rangeDate UI kind은 상대 날짜 literal을 허용하지 않는지 검증
+    func testRelativeDateStringWithRangeDateKindReturnsNil() {
+        let literal = "voyager.relativeDate:v1:past:3:day:2025-05-17"
+        let result = AppliedFilterValueUtils.stringValues(from: .string(literal), valueUIKind: "rangeDate")
+        XCTAssertNil(result)
+    }
+
     /// 날짜가 아닌 UI kind에서는 원본 문자열을 유지하는지 검증
     func testDateStringWithNonDateKindReturnsOriginalString() {
         let isoString = "2026-05-10T12:00:00Z"

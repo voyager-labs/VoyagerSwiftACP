@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ComposableArchitecture
+import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 
 /// Window chrome styling, traffic-light visibility, frame initialization, and title binding.
@@ -130,6 +131,7 @@ enum FileManagerWindowChrome {
 
         let initialTitle = makeTitle(
             openedCollectionName: store.state.content.collection.collectionSession.document?.name,
+            collectionNavigationTitle: collectionTitle(from: store.state.content.navigation.navigationState),
             isCollectionMode: store.state.content.isCollectionMode,
             titlePath: store.state.content.navigation.titlePath,
             makeWindowTitle: makeWindowTitle,
@@ -148,6 +150,7 @@ enum FileManagerWindowChrome {
 
     static func makeTitle(
         openedCollectionName: String?,
+        collectionNavigationTitle: String? = nil, // swiftlint:disable:this function_default_parameter_at_end
         isCollectionMode: Bool,
         titlePath: String,
         makeWindowTitle: (String) -> String,
@@ -156,9 +159,19 @@ enum FileManagerWindowChrome {
             return openedCollectionName
         }
         if isCollectionMode {
-            return "New Collection"
+            return collectionNavigationTitle ?? "New Collection"
         }
         return makeWindowTitle(titlePath)
+    }
+
+    static func collectionTitle(from navigationState: ContentPageNavigationRoute) -> String? {
+        guard case let .collection(navigation) = navigationState else { return nil }
+        switch navigation.kind {
+        case .temporary:
+            return "New Collection"
+        case let .file(_, name):
+            return name
+        }
     }
 
     private static func applyCenteredInitialSize(
@@ -200,16 +213,20 @@ enum FileManagerWindowChrome {
         store: StoreOf<FileManagerFeature>,
         makeWindowTitle: @escaping (String) -> String,
     ) -> some Publisher<String, Never> {
-        Publishers.CombineLatest3(
+        Publishers.CombineLatest4(
             store.publisher.content.collection.collectionSession.document
                 .map { $0?.name }
+                .removeDuplicates(),
+            store.publisher.content.navigation.navigationState
+                .map(collectionTitle(from:))
                 .removeDuplicates(),
             store.publisher.content.isCollectionMode.removeDuplicates(),
             store.publisher.content.navigation.titlePath.removeDuplicates(),
         )
-        .map { openedCollectionName, isCollectionMode, titlePath in
+        .map { openedCollectionName, collectionNavigationTitle, isCollectionMode, titlePath in
             makeTitle(
                 openedCollectionName: openedCollectionName,
+                collectionNavigationTitle: collectionNavigationTitle,
                 isCollectionMode: isCollectionMode,
                 titlePath: titlePath,
                 makeWindowTitle: makeWindowTitle,

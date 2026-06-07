@@ -2,7 +2,7 @@ import Foundation
 import VoyagerShared
 
 extension SearchConditionBuilder {
-    func canonicalVisiblePropertyKey(for rawKey: String) -> String? {
+    nonisolated func canonicalVisiblePropertyKey(for rawKey: String) -> String? {
         if let mapping = propertyMap[rawKey], mapping.uiHidden == false {
             return rawKey
         }
@@ -15,7 +15,7 @@ extension SearchConditionBuilder {
         return canonicalKey
     }
 
-    func validateValue(
+    nonisolated func validateValue(
         _ valueCount: ValueCount?,
         operatorCode: String,
         value: JSONValue?,
@@ -38,7 +38,7 @@ extension SearchConditionBuilder {
         }
     }
 
-    func conditionTypeKey(for rawType: String) -> String? {
+    nonisolated func conditionTypeKey(for rawType: String) -> String? {
         switch rawType.lowercased() {
         case "string": "string"
         case "categorical": "categorical"
@@ -50,7 +50,7 @@ extension SearchConditionBuilder {
         }
     }
 
-    static func buildPropertyMap(systemRegistry: SystemPropertyRegistry) -> [String: PropertyMapping] {
+    nonisolated static func buildPropertyMap(systemRegistry: SystemPropertyRegistry) -> [String: PropertyMapping] {
         var map: [String: PropertyMapping] = [:]
         for (_, entries) in systemRegistry.categories {
             for (key, definition) in entries {
@@ -65,7 +65,7 @@ extension SearchConditionBuilder {
         return map
     }
 
-    static func buildLegacyKeyMap(systemRegistry: SystemPropertyRegistry) -> [String: String] {
+    nonisolated static func buildLegacyKeyMap(systemRegistry: SystemPropertyRegistry) -> [String: String] {
         var map: [String: String] = [:]
         for (_, entries) in systemRegistry.categories {
             for (canonicalKey, definition) in entries {
@@ -80,7 +80,7 @@ extension SearchConditionBuilder {
         return map
     }
 
-    private func validateNoValue(
+    nonisolated private func validateNoValue(
         operatorCode: String,
         value: JSONValue?,
         propertyKey: String,
@@ -90,7 +90,7 @@ extension SearchConditionBuilder {
         }
     }
 
-    private func validateSingleValue(
+    nonisolated private func validateSingleValue(
         operatorCode: String,
         value: JSONValue?,
         propertyKey: String,
@@ -100,7 +100,7 @@ extension SearchConditionBuilder {
         }
     }
 
-    private func validateRangeValue(
+    nonisolated private func validateRangeValue(
         operatorCode: String,
         value: JSONValue?,
         propertyKey: String,
@@ -110,7 +110,7 @@ extension SearchConditionBuilder {
         }
     }
 
-    private func validateMultipleValue(
+    nonisolated private func validateMultipleValue(
         operatorCode: String,
         value: JSONValue?,
         propertyKey: String,

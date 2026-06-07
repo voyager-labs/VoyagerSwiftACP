@@ -1,12 +1,19 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 @CasePathable
-public enum ValuePickerAction: CasePathable, Sendable {
+public enum ValuePickerAction: CasePathable, Sendable, Equatable {
     case setPresented(Bool)
     case prepare(PreparePayload)
 
     case setValue(index: Int, text: String)
+    case setDateMode(DateValueState.Mode)
+    case setDateSelection(Date)
+    case setRelativeDateDirection(RelativeDateConditionLiteral.Direction)
+    case setRelativeDateAmount(Int)
+    case setRelativeDateUnit(RelativeDateConditionLiteral.Unit)
+    case setRelativeDatePreset(DateValueState.RelativePreset)
     case selectUnit(String)
     case setTokenInput(String)
     case appendToken(String)

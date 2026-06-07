@@ -57,4 +57,32 @@ final class SearchFilterPayloadsTests: XCTestCase {
 
         XCTAssertEqual(decoded, payload)
     }
+
+    func testSearchResponsePayloadDecodesMissingQueryConversionAsNil() throws {
+        let data = Data(#"{"itemCount":0,"appliedFilters":{"scopes":["/Users/test/Documents"],"conditions":[]},"items":null,"error":null}"#
+            .utf8)
+
+        let decoded = try JSONDecoder().decode(SearchResponsePayload.self, from: data)
+
+        XCTAssertNil(decoded.queryConversion)
+    }
+
+    func testSearchResponsePayloadRoundTripsQueryConversion() throws {
+        let payload = SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: ["/Users/test/Documents"],
+                excludedScopes: ["/Users/test/Documents/Receipts"],
+                includeSubfolders: true,
+                conditions: [],
+            ),
+            items: nil,
+            error: nil,
+            queryConversion: SearchQueryConversionMetadataPayload(outcome: .fallbackReuse),
+        )
+
+        let decoded = try JSONDecoder().decode(SearchResponsePayload.self, from: JSONEncoder().encode(payload))
+
+        XCTAssertEqual(decoded, payload)
+    }
 }

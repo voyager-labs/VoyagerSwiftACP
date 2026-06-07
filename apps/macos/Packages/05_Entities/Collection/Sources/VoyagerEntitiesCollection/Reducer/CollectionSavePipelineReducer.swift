@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerShared
@@ -20,6 +19,9 @@ public struct CollectionSavePipelineReducer {
     @Dependency(\.collectionStalenessClient)
     var collectionStalenessClient
 
+    @Dependency(\.collectionMetricClient)
+    var collectionMetricClient
+
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -28,6 +30,7 @@ public struct CollectionSavePipelineReducer {
                     state: &state,
                     payload: payload,
                     collectionSavePanelClient: collectionSavePanelClient,
+                    collectionMetricClient: collectionMetricClient,
                 )
 
             case let .saveToExisting(payload, url):
@@ -37,6 +40,7 @@ public struct CollectionSavePipelineReducer {
                     url: url,
                     collectionFileClient: collectionFileClient,
                     collectionStalenessClient: collectionStalenessClient,
+                    collectionMetricClient: collectionMetricClient,
                 )
 
             case let .savePanelResponse(url):
@@ -45,6 +49,7 @@ public struct CollectionSavePipelineReducer {
                     selectedURL: url,
                     collectionFileClient: collectionFileClient,
                     collectionStalenessClient: collectionStalenessClient,
+                    collectionMetricClient: collectionMetricClient,
                 )
 
             case let .saveCompleted(result):
@@ -62,7 +67,7 @@ public struct CollectionSavePipelineReducer {
     }
 }
 
-private enum CollectionSaveValidationError: LocalizedError {
+enum CollectionSaveValidationError: LocalizedError {
     case emptyContent
     case incompleteCondition(String)
     case invalidConditionValue(String)
@@ -86,8 +91,16 @@ private enum CollectionSaveValidationError: LocalizedError {
 }
 
 private struct CollectionSaveFailure: Equatable, Error {
-    let title: String
-    let message: String
+    let feedback: CollectionSaveFeedback
+    let reason: String
+
+    var title: String {
+        feedback.title
+    }
+
+    var message: String {
+        feedback.message
+    }
 }
 
 private func validateSavePayload(
@@ -95,8 +108,15 @@ private func validateSavePayload(
 ) -> Result<(snapshot: CollectionSaveSnapshot, context: CollectionContext), CollectionSaveFailure> {
     guard let context = payload.context else {
         return .failure(.init(
-            title: "No New Collection",
-            message: "There is no active new collection to save.",
+            feedback: .init(
+                stage: .saveBlocked,
+                category: .emptyContent,
+                title: "No New Collection",
+                message: "There is no active new collection to save.",
+                recoveryHint: "Add a query, scope, or filter before saving.",
+                isRetryable: false,
+            ),
+            reason: "empty_content",
         ))
     }
 
@@ -110,11 +130,55 @@ private func validateSavePayload(
     switch validation {
     case let .failure(error):
         return .failure(.init(
-            title: "Unable to Save Collection",
-            message: error.localizedDescription,
+            feedback: makeValidationFeedback(for: error),
+            reason: CollectionFilterSaveMetrics.reason(for: error),
         ))
     case let .success(snapshot):
         return .success((snapshot: snapshot, context: context))
+    }
+}
+
+private func makeValidationFeedback(for error: CollectionSaveValidationError) -> CollectionSaveFeedback {
+    switch error {
+    case .emptyContent:
+        .init(
+            stage: .saveBlocked,
+            category: .emptyContent,
+            title: "No New Collection",
+            message: "There is no active new collection to save.",
+            recoveryHint: "Add a query, scope, or filter before saving.",
+            isRetryable: false,
+        )
+    case let .incompleteCondition(label):
+        .init(
+            stage: .saveBlocked,
+            category: .incompleteCondition,
+            title: "Unable to Save Collection",
+            message: "Complete the filter for \"\(label)\" before saving.",
+            recoveryHint: "Fix the highlighted filter and try again.",
+            propertyLabel: label,
+            isRetryable: false,
+        )
+    case let .invalidConditionValue(label):
+        .init(
+            stage: .saveBlocked,
+            category: .invalidConditionValue,
+            title: "Unable to Save Collection",
+            message: label
+                .isEmpty ? "Some filter values are invalid." : "Check the value for \"\(label)\" before saving.",
+            recoveryHint: "Correct the invalid value and try again.",
+            propertyLabel: label,
+            isRetryable: false,
+        )
+    case .saveBlockedFutureMinor:
+        .init(
+            stage: .saveBlocked,
+            category: .futureMinorReadOnly,
+            title: "Unable to Save Collection",
+            message: "Collections opened from a newer minor schema version are read-only and cannot be saved.",
+            recoveryHint: "Open the collection in the matching app version or make a writable copy.",
+            isRetryable: false,
+        )
     }
 }
 
@@ -138,6 +202,7 @@ private func validateCollectionContext(
             scopes: context.scopes,
             excludedScopes: context.excludedScopes,
             includeSubfolders: context.includeSubfolders,
+            includeDirectories: context.includeDirectories,
             conditions: conditions,
             snapshotItems: payload.snapshotItems,
             definitionFingerprint: payload.definitionFingerprint,
@@ -183,6 +248,7 @@ private func buildCollectionConditions(from conditions: [Condition]) throws -> [
 private func resetPendingSave(_ state: inout CollectionState) {
     state.isSaving = false
     state.pendingSave = nil
+    state.pendingSaveContext = nil
 }
 
 private func canStartSave(
@@ -198,14 +264,35 @@ private func handleSaveRequested(
     state: inout CollectionState,
     payload: SaveRequestPayload,
     collectionSavePanelClient: CollectionSavePanelClient,
+    collectionMetricClient: CollectionMetricClient,
 ) -> Effect<CollectionAction> {
-    guard canStartSave(state: state, payload: payload) else { return .none }
+    let source = "save_new"
+    guard canStartSave(state: state, payload: payload) else {
+        logCollectionSaveResult(
+            outcome: "save_blocked",
+            reason: CollectionFilterSaveMetrics.reasonForInFlightBlock(state: state, payload: payload),
+            source: source,
+            payload: payload,
+            collectionMetricClient: collectionMetricClient,
+            level: .warn,
+        )
+        return .none
+    }
 
     switch validateSavePayload(payload) {
     case let .failure(failure):
+        logCollectionSaveResult(
+            outcome: "save_blocked",
+            reason: failure.reason,
+            source: source,
+            payload: payload,
+            collectionMetricClient: collectionMetricClient,
+            level: .warn,
+        )
         return showSaveError(failure)
     case let .success(result):
         state.pendingSave = result.snapshot
+        state.pendingSaveContext = result.context
         state.isSaving = true
         return .run { send in
             let initialDirectory = await collectionSavePanelClient.defaultSaveDirectory(
@@ -225,19 +312,42 @@ private func handleSaveToExisting(
     url: URL,
     collectionFileClient: CollectionFileClient,
     collectionStalenessClient: CollectionStalenessClient,
+    collectionMetricClient: CollectionMetricClient,
 ) -> Effect<CollectionAction> {
-    guard canStartSave(state: state, payload: payload) else { return .none }
+    let source = state.collectionSession.phase.isInflightWriteBack ? "write_back" : "save_existing"
+    guard canStartSave(state: state, payload: payload) else {
+        logCollectionSaveResult(
+            outcome: "save_blocked",
+            reason: CollectionFilterSaveMetrics.reasonForInFlightBlock(state: state, payload: payload),
+            source: source,
+            payload: payload,
+            collectionMetricClient: collectionMetricClient,
+            level: .warn,
+        )
+        return .none
+    }
 
     switch validateSavePayload(payload) {
     case let .failure(failure):
+        logCollectionSaveResult(
+            outcome: "save_blocked",
+            reason: failure.reason,
+            source: source,
+            payload: payload,
+            collectionMetricClient: collectionMetricClient,
+            level: .warn,
+        )
         return showSaveError(failure)
     case let .success(result):
         state.isSaving = true
         return performSave(
             snapshot: result.snapshot,
+            savedContext: result.context,
             url: url,
             collectionFileClient: collectionFileClient,
             collectionStalenessClient: collectionStalenessClient,
+            collectionMetricClient: collectionMetricClient,
+            source: source,
         )
     }
 }
@@ -247,17 +357,33 @@ private func handleSavePanelResponse(
     selectedURL: URL?,
     collectionFileClient: CollectionFileClient,
     collectionStalenessClient: CollectionStalenessClient,
+    collectionMetricClient: CollectionMetricClient,
 ) -> Effect<CollectionAction> {
-    guard let selectedURL, let snapshot = state.pendingSave else {
+    guard let selectedURL,
+          let snapshot = state.pendingSave,
+          let savedContext = state.pendingSaveContext
+    else {
+        if let pendingSave = state.pendingSave {
+            logCollectionSaveResult(
+                outcome: "cancelled",
+                reason: "none",
+                source: "save_new",
+                snapshot: pendingSave,
+                collectionMetricClient: collectionMetricClient,
+            )
+        }
         resetPendingSave(&state)
         return .none
     }
 
     return performSave(
         snapshot: snapshot,
+        savedContext: savedContext,
         url: selectedURL,
         collectionFileClient: collectionFileClient,
         collectionStalenessClient: collectionStalenessClient,
+        collectionMetricClient: collectionMetricClient,
+        source: "save_new",
     )
 }
 
@@ -290,83 +416,30 @@ private func handleSaveCompleted(
         if state.collectionSession.phase.isInflightWriteBack {
             state.collectionSession.failRefreshOrWriteBack()
         }
-        return showSaveError(.init(
+        return .send(.delegate(.saveFeedback(.init(
+            stage: .saveFailed,
+            category: .saveFailed,
             title: "Unable to Save Collection",
             message: error.localizedDescription,
-        ))
+            recoveryHint: "Check the file location or try again.",
+            isRetryable: true,
+        ))))
     }
-}
-
-private func makeCollectionFile(
-    name: String,
-    snapshot: CollectionSaveSnapshot,
-    appVersion: String?,
-) -> VoyagerCollectionFile {
-    let timestamp = Date()
-    return VoyagerCollectionFile(
-        id: UUID().uuidString,
-        name: name,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        query: snapshot.query,
-        scopes: snapshot.scopes,
-        excludedScopes: snapshot.excludedScopes,
-        includeSubfolders: snapshot.includeSubfolders,
-        conditions: snapshot.conditions,
-        snapshot: snapshot.snapshotItems.map(CollectionPersistedSnapshot.init(items:)),
-        snapshotMeta: snapshot.snapshotItems.map { snapshotItems in
-            .init(
-                definitionFingerprint: snapshot.definitionFingerprint,
-                capturedAt: snapshot.capturedAt,
-                itemCount: snapshotItems.count,
-                relevanceRoots: snapshot.relevanceRoots,
-            )
-        },
-        appVersion: appVersion,
-    )
-}
-
-private func currentAppVersion() -> String? {
-    let info = Bundle.main.infoDictionary
-    let version = info?["CFBundleShortVersionString"] as? String
-    let build = info?["CFBundleVersion"] as? String
-
-    switch (version, build) {
-    case let (.some(version), .some(build)):
-        return "\(version) (\(build))"
-    case let (.some(version), .none):
-        return version
-    case let (.none, .some(build)):
-        return build
-    default:
-        return nil
-    }
-}
-
-@MainActor
-private func showCollectionSaveErrorAlert(title: String, message: String) {
-    let alert = NSAlert()
-    alert.alertStyle = .warning
-    alert.messageText = title
-    alert.informativeText = message
-    alert.addButton(withTitle: "OK")
-    alert.runModal()
 }
 
 private func showSaveError(_ failure: CollectionSaveFailure) -> Effect<CollectionAction> {
-    .run { _ in
-        await showCollectionSaveErrorAlert(
-            title: failure.title,
-            message: failure.message,
-        )
-    }
+    .send(.delegate(.saveFeedback(failure.feedback)))
 }
 
+// swiftlint:disable:next function_parameter_count
 private func performSave(
     snapshot: CollectionSaveSnapshot,
+    savedContext: CollectionContext,
     url: URL,
     collectionFileClient: CollectionFileClient,
     collectionStalenessClient: CollectionStalenessClient,
+    collectionMetricClient: CollectionMetricClient,
+    source: String,
 ) -> Effect<CollectionAction> {
     let request = buildSaveRequest(
         snapshot: snapshot,
@@ -380,44 +453,10 @@ private func performSave(
 
     return executeSave(
         request: request,
-        collectionFileClient: collectionFileClient,
-    )
-}
-
-private struct CollectionSaveRequest {
-    let url: URL
-    let file: VoyagerCollectionFile
-}
-
-private func buildSaveRequest(
-    snapshot: CollectionSaveSnapshot,
-    destinationURL: URL,
-) -> CollectionSaveRequest {
-    let finalURL: URL = if destinationURL.pathExtension.lowercased() == CollectionConstants.fileExtension {
-        destinationURL
-    } else {
-        destinationURL
-            .deletingPathExtension()
-            .appendingPathExtension(CollectionConstants.fileExtension)
-    }
-    let file = makeCollectionFile(
-        name: finalURL.deletingPathExtension().lastPathComponent,
+        source: source,
         snapshot: snapshot,
-        appVersion: currentAppVersion(),
+        savedContext: savedContext,
+        collectionFileClient: collectionFileClient,
+        collectionMetricClient: collectionMetricClient,
     )
-    return .init(url: finalURL, file: file)
-}
-
-private func executeSave(
-    request: CollectionSaveRequest,
-    collectionFileClient: CollectionFileClient,
-) -> Effect<CollectionAction> {
-    .run { send in
-        do {
-            try await collectionFileClient.save(request.file, request.url)
-            await send(.saveCompleted(.success(.init(url: request.url, file: request.file))))
-        } catch {
-            await send(.saveCompleted(.failure(error)))
-        }
-    }
 }

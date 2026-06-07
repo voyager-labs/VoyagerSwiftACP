@@ -224,6 +224,15 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             $0.isSaving = false
             $0.pendingSave = nil
         }
+        await store.receive { action in
+            guard case let .delegate(.saveFeedback(feedback)) = action else { return false }
+            XCTAssertEqual(feedback.stage, .saveFailed)
+            XCTAssertEqual(feedback.category, .saveFailed)
+            XCTAssertEqual(feedback.title, "Unable to Save Collection")
+            XCTAssertEqual(feedback.message, "Disk write failed")
+            XCTAssertTrue(feedback.isRetryable)
+            return true
+        }
         await store.finish()
 
         let saved = await recorder.last()
@@ -273,6 +282,15 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         await store.receive(\.saveCompleted) {
             $0.isSaving = false
             $0.pendingSave = nil
+        }
+        await store.receive { action in
+            guard case let .delegate(.saveFeedback(feedback)) = action else { return false }
+            XCTAssertEqual(feedback.stage, .saveFailed)
+            XCTAssertEqual(feedback.category, .saveFailed)
+            XCTAssertEqual(feedback.title, "Unable to Save Collection")
+            XCTAssertEqual(feedback.message, "Disk write failed")
+            XCTAssertTrue(feedback.isRetryable)
+            return true
         }
         await store.finish()
 
@@ -324,6 +342,14 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.saveToExisting(payload, url))
+        await store.receive { action in
+            guard case let .delegate(.saveFeedback(feedback)) = action else { return false }
+            XCTAssertEqual(feedback.stage, .saveBlocked)
+            XCTAssertEqual(feedback.category, .futureMinorReadOnly)
+            XCTAssertEqual(feedback.title, "Unable to Save Collection")
+            XCTAssertFalse(feedback.isRetryable)
+            return true
+        }
         await store.finish()
 
         let lastSaved = await recorder.last()
