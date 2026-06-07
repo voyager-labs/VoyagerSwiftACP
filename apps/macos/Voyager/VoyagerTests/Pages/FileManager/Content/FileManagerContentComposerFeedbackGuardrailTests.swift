@@ -58,6 +58,51 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         )
     }
 
+    /// testInteractiveComposerSuccessPayloadErrorDoesNotInvokeCollectionAlert 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testInteractiveComposerSuccessPayloadErrorDoesNotInvokeCollectionAlert() async {
+        let alerts = CollectionAlertRecorder()
+        let requestID = UUID()
+        var initialState = FileManagerContentState()
+        initialState.composer.pendingSearchQuery = "kind:image"
+        initialState.composer.isLoadingSearch = true
+        initialState.composer.activeSearchRequestID = requestID
+        initialState.composer.queryRenderPhase = .searching
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .cancel },
+                showCollectionOpenErrorAlert: { title, message in
+                    await alerts.record(title: title, message: message)
+                },
+            )
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
+        }
+        store.exhaustivity = .off
+
+        await store.send(FileManagerContentAction.composer(ComposerAction.searchResponse(
+            requestID,
+            .success(makePayloadErrorSearchResponse()),
+        )))
+        await store.receive { action in
+            guard case .delegate(.composerCollectionSearchFailed) = action else { return false }
+            return true
+        }
+        await Task.yield()
+
+        XCTAssertEqual(alerts.count(), 0)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isOpening)
+        XCTAssertEqual(
+            store.state.composer.transientFeedback?.message,
+            ComposerQueryFeedbackPolicy.executionFailureMessage,
+        )
+    }
+
     /// testCollectionOpenFailureStillShowsModalAlertAndRollsBack 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
     func testCollectionOpenFailureStillShowsModalAlertAndRollsBack() async {
         let alerts = CollectionAlertRecorder()
@@ -98,16 +143,11 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         XCTAssertNil(store.state.collection.collectionContext)
     }
 
-    func testCollectionSaveFeedbackBridgesToComposerToast() async {
-        var initialState = FileManagerContentState()
-        let feedback = CollectionSaveFeedback(
-            stage: .saveBlocked,
-            category: .futureMinorReadOnly,
-            title: "Unable to Save Collection",
-            message: "Collections opened from a newer minor schema version are read-only and cannot be saved.",
-            recoveryHint: "Open the collection in the matching app version or make a writable copy.",
-            isRetryable: false,
-        )
+    /// testCollectionOpenSuccessPayloadErrorStillShowsModalAlertAndRollsBack 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testCollectionOpenSuccessPayloadErrorStillShowsModalAlertAndRollsBack() async {
+        let alerts = CollectionAlertRecorder()
+        let requestID = UUID()
+        let initialState = makeCollectionOpeningState(requestID: requestID)
 
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
@@ -115,7 +155,9 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
             $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
             $0.collectionAlertClient = .init(
                 showUnsavedNavigationAlert: { .cancel },
-                showCollectionOpenErrorAlert: { _, _ in },
+                showCollectionOpenErrorAlert: { title, message in
+                    await alerts.record(title: title, message: message)
+                },
             )
             $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
             $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
@@ -124,19 +166,57 @@ final class ComposerFeedbackGuardrailTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.collection(.delegate(.saveFeedback(feedback)))) {
-            $0.composer.transientFeedback = ComposerTransientFeedback(
-                id: $0.composer.transientFeedback?.id ?? UUID(),
-                kind: .error,
-                stage: .save,
-                category: .saveBlocked,
-                message: "\(feedback.title)\n\(feedback.message)",
-                recoveryHint: feedback.recoveryHint,
+        await store.send(FileManagerContentAction.composer(ComposerAction.searchResponse(
+            requestID,
+            .success(makePayloadErrorSearchResponse()),
+        )))
+        await assertCollectionOpenFailureRollback(store: store)
+        await Task.yield()
+
+        XCTAssertEqual(alerts.count(), 1)
+        XCTAssertEqual(alerts.lastTitle(), "Unable to Run Collection Search")
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isOpening)
+        XCTAssertNil(store.state.collection.collectionSession.document?.name)
+        XCTAssertNil(store.state.collection.collectionSession.document?.url)
+        XCTAssertNil(store.state.collection.collectionSession.metadata.baseline)
+        XCTAssertFalse(store.state.entryViewLayout.isCollectionMode)
+        XCTAssertNil(store.state.collection.collectionContext)
+    }
+
+    /// testStaleComposerSuccessPayloadErrorIsIgnored 시나리오가 FileManager 계약을 위반하지 않음을 검증한다.
+    func testStaleComposerSuccessPayloadErrorIsIgnored() async {
+        let alerts = CollectionAlertRecorder()
+        let activeRequestID = UUID()
+        let staleRequestID = UUID()
+        var initialState = makeCollectionOpeningState(requestID: activeRequestID)
+        initialState.composer.activeSearchRequestID = activeRequestID
+
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .cancel },
+                showCollectionOpenErrorAlert: { title, message in
+                    await alerts.record(title: title, message: message)
+                },
             )
+            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
+            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
+            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
+            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
         }
-        XCTAssertEqual(store.state.composer.transientFeedback?.stage, .save)
-        XCTAssertEqual(store.state.composer.transientFeedback?.category, .saveBlocked)
-        XCTAssertEqual(store.state.composer.transientFeedback?.recoveryHint, feedback.recoveryHint)
+        store.exhaustivity = .off
+
+        await store.send(FileManagerContentAction.composer(ComposerAction.searchResponse(
+            staleRequestID,
+            .success(makePayloadErrorSearchResponse()),
+        )))
+        await Task.yield()
+
+        XCTAssertEqual(alerts.count(), 0)
+        XCTAssertTrue(store.state.collection.collectionSession.phase.isOpening)
+        XCTAssertEqual(store.state.composer.activeSearchRequestID, activeRequestID)
     }
 }
 
@@ -225,4 +305,14 @@ private enum GuardrailError: LocalizedError {
     var errorDescription: String? {
         "HELPER_UNAVAILABLE: disconnected"
     }
+}
+
+private func makePayloadErrorSearchResponse() -> VoyagerShared.SearchResponsePayload {
+    .init(
+        itemCount: 0,
+        appliedFilters: .init(scopes: ["/tmp"], conditions: []),
+        items: nil,
+        error: .init(code: "HELPER_UNAVAILABLE", details: "disconnected"),
+        queryConversion: .init(outcome: .providerUnavailable),
+    )
 }

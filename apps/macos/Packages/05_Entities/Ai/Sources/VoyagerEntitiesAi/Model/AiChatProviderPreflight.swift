@@ -65,6 +65,7 @@ public enum AiChatProviderPreflight {
             messages: request.messages,
             credential: credential,
             thinkingCapability: request.context.selectedModel?.thinkingCapability,
+            responseContract: request.responseContract,
         )
     }
 
@@ -73,6 +74,7 @@ public enum AiChatProviderPreflight {
         messages: [AiChatMessage],
         credential: StoredCredentialPayload?,
         thinkingCapability: AiModelThinkingCapability?,
+        responseContract: AiChatProviderResponseContract? = nil,
     ) throws -> AiChatProviderPreflightResult {
         let validatedCredential = try validateCredential(for: context.provider, credential: credential)
         let (loweredThinking, warnings) = lowerThinking(
@@ -81,7 +83,7 @@ public enum AiChatProviderPreflight {
             capability: thinkingCapability,
             supportsNone: context.selectedModel?.supportsThinkingNone == true,
         )
-        let request = AiChatRequest(context: context, messages: messages)
+        let request = AiChatRequest(context: context, messages: messages, responseContract: responseContract)
         let payload: AiChatProviderRequestPayload
         do {
             payload = try AiChatProviderRequestPayload.lower(request, thinking: loweredThinking)

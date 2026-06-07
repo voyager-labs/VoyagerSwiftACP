@@ -18,8 +18,8 @@ struct FileManagerContentComposerReducer {
     private var userDefaultsClient
     @Dependency(\.metricsClient)
     private var metricsClient
-    @Dependency(\.registryClient)
-    private var registryClient
+    @Dependency(\.searchClient)
+    private var searchClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -30,7 +30,7 @@ struct FileManagerContentComposerReducer {
                     dependencies: .init(
                         collectionAlertClient: collectionAlertClient,
                         metricsClient: metricsClient,
-                        registryClient: registryClient,
+                        searchClient: searchClient,
                     ),
                 )
             }

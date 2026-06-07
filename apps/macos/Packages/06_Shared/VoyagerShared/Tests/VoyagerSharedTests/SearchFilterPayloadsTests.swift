@@ -4,28 +4,27 @@ import XCTest
 
 @MainActor
 final class SearchFilterPayloadsTests: XCTestCase {
-    func testSearchResponsePayloadDecodesMissingQueryOutcomeAsNil() throws {
+    func testSearchResponsePayloadDecodesMissingQueryConversionAsNil() throws {
         let data = Data(#"{"itemCount":0,"appliedFilters":{"scopes":["/tmp"],"conditions":[]},"items":null,"error":null}"#
             .utf8)
 
         let decoded = try JSONDecoder().decode(SearchResponsePayload.self, from: data)
 
-        XCTAssertNil(decoded.queryOutcome)
+        XCTAssertNil(decoded.queryConversion)
     }
 
-    func testSearchResponsePayloadRoundTripsQueryOutcome() throws {
+    func testSearchResponsePayloadRoundTripsQueryConversion() throws {
         let payload = SearchResponsePayload(
             itemCount: 0,
             appliedFilters: AppliedFiltersPayload(
                 scopes: ["/tmp"],
                 excludedScopes: ["/tmp/excluded"],
                 includeSubfolders: true,
-                includeDirectories: true,
                 conditions: [],
             ),
             items: nil,
             error: nil,
-            queryOutcome: .fallbackReuse,
+            queryConversion: SearchQueryConversionMetadataPayload(outcome: .fallbackReuse),
         )
 
         let decoded = try JSONDecoder().decode(SearchResponsePayload.self, from: JSONEncoder().encode(payload))

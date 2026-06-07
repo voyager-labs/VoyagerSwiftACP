@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated enum SearchScopeNormalizer {
+enum SearchScopeNormalizer {
     static func normalizeScopes(_ scopes: [String]) -> [String] {
         var orderedUnique: [String] = []
         var seen: Set<String> = []

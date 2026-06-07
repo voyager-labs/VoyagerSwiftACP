@@ -72,35 +72,6 @@ public enum CollectionSnapshotHydration {
         return snapshot
     }
 
-    private static func isCurrentOrLegacyFingerprint(_ fingerprint: String, for file: VoyagerCollectionFile) -> Bool {
-        if fingerprint == definitionFingerprint(file: file) {
-            return true
-        }
-
-        guard file.includeDirectories == false else { return false }
-        return fingerprint == legacyDefinitionFingerprintBeforeDirectoryPolicy(file: file)
-    }
-
-    private static func legacyDefinitionFingerprintBeforeDirectoryPolicy(file: VoyagerCollectionFile) -> String {
-        let normalizedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedScopes = normalizePaths(file.scopes)
-        let normalizedExcludedScopes = normalizePaths(file.excludedScopes)
-        let normalizedConditions = file.conditions
-            .map { condition in
-                let value = canonicalValueString(condition.value)
-                return [condition.propertyKey, condition.operatorCode, value].joined(separator: "\u{1E}")
-            }
-            .sorted()
-
-        return legacyDigestBeforeDirectoryPolicy(
-            query: normalizedQuery,
-            scopes: normalizedScopes,
-            excludedScopes: normalizedExcludedScopes,
-            includeSubfolders: file.includeSubfolders,
-            conditions: normalizedConditions,
-        )
-    }
-
     public static func syntheticSearchResponse(for file: VoyagerCollectionFile) -> VoyagerShared
         .SearchResponsePayload?
     {
@@ -112,7 +83,6 @@ public enum CollectionSnapshotHydration {
                 scopes: file.scopes,
                 excludedScopes: file.excludedScopes,
                 includeSubfolders: file.includeSubfolders,
-                includeDirectories: file.includeDirectories,
                 conditions: file.conditions.map {
                     VoyagerShared.SearchConditionPayload(
                         propertyKey: $0.propertyKey,
@@ -143,6 +113,35 @@ public enum CollectionSnapshotHydration {
             }
         }
         return paths
+    }
+
+    private static func isCurrentOrLegacyFingerprint(_ fingerprint: String, for file: VoyagerCollectionFile) -> Bool {
+        if fingerprint == definitionFingerprint(file: file) {
+            return true
+        }
+
+        guard file.includeDirectories == false else { return false }
+        return fingerprint == legacyDefinitionFingerprintBeforeDirectoryPolicy(file: file)
+    }
+
+    private static func legacyDefinitionFingerprintBeforeDirectoryPolicy(file: VoyagerCollectionFile) -> String {
+        let normalizedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedScopes = normalizePaths(file.scopes)
+        let normalizedExcludedScopes = normalizePaths(file.excludedScopes)
+        let normalizedConditions = file.conditions
+            .map { condition in
+                let value = canonicalValueString(condition.value)
+                return [condition.propertyKey, condition.operatorCode, value].joined(separator: "\u{1E}")
+            }
+            .sorted()
+
+        return legacyDigestBeforeDirectoryPolicy(
+            query: normalizedQuery,
+            scopes: normalizedScopes,
+            excludedScopes: normalizedExcludedScopes,
+            includeSubfolders: file.includeSubfolders,
+            conditions: normalizedConditions,
+        )
     }
 
     private static func normalizePaths(_ paths: [String]) -> [String] {

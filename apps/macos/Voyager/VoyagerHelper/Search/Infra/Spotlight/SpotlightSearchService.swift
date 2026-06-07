@@ -92,7 +92,6 @@ struct SpotlightSearchService: SearchExecutionServicing {
                 scopes: filters.scopes,
                 excludedScopes: filters.excludedScopes,
                 includeSubfolders: filters.includeSubfolders,
-                includeDirectories: filters.includeDirectories,
                 conditions: filters.conditions,
             ),
             items: items,
@@ -111,7 +110,6 @@ struct SpotlightSearchService: SearchExecutionServicing {
                 queryString: compiledPlan.predicate,
                 scopes: scopeURLs,
                 limit: maxCandidates,
-                includeDirectories: filters.includeDirectories,
             )
         }
 
@@ -119,7 +117,6 @@ struct SpotlightSearchService: SearchExecutionServicing {
             queryString: compiledPlan.predicate,
             scopes: scopeURLs,
             limit: maxCandidates,
-            includeDirectories: filters.includeDirectories,
             shouldIncludePath: { path in
                 pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
             },

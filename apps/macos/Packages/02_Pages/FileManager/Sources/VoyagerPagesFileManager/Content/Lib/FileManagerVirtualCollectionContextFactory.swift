@@ -29,7 +29,6 @@ enum FileManagerVirtualCollectionContextFactory {
             scopes: allIndexedScopes,
             excludedScopes: [],
             includeSubfolders: true,
-            includeDirectories: route.includesDirectoriesInVirtualCollection,
             conditions: conditionPayloads,
         )
         let resolved = AppliedFiltersUtils.resolveDetailed(
@@ -44,7 +43,7 @@ enum FileManagerVirtualCollectionContextFactory {
             scopes: resolved.scopes,
             excludedScopes: resolved.excludedScopes,
             includeSubfolders: appliedFilters.includeSubfolders ?? true,
-            includeDirectories: appliedFilters.includeDirectories ?? false,
+            includeDirectories: route.includesDirectoriesInVirtualCollection,
             conditions: resolved.conditions,
         )
     }

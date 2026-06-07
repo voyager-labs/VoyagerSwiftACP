@@ -20,14 +20,20 @@ public struct AiChatMessage: Codable, Equatable, Sendable {
 public struct AiChatRequest: Codable, Equatable, Sendable {
     public let context: AiChatRequestContextSnapshot
     public let messages: [AiChatMessage]
+    public let responseContract: AiChatProviderResponseContract?
 
-    public init(context: AiChatRequestContextSnapshot, messages: [AiChatMessage]) {
+    public init(
+        context: AiChatRequestContextSnapshot,
+        messages: [AiChatMessage],
+        responseContract: AiChatProviderResponseContract? = nil,
+    ) {
         self.context = context
         self.messages = messages
+        self.responseContract = responseContract
     }
 }
 
-public enum AiChatExecutionFailure: String, Codable, Sendable, Equatable, CaseIterable {
+public enum AiChatExecutionFailure: String, Codable, Sendable, Equatable, CaseIterable, Error {
     case cancelled
     case authentication
     case modelUnavailable

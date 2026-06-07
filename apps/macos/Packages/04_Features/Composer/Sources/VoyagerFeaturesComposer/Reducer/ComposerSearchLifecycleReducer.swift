@@ -49,129 +49,115 @@ struct ComposerSearchLifecycleReducer {
                 state.lastAcceptedSearchRequestID = requestID
                 switch response {
                 case let .success(response):
+                    if let error = response.error {
+                        state.isLoadingSearch = false
+                        state.activeSearchRequestID = nil
+                        state.resolveScopeChangeFeedback(.search(requestID), phase: .failed)
+                        let feedback = ComposerQueryFeedbackPolicy.feedback(for: response)
+                        let failureMessage = ComposerQueryFeedbackPolicy.failureMessage(for: error)
+                        let feedbackEffect = presentTransientFeedback(
+                            kind: feedback?.kind ?? .error,
+                            message: feedback?.message ?? failureMessage,
+                            state: &state,
+                            clock: clock,
+                        )
+                        applyQueryPhaseTransition(.searchFailed, state: &state)
+                        composerMetricClient.logMetric(
+                            "voyager_search_result",
+                            value: 1,
+                            tags: ["result": "error"],
+                            level: .warn,
+                        )
+                        state.searchStartedAt = nil
+                        kComposerSearchLifecycleLogger.warning(
+                            "Composer query search returned error payload: \(feedback?.message ?? failureMessage)",
+                        )
+                        return feedbackEffect
+                    }
+
+                    let baselineFilters = feedbackBaseline(from: state)
+                    let normalizedAppliedFilters = feedbackAppliedFilters(
+                        appliedFilters: response.appliedFilters,
+                        baseline: baselineFilters,
+                    )
+                    let shouldSkipApplyFilters = ComposerQueryFeedbackPolicy.shouldSkipApplyFilters(
+                        response: response,
+                        baseline: baselineFilters,
+                    )
                     state.isLoadingSearch = false
                     state.activeSearchRequestID = nil
                     state.lastSearchResponse = response
                     state.lastFiltersResponse = nil
-                    let queryOutcome = response.queryOutcome
-                    let startedAt = state.searchStartedAt
-                    state.searchStartedAt = nil
-                    switch queryOutcome {
-                    case .fallbackReuse where state.openedCollectionURL == nil:
-                        state.isLoadingFilters = false
-                        state.isFilteringInFlight = false
-                        state.activeFiltersRequestID = nil
-                        state.filtersStartedAt = nil
-                        state.pendingSearchQuery = nil
-                        applyQueryPhaseTransition(.reset, state: &state)
-                        state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
-                        if let startedAt {
-                            composerMetricClient.logMetric(
-                                "voyager_search_roundtrip_duration_ms",
-                                value: round((Date().timeIntervalSince(startedAt)) * 1000),
-                            )
-                        }
+                    applyQueryPhaseTransition(.searchSucceeded, state: &state)
+                    applyAppliedFilters(normalizedAppliedFilters, state: &state, registryClient: registryClient)
+                    if let startedAt = state.searchStartedAt {
                         composerMetricClient.logMetric(
-                            "voyager_search_result",
-                            value: 1,
-                            tags: [
-                                "result": response.itemCount > 0 ? "success" : "empty",
-                                "query_outcome": searchOutcomeMetricTag(for: queryOutcome),
-                            ],
+                            "voyager_search_roundtrip_duration_ms",
+                            value: round((Date().timeIntervalSince(startedAt)) * 1000),
                         )
-                        kComposerSearchLifecycleLogger.debug("Composer query search resolved to fallback reuse")
-                        return presentTransientFeedback(
-                            kind: .info,
-                            message: ComposerQueryFeedbackPolicy.fallbackReuseMessage,
-                            state: &state,
-                            clock: clock,
-                        )
-
-                    case .unchangedResult where state.openedCollectionURL == nil:
-                        state.isLoadingFilters = false
-                        state.isFilteringInFlight = false
-                        state.activeFiltersRequestID = nil
-                        state.filtersStartedAt = nil
-                        state.pendingSearchQuery = nil
-                        applyQueryPhaseTransition(.reset, state: &state)
-                        state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
-                        if let startedAt {
-                            composerMetricClient.logMetric(
-                                "voyager_search_roundtrip_duration_ms",
-                                value: round((Date().timeIntervalSince(startedAt)) * 1000),
-                            )
-                        }
-                        composerMetricClient.logMetric(
-                            "voyager_search_result",
-                            value: 1,
-                            tags: [
-                                "result": response.itemCount > 0 ? "success" : "empty",
-                                "query_outcome": searchOutcomeMetricTag(for: queryOutcome),
-                            ],
-                        )
-                        kComposerSearchLifecycleLogger.debug("Composer query search resolved to unchanged result")
-                        return .none
-
-                    case .convertedChanged, .fallbackReuse, .unchangedResult, nil:
-                        let baselineFilters = feedbackBaseline(from: state)
-                        let normalizedAppliedFilters = feedbackAppliedFilters(
-                            appliedFilters: response.appliedFilters,
-                            baseline: baselineFilters,
-                        )
-                        applyQueryPhaseTransition(.searchSucceeded, state: &state)
-                        applyAppliedFilters(normalizedAppliedFilters, state: &state, registryClient: registryClient)
-                        if let startedAt {
-                            composerMetricClient.logMetric(
-                                "voyager_search_roundtrip_duration_ms",
-                                value: round((Date().timeIntervalSince(startedAt)) * 1000),
-                            )
-                        }
-                        composerMetricClient.logMetric(
-                            "voyager_search_result",
-                            value: 1,
-                            tags: [
-                                "result": response.itemCount > 0 ? "success" : "empty",
-                                "query_outcome": searchOutcomeMetricTag(for: queryOutcome),
-                            ],
-                        )
-                        state.isLoadingFilters = true
-                        state.isFilteringInFlight = true
-                        let filtersRequestID = UUID()
-                        let executionFilters = buildFilters(from: state)
-                        state.activeFiltersRequestID = filtersRequestID
-                        state.filtersStartedAt = Date()
-                        state.retargetScopeChangeFeedbackPending(
-                            from: .search(requestID),
-                            to: .filters(filtersRequestID),
-                        )
-                        let applyEffect: Effect<ComposerFeature.Action> = .run { send in
-                            do {
-                                let executionResponse = try await searchClient.applyFilters(
-                                    .init(filters: executionFilters),
-                                )
-                                await send(.filtersResponse(filtersRequestID, .success(executionResponse)))
-                            } catch is CancellationError {
-                                return
-                            } catch {
-                                guard !Task.isCancelled else { return }
-                                await send(.filtersResponse(filtersRequestID, .failure(error)))
-                            }
-                        }
-                        .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
-
-                        if queryOutcome == .fallbackReuse {
-                            return .merge(
-                                applyEffect,
-                                presentTransientFeedback(
-                                    kind: .info,
-                                    message: ComposerQueryFeedbackPolicy.fallbackReuseMessage,
-                                    state: &state,
-                                    clock: clock,
-                                ),
-                            )
-                        }
-                        return applyEffect
                     }
+                    composerMetricClient.logMetric(
+                        "voyager_search_result",
+                        value: 1,
+                        tags: ["result": response.itemCount > 0 ? "success" : "empty"],
+                    )
+                    state.searchStartedAt = nil
+                    if shouldSkipApplyFilters, state.openedCollectionURL == nil {
+                        kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
+                        state.isLoadingFilters = false
+                        state.isFilteringInFlight = false
+                        state.activeFiltersRequestID = nil
+                        state.filtersStartedAt = nil
+                        state.pendingSearchQuery = nil
+                        applyQueryPhaseTransition(.reset, state: &state)
+                        state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
+                        if let feedback = ComposerQueryFeedbackPolicy.feedback(for: response) {
+                            return presentTransientFeedback(
+                                kind: feedback.kind,
+                                message: feedback.message,
+                                state: &state,
+                                clock: clock,
+                            )
+                        }
+                        return .none
+                    }
+                    state.isLoadingFilters = true
+                    state.isFilteringInFlight = true
+                    let filtersRequestID = UUID()
+                    let executionFilters = buildFilters(from: state)
+                    state.activeFiltersRequestID = filtersRequestID
+                    state.filtersStartedAt = Date()
+                    state.retargetScopeChangeFeedbackPending(
+                        from: .search(requestID),
+                        to: .filters(filtersRequestID),
+                    )
+                    let applyEffect: Effect<ComposerFeature.Action> = .run { send in
+                        do {
+                            let executionResponse = try await searchClient.applyFilters(
+                                .init(filters: executionFilters),
+                            )
+                            await send(.filtersResponse(filtersRequestID, .success(executionResponse)))
+                        } catch is CancellationError {
+                            return
+                        } catch {
+                            guard !Task.isCancelled else { return }
+                            await send(.filtersResponse(filtersRequestID, .failure(error)))
+                        }
+                    }
+                    .cancellable(id: ComposerFeature.CancelID.filters, cancelInFlight: true)
+
+                    if let feedback = ComposerQueryFeedbackPolicy.feedback(for: response) {
+                        return .merge(
+                            applyEffect,
+                            presentTransientFeedback(
+                                kind: feedback.kind,
+                                message: feedback.message,
+                                state: &state,
+                                clock: clock,
+                            ),
+                        )
+                    }
+                    return applyEffect
 
                 case let .failure(error):
                     state.isLoadingSearch = false
@@ -375,10 +361,12 @@ private func handleApplyFilters(
 }
 
 private func feedbackBaseline(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
-    if let submittedSearchFilters = state.submittedSearchFilters {
-        return submittedSearchFilters
-    }
-    return buildFilters(from: state)
+    state.submittedSearchFilters ?? VoyagerShared.SearchFiltersPayload(
+        scopes: state.scopeEditor.selection.legacyScopePaths,
+        excludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
+        includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
+        conditions: buildFilters(from: state).conditions,
+    )
 }
 
 private func feedbackAppliedFilters(
@@ -393,26 +381,12 @@ private func feedbackAppliedFilters(
         scopes: normalizedFilters.scopes,
         excludedScopes: normalizedFilters.excludedScopes,
         includeSubfolders: normalizedFilters.includeSubfolders,
-        includeDirectories: normalizedFilters.includeDirectories,
         conditions: normalizedFilters.conditions,
     )
 }
 
 private func feedbackFailureMessage(for error: any Error) -> String {
     ComposerQueryFeedbackPolicy.failureMessage(for: error)
-}
-
-private func searchOutcomeMetricTag(for outcome: SearchQueryOutcome?) -> String {
-    switch outcome {
-    case .convertedChanged:
-        SearchQueryOutcome.convertedChanged.rawValue
-    case .unchangedResult:
-        SearchQueryOutcome.unchangedResult.rawValue
-    case .fallbackReuse:
-        SearchQueryOutcome.fallbackReuse.rawValue
-    case nil:
-        "legacy_unknown"
-    }
 }
 
 private func presentTransientFeedback(
