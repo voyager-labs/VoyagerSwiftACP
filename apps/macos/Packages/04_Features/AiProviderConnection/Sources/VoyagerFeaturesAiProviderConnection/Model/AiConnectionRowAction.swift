@@ -18,7 +18,7 @@ public enum AiConnectionRowAction: CasePathable, Equatable, Sendable {
     case deviceAuthFailed(CodexNativeAuthError)
     case enteredKeyChanged(String)
     case submitAPIKey(String)
-    case _verificationResponse(AiProviderVerificationResult)
-    case _connectionResponse(AiProviderConnectionResult)
-    case _disconnectResponse(AiProviderConnectionResult)
+    case verificationResponse(AiProviderVerificationResult)
+    case connectionResponse(AiProviderConnectionResult)
+    case disconnectResponse(AiProviderConnectionResult)
 }

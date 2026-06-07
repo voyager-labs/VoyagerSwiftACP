@@ -3,13 +3,13 @@
 이 문서는 macOS 앱(Voyager)과 Helper(VoyagerHelper)가 검색 런타임(XPC + Gateway)을
 어떤 순서로 준비하고 앱과 동기화하는지 통합 관점에서 정리합니다.
 
-> 상세 구현(인덱싱/DB/알림 payload)은 `docs/macos/voyager-helper.md`를 SSOT로 봅니다.
+> 상세 구현(인덱싱/DB/알림 payload)은 `docs/legacy/macos/voyager-helper.md`를 SSOT로 봅니다.
 
 관련 문서
 
-- 환경 변수 로딩/키 목록: `docs/architecture/environment.md`
-- Helper 상세(인덱싱/DB): `docs/macos/voyager-helper.md`
-- 트러블슈팅: `docs/troubleshooting.md`
+- 환경 변수 로딩/키 목록: `docs/legacy/architecture/environment.md`
+- Helper 상세(인덱싱/DB): `docs/legacy/macos/voyager-helper.md`
+- 트러블슈팅: `docs/legacy/troubleshooting.md`
 
 ---
 
@@ -74,8 +74,8 @@ sequenceDiagram
 Python 백엔드는 `load_config()` 호출 시점에 dotenv를 로딩합니다.
 
 - 로딩 순서(override=False, 즉 "먼저 로드된 값" 우선)
-  1) 프로세스 환경 변수
-  2) `.env.{APP_ENV}`
+    1. 프로세스 환경 변수
+    2. `.env.{APP_ENV}`
 
 즉, Helper가 프로세스 환경 변수로 값을 전달하면 백엔드가 `.env`를 다시 읽더라도 override 되지 않습니다.
 
@@ -125,6 +125,6 @@ Helper는 `DistributedNotificationCenter`를 사용해 상태를 브로드캐스
 
 ## 8) 트러블슈팅 빠른 링크
 
-- "백엔드가 뜨지 않음": `docs/troubleshooting.md`
-- "포트 연결 실패": `docs/troubleshooting.md`
-- Helper/Backend 상세 디버깅: `docs/macos/voyager-helper.md`
+- "백엔드가 뜨지 않음": `docs/legacy/troubleshooting.md`
+- "포트 연결 실패": `docs/legacy/troubleshooting.md`
+- Helper/Backend 상세 디버깅: `docs/legacy/macos/voyager-helper.md`

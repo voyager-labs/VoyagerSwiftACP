@@ -5,7 +5,7 @@ enum ProgressClient {
     static var noOp: OnboardingProgressClient {
         OnboardingProgressClient(
             load: { .empty },
-            save: { _ in },
+            save: { _ in .success },
             reset: {},
         )
     }
@@ -13,7 +13,7 @@ enum ProgressClient {
     static var resetRequired: OnboardingProgressClient {
         OnboardingProgressClient(
             load: { .resetRequired },
-            save: { _ in },
+            save: { _ in .success },
             reset: {},
         )
     }
@@ -27,6 +27,7 @@ enum ProgressClient {
             save: { snapshot in
                 eventLog?.record("save")
                 saveRecorder.setValue(snapshot)
+                return .success
             },
             reset: {},
         )
@@ -38,7 +39,10 @@ enum ProgressClient {
     ) -> OnboardingProgressClient {
         OnboardingProgressClient(
             load: { .resetRequired },
-            save: { snapshot in saveRecorder.setValue(snapshot) },
+            save: { snapshot in
+                saveRecorder.setValue(snapshot)
+                return .success
+            },
             reset: { resetRecorder.setValue(true) },
         )
     }
@@ -46,7 +50,7 @@ enum ProgressClient {
     static func resuming(from snapshot: OnboardingProgressSnapshot) -> OnboardingProgressClient {
         OnboardingProgressClient(
             load: { .success(snapshot) },
-            save: { _ in },
+            save: { _ in .success },
             reset: {},
         )
     }
@@ -57,7 +61,10 @@ enum ProgressClient {
     ) -> OnboardingProgressClient {
         OnboardingProgressClient(
             load: { .success(snapshot) },
-            save: { snapshot in saveRecorder.setValue(snapshot) },
+            save: { snapshot in
+                saveRecorder.setValue(snapshot)
+                return .success
+            },
             reset: {},
         )
     }

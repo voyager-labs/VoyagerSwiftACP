@@ -1,6 +1,7 @@
 // swiftlint:disable file_length
 import ComposableArchitecture
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -63,7 +64,7 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.row(.element(
             id: .chatgptCodex,
-            action: ._connectionResponse(AiProviderConnectionResult(
+            action: .connectionResponse(AiProviderConnectionResult(
                 provider: .chatgptCodex,
                 state: .connected,
                 reason: .none,
@@ -145,7 +146,7 @@ final class AiSettingsFeatureTests: XCTestCase {
 
         await store.send(.row(.element(
             id: .openai,
-            action: ._disconnectResponse(AiProviderConnectionResult(
+            action: .disconnectResponse(AiProviderConnectionResult(
                 provider: .openai,
                 state: .notVerified,
                 reason: .none,
@@ -513,7 +514,7 @@ final class AiSettingsFeatureTests: XCTestCase {
             state.isVerifying = true
         }
 
-        await store.receive(\._verificationResponse) { state in
+        await store.receive(\.verificationResponse) { state in
             state.isVerifying = false
         }
 
@@ -553,7 +554,7 @@ final class AiSettingsFeatureTests: XCTestCase {
             state.isVerifying = true
         }
 
-        await store.receive(\._verificationResponse) { state in
+        await store.receive(\.verificationResponse) { state in
             state.isVerifying = false
             state.connectionState = .connectionFailed
             state.statusReason = .networkUnavailable
@@ -634,11 +635,11 @@ final class AiSettingsFeatureTests: XCTestCase {
             state.isVerifying = true
         }
 
-        await store.receive(\._verificationResponse) { state in
+        await store.receive(\.verificationResponse) { state in
             state.isVerifying = false
         }
 
-        await store.receive(\._connectionResponse) { state in
+        await store.receive(\.connectionResponse) { state in
             state.connectionState = .connected
             state.statusReason = .none
             state.flowState = .idle

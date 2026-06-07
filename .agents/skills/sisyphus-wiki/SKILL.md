@@ -1,6 +1,6 @@
 ---
 name: sisyphus-wiki
-description: Maintains a project-local LLM wiki and cross-session knowledge graph under .sisyphus/knowledge. Use when recording plan-independent decisions, review learnings, user preferences, rejected approaches, reusable patterns, or links between sessions, plans, evidence, reviews, and skills. Triggers on: LLM wiki, knowledge graph, agent memory, scribe, traceability, cross-session notes, planless artifacts, always record.
+description: "Maintains a project-local LLM wiki and cross-session knowledge graph under .sisyphus/knowledge. Use when recording plan-independent decisions, review learnings, user preferences, rejected approaches, reusable patterns, or links between sessions, plans, evidence, reviews, and skills. Triggers on: LLM wiki, knowledge graph, agent memory, scribe, traceability, cross-session notes, planless artifacts, always record."
 compatibility: opencode
 metadata:
     runtime_root: .sisyphus/knowledge
@@ -50,9 +50,9 @@ The skill supports three automation levels:
 
 1. **Manual capture** — the agent reads this skill and writes durable entries with the schema.
 2. **Scripted capture** — `scripts/wiki-*.ts` write, query, validate, and index knowledge artifacts deterministically.
-3. **OpenCode/OMO event capture** — `.opencode/plugins/sisyphus-wiki.js` records sanitized session events and durable candidates into `.sisyphus/knowledge/sessions/` and `.sisyphus/knowledge/inbox/` without editing `opencode.json`.
+3. **OpenCode/OMO turn capture** — `.opencode/plugins/sisyphus-wiki.js` records sanitized turn-level summaries and durable candidates into `.sisyphus/knowledge/sessions/` and `.sisyphus/knowledge/inbox/` without editing `opencode.json`.
 
-Automatic event capture is a candidate stream, not final truth. Promote candidates into entries only when they satisfy `references/write-policy.md`.
+Automatic turn capture is a candidate stream, not final truth. It must not duplicate raw session transcripts or telemetry; promote candidates into entries only when they satisfy `references/write-policy.md`.
 
 ## Workflow
 
@@ -104,6 +104,7 @@ Use these `type` values unless a reference update explicitly expands the schema:
 - Do not create `__adhoc__` folders under every plan-scoped category. Planless knowledge belongs in `.sisyphus/knowledge/`.
 - Do not duplicate entire evidence files inside wiki entries. Summarize and link.
 - Do not write low-signal diary entries for every command. Capture durable knowledge only.
+- Do not store raw OpenCode event streams in `sessions/`; use turn-level summaries and link back to the canonical session store.
 - Do not use vague relation names like `connected`. Prefer `affects`, `motivates`, `resolved_by`, or `evidence_for`.
 - Do not treat graph links as proof. They are traceability pointers that still need source verification.
 
