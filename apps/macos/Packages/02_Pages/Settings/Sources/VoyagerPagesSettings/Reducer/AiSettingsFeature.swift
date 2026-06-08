@@ -55,17 +55,21 @@ public struct AiSettingsFeature {
             case let .bootstrapCompleted(results):
                 Self.applyBootstrapResults(results, to: &state)
                 state.bootstrapPhase = .loaded
-                return Self.resetCollectionSearchProviderIfUnavailableInState(
+                return Self.refreshCollectionSearchModelsAfterBootstrapEffect(
                     state: &state,
-                    client: collectionSearchSettingsClient,
+                    settingsClient: collectionSearchSettingsClient,
+                    providerModelListClient: providerModelListClient,
+                    connectionsFileClient: connectionsFileClient,
                 )
 
             case let .bootstrapVerificationCompleted(results):
                 Self.applyBootstrapResults(results, to: &state)
                 state.bootstrapPhase = .loaded
-                return Self.resetCollectionSearchProviderIfUnavailableInState(
+                return Self.refreshCollectionSearchModelsAfterBootstrapEffect(
                     state: &state,
-                    client: collectionSearchSettingsClient,
+                    settingsClient: collectionSearchSettingsClient,
+                    providerModelListClient: providerModelListClient,
+                    connectionsFileClient: connectionsFileClient,
                 )
 
             case .bootstrapFailed:
@@ -269,6 +273,31 @@ private extension AiSettingsFeature {
         .run { _ in
             client.save(settings)
         }
+    }
+
+    private static func refreshCollectionSearchModelsAfterBootstrapEffect(
+        state: inout State,
+        settingsClient: CollectionSearchAISettingsClient,
+        providerModelListClient: AiProviderModelListClient,
+        connectionsFileClient: AIConnectionsFileClient,
+    ) -> Effect<Action> {
+        let resetEffect = resetCollectionSearchProviderIfUnavailableInState(
+            state: &state,
+            client: settingsClient,
+        )
+
+        guard let provider = state.collectionSearchSelectedProvider,
+              state.rows[id: provider]?.connectionState == .connected
+        else { return resetEffect }
+
+        return .merge(
+            resetEffect,
+            refreshCollectionSearchModelsEffect(
+                provider: provider,
+                providerModelListClient: providerModelListClient,
+                connectionsFileClient: connectionsFileClient,
+            ),
+        )
     }
 
     private static func resetCollectionSearchProviderIfUnavailableInState(

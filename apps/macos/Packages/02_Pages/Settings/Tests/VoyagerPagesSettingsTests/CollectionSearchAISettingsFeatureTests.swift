@@ -15,6 +15,57 @@ private final class CollectionSearchSettingsSaveSpy: @unchecked Sendable {
 
 @MainActor
 final class CollectionSearchAISettingsFeatureTests: XCTestCase {
+    func testBootstrapVerificationLoadsModelsAndNormalizesStaleSavedSelection() async {
+        let saveSpy = CollectionSearchSettingsSaveSpy()
+        let settings = Self.staleOpenAISettings
+        let model = Self.openAIModel
+        let store = TestStore(initialState: AiSettingsState(
+            didBootstrap: true,
+            bootstrapPhase: .loading,
+            collectionSearchSettings: settings,
+        )) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                AIConnectionsFile.singleProvider(.openai, state: .connected)
+            }
+            $0.aiConnectionsFileClient.save = { .success($0) }
+            $0.aiConnectionsFileClient.deleteCredential = { _ in .success(.empty()) }
+            $0.aiProviderModelListClient.loadModels = { provider, credential in
+                XCTAssertEqual(provider, .openai)
+                XCTAssertNotNil(credential)
+                return [model]
+            }
+            $0.collectionSearchAISettingsClient.load = { settings }
+            $0.collectionSearchAISettingsClient.save = { saveSpy.save($0) }
+            $0.collectionSearchAISettingsClient.reset = {}
+        }
+
+        await store.send(.bootstrapVerificationCompleted([
+            AIProviderBootstrapResult(provider: .openai, connectionState: .connected),
+        ])) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .connected
+        }
+        await store.receive(.collectionSearchModelsLoaded(
+            modelsByProvider: [.openai: [model]],
+            errorMessage: nil,
+        )) { state in
+            state.collectionSearchModelsByProvider = [.openai: [model]]
+            state.collectionSearchSettings.provider = .specific(AiProvider.openai.rawValue)
+            state.collectionSearchSettings.model = .auto
+            state.collectionSearchSettings.thinking = .providerDefault
+        }
+
+        XCTAssertEqual(saveSpy.saved, [
+            CollectionSearchAISettings(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ])
+    }
+
     func testProviderChangePersistsAutoModelAndDefaultThinking() async {
         let saveSpy = CollectionSearchSettingsSaveSpy()
         let store = TestStore(initialState: AiSettingsState()) {
@@ -161,5 +212,27 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
         XCTAssertEqual(saveSpy.saved.count, 1)
         XCTAssertEqual(saveSpy.saved.first?.model, .auto)
         XCTAssertEqual(saveSpy.saved.first?.thinking, .providerDefault)
+    }
+}
+
+private extension CollectionSearchAISettingsFeatureTests {
+    static var staleOpenAISettings: CollectionSearchAISettings {
+        CollectionSearchAISettings(
+            provider: .specific(AiProvider.openai.rawValue),
+            model: .specific(provider: AiProvider.openai.rawValue, model: "old-model"),
+            thinking: .effort("high"),
+        )
+    }
+
+    static var openAIModel: AiProviderModel {
+        AiProviderModel(
+            id: .init(provider: .openai, rawValue: "gpt-4o-mini"),
+            provider: .openai,
+            rawModelID: "gpt-4o-mini",
+            displayName: "GPT-4o mini",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .effort(values: [.low, .medium, .high], defaultValue: .medium),
+            supportsThinkingNone: true,
+        )
     }
 }

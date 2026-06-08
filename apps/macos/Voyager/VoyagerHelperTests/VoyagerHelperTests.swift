@@ -592,14 +592,150 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         XCTAssertEqual(modelLoader.loadCount(for: .anthropic), 1)
     }
 
+    func testExplicitProviderSelectionBuildsRequestWithSelectedModelThinkingAndResponseContract() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let model = Self.makeModel(
+            provider: .openai,
+            rawModelID: "gpt-4o-mini",
+            thinkingCapability: .effort(values: [.high], defaultValue: nil),
+            supportsThinkingNone: true,
+        )
+        let modelLoader = ModelLoadRecorder(responses: [.openai: [model]])
+        let capture = AiChatRequestCaptureBox()
+        let converter = Self.makeConverter(
+            fileBox: fileBox,
+            modelLoader: modelLoader,
+            executionClient: Self.makeCapturingExecutionClient(capture: capture),
+        )
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .effort("high"),
+            ),
+        ))
+
+        XCTAssertNil(result.error)
+        let request = capture.request
+        XCTAssertEqual(request?.context.selectedModel, model)
+        XCTAssertEqual(request?.context.selectedThinking, .effort(.high))
+        XCTAssertEqual(request?.responseContract, QueryConversionConfig.responseContract)
+    }
+
+    func testExplicitModelSelectionBuildsRequestWithRequestedModel() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let model = Self.makeModel(provider: .openai, rawModelID: "gpt-4o")
+        let modelLoader = ModelLoadRecorder(responses: [.openai: [model]])
+        let capture = AiChatRequestCaptureBox()
+        let converter = Self.makeConverter(
+            fileBox: fileBox,
+            modelLoader: modelLoader,
+            executionClient: Self.makeCapturingExecutionClient(capture: capture),
+        )
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .specific(provider: AiProvider.openai.rawValue, model: "gpt-4o"),
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertNil(result.error)
+        XCTAssertEqual(capture.request?.context.model, AiModelHandle(provider: .openai, rawValue: "gpt-4o"))
+        XCTAssertEqual(capture.request?.context.selectedModel, model)
+    }
+
+    func testExplicitProviderSelectionReturnsCollectionSearchProviderUnavailableForInvalidProvider() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .openai: [
+                Self.makeModel(
+                    provider: .openai,
+                    rawModelID: "gpt-4o-mini",
+                ),
+            ],
+        ])
+        let converter = Self.makeConverter(fileBox: fileBox, modelLoader: modelLoader)
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific("bogus"),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertEqual(result.outcome, .providerUnavailable)
+        XCTAssertEqual(result.providerId, "bogus")
+        XCTAssertEqual(result.errorCode, "COLLECTION_SEARCH_PROVIDER_UNAVAILABLE")
+        XCTAssertEqual(result.reason, "invalidProvider")
+    }
+
+    func testExplicitModelSelectionReturnsCollectionSearchModelUnavailableWhenPreferredModelIsMissing() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .openai: [
+                Self.makeModel(
+                    provider: .openai,
+                    rawModelID: "gpt-4o-mini",
+                ),
+            ],
+        ])
+        let converter = Self.makeConverter(fileBox: fileBox, modelLoader: modelLoader)
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .specific(provider: AiProvider.openai.rawValue, model: "missing-model"),
+                thinking: .providerDefault,
+            ),
+        ))
+
+        XCTAssertEqual(result.outcome, .providerUnavailable)
+        XCTAssertEqual(result.providerId, AiProvider.openai.rawValue)
+        XCTAssertEqual(result.errorCode, "COLLECTION_SEARCH_MODEL_UNAVAILABLE")
+        XCTAssertEqual(result.reason, "modelUnavailable:missing-model")
+    }
+
+    func testExplicitSelectionNormalizesUnsupportedStaleThinkingToProviderDefault() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let model = Self.makeModel(provider: .openai, rawModelID: "gpt-4o-mini")
+        let modelLoader = ModelLoadRecorder(responses: [.openai: [model]])
+        let capture = AiChatRequestCaptureBox()
+        let converter = Self.makeConverter(
+            fileBox: fileBox,
+            modelLoader: modelLoader,
+            executionClient: Self.makeCapturingExecutionClient(capture: capture),
+        )
+
+        let result = await converter.convert(request: Self.makeRequest(
+            settings: CollectionSearchAISettingsPayload(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .effort("high"),
+            ),
+        ))
+
+        XCTAssertNil(result.error)
+        XCTAssertNil(capture.request?.context.selectedThinking)
+    }
+
     private static func makeConverter(
         fileBox: ConnectionFileBox,
         modelLoader: ModelLoadRecorder,
+        executionClient: AiChatProviderExecutionClient = makeFallbackExecutionClient(),
     ) -> ProviderAwareQueryConverter {
         ProviderAwareQueryConverter(
             queryConversionInterpreter: QueryConversionInterpreter(),
             connectionsFileClient: fileBox.client,
-            providerExecutionClient: makeFallbackExecutionClient(),
+            providerExecutionClient: executionClient,
             modelCatalogCache: AIProviderModelCatalogCache(
                 connectionsFileClient: fileBox.client,
                 modelListClient: modelLoader.client,
@@ -617,6 +753,15 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
             default:
                 throw AiChatExecutionFailure.unsupportedProvider
             }
+        })
+    }
+
+    private static func makeCapturingExecutionClient(
+        capture: AiChatRequestCaptureBox,
+    ) -> AiChatProviderExecutionClient {
+        AiChatProviderExecutionClient(execute: { request, _ in
+            capture.store(request)
+            return Self.makeSuccessfulStream(for: request)
         })
     }
 
@@ -656,6 +801,21 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         )
     }
 
+    private static func makeRequest(settings: CollectionSearchAISettingsPayload) -> SearchRequestPayload {
+        SearchRequestPayload(
+            query: "find receipts",
+            filters: SearchFiltersPayload(
+                scopes: ["/tmp/root"],
+                excludedScopes: ["/tmp/root/excluded"],
+                includeSubfolders: false,
+                conditions: [
+                    SearchConditionPayload(propertyKey: "extension", operator: "eq", value: .string("txt")),
+                ],
+            ),
+            collectionSearchAISettings: settings,
+        )
+    }
+
     private static func makeConnectionsFile(updatedAtMs: Int64) -> AIConnectionsFile {
         AIConnectionsFile(
             updatedAtMs: updatedAtMs,
@@ -677,14 +837,22 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         )
     }
 
-    private static func makeModel(provider: AiProvider, rawModelID: String) -> AiProviderModel {
+    private static func makeModel(
+        provider: AiProvider,
+        rawModelID: String,
+        thinkingCapability: AiModelThinkingCapability = .unsupported(
+            reason: AiThinkingUnavailableReason(message: "unsupported"),
+        ),
+        supportsThinkingNone: Bool = false,
+    ) -> AiProviderModel {
         AiProviderModel(
             id: AiModelHandle(provider: provider, rawValue: rawModelID),
             provider: provider,
             rawModelID: rawModelID,
             displayName: rawModelID,
             providerDisplayName: provider.rawValue,
-            thinkingCapability: .unsupported(reason: AiThinkingUnavailableReason(message: "unsupported")),
+            thinkingCapability: thinkingCapability,
+            supportsThinkingNone: supportsThinkingNone,
         )
     }
 }
@@ -784,6 +952,24 @@ private struct SearchExecutionServiceStub: SearchExecutionServicing {
 
     func searchTag(_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload {
         TagSearchResponsePayload(requestedTag: request.requestedTag, items: [])
+    }
+}
+
+private final class AiChatRequestCaptureBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var capturedRequest: AiChatRequest?
+
+    var request: AiChatRequest? {
+        lock.lock()
+        let request = capturedRequest
+        lock.unlock()
+        return request
+    }
+
+    func store(_ request: AiChatRequest) {
+        lock.lock()
+        capturedRequest = request
+        lock.unlock()
     }
 }
 
