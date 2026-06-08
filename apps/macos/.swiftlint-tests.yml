@@ -3,17 +3,19 @@
 parent_config: .swiftlint.yml
 
 disabled_rules:
-  - todo
-  - opening_brace
-  - closure_body_length
-  - trailing_comma
-  - file_name
-  - file_length
-  - function_body_length
-  - function_default_parameter_at_end
-  - line_length
-  - modifier_order
-  - multiline_literal_brackets
-  - single_test_class
-  - type_body_length
-  - type_name
+  - todo # 테스트 TODO/FIXME는 작업 중 노이즈가 커서 강제하지 않습니다.
+  - opening_brace # brace 스타일은 SwiftFormat에 맡깁니다.
+  - closure_body_length # 테스트 setup/assertion closure는 길어질 수 있어 끕니다.
+  - trailing_comma # collection trailing comma 정책은 SwiftFormat에 맡깁니다.
+  - file_length # AC matrix 테스트 파일은 길어질 수 있어 끕니다.
+  - function_body_length # 테스트 helper/spec 함수는 길어질 수 있어 끕니다.
+  - function_default_parameter_at_end # 테스트 fixture API는 가독성을 우선해 완화합니다.
+  - line_length # 긴 expected value/assertion 문장을 허용합니다.
+  - modifier_order # 테스트 타입/fixture에서는 modifier 순서 노이즈를 줄입니다.
+  - multiline_literal_brackets # 긴 테스트 literal의 bracket 배치를 완화합니다.
+  - single_test_class # 테스트 파일 구조는 spec/fixture 필요에 따라 완화합니다.
+  - type_body_length # 테스트 클래스/fixture 타입은 길어질 수 있어 끕니다.
+  - type_name # AC/interaction 기반 긴 테스트 타입 이름을 허용합니다.
+
+opt_in_rules:
+  - mark # MARK 형식 검사는 테스트 파일에서만 유지합니다.
