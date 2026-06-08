@@ -115,7 +115,7 @@ final class SearchQueryServiceTests: XCTestCase {
     func testQuerySearchPreservesExcludedScopesInPlannedFilters() async {
         let service = SearchQueryService(
             searchService: SearchExecutionServiceStub(),
-            convertQuery: { _, _ in
+            convertQuery: { _ in
                 await MainActor.run {
                     QueryConversionResult(
                         conditions: [
@@ -160,10 +160,48 @@ final class SearchQueryServiceTests: XCTestCase {
         )
     }
 
+    func testQuerySearchForwardsCollectionSearchSettingsToConverter() async {
+        let requestBox = RequestCaptureBox()
+        let settings = CollectionSearchAISettingsPayload(
+            provider: .specific("openai"),
+            model: .auto,
+            thinking: .providerDefault,
+        )
+        let service = SearchQueryService(
+            searchService: SearchExecutionServiceStub(),
+            convertQuery: { request in
+                await requestBox.store(request)
+                return await MainActor.run {
+                    QueryConversionResult(
+                        conditions: [],
+                        scopes: nil,
+                        error: nil,
+                        outcome: .generatedChangeSet,
+                    )
+                }
+            },
+        )
+        let request = SearchRequestPayload(
+            query: "find receipts",
+            filters: SearchFiltersPayload(
+                scopes: ["/tmp/fallback"],
+                excludedScopes: [],
+                includeSubfolders: true,
+                conditions: [],
+            ),
+            collectionSearchAISettings: settings,
+        )
+
+        _ = await service.querySearch(request)
+
+        let seenRequest = await requestBox.request
+        XCTAssertEqual(seenRequest?.collectionSearchAISettings, settings)
+    }
+
     func testQuerySearchScopeOnlyChangeReportsGeneratedChangeSet() async {
         let service = SearchQueryService(
             searchService: SearchExecutionServiceStub(),
-            convertQuery: { _, _ in
+            convertQuery: { _ in
                 await MainActor.run {
                     QueryConversionResult(
                         conditions: [],
@@ -203,7 +241,7 @@ final class SearchQueryServiceTests: XCTestCase {
     func testQuerySearchEmptyQueryPreservesExcludedScopes() async {
         let service = SearchQueryService(
             searchService: SearchExecutionServiceStub(),
-            convertQuery: { _, _ in
+            convertQuery: { _ in
                 XCTFail("convertQuery should not run for empty query")
                 return await MainActor.run {
                     QueryConversionResult(conditions: [], scopes: nil, error: nil, outcome: .generatedChangeSet)
@@ -242,7 +280,7 @@ final class SearchQueryServiceTests: XCTestCase {
     func testQuerySearchErrorResponsePreservesExcludedScopes() async {
         let service = SearchQueryService(
             searchService: SearchExecutionServiceStub(),
-            convertQuery: { _, _ in
+            convertQuery: { _ in
                 await MainActor.run {
                     QueryConversionResult(
                         conditions: [],
@@ -307,7 +345,7 @@ final class SearchQueryServiceTests: XCTestCase {
         )
 
         XCTAssertNil(result.error)
-        XCTAssertEqual(result.outcome, .generatedChangeSet)
+        XCTAssertEqual(result.outcome, QueryConversionResultOutcome.generatedChangeSet)
         XCTAssertEqual(result.conditions, [
             SearchConditionPayload(
                 propertyKey: "extension",
@@ -327,7 +365,7 @@ final class SearchQueryServiceTests: XCTestCase {
         )
 
         XCTAssertNil(result.error)
-        XCTAssertEqual(result.outcome, .generatedChangeSet)
+        XCTAssertEqual(result.outcome, QueryConversionResultOutcome.generatedChangeSet)
         XCTAssertEqual(result.conditions, [])
         XCTAssertEqual(result.scopes, ["/tmp/new-root"])
     }
@@ -380,6 +418,57 @@ final class AIProviderModelCatalogCacheTests: XCTestCase {
         XCTAssertEqual(first.id.rawValue, "gpt-4o-mini")
         XCTAssertEqual(second.id.rawValue, "gpt-4o-mini")
         XCTAssertEqual(modelLoader.loadCount(for: .openai), 1)
+    }
+
+    func testSelectedModelReturnsPreferredExplicitModelWhenAvailable() async throws {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .openai: [
+                Self.makeModel(provider: .openai, rawModelID: "gpt-4o-mini"),
+                Self.makeModel(provider: .openai, rawModelID: "gpt-4o"),
+            ],
+        ])
+        let cache = AIProviderModelCatalogCache(
+            connectionsFileClient: fileBox.client,
+            modelListClient: modelLoader.client,
+        )
+        let selection = try XCTUnwrap(AIProviderQuerySelection.select(from: file).successValue)
+        let preferredModel = AiModelHandle(provider: .openai, rawValue: "gpt-4o")
+
+        let model = try await cache.selectedModel(
+            for: selection,
+            file: file,
+            preferredModel: preferredModel,
+        )
+
+        XCTAssertEqual(model.id, preferredModel)
+        XCTAssertEqual(modelLoader.loadCount(for: .openai), 1)
+    }
+
+    func testSelectedModelThrowsWhenPreferredExplicitModelIsMissing() async throws {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .openai: [Self.makeModel(provider: .openai, rawModelID: "gpt-4o-mini")],
+        ])
+        let cache = AIProviderModelCatalogCache(
+            connectionsFileClient: fileBox.client,
+            modelListClient: modelLoader.client,
+        )
+        let selection = try XCTUnwrap(AIProviderQuerySelection.select(from: file).successValue)
+        let preferredModel = AiModelHandle(provider: .openai, rawValue: "gpt-4o")
+
+        do {
+            _ = try await cache.selectedModel(
+                for: selection,
+                file: file,
+                preferredModel: preferredModel,
+            )
+            XCTFail("Expected explicit preferred model lookup to fail when missing")
+        } catch let error as AIProviderModelCatalogCacheError {
+            XCTAssertEqual(error, .modelUnavailable(provider: .openai, model: preferredModel))
+        }
     }
 
     func testSelectedModelInvalidatesCacheWhenConnectionsFileSnapshotChanges() async throws {
@@ -465,6 +554,123 @@ final class AIProviderModelCatalogCacheTests: XCTestCase {
                     providerId: .openai,
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: "sk-test")),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+    }
+
+    fileprivate static func makeModel(provider: AiProvider, rawModelID: String) -> AiProviderModel {
+        AiProviderModel(
+            id: AiModelHandle(provider: provider, rawValue: rawModelID),
+            provider: provider,
+            rawModelID: rawModelID,
+            displayName: rawModelID,
+            providerDisplayName: provider.rawValue,
+            thinkingCapability: .unsupported(reason: AiThinkingUnavailableReason(message: "unsupported")),
+        )
+    }
+}
+
+@MainActor
+final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
+    func testAutoFallbackTriesNextProviderAfterExecutionFailure() async {
+        let file = Self.makeConnectionsFile(updatedAtMs: 1)
+        let fileBox = ConnectionFileBox(file)
+        let modelLoader = ModelLoadRecorder(responses: [
+            .openai: [Self.makeModel(provider: .openai, rawModelID: "gpt-4o-mini")],
+            .anthropic: [Self.makeModel(provider: .anthropic, rawModelID: "claude-3-5-sonnet")],
+        ])
+        let converter = Self.makeConverter(fileBox: fileBox, modelLoader: modelLoader)
+
+        let result = await converter.convert(request: Self.makeAutoFallbackRequest())
+
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.outcome, QueryConversionResultOutcome.generatedChangeSet)
+        XCTAssertEqual(result.providerId, AiProvider.anthropic.rawValue)
+        XCTAssertEqual(modelLoader.loadCount(for: .openai), 1)
+        XCTAssertEqual(modelLoader.loadCount(for: .anthropic), 1)
+    }
+
+    private static func makeConverter(
+        fileBox: ConnectionFileBox,
+        modelLoader: ModelLoadRecorder,
+    ) -> ProviderAwareQueryConverter {
+        ProviderAwareQueryConverter(
+            queryConversionInterpreter: QueryConversionInterpreter(),
+            connectionsFileClient: fileBox.client,
+            providerExecutionClient: makeFallbackExecutionClient(),
+            modelCatalogCache: AIProviderModelCatalogCache(
+                connectionsFileClient: fileBox.client,
+                modelListClient: modelLoader.client,
+            ),
+        )
+    }
+
+    private static func makeFallbackExecutionClient() -> AiChatProviderExecutionClient {
+        AiChatProviderExecutionClient(execute: { request, _ in
+            switch request.context.provider {
+            case .openai:
+                throw AiChatExecutionFailure.network
+            case .anthropic:
+                return Self.makeSuccessfulStream(for: request)
+            default:
+                throw AiChatExecutionFailure.unsupportedProvider
+            }
+        })
+    }
+
+    private nonisolated static func makeSuccessfulStream(
+        for request: AiChatRequest,
+    ) -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let response = AiChatResponse(
+                context: request.context,
+                assistantMessage: AiChatMessage(
+                    role: .assistant,
+                    content: #"{"conditions":[],"scopes":null,"error":null}"#,
+                ),
+                completedAtMs: 2,
+            )
+            continuation.yield(.final(response: response))
+            continuation.finish()
+        }
+    }
+
+    private static func makeAutoFallbackRequest() -> SearchRequestPayload {
+        SearchRequestPayload(
+            query: "find receipts",
+            filters: SearchFiltersPayload(
+                scopes: ["/tmp/root"],
+                excludedScopes: ["/tmp/root/excluded"],
+                includeSubfolders: false,
+                conditions: [
+                    SearchConditionPayload(propertyKey: "extension", operator: "eq", value: .string("txt")),
+                ],
+            ),
+            collectionSearchAISettings: CollectionSearchAISettingsPayload(
+                provider: .auto,
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        )
+    }
+
+    private static func makeConnectionsFile(updatedAtMs: Int64) -> AIConnectionsFile {
+        AIConnectionsFile(
+            updatedAtMs: updatedAtMs,
+            lastUsedProviderId: .openai,
+            providers: [
+                AiProvider.openai.rawValue: ProviderRecordFile(
+                    providerId: .openai,
+                    authMethod: .apiKey,
+                    credential: .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+                AiProvider.anthropic.rawValue: ProviderRecordFile(
+                    providerId: .anthropic,
+                    authMethod: .apiKey,
+                    credential: .apiKey(APIKeyCredentialFile(secret: "sk-anthropic")),
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
                 ),
             ],
@@ -578,5 +784,13 @@ private struct SearchExecutionServiceStub: SearchExecutionServicing {
 
     func searchTag(_ request: TagSearchRequestPayload) async throws -> TagSearchResponsePayload {
         TagSearchResponsePayload(requestedTag: request.requestedTag, items: [])
+    }
+}
+
+private actor RequestCaptureBox {
+    var request: SearchRequestPayload?
+
+    func store(_ request: SearchRequestPayload) {
+        self.request = request
     }
 }
