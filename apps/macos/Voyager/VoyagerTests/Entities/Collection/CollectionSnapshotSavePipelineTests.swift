@@ -1,4 +1,3 @@
-// swiftlint:disable single_test_class
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -8,7 +7,6 @@ import XCTest
 
 @MainActor
 final class CollectionSnapshotSavePipelineTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     func testSaveToExistingPersistsSnapshotAndClearsInvalidationState() async {
         let recorder = SavedCollectionsRecorder()
         let stalenessClient = CollectionStalenessClient.live(userDefaultsClient: .testValue)

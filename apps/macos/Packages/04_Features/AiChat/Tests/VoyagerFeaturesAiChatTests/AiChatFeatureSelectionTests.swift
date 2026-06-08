@@ -124,8 +124,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(rows.first?.isRecommended, true)
     }
 
-    // provider connection 갱신 후에도 유효한 현재 선택 model이 유지되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// provider connection 갱신 후에도 유효한 현재 선택 model이 유지되는지 검증
     func testProviderConnectionsUpdatedPreservesValidCurrentSelection() async {
         let catalogRows = makeCatalogRows()
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))
@@ -187,8 +186,7 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.selectedModelHandle, catalogRows[1].handle)
     }
 
-    // provider connection 갱신 후 현재 선택 model이 사라지면 선택이 정리되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// provider connection 갱신 후 현재 선택 model이 사라지면 선택이 정리되는지 검증
     func testProviderConnectionsUpdatedClearsSelectionWhenCurrentModelDisappears() async {
         let catalogRows = makeCatalogRows()
         let anthropicCredential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-anthropic"))

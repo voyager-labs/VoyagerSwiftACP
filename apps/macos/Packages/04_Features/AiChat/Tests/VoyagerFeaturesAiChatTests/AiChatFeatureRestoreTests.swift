@@ -9,8 +9,7 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureRestoreTests: XCTestCase {
-    // 누락된 session record restore가 오류 없이 새 session fallback으로 전환되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// 누락된 session record restore가 오류 없이 새 session fallback으로 전환되는지 검증
     func testRestoreMissingRecordFallsBackToNewSessionWithoutError() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
@@ -94,8 +93,7 @@ final class AiChatFeatureRestoreTests: XCTestCase {
         XCTAssertEqual(store.state.transcriptAutoScrollVersion, 0)
     }
 
-    // 빈 catalog에서 누락 session fallback이 unknown model selection을 노출하지 않는지 검증
-    // swiftlint:disable:next function_body_length
+    /// 빈 catalog에서 누락 session fallback이 unknown model selection을 노출하지 않는지 검증
     func testRestoreMissingRecordWithEmptyCatalogDoesNotExposeUnknownModelSelection() async {
         let summary = makeContextSnapshot()
         let targetSessionID = AiChatSessionID(rawValue: makeUUID("99999999-9999-9999-9999-999999999999"))

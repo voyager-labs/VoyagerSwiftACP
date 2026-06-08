@@ -5,7 +5,6 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureHistoryTruncationTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     func testHistoryTruncationStopsAtOversizedRecentTurnToKeepContiguousContext() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()

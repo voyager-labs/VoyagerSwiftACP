@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 @preconcurrency import Foundation
 @testable import VoyagerEntitiesAi
 import XCTest

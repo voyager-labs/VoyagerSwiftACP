@@ -190,7 +190,6 @@ final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase {
         XCTAssertEqual(store.state.text, "")
     }
 
-    // swiftlint:disable:next function_body_length
     private func performRepeatedCycle(on store: TestStore<ComposerState, ComposerAction>) async throws {
         await store.send(.scopeEditorOpen(editingPath: nil, favorites: [], backHistory: [])) {
             $0.scopeEditor.isPresented = true

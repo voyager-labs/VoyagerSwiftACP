@@ -29,7 +29,6 @@ final class AiChatContractTests: XCTestCase {
         XCTAssertEqual(ProviderDescriptor.descriptor(for: decoded.handle.provider)?.authMethod, decoded.authMethod)
     }
 
-    // swiftlint:disable:next function_body_length
     func testRequestContextSnapshot_roundTrips() throws {
         let snapshot = try AiChatRequestContextSnapshot(
             sessionID: AiChatSessionID(

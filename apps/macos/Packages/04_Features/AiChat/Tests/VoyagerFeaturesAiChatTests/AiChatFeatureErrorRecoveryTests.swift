@@ -6,7 +6,6 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureErrorRecoveryTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     func testErrorRecoveryRetriesPersistenceSaveAndClearsRecoveryState() async {
         let persistence = AiChatSessionPersistenceSpy()
         let catalogRows = makeCatalogRows()

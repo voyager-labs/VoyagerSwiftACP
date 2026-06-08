@@ -6,7 +6,6 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureSurfaceStateTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     func testSurfaceStateCoversEmptyReadyProcessingAndError() {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
