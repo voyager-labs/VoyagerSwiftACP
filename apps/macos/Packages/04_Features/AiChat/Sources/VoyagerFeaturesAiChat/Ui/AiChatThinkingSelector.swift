@@ -23,7 +23,8 @@ struct AiChatThinkingSelectorButton: View {
             AiChatSelectorPopoverContainer {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(AiChatThinkingSelectorOptions.options(for: state.resolvedSelectedModel),
-                            id: \.id) { option in
+                            id: \.id)
+                    { option in
                         AiChatThinkingSelectorRow(
                             store: store,
                             option: option,
@@ -96,7 +97,7 @@ private enum AiChatThinkingSelectorOptions {
     }
 
     private static func defaultOptions(supportsNone: Bool) -> [ThinkingSelectorOption] {
-        var options = [ThinkingSelectorOption(selection: nil, title: "default")]
+        var options = [ThinkingSelectorOption(selection: nil, title: "Provider default")]
         if supportsNone {
             options.append(
                 ThinkingSelectorOption(
