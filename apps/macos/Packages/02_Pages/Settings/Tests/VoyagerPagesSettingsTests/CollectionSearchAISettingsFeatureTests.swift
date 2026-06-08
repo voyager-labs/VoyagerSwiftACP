@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -30,11 +31,95 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
             state.collectionSearchSettings.thinking = .providerDefault
         }
 
-        XCTAssertEqual(saveSpy.saved, [CollectionSearchAISettings(
+        XCTAssertEqual(saveSpy.saved, [
+            CollectionSearchAISettings(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .auto,
+                thinking: .providerDefault,
+            ),
+        ])
+    }
+
+    func testProviderDropdownOnlyIncludesConnectedProviders() {
+        let state = AiSettingsState(rows: [
+            AiConnectionRowState(provider: .chatgptCodex, connectionState: .connected),
+            AiConnectionRowState(provider: .openai, connectionState: .notVerified),
+            AiConnectionRowState(provider: .anthropic, connectionState: .connectionFailed),
+        ])
+
+        XCTAssertTrue(state.hasConnectedProviders)
+        XCTAssertEqual(
+            state.connectedProviderDescriptors.map(\.provider),
+            [.chatgptCodex],
+        )
+    }
+
+    func testProviderDropdownHasNoOptionsWithoutConnectedProviders() {
+        let state = AiSettingsState(rows: [
+            AiConnectionRowState(provider: .chatgptCodex, connectionState: .notVerified),
+            AiConnectionRowState(provider: .openai, connectionState: .connectionFailed),
+            AiConnectionRowState(provider: .anthropic, connectionState: .disconnected),
+        ])
+
+        XCTAssertFalse(state.hasConnectedProviders)
+        XCTAssertTrue(state.connectedProviderDescriptors.isEmpty)
+    }
+
+    func testBootstrapResetsDisconnectedCollectionSearchProvider() async {
+        let saveSpy = CollectionSearchSettingsSaveSpy()
+        let initialState = AiSettingsState(
+            collectionSearchSettings: CollectionSearchAISettings(
+                provider: .specific(AiProvider.openai.rawValue),
+                model: .specific(provider: AiProvider.openai.rawValue, model: "gpt-4o-mini"),
+                thinking: .effort("high"),
+            ),
+        )
+        let store = TestStore(initialState: initialState) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.collectionSearchAISettingsClient.load = { .default }
+            $0.collectionSearchAISettingsClient.save = { saveSpy.save($0) }
+            $0.collectionSearchAISettingsClient.reset = {}
+        }
+
+        await store.send(.bootstrapCompleted([
+            AIProviderBootstrapResult(provider: .chatgptCodex, connectionState: .notVerified),
+            AIProviderBootstrapResult(provider: .openai, connectionState: .disconnected),
+            AIProviderBootstrapResult(provider: .anthropic, connectionState: .notVerified),
+        ])) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .disconnected
+            state.collectionSearchSettings = .default
+        }
+
+        XCTAssertEqual(saveSpy.saved, [.default])
+    }
+
+    func testBootstrapKeepsCollectionSearchProviderWhileCheckingStatus() async {
+        let saveSpy = CollectionSearchSettingsSaveSpy()
+        let settings = CollectionSearchAISettings(
             provider: .specific(AiProvider.openai.rawValue),
             model: .auto,
             thinking: .providerDefault,
-        )])
+        )
+        let store = TestStore(initialState: AiSettingsState(collectionSearchSettings: settings)) {
+            AiSettingsFeature()
+        } withDependencies: {
+            $0.collectionSearchAISettingsClient.load = { .default }
+            $0.collectionSearchAISettingsClient.save = { saveSpy.save($0) }
+            $0.collectionSearchAISettingsClient.reset = {}
+        }
+
+        await store.send(.bootstrapCompleted([
+            AIProviderBootstrapResult(provider: .chatgptCodex, connectionState: .notVerified),
+            AIProviderBootstrapResult(provider: .openai, connectionState: .checkingStatus),
+            AIProviderBootstrapResult(provider: .anthropic, connectionState: .notVerified),
+        ])) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: .openai]?.connectionState = .checkingStatus
+        }
+
+        XCTAssertTrue(saveSpy.saved.isEmpty)
     }
 
     func testLoadedModelsResetMissingSelectionAndPersist() async {
