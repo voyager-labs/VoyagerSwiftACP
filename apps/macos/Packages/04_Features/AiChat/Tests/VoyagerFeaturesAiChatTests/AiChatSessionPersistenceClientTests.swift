@@ -6,8 +6,8 @@ import XCTest
 final class AiChatSessionPersistenceClientTests: XCTestCase {
     func testLiveAdapterDelegatesToEntityPersistenceClient() async throws {
         let stub = StubSessionPersistenceClient()
-        let try sessionID =
-            AiChatSessionID(rawValue: XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777")))
+        let sessionID =
+            try AiChatSessionID(rawValue: XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777")))
         let snapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .active,

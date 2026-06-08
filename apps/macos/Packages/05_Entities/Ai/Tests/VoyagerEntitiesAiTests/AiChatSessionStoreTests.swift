@@ -186,8 +186,8 @@ final class AiChatSessionStoreTests: XCTestCase {
             assistantReply: "Still here",
             updatedAtMs: 400,
         )
-        let try corruptID =
-            AiChatSessionID(rawValue: XCTUnwrap(UUID(uuidString: "66666666-6666-6666-6666-666666666666")))
+        let corruptID =
+            try AiChatSessionID(rawValue: XCTUnwrap(UUID(uuidString: "66666666-6666-6666-6666-666666666666")))
 
         try await store.saveSession(healthy)
         let corruptFileURL = sessionFileURL(for: corruptID)
@@ -204,8 +204,8 @@ final class AiChatSessionStoreTests: XCTestCase {
 
     func testAiChatSessionStore_loadQuarantinesCorruptRecordAndThrowsCorruptedRecord() async throws {
         let store = try makeStore()
-        let try corruptID =
-            AiChatSessionID(rawValue: XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777")))
+        let corruptID =
+            try AiChatSessionID(rawValue: XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777")))
         let corruptFileURL = sessionFileURL(for: corruptID)
         try FileManager.default.createDirectory(
             at: XCTUnwrap(storeRootURL),

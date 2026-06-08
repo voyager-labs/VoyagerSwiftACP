@@ -18,7 +18,12 @@ public struct CodexOAuthConfig: Sendable, Equatable {
     public static let `default` = CodexOAuthConfig(
         clientId: ProcessInfo.processInfo.environment["OPENAI_CODEX_OAUTH_CLIENT_ID"]
             ?? "app_EMoamEEZ73f0CkXaXp7hrann",
-        issuer: URL(string: "https://auth.openai.com") ?? preconditionFailure("Invalid hardcoded issuer URL"),
+        issuer: {
+            guard let url = URL(string: "https://auth.openai.com") else {
+                fatalError("Invalid hardcoded issuer URL")
+            }
+            return url
+        }(),
         authorizePath: "/oauth/authorize",
         tokenPath: "/oauth/token",
         redirectPort: ProcessInfo.processInfo.environment["OPENAI_CODEX_OAUTH_REDIRECT_PORT"]

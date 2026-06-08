@@ -254,8 +254,12 @@ extension CodexNativeAuthClient: DependencyKey {
             startDeviceAuth: {
                 DeviceAuthChallenge(
                     userCode: "ABCD-1234",
-                    verificationURL: URL(string: "https://chatgpt.com/device") ??
-                        preconditionFailure("Invalid hardcoded device URL"),
+                    verificationURL: {
+                        guard let url = URL(string: "https://chatgpt.com/device") else {
+                            fatalError("Invalid hardcoded device URL")
+                        }
+                        return url
+                    }(),
                     pollIntervalMs: 5000,
                     expiresAt: Date().addingTimeInterval(900),
                 )
