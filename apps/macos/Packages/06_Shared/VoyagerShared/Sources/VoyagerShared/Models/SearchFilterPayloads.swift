@@ -3,10 +3,16 @@ import Foundation
 public nonisolated struct SearchRequestPayload: Codable, Equatable, Sendable {
     public let query: String
     public let filters: SearchFiltersPayload
+    public let collectionSearchAISettings: CollectionSearchAISettingsPayload?
 
-    public init(query: String, filters: SearchFiltersPayload) {
+    public init(
+        query: String,
+        filters: SearchFiltersPayload,
+        collectionSearchAISettings: CollectionSearchAISettingsPayload? = nil,
+    ) {
         self.query = query
         self.filters = filters
+        self.collectionSearchAISettings = collectionSearchAISettings
     }
 }
 
