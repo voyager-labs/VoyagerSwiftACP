@@ -60,7 +60,7 @@ public extension AiChatSessionPersistenceClient {
 }
 
 extension AiChatSessionPersistenceClient: DependencyKey {
-    public nonisolated static var liveValue: AiChatSessionPersistenceClient {
+    nonisolated public static var liveValue: AiChatSessionPersistenceClient {
         do {
             return try .live(persistenceClient: VoyagerEntitiesAi.AiChatSessionFileStore())
         } catch let error as VoyagerEntitiesAi.AiChatSessionPersistenceClientError {
@@ -70,7 +70,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         }
     }
 
-    public nonisolated static var testValue: AiChatSessionPersistenceClient {
+    nonisolated public static var testValue: AiChatSessionPersistenceClient {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },
@@ -78,7 +78,7 @@ extension AiChatSessionPersistenceClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: AiChatSessionPersistenceClient {
+    nonisolated public static var previewValue: AiChatSessionPersistenceClient {
         AiChatSessionPersistenceClient(
             loadSession: { _ in nil },
             saveSession: { _ in },

@@ -68,8 +68,8 @@ struct OpenAIResponsesCreateRequest: Encodable {
             requestFamily: .openAIResponses,
             fileExtension: preferredFileExtension(filename: filename, metadata: metadata),
             detectedMIMEType: declaredMIMEType,
-            detectedContentTypeIdentifier: metadata["contentTypeIdentifier"],
             sizeBytes: preferredByteCount(part: part, metadata: metadata),
+            detectedContentTypeIdentifier: metadata["contentTypeIdentifier"],
         ))
         guard case let .providerNativeUpload(capabilityKind, normalizedMIMEType) = capability.disposition,
               capabilityKind == kind

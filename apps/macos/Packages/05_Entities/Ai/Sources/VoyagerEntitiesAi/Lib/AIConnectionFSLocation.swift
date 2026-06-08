@@ -38,7 +38,7 @@ public enum AIConnectionFSLocation {
 
     public static func quarantineFileURL(
         directoryURL: URL,
-        generatedAt: Date = Date()
+        generatedAt: Date = Date(),
     ) -> URL {
         let formatter = ISO8601DateFormatter()
         let timestamp = formatter.string(from: generatedAt).replacingOccurrences(of: ":", with: "-")

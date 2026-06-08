@@ -424,7 +424,7 @@ actor PendingReplayPathsStore {
     }
 }
 
-private nonisolated func helperGrantedWatchRoots(from access: HelperFolderAccessResult) -> [String] {
+nonisolated private func helperGrantedWatchRoots(from access: HelperFolderAccessResult) -> [String] {
     guard access.status == .granted else { return [] }
 
     let fileManager = FileManager.default
@@ -460,7 +460,7 @@ private nonisolated func helperGrantedWatchRoots(from access: HelperFolderAccess
     return Array(Set(roots)).sorted()
 }
 
-private nonisolated func persistedHelperFolderAccess(userDefaultsClient: UserDefaultsClient)
+nonisolated private func persistedHelperFolderAccess(userDefaultsClient: UserDefaultsClient)
     -> HelperFolderAccessResult?
 {
     guard let data = userDefaultsClient.object(SettingsKeys.helperFolderAccessSnapshot) as? Data else {

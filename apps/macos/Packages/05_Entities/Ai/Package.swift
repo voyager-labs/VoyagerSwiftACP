@@ -23,7 +23,7 @@ let package = Package(
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
-            ]
+            ],
         ),
         .testTarget(
             name: "VoyagerEntitiesAiTests",
@@ -32,7 +32,7 @@ let package = Package(
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
-            ]
+            ],
         ),
-    ]
+    ],
 )

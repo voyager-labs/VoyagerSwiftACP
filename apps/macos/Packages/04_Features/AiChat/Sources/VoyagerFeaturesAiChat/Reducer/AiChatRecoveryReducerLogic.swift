@@ -23,7 +23,7 @@ extension AiChatFeature {
         let snapshot = makeSessionSnapshot(
             state: state,
             lock: lock,
-            updatedAtMs: lock.observabilitySummary.terminalAtMs ?? currentTimestampMs()
+            updatedAtMs: lock.observabilitySummary.terminalAtMs ?? currentTimestampMs(),
         )
         return .run { [aiChatSessionPersistenceClient] send in
             do {

@@ -89,24 +89,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             openedCompatibility: nil,
         )
 
-        let store = TestStore(initialState: CollectionFeature.State()) {
-            CollectionFeature()
-        } withDependencies: {
-            $0.collectionFileClient = CollectionFileClient(
-                save: { file, url in
-                    await recorder.append(file: file, url: url)
-                },
-                load: { _ in
-                    makeCollectionLoadResult(
-                        kEmptyCollectionFile,
-                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
-                    )
-                },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.collectionStalenessClient = stalenessClient
-        }
-        store.exhaustivity = .off
+        let store = makeSavePipelineStore(recorder: recorder, stalenessClient: stalenessClient)
 
         await store.send(.saveToExisting(payload, url)) {
             $0.isSaving = true
@@ -148,24 +131,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             openedCompatibility: nil,
         )
 
-        let store = TestStore(initialState: CollectionFeature.State()) {
-            CollectionFeature()
-        } withDependencies: {
-            $0.collectionFileClient = CollectionFileClient(
-                save: { file, url in
-                    await recorder.append(file: file, url: url)
-                },
-                load: { _ in
-                    makeCollectionLoadResult(
-                        kEmptyCollectionFile,
-                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
-                    )
-                },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.collectionStalenessClient = stalenessClient
-        }
-        store.exhaustivity = .off
+        let store = makeSavePipelineStore(recorder: recorder, stalenessClient: stalenessClient)
 
         await store.send(.saveToExisting(payload, url)) {
             $0.isSaving = true
@@ -198,24 +164,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             openedCompatibility: nil,
         )
 
-        let store = TestStore(initialState: CollectionFeature.State()) {
-            CollectionFeature()
-        } withDependencies: {
-            $0.collectionFileClient = CollectionFileClient(
-                save: { file, url in
-                    await recorder.append(file: file, url: url)
-                },
-                load: { _ in
-                    makeCollectionLoadResult(
-                        kEmptyCollectionFile,
-                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
-                    )
-                },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.collectionStalenessClient = stalenessClient
-        }
-        store.exhaustivity = .off
+        let store = makeSavePipelineStore(recorder: recorder, stalenessClient: stalenessClient)
 
         await store.send(.saveToExisting(payload, url)) {
             $0.isSaving = true
@@ -257,24 +206,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             openedCompatibility: nil,
         )
 
-        let store = TestStore(initialState: CollectionFeature.State()) {
-            CollectionFeature()
-        } withDependencies: {
-            $0.collectionFileClient = CollectionFileClient(
-                save: { file, url in
-                    await recorder.append(file: file, url: url)
-                },
-                load: { _ in
-                    makeCollectionLoadResult(
-                        kEmptyCollectionFile,
-                        sourceSchemaVersion: CollectionFileSchemaVersion.definitionOnlyCurrent,
-                    )
-                },
-            )
-            $0.userDefaultsClient = .testValue
-            $0.collectionStalenessClient = stalenessClient
-        }
-        store.exhaustivity = .off
+        let store = makeSavePipelineStore(recorder: recorder, stalenessClient: stalenessClient)
 
         await store.send(.saveToExisting(payload, url)) {
             $0.isSaving = true
@@ -322,6 +254,27 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             ),
         )
 
+        let store = makeSavePipelineStore(recorder: recorder, stalenessClient: stalenessClient)
+
+        await store.send(.saveToExisting(payload, url))
+        await store.receive { action in
+            guard case let .delegate(.saveFeedback(feedback)) = action else { return false }
+            XCTAssertEqual(feedback.stage, .saveBlocked)
+            XCTAssertEqual(feedback.category, .futureMinorReadOnly)
+            XCTAssertEqual(feedback.title, "Unable to Save Collection")
+            XCTAssertFalse(feedback.isRetryable)
+            return true
+        }
+        await store.finish()
+
+        let lastSaved = await recorder.last()
+        XCTAssertNil(lastSaved)
+    }
+
+    private func makeSavePipelineStore(
+        recorder: SavedCollectionsRecorder,
+        stalenessClient: CollectionStalenessClient,
+    ) -> TestStore<CollectionFeature.State, CollectionFeature.Action> {
         let store = TestStore(initialState: CollectionFeature.State()) {
             CollectionFeature()
         } withDependencies: {
@@ -340,20 +293,7 @@ final class CollectionSnapshotSavePipelineTests: XCTestCase {
             $0.collectionStalenessClient = stalenessClient
         }
         store.exhaustivity = .off
-
-        await store.send(.saveToExisting(payload, url))
-        await store.receive { action in
-            guard case let .delegate(.saveFeedback(feedback)) = action else { return false }
-            XCTAssertEqual(feedback.stage, .saveBlocked)
-            XCTAssertEqual(feedback.category, .futureMinorReadOnly)
-            XCTAssertEqual(feedback.title, "Unable to Save Collection")
-            XCTAssertFalse(feedback.isRetryable)
-            return true
-        }
-        await store.finish()
-
-        let lastSaved = await recorder.last()
-        XCTAssertNil(lastSaved)
+        return store
     }
 
     private func assertSnapshotMeta(_ file: VoyagerCollectionFile?, itemCount: Int) {

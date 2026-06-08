@@ -9,7 +9,6 @@ import XCTest
 // provider connection update, partial provider failure, Codex model listing, stale response cancellation contract를
 // 보존한다.
 
-// swiftlint:disable:next type_body_length
 @MainActor
 final class AiChatFeatureModelListLoadingTests: XCTestCase {
     // provider connection 변경이 진행 중 model list batch를 취소하고 stale response를 무시하는지 검증

@@ -38,7 +38,7 @@ public struct ProviderDescriptor: Equatable, Sendable {
         authMethod: ProviderAuthMethod,
         sortOrder: Int,
         browserLoginAvailable: Bool = true,
-        deviceAuthAvailable: Bool = false
+        deviceAuthAvailable: Bool = false,
     ) {
         self.provider = provider
         self.displayName = displayName
@@ -68,19 +68,19 @@ public struct ProviderDescriptor: Equatable, Sendable {
             displayName: "ChatGPT Codex",
             authMethod: .oauth,
             sortOrder: 0,
-            deviceAuthAvailable: false
+            deviceAuthAvailable: false,
         ),
         ProviderDescriptor(
             provider: .openai,
             displayName: "OpenAI",
             authMethod: .apiKey,
-            sortOrder: 1
+            sortOrder: 1,
         ),
         ProviderDescriptor(
             provider: .anthropic,
             displayName: "Anthropic",
             authMethod: .apiKey,
-            sortOrder: 2
+            sortOrder: 2,
         ),
     ]
 

@@ -17,6 +17,7 @@ struct ViewToggleButton: View {
                     label: {
                         HStack {
                             Image(systemName: "list.bullet")
+                                .accessibilityHidden(true)
                             Text("as List")
                         }
                     },
@@ -28,6 +29,7 @@ struct ViewToggleButton: View {
                     label: {
                         HStack {
                             Image(systemName: "square.grid.2x2")
+                                .accessibilityHidden(true)
                             Text("as Icon")
                         }
                     },

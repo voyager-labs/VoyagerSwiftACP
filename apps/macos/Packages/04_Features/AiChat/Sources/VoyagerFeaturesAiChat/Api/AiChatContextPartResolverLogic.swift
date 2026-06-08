@@ -4,44 +4,27 @@ import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerShared
 
+struct AiChatContextResolveConfig {
+    var provider: AiProvider
+    var rawModelID: String
+    var requestFamily: AiChatContextPartResolverRequestFamily
+    var attachmentCanonicalPaths: Set<String>
+    var fileManagerClient: FileManagerClient
+}
+
 extension AiChatContextPartResolverClient {
     static func resolveCurrentContext(
         _ snapshot: AiChatCurrentContextSnapshot,
-        provider: AiProvider,
-        rawModelID: String,
-        requestFamily: AiChatContextPartResolverRequestFamily,
-        attachmentCanonicalPaths: Set<String>,
-        fileManagerClient: FileManagerClient,
+        config: AiChatContextResolveConfig,
     ) -> AiChatResolvedCurrentContext {
         let references = snapshot.references.compactMap {
-            resolveCurrentContextReference(
-                $0,
-                provider: provider,
-                rawModelID: rawModelID,
-                requestFamily: requestFamily,
-                attachmentCanonicalPaths: attachmentCanonicalPaths,
-                fileManagerClient: fileManagerClient,
-            )
+            resolveCurrentContextReference($0, config: config)
         }
         let items = snapshot.items.compactMap {
-            resolveCurrentContextItem(
-                $0,
-                provider: provider,
-                rawModelID: rawModelID,
-                requestFamily: requestFamily,
-                attachmentCanonicalPaths: attachmentCanonicalPaths,
-                fileManagerClient: fileManagerClient,
-            )
+            resolveCurrentContextItem($0, config: config)
         }
         let attachments = snapshot.attachments.compactMap {
-            resolveCurrentContextAttachment(
-                $0,
-                provider: provider,
-                rawModelID: rawModelID,
-                requestFamily: requestFamily,
-                attachmentCanonicalPaths: attachmentCanonicalPaths,
-                fileManagerClient: fileManagerClient,
-            )
+            resolveCurrentContextAttachment($0, config: config)
         }
 
         return AiChatResolvedCurrentContext(
@@ -57,11 +40,7 @@ extension AiChatContextPartResolverClient {
 
     static func resolveCurrentContextReference(
         _ reference: AiChatContextReference,
-        provider: AiProvider,
-        rawModelID: String,
-        requestFamily: AiChatContextPartResolverRequestFamily,
-        attachmentCanonicalPaths: Set<String>,
-        fileManagerClient: FileManagerClient,
+        config: AiChatContextResolveConfig,
     ) -> AiChatCurrentContextElementDescriptor<AiChatContextReference>? {
         resolveCurrentContextElement(AiChatCurrentContextElementInput(
             kind: reference.kind,
@@ -69,11 +48,11 @@ extension AiChatContextPartResolverClient {
             title: reference.title,
             subtitle: reference.subtitle,
             metadata: reference.metadata,
-            provider: provider,
-            rawModelID: rawModelID,
-            requestFamily: requestFamily,
-            attachmentCanonicalPaths: attachmentCanonicalPaths,
-            fileManagerClient: fileManagerClient,
+            provider: config.provider,
+            rawModelID: config.rawModelID,
+            requestFamily: config.requestFamily,
+            attachmentCanonicalPaths: config.attachmentCanonicalPaths,
+            fileManagerClient: config.fileManagerClient,
         )) { identifier, subtitle, metadata in
             AiChatContextReference(
                 kind: reference.kind,
@@ -87,11 +66,7 @@ extension AiChatContextPartResolverClient {
 
     static func resolveCurrentContextItem(
         _ item: AiChatContextItem,
-        provider: AiProvider,
-        rawModelID: String,
-        requestFamily: AiChatContextPartResolverRequestFamily,
-        attachmentCanonicalPaths: Set<String>,
-        fileManagerClient: FileManagerClient,
+        config: AiChatContextResolveConfig,
     ) -> AiChatCurrentContextElementDescriptor<AiChatContextItem>? {
         resolveCurrentContextElement(AiChatCurrentContextElementInput(
             kind: item.kind,
@@ -99,11 +74,11 @@ extension AiChatContextPartResolverClient {
             title: item.title,
             subtitle: item.subtitle,
             metadata: item.metadata,
-            provider: provider,
-            rawModelID: rawModelID,
-            requestFamily: requestFamily,
-            attachmentCanonicalPaths: attachmentCanonicalPaths,
-            fileManagerClient: fileManagerClient,
+            provider: config.provider,
+            rawModelID: config.rawModelID,
+            requestFamily: config.requestFamily,
+            attachmentCanonicalPaths: config.attachmentCanonicalPaths,
+            fileManagerClient: config.fileManagerClient,
         )) { identifier, subtitle, metadata in
             AiChatContextItem(
                 kind: item.kind,
@@ -127,11 +102,7 @@ extension AiChatContextPartResolverClient {
 
     static func resolveCurrentContextAttachment(
         _ attachment: AiChatContextAttachment,
-        provider: AiProvider,
-        rawModelID: String,
-        requestFamily: AiChatContextPartResolverRequestFamily,
-        attachmentCanonicalPaths: Set<String>,
-        fileManagerClient: FileManagerClient,
+        config: AiChatContextResolveConfig,
     ) -> AiChatCurrentContextElementDescriptor<AiChatContextAttachment>? {
         resolveCurrentContextElement(AiChatCurrentContextElementInput(
             kind: attachment.kind,
@@ -139,11 +110,11 @@ extension AiChatContextPartResolverClient {
             title: attachment.title,
             subtitle: attachment.subtitle,
             metadata: attachment.metadata,
-            provider: provider,
-            rawModelID: rawModelID,
-            requestFamily: requestFamily,
-            attachmentCanonicalPaths: attachmentCanonicalPaths,
-            fileManagerClient: fileManagerClient,
+            provider: config.provider,
+            rawModelID: config.rawModelID,
+            requestFamily: config.requestFamily,
+            attachmentCanonicalPaths: config.attachmentCanonicalPaths,
+            fileManagerClient: config.fileManagerClient,
         )) { identifier, subtitle, metadata in
             AiChatContextAttachment(
                 identifier: identifier,
@@ -278,8 +249,8 @@ extension AiChatContextPartResolverClient {
             requestFamily: providerRequestFamily(for: input.requestFamily),
             fileExtension: fileIdentity.fileExtension,
             detectedMIMEType: fileIdentity.mimeType,
-            detectedContentTypeIdentifier: fileIdentity.contentTypeIdentifier,
             sizeBytes: fileIdentity.sizeBytes ?? 0,
+            detectedContentTypeIdentifier: fileIdentity.contentTypeIdentifier,
         ))
         guard case let .providerNativeUpload(kind, normalizedMIMEType) = capability.disposition,
               let sizeBytes = fileIdentity.sizeBytes,

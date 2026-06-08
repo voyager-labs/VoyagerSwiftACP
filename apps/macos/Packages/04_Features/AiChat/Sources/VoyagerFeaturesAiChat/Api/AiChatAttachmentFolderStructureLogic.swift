@@ -109,20 +109,26 @@ extension AiChatAttachmentResolverClient {
             at: rootCanonicalURL,
             relativePath: rootRelativePath,
             depth: 0,
-            rootCanonicalPath: rootCanonicalPath,
             snapshot: &snapshot,
-            fileManagerClient: fileManagerClient,
+            context: FolderTraversalContext(
+                rootCanonicalPath: rootCanonicalPath,
+                fileManagerClient: fileManagerClient,
+            ),
         )
         return snapshot
+    }
+
+    struct FolderTraversalContext {
+        var rootCanonicalPath: String
+        var fileManagerClient: FileManagerClient
     }
 
     static func collectFolderStructureEntries(
         at directoryURL: URL,
         relativePath: String,
         depth: Int,
-        rootCanonicalPath: String,
         snapshot: inout FolderStructureSnapshot,
-        fileManagerClient: FileManagerClient,
+        context _: FolderTraversalContext,
     ) {
         guard !snapshot.truncated, snapshot.includedCount < 1000, depth < 8 else {
             snapshot.truncated = true
@@ -132,7 +138,7 @@ extension AiChatAttachmentResolverClient {
         guard let sortedChildren = sortedFolderStructureChildren(
             at: directoryURL,
             snapshot: &snapshot,
-            fileManagerClient: fileManagerClient,
+            fileManagerClient: context.fileManagerClient,
         ) else { return }
 
         appendDirectoryFilePaths(
@@ -151,9 +157,8 @@ extension AiChatAttachmentResolverClient {
                 child,
                 parentRelativePath: relativePath,
                 depth: depth,
-                rootCanonicalPath: rootCanonicalPath,
                 snapshot: &snapshot,
-                fileManagerClient: fileManagerClient,
+                context: context,
             )
         }
     }
@@ -182,9 +187,8 @@ extension AiChatAttachmentResolverClient {
         _ child: URL,
         parentRelativePath: String,
         depth: Int,
-        rootCanonicalPath: String,
         snapshot: inout FolderStructureSnapshot,
-        fileManagerClient: FileManagerClient,
+        context _: FolderTraversalContext,
     ) {
         let childRelativePath = parentRelativePath.isEmpty
             ? child.lastPathComponent
@@ -206,7 +210,7 @@ extension AiChatAttachmentResolverClient {
                 child,
                 relativePath: childRelativePath,
                 depth: depth,
-                rootCanonicalPath: rootCanonicalPath,
+                rootCanonicalPath: context.rootCanonicalPath,
                 snapshot: &snapshot,
             )
         } else if isPackageDirectory(child) {
@@ -221,9 +225,8 @@ extension AiChatAttachmentResolverClient {
                 child,
                 relativePath: childRelativePath,
                 depth: depth,
-                rootCanonicalPath: rootCanonicalPath,
                 snapshot: &snapshot,
-                fileManagerClient: fileManagerClient,
+                context: context,
             )
         } else if resourceValues?.isRegularFile == true {
             appendFolderStructureEntry(
@@ -269,18 +272,16 @@ extension AiChatAttachmentResolverClient {
         _ child: URL,
         relativePath: String,
         depth: Int,
-        rootCanonicalPath: String,
         snapshot: inout FolderStructureSnapshot,
-        fileManagerClient: FileManagerClient,
+        context: FolderTraversalContext,
     ) {
         appendFolderStructureEntry(kind: "directory", depth: depth + 1, relativePath: relativePath, snapshot: &snapshot)
         collectFolderStructureEntries(
             at: child.standardizedFileURL,
             relativePath: relativePath,
             depth: depth + 1,
-            rootCanonicalPath: rootCanonicalPath,
             snapshot: &snapshot,
-            fileManagerClient: fileManagerClient,
+            context: context,
         )
     }
 
@@ -343,12 +344,12 @@ extension AiChatAttachmentResolverClient {
     }
 
     static func isPackageDirectory(_ url: URL) -> Bool {
-        let extensionSet: Set<String> = ["app", "framework", "xcarchive", "playground", "xcodeproj"]
+        let extensionSet: Set = ["app", "framework", "xcarchive", "playground", "xcodeproj"]
         return extensionSet.contains(url.pathExtension.lowercased())
     }
 
     static func isHeavyFolder(name: String) -> Bool {
-        let heavyNames: Set<String> = [
+        let heavyNames: Set = [
             "node_modules", ".build", ".swiftpm", "DerivedData", "build", "dist", ".next", ".turbo", ".cache", "Pods",
             "Carthage",
         ]

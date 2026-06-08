@@ -4,20 +4,22 @@ import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerShared
 
+struct ProviderIdentity {
+    let provider: AiProvider
+    let rawModelID: String
+}
+
 extension AiChatContextPartResolverClient {
     static func makeAttachmentDescriptor(
         draft: AiChatAttachmentDraft,
         snapshot: AiChatAttachmentSnapshot,
-        provider: AiProvider,
-        rawModelID: String,
-        requestFamily: AiChatContextPartResolverRequestFamily,
-        fileManagerClient _: FileManagerClient,
+        config _: AiChatContextResolveConfig,
     ) -> AiChatResolvedAttachmentDescriptor {
         let fileIdentity = AiChatAttachmentResolverClient.attachmentResolutionURL(for: draft)
             .flatMap(resolveFileIdentity)
         let sanitizedSnapshot = sanitizeAttachmentSnapshot(
             snapshot,
-            provider: provider,
+            provider: config.provider,
             displayPath: fileIdentity?.displayPath,
         )
         let part = AiChatResolvedContextPart(
@@ -26,9 +28,8 @@ extension AiChatContextPartResolverClient {
                 draft: draft,
                 snapshot: sanitizedSnapshot,
                 fileIdentity: fileIdentity,
-                provider: provider,
-                rawModelID: rawModelID,
-                requestFamily: requestFamily,
+                providerIdentity: ProviderIdentity(provider: config.provider, rawModelID: config.rawModelID),
+                requestFamily: config.requestFamily,
             ),
             fileKind: draft.kind,
             canonicalPath: fileIdentity?.canonicalURL.path(percentEncoded: false),
@@ -44,14 +45,13 @@ extension AiChatContextPartResolverClient {
         draft: AiChatAttachmentDraft,
         snapshot: AiChatAttachmentSnapshot,
         fileIdentity: AiChatResolvedFileIdentity?,
-        provider: AiProvider,
-        rawModelID: String,
+        providerIdentity _: ProviderIdentity,
         requestFamily: AiChatContextPartResolverRequestFamily,
     ) -> AiChatContextPartResolution {
         let fallbackResolution = addingAttachmentID(
             to: Self.sanitizeContextPartResolution(
                 from: snapshot.resolutionResult.contextPartResolution,
-                provider: provider,
+                provider: providerIdentity.provider,
             ),
             attachmentID: draft.id.rawValue,
         )
@@ -63,11 +63,11 @@ extension AiChatContextPartResolverClient {
             return fallbackResolution
         }
 
-        if provider == .chatgptCodex {
+        if providerIdentity.provider == .chatgptCodex {
             return codexAttachmentPartResolution(
                 snapshot: snapshot,
                 fileIdentity: fileIdentity,
-                provider: provider,
+                provider: providerIdentity.provider,
                 attachmentID: draft.id.rawValue,
             )
         }
@@ -77,8 +77,8 @@ extension AiChatContextPartResolverClient {
             snapshot: snapshot,
             fallbackResolution: fallbackResolution,
             fileIdentity: fileIdentity,
-            provider: provider,
-            rawModelID: rawModelID,
+            provider: providerIdentity.provider,
+            rawModelID: providerIdentity.rawModelID,
             requestFamily: requestFamily,
         )) ?? fallbackResolution
     }
@@ -114,8 +114,8 @@ extension AiChatContextPartResolverClient {
             requestFamily: providerRequestFamily(for: input.requestFamily),
             fileExtension: fileIdentity.fileExtension,
             detectedMIMEType: fileIdentity.mimeType,
-            detectedContentTypeIdentifier: fileIdentity.contentTypeIdentifier,
             sizeBytes: fileIdentity.sizeBytes ?? 0,
+            detectedContentTypeIdentifier: fileIdentity.contentTypeIdentifier,
         ))
         guard case let .providerNativeUpload(kind, normalizedMIMEType) = capability.disposition,
               let sizeBytes = fileIdentity.sizeBytes,

@@ -171,7 +171,7 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
         }
     }
 
-    private nonisolated static func makeNSError(from error: Error) -> NSError {
+    nonisolated private static func makeNSError(from error: Error) -> NSError {
         if let serviceError = error as? ServiceError {
             return serviceError.asNSError
         }
@@ -217,7 +217,7 @@ final class XPCSearchService: NSObject, FilterSearchXPCServiceProtocol {
 
 private final class ReplyBox: @unchecked Sendable {
     private let lock = NSLock()
-    private nonisolated(unsafe) var reply: ((Data?, NSError?) -> Void)?
+    nonisolated(unsafe) private var reply: ((Data?, NSError?) -> Void)?
 
     nonisolated init(_ reply: @escaping (Data?, NSError?) -> Void) {
         self.reply = reply

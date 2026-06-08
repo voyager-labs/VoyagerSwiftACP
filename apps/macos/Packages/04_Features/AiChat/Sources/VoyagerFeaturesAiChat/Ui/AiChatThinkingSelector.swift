@@ -23,7 +23,8 @@ struct AiChatThinkingSelectorButton: View {
             AiChatSelectorPopoverContainer {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(AiChatThinkingSelectorOptions.options(for: state.resolvedSelectedModel),
-                            id: \.id) { option in
+                            id: \.id)
+                    { option in
                         AiChatThinkingSelectorRow(
                             store: store,
                             option: option,

@@ -18,15 +18,15 @@ public struct AiChatExecutionClient: Sendable {
 }
 
 extension AiChatExecutionClient: DependencyKey {
-    public nonisolated static var liveValue: AiChatExecutionClient {
+    nonisolated public static var liveValue: AiChatExecutionClient {
         live()
     }
 
-    public nonisolated static var testValue: AiChatExecutionClient {
+    nonisolated public static var testValue: AiChatExecutionClient {
         AiChatExecutionClient(execute: { _, _ in AsyncStream { $0.finish() } })
     }
 
-    public nonisolated static var previewValue: AiChatExecutionClient {
+    nonisolated public static var previewValue: AiChatExecutionClient {
         AiChatExecutionClient(execute: { _, _ in AsyncStream { $0.finish() } })
     }
 }

@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import OSLog
@@ -6,8 +5,7 @@ import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
 @Reducer
-struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_length
-    typealias State = EntryOperationsState
+struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
     typealias Action = EntryOperationsAction
 
     @Dependency(\.entryFileOpsClient)
@@ -286,7 +284,42 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         }
     }
 
-    private func makeCreateAliasOperation(
+    private func moveItemToTrash(path: String) async throws -> String {
+        let sourceURL = URL(fileURLWithPath: path)
+        let trashURL = try await entryFileOpsClient.moveToTrashAndReturnURL(sourceURL)
+        let metadata = TrashMetadata(
+            trashPath: trashURL.path,
+            originalPath: path,
+            deletedDate: Date(),
+        )
+        await trashMetadataStoreClient.save(metadata)
+        return trashURL.path
+    }
+
+    nonisolated private static let logger = Logger(
+        subsystem: "fm.voyager",
+        category: "entry-undo-redo-operations",
+    )
+
+    private static func requiredPath(_ path: String?, context: String) throws -> String {
+        guard let path else {
+            throw FileOpError.system(message: "Entry action path missing (\(context))")
+        }
+        return path
+    }
+
+    private static func requiredTags(_ tags: [String]?, context: String) throws -> [String] {
+        guard let tags else {
+            throw FileOpError.system(message: "Entry action tags missing (\(context))")
+        }
+        return tags
+    }
+}
+
+// MARK: - Operation Factories
+
+private extension EntryUndoRedoOperationsReducer {
+    func makeCreateAliasOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -318,7 +351,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         }
     }
 
-    private func makeRenameOperation(
+    func makeRenameOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -343,7 +376,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         )
     }
 
-    private func makeMoveOperation(
+    func makeMoveOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -368,7 +401,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         )
     }
 
-    private func makeCopyOperation(
+    func makeCopyOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
         operationKind: OperationKind,
@@ -401,7 +434,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         }
     }
 
-    private func makeCreateFolderOperation(
+    func makeCreateFolderOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -432,7 +465,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         }
     }
 
-    private func makeMoveToTrashOperation(
+    func makeMoveToTrashOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -466,7 +499,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         }
     }
 
-    private func makePutBackOperation(
+    func makePutBackOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -500,7 +533,7 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
         }
     }
 
-    private func makeSetTagsOperation(
+    func makeSetTagsOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -518,36 +551,5 @@ struct EntryUndoRedoOperationsReducer { // swiftlint:disable:this type_body_leng
                 return target
             },
         )
-    }
-
-    private func moveItemToTrash(path: String) async throws -> String {
-        let sourceURL = URL(fileURLWithPath: path)
-        let trashURL = try await entryFileOpsClient.moveToTrashAndReturnURL(sourceURL)
-        let metadata = TrashMetadata(
-            trashPath: trashURL.path,
-            originalPath: path,
-            deletedDate: Date(),
-        )
-        await trashMetadataStoreClient.save(metadata)
-        return trashURL.path
-    }
-
-    nonisolated private static let logger = Logger(
-        subsystem: "fm.voyager",
-        category: "entry-undo-redo-operations",
-    )
-
-    private static func requiredPath(_ path: String?, context: String) throws -> String {
-        guard let path else {
-            throw FileOpError.system(message: "Entry action path missing (\(context))")
-        }
-        return path
-    }
-
-    private static func requiredTags(_ tags: [String]?, context: String) throws -> [String] {
-        guard let tags else {
-            throw FileOpError.system(message: "Entry action tags missing (\(context))")
-        }
-        return tags
     }
 }

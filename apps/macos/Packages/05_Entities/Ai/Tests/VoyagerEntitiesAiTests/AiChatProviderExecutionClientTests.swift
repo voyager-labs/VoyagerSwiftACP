@@ -126,10 +126,14 @@ final class AiChatProviderExecutionClientTests: XCTestCase {
         var state = AnthropicStreamConsumptionState()
         let decoder = JSONDecoder()
         let payloads = [
-            #"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"search_conditions_output","input":{}}}"#,
-            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"conditions\":"}}"#,
-            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"[],\"scopes\":null"}}"#,
-            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":",\"error\":null}"}}"#,
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","#
+                + #"id":"toolu_1","name":"search_conditions_output","input":{}}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","#
+                + #"partial_json":"{\"conditions\":"}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","#
+                + #"partial_json":"[],\"scopes\":null"}}"#,
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","#
+                + #"partial_json":",\"error\":null}"}}"#,
             #"{"type":"content_block_stop","index":0}"#,
             #"{"type":"message_stop"}"#,
         ]
@@ -771,8 +775,8 @@ private enum ExpectedAnthropicThinking: Equatable {
 }
 
 private final class OpenAIExecutionURLProtocol: URLProtocol, @unchecked Sendable {
-    private nonisolated(unsafe) static var count = 0
-    private nonisolated(unsafe) static var currentHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
+    nonisolated(unsafe) private static var count = 0
+    nonisolated(unsafe) private static var currentHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
 
     static var handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? {
         get { currentHandler }

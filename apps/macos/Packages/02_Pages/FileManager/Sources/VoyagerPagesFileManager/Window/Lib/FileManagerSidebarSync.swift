@@ -113,8 +113,7 @@ struct FileManagerSidebarSync {
         sidebarVisible: Bool,
         sidebarWidth: CGFloat,
         splitView: NSSplitView?,
-        mainContainerLeading: NSLayoutConstraint?,
-        contentVerticalMargin: CGFloat,
+        layout: (mainContainerLeading: NSLayoutConstraint?, contentVerticalMargin: CGFloat),
         onTrafficLightUpdate: (Bool) -> Void,
     ) {
         guard !hasSetInitialLayout,
@@ -127,16 +126,16 @@ struct FileManagerSidebarSync {
         if sidebarVisible {
             splitView.setPosition(clampedSidebarWidth, ofDividerAt: 0)
             FileManagerWindowSplitLayout.updateMainContainerLeading(
-                mainContainerLeading,
+                layout.mainContainerLeading,
                 isSidebarVisible: true,
-                contentVerticalMargin: contentVerticalMargin,
+                contentVerticalMargin: layout.contentVerticalMargin,
             )
         } else {
             splitView.setPosition(0, ofDividerAt: 0)
             FileManagerWindowSplitLayout.updateMainContainerLeading(
-                mainContainerLeading,
+                layout.mainContainerLeading,
                 isSidebarVisible: false,
-                contentVerticalMargin: contentVerticalMargin,
+                contentVerticalMargin: layout.contentVerticalMargin,
             )
         }
 

@@ -10,7 +10,7 @@ import Foundation
 public enum AiConnectionRootResolver {
     public static func resolveBaseRoot(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        bundle: Bundle = .main
+        bundle: Bundle = .main,
     ) -> URL {
         if let envRoot = environment["VOYAGER_PROJECT_ROOT"], !envRoot.isEmpty {
             return URL(fileURLWithPath: envRoot)
@@ -31,7 +31,7 @@ public enum AiConnectionRootResolver {
         while true {
             let macosPath = current.appendingPathComponent("apps/macos/Voyager")
             let xcodeprojPath = current.appendingPathComponent(
-                "apps/macos/Voyager/Voyager.xcodeproj"
+                "apps/macos/Voyager/Voyager.xcodeproj",
             )
             if fm.fileExists(atPath: macosPath.path),
                fm.fileExists(atPath: xcodeprojPath.path)

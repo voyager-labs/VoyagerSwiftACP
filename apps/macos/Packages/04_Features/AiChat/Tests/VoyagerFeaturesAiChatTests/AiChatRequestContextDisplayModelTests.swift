@@ -9,70 +9,12 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
         let emptyState = AiChatFeature.State(currentContext: .init(), addedAttachments: [])
         XCTAssertTrue(AiChatStateDisplayModelBuilder(state: emptyState).requestContextDisplayModel.isEmpty)
         XCTAssertNil(AiChatStateDisplayModelBuilder(state: emptyState).requestContextDisplayModel.currentContext)
-        XCTAssertTrue(AiChatStateDisplayModelBuilder(state: emptyState).requestContextDisplayModel.addedAttachments.isEmpty)
+        XCTAssertTrue(AiChatStateDisplayModelBuilder(state: emptyState).requestContextDisplayModel.addedAttachments
+            .isEmpty)
 
-        let liveState = AiChatFeature.State(
-            currentContext: makeContextSnapshot(
-                summary: "Inspector selection",
-                references: [makeContextReference(kind: .folder, title: "Documents", metadata: ["path": "/tmp", "folderStructureMode": "includeSubfolders"])],
-                items: [makeContextItem(title: "ProjectPlan.md")]
-            ),
-            addedAttachments: [
-                makeDraftAttachment(
-                    id: "notes",
-                    displayTitle: "Notes.txt",
-                    metadata: ["folderStructureMode": "includeSubfolders"],
-                    status: .resolved(.resolvedText(text: "Hello", metadata: [:]))
-                ),
-                makeDraftAttachment(
-                    id: "folder",
-                    source: .collectionDocument,
-                    displayTitle: "Workspace.voycoll",
-                    filePath: "/tmp/Workspace.voycoll",
-                    metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two", "folderStructureMode": "includeSubfolders"],
-                    status: .resolved(.resolvedReference(metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two", "folderStructureMode": "includeSubfolders"]))
-                ),
-                makeDraftAttachment(
-                    id: "pending",
-                    filePath: "/tmp/Pending.txt",
-                    status: .pending
-                ),
-                makeDraftAttachment(
-                    id: "partial",
-                    filePath: "/tmp/Long.txt",
-                    status: .resolved(.resolvedPartial(text: "Trimmed", truncated: true, metadata: [:]))
-                ),
-                makeDraftAttachment(
-                    id: "failed",
-                    filePath: "/tmp/Broken.txt",
-                    status: .resolved(.failure(reason: .brokenReference, metadata: [:]))
-                ),
-            ]
-        )
-
-        let displayModel = AiChatStateDisplayModelBuilder(state: liveState).requestContextDisplayModel
-
-        XCTAssertEqual(displayModel.source, AiChatRequestContextDisplaySource.draft)
-        XCTAssertEqual(displayModel.currentContext?.title, "ProjectPlan.md")
-        XCTAssertEqual(displayModel.addedAttachments.map { $0.title }, [
-            "Notes.txt", "Workspace", "Pending.txt", "Long.txt", "Broken.txt",
-        ])
-        XCTAssertEqual(displayModel.addedAttachments.map { $0.statusLabel }, [
-            "Included", "Collection paths", "", "Partial", "Failed",
-        ])
-        XCTAssertEqual(displayModel.addedAttachments.map { $0.statusDetail }, [
-            "Included as text",
-            "Collection paths only; contents not included",
-            "",
-            "Included first 64 KiB as text",
-            "Not sent: brokenReference",
-        ])
-        XCTAssertEqual(displayModel.addedAttachments[1].iconFilePath, "/tmp/Workspace.voycoll")
-        XCTAssertEqual(displayModel.addedAttachments[1].iconAssetName, "voycollFileIcon")
-        XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
-        XCTAssertEqual(displayModel.currentContext?.folderStructureMode, .includeSubfolders)
-        XCTAssertEqual(displayModel.currentContext?.supportsFolderStructureMode, true)
-        XCTAssertEqual(displayModel.addedAttachments[1].folderStructureMode, .includeSubfolders)
+        let displayModel = AiChatStateDisplayModelBuilder(state: makeLiveStateForGroupSeparation())
+            .requestContextDisplayModel
+        assertDraftDisplayModelGroupSeparation(displayModel)
 
         let multiSelectState = AiChatFeature.State(
             currentContext: makeContextSnapshot(
@@ -82,11 +24,14 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
                     makeContextItem(title: "One.txt"),
                     makeContextItem(title: "Two.txt"),
                     makeContextItem(title: "Three.txt"),
-                ]
+                ],
             ),
-            addedAttachments: []
+            addedAttachments: [],
         )
-        XCTAssertEqual(AiChatStateDisplayModelBuilder(state: multiSelectState).requestContextDisplayModel.currentContext?.title, "3 Selected")
+        XCTAssertEqual(
+            AiChatStateDisplayModelBuilder(state: multiSelectState).requestContextDisplayModel.currentContext?.title,
+            "3 Selected",
+        )
     }
 
     func testCurrentFolderContextUsesFinderFolderIconPath() {
@@ -96,13 +41,13 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
                 references: [
                     makeContextReference(
                         title: "Desktop",
-                        metadata: ["route": "folder", "path": "/Users/test/Desktop"]
+                        metadata: ["route": "folder", "path": "/Users/test/Desktop"],
                     ),
                 ],
                 items: [],
-                attachments: []
+                attachments: [],
             ),
-            addedAttachments: []
+            addedAttachments: [],
         )
 
         let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
@@ -110,7 +55,10 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
             sourceLabel: "Current context",
             destinationLabel: "ChatGPT Codex",
             statusLabel: aiChatCurrentContextStatusLabel(for: state.currentContext, destinationProvider: .chatgptCodex),
-            statusDetail: aiChatCurrentContextStatusDetail(for: state.currentContext, destinationProvider: .chatgptCodex)
+            statusDetail: aiChatCurrentContextStatusDetail(
+                for: state.currentContext,
+                destinationProvider: .chatgptCodex,
+            ),
         )
 
         XCTAssertEqual(currentContext?.title, "Desktop")
@@ -123,61 +71,7 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
 
     func testLockedCurrentContextChipUsesResolvedFolderMetadataDuringProcessing() {
         let catalogRows = makeCatalogRows()
-        let selectedHandle = catalogRows[0].handle
-        let lockedRequestContext = AiChatLockedRequestContextSnapshot(
-            currentContext: makeContextSnapshot(
-                summary: "Desktop",
-                references: [],
-                items: [
-                    makeContextItem(
-                        kind: .folder,
-                        title: "Desktop",
-                        metadata: ["path": "Desktop"]
-                    ),
-                ],
-                attachments: []
-            ),
-            addedAttachments: [],
-            parts: [
-                AiChatLockedContextPartSnapshot(
-                    source: .currentContext,
-                    resolution: .referenceOnly(metadata: ["folderStructureMode": "includeSubfolders"]),
-                    canonicalPath: "/tmp/Desktop",
-                    displayPath: "Desktop",
-                    fileKind: .folder,
-                    displayTitle: "Desktop"
-                ),
-            ]
-        )
-        let lock = makeRequestLock(
-            kind: .submit,
-            request: AiChatRequest(
-                context: AiChatRequestContextSnapshot(
-                    sessionID: AiChatSessionID(rawValue: UUID()),
-                    requestID: AiChatRequestID(rawValue: UUID()),
-                    runID: AiChatRunID(rawValue: UUID()),
-                    provider: selectedHandle.provider,
-                    model: selectedHandle,
-                    selectedModelRow: catalogRows[0],
-                    sessionStatus: .active,
-                    currentContext: makeContextSnapshot(summary: "Live context"),
-                    requestContext: lockedRequestContext,
-                    promptSummary: "Hello"
-                ),
-                messages: []
-            ),
-            selectedHandle: selectedHandle,
-            selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
-        )
-        let state = AiChatFeature.State(
-            sessionStatus: .active,
-            catalogRows: catalogRows,
-            selectedModelHandle: selectedHandle,
-            executionPhase: .processing(lock)
-        )
-
-        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+        let (state, currentContext) = makeLockedFolderProcessingState(catalogRows: catalogRows)
 
         XCTAssertEqual(currentContext?.title, "Desktop")
         XCTAssertEqual(currentContext?.iconSystemName, "folder")
@@ -193,12 +87,12 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
                 items: [
                     makeContextItem(
                         title: "Notes.pdf",
-                        metadata: ["path": "/Users/test/Notes.pdf", "folderStructureMode": "includeSubfolders"]
+                        metadata: ["path": "/Users/test/Notes.pdf", "folderStructureMode": "includeSubfolders"],
                     ),
                 ],
-                attachments: []
+                attachments: [],
             ),
-            addedAttachments: []
+            addedAttachments: [],
         )
 
         let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
@@ -215,19 +109,19 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
                 items: [
                     makeContextItem(
                         title: "Notes.pdf",
-                        metadata: ["path": "/Users/test/Notes.pdf"]
+                        metadata: ["path": "/Users/test/Notes.pdf"],
                     ),
                 ],
-                attachments: []
+                attachments: [],
             ),
-            addedAttachments: []
+            addedAttachments: [],
         )
 
         let currentContextTooltip = aiChatRequestContextTooltipText(
             sourceLabel: "Current context",
             destinationLabel: "OpenAI",
             statusLabel: aiChatCurrentContextStatusLabel(for: state.currentContext, destinationProvider: .openai),
-            statusDetail: aiChatCurrentContextStatusDetail(for: state.currentContext, destinationProvider: .openai)
+            statusDetail: aiChatCurrentContextStatusDetail(for: state.currentContext, destinationProvider: .openai),
         )
 
         XCTAssertTrue(currentContextTooltip.contains("Source: Current context"))
@@ -243,12 +137,12 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
                 items: [
                     makeContextItem(
                         title: "Workspace.voycoll",
-                        metadata: ["path": "/tmp/Workspace.voycoll"]
+                        metadata: ["path": "/tmp/Workspace.voycoll"],
                     ),
                 ],
-                attachments: []
+                attachments: [],
             ),
-            addedAttachments: []
+            addedAttachments: [],
         )
 
         let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
@@ -264,13 +158,13 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
                 references: [
                     makeContextReference(
                         title: "Workspace.voycoll",
-                        metadata: ["route": "collection", "path": "/tmp/Workspace.voycoll"]
+                        metadata: ["route": "collection", "path": "/tmp/Workspace.voycoll"],
                     ),
                 ],
                 items: [],
-                attachments: []
+                attachments: [],
             ),
-            addedAttachments: []
+            addedAttachments: [],
         )
 
         let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
@@ -279,196 +173,93 @@ final class AiChatRequestContextDisplayModelTests: XCTestCase {
         XCTAssertEqual(currentContext?.iconAssetName, "voycollFileIcon")
     }
 
-    func testRequestContextDisplayModelUsesLockedSnapshotDuringProcessingAndTerminalStates() {
-        let catalogRows = makeCatalogRows()
-        let selectedHandle = catalogRows[0].handle
-        let lockedRequestContext = AiChatLockedRequestContextSnapshot(
-            currentContext: makeContextSnapshot(
-                summary: "Locked request context",
-                references: [makeContextReference(title: "Locked request context", metadata: ["folderStructureMode": "includeSubfolders"])]
-            ),
-            addedAttachments: [
-                makeLockedAttachment(
-                    id: "locked-ref",
-                    source: .collectionDocument,
-                    displayTitle: "Workspace.voycoll",
-                    filePath: "/tmp/Workspace.voycoll",
-                    metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two", "folderStructureMode": "includeSubfolders"],
-                    result: .resolvedReference(metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two", "folderStructureMode": "includeSubfolders"])
-                ),
-                makeLockedAttachment(
-                    id: "locked-native",
-                    displayTitle: "Design.pdf",
-                    filePath: "/tmp/Design.pdf",
-                    result: .resolvedReference(metadata: [:])
-                ),
-                makeLockedAttachment(
-                    id: "locked-fail",
-                    filePath: "/tmp/Secret.txt",
-                    result: .failure(reason: .permissionDenied, metadata: [:])
-                ),
-            ],
-            parts: [
-                AiChatLockedContextPartSnapshot(
-                    source: .attachment,
-                    resolution: .collectionPathList(
-                        paths: ["/tmp/One", "/tmp/Two"],
-                        metadata: ["attachmentID": "locked-ref", "folderStructureMode": "includeSubfolders"]
-                    ),
-                    fileKind: .attachment,
-                    displayTitle: "Workspace.voycoll"
-                ),
-                AiChatLockedContextPartSnapshot(
-                    source: .attachment,
-                    resolution: .providerNativeFile(
-                        kind: .pdf,
-                        mimeType: "application/pdf",
-                        metadata: ["attachmentID": "locked-native"]
-                    ),
-                    fileKind: .file,
-                    displayTitle: "Design.pdf",
-                    mimeType: "application/pdf"
-                ),
-                AiChatLockedContextPartSnapshot(
-                    source: .attachment,
-                    resolution: .failure(
-                        reason: .permissionDenied,
-                        metadata: ["attachmentID": "locked-fail"]
-                    ),
-                    fileKind: .file,
-                    displayTitle: "Secret.txt"
-                ),
-            ]
-        )
-        let lock = makeRequestLock(
-            kind: .submit,
-            request: AiChatRequest(
-                context: AiChatRequestContextSnapshot(
-                    sessionID: AiChatSessionID(rawValue: UUID()),
-                    requestID: AiChatRequestID(rawValue: UUID()),
-                    runID: AiChatRunID(rawValue: UUID()),
-                    provider: selectedHandle.provider,
-                    model: selectedHandle,
-                    selectedModel: nil,
-                    selectedModelRow: catalogRows[0],
-                    selectedThinking: nil,
-                    sessionStatus: .active,
-                    currentContext: makeContextSnapshot(summary: "Live context"),
-                    requestContext: lockedRequestContext,
-                    promptSummary: "Hello",
-                    submittedAtMs: nil
-                ),
-                messages: []
-            ),
-            selectedHandle: selectedHandle,
-            selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
-        )
-
-        let processingState = AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            currentContext: makeContextSnapshot(summary: "Live context"),
-            addedAttachments: [
-                makeDraftAttachment(
-                    id: "draft-only",
-                    displayTitle: "DraftOnly.txt",
-                    status: .resolved(.resolvedText(text: "Draft", metadata: [:]))
-                ),
-            ],
-            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            draftText: "Follow up",
-            catalogRows: catalogRows,
-            selectedModelHandle: selectedHandle,
-            executionPhase: .processing(lock)
-        )
-
-        let processingDisplayModel = AiChatStateDisplayModelBuilder(state: processingState).requestContextDisplayModel
-        XCTAssertEqual(processingDisplayModel.source, AiChatRequestContextDisplaySource.locked)
-        XCTAssertEqual(processingDisplayModel.currentContext?.title, "VoyagerEntitiesAi.swift")
-        XCTAssertEqual(processingDisplayModel.addedAttachments.map { $0.title }, ["Workspace", "Design.pdf", "Secret.txt"])
-        XCTAssertEqual(processingDisplayModel.addedAttachments.map { $0.statusLabel }, ["Collection paths", "Uploaded/native", "Failed"])
-        XCTAssertEqual(processingDisplayModel.addedAttachments.map { $0.statusDetail }, [
-            "Collection paths only; contents not included",
-            "Uploaded natively as application/pdf",
-            "Not sent: permissionDenied",
-        ])
-        XCTAssertEqual(processingDisplayModel.addedAttachments[0].iconFilePath, "/tmp/Workspace.voycoll")
-        XCTAssertEqual(processingDisplayModel.addedAttachments[0].iconAssetName, "voycollFileIcon")
-        XCTAssertTrue(processingDisplayModel.addedAttachments.allSatisfy { !$0.isRemovable })
-        XCTAssertNil(processingDisplayModel.currentContext?.folderStructureMode)
-        XCTAssertEqual(processingDisplayModel.currentContext?.supportsFolderStructureMode, false)
-        XCTAssertEqual(processingDisplayModel.addedAttachments[0].folderStructureMode, .includeSubfolders)
-
-        let completedState = AiChatFeature.State(
-            sessionID: processingState.sessionID,
-            sessionStatus: .active,
-            currentContext: makeContextSnapshot(
-                summary: "Edited live context",
-                references: [makeContextReference(title: "Documents", metadata: ["folderStructureMode": "includeSubfolders"])],
-                items: [makeContextItem(title: "LiveOnly.txt")]
-            ),
-            addedAttachments: [
-                makeDraftAttachment(
-                    id: "live-only",
-                    displayTitle: "LiveOnly.txt",
-                    metadata: ["folderStructureMode": "includeSubfolders"],
-                    status: .resolved(.resolvedText(text: "Live", metadata: [:]))
-                ),
-            ],
-            transcriptHistory: [AiChatMessage(role: .assistant, content: "Done")],
-            draftText: "",
-            catalogRows: catalogRows,
-            selectedModelHandle: selectedHandle,
-            executionPhase: .completed(lock)
-        )
-
-        let completedDisplayModel = AiChatStateDisplayModelBuilder(state: completedState).requestContextDisplayModel
-        XCTAssertEqual(completedDisplayModel.source, AiChatRequestContextDisplaySource.draft)
-        XCTAssertEqual(completedDisplayModel.currentContext?.title, "LiveOnly.txt")
-        XCTAssertEqual(completedDisplayModel.addedAttachments.map { $0.title }, ["LiveOnly.txt"])
-    }
-
     func testContextPartResolutionMapsToClosedChipStates() {
-        let fixtures: [(AiChatContextPartResolution, String, String)] = [
-            (.inlineText(text: "Hello", metadata: [:]), "Included", "Included as text"),
-            (.partialText(text: "Hello", truncated: true, metadata: [:]), "Partial", "Included first 64 KiB as text"),
-            (.partialText(text: "Hello", truncated: false, metadata: [:]), "Included", "Included as text"),
-            (.referenceOnly(metadata: [:]), "Reference only", "Reference only; contents not included"),
-            (
-                .referenceOnly(metadata: ["collectionItemPaths": "/tmp/A\n/tmp/B"]),
-                "Collection paths",
-                "Collection paths only; contents not included"
-            ),
-            (.collectionPathList(paths: ["/tmp/A", "/tmp/B"], metadata: [:]), "Collection paths", "Collection paths only; contents not included"),
-            (
-                .providerNativeFile(kind: .plainTextDocument, mimeType: "text/plain", metadata: [:]),
-                "Uploaded/native",
-                "Uploaded natively as text/plain"
-            ),
-            (
-                .providerNativeFile(kind: .codexPathScope, mimeType: "text/plain", metadata: [:]),
-                "Codex path",
-                "Codex path reference; not uploaded"
-            ),
-            (.failure(reason: .unsupportedType, metadata: [:]), "Unsupported", "Not sent: unsupported type"),
-            (.failure(reason: .permissionDenied, metadata: [:]), "Failed", "Not sent: permissionDenied"),
-        ]
+        let fixtures = makeContextPartResolutionFixtures()
 
-        for (resolution, expectedLabel, expectedDetail) in fixtures {
-            XCTAssertEqual(aiChatContextPartStatusLabel(for: resolution), expectedLabel)
-            XCTAssertEqual(aiChatContextPartStatusDetail(for: resolution), expectedDetail)
+        for fixture in fixtures {
+            XCTAssertEqual(aiChatContextPartStatusLabel(for: fixture.resolution), fixture.expectedLabel)
+            XCTAssertEqual(aiChatContextPartStatusDetail(for: fixture.resolution), fixture.expectedDetail)
         }
     }
 }
 
-private func makeDraftAttachment(
+struct ContextPartResolutionFixture {
+    let resolution: AiChatContextPartResolution
+    let expectedLabel: String
+    let expectedDetail: String
+}
+
+func makeContextPartResolutionFixtures() -> [ContextPartResolutionFixture] {
+    makeContextPartSuccessResolutionFixtures() + makeContextPartFailureResolutionFixtures()
+}
+
+func makeContextPartSuccessResolutionFixtures() -> [ContextPartResolutionFixture] {
+    [
+        ContextPartResolutionFixture(
+            resolution: .inlineText(text: "Hello", metadata: [:]),
+            expectedLabel: "Included",
+            expectedDetail: "Included as text",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .partialText(text: "Hello", truncated: true, metadata: [:]),
+            expectedLabel: "Partial",
+            expectedDetail: "Included first 64 KiB as text",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .partialText(text: "Hello", truncated: false, metadata: [:]),
+            expectedLabel: "Included",
+            expectedDetail: "Included as text",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .referenceOnly(metadata: [:]),
+            expectedLabel: "Reference only",
+            expectedDetail: "Reference only; contents not included",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .referenceOnly(metadata: ["collectionItemPaths": "/tmp/A\n/tmp/B"]),
+            expectedLabel: "Collection paths",
+            expectedDetail: "Collection paths only; contents not included",
+        ),
+    ]
+}
+
+func makeContextPartFailureResolutionFixtures() -> [ContextPartResolutionFixture] {
+    [
+        ContextPartResolutionFixture(
+            resolution: .collectionPathList(paths: ["/tmp/A", "/tmp/B"], metadata: [:]),
+            expectedLabel: "Collection paths",
+            expectedDetail: "Collection paths only; contents not included",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .providerNativeFile(kind: .plainTextDocument, mimeType: "text/plain", metadata: [:]),
+            expectedLabel: "Uploaded/native",
+            expectedDetail: "Uploaded natively as text/plain",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .providerNativeFile(kind: .codexPathScope, mimeType: "text/plain", metadata: [:]),
+            expectedLabel: "Codex path",
+            expectedDetail: "Codex path reference; not uploaded",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .failure(reason: .unsupportedType, metadata: [:]),
+            expectedLabel: "Unsupported",
+            expectedDetail: "Not sent: unsupported type",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .failure(reason: .permissionDenied, metadata: [:]),
+            expectedLabel: "Failed",
+            expectedDetail: "Not sent: permissionDenied",
+        ),
+    ]
+}
+
+func makeDraftAttachment(
     id: String,
+    status: AiChatAttachmentDraftStatus,
     source: AiChatAttachmentSource = .file,
     displayTitle: String? = nil,
     filePath: String? = nil,
     metadata: [String: String] = [:],
-    status: AiChatAttachmentDraftStatus
 ) -> AiChatAttachmentDraft {
     AiChatAttachmentDraft(
         id: AiChatAttachmentID(rawValue: id),
@@ -476,17 +267,17 @@ private func makeDraftAttachment(
         displayTitle: displayTitle,
         sourceLocation: AiChatAttachmentSourceLocation(filePath: filePath),
         metadata: metadata,
-        currentStatus: status
+        currentStatus: status,
     )
 }
 
-private func makeLockedAttachment(
+func makeLockedAttachment(
     id: String,
+    result: AiChatAttachmentResolutionResult,
     source: AiChatAttachmentSource = .file,
     displayTitle: String? = nil,
     filePath: String? = nil,
     metadata: [String: String] = [:],
-    result: AiChatAttachmentResolutionResult
 ) -> AiChatAttachmentSnapshot {
     AiChatAttachmentSnapshot(
         id: AiChatAttachmentID(rawValue: id),
@@ -494,22 +285,160 @@ private func makeLockedAttachment(
         displayTitle: displayTitle,
         sourceLocation: AiChatAttachmentSourceLocation(filePath: filePath),
         metadata: metadata,
-        resolutionResult: result
+        resolutionResult: result,
     )
 }
 
-private func makeContextReference(
-    kind: AiChatContextItemKind = .reference,
+func makeContextReference(
     title: String,
-    metadata: [String: String] = [:]
+    kind: AiChatContextItemKind = .reference,
+    metadata: [String: String] = [:],
 ) -> AiChatContextReference {
     AiChatContextReference(kind: kind, identifier: title, title: title, subtitle: nil, metadata: metadata)
 }
 
-private func makeContextItem(
-    kind: AiChatContextItemKind = .file,
+func makeContextItem(
     title: String,
-    metadata: [String: String] = [:]
+    kind: AiChatContextItemKind = .file,
+    metadata: [String: String] = [:],
 ) -> AiChatContextItem {
     AiChatContextItem(kind: kind, identifier: title, title: title, subtitle: nil, metadata: metadata)
+}
+
+func makeLiveStateForGroupSeparation() -> AiChatFeature.State {
+    AiChatFeature.State(
+        currentContext: makeContextSnapshot(
+            summary: "Inspector selection",
+            references: [
+                makeContextReference(
+                    title: "Documents",
+                    kind: .folder,
+                    metadata: ["path": "/tmp", "folderStructureMode": "includeSubfolders"],
+                ),
+            ],
+            items: [makeContextItem(title: "ProjectPlan.md")],
+        ),
+        addedAttachments: [
+            makeDraftAttachment(
+                id: "notes",
+                status: .resolved(.resolvedText(text: "Hello", metadata: [:])),
+                displayTitle: "Notes.txt",
+                metadata: ["folderStructureMode": "includeSubfolders"],
+            ),
+            makeDraftAttachment(
+                id: "folder",
+                status: .resolved(.resolvedReference(metadata: [
+                    "collectionItemPaths": "/tmp/One\n/tmp/Two",
+                    "folderStructureMode": "includeSubfolders",
+                ])),
+                source: .collectionDocument,
+                displayTitle: "Workspace.voycoll",
+                filePath: "/tmp/Workspace.voycoll",
+                metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two", "folderStructureMode": "includeSubfolders"],
+            ),
+            makeDraftAttachment(
+                id: "pending",
+                status: .pending,
+                filePath: "/tmp/Pending.txt",
+            ),
+            makeDraftAttachment(
+                id: "partial",
+                status: .resolved(.resolvedPartial(text: "Trimmed", truncated: true, metadata: [:])),
+                filePath: "/tmp/Long.txt",
+            ),
+            makeDraftAttachment(
+                id: "failed",
+                status: .resolved(.failure(reason: .brokenReference, metadata: [:])),
+                filePath: "/tmp/Broken.txt",
+            ),
+        ],
+    )
+}
+
+func assertDraftDisplayModelGroupSeparation(_ displayModel: AiChatRequestContextDisplayModel) {
+    XCTAssertEqual(displayModel.source, AiChatRequestContextDisplaySource.draft)
+    XCTAssertEqual(displayModel.currentContext?.title, "ProjectPlan.md")
+    XCTAssertEqual(displayModel.addedAttachments.map(\.title), [
+        "Notes.txt", "Workspace", "Pending.txt", "Long.txt", "Broken.txt",
+    ])
+    XCTAssertEqual(displayModel.addedAttachments.map(\.statusLabel), [
+        "Included", "Collection paths", "", "Partial", "Failed",
+    ])
+    XCTAssertEqual(displayModel.addedAttachments.map(\.statusDetail), [
+        "Included as text",
+        "Collection paths only; contents not included",
+        "",
+        "Included first 64 KiB as text",
+        "Not sent: brokenReference",
+    ])
+    XCTAssertEqual(displayModel.addedAttachments[1].iconFilePath, "/tmp/Workspace.voycoll")
+    XCTAssertEqual(displayModel.addedAttachments[1].iconAssetName, "voycollFileIcon")
+    XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
+    XCTAssertEqual(displayModel.currentContext?.folderStructureMode, .includeSubfolders)
+    XCTAssertEqual(displayModel.currentContext?.supportsFolderStructureMode, true)
+    XCTAssertEqual(displayModel.addedAttachments[1].folderStructureMode, .includeSubfolders)
+}
+
+func makeLockedFolderProcessingState(
+    catalogRows: [AiModelCatalogRow],
+) -> (state: AiChatFeature.State, currentContext: AiChatRequestContextDisplayModel.CurrentContext?) {
+    let selectedHandle = catalogRows[0].handle
+    let lockedRequestContext = makeDesktopLockedRequestContext()
+    let lock = makeRequestLock(
+        kind: .submit,
+        request: AiChatRequest(
+            context: AiChatRequestContextSnapshot(
+                sessionID: AiChatSessionID(rawValue: UUID()),
+                requestID: AiChatRequestID(rawValue: UUID()),
+                runID: AiChatRunID(rawValue: UUID()),
+                provider: selectedHandle.provider,
+                model: selectedHandle,
+                selectedModelRow: catalogRows[0],
+                sessionStatus: .active,
+                currentContext: makeContextSnapshot(summary: "Live context"),
+                requestContext: lockedRequestContext,
+                promptSummary: "Hello",
+            ),
+            messages: [],
+        ),
+        selectedHandle: selectedHandle,
+        selectedRow: catalogRows[0],
+        assistantReplacementIndex: nil,
+    )
+    let state = AiChatFeature.State(
+        sessionStatus: .active,
+        catalogRows: catalogRows,
+        selectedModelHandle: selectedHandle,
+        executionPhase: .processing(lock),
+    )
+    let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+    return (state, currentContext)
+}
+
+func makeDesktopLockedRequestContext() -> AiChatLockedRequestContextSnapshot {
+    AiChatLockedRequestContextSnapshot(
+        currentContext: makeContextSnapshot(
+            summary: "Desktop",
+            references: [],
+            items: [
+                makeContextItem(
+                    title: "Desktop",
+                    kind: .folder,
+                    metadata: ["path": "Desktop"],
+                ),
+            ],
+            attachments: [],
+        ),
+        addedAttachments: [],
+        parts: [
+            AiChatLockedContextPartSnapshot(
+                source: .currentContext,
+                resolution: .referenceOnly(metadata: ["folderStructureMode": "includeSubfolders"]),
+                canonicalPath: "/tmp/Desktop",
+                displayPath: "Desktop",
+                fileKind: .folder,
+                displayTitle: "Desktop",
+            ),
+        ],
+    )
 }

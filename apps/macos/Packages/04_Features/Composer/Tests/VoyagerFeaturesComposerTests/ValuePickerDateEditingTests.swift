@@ -232,10 +232,7 @@ final class ValuePickerDateEditingTests: XCTestCase {
             ConditionChipDisplayUtils.displayedValuesForDate(
                 conditionValues: ["2025-05-01", "2025-05-31"],
                 conditionPropertyKey: "modified_date",
-                pickerPropertyKey: nil,
-                pickerPresented: false,
-                pickerValues: [],
-                pickerDateValueState: nil,
+                pickerState: (propertyKey: nil, presented: false, values: [], dateValueState: nil),
             ),
             ["2025-05-01", "2025-05-31"],
         )
@@ -243,15 +240,17 @@ final class ValuePickerDateEditingTests: XCTestCase {
             ConditionChipDisplayUtils.displayedValuesForDate(
                 conditionValues: [relativeRaw],
                 conditionPropertyKey: "modified_date",
-                pickerPropertyKey: "modified_date",
-                pickerPresented: true,
-                pickerValues: [relativeRaw],
-                pickerDateValueState: DateValueState(
-                    mode: .relative,
-                    selectedDate: Date(),
-                    relativeDirection: .future,
-                    relativeAmount: 2,
-                    relativeUnit: .week,
+                pickerState: (
+                    propertyKey: "modified_date",
+                    presented: true,
+                    values: [relativeRaw],
+                    dateValueState: DateValueState(
+                        mode: .relative,
+                        selectedDate: Date(),
+                        relativeDirection: .future,
+                        relativeAmount: 2,
+                        relativeUnit: .week,
+                    ),
                 ),
             ),
             ["In 2 weeks"],

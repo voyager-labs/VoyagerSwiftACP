@@ -18,6 +18,7 @@ struct AiChatHoverTextAffordance: View {
             if let systemName {
                 Image(systemName: systemName)
                     .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
             }
         }
         .foregroundStyle(isHovered ? hoverColor : .secondary)

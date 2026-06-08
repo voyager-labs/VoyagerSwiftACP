@@ -10,7 +10,7 @@ public struct AiChatFeature {
     public typealias State = AiChatState
     public typealias Action = AiChatAction
 
-    enum CancelID: Hashable, Sendable {
+    enum CancelID: Hashable {
         case request
         case requestContextResolution
         case requestStartPersistence
@@ -566,13 +566,13 @@ public struct AiChatFeature {
     }
 }
 
-private struct AiChatModelListLoadRequest: Equatable, Sendable {
+private struct AiChatModelListLoadRequest: Equatable {
     var requestID: UUID
     var provider: AiProvider
     var credential: StoredCredentialPayload?
 }
 
-private struct AiChatModelListLoadBatch: Equatable, Sendable {
+private struct AiChatModelListLoadBatch: Equatable {
     var requestID: UUID
     var requests: [AiChatModelListLoadRequest]
 }
@@ -924,11 +924,13 @@ private extension AiChatFeature {
     ) -> AiChatContextReference {
         let metadata = applyingFolderStructureModeMetadata(
             folderStructureModes,
-            source: .reference,
-            kind: reference.kind,
+            lookupContext: .init(
+                source: .reference,
+                kind: reference.kind,
+                identifier: reference.identifier,
+                subtitle: reference.subtitle,
+            ),
             metadata: reference.metadata,
-            identifier: reference.identifier,
-            subtitle: reference.subtitle,
         )
         return AiChatContextReference(
             kind: reference.kind,
@@ -945,11 +947,8 @@ private extension AiChatFeature {
     ) -> AiChatContextItem {
         let metadata = applyingFolderStructureModeMetadata(
             folderStructureModes,
-            source: .item,
-            kind: item.kind,
+            lookupContext: .init(source: .item, kind: item.kind, identifier: item.identifier, subtitle: item.subtitle),
             metadata: item.metadata,
-            identifier: item.identifier,
-            subtitle: item.subtitle,
         )
         return AiChatContextItem(
             kind: item.kind,
@@ -960,11 +959,13 @@ private extension AiChatFeature {
             references: item.references.map { reference in
                 let metadata = applyingFolderStructureModeMetadata(
                     folderStructureModes,
-                    source: .itemReference,
-                    kind: reference.kind,
+                    lookupContext: .init(
+                        source: .itemReference,
+                        kind: reference.kind,
+                        identifier: reference.identifier,
+                        subtitle: reference.subtitle,
+                    ),
                     metadata: reference.metadata,
-                    identifier: reference.identifier,
-                    subtitle: reference.subtitle,
                 )
                 return AiChatContextReference(
                     kind: reference.kind,
@@ -983,11 +984,13 @@ private extension AiChatFeature {
     ) -> AiChatContextAttachment {
         let metadata = applyingFolderStructureModeMetadata(
             folderStructureModes,
-            source: .attachment,
-            kind: attachment.kind,
+            lookupContext: .init(
+                source: .attachment,
+                kind: attachment.kind,
+                identifier: attachment.identifier,
+                subtitle: attachment.subtitle,
+            ),
             metadata: attachment.metadata,
-            identifier: attachment.identifier,
-            subtitle: attachment.subtitle,
         )
         return AiChatContextAttachment(
             identifier: attachment.identifier,
@@ -1029,21 +1032,25 @@ private extension AiChatFeature {
         )
     }
 
+    struct FolderStructureLookupContext {
+        var source: AiChatCurrentContextFolderStructureSource
+        var kind: AiChatContextItemKind
+        var identifier: String
+        var subtitle: String?
+    }
+
     func applyingFolderStructureModeMetadata(
         _ folderStructureModes: [AiChatCurrentContextFolderStructureKey: AiChatFolderStructureMode],
-        source: AiChatCurrentContextFolderStructureSource,
-        kind: AiChatContextItemKind,
+        lookupContext: FolderStructureLookupContext,
         metadata: [String: String],
-        identifier: String,
-        subtitle: String?,
     ) -> [String: String] {
         var metadata = removingFolderStructureModeMetadata(from: metadata)
         let keys = currentContextFolderStructureKeys(
-            source: source,
-            kind: kind,
+            source: lookupContext.source,
+            kind: lookupContext.kind,
             metadata: metadata,
-            identifier: identifier,
-            subtitle: subtitle,
+            identifier: lookupContext.identifier,
+            subtitle: lookupContext.subtitle,
         )
         let mode = folderStructureModes.first(where: { key, _ in keys.contains(key) })?.value
         if let mode {

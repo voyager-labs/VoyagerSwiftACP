@@ -28,18 +28,15 @@ public struct CollectionMetricClient: Sendable {
     }
 }
 
-// swiftlint:disable modifier_order
 extension CollectionMetricClient: DependencyKey {
-    public nonisolated static let liveValue = CollectionMetricClient(
+    nonisolated public static let liveValue = CollectionMetricClient(
         logMetric: { _, _, _, _ in },
     )
 
-    public nonisolated(unsafe) static var testValue = CollectionMetricClient(
+    nonisolated(unsafe) public static var testValue = CollectionMetricClient(
         logMetric: { _, _, _, _ in },
     )
 }
-
-// swiftlint:enable modifier_order
 
 public extension DependencyValues {
     nonisolated var collectionMetricClient: CollectionMetricClient {

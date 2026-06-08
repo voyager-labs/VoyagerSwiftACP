@@ -14,6 +14,7 @@ struct SidebarSectionHeader: View {
                 .foregroundColor(.secondary)
             Spacer()
             Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                .accessibilityHidden(true)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.secondary)
                 .opacity(isHovered ? 1 : 0)

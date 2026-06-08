@@ -73,7 +73,7 @@ struct SearchQueryService {
         try await searchService.applyFilters(filters)
     }
 
-    private nonisolated func conversionErrorResponse(
+    nonisolated private func conversionErrorResponse(
         _ conversion: QueryConversionResult,
         fallbackFilters: SearchFiltersPayload,
     ) -> SearchResponsePayload? {
@@ -92,7 +92,7 @@ struct SearchQueryService {
         )
     }
 
-    private nonisolated func plannedFilters(
+    nonisolated private func plannedFilters(
         conversion: QueryConversionResult,
         baselineFilters: SearchFiltersPayload,
     ) -> SearchFiltersPayload {

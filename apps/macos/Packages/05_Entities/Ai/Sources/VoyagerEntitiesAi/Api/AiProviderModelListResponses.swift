@@ -1,8 +1,8 @@
-struct OpenAIModelsResponse: Decodable, Sendable {
+struct OpenAIModelsResponse: Decodable {
     let data: [OpenAIModelPayload]
 }
 
-struct OpenAIModelPayload: Decodable, Sendable {
+struct OpenAIModelPayload: Decodable {
     let id: String
     let supportedReasoningEfforts: [OpenAIReasoningEffortPayload]
     let defaultReasoningEffort: AiThinkingEffort?
@@ -46,7 +46,7 @@ struct OpenAIModelPayload: Decodable, Sendable {
                 .supportedReasoningEfforts,
                 .supportedReasoningEffortsCamel,
                 .reasoningEfforts,
-                .reasoningEffortsCamel
+                .reasoningEffortsCamel,
             ],
         )
         defaultReasoningEffort = try container.decodeFirstPresentOpenAIEffort(
@@ -54,13 +54,13 @@ struct OpenAIModelPayload: Decodable, Sendable {
                 .defaultReasoningEffort,
                 .defaultReasoningEffortCamel,
                 .reasoningEffort,
-                .reasoningEffortCamel
+                .reasoningEffortCamel,
             ],
         )
     }
 }
 
-struct OpenAIReasoningEffortPayload: Decodable, Sendable {
+struct OpenAIReasoningEffortPayload: Decodable {
     let effortValue: AiThinkingEffort?
     let supportsNone: Bool
 
@@ -72,7 +72,8 @@ struct OpenAIReasoningEffortPayload: Decodable, Sendable {
 
     init(from decoder: Decoder) throws {
         if let singleValue = try? decoder.singleValueContainer(),
-           let rawEffort = try? singleValue.decode(String.self) {
+           let rawEffort = try? singleValue.decode(String.self)
+        {
             supportsNone = rawEffort.lowercased() == "none"
             effortValue = AiThinkingEffort(rawValue: rawEffort)
             return
@@ -122,11 +123,11 @@ enum OpenAIReasoningCapability {
     }
 }
 
-struct AnthropicModelsResponse: Decodable, Sendable {
+struct AnthropicModelsResponse: Decodable {
     let data: [AnthropicModelPayload]
 }
 
-struct AnthropicModelPayload: Decodable, Sendable {
+struct AnthropicModelPayload: Decodable {
     let id: String
     let displayName: String?
     let capabilities: AnthropicModelCapabilities?
@@ -146,7 +147,7 @@ struct AnthropicModelPayload: Decodable, Sendable {
     }
 }
 
-struct AnthropicModelCapabilities: Decodable, Sendable {
+struct AnthropicModelCapabilities: Decodable {
     let thinking: Thinking?
     let effort: Effort?
 
@@ -166,21 +167,21 @@ struct AnthropicModelCapabilities: Decodable, Sendable {
         return nil
     }
 
-    struct Thinking: Decodable, Sendable {
+    struct Thinking: Decodable {
         let supported: Bool
         let types: Types?
     }
 
-    struct Types: Decodable, Sendable {
+    struct Types: Decodable {
         let adaptive: Support?
         let enabled: Support?
     }
 
-    struct Support: Decodable, Sendable {
+    struct Support: Decodable {
         let supported: Bool
     }
 
-    struct Effort: Decodable, Sendable {
+    struct Effort: Decodable {
         let supported: Bool
         let low: Support?
         let medium: Support?
@@ -194,14 +195,14 @@ struct AnthropicModelCapabilities: Decodable, Sendable {
                 (medium, AiThinkingEffort.medium),
                 (high, AiThinkingEffort.high),
                 (xhigh, AiThinkingEffort.xhigh),
-                (max, AiThinkingEffort.max)
+                (max, AiThinkingEffort.max),
             ]
             .compactMap { support, effort in support?.supported == true ? effort : nil }
         }
     }
 }
 
-struct CodexModelsResponse: Decodable, Sendable {
+struct CodexModelsResponse: Decodable {
     let models: [CodexModelPayload]
 
     enum CodingKeys: String, CodingKey {
@@ -217,7 +218,7 @@ struct CodexModelsResponse: Decodable, Sendable {
     }
 }
 
-struct CodexModelPayload: Decodable, Sendable {
+struct CodexModelPayload: Decodable {
     let modelID: String
     let displayName: String?
     let visibility: String?
@@ -269,7 +270,7 @@ struct CodexModelPayload: Decodable, Sendable {
             forKeys: [
                 .supportedReasoningLevels,
                 .supportedReasoningEfforts,
-                .supportedReasoningEffortsCamel
+                .supportedReasoningEffortsCamel,
             ],
         )
         supportedReasoningLevels = decodedEfforts
@@ -278,13 +279,13 @@ struct CodexModelPayload: Decodable, Sendable {
             forKeys: [
                 .defaultReasoningLevel,
                 .defaultReasoningEffort,
-                .defaultReasoningEffortCamel
+                .defaultReasoningEffortCamel,
             ],
         )
     }
 }
 
-struct CodexReasoningEffortPayload: Decodable, Sendable {
+struct CodexReasoningEffortPayload: Decodable {
     let effortValue: AiThinkingEffort?
     let supportsNone: Bool
 
@@ -296,7 +297,8 @@ struct CodexReasoningEffortPayload: Decodable, Sendable {
 
     init(from decoder: Decoder) throws {
         if let singleValue = try? decoder.singleValueContainer(),
-           let rawEffort = try? singleValue.decode(String.self) {
+           let rawEffort = try? singleValue.decode(String.self)
+        {
             supportsNone = rawEffort.lowercased() == "none"
             effortValue = AiThinkingEffort(rawValue: rawEffort)
             return

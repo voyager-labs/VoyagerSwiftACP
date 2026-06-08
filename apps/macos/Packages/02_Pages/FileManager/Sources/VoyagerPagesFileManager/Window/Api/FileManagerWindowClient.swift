@@ -142,21 +142,35 @@ public func makeFileManagerWindowClientLive() -> FileManagerWindowClient {
     )
 }
 
+public struct FileManagerWindowKeyCallbacks {
+    public let onBecameKey: @MainActor (UUID) -> Void
+    public let onResignedKey: @MainActor (UUID) -> Void
+    public let onClosed: @MainActor (UUID) -> Void
+
+    public init(
+        onBecameKey: @MainActor @escaping (UUID) -> Void,
+        onResignedKey: @MainActor @escaping (UUID) -> Void,
+        onClosed: @MainActor @escaping (UUID) -> Void,
+    ) {
+        self.onBecameKey = onBecameKey
+        self.onResignedKey = onResignedKey
+        self.onClosed = onClosed
+    }
+}
+
 @MainActor
 public func configureFileManagerWindowClientLive(
     requestNewWindow: @escaping (String?) -> Void,
     requestNewTab: @escaping (String?) -> Void,
     resolveFileManagerStore: @escaping (UUID) -> StoreOf<FileManagerFeature>?,
-    onWindowBecameKey: @escaping (UUID) -> Void,
-    onWindowResignedKey: @escaping (UUID) -> Void,
-    onWindowClosed: @escaping (UUID) -> Void,
+    windowKeyCallbacks: FileManagerWindowKeyCallbacks,
 ) {
     fileManagerWindowRequestNewWindow = requestNewWindow
     fileManagerWindowRequestNewTab = requestNewTab
     fileManagerWindowResolveStore = resolveFileManagerStore
-    fileManagerWindowOnBecameKey = onWindowBecameKey
-    fileManagerWindowOnResignedKey = onWindowResignedKey
-    fileManagerWindowOnClosed = onWindowClosed
+    fileManagerWindowOnBecameKey = windowKeyCallbacks.onBecameKey
+    fileManagerWindowOnResignedKey = windowKeyCallbacks.onResignedKey
+    fileManagerWindowOnClosed = windowKeyCallbacks.onClosed
 }
 
 @MainActor

@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
@@ -8,7 +7,6 @@ import XCTest
 // CBW004 spec-owner suite 밖에 남긴 model selection reducer 회귀 테스트.
 // provider update selection 보존/해제와 Codex execution path contract를 보존한다.
 
-// swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureSelectionTests: XCTestCase {
     /// teardown 요청이 processing draft를 중단하되 conversation은 유지하는지 검증
@@ -20,14 +18,14 @@ final class AiChatFeatureSelectionTests: XCTestCase {
         let requestID = AiChatRequestID(rawValue: makeUUID("00000000-0000-0000-0000-000000000004"))
         let runID = AiChatRunID(rawValue: makeUUID("00000000-0000-0000-0000-000000000005"))
         let messages = [AiChatMessage(role: .user, content: "Keep this transcript")]
-        let lock = makeTeardownProcessingLock(
+        let lock = makeTeardownProcessingLock(input: TeardownLockInput(
             sessionID: sessionID,
             requestIDs: (requestID: requestID, runID: runID),
             catalogRow: catalogRows[0],
             selectedModel: models[0],
             summary: summary,
             messages: messages,
-        )
+        ))
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
             sessionStatus: .active,
@@ -298,38 +296,40 @@ final class AiChatFeatureSelectionTests: XCTestCase {
     }
 }
 
-private func makeTeardownProcessingLock(
-    sessionID: AiChatSessionID,
-    requestIDs: (requestID: AiChatRequestID, runID: AiChatRunID),
-    catalogRow: AiModelCatalogRow,
-    selectedModel: AiProviderModel,
-    summary: AiChatCurrentContextSnapshot,
-    messages: [AiChatMessage],
-) -> AiChatRequestLock {
+private struct TeardownLockInput {
+    let sessionID: AiChatSessionID
+    let requestIDs: (requestID: AiChatRequestID, runID: AiChatRunID)
+    let catalogRow: AiModelCatalogRow
+    let selectedModel: AiProviderModel
+    let summary: AiChatCurrentContextSnapshot
+    let messages: [AiChatMessage]
+}
+
+private func makeTeardownProcessingLock(input: TeardownLockInput) -> AiChatRequestLock {
     let context = AiChatRequestContextSnapshot(
-        sessionID: sessionID,
-        requestID: requestIDs.requestID,
-        runID: requestIDs.runID,
-        provider: catalogRow.handle.provider,
-        model: catalogRow.handle,
-        selectedModel: selectedModel,
-        selectedModelRow: catalogRow,
+        sessionID: input.sessionID,
+        requestID: input.requestIDs.requestID,
+        runID: input.requestIDs.runID,
+        provider: input.catalogRow.handle.provider,
+        model: input.catalogRow.handle,
+        selectedModel: input.selectedModel,
+        selectedModelRow: input.catalogRow,
         selectedThinking: .effort(.medium),
         sessionStatus: .active,
-        currentContext: summary,
+        currentContext: input.summary,
         promptSummary: "Keep this transcript",
         submittedAtMs: 1_700_000_000_600,
     )
-    let request = AiChatRequest(context: context, messages: messages)
+    let request = AiChatRequest(context: context, messages: input.messages)
 
     return AiChatRequestLock(
         kind: .submit,
-        requestID: requestIDs.requestID,
-        runID: requestIDs.runID,
+        requestID: input.requestIDs.requestID,
+        runID: input.requestIDs.runID,
         context: context,
         request: request,
-        selectedModelHandle: catalogRow.handle,
-        selectedModelRow: catalogRow,
+        selectedModelHandle: input.catalogRow.handle,
+        selectedModelRow: input.catalogRow,
         assistantReplacementIndex: nil,
         historyTruncation: AiChatHistoryTruncationMetadata(
             includedMessageCount: 1,
@@ -340,5 +340,3 @@ private func makeTeardownProcessingLock(
         observabilitySummary: AiChatRequestObservabilitySummary(submittedAtMs: 1_700_000_000_600),
     )
 }
-
-// swiftlint:enable type_body_length

@@ -76,8 +76,10 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
                 sidebarVisible: store.sidebar.sidebarVisible,
                 sidebarWidth: store.sidebar.sidebarWidth,
                 splitView: windowSplitView,
-                mainContainerLeading: mainContainerLeading,
-                contentVerticalMargin: Constants.contentVerticalMargin,
+                layout: (
+                    mainContainerLeading: mainContainerLeading,
+                    contentVerticalMargin: Constants.contentVerticalMargin,
+                ),
             ) { [weak self] isSidebarVisible in
                 self?.updateTrafficLightVisibility(isSidebarVisible: isSidebarVisible)
             }

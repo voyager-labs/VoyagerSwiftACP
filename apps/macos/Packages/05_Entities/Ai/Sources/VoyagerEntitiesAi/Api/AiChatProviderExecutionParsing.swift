@@ -173,7 +173,8 @@ extension AiChatProviderExecutionClient {
             try Task.checkCancellation()
             for payload in accumulator.consume(line) {
                 if let delta = try consumeOpenAIPayload(payload, deltas: &deltas, finalText: &finalText),
-                   !delta.isEmpty {
+                   !delta.isEmpty
+                {
                     continuation.yield(.delta(context: context, text: delta))
                 }
             }
@@ -181,7 +182,8 @@ extension AiChatProviderExecutionClient {
 
         if let payload = accumulator.finish(),
            let delta = try consumeOpenAIPayload(payload, deltas: &deltas, finalText: &finalText),
-           !delta.isEmpty {
+           !delta.isEmpty
+        {
             continuation.yield(.delta(context: context, text: delta))
         }
 
@@ -286,7 +288,8 @@ extension AiChatProviderExecutionClient {
                payload,
                decoder: decoder,
                state: &state,
-           ), !delta.isEmpty {
+           ), !delta.isEmpty
+        {
             continuation.yield(.delta(context: context, text: delta))
         }
 

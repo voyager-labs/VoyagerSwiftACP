@@ -95,7 +95,7 @@ final class AiContractValueTests: XCTestCase {
             provider: .openai,
             state: .connected,
             reason: .none,
-            updatedFile: AIConnectionsFile.empty()
+            updatedFile: AIConnectionsFile.empty(),
         )
         XCTAssertEqual(result.provider, .openai)
         XCTAssertEqual(result.state, .connected)

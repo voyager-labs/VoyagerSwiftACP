@@ -51,7 +51,9 @@ struct SidebarItemView: View {
 
     private func applicationsIcon() -> NSImage? {
         let appIcon = NSImage(
-            contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/SidebarApplicationsFolder.icns",
+            contentsOfFile:
+            "/System/Library/CoreServices/CoreTypes.bundle"
+                + "/Contents/Resources/SidebarApplicationsFolder.icns",
         )
         appIcon?.isTemplate = true
         return appIcon
@@ -66,11 +68,13 @@ struct SidebarItemView: View {
                 Image(nsImage: appIcon)
                     .resizable()
                     .scaledToFit()
+                    .accessibilityHidden(true)
                     .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
                     .frame(width: 16, height: 16)
             } else {
                 Image(systemName: iconName)
                     .symbolRenderingMode(.hierarchical)
+                    .accessibilityHidden(true)
                     .foregroundColor(isDropTarget ? .white : (iconColor ?? .accentColor))
                     .frame(width: 16)
             }

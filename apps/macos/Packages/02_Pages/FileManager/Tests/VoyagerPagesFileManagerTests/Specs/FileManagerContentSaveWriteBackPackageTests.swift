@@ -52,25 +52,12 @@ final class FileManagerContentSaveWriteBackPackageTests: XCTestCase {
 
         await store.finish()
 
-        XCTAssertEqual(store.state.collection.collectionSession.document?.url, savedURL)
-        XCTAssertEqual(store.state.collection.collectionSession.document?.name, "saved")
-        XCTAssertEqual(store.state.collection.collectionContext, savedContext)
-        XCTAssertEqual(
-            store.state.collection.collectionSession.metadata.baseline,
-            CollectionBaseline(context: savedContext),
+        assertWriteBackCompletedState(
+            store: store,
+            savedURL: savedURL,
+            savedContext: savedContext,
+            expectedPath: "saved",
         )
-        XCTAssertFalse(store.state.isOpenedCollectionDirty)
-        XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
-        let collectionStatus = ToolbarCollectionStatusViewState(
-            isCollectionMode: store.state.isCollectionMode,
-            openedCollectionURLExists: store.state.openedCollectionURLExists,
-            isOpenedCollectionDirty: store.state.isOpenedCollectionDirty,
-            isOpenedCollectionStale: store.state.collection.collectionSession.phase.isStale,
-            refreshBlockingReason: nil,
-        )
-        XCTAssertFalse(collectionStatus.showsUnsavedIndicator)
-        XCTAssertFalse(collectionStatus.showsStaleIndicator)
-        XCTAssertEqual(store.state.navigation.currentPath, "saved")
     }
 
     func testSaveFeedbackPresentsComposerWhenClosed() async {
@@ -133,6 +120,33 @@ final class FileManagerContentSaveWriteBackPackageTests: XCTestCase {
             refreshBlockingReason: nil,
         )
         XCTAssertFalse(collectionStatus.showsUnsavedIndicator)
+    }
+
+    private func assertWriteBackCompletedState(
+        store: TestStore<FileManagerContentState, FileManagerContentAction>,
+        savedURL: URL,
+        savedContext: CollectionContext,
+        expectedPath: String,
+    ) {
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, savedURL)
+        XCTAssertEqual(store.state.collection.collectionSession.document?.name, expectedPath)
+        XCTAssertEqual(store.state.collection.collectionContext, savedContext)
+        XCTAssertEqual(
+            store.state.collection.collectionSession.metadata.baseline,
+            CollectionBaseline(context: savedContext),
+        )
+        XCTAssertFalse(store.state.isOpenedCollectionDirty)
+        XCTAssertFalse(store.state.collection.collectionSession.phase.isStale)
+        let collectionStatus = ToolbarCollectionStatusViewState(
+            isCollectionMode: store.state.isCollectionMode,
+            openedCollectionURLExists: store.state.openedCollectionURLExists,
+            isOpenedCollectionDirty: store.state.isOpenedCollectionDirty,
+            isOpenedCollectionStale: store.state.collection.collectionSession.phase.isStale,
+            refreshBlockingReason: nil,
+        )
+        XCTAssertFalse(collectionStatus.showsUnsavedIndicator)
+        XCTAssertFalse(collectionStatus.showsStaleIndicator)
+        XCTAssertEqual(store.state.navigation.currentPath, expectedPath)
     }
 
     private func makeStore(

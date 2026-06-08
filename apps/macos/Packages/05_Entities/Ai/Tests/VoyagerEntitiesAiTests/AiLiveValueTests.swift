@@ -24,9 +24,9 @@ final class AiLiveValueTests: XCTestCase {
                     providerId: .openai,
                     authMethod: .apiKey,
                     credential: .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
-                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
                 ),
-            ]
+            ],
         )
 
         let saveResult = try await client.save(file)
@@ -75,8 +75,8 @@ final class AiLiveValueTests: XCTestCase {
 
     // MARK: - connectOAuth liveValue
 
-    func testConnectOAuth_liveValue_persistsCredentialForValidProvider() {
-        let fixture = try! TemporaryHomeFixture()
+    func testConnectOAuth_liveValue_persistsCredentialForValidProvider() throws {
+        let fixture = try TemporaryHomeFixture()
         let before = fixture.snapshotRealAuthFile()
         let client = AIProviderConnectionClient.liveValue
         let credential = OAuthCredentialFile(accessToken: "at_connect_test")
@@ -90,8 +90,8 @@ final class AiLiveValueTests: XCTestCase {
         XCTAssertEqual(after, before, "OAuth persistence must not touch the real auth file")
     }
 
-    func testConnectOAuth_liveValue_persistsCredentialInFile() {
-        let fixture = try! TemporaryHomeFixture()
+    func testConnectOAuth_liveValue_persistsCredentialInFile() throws {
+        let fixture = try TemporaryHomeFixture()
         let client = AIProviderConnectionClient.liveValue
         let credential = OAuthCredentialFile(accessToken: "at_verify_fake")
         let result = awaitTest { await client.connectOAuth(.chatgptCodex, credential, .connected) }
@@ -101,8 +101,8 @@ final class AiLiveValueTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
     }
 
-    func testConnectOAuth_liveValue_rejectsAPIKeyOnlyProvider() {
-        let fixture = try! TemporaryHomeFixture()
+    func testConnectOAuth_liveValue_rejectsAPIKeyOnlyProvider() throws {
+        let fixture = try TemporaryHomeFixture()
         let before = fixture.snapshotRealAuthFile()
         let client = AIProviderConnectionClient.liveValue
         let credential = OAuthCredentialFile(accessToken: "at_wrong_provider")
@@ -118,24 +118,24 @@ final class AiLiveValueTests: XCTestCase {
 
     // MARK: - connectAPIKey persistence-only
 
-    func testConnectAPIKey_isPersistenceOnly_returnsConnected() async {
-        let fixture = try! TemporaryHomeFixture()
+    func testConnectAPIKey_isPersistenceOnly_returnsConnected() async throws {
+        let fixture = try TemporaryHomeFixture()
         let result = await AIProviderConnectionClient.liveValue.connectAPIKey(
             .openai,
             "sk-obviously-fake-key",
-            .connected
+            .connected,
         )
         XCTAssertEqual(result.state, .connected)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
     }
 
-    func testConnectOAuth_isPersistenceOnly_returnsConnected() async {
-        let fixture = try! TemporaryHomeFixture()
+    func testConnectOAuth_isPersistenceOnly_returnsConnected() async throws {
+        let fixture = try TemporaryHomeFixture()
         let credential = OAuthCredentialFile(accessToken: "fake-oauth-token")
         let result = await AIProviderConnectionClient.liveValue.connectOAuth(
             .chatgptCodex,
             credential,
-            .connected
+            .connected,
         )
         XCTAssertEqual(result.state, .connected)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.authFileURL.path))
@@ -143,8 +143,8 @@ final class AiLiveValueTests: XCTestCase {
 
     // MARK: - disconnect liveValue
 
-    func testDisconnect_liveValue_returnsNotVerified_forProviderWithNoRecord() {
-        let fixture = try! TemporaryHomeFixture()
+    func testDisconnect_liveValue_returnsNotVerified_forProviderWithNoRecord() throws {
+        let fixture = try TemporaryHomeFixture()
         let before = fixture.snapshotRealAuthFile()
         let client = AIProviderConnectionClient.liveValue
         let disconnectResult = awaitTest { await client.disconnect(.chatgptCodex) }
@@ -160,20 +160,20 @@ final class AiLiveValueTests: XCTestCase {
 
     // MARK: - OAuth infrastructure wiring
 
-    func testCodexOAuthInfrastructureIsWired() {
+    func testCodexOAuthInfrastructureIsWired() throws {
         let pkce = PKCE.generate()
         XCTAssertEqual(pkce.verifier.count, 43)
         XCTAssertFalse(pkce.challenge.isEmpty)
 
-        let config = CodexOAuthConfig(
+        let config = try CodexOAuthConfig(
             clientId: "test-client-id",
-            issuer: URL(string: "https://auth.example.com")!,
+            issuer: XCTUnwrap(URL(string: "https://auth.example.com")),
             authorizePath: "/authorize",
             tokenPath: "/token",
             redirectPort: 1455,
             redirectPath: "/auth/callback",
             scopes: ["openid", "profile", "email"],
-            originator: "test-originator"
+            originator: "test-originator",
         )
         XCTAssertEqual(config.issuer.host, "auth.example.com")
         XCTAssertFalse(config.clientId.isEmpty)
@@ -193,14 +193,14 @@ final class AiLiveValueTests: XCTestCase {
 
     // MARK: - Snapshot persistence with .notVerified
 
-    func testConnectOAuth_withNotVerified_persistsNotVerifiedInSnapshot() async {
-        let fixture = try! TemporaryHomeFixture()
+    func testConnectOAuth_withNotVerified_persistsNotVerifiedInSnapshot() async throws {
+        let fixture = try TemporaryHomeFixture()
         let before = fixture.snapshotRealAuthFile()
         let credential = OAuthCredentialFile(accessToken: "net-err-token")
         let result = await AIProviderConnectionClient.liveValue.connectOAuth(
             .chatgptCodex,
             credential,
-            .notVerified
+            .notVerified,
         )
 
         XCTAssertEqual(result.state, .notVerified)
@@ -216,13 +216,13 @@ final class AiLiveValueTests: XCTestCase {
         XCTAssertEqual(after, before, "Not-verified persistence must not touch the real auth file")
     }
 
-    func testConnectAPIKey_withNotVerified_persistsNotVerifiedInSnapshot() async {
-        let fixture = try! TemporaryHomeFixture()
+    func testConnectAPIKey_withNotVerified_persistsNotVerifiedInSnapshot() async throws {
+        let fixture = try TemporaryHomeFixture()
         let before = fixture.snapshotRealAuthFile()
         let result = await AIProviderConnectionClient.liveValue.connectAPIKey(
             .openai,
             "sk-net-err-key",
-            .notVerified
+            .notVerified,
         )
 
         XCTAssertEqual(result.state, .notVerified)
@@ -239,14 +239,14 @@ final class AiLiveValueTests: XCTestCase {
 
     // MARK: - Snapshot persistence with .connected
 
-    func testConnectOAuth_withConnected_persistsConnectedInSnapshot() async {
-        let fixture = try! TemporaryHomeFixture()
+    func testConnectOAuth_withConnected_persistsConnectedInSnapshot() async throws {
+        let fixture = try TemporaryHomeFixture()
         let before = fixture.snapshotRealAuthFile()
         let credential = OAuthCredentialFile(accessToken: "valid-token")
         let result = await AIProviderConnectionClient.liveValue.connectOAuth(
             .chatgptCodex,
             credential,
-            .connected
+            .connected,
         )
 
         XCTAssertEqual(result.state, .connected)
@@ -264,7 +264,7 @@ final class AiLiveValueTests: XCTestCase {
 
 private func awaitTest<T: Sendable>(
     timeout: TimeInterval = 2.0,
-    _ operation: @escaping @Sendable () async -> T
+    _ operation: @escaping @Sendable () async -> T,
 ) -> T {
     let expectation = XCTestExpectation()
     nonisolated(unsafe) var result: T?
@@ -273,5 +273,9 @@ private func awaitTest<T: Sendable>(
         expectation.fulfill()
     }
     _ = XCTWaiter.wait(for: [expectation], timeout: timeout)
-    return result!
+    guard let unwrapped = result else {
+        XCTFail("awaitTest timed out or returned nil")
+        fatalError("awaitTest: result was nil after wait")
+    }
+    return unwrapped
 }

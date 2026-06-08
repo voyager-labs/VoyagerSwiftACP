@@ -14,7 +14,7 @@ struct AiChatConversationSurface: View {
             if state.sessionStatus == .rebindRequired {
                 AiChatRebindRecoveryBanner(
                     onRebindContext: onRebindContext,
-                    onStartNewChat: onStartNewChatFromRebind
+                    onStartNewChat: onStartNewChatFromRebind,
                 )
             }
 
@@ -54,7 +54,6 @@ struct AiChatConversationSurface: View {
     }
 }
 
-
 private struct AiChatRebindRecoveryBanner: View {
     let onRebindContext: () -> Void
     let onStartNewChat: () -> Void
@@ -65,6 +64,7 @@ private struct AiChatRebindRecoveryBanner: View {
                 Image(systemName: "arrow.triangle.2.circlepath.circle")
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("Rebind required")
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Session needs rebind")
@@ -128,6 +128,7 @@ private struct AiChatStatusBanner: View {
                 Image(systemName: "bolt.horizontal.circle")
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("Connection status")
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -280,6 +281,7 @@ private struct AiChatAssistantCard: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
+                    .accessibilityHidden(true)
             }
             .frame(width: 28, height: 28)
 
@@ -305,6 +307,7 @@ private struct AiChatAssistantCard: View {
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.red)
                 .frame(width: 12)
+                .accessibilityLabel("Error")
 
             Text(failure.displayMessage)
                 .font(.system(size: 12, weight: .medium))

@@ -274,15 +274,30 @@ public struct AiChatState: Equatable, Sendable {
         self.availableModelsByProvider = availableModelsByProvider
     }
 
-    public var availableModels: [AiProviderModel] { displayModelBuilder.availableModels }
+    public var availableModels: [AiProviderModel] {
+        displayModelBuilder.availableModels
+    }
+
     public var currentContextSummaryDisplayModel: AiChatContextSummaryDisplayModel {
         displayModelBuilder.currentContextSummaryDisplayModel
     }
 
-    public var connectionState: AiChatConnectionState { displayModelBuilder.connectionState }
-    public var emptyStateDisplayModel: AiChatEmptyStateDisplayModel { displayModelBuilder.emptyStateDisplayModel }
-    public var chatInputDisplayModel: AiChatInputDisplayModel { displayModelBuilder.chatInputDisplayModel }
-    public var skeletonDisplayModel: AiChatSkeletonDisplayModel { displayModelBuilder.skeletonDisplayModel }
+    public var connectionState: AiChatConnectionState {
+        displayModelBuilder.connectionState
+    }
+
+    public var emptyStateDisplayModel: AiChatEmptyStateDisplayModel {
+        displayModelBuilder.emptyStateDisplayModel
+    }
+
+    public var chatInputDisplayModel: AiChatInputDisplayModel {
+        displayModelBuilder.chatInputDisplayModel
+    }
+
+    public var skeletonDisplayModel: AiChatSkeletonDisplayModel {
+        displayModelBuilder.skeletonDisplayModel
+    }
+
     public var skeletonSurfaceDisplayModel: AiChatSkeletonSurfaceDisplayModel {
         displayModelBuilder.skeletonSurfaceDisplayModel
     }
@@ -291,7 +306,10 @@ public struct AiChatState: Equatable, Sendable {
         displayModelBuilder.streamingAssistantDisplayModel
     }
 
-    public var modelCatalogState: AiChatModelCatalogState { displayModelBuilder.modelCatalogState }
+    public var modelCatalogState: AiChatModelCatalogState {
+        displayModelBuilder.modelCatalogState
+    }
+
     public var modelSelectorContentState: AiChatModelSelectorContentState {
         displayModelBuilder.modelSelectorContentState
     }
@@ -300,12 +318,17 @@ public struct AiChatState: Equatable, Sendable {
         displayModelBuilder.modelSelectorHasPresentableContent
     }
 
-    public var modelSelectorIsDisabled: Bool { displayModelBuilder.modelSelectorIsDisabled }
+    public var modelSelectorIsDisabled: Bool {
+        displayModelBuilder.modelSelectorIsDisabled
+    }
+
     public var selectedModelDisplayModel: AiChatSelectedModelDisplayModel? {
         displayModelBuilder.selectedModelDisplayModel
     }
 
-    public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? { displayModelBuilder.lockedModelDisplayModel }
+    public var lockedModelDisplayModel: AiChatLockedModelDisplayModel? {
+        displayModelBuilder.lockedModelDisplayModel
+    }
 
     public var hiddenEmptyDraftSessionIDs: Set<AiChatSessionID> {
         var hiddenSessionIDs = pendingEmptyDraftDeletionSessionIDs
@@ -322,16 +345,45 @@ public struct AiChatState: Equatable, Sendable {
         return hiddenSessionIDs
     }
 
-    public var canSubmit: Bool { displayModelBuilder.canSubmit }
-    public var canRegenerate: Bool { displayModelBuilder.canRegenerate }
-    public var requestStatusText: String? { displayModelBuilder.requestStatusText }
-    public var sessionStatusText: String? { displayModelBuilder.sessionStatusText }
-    public var cancelAffordance: AiChatCancelAffordance? { displayModelBuilder.cancelAffordance }
-    public var surfaceState: AiChatSurfaceState { displayModelBuilder.surfaceState }
-    public var modelFieldLabel: String { displayModelBuilder.modelFieldLabel }
-    public var isProcessing: Bool { displayModelBuilder.isProcessing }
-    public var resolvedSelectedModelHandle: AiModelHandle? { displayModelBuilder.resolvedSelectedModelHandle }
-    public var resolvedSelectedModel: AiProviderModel? { displayModelBuilder.resolvedSelectedModel }
+    public var canSubmit: Bool {
+        displayModelBuilder.canSubmit
+    }
+
+    public var canRegenerate: Bool {
+        displayModelBuilder.canRegenerate
+    }
+
+    public var requestStatusText: String? {
+        displayModelBuilder.requestStatusText
+    }
+
+    public var sessionStatusText: String? {
+        displayModelBuilder.sessionStatusText
+    }
+
+    public var cancelAffordance: AiChatCancelAffordance? {
+        displayModelBuilder.cancelAffordance
+    }
+
+    public var surfaceState: AiChatSurfaceState {
+        displayModelBuilder.surfaceState
+    }
+
+    public var modelFieldLabel: String {
+        displayModelBuilder.modelFieldLabel
+    }
+
+    public var isProcessing: Bool {
+        displayModelBuilder.isProcessing
+    }
+
+    public var resolvedSelectedModelHandle: AiModelHandle? {
+        displayModelBuilder.resolvedSelectedModelHandle
+    }
+
+    public var resolvedSelectedModel: AiProviderModel? {
+        displayModelBuilder.resolvedSelectedModel
+    }
 
     private var displayModelBuilder: AiChatStateDisplayModelBuilder {
         AiChatStateDisplayModelBuilder(state: self)

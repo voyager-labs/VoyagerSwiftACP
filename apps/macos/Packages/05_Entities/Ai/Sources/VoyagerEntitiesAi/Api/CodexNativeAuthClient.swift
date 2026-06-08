@@ -13,7 +13,7 @@ public struct DeviceAuthChallenge: Equatable, Sendable {
         userCode: String,
         verificationURL: URL,
         pollIntervalMs: Int,
-        expiresAt: Date
+        expiresAt: Date,
     ) {
         self.userCode = userCode
         self.verificationURL = verificationURL
@@ -28,7 +28,7 @@ public enum BrowserLoginState: Equatable, Sendable {
     case failed(CodexNativeAuthError)
 }
 
-struct CodexTokenResponse: Decodable, Sendable {
+struct CodexTokenResponse: Decodable {
     let access_token: String
     let refresh_token: String?
     let id_token: String?
@@ -108,11 +108,11 @@ public struct CodexNativeAuthClient: Sendable {
     public var completeDeviceAuth: @Sendable (_ challenge: DeviceAuthChallenge) async throws -> OAuthCredentialFile
     public var cancelCurrentFlow: @Sendable () async -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         startBrowserLogin: @escaping @Sendable () -> AsyncThrowingStream<BrowserLoginState, Error>,
         startDeviceAuth: @escaping @Sendable () async throws -> DeviceAuthChallenge,
         completeDeviceAuth: @escaping @Sendable (_ challenge: DeviceAuthChallenge) async throws -> OAuthCredentialFile,
-        cancelCurrentFlow: @escaping @Sendable () async -> Void
+        cancelCurrentFlow: @escaping @Sendable () async -> Void,
     ) {
         self.startBrowserLogin = startBrowserLogin
         self.startDeviceAuth = startDeviceAuth
@@ -124,7 +124,7 @@ public struct CodexNativeAuthClient: Sendable {
 // MARK: - DependencyKey
 
 extension CodexNativeAuthClient: DependencyKey {
-    public nonisolated static var liveValue: CodexNativeAuthClient {
+    nonisolated public static var liveValue: CodexNativeAuthClient {
         let browserLoginFlow = CodexBrowserLoginFlow()
 
         return CodexNativeAuthClient(
@@ -133,7 +133,7 @@ extension CodexNativeAuthClient: DependencyKey {
                     let config = CodexOAuthConfig.default
                     let server = LocalOAuthHTTPServer(
                         port: UInt16(config.redirectPort),
-                        expectedPath: config.redirectPath
+                        expectedPath: config.redirectPath,
                     )
 
                     let flowGeneration = browserLoginFlow.start(server: server) {
@@ -158,7 +158,7 @@ extension CodexNativeAuthClient: DependencyKey {
                             let tokenResponse = try await exchangeCode(
                                 config: config,
                                 code: callback.code,
-                                pkce: pkce
+                                pkce: pkce,
                             )
 
                             let credential = OAuthCredentialFile(
@@ -169,7 +169,7 @@ extension CodexNativeAuthClient: DependencyKey {
                                 scopes: config.scopes,
                                 expiresAtMs: Int64(Date().timeIntervalSince1970 * 1000)
                                     + Int64(tokenResponse.expires_in ?? 3600) * 1000,
-                                chatGPTAccountId: Self.chatGPTAccountId(from: tokenResponse.id_token)
+                                chatGPTAccountId: Self.chatGPTAccountId(from: tokenResponse.id_token),
                             )
 
                             continuation.yield(.completed(credential))
@@ -181,7 +181,7 @@ extension CodexNativeAuthClient: DependencyKey {
                             let mapped: CodexNativeAuthError = switch error {
                             case .cancelled: .cancelled
                             case .serverStartFailed where error == .serverStartFailed(
-                                "Timeout waiting for OAuth callback"
+                                "Timeout waiting for OAuth callback",
                             ): .timeout
                             case .accessDenied, .invalidCallback, .serverStartFailed:
                                 .networkError(String(describing: error))
@@ -210,11 +210,11 @@ extension CodexNativeAuthClient: DependencyKey {
             },
             cancelCurrentFlow: {
                 browserLoginFlow.cancel()
-            }
+            },
         )
     }
 
-    public nonisolated static var testValue: CodexNativeAuthClient {
+    nonisolated public static var testValue: CodexNativeAuthClient {
         CodexNativeAuthClient(
             startBrowserLogin: {
                 AsyncThrowingStream { continuation in
@@ -228,11 +228,11 @@ extension CodexNativeAuthClient: DependencyKey {
             completeDeviceAuth: { _ in
                 throw CodexNativeAuthError.loginUnavailable
             },
-            cancelCurrentFlow: {}
+            cancelCurrentFlow: {},
         )
     }
 
-    public nonisolated static var previewValue: CodexNativeAuthClient {
+    nonisolated public static var previewValue: CodexNativeAuthClient {
         CodexNativeAuthClient(
             startBrowserLogin: {
                 AsyncThrowingStream { continuation in
@@ -244,9 +244,9 @@ extension CodexNativeAuthClient: DependencyKey {
                                 refreshToken: "preview-refresh-token",
                                 tokenType: "Bearer",
                                 scopes: ["profile", "email"],
-                                expiresAtMs: nil
-                            )
-                        )
+                                expiresAtMs: nil,
+                            ),
+                        ),
                     )
                     continuation.finish()
                 }
@@ -254,9 +254,10 @@ extension CodexNativeAuthClient: DependencyKey {
             startDeviceAuth: {
                 DeviceAuthChallenge(
                     userCode: "ABCD-1234",
-                    verificationURL: URL(string: "https://chatgpt.com/device")!,
+                    verificationURL: URL(string: "https://chatgpt.com/device") ??
+                        preconditionFailure("Invalid hardcoded device URL"),
                     pollIntervalMs: 5000,
-                    expiresAt: Date().addingTimeInterval(900)
+                    expiresAt: Date().addingTimeInterval(900),
                 )
             },
             completeDeviceAuth: { _ in
@@ -265,10 +266,10 @@ extension CodexNativeAuthClient: DependencyKey {
                     refreshToken: "preview-refresh-token",
                     tokenType: "Bearer",
                     scopes: ["profile", "email"],
-                    expiresAtMs: nil
+                    expiresAtMs: nil,
                 )
             },
-            cancelCurrentFlow: {}
+            cancelCurrentFlow: {},
         )
     }
 }
@@ -286,7 +287,7 @@ extension CodexNativeAuthClient {
     private static func exchangeCode(
         config: CodexOAuthConfig,
         code: String,
-        pkce: PKCECodes
+        pkce: PKCECodes,
     ) async throws -> CodexTokenResponse {
         var request = URLRequest(url: config.tokenEndpoint)
         request.httpMethod = "POST"
