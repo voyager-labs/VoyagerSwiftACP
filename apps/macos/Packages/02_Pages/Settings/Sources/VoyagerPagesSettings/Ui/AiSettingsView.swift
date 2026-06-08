@@ -7,14 +7,6 @@ import VoyagerFeaturesAiProviderConnection
 struct AiSettingsView: View {
     let store: StoreOf<AiSettingsFeature>
 
-    private var providerOptions: [(title: String, preference: CollectionSearchAIProviderPreference)] {
-        var options = [(title: "Auto", preference: CollectionSearchAIProviderPreference.auto)]
-        options.append(contentsOf: ProviderDescriptor.v1Catalog.sorted { $0.sortOrder < $1.sortOrder }.map {
-            (title: $0.displayName, preference: .specific($0.provider.rawValue))
-        })
-        return options
-    }
-
     private var thinkingOptions: [CollectionSearchAIThinkingOption] {
         let options = store.collectionSearchThinkingOptions
         if !options.isEmpty { return options }
@@ -52,13 +44,21 @@ struct AiSettingsView: View {
             }
 
             Section {
-                Picker("Provider", selection: Binding(
-                    get: { store.collectionSearchSettings.provider },
-                    set: { store.send(.collectionSearchProviderChanged($0)) },
-                )) {
-                    ForEach(providerOptions, id: \.preference) { option in
-                        Text(option.title).tag(option.preference)
+                if store.hasConnectedProviders {
+                    Picker("Provider", selection: Binding(
+                        get: { store.collectionSearchSettings.provider },
+                        set: { store.send(.collectionSearchProviderChanged($0)) },
+                    )) {
+                        Text("Auto").tag(CollectionSearchAIProviderPreference.auto)
+                        ForEach(store.connectedProviderDescriptors, id: \.provider) { descriptor in
+                            Text(descriptor.displayName).tag(
+                                CollectionSearchAIProviderPreference.specific(descriptor.provider.rawValue),
+                            )
+                        }
                     }
+                } else {
+                    Text("Connect an AI provider to enable collection search AI settings.")
+                        .foregroundStyle(.secondary)
                 }
 
                 Picker("Model", selection: Binding(

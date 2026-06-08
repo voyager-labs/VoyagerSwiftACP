@@ -55,12 +55,18 @@ public struct AiSettingsFeature {
             case let .bootstrapCompleted(results):
                 Self.applyBootstrapResults(results, to: &state)
                 state.bootstrapPhase = .loaded
-                return .none
+                return Self.resetCollectionSearchProviderIfUnavailableInState(
+                    state: &state,
+                    client: collectionSearchSettingsClient,
+                )
 
             case let .bootstrapVerificationCompleted(results):
                 Self.applyBootstrapResults(results, to: &state)
                 state.bootstrapPhase = .loaded
-                return .none
+                return Self.resetCollectionSearchProviderIfUnavailableInState(
+                    state: &state,
+                    client: collectionSearchSettingsClient,
+                )
 
             case .bootstrapFailed:
                 state.bootstrapPhase = .failed
@@ -75,7 +81,15 @@ public struct AiSettingsFeature {
 
             case let .row(.element(id: _, action: .connectionResponse(result))),
                  let .row(.element(id: _, action: .disconnectResponse(result))):
-                return .send(.delegate(.connectionsFileUpdated(result.updatedFile)))
+                let saveEffect = Self.resetCollectionSearchProviderIfDisconnected(
+                    result: result,
+                    state: &state,
+                    client: collectionSearchSettingsClient,
+                )
+                return .merge(
+                    saveEffect,
+                    .send(.delegate(.connectionsFileUpdated(result.updatedFile))),
+                )
 
             case .delegate(.connectionsFileUpdated):
                 return .none
@@ -178,8 +192,10 @@ public struct AiSettingsFeature {
             AiConnectionRowReducer()
         }
     }
+}
 
-    private static func applyBootstrapResults(
+private extension AiSettingsFeature {
+    static func applyBootstrapResults(
         _ results: [AIProviderBootstrapResult],
         to state: inout State,
     ) {
@@ -253,6 +269,43 @@ public struct AiSettingsFeature {
         .run { _ in
             client.save(settings)
         }
+    }
+
+    private static func resetCollectionSearchProviderIfUnavailableInState(
+        state: inout State,
+        client: CollectionSearchAISettingsClient,
+    ) -> Effect<Action> {
+        guard let provider = state.collectionSearchSelectedProvider,
+              let row = state.rows[id: provider],
+              row.connectionState != .connected,
+              row.connectionState != .checkingStatus
+        else { return .none }
+
+        return resetCollectionSearchProvider(state: &state, client: client)
+    }
+
+    private static func resetCollectionSearchProviderIfDisconnected(
+        result: AiProviderConnectionResult,
+        state: inout State,
+        client: CollectionSearchAISettingsClient,
+    ) -> Effect<Action> {
+        guard result.state != .connected,
+              state.collectionSearchSelectedProvider == result.provider
+        else { return .none }
+
+        state.collectionSearchModelsByProvider[result.provider] = nil
+        return resetCollectionSearchProvider(state: &state, client: client)
+    }
+
+    private static func resetCollectionSearchProvider(
+        state: inout State,
+        client: CollectionSearchAISettingsClient,
+    ) -> Effect<Action> {
+        let previousSettings = state.collectionSearchSettings
+        state.collectionSearchSettings = .default
+        return previousSettings == state.collectionSearchSettings
+            ? .none
+            : saveCollectionSearchSettingsEffect(settings: state.collectionSearchSettings, client: client)
     }
 
     private static func normalizedCollectionSearchSettings(

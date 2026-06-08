@@ -39,6 +39,17 @@ public struct AiSettingsState: Equatable {
         )
     }
 
+    public var connectedProviderDescriptors: [ProviderDescriptor] {
+        let connectedProviders = Set(rows.filter { $0.connectionState == .connected }.map(\.provider))
+        return ProviderDescriptor.v1Catalog
+            .filter { connectedProviders.contains($0.provider) }
+            .sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    public var hasConnectedProviders: Bool {
+        !connectedProviderDescriptors.isEmpty
+    }
+
     public var collectionSearchSelectedProvider: AiProvider? {
         switch collectionSearchSettings.provider {
         case .auto:
