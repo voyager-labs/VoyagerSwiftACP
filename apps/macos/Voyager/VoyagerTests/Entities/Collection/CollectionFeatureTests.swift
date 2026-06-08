@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -624,5 +623,3 @@ private actor SavedCollectionsRecorder {
         entries.last
     }
 }
-
-// swiftlint:enable file_length

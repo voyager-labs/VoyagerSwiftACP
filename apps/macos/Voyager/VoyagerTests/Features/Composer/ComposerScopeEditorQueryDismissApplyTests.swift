@@ -5,7 +5,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase { // swiftlint:disable:this type_name
+final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase {
     func testScopeEditorDismissSubmitsSearchForQueryOnlyIncludeSubfoldersChange() async {
         let searchRecorder = QueryDismissSearchRecorder()
         let store = makeQueryOnlyStore(recorder: searchRecorder) { state in

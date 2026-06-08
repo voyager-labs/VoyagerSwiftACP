@@ -1,4 +1,3 @@
-// swiftlint:disable type_name
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesEntry
@@ -163,5 +162,3 @@ final class SidebarActionNormalizationTests: XCTestCase {
         await store.finish()
     }
 }
-
-// swiftlint:enable type_name

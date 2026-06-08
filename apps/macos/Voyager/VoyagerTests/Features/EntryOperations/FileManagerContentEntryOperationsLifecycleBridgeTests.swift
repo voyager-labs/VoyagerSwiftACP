@@ -1,4 +1,3 @@
-// swiftlint:disable type_name
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -335,5 +334,3 @@ final class ContentEntryOpsLifecycleTests: XCTestCase {
         await store.finish()
     }
 }
-
-// swiftlint:enable type_name

@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 @testable import Voyager
@@ -9,8 +8,6 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import XCTest
 
-// swiftlint:disable type_name
-// swiftlint:disable type_body_length
 @MainActor
 final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
     func testOpenContextualAiChatRoutesCurrentContextSetupToInspector() async {
@@ -602,8 +599,6 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
     }
 }
 
-// swiftlint:enable type_name
-
 private extension FileManagerWindowInspectorChatRoutingTests {
     private func assertConnectedCurrentContextSkeletonContract(
         _ state: AiChatFeature.State,
@@ -871,5 +866,3 @@ private extension FileManagerWindowInspectorChatRoutingTests {
         )
     }
 }
-
-// swiftlint:enable type_body_length
