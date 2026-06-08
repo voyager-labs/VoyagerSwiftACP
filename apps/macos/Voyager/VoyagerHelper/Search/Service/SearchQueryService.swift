@@ -10,7 +10,7 @@ protocol SearchExecutionServicing: Sendable {
 
 struct SearchQueryService {
     private let searchService: any SearchExecutionServicing
-    private let convertQuery: @Sendable (String, SearchFiltersPayload) async -> QueryConversionResult
+    private let convertQuery: @Sendable (SearchRequestPayload) async -> QueryConversionResult
     private let logger: Logger
 
     init(
@@ -23,15 +23,15 @@ struct SearchQueryService {
         logger: Logger = Logger(label: "VoyagerHelper.SearchQueryService"),
     ) {
         self.searchService = searchService
-        convertQuery = { query, existingFilters in
-            await converter.convert(query: query, existingFilters: existingFilters)
+        convertQuery = { request in
+            await converter.convert(request: request)
         }
         self.logger = logger
     }
 
     init(
         searchService: any SearchExecutionServicing,
-        convertQuery: @Sendable @escaping (String, SearchFiltersPayload) async -> QueryConversionResult,
+        convertQuery: @Sendable @escaping (SearchRequestPayload) async -> QueryConversionResult,
         logger: Logger = Logger(label: "VoyagerHelper.SearchQueryService"),
     ) {
         self.searchService = searchService
@@ -48,7 +48,7 @@ struct SearchQueryService {
             return Self.emptyQueryResponse(filters: request.filters)
         }
 
-        let conversion = await convertQuery(trimmedQuery, request.filters)
+        let conversion = await convertQuery(request)
 
         if let errorResponse = conversionErrorResponse(conversion, fallbackFilters: request.filters) {
             return errorResponse

@@ -32,9 +32,27 @@ actor AIProviderModelCatalogCache {
     func selectedModel(
         for selection: AIProviderQuerySelectionContext,
         file: AIConnectionsFile,
+        preferredModel: AiModelHandle? = nil,
     ) async throws -> AiProviderModel {
         let currentSnapshot = Self.snapshot(for: file)
         resetIfNeeded(snapshot: currentSnapshot)
+
+        if let preferredModel {
+            if let model = exactAvailableModel(for: selection.provider, matching: preferredModel) {
+                return model
+            }
+
+            let models = try await loadModels(for: selection.provider, credential: selection.credential)
+            modelsByProvider[selection.provider] = models
+
+            guard let model = exactAvailableModel(for: selection.provider, matching: preferredModel) else {
+                throw AIProviderModelCatalogCacheError.modelUnavailable(
+                    provider: selection.provider,
+                    model: preferredModel,
+                )
+            }
+            return model
+        }
 
         if let model = firstAvailableModel(for: selection.provider) {
             return model
@@ -85,39 +103,15 @@ actor AIProviderModelCatalogCache {
         modelsByProvider[provider]?.first(where: Self.supportsQueryConversion)
     }
 
-    private static func supportsQueryConversion(_ model: AiProviderModel) -> Bool {
-        guard model.unavailableReason == nil else { return false }
-
-        let normalizedID = model.rawModelID.lowercased()
-        switch model.provider {
-        case .openai:
-            guard isOpenAIStructuredTextCandidate(normalizedID) else { return false }
-            return normalizedID.hasPrefix("gpt-4o")
-                || normalizedID.hasPrefix("gpt-4.1")
-                || normalizedID.hasPrefix("gpt-5")
-                || normalizedID.hasPrefix("o1")
-                || normalizedID.hasPrefix("o3")
-                || normalizedID.hasPrefix("o4")
-        case .anthropic:
-            return normalizedID.hasPrefix("claude-")
-        case .chatgptCodex:
-            return true
-        }
+    private func exactAvailableModel(
+        for provider: AiProvider,
+        matching handle: AiModelHandle,
+    ) -> AiProviderModel? {
+        modelsByProvider[provider]?.first(where: { $0.id == handle })
     }
 
-    private static func isOpenAIStructuredTextCandidate(_ normalizedID: String) -> Bool {
-        let unsupportedMarkers = [
-            "audio",
-            "search",
-            "transcribe",
-            "transcription",
-            "tts",
-            "moderation",
-            "embedding",
-            "realtime",
-            "whisper",
-        ]
-        return unsupportedMarkers.contains { normalizedID.contains($0) } == false
+    private static func supportsQueryConversion(_ model: AiProviderModel) -> Bool {
+        CollectionSearchAISelectionPolicy.supportsQueryConversion(model)
     }
 
     private static func snapshot(for file: AIConnectionsFile) -> Snapshot {
@@ -134,4 +128,5 @@ actor AIProviderModelCatalogCache {
 
 enum AIProviderModelCatalogCacheError: Error, Equatable {
     case emptyModelList(provider: AiProvider)
+    case modelUnavailable(provider: AiProvider, model: AiModelHandle)
 }
