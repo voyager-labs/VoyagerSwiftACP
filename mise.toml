@@ -16,10 +16,21 @@ version = "0.61.1"
 rename_exe = "swiftformat"
 no_app = true
 
+# Cupertino: Apple Docs MCP (Homebrew tap)
+[tools."brew:mihaelamj/tap/cupertino"]
+version = "latest"
+
+# CodeGraph: semantic code intelligence (npm)
+[tools."npm:@colbymchenry/codegraph"]
+version = "0.9.6"
+
+# XcodeBuildMCP: Xcode build/test MCP (npm)
+[tools."npm:xcodebuildmcp"]
+version = "latest"
+
 # ── Tasks ─────────────────────────────────────────────────────
 
 # 온보딩: clone 후 한 번 실행
-# mise install → xcode → hooks → submodules → xcode-build-server
 [tasks.setup]
 description = "온보딩: clone 후 한 번 실행"
 run = """
@@ -27,7 +38,7 @@ mise install
 bash scripts/xcodes.sh
 lefthook install
 git submodule update --init --recursive
-mise run lsp-install
+mise run codegraph-init
 """
 
 # .xcode-version 기준 Xcode 설치 및 선택
@@ -44,34 +55,6 @@ run = "lefthook install"
 [tasks.submodules]
 description = "Submodule 초기화"
 run = "git submodule update --init --recursive"
-
-# xcode-build-server 설치 (SourceKit-LSP 의존성)
-[tasks.lsp-install]
-description = "xcode-build-server 설치 (SourceKit-LSP용)"
-run = """
-if command -v xcode-build-server >/dev/null 2>&1; then
-  echo "xcode-build-server already installed: $(xcode-build-server --version 2>/dev/null || true)"
-  exit 0
-fi
-if ! command -v brew >/dev/null 2>&1; then
-  echo "ERROR: Homebrew not found. Install Homebrew first: https://brew.sh" >&2
-  exit 1
-fi
-brew install xcode-build-server
-"""
-
-# SourceKit-LSP용 buildServer.json 생성
-[tasks.lsp]
-description = "SourceKit-LSP용 buildServer.json 생성"
-depends = ["lsp-install"]
-run = "python3 scripts/dev/setup_sourcekit_lsp.py"
-
-# SourceKit-LSP 컨텍스트 선택
-# 사용법: mise run lsp-context -- --path apps/macos/Voyager/VoyagerHelper
-[tasks.lsp-context]
-description = "SourceKit-LSP 컨텍스트 선택"
-depends = ["lsp-install"]
-run = "python3 scripts/dev/lsp_context.py"
 
 # macOS 변경 범위 기반 검증 계획/실행
 # 사용법: mise run macos-checks -- --changed --run
@@ -103,15 +86,15 @@ run = "lefthook install --force"
 
 [tasks.codegraph-init]
 description = "CodeGraph 인덱스 초기화 (최초 1회)"
-run = "npx -y @colbymchenry/codegraph@0.9.6 init -i"
+run = "mise exec -- codegraph init -i"
 
 [tasks.codegraph-serve]
 description = "CodeGraph MCP 서버 실행"
-run = "npx -y @colbymchenry/codegraph@0.9.6 serve --mcp"
+run = "mise exec -- codegraph serve --mcp"
 
 [tasks.codegraph-reindex]
 description = "CodeGraph 인덱스 재구축"
-run = "npx -y @colbymchenry/codegraph@0.9.6 index"
+run = "mise exec -- codegraph index"
 
 [tasks.codegraph-clean]
 description = "CodeGraph 인덱스/캐시 삭제"
@@ -119,4 +102,4 @@ run = "rm -rf .codegraph"
 
 [tasks.codegraph-status]
 description = "CodeGraph 인덱스 상태 확인"
-run = "npx -y @colbymchenry/codegraph@0.9.6 status"
+run = "mise exec -- codegraph status"

@@ -11,7 +11,9 @@ post-checkout:
     submodules:
       run: git submodule update --init --recursive
     codegraph:
-      run: test -d .codegraph || npx -y @colbymchenry/codegraph@0.9.6 init -i
+      run: test -d .codegraph || mise exec -- codegraph init -i
+    cupertino:
+      run: command -v cupertino >/dev/null 2>&1 || mise install cupertino
 
 post-merge:
   commands:
@@ -19,7 +21,7 @@ post-merge:
       run: git submodule update --init --recursive
 
 pre-commit:
-  parallel: true
+  parallel: false
   commands:
     sisyphus-artifacts-guard:
       run: |
@@ -31,11 +33,13 @@ pre-commit:
         fi
     swiftformat:
       glob: "apps/macos/**/*.swift"
-      run: mise exec -- swiftformat --config apps/macos/.swiftformat --lint {staged_files}
+      run: mise exec -- swiftformat --config apps/macos/.swiftformat {staged_files}
     swiftlint:
       glob: "apps/macos/**/*.swift"
       exclude: "apps/macos/**/*Tests/**/*.swift"
-      run: mise exec -- swiftlint lint --config apps/macos/.swiftlint.yml --strict {staged_files}
+      run: mise exec -- swiftlint --fix --config apps/macos/.swiftlint.yml {staged_files}
     swiftlint-tests:
       glob: "apps/macos/**/*Tests/**/*.swift"
-      run: mise exec -- swiftlint lint --config apps/macos/.swiftlint-tests.yml --strict {staged_files}
+      run: mise exec -- swiftlint --fix --config apps/macos/.swiftlint-tests.yml {staged_files}
+    re-stage:
+      run: git add {staged_files}

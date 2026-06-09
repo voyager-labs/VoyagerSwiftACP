@@ -5,30 +5,40 @@
     ".agents/rules/10-routing/*.md",
     ".agents/rules/99-agent/01-agent-harness-artifacts.md"
   ],
+  "plugins": [".opencode/plugins/sisyphus-wiki.js"],
+  "lsp": {
+      "sourcekit-lsp": {
+        "disabled": true
+      }
+  },
   "mcp": {
     "cupertino": {
       "type": "local",
-      "command": [
-        "/usr/bin/env",
-        "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/sbin:/usr/local/sbin",
-        "cupertino",
-        "serve"
-      ],
+      "command": ["mise", "exec", "--", "cupertino", "serve"],
       "enabled": true
     },
     "XcodeBuildMCP": {
       "type": "local",
-      "command": ["npx", "-y", "xcodebuildmcp@latest", "mcp"],
+      "command": ["mise", "exec", "--", "xcodebuildmcp", "mcp"],
+      "enabled": true
+    },
+    "codegraph": {
+      "type": "local",
+      "command": ["mise", "exec", "--", "codegraph", "serve", "--mcp"],
       "enabled": true
     }
   },
   "formatter": {
     "prettier": {
-      "command": ["npx", "prettier", "--write", "$FILE"],
+      "command": ["npx", "prettier", "--write", "--config", "docs/canonical/.prettierrc.json", "$FILE"],
       "extensions": [".md"]
     },
     "swiftformat": {
-      "command": ["swiftformat", "$FILE"],
+      "command": ["mise", "exec", "--", "swiftformat", "--config", "apps/macos/.swiftformat", "$FILE"],
+      "extensions": [".swift"]
+    },
+    "swiftlint": {
+      "command": ["mise", "exec", "--", "swiftlint", "--fix", "--config", "apps/macos/.swiftlint.yml", "$FILE"],
       "extensions": [".swift"]
     }
   }
