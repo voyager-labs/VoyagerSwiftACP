@@ -16,9 +16,9 @@ version = "0.61.1"
 rename_exe = "swiftformat"
 no_app = true
 
-# Cupertino: Apple Docs MCP (Homebrew tap)
-[tools."brew:mihaelamj/tap/cupertino"]
-version = "latest"
+# Cupertino: Apple Docs MCP (GitHub release)
+[tools."github:mihaelamj/cupertino"]
+version = "1.3.0"
 
 # CodeGraph: semantic code intelligence (npm)
 [tools."npm:@colbymchenry/codegraph"]
@@ -26,7 +26,7 @@ version = "0.9.6"
 
 # XcodeBuildMCP: Xcode build/test MCP (npm)
 [tools."npm:xcodebuildmcp"]
-version = "latest"
+version = "2.6.2"
 
 # ── Tasks ─────────────────────────────────────────────────────
 

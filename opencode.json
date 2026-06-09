@@ -5,7 +5,7 @@
     ".agents/rules/10-routing/*.md",
     ".agents/rules/99-agent/01-agent-harness-artifacts.md"
   ],
-  "plugins": [".opencode/plugins/sisyphus-wiki.js"],
+  "plugin": [".opencode/plugins/sisyphus-wiki.js"],
   "lsp": {
       "sourcekit-lsp": {
         "disabled": true
