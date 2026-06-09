@@ -14,6 +14,10 @@ excluded:
   - Voyager/Voyager.xcodeproj/project.xcworkspace/xcuserdata
   - Hosts/**/.build
   - Packages/**/.build
+  - Voyager/VoyagerTests # 앱 테스트 타겟은 .swiftlint-tests.yml로 별도 검사합니다.
+  - Voyager/VoyagerHelperTests # 헬퍼 테스트 타겟은 .swiftlint-tests.yml로 별도 검사합니다.
+  - Voyager/VoyagerUITests # UI 테스트 타겟은 .swiftlint-tests.yml로 별도 검사합니다.
+  - '**/Tests/**' # 패키지 테스트 디렉토리는 .swiftlint-tests.yml로 별도 검사합니다.
 
 # 활성화할 규칙들
 opt_in_rules:
