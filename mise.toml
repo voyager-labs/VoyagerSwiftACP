@@ -56,12 +56,6 @@ run = "lefthook install"
 description = "Submodule 초기화"
 run = "git submodule update --init --recursive"
 
-# macOS 변경 범위 기반 검증 계획/실행
-# 사용법: mise run macos-checks -- --changed --run
-[tasks.macos-checks]
-description = "macOS 변경 범위 기반 검증 계획/실행"
-run = "python3 scripts/dev/macos_checks.py"
-
 # macOS 개발 앱 빌드 (worktree 내부 DerivedData 사용)
 [tasks.macos-build]
 description = "macOS 개발 앱 빌드"
