@@ -3,14 +3,14 @@ import ComposableArchitecture
 import Foundation
 
 @Reducer
-public struct UnlockLicenseAuthFeature {
-    public typealias State = UnlockLicenseAuthState
-    public typealias Action = UnlockLicenseAuthAction
+public struct AccountAccessFeature {
+    public typealias State = AccountAccessState
+    public typealias Action = AccountAccessAction
 
-    @Dependency(\.licenseAuthClient)
-    var licenseAuthClient
+    @Dependency(\.accountAccessClient)
+    var accountAccessClient
 
-    @Dependency(\.licenseAuthStatusSnapshotClient)
+    @Dependency(\.accessStatusSnapshotClient)
     var snapshotClient
 
     @Dependency(\.signInHandoffClient)
@@ -26,8 +26,8 @@ public struct UnlockLicenseAuthFeature {
     var notificationCenterClient
 
     private enum CancelID {
-        static let fetchStatus = "unlockLicenseAuthFetchStatus"
-        static let appDidBecomeActiveObserver = "unlockLicenseAuthAppDidBecomeActiveObserver"
+        static let fetchStatus = "accountAccessFetchStatus"
+        static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
     }
 
     public init() {}
@@ -60,8 +60,8 @@ public struct UnlockLicenseAuthFeature {
             case let ._loginSessionRestored(hasSession):
                 return handleLoginSessionRestored(&state, hasSession: hasSession)
 
-            case let .licenseAuthStatusResponse(generation: gen, result: result):
-                return handleLicenseAuthStatusResponse(&state, generation: gen, result: result)
+            case let .accessStatusResponse(generation: gen, result: result):
+                return handleAccessStatusResponse(&state, generation: gen, result: result)
 
             case .refreshAccessTapped:
                 return handleRefreshAccessTapped(&state)
@@ -94,8 +94,8 @@ public struct UnlockLicenseAuthFeature {
 
     private func handleOnAppear(_: inout State) -> Effect<Action> {
         .merge(
-            .run { [licenseAuthClient] send in
-                let session = try? await licenseAuthClient.restoreSession()
+            .run { [accountAccessClient] send in
+                let session = try? await accountAccessClient.restoreSession()
                 await send(._onAppearSessionRestored(session != nil))
             },
             observeAppDidBecomeActive(),
@@ -114,17 +114,17 @@ public struct UnlockLicenseAuthFeature {
     }
 
     private func fetchAccessStatusEffect(generation: Int) -> Effect<Action> {
-        .run { [licenseAuthClient] send in
-            let result: Result<LicenseAuthStatusResponse, LicenseAuthError>
+        .run { [accountAccessClient] send in
+            let result: Result<AccessStatusResponse, AccessError>
             do {
-                let response = try await licenseAuthClient.fetchAccessStatus()
+                let response = try await accountAccessClient.fetchAccessStatus()
                 result = .success(response)
-            } catch let error as LicenseAuthError {
+            } catch let error as AccessError {
                 result = .failure(error)
             } catch {
                 result = .failure(.networkFailure)
             }
-            await send(.licenseAuthStatusResponse(generation: generation, result: result))
+            await send(.accessStatusResponse(generation: generation, result: result))
         }
         .cancellable(id: CancelID.fetchStatus, cancelInFlight: true)
     }
@@ -176,8 +176,8 @@ public struct UnlockLicenseAuthFeature {
             return .none
         }
 
-        return .run { [licenseAuthClient] send in
-            let session = try? await licenseAuthClient.restoreSession()
+        return .run { [accountAccessClient] send in
+            let session = try? await accountAccessClient.restoreSession()
             await send(._loginSessionRestored(session != nil))
         }
     }
@@ -209,10 +209,10 @@ public struct UnlockLicenseAuthFeature {
 
         state.handoffPendingState = nil
 
-        return .run { [licenseAuthClient] send in
-            let result: Result<LicenseAuthSession, AppHandoffExchangeError>
+        return .run { [accountAccessClient] send in
+            let result: Result<AccountSession, AppHandoffExchangeError>
             do {
-                let session = try await licenseAuthClient.exchangeAppHandoff(
+                let session = try await accountAccessClient.exchangeAppHandoff(
                     callback.ticket, callback.state, callback.context,
                 )
                 result = .success(session)
@@ -227,7 +227,7 @@ public struct UnlockLicenseAuthFeature {
 
     private func handleHandoffExchangeCompleted(
         _ state: inout State,
-        result: Result<LicenseAuthSession, AppHandoffExchangeError>,
+        result: Result<AccountSession, AppHandoffExchangeError>,
     ) -> Effect<Action> {
         switch result {
         case .success:
@@ -271,7 +271,7 @@ public struct UnlockLicenseAuthFeature {
     }
 }
 
-private extension UnlockLicenseAuthFeature {
+private extension AccountAccessFeature {
     // MARK: - ONB-002-start_access_unlock_recovery
 
     private func handleRefreshAccessTapped(_ state: inout State) -> Effect<Action> {
@@ -282,10 +282,10 @@ private extension UnlockLicenseAuthFeature {
         return fetchAccessStatusEffect(generation: state.fetchGeneration)
     }
 
-    private func handleLicenseAuthStatusResponse(
+    private func handleAccessStatusResponse(
         _ state: inout State,
         generation: Int,
-        result: Result<LicenseAuthStatusResponse, LicenseAuthError>,
+        result: Result<AccessStatusResponse, AccessError>,
     ) -> Effect<Action> {
         guard generation == state.fetchGeneration else {
             return .none
@@ -296,7 +296,7 @@ private extension UnlockLicenseAuthFeature {
             state.status = response.status
             state.trialExpiresAt = response.expiresAt
 
-            let snapshot = LicenseAuthStatusSnapshot(
+            let snapshot = AccessStatusSnapshot(
                 status: response.status,
                 expiresAt: response.expiresAt,
                 entitlements: response.entitlements,
@@ -329,7 +329,7 @@ private extension UnlockLicenseAuthFeature {
         }
     }
 
-    private func errorMessage(for error: LicenseAuthError) -> String {
+    private func errorMessage(for error: AccessError) -> String {
         switch error {
         case .networkFailure: "Network error. Please check your connection and try again."
         case .notConfigured: "Access service is not configured."
@@ -338,7 +338,7 @@ private extension UnlockLicenseAuthFeature {
         }
     }
 
-    private func errorMessageForStatus(_ status: LicenseAuthStatus) -> String {
+    private func errorMessageForStatus(_ status: AccessStatus) -> String {
         switch status {
         case .trialExpired: "This trial has expired."
         case .revoked: "This license has been revoked."

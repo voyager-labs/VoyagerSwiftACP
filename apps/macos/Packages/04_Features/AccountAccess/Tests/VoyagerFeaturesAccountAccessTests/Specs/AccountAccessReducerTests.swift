@@ -1,7 +1,7 @@
 // swiftlint:disable force_unwrapping
 
 @preconcurrency import ComposableArchitecture
-@testable import VoyagerFeaturesLicenseAuth
+@testable import VoyagerFeaturesAccountAccess
 import XCTest
 
 /*
@@ -13,27 +13,27 @@ import XCTest
  - ONB-002-apply_access_unlock_result: Core License, beta trial, expired/revoked/network 결과를 unlock 여부와 delegate로 반영한다.
 
  Fixture reset:
- - `TestStore`와 in-memory `LicenseAuthClient`만 사용하므로 영구 credential fixture가 필요 없다.
+ - `TestStore`와 in-memory `AccountAccessClient`만 사용하므로 영구 credential fixture가 필요 없다.
  */
 
 @MainActor
-final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
+final class AccountAccessReducerTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func makeTestStore(
-        licenseAuthClient: LicenseAuthClient = .mock,
-        initialState: UnlockLicenseAuthFeature.State = UnlockLicenseAuthFeature.State(),
-    ) -> TestStore<UnlockLicenseAuthFeature.State, UnlockLicenseAuthFeature.Action> {
+        accountAccessClient: AccountAccessClient = .mock,
+        initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
+    ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = licenseAuthClient
+            $0.accountAccessClient = accountAccessClient
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
         }
     }
 
-    private func signedInInitialState() -> UnlockLicenseAuthFeature.State {
-        var state = UnlockLicenseAuthFeature.State()
+    private func signedInInitialState() -> AccountAccessFeature.State {
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         return state
     }
@@ -71,10 +71,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// 기본 상태(초기 진입): authAxis == .signedOut, accessStepState == .blocked
     /// signed-out 상태에서는 Login CTA가 보이고 Next 비활성화
     func testInitialDerivesSignedOutAndBlocked() {
-        let state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
 
-        XCTAssertEqual(state.onb002AuthAxis, .signedOut)
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signedOut)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
         XCTAssertTrue(state.canStartLogin)
         XCTAssertFalse(state.canRefreshAccess)
         XCTAssertFalse(state.canRetry)
@@ -85,11 +85,11 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// signInFailed: authAxis == .signInFailed, accessStepState == .blocked
     /// 로그인 실패 시 Login CTA 다시 노출
     func testSignInFailedDerivesBlockedWithLoginCTA() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.didSignInFail = true
 
-        XCTAssertEqual(state.onb002AuthAxis, .signInFailed)
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signInFailed)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
         XCTAssertTrue(state.canStartLogin)
         XCTAssertFalse(state.canRefreshAccess)
         XCTAssertFalse(state.canRetry)
@@ -100,11 +100,11 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// signedIn + status == nil: authAxis == .signedIn, accessStepState == .pending
     /// 로그인 완료 후 access status 조회 전 pending 상태
     func testSignedInNoStatusDerivesPending() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
 
-        XCTAssertEqual(state.onb002AuthAxis, .signedIn)
-        XCTAssertEqual(state.onb002AccessStepState, .pending)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
+        XCTAssertEqual(state.accountAccessStepState, .pending)
         XCTAssertFalse(state.canStartLogin)
         XCTAssertTrue(state.canRefreshAccess)
         XCTAssertFalse(state.canRetry)
@@ -117,12 +117,12 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// coreLicenseActive + signedIn → complete
     /// PRODUCT TOML: access_unlock_complete_for = ["core_license_active"]
     func testCoreLicenseActiveDerivesComplete() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .coreLicenseActive
 
-        XCTAssertEqual(state.onb002AuthAxis, .signedIn)
-        XCTAssertEqual(state.onb002AccessStepState, .complete)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
+        XCTAssertEqual(state.accountAccessStepState, .complete)
         XCTAssertFalse(state.canStartLogin)
         XCTAssertFalse(state.canRetry)
         XCTAssertFalse(state.requiresAccountSession)
@@ -132,24 +132,24 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// betaTrialActive + signedIn → complete
     /// PRODUCT TOML: access_unlock_complete_for = ["beta_trial_active"]
     func testBetaTrialActiveDerivesComplete() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .betaTrialActive
 
-        XCTAssertEqual(state.onb002AuthAxis, .signedIn)
-        XCTAssertEqual(state.onb002AccessStepState, .complete)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
+        XCTAssertEqual(state.accountAccessStepState, .complete)
     }
 
     /// ONB-002-apply_access_unlock_result
     /// internalTestActive + signedIn → complete
     /// PRODUCT TOML: access_unlock_complete_for = ["internal_test_active"]
     func testInternalTestActiveDerivesComplete() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .internalTestActive
 
-        XCTAssertEqual(state.onb002AuthAxis, .signedIn)
-        XCTAssertEqual(state.onb002AccessStepState, .complete)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
+        XCTAssertEqual(state.accountAccessStepState, .complete)
     }
 
     // MARK: - ONB-002-apply_access_unlock_result (Blocked PRODUCT Access Statuses → Blocked)
@@ -158,44 +158,44 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// none + signedIn → blocked
     /// PRODUCT TOML: access_unlock_blocked_for = ["none"]
     func testNoneStatusDerivesBlocked() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
-        state.status = LicenseAuthStatus.none
+        state.status = AccessStatus.none
 
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
     }
 
     /// ONB-002-apply_access_unlock_result
     /// trialExpired + signedIn → blocked
     /// PRODUCT TOML: access_unlock_blocked_for = ["trial_expired"]
     func testTrialExpiredDerivesBlocked() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .trialExpired
 
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
     }
 
     /// ONB-002-apply_access_unlock_result
     /// revoked + signedIn → blocked
     /// PRODUCT TOML: access_unlock_blocked_for = ["revoked"]
     func testRevokedStatusDerivesBlocked() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .revoked
 
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
     }
 
     /// ONB-002-apply_access_unlock_result
     /// refunded + signedIn → blocked
     /// PRODUCT TOML: access_unlock_blocked_for = ["refunded"]
     func testRefundedStatusDerivesBlocked() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .refunded
 
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
     }
 
     // MARK: - ONB-002-apply_access_unlock_result (Error States)
@@ -203,11 +203,11 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// ONB-002-apply_access_unlock_result
     /// networkFailure + signedIn → error (retryable)
     func testNetworkFailureDerivesError() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .networkFailure
 
-        XCTAssertEqual(state.onb002AccessStepState, .error)
+        XCTAssertEqual(state.accountAccessStepState, .error)
         XCTAssertTrue(state.canRetry)
     }
 
@@ -217,12 +217,12 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// Settings entitlement axis 값은 ONB raw access_status로 대체 불가
     /// hasAccountSession == false면 status가 active여도 blocked
     func testActiveStatusWithoutSessionDerivesBlocked() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = false
         state.status = .coreLicenseActive
 
-        XCTAssertEqual(state.onb002AuthAxis, .signedOut)
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signedOut)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
         XCTAssertTrue(state.requiresAccountSession)
         XCTAssertTrue(state.canStartLogin)
     }
@@ -232,7 +232,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// ONB-002-show_access_unlock_status
     /// canRefreshAccess: signedIn + not submitting + not signInInProgress
     func testCanRefreshAccessWhenSignedIn() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
 
         XCTAssertTrue(state.canRefreshAccess)
@@ -241,7 +241,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// ONB-002-show_access_unlock_status
     /// canRefreshAccess == false when signed out
     func testCannotRefreshAccessWhenSignedOut() {
-        var state = UnlockLicenseAuthFeature.State()
+        let state = AccountAccessFeature.State()
 
         XCTAssertFalse(state.canRefreshAccess)
     }
@@ -249,7 +249,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// ONB-002-show_access_unlock_status
     /// canRefreshAccess == false when submitting
     func testCannotRefreshAccessWhenSubmitting() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.isSubmitting = true
 
@@ -259,7 +259,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// ONB-002-show_access_unlock_status
     /// canRetry: error 상태에서 retry 가능
     func testCanRetryWhenNetworkFailure() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .networkFailure
 
@@ -269,7 +269,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// ONB-002-show_access_unlock_status
     /// canRetry == false when status is active (complete)
     func testCannotRetryWhenComplete() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .coreLicenseActive
 
@@ -279,7 +279,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// ONB-002-show_access_unlock_status
     /// canRetry == false when submitting
     func testCannotRetryWhenSubmitting() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .networkFailure
         state.isSubmitting = true
@@ -297,11 +297,11 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     func testOnAppearWithNoSessionShowsLoginCTAWithoutFetchingAccessStatus() async {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
+            accountAccessClient: AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             ),
@@ -314,26 +314,26 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         await store.receive(\._onAppearSessionRestored)
 
         XCTAssertFalse(store.state.hasAccountSession)
-        XCTAssertEqual(store.state.onb002AuthAxis, .signedOut)
-        XCTAssertEqual(store.state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(store.state.accountAccessAuthAxis, .signedOut)
+        XCTAssertEqual(store.state.accountAccessStepState, .blocked)
         XCTAssertFalse(fetchCalled)
     }
 
     /// ONB-002-start_access_unlock_recovery
     /// onAppear에서 세션이 있으면 hasAccountSession = true로 설정하고 access-status를 조회한다.
     /// - 검증 내용: restoreSession이 세션을 반환하면 signed-in 상태로 전이 후 fetchAccessStatus 호출
-    /// - 사전 조건: restoreSession → LicenseAuthSession
+    /// - 사전 조건: restoreSession → AccountSession
     /// - 기대 결과: hasAccountSession == true, fetchAccessStatus 호출됨
     func testOnAppearWithSessionRestoresAndFetchesAccessStatus() async {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
+            accountAccessClient: AccountAccessClient(
                 restoreSession: {
-                    LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive)
+                    AccountSession(accessToken: "test-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             ),
@@ -348,10 +348,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
+        await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
             state.isComplete = true
-            state.snapshot = LicenseAuthStatusSnapshot(
+            state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 entitlements: [.coreLicense],
                 fetchedAt: self.referenceDate,
@@ -370,10 +370,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: isSignInInProgress == true, signInHandoffClient를 통해 Effect 실행
     func testLoginTappedTriggersSignInHandoffAndSetsSignInInProgress() async {
         nonisolated(unsafe) var handoffCalled = false
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = .mock
+            $0.accountAccessClient = .mock
             $0.signInHandoffClient = SignInHandoffClient {
                 handoffCalled = true
                 return .failure
@@ -401,13 +401,13 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: 상태 변화 없음, URL opener 재호출 없음
     func testDuplicateLoginTappedIgnoredDuringSignInInProgress() async {
         nonisolated(unsafe) var openCount = 0
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = .mock
+            $0.accountAccessClient = .mock
             $0.loginURLClient = LoginURLClient(
                 openLoginURL: { _ in
                     openCount += 1
@@ -436,8 +436,8 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         let supportCount = LockIsolated(0)
         let openedURLs = LockIsolated<[URL]>([])
 
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
             $0.checkoutURLClient = self.makeCheckoutURLClient(
                 openCount: openCount,
@@ -470,8 +470,8 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         let supportCount = LockIsolated(0)
         let openedURLs = LockIsolated<[URL]>([])
 
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
             $0.checkoutURLClient = self.makeCheckoutURLClient(
                 openCount: openCount,
@@ -504,8 +504,8 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         let supportCount = LockIsolated(0)
         let openedURLs = LockIsolated<[URL]>([])
 
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
             $0.checkoutURLClient = self.makeCheckoutURLClient(
                 openCount: openCount,
@@ -538,8 +538,8 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         let supportCount = LockIsolated(0)
         let openedURLs = LockIsolated<[URL]>([])
 
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
             $0.checkoutURLClient = self.makeCheckoutURLClient(
                 openCount: openCount,
@@ -567,21 +567,21 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: isSignInInProgress = false, hasAccountSession = true, fetchAccessStatus 트리거
     func testLoginCallbackReceivedWithValidURLRestoresSession() async {
         nonisolated(unsafe) var fetchCalled = false
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
 
         let callbackURL = URL(string: "voyager://auth/callback")!
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: {
-                    LicenseAuthSession(accessToken: "restored-token", status: .coreLicenseActive)
+                    AccountSession(accessToken: "restored-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -598,10 +598,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
+        await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
             state.isComplete = true
-            state.snapshot = LicenseAuthStatusSnapshot(
+            state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 entitlements: [.coreLicense],
                 fetchedAt: self.referenceDate,
@@ -623,19 +623,19 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: isSignInInProgress = false, didSignInFail = true, fetchAccessStatus 미호출
     func testLoginCallbackReceivedWithMalformedURLFailsSignIn() async {
         nonisolated(unsafe) var fetchCalled = false
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
 
         let malformedURL = URL(string: "voyager://auth/invalid-path")!
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -650,8 +650,8 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
 
         XCTAssertFalse(fetchCalled)
         XCTAssertTrue(store.state.didSignInFail)
-        XCTAssertEqual(store.state.onb002AuthAxis, .signInFailed)
-        XCTAssertEqual(store.state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(store.state.accountAccessAuthAxis, .signInFailed)
+        XCTAssertEqual(store.state.accountAccessStepState, .blocked)
         await store.finish()
     }
 
@@ -662,19 +662,19 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: didSignInFail = true, hasAccountSession = false
     func testLoginCallbackReceivedWithValidURLButNoSessionFails() async {
         nonisolated(unsafe) var fetchCalled = false
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
 
         let callbackURL = URL(string: "voyager://auth/callback")!
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -701,10 +701,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 사전 조건: signed-out 상태
     /// - 기대 결과: isSignInInProgress = true, isComplete = false
     func testLoginAloneDoesNotCompleteStep() async {
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = .mock
+            $0.accountAccessClient = .mock
             $0.signInHandoffClient = SignInHandoffClient { .failure }
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
         }
@@ -730,19 +730,19 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: didSignInFail = true, fetchAccessStatus 미호출
     func testNonAuthVoyagerURLReturnsSignInFailed() async {
         nonisolated(unsafe) var fetchCalled = false
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
 
         let otherURL = URL(string: "voyager://other/path")!
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -764,20 +764,20 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// Login failure → signed-out/sign-in-failed blocked 상태에서 Login CTA 다시 노출.
     /// - 검증 내용: signInFailed 후에도 canStartLogin == true
     /// - 사전 조건: didSignInFail = true
-    /// - 기대 결과: canStartLogin == true, onb002AuthAxis == .signInFailed
+    /// - 기대 결과: canStartLogin == true, accountAccessAuthAxis == .signInFailed
     func testLoginFailureAllowsRetry() async {
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.isSignInInProgress = true
 
         let callbackURL = URL(string: "voyager://auth/callback")!
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -793,7 +793,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         }
 
         XCTAssertTrue(store.state.canStartLogin)
-        XCTAssertEqual(store.state.onb002AuthAxis, .signInFailed)
+        XCTAssertEqual(store.state.accountAccessAuthAxis, .signInFailed)
         await store.finish()
     }
 
@@ -803,15 +803,15 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// Signed-in onAppear → access_status fetch returns blocked (none) → step blocked, Next disabled
     /// - 검증: fetchAccessStatus가 PRODUCT access_status `none` 반환 시 step이 blocked
     /// - 사전 조건: restoreSession이 세션 반환, fetchAccessStatus가 `.none` 반환
-    /// - 기대 결과: onb002AccessStepState == .blocked, isComplete == false, errorMessage 설정
+    /// - 기대 결과: accountAccessStepState == .blocked, isComplete == false, errorMessage 설정
     func testOnAppearFetchesBlockedStatusShowsBlocked() async {
         let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
+            accountAccessClient: AccountAccessClient(
                 restoreSession: {
-                    LicenseAuthSession(accessToken: "test-token", status: .none)
+                    AccountSession(accessToken: "test-token", status: .none)
                 },
                 fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: LicenseAuthStatus.none, entitlements: [])
+                    AccessStatusResponse(status: AccessStatus.none, entitlements: [])
                 },
                 signOut: {},
             ),
@@ -826,18 +826,18 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
-            state.status = LicenseAuthStatus.none
+        await store.receive(\.accessStatusResponse) { state in
+            state.status = AccessStatus.none
             state.isComplete = false
             state.errorMessage = "Access denied."
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: LicenseAuthStatus.none,
+            state.snapshot = AccessStatusSnapshot(
+                status: AccessStatus.none,
                 entitlements: [],
                 fetchedAt: self.referenceDate,
             )
         }
 
-        XCTAssertEqual(store.state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(store.state.accountAccessStepState, .blocked)
         XCTAssertFalse(store.state.isComplete)
     }
 
@@ -845,15 +845,15 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// Signed-in onAppear → access_status fetch returns network failure → step error
     /// - 검증: fetchAccessStatus 네트워크 실패 시 error 상태 + retry 가능
     /// - 사전 조건: restoreSession 성공, fetchAccessStatus가 networkFailure throw
-    /// - 기대 결과: onb002AccessStepState == .error, canRetry == true
+    /// - 기대 결과: accountAccessStepState == .error, canRetry == true
     func testOnAppearFetchNetworkFailureShowsError() async {
         let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
+            accountAccessClient: AccountAccessClient(
                 restoreSession: {
-                    LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive)
+                    AccountSession(accessToken: "test-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    throw LicenseAuthError.networkFailure
+                    throw AccessError.networkFailure
                 },
                 signOut: {},
             ),
@@ -868,13 +868,13 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
+        await store.receive(\.accessStatusResponse) { state in
             state.isComplete = false
             state.errorMessage = "Network error. Please check your connection and try again."
             state.status = .networkFailure
         }
 
-        XCTAssertEqual(store.state.onb002AccessStepState, .error)
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
         XCTAssertTrue(store.state.canRetry)
     }
 
@@ -882,17 +882,17 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// 서버가 클라이언트가 인식하지 못하는 status 값(예: "unexpected_future_status")을 반환하면
     /// decodingFailure가 발생한다. fetchAccessStatus가 decodingFailure를 throw할 때
     /// retry 가능한 error 상태로 표시되고 crash가 발생하지 않는지 검증한다.
-    /// - 검증: fetchAccessStatus가 LicenseAuthError.decodingFailure throw 시 error message 표시, isComplete=false, crash 없음
+    /// - 검증: fetchAccessStatus가 AccessError.decodingFailure throw 시 error message 표시, isComplete=false, crash 없음
     /// - 사전 조건: restoreSession 성공, fetchAccessStatus가 decodingFailure throw
     /// - 기대 결과: errorMessage="Failed to process the response.", isComplete=false, canRefreshAccess=true
     func testOnAppearFetchDecodingFailureShowsError() async {
         let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
+            accountAccessClient: AccountAccessClient(
                 restoreSession: {
-                    LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive)
+                    AccountSession(accessToken: "test-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    throw LicenseAuthError.decodingFailure
+                    throw AccessError.decodingFailure
                 },
                 signOut: {},
             ),
@@ -907,7 +907,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
+        await store.receive(\.accessStatusResponse) { state in
             state.isComplete = false
             state.errorMessage = "Failed to process the response."
         }
@@ -926,17 +926,17 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: fetchGeneration 증가, fetchAccessStatus 호출됨, active 응답 시 isComplete = true
     func testRefreshAccessTappedWhenSignedInTriggersFetch() async {
         nonisolated(unsafe) var fetchCount = 0
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCount += 1
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -947,10 +947,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
+        await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
             state.isComplete = true
-            state.snapshot = LicenseAuthStatusSnapshot(
+            state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 entitlements: [.coreLicense],
                 fetchedAt: self.referenceDate,
@@ -973,11 +973,11 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     func testRefreshAccessTappedWhenSignedOutIgnored() async {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
+            accountAccessClient: AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             ),
@@ -997,18 +997,18 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: fetchAccessStatus 미호출, 상태 변화 없음
     func testRefreshAccessTappedDuringSubmitIgnored() async {
         nonisolated(unsafe) var fetchCalled = false
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
         initialState.isSubmitting = true
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -1030,18 +1030,18 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: fetchGeneration 증가, fetchAccessStatus 호출됨, response가 reducer에 반영됨
     func testAppDidBecomeActive_TriggersFetchAccessStatus() async {
         nonisolated(unsafe) var fetchCount = 0
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
         initialState.status = .revoked
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCount += 1
-                    return LicenseAuthStatusResponse(status: LicenseAuthStatus.none, entitlements: [])
+                    return AccessStatusResponse(status: AccessStatus.none, entitlements: [])
                 },
                 signOut: {},
             )
@@ -1052,12 +1052,12 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
-            state.status = LicenseAuthStatus.none
+        await store.receive(\.accessStatusResponse) { state in
+            state.status = AccessStatus.none
             state.isComplete = false
             state.errorMessage = "Access denied."
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: LicenseAuthStatus.none,
+            state.snapshot = AccessStatusSnapshot(
+                status: AccessStatus.none,
                 entitlements: [],
                 fetchedAt: self.referenceDate,
             )
@@ -1077,11 +1077,11 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     func testAppDidBecomeActive_WhenSignedOut_DoesNotFetchStatus() async {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
-            licenseAuthClient: LicenseAuthClient(
+            accountAccessClient: AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             ),
@@ -1102,19 +1102,19 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 기대 결과: complete 전환, snapshot 저장, delegate.unlocked 발행
     func testAppDidBecomeActive_StatusChangesFromBlockedToComplete() async {
         nonisolated(unsafe) var fetchCount = 0
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
-        initialState.status = LicenseAuthStatus.none
+        initialState.status = AccessStatus.none
         initialState.isComplete = false
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCount += 1
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -1125,11 +1125,11 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
+        await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
             state.isComplete = true
             state.errorMessage = nil
-            state.snapshot = LicenseAuthStatusSnapshot(
+            state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 entitlements: [.coreLicense],
                 fetchedAt: self.referenceDate,
@@ -1141,7 +1141,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
         XCTAssertEqual(fetchCount, 1)
         XCTAssertEqual(store.state.fetchGeneration, 1)
         XCTAssertTrue(store.state.isComplete)
-        XCTAssertEqual(store.state.onb002AccessStepState, .complete)
+        XCTAssertEqual(store.state.accountAccessStepState, .complete)
         await store.finish()
     }
 
@@ -1155,20 +1155,20 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     func testRefreshOverridesPreviousBlockedResult() async {
         nonisolated(unsafe) var fetchCount = 0
-        var initialState = UnlockLicenseAuthFeature.State()
+        var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
 
         let store = TestStore(initialState: initialState) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     fetchCount += 1
                     if fetchCount == 1 {
-                        return LicenseAuthStatusResponse(status: LicenseAuthStatus.none, entitlements: [])
+                        return AccessStatusResponse(status: AccessStatus.none, entitlements: [])
                     }
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -1180,29 +1180,29 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
-            state.status = LicenseAuthStatus.none
+        await store.receive(\.accessStatusResponse) { state in
+            state.status = AccessStatus.none
             state.isComplete = false
             state.errorMessage = "Access denied."
-            state.snapshot = LicenseAuthStatusSnapshot(
-                status: LicenseAuthStatus.none,
+            state.snapshot = AccessStatusSnapshot(
+                status: AccessStatus.none,
                 entitlements: [],
                 fetchedAt: self.referenceDate,
             )
         }
 
-        XCTAssertEqual(store.state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(store.state.accountAccessStepState, .blocked)
 
         // Second refresh → active, overrides blocked
         await store.send(.refreshAccessTapped) { state in
             state.fetchGeneration = 2
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
+        await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
             state.isComplete = true
             state.errorMessage = nil
-            state.snapshot = LicenseAuthStatusSnapshot(
+            state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 entitlements: [.coreLicense],
                 fetchedAt: self.referenceDate,
@@ -1211,7 +1211,7 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
 
         await store.receive(\.delegate.unlocked)
 
-        XCTAssertEqual(store.state.onb002AccessStepState, .complete)
+        XCTAssertEqual(store.state.accountAccessStepState, .complete)
         XCTAssertTrue(store.state.isComplete)
         XCTAssertEqual(store.state.fetchGeneration, 2)
         await store.finish()
@@ -1227,15 +1227,15 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     func testMockSignInSuccessRoutesThroughLocalCallback() async {
         let callbackURL = URL(string: "voyager://auth/callback")!
 
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: {
-                    LicenseAuthSession(accessToken: "mock-token", status: .coreLicenseActive)
+                    AccountSession(accessToken: "mock-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
@@ -1265,10 +1265,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
             state.fetchGeneration = 1
         }
 
-        await store.receive(\.licenseAuthStatusResponse) { state in
+        await store.receive(\.accessStatusResponse) { state in
             state.status = .coreLicenseActive
             state.isComplete = true
-            state.snapshot = LicenseAuthStatusSnapshot(
+            state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
                 entitlements: [.coreLicense],
                 fetchedAt: self.referenceDate,
@@ -1290,10 +1290,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     func testMockSignInDoesNotOpenExternalBrowser() async {
         nonisolated(unsafe) var openURLCallCount = 0
 
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = .mock
+            $0.accountAccessClient = .mock
             $0.signInHandoffClient = SignInHandoffClient {
                 .success(callbackURL: URL(string: "voyager://auth/callback")!)
             }
@@ -1329,10 +1329,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 사전 조건: signInHandoffClient가 .failure 반환
     /// - 기대 결과: isSignInInProgress = false, didSignInFail = true, canStartLogin = true
     func testMockSignInFailureClearsPendingAndAllowsRetry() async {
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = .mock
+            $0.accountAccessClient = .mock
             $0.signInHandoffClient = SignInHandoffClient {
                 .failure
             }
@@ -1363,10 +1363,10 @@ final class ONB002UnlockLicenseAuthReducerTests: XCTestCase {
     /// - 사전 조건: signInHandoffClient가 .cancelled 반환
     /// - 기대 결과: failure와 동일 — isSignInInProgress = false, didSignInFail = true, canStartLogin = true
     func testMockSignInCancelBehavesSameAsFailure() async {
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = .mock
+            $0.accountAccessClient = .mock
             $0.signInHandoffClient = SignInHandoffClient {
                 .cancelled
             }

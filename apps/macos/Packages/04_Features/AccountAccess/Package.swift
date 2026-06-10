@@ -2,10 +2,10 @@
 import PackageDescription
 
 let kPackage = Package(
-    name: "VoyagerFeaturesLicenseAuth",
+    name: "VoyagerFeaturesAccountAccess",
     platforms: [.macOS(.v13)],
     products: [
-        .library(name: "VoyagerFeaturesLicenseAuth", targets: ["VoyagerFeaturesLicenseAuth"]),
+        .library(name: "VoyagerFeaturesAccountAccess", targets: ["VoyagerFeaturesAccountAccess"]),
     ],
     dependencies: [
         .package(path: "../../05_Entities/AppPreferences"),
@@ -18,7 +18,7 @@ let kPackage = Package(
     ],
     targets: [
         .target(
-            name: "VoyagerFeaturesLicenseAuth",
+            name: "VoyagerFeaturesAccountAccess",
             dependencies: [
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
@@ -31,9 +31,9 @@ let kPackage = Package(
             ],
         ),
         .testTarget(
-            name: "VoyagerFeaturesLicenseAuthTests",
+            name: "VoyagerFeaturesAccountAccessTests",
             dependencies: [
-                "VoyagerFeaturesLicenseAuth",
+                "VoyagerFeaturesAccountAccess",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "XCTestDynamicOverlay", package: "xctest-dynamic-overlay"),
             ],

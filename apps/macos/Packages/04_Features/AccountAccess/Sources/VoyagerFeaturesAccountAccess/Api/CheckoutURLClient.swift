@@ -125,7 +125,7 @@ public extension DependencyValues {
 public extension CheckoutURLClient {
     /// 라이선스 인증 상태에 따라 리다이렉트할 URL을 반환한다.
     /// 차단 상태가 아니면 `nil`을 반환하여 리다이렉트가 불필요함을 나타낸다.
-    func url(for status: LicenseAuthStatus) -> URL? {
+    func url(for status: AccessStatus) -> URL? {
         switch status {
         case .none:
             checkoutURL()
@@ -139,7 +139,7 @@ public extension CheckoutURLClient {
         }
     }
 
-    static func url(for status: LicenseAuthStatus) -> URL? {
+    static func url(for status: AccessStatus) -> URL? {
         liveValue.url(for: status)
     }
 }

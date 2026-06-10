@@ -3,14 +3,14 @@ import Foundation
 import VoyagerEntitiesAppPreferences
 import VoyagerShared
 
-public struct LicenseAuthStatusSnapshotClient: Sendable {
-    public var load: @Sendable () async -> LicenseAuthStatusSnapshot?
-    public var save: @Sendable (_ snapshot: LicenseAuthStatusSnapshot) async -> Void
+public struct AccessStatusSnapshotClient: Sendable {
+    public var load: @Sendable () async -> AccessStatusSnapshot?
+    public var save: @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void
     public var remove: @Sendable () async -> Void
 
     public nonisolated init(
-        load: @escaping @Sendable () async -> LicenseAuthStatusSnapshot?,
-        save: @escaping @Sendable (_ snapshot: LicenseAuthStatusSnapshot) async -> Void,
+        load: @escaping @Sendable () async -> AccessStatusSnapshot?,
+        save: @escaping @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void,
         remove: @escaping @Sendable () async -> Void,
     ) {
         self.load = load
@@ -19,16 +19,16 @@ public struct LicenseAuthStatusSnapshotClient: Sendable {
     }
 }
 
-extension LicenseAuthStatusSnapshotClient: DependencyKey {
-    public nonisolated static var liveValue: LicenseAuthStatusSnapshotClient {
-        LicenseAuthStatusSnapshotClient(
+extension AccessStatusSnapshotClient: DependencyKey {
+    public nonisolated static var liveValue: AccessStatusSnapshotClient {
+        AccessStatusSnapshotClient(
             load: {
                 @Dependency(\.userDefaultsClient)
                 var userDefaults
                 guard let data = userDefaults.object(SettingsKeys.accessStatusSnapshot) as? Data else {
                     return nil
                 }
-                return try? JSONDecoder().decode(LicenseAuthStatusSnapshot.self, from: data)
+                return try? JSONDecoder().decode(AccessStatusSnapshot.self, from: data)
             },
             save: { snapshot in
                 @Dependency(\.userDefaultsClient)
@@ -44,22 +44,22 @@ extension LicenseAuthStatusSnapshotClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: LicenseAuthStatusSnapshotClient {
-        LicenseAuthStatusSnapshotClient(
+    public nonisolated static var testValue: AccessStatusSnapshotClient {
+        AccessStatusSnapshotClient(
             load: { nil },
             save: { _ in },
             remove: {},
         )
     }
 
-    public nonisolated static var previewValue: LicenseAuthStatusSnapshotClient {
+    public nonisolated static var previewValue: AccessStatusSnapshotClient {
         testValue
     }
 }
 
 public extension DependencyValues {
-    nonisolated var licenseAuthStatusSnapshotClient: LicenseAuthStatusSnapshotClient {
-        get { self[LicenseAuthStatusSnapshotClient.self] }
-        set { self[LicenseAuthStatusSnapshotClient.self] = newValue }
+    nonisolated var accessStatusSnapshotClient: AccessStatusSnapshotClient {
+        get { self[AccessStatusSnapshotClient.self] }
+        set { self[AccessStatusSnapshotClient.self] = newValue }
     }
 }

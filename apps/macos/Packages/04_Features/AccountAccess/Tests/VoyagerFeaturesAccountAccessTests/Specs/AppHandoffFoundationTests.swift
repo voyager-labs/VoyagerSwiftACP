@@ -1,4 +1,4 @@
-@testable import VoyagerFeaturesLicenseAuth
+@testable import VoyagerFeaturesAccountAccess
 import XCTest
 
 final class AppHandoffCallbackTests: XCTestCase {
@@ -107,7 +107,7 @@ final class AppHandoffURLBuilderTests: XCTestCase {
         XCTAssertEqual(components.path, "/auth/login")
 
         let queryItems = try XCTUnwrap(components.queryItems)
-        let queryDict = Dictionary(uniqueKeysWithValues: queryItems.compactMap { item in
+        let queryDict = [String: String](uniqueKeysWithValues: queryItems.compactMap { item in
             guard let value = item.value else { return nil }
             return (item.name, value)
         })

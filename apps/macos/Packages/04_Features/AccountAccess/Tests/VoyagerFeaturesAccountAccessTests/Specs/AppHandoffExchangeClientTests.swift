@@ -1,6 +1,6 @@
 // swiftlint:disable single_test_class
 
-@testable import VoyagerFeaturesLicenseAuth
+@testable import VoyagerFeaturesAccountAccess
 import XCTest
 
 // MARK: - ONB-002-mock_sign_in_handoff
@@ -11,7 +11,7 @@ final class AppHandoffExchangeClientTests: XCTestCase {
     /// ONB-002-mock_sign_in_handoff: exchange 성공 시 세션이 holder에 저장되고 restoreSession이 반환한다
     func testExchangeSuccessAppliesSession() async throws {
         let sessionHolder = MockSignInState()
-        let expectedSession = LicenseAuthSession(
+        let expectedSession = AccountSession(
             accessToken: "exchanged-access-token",
             status: .coreLicenseActive,
             refreshToken: "exchanged-refresh-token",
@@ -27,7 +27,7 @@ final class AppHandoffExchangeClientTests: XCTestCase {
             },
         )
 
-        let client = LicenseAuthClient.handoffBacked(
+        let client = AccountAccessClient.handoffBacked(
             sessionHolder: sessionHolder,
             exchangeClient: exchangeClient,
         )
@@ -39,7 +39,7 @@ final class AppHandoffExchangeClientTests: XCTestCase {
         XCTAssertEqual(restored, expectedSession, "restoreSession은 exchange로 저장된 세션을 반환해야 함")
     }
 
-    /// VOY-334 실제 exchange 성공 응답(snake_case session fields)을 LicenseAuthSession으로 디코딩한다.
+    /// VOY-334 실제 exchange 성공 응답(snake_case session fields)을 AccountSession으로 디코딩한다.
     func testDecodesRealExchangeSuccessPayloadShape() throws {
         let json = """
         {
@@ -112,13 +112,13 @@ final class AppHandoffExchangeClientTests: XCTestCase {
     /// ONB-002-mock_sign_in_handoff: exchange 실패 시 session holder에 세션이 저장되지 않는다
     func testExchangeFailureDoesNotStoreSession() async {
         let sessionHolder = MockSignInState()
-        sessionHolder.setSession(LicenseAuthSession(accessToken: "pre-existing", status: .coreLicenseActive))
+        sessionHolder.setSession(AccountSession(accessToken: "pre-existing", status: .coreLicenseActive))
 
         let exchangeClient = AppHandoffExchangeClient(
             exchange: { _, _, _ in throw AppHandoffExchangeError.ticketAlreadyUsed },
         )
 
-        let client = LicenseAuthClient.handoffBacked(
+        let client = AccountAccessClient.handoffBacked(
             sessionHolder: sessionHolder,
             exchangeClient: exchangeClient,
         )
@@ -141,11 +141,11 @@ final class AppHandoffExchangeClientTests: XCTestCase {
     /// ONB-002-mock_sign_in_handoff: fetchAccessStatus는 테스트에서 오버라이드 가능하다
     func testFetchAccessStatusIsOverridable() async throws {
         nonisolated(unsafe) var fetchCalled = false
-        let client = LicenseAuthClient(
+        let client = AccountAccessClient(
             restoreSession: { nil },
             fetchAccessStatus: {
                 fetchCalled = true
-                return LicenseAuthStatusResponse(status: .betaTrialActive, entitlements: [])
+                return AccessStatusResponse(status: .betaTrialActive, entitlements: [])
             },
             signOut: {},
         )
@@ -162,11 +162,11 @@ final class AppHandoffExchangeClientTests: XCTestCase {
         let sessionHolder = MockSignInState()
         let exchangeClient = AppHandoffExchangeClient(
             exchange: { _, _, _ in
-                LicenseAuthSession(accessToken: "exchanged", status: .coreLicenseActive)
+                AccountSession(accessToken: "exchanged", status: .coreLicenseActive)
             },
         )
 
-        let client = LicenseAuthClient.handoffBacked(
+        let client = AccountAccessClient.handoffBacked(
             sessionHolder: sessionHolder,
             exchangeClient: exchangeClient,
         )
@@ -184,16 +184,16 @@ final class AppHandoffExchangeClientTests: XCTestCase {
 
     /// ONB-002-mock_sign_in_handoff: 기존 3-arg init으로 생성한 client의 exchangeAppHandoff는 notConfigured를 던진다
     func testLegacyInitExchangeThrowsNotConfigured() async {
-        let client = LicenseAuthClient(
+        let client = AccountAccessClient(
             restoreSession: { nil },
-            fetchAccessStatus: { LicenseAuthStatusResponse(status: .none, entitlements: []) },
+            fetchAccessStatus: { AccessStatusResponse(status: .none, entitlements: []) },
             signOut: {},
         )
 
         do {
             _ = try await client.exchangeAppHandoff("ticket", "state", .onboarding)
             XCTFail("3-arg init으로 생성한 client의 exchange는 notConfigured를 던져야 함")
-        } catch let error as LicenseAuthError {
+        } catch let error as AccessError {
             XCTAssertEqual(error, .notConfigured)
         } catch {
             XCTFail("Unexpected error: \(error)")

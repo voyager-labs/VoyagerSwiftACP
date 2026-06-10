@@ -4,16 +4,16 @@ import Foundation
 // swiftlint:disable identifier_name
 
 @CasePathable
-public enum UnlockLicenseAuthAction: CasePathable, Sendable {
+public enum AccountAccessAction: CasePathable, Sendable {
     case onAppear
     case retryTapped
     case loginTapped
     case signInHandoffCompleted(SignInHandoffResult)
     case loginCallbackReceived(URL)
-    case _handoffExchangeCompleted(Result<LicenseAuthSession, AppHandoffExchangeError>)
+    case _handoffExchangeCompleted(Result<AccountSession, AppHandoffExchangeError>)
     case _onAppearSessionRestored(Bool)
     case _loginSessionRestored(Bool)
-    case licenseAuthStatusResponse(generation: Int, result: Result<LicenseAuthStatusResponse, LicenseAuthError>)
+    case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
     case refreshAccessTapped
     case appDidBecomeActive
     case openCheckoutTapped
@@ -24,7 +24,7 @@ public enum UnlockLicenseAuthAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Delegate: CasePathable, Sendable {
-        case unlocked(LicenseAuthStatusSnapshot)
+        case unlocked(AccessStatusSnapshot)
     }
 }
 

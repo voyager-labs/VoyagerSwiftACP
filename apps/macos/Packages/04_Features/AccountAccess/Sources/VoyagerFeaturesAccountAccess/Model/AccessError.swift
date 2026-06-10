@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated enum LicenseAuthError: Error, Equatable, Sendable {
+public nonisolated enum AccessError: Error, Equatable, Sendable {
     case networkFailure
     case notConfigured
     case decodingFailure

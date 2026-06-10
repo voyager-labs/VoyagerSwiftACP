@@ -1,14 +1,14 @@
 import Foundation
 
-public struct LicenseAuthStatusSnapshot: Equatable, Sendable, Codable {
-    public var status: LicenseAuthStatus
+public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
+    public var status: AccessStatus
     public var expiresAt: Date?
-    public var entitlements: [LicenseAuthEntitlement]
+    public var entitlements: [AccessEntitlement]
     public var fetchedAt: Date
     public init(
-        status: LicenseAuthStatus,
+        status: AccessStatus,
         expiresAt: Date? = nil,
-        entitlements: [LicenseAuthEntitlement] = [],
+        entitlements: [AccessEntitlement] = [],
         fetchedAt: Date = Date(),
     ) {
         self.status = status

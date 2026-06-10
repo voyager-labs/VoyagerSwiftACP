@@ -1,15 +1,15 @@
 import Foundation
 
-public struct LicenseAuthStatusResponse: Equatable, Sendable, Codable {
-    public var status: LicenseAuthStatus
+public struct AccessStatusResponse: Equatable, Sendable, Codable {
+    public var status: AccessStatus
     public var expiresAt: Date?
-    public var entitlements: [LicenseAuthEntitlement]
+    public var entitlements: [AccessEntitlement]
     public var message: String?
     public var reasonCode: String?
     public init(
-        status: LicenseAuthStatus,
+        status: AccessStatus,
         expiresAt: Date? = nil,
-        entitlements: [LicenseAuthEntitlement] = [],
+        entitlements: [AccessEntitlement] = [],
         message: String? = nil,
         reasonCode: String? = nil,
     ) {

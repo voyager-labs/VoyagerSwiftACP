@@ -2,9 +2,9 @@ import ComposableArchitecture
 import Foundation
 
 @ObservableState
-public struct UnlockLicenseAuthState: Equatable {
-    public var status: LicenseAuthStatus?
-    public var snapshot: LicenseAuthStatusSnapshot?
+public struct AccountAccessState: Equatable {
+    public var status: AccessStatus?
+    public var snapshot: AccessStatusSnapshot?
     public var isSubmitting: Bool = false
     public var errorMessage: String?
     public var isComplete: Bool = false
@@ -25,7 +25,7 @@ public struct UnlockLicenseAuthState: Equatable {
 
     // MARK: - ONB-002 Interpretation
 
-    public var onb002AuthAxis: Onb002AuthAxis {
+    public var accountAccessAuthAxis: AccountAccessAuthAxis {
         if isSignInInProgress {
             return .signInInProgress
         }
@@ -38,7 +38,7 @@ public struct UnlockLicenseAuthState: Equatable {
         return .signedOut
     }
 
-    public var onb002AccessStepState: Onb002AccessStepState {
+    public var accountAccessStepState: AccountAccessStepState {
         if isSignInInProgress {
             return .pending
         }
@@ -61,15 +61,15 @@ public struct UnlockLicenseAuthState: Equatable {
     // MARK: - ONB-002 Affordances
 
     public var canStartLogin: Bool {
-        onb002AuthAxis == .signedOut || onb002AuthAxis == .signInFailed
+        accountAccessAuthAxis == .signedOut || accountAccessAuthAxis == .signInFailed
     }
 
     public var canRefreshAccess: Bool {
-        onb002AuthAxis == .signedIn && !isSubmitting && !isSignInInProgress
+        accountAccessAuthAxis == .signedIn && !isSubmitting && !isSignInInProgress
     }
 
     public var canRetry: Bool {
-        onb002AccessStepState == .error && !isSubmitting
+        accountAccessStepState == .error && !isSubmitting
     }
 
     public var requiresAccountSession: Bool {

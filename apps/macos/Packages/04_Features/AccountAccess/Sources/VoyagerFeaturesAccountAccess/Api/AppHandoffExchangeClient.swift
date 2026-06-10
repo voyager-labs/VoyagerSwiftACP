@@ -3,15 +3,15 @@ import Foundation
 
 /// `/auth/app-handoff/exchange` 호출을 담당하는 의존성.
 /// 티켓·state·context로 서버에 세션 교환을 요청한다.
-/// 성공 시 `LicenseAuthSession`을 반환한다.
+/// 성공 시 `AccountSession`을 반환한다.
 /// 토큰·세션 정보는 로깅하지 않는다.
 public struct AppHandoffExchangeClient: Sendable {
     public var exchange: @Sendable (_ ticket: String, _ state: String, _ context: AppHandoffContext) async throws
-        -> LicenseAuthSession
+        -> AccountSession
 
     public nonisolated init(
         exchange: @escaping @Sendable (_ ticket: String, _ state: String, _ context: AppHandoffContext) async throws
-            -> LicenseAuthSession,
+            -> AccountSession,
     ) {
         self.exchange = exchange
     }
@@ -73,7 +73,7 @@ extension AppHandoffExchangeClient: DependencyKey {
 
     public nonisolated static var previewValue: AppHandoffExchangeClient {
         AppHandoffExchangeClient { _, _, _ in
-            LicenseAuthSession(accessToken: "preview-token", status: .coreLicenseActive)
+            AccountSession(accessToken: "preview-token", status: .coreLicenseActive)
         }
     }
 }
@@ -104,7 +104,7 @@ private struct ExchangeUserPayload: Decodable {
 }
 
 extension AppHandoffExchangeClient {
-    nonisolated static func decodeSession(fromExchangeSuccessData data: Data) throws -> LicenseAuthSession {
+    nonisolated static func decodeSession(fromExchangeSuccessData data: Data) throws -> AccountSession {
         let exchangeResponse = try decodeExchangeSuccessResponse(data)
         guard exchangeResponse.ok else {
             throw AppHandoffExchangeError.decodingFailure
@@ -121,7 +121,7 @@ private func decodeExchangeSuccessResponse(_ data: Data) throws -> ExchangeSucce
     }
 }
 
-private func sessionFromExchangeResponse(_ response: ExchangeSuccessResponse) throws -> LicenseAuthSession {
+private func sessionFromExchangeResponse(_ response: ExchangeSuccessResponse) throws -> AccountSession {
     guard let sessionPayload = response.session,
           let accessToken = sessionPayload.accessToken, !accessToken.isEmpty
     else {
@@ -130,7 +130,7 @@ private func sessionFromExchangeResponse(_ response: ExchangeSuccessResponse) th
 
     let expiresAt: Date? = sessionPayload.expiresAt.map { Date(timeIntervalSince1970: $0) }
 
-    return LicenseAuthSession(
+    return AccountSession(
         accessToken: accessToken,
         status: .coreLicenseActive,
         refreshToken: sessionPayload.refreshToken,
@@ -143,7 +143,7 @@ private func extractErrorCode(from data: Data) -> String? {
     return json["code"] as? String
 }
 
-private func throwMappedExchangeError(_ code: String?) throws -> LicenseAuthSession {
+private func throwMappedExchangeError(_ code: String?) throws -> AccountSession {
     switch code {
     case "ticket_already_used": throw AppHandoffExchangeError.ticketAlreadyUsed
     case "state_mismatch": throw AppHandoffExchangeError.stateMismatch

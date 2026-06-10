@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated enum LicenseAuthStatus: String, Equatable, Sendable, Codable {
+public nonisolated enum AccessStatus: String, Equatable, Sendable, Codable {
     case coreLicenseActive = "core_license_active"
     case betaTrialActive = "beta_trial_active"
     case internalTestActive = "internal_test_active"
