@@ -10,6 +10,12 @@ post-checkout:
       run: test -f "$(git rev-parse --git-path hooks/post-checkout)" || lefthook install
     submodules:
       run: git submodule update --init --recursive
+    docs-canonical-npm-ci:
+      run: |
+        if git diff --name-only {1} {2} | grep -qE '^docs/canonical/(package\.json|package-lock\.json)$'; then
+          echo ":: docs/canonical package manifest changed — running npm ci..."
+          cd docs/canonical && npm ci
+        fi
     codegraph:
       run: test -d .codegraph || npx -y @colbymchenry/codegraph@0.9.6 init -i
 

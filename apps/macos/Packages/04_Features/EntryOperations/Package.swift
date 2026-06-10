@@ -38,6 +38,7 @@ let kPackage = Package(
             dependencies: [
                 .product(name: "VoyagerEntitiesEntry", package: "VoyagerEntitiesEntry"),
                 .product(name: "VoyagerEntitiesTag", package: "VoyagerEntitiesTag"),
+                .product(name: "VoyagerShared", package: "VoyagerShared"),
                 "VoyagerFeaturesEntryOperations",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "IdentifiedCollections", package: "swift-identified-collections"),
