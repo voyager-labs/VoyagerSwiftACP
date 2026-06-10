@@ -1,0 +1,30 @@
+id: nested-state-in-reducer
+language: swift
+severity: error
+message: "State와 Action을 Reducer 내부에 직접 정의하지 마세요. 별도 Model 타입으로 분리하고 typealias로 참조하세요."
+note: >
+  TCA convention: Reducers must reference State and Action via typealias, not define them inline.
+  Split into separate files:
+    - Model/*State.swift: concrete struct definition
+    - Model/*Action.swift: concrete enum definition
+    - Reducer/*Feature.swift: typealias only
+ast-grep-essentials: false
+rule:
+  kind: class_declaration
+  all:
+    - has:
+        stopBy: end
+        pattern: "@Reducer"
+    - has:
+        stopBy: end
+        any:
+          - kind: class_declaration
+            has:
+              stopBy: end
+              field: name
+              regex: "^State$"
+          - kind: class_declaration
+            has:
+              stopBy: end
+              field: name
+              regex: "^Action$"
