@@ -199,4 +199,4 @@ analyzer_rules:
   - unused_parameter # 사용하지 않는 파라미터를 제거하거나 _로 표시하게 합니다.
 
 # 경고 레벨
-warning_threshold: 250 # 전체 warning 임계값입니다.
+warning_threshold: 25 # 전체 warning 임계값입니다.

@@ -194,4 +194,4 @@ analyzer_rules:
   - unused_parameter # 사용하지 않는 파라미터를 제거하거나 _로 표시하게 합니다.
 
 # 경고 레벨
-warning_threshold: 250 # 전체 warning 임계값입니다. 대부분 pre-existing violation이며 accessibility_label_for_image 등 새 rule 위반은 단계적으로 정리 예정입니다.
+warning_threshold: 25 # 전체 warning 임계값입니다. violation이 0이므로 새 위반 누적을 즉시 감지합니다.
