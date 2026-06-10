@@ -117,15 +117,15 @@ A suite whose filename includes reducer, client, status, contract, or feature im
 
 ### Examples of forbidden suite names
 
-These real patterns from LicenseAuth package tests violate the ownership rule because they embed implementation detail in the suite name:
+These real patterns from AccountAccess package tests (previously LicenseAuth) violate the ownership rule because they embed implementation detail in the suite name:
 
-| Forbidden suite name                         | Why it is forbidden                                           |
-| -------------------------------------------- | ------------------------------------------------------------- |
-| `ONB002UnlockLicenseAuthReducerTests`        | Reducer implementation detail, not a spec-owner suite         |
-| `ONB002LicenseAuthClientContractTests`       | Client implementation detail, not a spec-owner suite          |
-| `ONB002LicenseAuthStatusActivityTests`       | Status activity implementation detail, not a spec-owner suite |
-| `ONB002LicenseAuthStatusCodingContractTests` | Coding contract detail, not a spec-owner suite                |
-| `UnlockLicenseAuthFeatureTests`              | Forbidden `FeatureTests` suffix                               |
+| Forbidden suite name               | Why it is forbidden                                           |
+| ---------------------------------- | ------------------------------------------------------------- |
+| `AccountAccessReducerTests`        | Reducer implementation detail, not a spec-owner suite         |
+| `AccountAccessClientContractTests` | Client implementation detail, not a spec-owner suite          |
+| `AccessStatusActivityTests`        | Status activity implementation detail, not a spec-owner suite |
+| `AccessStatusCodingContractTests`  | Coding contract detail, not a spec-owner suite                |
+| `AccountAccessFeatureTests`        | Forbidden `FeatureTests` suffix                               |
 
 ### Correct owner
 
