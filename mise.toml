@@ -28,6 +28,22 @@ version = "0.9.6"
 [tools."npm:xcodebuildmcp"]
 version = "2.6.2"
 
+# xcbeautify: xcodebuild log 파서/필터 (GitHub release)
+[tools."github:cpisciotta/xcbeautify"]
+version = "3.2.1"
+
+# RTK: Rust Token Killer — build/command log token 최적화 (GitHub release)
+[tools."github:rtk-ai/rtk"]
+version = "0.42.3"
+
+# Periphery: Swift 미사용 코드 탐지 (GitHub release)
+[tools."github:peripheryapp/periphery"]
+version = "3.7.4"
+
+# ast-grep: AST 기반 코드 검색/rewrite (GitHub release)
+[tools."github:ast-grep/ast-grep"]
+version = "0.43.0"
+
 # ── Tasks ─────────────────────────────────────────────────────
 
 # 온보딩: clone 후 한 번 실행
@@ -56,15 +72,21 @@ run = "lefthook install"
 description = "Submodule 초기화"
 run = "git submodule update --init --recursive"
 
-# macOS 개발 앱 빌드 (worktree 내부 DerivedData 사용)
+# macOS 개발 앱 빌드 (worktree 내부 DerivedData 사용, xcbeautify 필터링)
 [tasks.macos-build]
-description = "macOS 개발 앱 빌드"
-run = "xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation build"
+description = "macOS 개발 앱 빌드 (xcbeautify 필터링)"
+run = """
+set -o pipefail
+NSUnbufferedIO=YES xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee build/dev/xcodebuild.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
+"""
 
-# macOS 개발 앱 테스트 (worktree 내부 DerivedData 사용)
+# macOS 개발 앱 테스트 (worktree 내부 DerivedData 사용, xcbeautify 필터링)
 [tasks.macos-test]
-description = "macOS 개발 앱 테스트"
-run = "xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation"
+description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"
+run = """
+set -o pipefail
+NSUnbufferedIO=YES xcodebuild test -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee build/dev/xcodebuild-test.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
+"""
 
 # Xcode 툴체인의 Swift 버전 확인
 [tasks.swift-version]

@@ -5,7 +5,7 @@
     ".agents/rules/10-routing/*.md",
     ".agents/rules/99-agent/01-agent-harness-artifacts.md"
   ],
-  "plugin": [".opencode/plugins/sisyphus-wiki.js"],
+  "plugin": [".opencode/plugins/sisyphus-wiki.js", "context-mode", "rtk"],
   "lsp": {
       "sourcekit-lsp": {
         "disabled": true
@@ -25,6 +25,11 @@
     "codegraph": {
       "type": "local",
       "command": ["mise", "exec", "--", "codegraph", "serve", "--mcp"],
+      "enabled": true
+    },
+    "ast-grep": {
+      "type": "local",
+      "command": ["mise", "exec", "--", "uvx", "--from", "git+https://github.com/ast-grep/ast-grep-mcp", "ast-grep-server"],
       "enabled": true
     }
   },

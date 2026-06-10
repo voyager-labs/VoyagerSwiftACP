@@ -25,6 +25,7 @@ globs: "apps/macos/**/*.swift"
 - Follow `.agents/rules/30-macos/04-xcode-test-plan-visibility.md` when verification depends on SPM package test targets or Xcode schemes.
 - Follow `.agents/rules/30-macos/05-swift-testing-gotchas.md` when writing or fixing Swift tests.
 - Follow `.agents/rules/30-macos/06-file-backed-storage-invariants.md` when changing credential, OAuth, provider snapshot, settings, or other file-backed storage.
+- Follow `.agents/rules/30-macos/08-build-and-verify-tooling.md` when building or testing macOS targets — XcodeBuildMCP mandatory, no fallback.
 - In multi-stage UI callback flows, keep state cleanup, resolved context, and visual ownership with one canonical owner instead of splitting them across success handlers, session-end hooks, and reload paths.
 - For scaffold/orchestrator-style TCA work, load the `voyager-dev` orchestrator entry:
     - `.agents/skills/voyager-dev/orchestrator/SKILL.md`
