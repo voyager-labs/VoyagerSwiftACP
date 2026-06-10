@@ -1,5 +1,5 @@
 import ComposableArchitecture
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 @CasePathable
 enum OnboardingAction: CasePathable {
@@ -8,7 +8,7 @@ enum OnboardingAction: CasePathable {
     case nextTapped
 
     case welcome(WelcomeFeature.Action)
-    case betaAccess(UnlockLicenseAuthFeature.Action)
+    case betaAccess(AccountAccessFeature.Action)
     case permissions(PermissionsFeature.Action)
     case aiProviderSetup(AiProviderSetupFeature.Action)
     case complete(CompleteFeature.Action)

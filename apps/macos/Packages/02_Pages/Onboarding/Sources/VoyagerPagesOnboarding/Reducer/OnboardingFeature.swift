@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 @Reducer
 struct OnboardingFeature {
@@ -18,7 +18,7 @@ struct OnboardingFeature {
             WelcomeFeature()
         }
         Scope(state: \.betaAccess, action: \.betaAccess) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         }
         Scope(state: \.permissions, action: \.permissions) {
             PermissionsFeature()
@@ -59,7 +59,7 @@ struct OnboardingFeature {
             case let .success(snapshot):
                 state.applyStepState(snapshot.stepState)
                 if snapshot.stepState.betaAccessComplete, snapshot.accessSnapshot == nil {
-                    state.betaAccess = UnlockLicenseAuthFeature.State()
+                    state.betaAccess = AccountAccessFeature.State()
                     state.currentStep = .betaAccess
                     let updatedSnapshot = state.progressSnapshot
                     return .run { _ in
@@ -132,7 +132,7 @@ struct OnboardingFeature {
             }
             return .none
 
-        case let .betaAccess(.licenseAuthStatusResponse(generation: _, result: .success(response))):
+        case let .betaAccess(.accessStatusResponse(generation: _, result: .success(response))):
             if !response.status.isActive {
                 state.currentStep = .betaAccess
             }

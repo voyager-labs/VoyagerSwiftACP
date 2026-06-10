@@ -1,9 +1,9 @@
 import ComposableArchitecture
 import SwiftUI
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
-struct UnlockLicenseAuthStepView: View {
-    let store: StoreOf<UnlockLicenseAuthFeature>
+struct UnlockAccessStepView: View {
+    let store: StoreOf<AccountAccessFeature>
 
     var body: some View {
         WithViewStore(store, observe: { $0 }, content: { viewStore in
@@ -47,8 +47,8 @@ struct UnlockLicenseAuthStepView: View {
     // MARK: - Auth status banner
 
     @ViewBuilder
-    private func authStatusBanner(viewStore: ViewStoreOf<UnlockLicenseAuthFeature>) -> some View {
-        switch viewStore.onb002AuthAxis {
+    private func authStatusBanner(viewStore: ViewStoreOf<AccountAccessFeature>) -> some View {
+        switch viewStore.accountAccessAuthAxis {
         case .signedOut:
             HStack(spacing: 8) {
                 Image(systemName: "person.crop.circle.badge.xmark")
@@ -87,7 +87,7 @@ struct UnlockLicenseAuthStepView: View {
     // MARK: - Action CTAs
 
     @ViewBuilder
-    private func actionCTAs(viewStore: ViewStoreOf<UnlockLicenseAuthFeature>) -> some View {
+    private func actionCTAs(viewStore: ViewStoreOf<AccountAccessFeature>) -> some View {
         if viewStore.canStartLogin {
             Button {
                 viewStore.send(.loginTapped)
@@ -100,8 +100,8 @@ struct UnlockLicenseAuthStepView: View {
             .disabled(viewStore.isSignInInProgress)
         }
 
-        if viewStore.onb002AuthAxis == .signedIn,
-           viewStore.onb002AccessStepState == .blocked,
+        if viewStore.accountAccessAuthAxis == .signedIn,
+           viewStore.accountAccessStepState == .blocked,
            let status = viewStore.status
         {
             blockedStatusCTAs(viewStore: viewStore, status: status)
@@ -123,8 +123,8 @@ struct UnlockLicenseAuthStepView: View {
 
     @ViewBuilder
     private func blockedStatusCTAs(
-        viewStore: ViewStoreOf<UnlockLicenseAuthFeature>,
-        status: LicenseAuthStatus,
+        viewStore: ViewStoreOf<AccountAccessFeature>,
+        status: AccessStatus,
     ) -> some View {
         VStack(spacing: 10) {
             switch status {

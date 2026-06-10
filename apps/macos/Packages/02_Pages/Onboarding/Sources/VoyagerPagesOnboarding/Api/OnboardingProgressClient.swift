@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 import VoyagerShared
 
 struct OnboardingProgressClient {
@@ -62,7 +62,7 @@ extension OnboardingProgressClient: DependencyKey {
                     return .resetRequired
                 }
                 let accessSnapshot = (userDefaultsClient.object(Keys.accessSnapshot) as? Data).flatMap { data in
-                    try? JSONDecoder().decode(LicenseAuthStatusSnapshot.self, from: data)
+                    try? JSONDecoder().decode(AccessStatusSnapshot.self, from: data)
                 }
 
                 if version != currentVersion {
@@ -105,7 +105,7 @@ extension OnboardingProgressClient: DependencyKey {
         version: Double,
         currentStep: OnboardingStep,
         stepState: OnboardingStepState,
-        accessSnapshot: LicenseAuthStatusSnapshot?,
+        accessSnapshot: AccessStatusSnapshot?,
     ) -> OnboardingProgressSnapshot? {
         guard version == 1.1 else { return nil }
 

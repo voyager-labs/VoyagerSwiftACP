@@ -1,7 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerEntitiesAppPreferences
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 import VoyagerPagesOnboarding
 import XCTest
 
@@ -53,7 +53,7 @@ final class AppLifecycleFeatureTests: XCTestCase {
 
     // swiftlint:disable:next function_body_length
     func testActiveAccessOpensMainAndStartsHelper() async {
-        nonisolated(unsafe) var savedSnapshots: [LicenseAuthStatusSnapshot] = []
+        nonisolated(unsafe) var savedSnapshots: [AccessStatusSnapshot] = []
         nonisolated(unsafe) var didShowUnlock = false
         nonisolated(unsafe) var helperStartCount = 0
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
@@ -63,8 +63,8 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.licenseAuthClient = .mock
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
+            $0.accountAccessClient = .mock
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
                 save: { snapshot in savedSnapshots.append(snapshot) },
                 remove: {},
@@ -100,19 +100,19 @@ final class AppLifecycleFeatureTests: XCTestCase {
 
         await store.send(.launch(.didFinishLaunching))
 
-        await store.receive(.licenseAuthGate(.checkAccessStatus)) {
-            $0.isCheckingLicenseAuth = true
+        await store.receive(.accountAccessGate(.checkAccessStatus)) {
+            $0.isCheckingAccountAccess = true
         }
 
-        await store.receive(.licenseAuthGate(.licenseAuthStatusResponse(.success(
-            LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense]),
+        await store.receive(.accountAccessGate(.accessStatusResponse(.success(
+            AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense]),
         )))) {
-            $0.isCheckingLicenseAuth = false
-            $0.lastLicenseAuthStatus = .coreLicenseActive
-            $0.licenseAuthGateResolved = true
+            $0.isCheckingAccountAccess = false
+            $0.lastAccessStatus = .coreLicenseActive
+            $0.accountAccessGateResolved = true
         }
 
-        await store.receive(.licenseAuthGate(.licenseAuthGranted(snapshot: LicenseAuthStatusSnapshot(
+        await store.receive(.accountAccessGate(.accountAccessGranted(snapshot: AccessStatusSnapshot(
             status: .coreLicenseActive,
             entitlements: [.coreLicense],
             fetchedAt: testDate,
@@ -137,14 +137,14 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
-                    LicenseAuthStatusResponse(status: .revoked, entitlements: [])
+                    AccessStatusResponse(status: .revoked, entitlements: [])
                 },
                 signOut: {},
             )
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
                 save: { _ in },
                 remove: {},
@@ -169,19 +169,19 @@ final class AppLifecycleFeatureTests: XCTestCase {
 
         await store.send(.launch(.didFinishLaunching))
 
-        await store.receive(.licenseAuthGate(.checkAccessStatus)) {
-            $0.isCheckingLicenseAuth = true
+        await store.receive(.accountAccessGate(.checkAccessStatus)) {
+            $0.isCheckingAccountAccess = true
         }
 
-        await store.receive(.licenseAuthGate(.licenseAuthStatusResponse(.success(
-            LicenseAuthStatusResponse(status: .revoked, entitlements: []),
+        await store.receive(.accountAccessGate(.accessStatusResponse(.success(
+            AccessStatusResponse(status: .revoked, entitlements: []),
         )))) {
-            $0.isCheckingLicenseAuth = false
-            $0.lastLicenseAuthStatus = .revoked
-            $0.licenseAuthGateResolved = true
+            $0.isCheckingAccountAccess = false
+            $0.lastAccessStatus = .revoked
+            $0.accountAccessGateResolved = true
         }
 
-        await store.receive(.licenseAuthGate(.showUnlockSurface))
+        await store.receive(.accountAccessGate(.showUnlockSurface))
         await store.finish()
 
         XCTAssertTrue(didShowUnlock)
@@ -195,15 +195,15 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
                     accessCheckCalled = true
-                    return LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 signOut: {},
             )
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
                 save: { _ in },
                 remove: {},
@@ -234,12 +234,12 @@ final class AppLifecycleFeatureTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     func testNetworkFailureWithValidCacheGrantsAccess() async {
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let cachedSnapshot = LicenseAuthStatusSnapshot(
+        let cachedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             entitlements: [.coreLicense],
             fetchedAt: testDate.addingTimeInterval(-3600),
         )
-        nonisolated(unsafe) var savedSnapshots: [LicenseAuthStatusSnapshot] = []
+        nonisolated(unsafe) var savedSnapshots: [AccessStatusSnapshot] = []
         nonisolated(unsafe) var didShowUnlock = false
         nonisolated(unsafe) var helperStartCount = 0
 
@@ -248,14 +248,14 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
-                    throw LicenseAuthError.networkFailure
+                    throw AccessError.networkFailure
                 },
                 signOut: {},
             )
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { snapshot in savedSnapshots.append(snapshot) },
                 remove: {},
@@ -291,17 +291,17 @@ final class AppLifecycleFeatureTests: XCTestCase {
 
         await store.send(.launch(.didFinishLaunching))
 
-        await store.receive(.licenseAuthGate(.checkAccessStatus)) {
-            $0.isCheckingLicenseAuth = true
+        await store.receive(.accountAccessGate(.checkAccessStatus)) {
+            $0.isCheckingAccountAccess = true
         }
 
-        await store.receive(.licenseAuthGate(.licenseAuthStatusResponse(.failure(LicenseAuthError.networkFailure))))
+        await store.receive(.accountAccessGate(.accessStatusResponse(.failure(AccessError.networkFailure))))
 
-        await store.receive(.licenseAuthGate(.licenseAuthGranted(snapshot: cachedSnapshot))) {
+        await store.receive(.accountAccessGate(.accountAccessGranted(snapshot: cachedSnapshot))) {
             $0.didStartHelper = true
-            $0.isCheckingLicenseAuth = false
-            $0.lastLicenseAuthStatus = .coreLicenseActive
-            $0.licenseAuthGateResolved = true
+            $0.isCheckingAccountAccess = false
+            $0.lastAccessStatus = .coreLicenseActive
+            $0.accountAccessGateResolved = true
         }
 
         await store.receive(.delegate(.openInitialWindowIfNeeded))
@@ -315,12 +315,12 @@ final class AppLifecycleFeatureTests: XCTestCase {
     // swiftlint:disable:next function_body_length
     func testNonNetworkFailureWithValidCacheShowsUnlock() async {
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let cachedSnapshot = LicenseAuthStatusSnapshot(
+        let cachedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             entitlements: [.coreLicense],
             fetchedAt: testDate.addingTimeInterval(-3600),
         )
-        nonisolated(unsafe) var savedSnapshots: [LicenseAuthStatusSnapshot] = []
+        nonisolated(unsafe) var savedSnapshots: [AccessStatusSnapshot] = []
         nonisolated(unsafe) var didShowUnlock = false
         nonisolated(unsafe) var helperStartCount = 0
 
@@ -329,14 +329,14 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
-                    throw LicenseAuthError.notConfigured
+                    throw AccessError.notConfigured
                 },
                 signOut: {},
             )
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
                 save: { snapshot in savedSnapshots.append(snapshot) },
                 remove: {},
@@ -372,15 +372,15 @@ final class AppLifecycleFeatureTests: XCTestCase {
 
         await store.send(.launch(.didFinishLaunching))
 
-        await store.receive(.licenseAuthGate(.checkAccessStatus)) {
-            $0.isCheckingLicenseAuth = true
+        await store.receive(.accountAccessGate(.checkAccessStatus)) {
+            $0.isCheckingAccountAccess = true
         }
 
-        await store.receive(.licenseAuthGate(.licenseAuthStatusResponse(.failure(LicenseAuthError.notConfigured))))
+        await store.receive(.accountAccessGate(.accessStatusResponse(.failure(AccessError.notConfigured))))
 
-        await store.receive(.licenseAuthGate(.showUnlockSurface)) {
-            $0.isCheckingLicenseAuth = false
-            $0.licenseAuthGateResolved = true
+        await store.receive(.accountAccessGate(.showUnlockSurface)) {
+            $0.isCheckingAccountAccess = false
+            $0.accountAccessGateResolved = true
         }
         await store.finish()
 
@@ -398,14 +398,14 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
-                    throw LicenseAuthError.networkFailure
+                    throw AccessError.networkFailure
                 },
                 signOut: {},
             )
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
                 save: { _ in },
                 remove: {},
@@ -430,15 +430,15 @@ final class AppLifecycleFeatureTests: XCTestCase {
 
         await store.send(.launch(.didFinishLaunching))
 
-        await store.receive(.licenseAuthGate(.checkAccessStatus)) {
-            $0.isCheckingLicenseAuth = true
+        await store.receive(.accountAccessGate(.checkAccessStatus)) {
+            $0.isCheckingAccountAccess = true
         }
 
-        await store.receive(.licenseAuthGate(.licenseAuthStatusResponse(.failure(LicenseAuthError.networkFailure))))
+        await store.receive(.accountAccessGate(.accessStatusResponse(.failure(AccessError.networkFailure))))
 
-        await store.receive(.licenseAuthGate(.showUnlockSurface)) {
-            $0.isCheckingLicenseAuth = false
-            $0.licenseAuthGateResolved = true
+        await store.receive(.accountAccessGate(.showUnlockSurface)) {
+            $0.isCheckingAccountAccess = false
+            $0.accountAccessGateResolved = true
         }
         await store.finish()
 
@@ -449,7 +449,7 @@ final class AppLifecycleFeatureTests: XCTestCase {
     func testNetworkFailureWithExpiredCacheShowsUnlock() async {
         nonisolated(unsafe) var didShowUnlock = false
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let expiredSnapshot = LicenseAuthStatusSnapshot(
+        let expiredSnapshot = AccessStatusSnapshot(
             status: .betaTrialActive,
             expiresAt: testDate.addingTimeInterval(-1),
             entitlements: [.betaTrial],
@@ -461,14 +461,14 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: {
-                    throw LicenseAuthError.networkFailure
+                    throw AccessError.networkFailure
                 },
                 signOut: {},
             )
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { expiredSnapshot },
                 save: { _ in },
                 remove: {},
@@ -493,15 +493,15 @@ final class AppLifecycleFeatureTests: XCTestCase {
 
         await store.send(.launch(.didFinishLaunching))
 
-        await store.receive(.licenseAuthGate(.checkAccessStatus)) {
-            $0.isCheckingLicenseAuth = true
+        await store.receive(.accountAccessGate(.checkAccessStatus)) {
+            $0.isCheckingAccountAccess = true
         }
 
-        await store.receive(.licenseAuthGate(.licenseAuthStatusResponse(.failure(LicenseAuthError.networkFailure))))
+        await store.receive(.accountAccessGate(.accessStatusResponse(.failure(AccessError.networkFailure))))
 
-        await store.receive(.licenseAuthGate(.showUnlockSurface)) {
-            $0.isCheckingLicenseAuth = false
-            $0.licenseAuthGateResolved = true
+        await store.receive(.accountAccessGate(.showUnlockSurface)) {
+            $0.isCheckingAccountAccess = false
+            $0.accountAccessGateResolved = true
         }
         await store.finish()
 
@@ -530,8 +530,8 @@ final class AppLifecycleFeatureTests: XCTestCase {
     func testAppReopenAfterGateResolvedSendsDelegate() async {
         let store = TestStore(
             initialState: AppLifecycleState(
-                lastLicenseAuthStatus: .coreLicenseActive,
-                licenseAuthGateResolved: true,
+                lastAccessStatus: .coreLicenseActive,
+                accountAccessGateResolved: true,
             ),
         ) {
             AppLifecycleFeature()
@@ -553,8 +553,8 @@ final class AppLifecycleFeatureTests: XCTestCase {
     func testAppReopenAfterLockedGateDoesNothing() async {
         let store = TestStore(
             initialState: AppLifecycleState(
-                lastLicenseAuthStatus: .revoked,
-                licenseAuthGateResolved: true,
+                lastAccessStatus: .revoked,
+                accountAccessGateResolved: true,
             ),
         ) {
             AppLifecycleFeature()

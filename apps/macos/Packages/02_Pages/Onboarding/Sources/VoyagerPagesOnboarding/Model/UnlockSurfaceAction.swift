@@ -1,15 +1,15 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 @CasePathable
 enum UnlockSurfaceAction: CasePathable, Sendable {
     case onAppear
-    case unlockAccess(UnlockLicenseAuthFeature.Action)
+    case unlockAccess(AccountAccessFeature.Action)
     case delegate(Delegate)
 
     @CasePathable
     enum Delegate: CasePathable, Sendable {
-        case unlocked(LicenseAuthStatusSnapshot)
+        case unlocked(AccessStatusSnapshot)
     }
 }

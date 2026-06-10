@@ -1,5 +1,5 @@
 import ComposableArchitecture
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesOnboarding
 import XCTest
 
@@ -198,7 +198,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.send(.nextTapped) { state in
             state.currentStep = .betaAccess
         }
-        await store.send(.betaAccess(.licenseAuthStatusResponse(
+        await store.send(.betaAccess(.accessStatusResponse(
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
@@ -305,7 +305,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         }
 
         // beta access를 완료하여 다음 네비게이션 활성화
-        await store.send(.betaAccess(.licenseAuthStatusResponse(
+        await store.send(.betaAccess(.accessStatusResponse(
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
@@ -383,7 +383,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertNil(store.state.betaAccess.status)
 
         // 성공적인 확인이 상태를 업데이트
-        await store.send(.betaAccess(.licenseAuthStatusResponse(
+        await store.send(.betaAccess(.accessStatusResponse(
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
@@ -413,7 +413,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
         }
 
-        await store.send(.betaAccess(.licenseAuthStatusResponse(
+        await store.send(.betaAccess(.accessStatusResponse(
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
@@ -504,7 +504,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
 
         await store.send(.nextTapped)
 
-        await store.send(.betaAccess(.licenseAuthStatusResponse(
+        await store.send(.betaAccess(.accessStatusResponse(
             generation: 0,
             result: .success(StateMutation.activeAccessResponse),
         ))) { state in
@@ -775,7 +775,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
         }
-        await store.receive(\.betaAccess.licenseAuthStatusResponse)
+        await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
     }
 
@@ -902,7 +902,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
         }
-        await store.receive(\.betaAccess.licenseAuthStatusResponse)
+        await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
         XCTAssertEqual(store.state.currentStep, .complete)
@@ -993,7 +993,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
         }
-        await store.receive(\.betaAccess.licenseAuthStatusResponse)
+        await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
         let saved = saveRecorder.value
@@ -1058,7 +1058,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         // swiftlint:enable function_body_length
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
-        let accessSnapshotRecorder = LicenseAuthSnapshotRecorder()
+        let accessSnapshotRecorder = AccessSnapshotRecorder()
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .permissions,
             stepState: OnboardingStepState(
@@ -1069,8 +1069,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             ),
             accessSnapshot: StateMutation.activeAccessSnapshot,
         )
-        let revokedResponse = LicenseAuthStatusResponse(status: .revoked, entitlements: [])
-        let revokedSnapshot = LicenseAuthStatusSnapshot(
+        let revokedResponse = AccessStatusResponse(status: .revoked, entitlements: [])
+        let revokedSnapshot = AccessStatusSnapshot(
             status: .revoked,
             entitlements: [],
             fetchedAt: testDate,
@@ -1083,12 +1083,12 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
                 snapshot: snapshot,
                 saveRecorder: saveRecorder,
             )
-            $0.licenseAuthClient = LicenseAuthClient(
-                restoreSession: { LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive) },
+            $0.accountAccessClient = AccountAccessClient(
+                restoreSession: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
                 fetchAccessStatus: { revokedResponse },
                 signOut: {},
             )
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthSnapshotClient.recording(
+            $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(
                 recorder: accessSnapshotRecorder,
                 load: StateMutation.activeAccessSnapshot,
             )
@@ -1110,7 +1110,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
         }
-        await store.receive(\.betaAccess.licenseAuthStatusResponse) { state in
+        await store.receive(\.betaAccess.accessStatusResponse) { state in
             state.currentStep = .betaAccess
             state.betaAccess.status = .revoked
             state.betaAccess.snapshot = revokedSnapshot
@@ -1286,7 +1286,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
         }
-        await store.receive(\.betaAccess.licenseAuthStatusResponse)
+        await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
     }
 
@@ -1609,7 +1609,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
         }
-        await store.receive(\.betaAccess.licenseAuthStatusResponse)
+        await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
 
         XCTAssertTrue(store.state.isSessionComplete)

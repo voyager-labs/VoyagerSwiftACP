@@ -1,32 +1,32 @@
 import Dependencies
 import Foundation
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesOnboarding
 
 // MARK: - 상태 변이 헬퍼
 
 /// 테스트에서 반복 사용하는 상태 변이 패턴을 네임스페이스로 제공합니다.
 enum StateMutation {
-    static let activeAccessResponse = LicenseAuthStatusResponse(
+    static let activeAccessResponse = AccessStatusResponse(
         status: .coreLicenseActive,
         entitlements: [.coreLicense],
     )
 
-    static let activeAccessSnapshot = LicenseAuthStatusSnapshot(
+    static let activeAccessSnapshot = AccessStatusSnapshot(
         status: .coreLicenseActive,
         entitlements: [.coreLicense],
         fetchedAt: Date(timeIntervalSince1970: 0),
     )
 
-    static let activeLicenseAuthClient = LicenseAuthClient(
-        restoreSession: { LicenseAuthSession(accessToken: "test-token", status: .coreLicenseActive) },
+    static let activeAccountAccessClient = AccountAccessClient(
+        restoreSession: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
         fetchAccessStatus: { activeAccessResponse },
         signOut: {},
     )
 
     static func installActiveAccessRefresh(_ dependencies: inout DependencyValues) {
-        dependencies.licenseAuthClient = activeLicenseAuthClient
-        dependencies.licenseAuthStatusSnapshotClient = LicenseAuthStatusSnapshotClient(
+        dependencies.accountAccessClient = activeAccountAccessClient
+        dependencies.accessStatusSnapshotClient = AccessStatusSnapshotClient(
             load: { activeAccessSnapshot },
             save: { _ in },
             remove: {},

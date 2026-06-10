@@ -3,7 +3,7 @@ import ComposableArchitecture
 import QuartzCore
 import SwiftUI
 import VoyagerEntitiesAppPreferences
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let store: StoreOf<OnboardingFeature>
@@ -14,7 +14,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
             false
         },
-        licenseAuthClient: LicenseAuthClient? = nil,
+        accountAccessClient: AccountAccessClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
     ) {
@@ -30,8 +30,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                 openMainWindow: openMainWindow,
                 resetStoredProgress: base.resetStoredProgress,
             )
-            if let licenseAuthClient {
-                $0.licenseAuthClient = licenseAuthClient
+            if let accountAccessClient {
+                $0.accountAccessClient = accountAccessClient
             }
             if let signInHandoffClient {
                 $0.signInHandoffClient = signInHandoffClient

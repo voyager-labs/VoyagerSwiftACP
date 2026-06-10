@@ -1,6 +1,6 @@
 import AppKit
 import ComposableArchitecture
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 @MainActor private var onboardingWindowController: OnboardingWindowController?
 
@@ -59,14 +59,14 @@ extension OnboardingWindowClient: DependencyKey {
 
     nonisolated public static func makeLive(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        licenseAuthClient: LicenseAuthClient? = nil,
+        accountAccessClient: AccountAccessClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
     ) -> OnboardingWindowClient {
         makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
-            licenseAuthClient: licenseAuthClient,
+            accountAccessClient: accountAccessClient,
             signInHandoffClient: signInHandoffClient,
             permissionDebugScenario: permissionDebugScenario,
         )
@@ -75,7 +75,7 @@ extension OnboardingWindowClient: DependencyKey {
     nonisolated static func makeClient(
         progressClient: OnboardingProgressClient,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        licenseAuthClient: LicenseAuthClient? = nil,
+        accountAccessClient: AccountAccessClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
@@ -87,7 +87,7 @@ extension OnboardingWindowClient: DependencyKey {
                 if onboardingWindowController == nil {
                     onboardingWindowController = OnboardingWindowController(
                         openMainWindow: openMainWindow,
-                        licenseAuthClient: licenseAuthClient,
+                        accountAccessClient: accountAccessClient,
                         signInHandoffClient: signInHandoffClient,
                         permissionDebugScenario: permissionDebugScenario,
                     )

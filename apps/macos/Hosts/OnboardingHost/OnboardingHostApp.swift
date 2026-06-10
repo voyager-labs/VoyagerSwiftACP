@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 import VoyagerPagesOnboarding
 
 // MARK: - Deterministic smoke mode (env-toggle, host-only)
@@ -202,7 +202,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return true
             },
-            licenseAuthClient: authClients.licenseAuthClient,
+            accountAccessClient: authClients.accountAccessClient,
             signInHandoffClient: authClients.signInHandoffClient,
             permissionDebugScenario: { [debugStore] in
                 debugStore.currentScenario
@@ -210,16 +210,18 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func makeAuthClients() -> (licenseAuthClient: LicenseAuthClient, signInHandoffClient: SignInHandoffClient) {
+    private func makeAuthClients()
+        -> (accountAccessClient: AccountAccessClient, signInHandoffClient: SignInHandoffClient)
+    {
         switch OnboardingHostAuthMode.current {
         case .mock:
             (
-                licenseAuthClient: .mockSignInBacked(by: sessionHolder),
+                accountAccessClient: .mockSignInBacked(by: sessionHolder),
                 signInHandoffClient: makeMockSignInHandoffClient(),
             )
         case .live:
             (
-                licenseAuthClient: makeLiveLicenseAuthClient(),
+                accountAccessClient: makeLiveAccountAccessClient(),
                 signInHandoffClient: .liveValue,
             )
         }
@@ -227,7 +229,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeMockSignInHandoffClient() -> SignInHandoffClient {
         SignInHandoffClient { [sessionHolder] in
-            let mockSession = LicenseAuthSession(
+            let mockSession = AccountSession(
                 accessToken: "mock-onboarding-token",
                 status: .coreLicenseActive,
             )
@@ -239,14 +241,14 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func makeLiveLicenseAuthClient() -> LicenseAuthClient {
-        LicenseAuthClient.handoffBacked(
+    private func makeLiveAccountAccessClient() -> AccountAccessClient {
+        AccountAccessClient.handoffBacked(
             sessionHolder: sessionHolder,
             exchangeClient: .liveValue,
             fetchAccessStatus: {
                 // Host live auth 검증: entitlement 백엔드 미구현이므로 활성 상태 반환
                 // TODO(VOY-334): 실제 entitlement API 연동 후 교체
-                LicenseAuthStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
             },
         )
     }

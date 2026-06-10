@@ -1,8 +1,8 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 @ObservableState
 struct UnlockSurfaceState: Equatable {
-    var unlockAccess: UnlockLicenseAuthFeature.State = .init()
+    var unlockAccess: AccountAccessFeature.State = .init()
 }

@@ -1,13 +1,13 @@
 import ComposableArchitecture
 import SwiftUI
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
-// Legacy LicenseAuthStepView — Task 8 에서 삭제 예정
-// UnlockLicenseAuthStepView 로 교체됨
-struct LicenseAuthStepView: View {
-    let store: StoreOf<UnlockLicenseAuthFeature>
+// Legacy AccessStepView — Task 8 에서 삭제 예정
+// UnlockAccessStepView 로 교체됨
+struct AccessStepView: View {
+    let store: StoreOf<AccountAccessFeature>
 
     var body: some View {
-        UnlockLicenseAuthStepView(store: store)
+        UnlockAccessStepView(store: store)
     }
 }

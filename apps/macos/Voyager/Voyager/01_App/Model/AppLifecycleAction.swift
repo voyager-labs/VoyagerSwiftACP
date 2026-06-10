@@ -1,31 +1,31 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 @CasePathable
-enum AppLifecycleAction: CasePathable, Equatable, Sendable {
+enum AppLifecycleAction: CasePathable, Equatable {
     case launch(Launch)
     case termination(Termination)
-    case licenseAuthGate(LicenseAuthGate)
+    case accountAccessGate(AccountAccessGate)
     case delegate(Delegate)
 
     @CasePathable
-    enum Launch: CasePathable, Equatable, Sendable {
+    enum Launch: CasePathable, Equatable {
         case willFinishLaunching
         case didFinishLaunching
         case appReopen(hasVisibleWindows: Bool)
     }
 
     @CasePathable
-    enum LicenseAuthGate: CasePathable, Equatable, Sendable {
+    enum AccountAccessGate: CasePathable, Equatable {
         case checkAccessStatus
-        case licenseAuthStatusResponse(Result<LicenseAuthStatusResponse, LicenseAuthError>)
+        case accessStatusResponse(Result<AccessStatusResponse, AccessError>)
         case showUnlockSurface
-        case licenseAuthGranted(snapshot: LicenseAuthStatusSnapshot)
+        case accountAccessGranted(snapshot: AccessStatusSnapshot)
     }
 
     @CasePathable
-    enum Termination: CasePathable, Equatable, Sendable {
+    enum Termination: CasePathable, Equatable {
         case requestTermination
         case quitConfirmationResponse(attemptID: UUID, result: QuitConfirmationResult)
         case startTerminationCleanup(attemptID: UUID)
@@ -34,7 +34,7 @@ enum AppLifecycleAction: CasePathable, Equatable, Sendable {
     }
 
     @CasePathable
-    enum Delegate: CasePathable, Equatable, Sendable {
+    enum Delegate: CasePathable, Equatable {
         case openInitialWindowIfNeeded
         case reopenWindowIfNeeded(hasVisibleWindows: Bool)
         case startHelperIfNeeded

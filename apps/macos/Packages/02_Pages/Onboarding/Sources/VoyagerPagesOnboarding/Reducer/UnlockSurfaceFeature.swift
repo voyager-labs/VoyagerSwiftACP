@@ -1,19 +1,19 @@
 import ComposableArchitecture
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 @Reducer
 struct UnlockSurfaceFeature {
     typealias State = UnlockSurfaceState
     typealias Action = UnlockSurfaceAction
 
-    @Dependency(\.licenseAuthStatusSnapshotClient)
+    @Dependency(\.accessStatusSnapshotClient)
     var snapshotClient
     @Dependency(\.unlockSurfaceWindowClient)
     var windowClient
 
     var body: some Reducer<State, Action> {
         Scope(state: \.unlockAccess, action: \.unlockAccess) {
-            UnlockLicenseAuthFeature()
+            AccountAccessFeature()
         }
         Reduce { _, action in
             switch action {

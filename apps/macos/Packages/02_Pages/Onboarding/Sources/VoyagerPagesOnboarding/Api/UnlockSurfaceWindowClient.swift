@@ -1,6 +1,6 @@
 import AppKit
 import ComposableArchitecture
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 
 @MainActor private var unlockWindowController: UnlockSurfaceWindowController?
 
@@ -14,13 +14,13 @@ public struct UnlockSurfaceWindowClient: Sendable {
     public var showWindow: @Sendable () async -> Void
     public var closeWindow: @Sendable () async -> Void
     public var openMainWindow: @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool
-    public var onUnlocked: @Sendable (_ snapshot: LicenseAuthStatusSnapshot) async -> Void
+    public var onUnlocked: @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void
 
     public nonisolated init(
         showWindow: @escaping @Sendable () async -> Void,
         closeWindow: @escaping @Sendable () async -> Void,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        onUnlocked: @escaping @Sendable (_ snapshot: LicenseAuthStatusSnapshot) async -> Void = { _ in },
+        onUnlocked: @escaping @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void = { _ in },
     ) {
         self.showWindow = showWindow
         self.closeWindow = closeWindow
@@ -50,7 +50,7 @@ extension UnlockSurfaceWindowClient: DependencyKey {
 
     public nonisolated static func makeLive(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        onUnlocked: @escaping @Sendable (_ snapshot: LicenseAuthStatusSnapshot) async -> Void = { _ in },
+        onUnlocked: @escaping @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void = { _ in },
     ) -> UnlockSurfaceWindowClient {
         UnlockSurfaceWindowClient(
             showWindow: {

@@ -1,5 +1,5 @@
 import ComposableArchitecture
-import VoyagerFeaturesLicenseAuth
+import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesOnboarding
 import XCTest
 
@@ -15,10 +15,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: unlock surface가 표시되어 있고 child access reducer가 active access snapshot을 delegate로 전달합니다.
     /// - 기대 결과: snapshot 저장 recorder와 window callback이 각각 한 번 호출되고 `.delegate(.unlocked(snapshot))`이 수신됩니다.
     func testCompleteAccessResultSavesSnapshotAndEmitsSurfaceDelegate() async {
-        let recorder = LicenseAuthSnapshotRecorder()
+        let recorder = AccessSnapshotRecorder()
         let closedWindow = LockIsolated(false)
-        let completedSnapshots = LockIsolated<[LicenseAuthStatusSnapshot]>([])
-        let snapshot = LicenseAuthStatusSnapshot(
+        let completedSnapshots = LockIsolated<[AccessStatusSnapshot]>([])
+        let snapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
             entitlements: [.coreLicense],
             fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
@@ -27,7 +27,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         let store = TestStore(initialState: UnlockSurfaceFeature.State()) {
             UnlockSurfaceFeature()
         } withDependencies: {
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthSnapshotClient.recording(recorder: recorder)
+            $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(recorder: recorder)
             $0.unlockSurfaceWindowClient = UnlockSurfaceWindowClient(
                 showWindow: {},
                 closeWindow: { closedWindow.setValue(true) },
@@ -53,12 +53,12 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: unlock surface가 표시되어 있고 child access 조회가 `.networkFailure`로 실패합니다.
     /// - 기대 결과: child state는 retry 가능한 오류 상태가 되고 저장된 access snapshot은 없습니다.
     func testErrorAccessResultDoesNotSaveSnapshotOrEmitSurfaceDelegate() async {
-        let recorder = LicenseAuthSnapshotRecorder()
+        let recorder = AccessSnapshotRecorder()
 
         let store = TestStore(initialState: UnlockSurfaceFeature.State()) {
             UnlockSurfaceFeature()
         } withDependencies: {
-            $0.licenseAuthStatusSnapshotClient = LicenseAuthSnapshotClient.recording(recorder: recorder)
+            $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(recorder: recorder)
             $0.unlockSurfaceWindowClient = UnlockSurfaceWindowClient(
                 showWindow: {},
                 closeWindow: {},
@@ -67,7 +67,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             )
         }
 
-        await store.send(.unlockAccess(.licenseAuthStatusResponse(
+        await store.send(.unlockAccess(.accessStatusResponse(
             generation: 0,
             result: .failure(.networkFailure),
         ))) { state in
@@ -90,14 +90,14 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: 세션 없음, 로그인 진행 중 아님, 로그인 실패 아님.
     /// - 기대 결과: canStartLogin=true, canRefreshAccess=false, canRetry=false.
     func testSignedOutStateShowsLoginCTADisablesAllOthers() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = false
 
         XCTAssertTrue(state.canStartLogin, "signed-out 상태에서 canStartLogin이 true여야 함")
         XCTAssertFalse(state.canRefreshAccess, "signed-out 상태에서 canRefreshAccess가 false여야 함")
         XCTAssertFalse(state.canRetry, "signed-out 상태에서 canRetry가 false여야 함")
-        XCTAssertEqual(state.onb002AuthAxis, .signedOut)
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signedOut)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
     }
 
     /// ONB-002 UI: sign-in-failed 상태에서 Login CTA가 primary로 표시된다.
@@ -106,13 +106,13 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: hasAccountSession=false, didSignInFail=true.
     /// - 기대 결과: canStartLogin=true, canRefreshAccess=false.
     func testSignInFailedStateShowsLoginCTA() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = false
         state.didSignInFail = true
 
         XCTAssertTrue(state.canStartLogin, "sign-in-failed 상태에서 canStartLogin이 true여야 함")
         XCTAssertFalse(state.canRefreshAccess, "sign-in-failed 상태에서 canRefreshAccess가 false여야 함")
-        XCTAssertEqual(state.onb002AuthAxis, .signInFailed)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signInFailed)
     }
 
     /// ONB-002 UI: sign-in 진행 중에는 모든 액션 버튼이 비활성화된다.
@@ -121,61 +121,61 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: isSignInInProgress=true.
     /// - 기대 결과: canStartLogin=false, canRefreshAccess=false.
     func testSignInInProgressDisablesAllActions() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.isSignInInProgress = true
 
         XCTAssertFalse(state.canStartLogin, "sign-in 진행 중 canStartLogin이 false여야 함")
         XCTAssertFalse(state.canRefreshAccess, "sign-in 진행 중 canRefreshAccess가 false여야 함")
         XCTAssertFalse(state.canRetry, "sign-in 진행 중 canRetry가 false여야 함")
-        XCTAssertEqual(state.onb002AuthAxis, .signInInProgress)
-        XCTAssertEqual(state.onb002AccessStepState, .pending)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signInInProgress)
+        XCTAssertEqual(state.accountAccessStepState, .pending)
     }
 
     /// ONB-002 UI: signed-in blocked 상태에서 Refresh Access CTA가 활성화된다.
     /// 라이선스가 revoked/trialExpired 등 blocked 상태일 때 Refresh Access가 available한지 검증합니다.
     /// - 검증 내용: hasAccountSession=true, status=revoked → canRefreshAccess=true.
     /// - 사전 조건: 세션 있음, 라이선스 revoked.
-    /// - 기대 결과: canRefreshAccess=true, canStartLogin=false, onb002AccessStepState=blocked.
+    /// - 기대 결과: canRefreshAccess=true, canStartLogin=false, accountAccessStepState=blocked.
     func testSignedInBlockedShowsRefreshAccessCTA() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .revoked
 
         XCTAssertTrue(state.canRefreshAccess, "signed-in blocked 상태에서 canRefreshAccess가 true여야 함")
         XCTAssertFalse(state.canStartLogin, "signed-in 상태에서 canStartLogin이 false여야 함")
         XCTAssertFalse(state.canRetry, "blocked(비에러)에서 canRetry가 false여야 함")
-        XCTAssertEqual(state.onb002AccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
     }
 
     /// ONB-002 UI: signed-in error 상태에서 Refresh Access와 Retry CTA가 모두 활성화된다.
     /// 네트워크 오류 등 error 상태에서 refresh와 retry가 모두 가능한지 검증합니다.
     /// - 검증 내용: hasAccountSession=true, status=networkFailure → canRefreshAccess=true, canRetry=true.
     /// - 사전 조건: 세션 있음, 네트워크 실패.
-    /// - 기대 결과: canRefreshAccess=true, canRetry=true, onb002AccessStepState=error.
+    /// - 기대 결과: canRefreshAccess=true, canRetry=true, accountAccessStepState=error.
     func testSignedInErrorShowsRefreshAndRetryCTA() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .networkFailure
 
         XCTAssertTrue(state.canRefreshAccess, "signed-in error 상태에서 canRefreshAccess가 true여야 함")
         XCTAssertTrue(state.canRetry, "signed-in error 상태에서 canRetry가 true여야 함")
         XCTAssertFalse(state.canStartLogin, "signed-in 상태에서 canStartLogin이 false여야 함")
-        XCTAssertEqual(state.onb002AccessStepState, .error)
+        XCTAssertEqual(state.accountAccessStepState, .error)
     }
 
     /// ONB-002 UI: complete 상태에서 Next가 활성화된다.
     /// 라이선스가 active로 확인되면 onboarding 다음 단계로 진행 가능한지 검증합니다.
     /// - 검증 내용: status=coreLicenseActive, isComplete=true → onboarding canGoNext=true.
     /// - 사전 조건: 세션 있음, 라이선스 active, isComplete=true.
-    /// - 기대 결과: isComplete=true, onb002AccessStepState=complete.
+    /// - 기대 결과: isComplete=true, accountAccessStepState=complete.
     func testCompleteStateEnablesNext() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
         state.status = .coreLicenseActive
         state.isComplete = true
 
         XCTAssertTrue(state.isComplete)
-        XCTAssertEqual(state.onb002AccessStepState, .complete)
+        XCTAssertEqual(state.accountAccessStepState, .complete)
 
         // Onboarding 수준에서 canGoNext 검증
         var onboardingState = OnboardingFeature.State()
@@ -191,7 +191,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: 세션 있음.
     /// - 기대 결과: canRefreshAccess=true.
     func testSignedInEnablesRefreshAccess() {
-        var state = UnlockLicenseAuthFeature.State()
+        var state = AccountAccessFeature.State()
         state.hasAccountSession = true
 
         XCTAssertTrue(state.canRefreshAccess, "signed-in에서 canRefreshAccess가 true여야 함")
@@ -250,10 +250,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// onboarding scope를 통해 refreshAccessTapped가 전달될 때 fetch effect가 실행되는지 검증합니다.
     /// - 검증 내용: `.betaAccess(.refreshAccessTapped)` 전송 → fetchGeneration 증가, status fetch effect 실행.
     /// - 사전 조건: signed-in, status=revoked (blocked), canRefreshAccess=true.
-    /// - 기대 결과: fetchGeneration이 1 증가하고 licenseAuthStatusResponse 수신.
+    /// - 기대 결과: fetchGeneration이 1 증가하고 accessStatusResponse 수신.
     func testRefreshAccessCTADispatchesRefreshAccessTappedThroughOnboardingScope() async {
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let revokedResponse = LicenseAuthStatusResponse(status: .revoked, entitlements: [])
+        let revokedResponse = AccessStatusResponse(status: .revoked, entitlements: [])
 
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .betaAccess
@@ -265,7 +265,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: { revokedResponse },
                 signOut: {},
@@ -280,13 +280,13 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             state.betaAccess.fetchGeneration = expectedGeneration
         }
 
-        let expectedSnapshot = LicenseAuthStatusSnapshot(
+        let expectedSnapshot = AccessStatusSnapshot(
             status: .revoked,
             entitlements: [],
             fetchedAt: testDate,
         )
 
-        await store.receive(\.betaAccess.licenseAuthStatusResponse) { state in
+        await store.receive(\.betaAccess.accessStatusResponse) { state in
             state.betaAccess.status = .revoked
             state.betaAccess.snapshot = expectedSnapshot
             state.betaAccess.isComplete = false
@@ -335,8 +335,8 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: signed-out 상태.
     /// - 기대 결과: isSignInInProgress=true, status/snapshot/isComplete는 초기 상태 유지.
     func testLoginTappedDoesNotMutateEntitlementState() async {
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
             $0.signInHandoffClient = SignInHandoffClient { .failure }
         }
@@ -368,10 +368,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 사전 조건: hasAccountSession=false.
     /// - 기대 결과: 상태 변화 없음.
     func testRefreshAccessTappedNoopWhenSignedOut() async {
-        let store = TestStore(initialState: UnlockLicenseAuthFeature.State()) {
-            UnlockLicenseAuthFeature()
+        let store = TestStore(initialState: AccountAccessFeature.State()) {
+            AccountAccessFeature()
         } withDependencies: {
-            $0.licenseAuthClient = LicenseAuthClient(
+            $0.accountAccessClient = AccountAccessClient(
                 restoreSession: { nil },
                 fetchAccessStatus: { StateMutation.activeAccessResponse },
                 signOut: {},
@@ -390,10 +390,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
 
     /// ONB-002-mock_sign_in_handoff: Login CTA가 mock handoff 진행 중에 isSignInInProgress와 pending 상태를 표시한다.
     /// onboarding scope를 통해 loginTapped가 전달될 때 signInHandoffClient를 사용하면 sign-in 진행 상태가 올바르게 반영되는지 검증한다.
-    /// - 검증 내용: `.betaAccess(.loginTapped)` 전송 → isSignInInProgress=true, onb002AuthAxis=signInInProgress,
-    /// onb002AccessStepState=pending
+    /// - 검증 내용: `.betaAccess(.loginTapped)` 전송 → isSignInInProgress=true, accountAccessAuthAxis=signInInProgress,
+    /// accountAccessStepState=pending
     /// - 사전 조건: signed-out 상태 (hasAccountSession=false), signInHandoffClient가 지연 후 success 반환
-    /// - 기대 결과: isSignInInProgress=true, onb002AuthAxis==.signInInProgress, onb002AccessStepState==.pending
+    /// - 기대 결과: isSignInInProgress=true, accountAccessAuthAxis==.signInInProgress, accountAccessStepState==.pending
     func testLoginCTAShowsPendingDuringMockSignInHandoff() async {
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -423,8 +423,8 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
 
         // mock handoff 진행 중 상태 검증
         XCTAssertTrue(store.state.betaAccess.isSignInInProgress)
-        XCTAssertEqual(store.state.betaAccess.onb002AuthAxis, .signInInProgress)
-        XCTAssertEqual(store.state.betaAccess.onb002AccessStepState, .pending)
+        XCTAssertEqual(store.state.betaAccess.accountAccessAuthAxis, .signInInProgress)
+        XCTAssertEqual(store.state.betaAccess.accountAccessStepState, .pending)
 
         // signInHandoffClient가 success 반환 → callback chain
         await store.receive(\.betaAccess.signInHandoffCompleted)
