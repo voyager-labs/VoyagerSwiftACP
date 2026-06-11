@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerShared
 
 @Reducer
 public struct AiChatFeature {
@@ -19,6 +20,7 @@ public struct AiChatFeature {
         case sessionDelete
         case sessionRename
         case newChat
+        case transcriptScrollOffsetPersistence
     }
 
     @Dependency(\.aiChatExecutionClient)
@@ -37,6 +39,10 @@ public struct AiChatFeature {
     var uuid
     @Dependency(\.date)
     var date
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
+    @Dependency(\.continuousClock)
+    var clock
 
     public init() {}
 
@@ -45,6 +51,9 @@ public struct AiChatFeature {
             switch action {
             case .onAppear:
                 normalizeSelectionIfNeeded(&state)
+                state.transcriptScrollOffsets = _loadTranscriptScrollOffsets(
+                    from: userDefaultsClient,
+                )
                 return .none
 
             case .sessionsAppeared:
@@ -312,6 +321,21 @@ public struct AiChatFeature {
             case .openSettingsTapped:
                 return .send(.delegate(.openAISettings))
 
+            case let .transcriptScrollOffsetsLoaded(offsets):
+                state.transcriptScrollOffsets = offsets
+                return .none
+
+            case let .transcriptScrollOffsetChanged(sessionID, offsetY):
+                state.transcriptScrollOffsets[sessionID] = max(0, offsetY)
+                let snapshot = state.transcriptScrollOffsets
+                let capturedClient = userDefaultsClient
+                let capturedClock = clock
+                return .run { _ in
+                    try await capturedClock.sleep(for: .milliseconds(300))
+                    _saveTranscriptScrollOffsets(snapshot, to: capturedClient)
+                }
+                .cancellable(id: CancelID.transcriptScrollOffsetPersistence, cancelInFlight: true)
+
             case .delegate:
                 return .none
 
@@ -364,4 +388,29 @@ public struct AiChatFeature {
             }
         }
     }
+}
+
+private let _transcriptScrollOffsetsKey = "voyager.aiChat.transcriptScrollOffsets"
+
+private func _loadTranscriptScrollOffsets(
+    from userDefaultsClient: UserDefaultsClient,
+) -> [AiChatSessionID: CGFloat] {
+    guard let storedOffsets = userDefaultsClient
+        .object(_transcriptScrollOffsetsKey) as? [String: Double]
+    else { return [:] }
+
+    return storedOffsets.reduce(into: [AiChatSessionID: CGFloat]()) { result, element in
+        guard let uuid = UUID(uuidString: element.key) else { return }
+        result[AiChatSessionID(rawValue: uuid)] = CGFloat(max(0, element.value))
+    }
+}
+
+private func _saveTranscriptScrollOffsets(
+    _ offsets: [AiChatSessionID: CGFloat],
+    to userDefaultsClient: UserDefaultsClient,
+) {
+    let storedOffsets = offsets.reduce(into: [String: Double]()) { result, element in
+        result[element.key.rawValue.uuidString] = Double(max(0, element.value))
+    }
+    userDefaultsClient.setObject(storedOffsets, _transcriptScrollOffsetsKey)
 }

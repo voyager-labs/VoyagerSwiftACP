@@ -194,6 +194,7 @@ public struct AiChatState: Equatable, Sendable {
     public var modelListFailedProviders: [AiProvider: AiModelListFailure]
     public var providerConnectionSnapshot: AiChatProviderConnectionSnapshot
     public var availableModelsByProvider: [AiProvider: [AiProviderModel]]
+    public var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
 
     public init(
         restoreSessionID: AiChatSessionID? = nil,
@@ -233,6 +234,7 @@ public struct AiChatState: Equatable, Sendable {
         modelListFailedProviders: [AiProvider: AiModelListFailure] = [:],
         providerConnectionSnapshot: AiChatProviderConnectionSnapshot = .unknown,
         availableModelsByProvider: [AiProvider: [AiProviderModel]] = [:],
+        transcriptScrollOffsets: [AiChatSessionID: CGFloat] = [:],
     ) {
         self.restoreSessionID = restoreSessionID
         self.restoreOutcome = restoreOutcome
@@ -272,6 +274,7 @@ public struct AiChatState: Equatable, Sendable {
         self.modelListFailedProviders = modelListFailedProviders
         self.providerConnectionSnapshot = providerConnectionSnapshot
         self.availableModelsByProvider = availableModelsByProvider
+        self.transcriptScrollOffsets = transcriptScrollOffsets
     }
 
     public var availableModels: [AiProviderModel] {
