@@ -15,6 +15,12 @@ note: >
   DistributedNotificationCenter.default() remains forbidden everywhere in Ui — no exception.
   Implementation: uses ast-grep relational `not` + `inside` with `stopBy: end` to exclude matches
   nested inside any class_declaration whose name matches "Coordinator".
+  TODO: 이 예외는 NSClipView.boundsDidChangeNotification 같은 AppKit geometry observation이
+  NSViewRepresentable.Coordinator에서 불가피하게 발생하는 false positive를 회피하기 위한 임시 조치입니다.
+  장기적으로 AiChatTranscriptScrollObservationClient 같은 feature-local DependencyClient를 도입하여
+  Coordinator는 NSClipView 등록만 하고 실제 관찰 lifecycle(시작/중지)은 reducer effect가 소유하도록
+  리팩터링해야 합니다. 그 후 이 예외를 제거할 수 있습니다.
+  참조: EntryListCoordinator, EntryGridCoordinator도 동일한 패턴을 사용 중입니다.
   Scan: sg scan --rule .ast-grep/rules/ui/ui-direct-observation.yaml **/Ui/*.swift
 rule:
   any:
