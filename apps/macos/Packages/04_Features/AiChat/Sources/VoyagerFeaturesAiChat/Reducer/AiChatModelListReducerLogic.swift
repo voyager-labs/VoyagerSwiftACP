@@ -184,4 +184,37 @@ extension AiChatFeature {
 
         return AiModelListFailure(message: "Unable to load models for \(providerDisplayName).")
     }
+
+    func handleProviderConnectionsUpdated(file: AIConnectionsFile, state: inout State) -> Effect<Action> {
+        guard let loadBatch = makeModelListLoadBatch(from: file, state: state) else {
+            state.providerConnectionSnapshot = .known([])
+            state.availableModelsByProvider = [:]
+            clearModelListTracking(&state)
+            state.modelListProvider = nil
+            applyModelListState(.empty, to: &state)
+            return .cancel(id: CancelID.modelList)
+        }
+
+        let connectedProviders = loadBatch.requests.map(\.provider)
+        state.providerConnectionSnapshot = .known(connectedProviders)
+        state.availableModelsByProvider = [:]
+        state.modelListRequestID = loadBatch.requestID
+        state.modelListProvider = loadBatch.requests.first?.provider
+        state.modelListProviderOrder = connectedProviders
+        state.modelListPendingProviders = Set(connectedProviders)
+        state.modelListLoadedModelsByProvider = [:]
+        state.modelListFailedProviders = [:]
+        applyModelListState(.loading, to: &state)
+
+        return .concatenate(
+            .cancel(id: CancelID.modelList),
+            .merge(loadBatch.requests.map { loadRequest in
+                .send(.modelListLoading(
+                    requestID: loadRequest.requestID,
+                    provider: loadRequest.provider,
+                    credential: loadRequest.credential,
+                ))
+            }),
+        )
+    }
 }

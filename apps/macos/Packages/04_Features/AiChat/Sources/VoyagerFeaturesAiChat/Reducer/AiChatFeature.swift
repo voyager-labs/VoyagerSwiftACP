@@ -74,57 +74,10 @@ public struct AiChatFeature {
                 return .none
 
             case let .sessionRowTapped(sessionID):
-                state.emptyDraftSessionID = nil
-                state.sessionList.cancelRenaming()
-                state.sessionList.selectedSessionID = sessionID
-                state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
-                state.sessionList.errorMessage = nil
-                if state.sessionID != sessionID {
-                    state.currentContextFolderStructureModes = [:]
-                }
-
-                if state.executionPhase.isProcessing, state.sessionID == sessionID {
-                    state.mode = .chat
-                    return .none
-                }
-
-                state.mode = .sessions
-                state.restoreSessionID = sessionID
-                return restoreSession(sessionID: sessionID, state: state)
+                return handleSessionRowTapped(sessionID: sessionID, state: &state)
 
             case let .deleteSessionTapped(sessionID):
-                state.sessionList.errorMessage = nil
-                if state.sessionList.renamingSessionID == sessionID {
-                    state.sessionList.cancelRenaming()
-                }
-
-                var preDeleteEffects: [Effect<Action>] = []
-                if state.restoreSessionID == sessionID {
-                    state.restoreSessionID = nil
-                    state.restoreOutcome = nil
-                    state.restoreFailure = nil
-                    state.sessionList.selectedSessionID = nil
-                    preDeleteEffects.append(.cancel(id: CancelID.restore))
-                }
-                if state.sessionID == sessionID {
-                    if case let .processing(lock) = state.executionPhase {
-                        state.lockedModelHandle = nil
-                        state.streamingAssistantDraft = nil
-                        state.executionPhase = .cancelled(lock.recordingTerminal(
-                            at: currentTimestampMs(),
-                            failure: .cancelled,
-                            wasCancelled: true,
-                        ))
-                    }
-                    preDeleteEffects.append(cancelRequestLifecycle())
-                }
-                guard !preDeleteEffects.isEmpty else {
-                    return deleteSession(sessionID)
-                }
-                return .concatenate(
-                    .merge(preDeleteEffects),
-                    deleteSession(sessionID),
-                )
+                return handleDeleteSessionTapped(sessionID: sessionID, state: &state)
 
             case let .renameSessionTapped(sessionID):
                 state.sessionList.errorMessage = nil
@@ -179,44 +132,11 @@ public struct AiChatFeature {
                 return .none
 
             case let .sessionSnapshotSaved(summary):
-                guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID) else {
-                    return .none
-                }
-                state.sessionList.replaceRow(summary)
-                if state.restoreSessionID == nil || state.restoreSessionID == summary.sessionID {
-                    state.sessionList.selectedSessionID = summary.sessionID
-                }
-                if state.mode == .chat, state.sessionID == summary.sessionID {
-                    state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
-                } else {
-                    state.sessionList.unreadCompletedSessionIDs.insert(summary.sessionID)
-                }
-                state.sessionList.errorMessage = nil
+                applySessionSnapshotSaved(summary: summary, state: &state)
                 return .none
 
             case .backToSessionsTapped:
-                state.mode = .sessions
-                let exitEffects: Effect<Action> = .cancel(id: CancelID.restore)
-                if state.restoreSessionID != nil {
-                    state.restoreSessionID = nil
-                    state.restoreOutcome = nil
-                    state.restoreFailure = nil
-                }
-                guard let emptyDraftSessionID = cleanupEligibleEmptyDraftSessionID(for: state) else {
-                    return exitEffects
-                }
-                state.pendingEmptyDraftDeletionSessionIDs.insert(emptyDraftSessionID)
-                state.emptyDraftSessionID = nil
-                state.sessionID = nil
-                state.restoreSessionID = nil
-                state.restoreOutcome = nil
-                state.restoreFailure = nil
-                state.sessionList.selectedSessionID = nil
-                state.sessionList.errorMessage = nil
-                return .concatenate(
-                    exitEffects,
-                    deleteSession(emptyDraftSessionID),
-                )
+                return handleBackToSessionsTapped(state: &state)
 
             case let .sessionSearchQueryChanged(query):
                 state.sessionList.updateQuery(query)
@@ -250,14 +170,7 @@ public struct AiChatFeature {
                 return .none
 
             case let .newChatCreated(snapshot):
-                applyNewSessionSnapshot(snapshot, state: &state)
-                state.emptyDraftSessionID = snapshot.sessionID
-                state.restoreSessionID = snapshot.sessionID
-                state.restoreOutcome = nil
-                state.restoreFailure = nil
-                state.mode = .chat
-                state.sessionList.selectedSessionID = snapshot.sessionID
-                state.sessionList.errorMessage = nil
+                applyNewChatCreated(snapshot: snapshot, state: &state)
                 return .none
 
             case let .newChatFailed(message):
@@ -278,36 +191,7 @@ public struct AiChatFeature {
                 return restoreSession(sessionID: restoreSessionID, state: state)
 
             case let .providerConnectionsUpdated(file):
-                guard let loadBatch = makeModelListLoadBatch(from: file, state: state) else {
-                    state.providerConnectionSnapshot = .known([])
-                    state.availableModelsByProvider = [:]
-                    clearModelListTracking(&state)
-                    state.modelListProvider = nil
-                    applyModelListState(.empty, to: &state)
-                    return .cancel(id: CancelID.modelList)
-                }
-
-                let connectedProviders = loadBatch.requests.map(\.provider)
-                state.providerConnectionSnapshot = .known(connectedProviders)
-                state.availableModelsByProvider = [:]
-                state.modelListRequestID = loadBatch.requestID
-                state.modelListProvider = loadBatch.requests.first?.provider
-                state.modelListProviderOrder = connectedProviders
-                state.modelListPendingProviders = Set(connectedProviders)
-                state.modelListLoadedModelsByProvider = [:]
-                state.modelListFailedProviders = [:]
-                applyModelListState(.loading, to: &state)
-
-                return .concatenate(
-                    .cancel(id: CancelID.modelList),
-                    .merge(loadBatch.requests.map { loadRequest in
-                        .send(.modelListLoading(
-                            requestID: loadRequest.requestID,
-                            provider: loadRequest.provider,
-                            credential: loadRequest.credential,
-                        ))
-                    }),
-                )
+                return handleProviderConnectionsUpdated(file: file, state: &state)
 
             case let .modelListLoading(requestID, provider, credential):
                 guard state.modelListRequestID == requestID,
@@ -450,115 +334,34 @@ public struct AiChatFeature {
                 )
 
             case .cancelTapped:
-                if state.pendingRequestStart != nil {
-                    state.pendingRequestStart = nil
-                    return .cancel(id: CancelID.requestContextResolution)
-                }
-                guard let lock = state.executionPhase.lock, state.executionPhase.isProcessing else { return .none }
-                state.lockedModelHandle = nil
-                state.streamingAssistantDraft = nil
-                state.executionPhase = .cancelled(lock.recordingTerminal(
-                    at: currentTimestampMs(),
-                    failure: .cancelled,
-                    wasCancelled: true,
-                ))
-                return cancelRequestLifecycle()
+                return handleCancelTapped(state: &state)
 
             case .resetTapped:
-                state.pendingRequestStart = nil
-                state.emptyDraftSessionID = nil
-                state.restoreSessionID = nil
-                state.restoreOutcome = nil
-                state.restoreFailure = nil
-                state.draftText = ""
-                state.transcriptHistory = []
-                state.streamingAssistantDraft = nil
-                state.lastExecutionFailure = nil
-                state.lockedModelHandle = nil
-                state.executionPhase = .idle
-                return cancelAllInFlightWork()
+                return handleResetTapped(state: &state)
 
             case .teardownRequested:
-                state.pendingRequestStart = nil
-                state.streamingAssistantDraft = nil
-                state.lockedModelHandle = nil
-                state.executionPhase = .idle
-                return cancelAllInFlightWork()
+                return handleTeardownRequested(state: &state)
 
             case let .restoreOutcome(requestedSessionID, result, restoreFailure):
-                guard state.restoreSessionID == requestedSessionID else { return .none }
-                let isSessionListRestore = state.mode == .sessions && state.sessionList
-                    .selectedSessionID == requestedSessionID
-                if isSessionListRestore,
-                   let restoreFailure,
-                   restoreFailure != .contextMismatch
-                {
-                    state.sessionList.selectedSessionID = nil
-                    state.sessionList.errorMessage = sessionRestoreFailureMessage(for: restoreFailure)
-                    return .none
-                }
-                applyRestoreOutcome(result, restoreFailure: restoreFailure, state: &state)
-                if isSessionListRestore {
-                    state.mode = .chat
-                    state.sessionList.errorMessage = nil
-                }
-                return .none
+                return handleRestoreOutcome(
+                    requestedSessionID: requestedSessionID,
+                    result: result,
+                    restoreFailure: restoreFailure,
+                    state: &state,
+                )
 
             case let .executionEvent(event):
                 return handleExecutionEvent(event, state: &state)
 
             case let .persistenceFailed(lock, failure):
-                switch state.executionPhase {
-                case let .completed(currentLock):
-                    guard currentLock.requestID == lock.requestID else { return .none }
-                case let .persistenceRecovery(currentLock, _):
-                    guard currentLock.requestID == lock.requestID else { return .none }
-                default:
-                    return .none
-                }
-
-                state.executionPhase = .persistenceRecovery(lock, failure)
-                state.lastExecutionFailure = failure
-                return .none
+                return handlePersistenceFailed(lock: lock, failure: failure, state: &state)
 
             case let .persistenceRecoverySucceeded(lock):
-                guard case let .persistenceRecovery(currentLock, _) = state.executionPhase,
-                      currentLock.requestID == lock.requestID
-                else { return .none }
-                state.executionPhase = .completed(lock)
-                state.lastExecutionFailure = nil
-                return .none
+                return handlePersistenceRecoverySucceeded(lock: lock, state: &state)
 
             case let .persistenceRecoveryRetryFailed(lock, failure):
-                guard case let .persistenceRecovery(currentLock, _) = state.executionPhase,
-                      currentLock.requestID == lock.requestID
-                else { return .none }
-                state.executionPhase = .persistenceRecovery(lock, failure)
-                state.lastExecutionFailure = failure
-                return .none
+                return handlePersistenceRecoveryRetryFailed(lock: lock, failure: failure, state: &state)
             }
         }
-    }
-
-    private func cancelRequestLifecycle() -> Effect<Action> {
-        .merge(
-            .cancel(id: CancelID.request),
-            .cancel(id: CancelID.requestContextResolution),
-            .cancel(id: CancelID.requestStartPersistence),
-            .cancel(id: CancelID.requestFinalPersistence),
-        )
-    }
-
-    private func cancelAllInFlightWork() -> Effect<Action> {
-        .merge(
-            cancelRequestLifecycle(),
-            .cancel(id: CancelID.restore),
-            .cancel(id: CancelID.persistenceRecovery),
-            .cancel(id: CancelID.modelList),
-            .cancel(id: CancelID.newChat),
-            .cancel(id: CancelID.sessionList),
-            .cancel(id: CancelID.sessionDelete),
-            .cancel(id: CancelID.sessionRename),
-        )
     }
 }

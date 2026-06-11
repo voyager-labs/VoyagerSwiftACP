@@ -205,6 +205,111 @@ extension AiChatFeature {
             "That chat could not be restored."
         }
     }
+
+    func handleDeleteSessionTapped(sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {
+        state.sessionList.errorMessage = nil
+        if state.sessionList.renamingSessionID == sessionID {
+            state.sessionList.cancelRenaming()
+        }
+
+        var preDeleteEffects: [Effect<Action>] = []
+        if state.restoreSessionID == sessionID {
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.sessionList.selectedSessionID = nil
+            preDeleteEffects.append(.cancel(id: CancelID.restore))
+        }
+        if state.sessionID == sessionID {
+            if case let .processing(lock) = state.executionPhase {
+                state.lockedModelHandle = nil
+                state.streamingAssistantDraft = nil
+                state.executionPhase = .cancelled(lock.recordingTerminal(
+                    at: currentTimestampMs(),
+                    failure: .cancelled,
+                    wasCancelled: true,
+                ))
+            }
+            preDeleteEffects.append(cancelRequestLifecycle())
+        }
+        guard !preDeleteEffects.isEmpty else {
+            return deleteSession(sessionID)
+        }
+        return .concatenate(
+            .merge(preDeleteEffects),
+            deleteSession(sessionID),
+        )
+    }
+
+    func handleSessionRowTapped(sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {
+        state.emptyDraftSessionID = nil
+        state.sessionList.cancelRenaming()
+        state.sessionList.selectedSessionID = sessionID
+        state.sessionList.unreadCompletedSessionIDs.remove(sessionID)
+        state.sessionList.errorMessage = nil
+        if state.sessionID != sessionID {
+            state.currentContextFolderStructureModes = [:]
+        }
+
+        if state.executionPhase.isProcessing, state.sessionID == sessionID {
+            state.mode = .chat
+            return .none
+        }
+
+        state.mode = .sessions
+        state.restoreSessionID = sessionID
+        return restoreSession(sessionID: sessionID, state: state)
+    }
+
+    func handleBackToSessionsTapped(state: inout State) -> Effect<Action> {
+        state.mode = .sessions
+        let exitEffects: Effect<Action> = .cancel(id: CancelID.restore)
+        if state.restoreSessionID != nil {
+            state.restoreSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+        }
+        guard let emptyDraftSessionID = cleanupEligibleEmptyDraftSessionID(for: state) else {
+            return exitEffects
+        }
+        state.pendingEmptyDraftDeletionSessionIDs.insert(emptyDraftSessionID)
+        state.emptyDraftSessionID = nil
+        state.sessionID = nil
+        state.restoreSessionID = nil
+        state.restoreOutcome = nil
+        state.restoreFailure = nil
+        state.sessionList.selectedSessionID = nil
+        state.sessionList.errorMessage = nil
+        return .concatenate(
+            exitEffects,
+            deleteSession(emptyDraftSessionID),
+        )
+    }
+
+    func applySessionSnapshotSaved(summary: AiChatSessionSummary, state: inout State) {
+        guard !state.sessionList.deletedSessionIDs.contains(summary.sessionID) else { return }
+        state.sessionList.replaceRow(summary)
+        if state.restoreSessionID == nil || state.restoreSessionID == summary.sessionID {
+            state.sessionList.selectedSessionID = summary.sessionID
+        }
+        if state.mode == .chat, state.sessionID == summary.sessionID {
+            state.sessionList.unreadCompletedSessionIDs.remove(summary.sessionID)
+        } else {
+            state.sessionList.unreadCompletedSessionIDs.insert(summary.sessionID)
+        }
+        state.sessionList.errorMessage = nil
+    }
+
+    func applyNewChatCreated(snapshot: AiChatSessionSnapshot, state: inout State) {
+        applyNewSessionSnapshot(snapshot, state: &state)
+        state.emptyDraftSessionID = snapshot.sessionID
+        state.restoreSessionID = snapshot.sessionID
+        state.restoreOutcome = nil
+        state.restoreFailure = nil
+        state.mode = .chat
+        state.sessionList.selectedSessionID = snapshot.sessionID
+        state.sessionList.errorMessage = nil
+    }
 }
 
 private extension String {
