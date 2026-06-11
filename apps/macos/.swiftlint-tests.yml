@@ -37,7 +37,6 @@ opt_in_rules:
   - extension_access_modifier # extension 단위 access modifier 사용을 선호합니다.
   - fallthrough # switch fallthrough 사용을 피하게 합니다.
   - fatal_error_message # fatalError 호출에 디버깅용 메시지를 요구합니다.
-  - file_name # 파일명과 파일 안 대표 타입/extension 이름을 맞춥니다.
   - file_name_no_space # 파일명 공백을 금지합니다.
   - first_where # filter(...).first보다 first(where:)를 쓰게 합니다.
   - force_unwrapping # optional 강제 언래핑으로 인한 런타임 crash를 줄입니다.

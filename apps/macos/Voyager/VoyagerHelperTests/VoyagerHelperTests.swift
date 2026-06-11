@@ -1,4 +1,3 @@
-// swiftlint:disable single_test_class
 import Foundation
 import VoyagerEntitiesAi
 @testable import VoyagerHelper
