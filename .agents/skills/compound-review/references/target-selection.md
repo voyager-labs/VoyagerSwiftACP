@@ -137,7 +137,37 @@ Facet files (`f1-plan-compliance.md`, `f2-code-quality.md`, `f3-manual-qa.md`, `
 
 ---
 
-## 6. Notepad Association Rules
+## 6. Knowledge Association Rules
+
+Knowledge entries are a cross-session input family managed by `sisyphus-wiki`. They are NOT plan-scoped — they are stored centrally under `.sisyphus/knowledge/` and associated with review runs by tag matching, not directory name.
+
+### Association Rule
+
+1. Read `.sisyphus/knowledge/index.json` to discover available entries. Each entry has `id`, `title`, `type`, `status`, `path`, `tags[]` fields.
+2. Match knowledge entries whose `tags[]` overlap with:
+    - `plan_slug` substrings (e.g., plan `voy-208-grid-drop-interaction-stabilization` matches entries tagged `grid-drop`, `drag-drop`, `interaction`)
+    - Plan context keywords (extracted from the plan file content: topic nouns, feature names)
+    - Notepad topics (from `decisions.md`, `learnings.md` headers/keywords when present)
+3. Read matched entry files at their `path` values under `.sisyphus/knowledge/entries/`.
+4. Optionally read `.sisyphus/knowledge/graph.jsonl` for edges connecting matched entries to related entries.
+
+### Degradation
+
+- If `index.json` is missing or empty, skip knowledge consumption entirely. No degradation penalty — knowledge is purely optional enrichment.
+- If `index.json` exists but no entries match, skip knowledge consumption. Note in manifest `missing_sources` if appropriate.
+- If some entry files referenced by `index.json` are missing, consume what is available and note missing entries in manifest.
+
+### Tag Matching Semantics
+
+Tag matching is case-insensitive substring containment:
+
+- Entry tag `grid-drop` matches plan_slug substring `grid-drop`
+- Entry tag `drag-option-lifecycle` matches plan context keyword `drag-option` or `lifecycle`
+- Multiple tag overlaps increase association confidence but are not required — a single tag match is sufficient
+
+---
+
+## 7. Notepad Association Rules
 
 Notepad directories are associated with the target plan:
 
@@ -147,7 +177,7 @@ Notepad directories are associated with the target plan:
 
 ---
 
-## 7. Prior Run Association Rules
+## 8. Prior Run Association Rules
 
 When the target plan has been previously reviewed, prior runs provide cross-run context for dedup and trend detection.
 
@@ -170,7 +200,7 @@ If no prior runs exist, the skill proceeds without cross-run context. This is no
 
 ---
 
-## 8. Summary: Decision Flow
+## 9. Summary: Decision Flow
 
 ```
 Operator invokes compound-review
