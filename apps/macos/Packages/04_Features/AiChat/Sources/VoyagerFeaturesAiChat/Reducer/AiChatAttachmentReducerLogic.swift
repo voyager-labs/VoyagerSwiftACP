@@ -27,6 +27,7 @@ extension AiChatFeature {
             guard !urls.isEmpty else { return }
             await send(.attachmentDropSelection(urls))
         }
+        .cancellable(id: CancelID.attachmentDrop, cancelInFlight: true)
     }
 
     static func droppedFileURL(from provider: NSItemProvider, typeIdentifier: String) async -> URL? {

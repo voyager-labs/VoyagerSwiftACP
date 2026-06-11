@@ -479,6 +479,7 @@ extension AiChatFeature {
             .cancel(id: CancelID.sessionList),
             .cancel(id: CancelID.sessionDelete),
             .cancel(id: CancelID.sessionRename),
+            .cancel(id: CancelID.attachmentDrop),
         )
     }
 

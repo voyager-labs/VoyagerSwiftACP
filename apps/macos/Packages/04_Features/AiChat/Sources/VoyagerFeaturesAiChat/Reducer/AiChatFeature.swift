@@ -21,6 +21,7 @@ public struct AiChatFeature {
         case sessionRename
         case newChat
         case transcriptScrollOffsetPersistence
+        case attachmentDrop
     }
 
     @Dependency(\.aiChatExecutionClient)
@@ -51,10 +52,12 @@ public struct AiChatFeature {
             switch action {
             case .onAppear:
                 normalizeSelectionIfNeeded(&state)
-                state.transcriptScrollOffsets = _loadTranscriptScrollOffsets(
-                    from: userDefaultsClient,
-                )
-                return .none
+                return .run { send in
+                    let offsets = _loadTranscriptScrollOffsets(
+                        from: userDefaultsClient,
+                    )
+                    await send(.transcriptScrollOffsetsLoaded(offsets))
+                }
 
             case .sessionsAppeared:
                 state.mode = .sessions
