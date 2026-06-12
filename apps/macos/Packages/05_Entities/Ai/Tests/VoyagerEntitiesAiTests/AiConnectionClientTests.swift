@@ -347,7 +347,8 @@ final class AIProviderVerificationClientTests: XCTestCase {
 
     func testVerifyProvider_nilCredential_returnsMissingCredential() {
         let client = AiConnectionRuntimeClient(
-            verifyProvider: { _, _ in
+            // swiftlint:disable:next unused_closure_parameter
+            verifyProvider: { _, credential in
                 guard let credential else { return .invalid(.missingCredential) }
                 return .valid
             },

@@ -128,7 +128,7 @@ extension AiChatAttachmentResolverClient {
         relativePath: String,
         depth: Int,
         snapshot: inout FolderStructureSnapshot,
-        context _: FolderTraversalContext,
+        context: FolderTraversalContext,
     ) {
         guard !snapshot.truncated, snapshot.includedCount < 1000, depth < 8 else {
             snapshot.truncated = true
@@ -188,7 +188,7 @@ extension AiChatAttachmentResolverClient {
         parentRelativePath: String,
         depth: Int,
         snapshot: inout FolderStructureSnapshot,
-        context _: FolderTraversalContext,
+        context: FolderTraversalContext,
     ) {
         let childRelativePath = parentRelativePath.isEmpty
             ? child.lastPathComponent

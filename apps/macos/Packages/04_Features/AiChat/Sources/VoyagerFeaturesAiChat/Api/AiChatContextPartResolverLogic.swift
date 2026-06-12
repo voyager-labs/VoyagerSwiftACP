@@ -87,12 +87,12 @@ extension AiChatContextPartResolverClient {
                 subtitle: subtitle,
                 metadata: metadata,
                 references: item.references.map {
-                    let sanitizedMetadata = sanitizeContextMetadata($0.metadata, provider: provider)
+                    let sanitizedMetadata = sanitizeContextMetadata($0.metadata, provider: config.provider)
                     return AiChatContextReference(
                         kind: $0.kind,
-                        identifier: sanitizeContextScalar($0.identifier, provider: provider) ?? $0.identifier,
+                        identifier: sanitizeContextScalar($0.identifier, provider: config.provider) ?? $0.identifier,
                         title: $0.title,
-                        subtitle: sanitizeContextScalar($0.subtitle, provider: provider),
+                        subtitle: sanitizeContextScalar($0.subtitle, provider: config.provider),
                         metadata: sanitizedMetadata,
                     )
                 },

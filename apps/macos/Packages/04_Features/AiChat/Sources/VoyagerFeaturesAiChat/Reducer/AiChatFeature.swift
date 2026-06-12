@@ -52,9 +52,10 @@ public struct AiChatFeature {
             switch action {
             case .onAppear:
                 normalizeSelectionIfNeeded(&state)
+                let capturedClient = userDefaultsClient
                 return .run { send in
                     let offsets = _loadTranscriptScrollOffsets(
-                        from: userDefaultsClient,
+                        from: capturedClient,
                     )
                     await send(.transcriptScrollOffsetsLoaded(offsets))
                 }

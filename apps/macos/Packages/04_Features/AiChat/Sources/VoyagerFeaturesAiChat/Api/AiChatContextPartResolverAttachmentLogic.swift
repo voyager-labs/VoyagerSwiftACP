@@ -13,7 +13,7 @@ extension AiChatContextPartResolverClient {
     static func makeAttachmentDescriptor(
         draft: AiChatAttachmentDraft,
         snapshot: AiChatAttachmentSnapshot,
-        config _: AiChatContextResolveConfig,
+        config: AiChatContextResolveConfig,
     ) -> AiChatResolvedAttachmentDescriptor {
         let fileIdentity = AiChatAttachmentResolverClient.attachmentResolutionURL(for: draft)
             .flatMap(resolveFileIdentity)
@@ -45,7 +45,7 @@ extension AiChatContextPartResolverClient {
         draft: AiChatAttachmentDraft,
         snapshot: AiChatAttachmentSnapshot,
         fileIdentity: AiChatResolvedFileIdentity?,
-        providerIdentity _: ProviderIdentity,
+        providerIdentity: ProviderIdentity,
         requestFamily: AiChatContextPartResolverRequestFamily,
     ) -> AiChatContextPartResolution {
         let fallbackResolution = addingAttachmentID(
