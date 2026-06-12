@@ -1,0 +1,16 @@
+id: ui-direct-observation
+language: swift
+severity: error
+message: "Ui 파일에서 NotificationCenter를 직접 사용하지 마세요. Reducer-owned observation을 사용하세요."
+note: >
+  Observation (NotificationCenter, Timer, etc.) must be owned by the Reducer, not the View.
+  Views should only send lifecycle events; actual observation logic belongs in Reducer effects.
+  Instead:
+    - Encapsulate observation in a DependencyClient
+    - Start/stop observation in Reducer .run effects
+    - Views only call store.send(.view(.startObserving))
+  Scan: sg scan --rule .ast-grep/rules/ui-direct-observation.yaml **/Ui/*.swift
+rule:
+  any:
+    - pattern: "NotificationCenter.default"
+    - pattern: "DistributedNotificationCenter.default()"

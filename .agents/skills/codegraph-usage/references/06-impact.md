@@ -66,5 +66,5 @@ codegraph_impact(symbol: "SearchGateway", depth: 1)
 
 - **Always run before refactoring** — this is your safety check.
 - Start with `depth=2` for a reasonable overview. Increase only if needed.
-- Compare with `macos_checks.py --changed` for file-path-based impact — CodeGraph catches symbol-level dependencies that file mapping misses.
+- CodeGraph catches symbol-level dependencies that file-path-based mapping misses — prefer it over path heuristics for impact analysis.
 - For packages/modules, use the package name as the symbol.

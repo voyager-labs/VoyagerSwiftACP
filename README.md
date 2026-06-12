@@ -70,20 +70,6 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Release)` - 설정 호스트 Release 모드로 빌드 및 실행
             - 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
-    - Zed에서 LSP context/검증 태스크 실행:
-        - `cmd-shift-p`로 Command Palette를 열고 `task: spawn`을 실행합니다.
-        - `.zed/tasks.json`에는 아래 Voyager 전용 태스크가 정의되어 있습니다.
-        - LSP context 전환 태스크:
-            - `Voyager LSP: Current File` - 현재 파일 경로로 적절한 SourceKit-LSP build context를 추론해 `buildServer.json`을 갱신
-            - `Voyager LSP: App` - `Voyager-Dev` 기준 app context로 전환
-            - `Voyager LSP: Helper` - `VoyagerHelper-Dev` 기준 helper context로 전환
-            - `Voyager LSP: OnboardingHost` - `OnboardingHost-Dev` 기준 onboarding host context로 전환
-        - Affected verification 태스크:
-            - `Voyager Checks: Current File (Plan)` - 현재 파일 기준으로 실행할 검증 명령을 JSON으로 출력
-            - `Voyager Checks: Current File (Run)` - 현재 파일 기준 검증 명령을 실제 실행
-            - `Voyager Checks: Changed Files (Plan)` - Git 변경 파일 기준으로 실행할 검증 명령을 JSON으로 출력
-            - `Voyager Checks: Changed Files (Run)` - Git 변경 파일 기준 검증 명령을 실제 실행
-        - Zed는 프로젝트 루트의 `buildServer.json`을 자동 탐지합니다. 별도 `.zed/settings.json`은 두지 않으며, LSP context 전환은 위 태스크 또는 `python3 scripts/dev/lsp_context.py ...` 명령으로 수행합니다.
     - Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
     - Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
     - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
@@ -161,34 +147,17 @@ bash scripts/setup.sh
 > 이 레포에서 작업할 때는 항상 `.xcode-version`에 적힌 Xcode 버전으로 빌드하는 것을 원칙으로 합니다.
 > 다른 프로젝트와 혼용해서 Xcode 버전을 바꾼 경우, Voyager 작업 전에 `./scripts/xcodes.sh`를 한 번 실행해 Xcode 버전을 다시 맞춰 주세요.
 
-## Optional: Cupertino Apple Docs MCP
+## Cupertino Apple Docs MCP
 
 이 레포의 `opencode.json`에는 Apple 플랫폼 문서 검색용 `cupertino` MCP가 함께 선언되어 있습니다.
-`opencode` 세션에서 사용하려면 각 개발자 로컬 환경에 `cupertino` 바이너리가 먼저 설치되어 있어야 합니다.
+`mise`로 버전 고정 관리되며, `mise install cupertino`로 설치할 수 있습니다.
 
 - 지원 플랫폼: macOS 15+
-- 설치(upstream installer 권장):
+- 설치:
 
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/mihaelamj/cupertino/main/install.sh)
+mise install cupertino
 ```
-
-- 또는 Homebrew 사용:
-
-```bash
-brew tap mihaelamj/tap
-brew install cupertino
-cupertino setup
-```
-
-설치 후에는 아래 명령으로 경로를 확인하세요.
-
-```bash
-which cupertino
-```
-
-레포의 `opencode.json`은 `/opt/homebrew/bin`, `/usr/local/bin`을 포함한 공통 PATH로 `cupertino serve`를 실행하도록 설정되어 있습니다.
-만약 명령을 찾지 못하면 로컬 shell PATH 또는 설치 위치를 먼저 확인하세요.
 
 ## Conventions
 

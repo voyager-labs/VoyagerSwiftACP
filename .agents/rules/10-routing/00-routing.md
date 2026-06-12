@@ -23,6 +23,7 @@ alwaysApply: true
         - `apps/macos/Voyager/VoyagerUITests/**`
         - `apps/macos/Packages/**`
         - `apps/macos/Hosts/**`
+    - Load skill `code-tooling` for code navigation, search, build, and diagnostics operations.
 - If touching both backend and macOS:
     - Load both backend and macOS domain rules.
 - If docs-only:
