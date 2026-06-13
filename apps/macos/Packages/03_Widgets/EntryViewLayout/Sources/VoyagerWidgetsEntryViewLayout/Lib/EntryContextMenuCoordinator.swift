@@ -13,10 +13,30 @@ final class EntryContextMenuCoordinator: NSObject {
         self.rowEntry = rowEntry
     }
 
+    private func selectRowEntryIfNeeded() {
+        guard let rowEntry, !store.state.selectedIds.contains(rowEntry.id) else { return }
+        store.send(.internal(.setSelectionState(
+            ids: [rowEntry.id],
+            lastSelectedId: rowEntry.id,
+            rangeAnchorId: rowEntry.id,
+            shouldScrollToSelection: false,
+        )))
+    }
+
+    private func executeCommand(_ command: EntryOperationsCommand) {
+        selectRowEntryIfNeeded()
+        store.send(.delegate(.executeCommand(command)))
+    }
+
+    private func startRename(_ item: EntryModel) {
+        selectRowEntryIfNeeded()
+        store.send(.delegate(.startRename(item: item, text: item.name)))
+    }
+
     @objc
     func contextMenuOpenSelectedItem() {
         store.send(.delegate(.saveScrollOffset(.zero, forPath: store.state.currentPath)))
-        store.send(.delegate(.executeCommand(.navigation(.openSelectedItem))))
+        executeCommand(.navigation(.openSelectedItem))
     }
 
     @objc
@@ -27,42 +47,42 @@ final class EntryContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuQuickLookSelectedItem() {
-        store.send(.delegate(.executeCommand(.navigation(.quickLookSelectedItem))))
+        executeCommand(.navigation(.quickLookSelectedItem))
     }
 
     @objc
     func contextMenuGetInfoForSelectedItems() {
-        store.send(.delegate(.executeCommand(.navigation(.getInfoForSelectedItems))))
+        executeCommand(.navigation(.getInfoForSelectedItems))
     }
 
     @objc
     func contextMenuShareSelectedItems() {
-        store.send(.delegate(.executeCommand(.navigation(.shareSelectedItems(anchor: nil)))))
+        executeCommand(.navigation(.shareSelectedItems(anchor: nil)))
     }
 
     @objc
     func contextMenuRevealSelectedItemsInFinder() {
-        store.send(.delegate(.executeCommand(.navigation(.revealSelectedItemsInFinder))))
+        executeCommand(.navigation(.revealSelectedItemsInFinder))
     }
 
     @objc
     func contextMenuCopySelectedItems() {
-        store.send(.delegate(.executeCommand(.clipboard(.copySelectedItems))))
+        executeCommand(.clipboard(.copySelectedItems))
     }
 
     @objc
     func contextMenuCopySelectedAbsolutePaths() {
-        store.send(.delegate(.executeCommand(.clipboard(.copySelectedAbsolutePaths))))
+        executeCommand(.clipboard(.copySelectedAbsolutePaths))
     }
 
     @objc
     func contextMenuCopySelectedURLs() {
-        store.send(.delegate(.executeCommand(.clipboard(.copySelectedURLs))))
+        executeCommand(.clipboard(.copySelectedURLs))
     }
 
     @objc
     func contextMenuCutSelectedItems() {
-        store.send(.delegate(.executeCommand(.clipboard(.cutSelectedItems))))
+        executeCommand(.clipboard(.cutSelectedItems))
     }
 
     @objc
@@ -73,7 +93,7 @@ final class EntryContextMenuCoordinator: NSObject {
     @objc
     func contextMenuStartRename() {
         if let rowEntry {
-            store.send(.delegate(.startRename(item: rowEntry, text: rowEntry.name)))
+            startRename(rowEntry)
             return
         }
 
@@ -84,37 +104,37 @@ final class EntryContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuDuplicateSelectedItems() {
-        store.send(.delegate(.executeCommand(.clipboard(.duplicateSelectedItems))))
+        executeCommand(.clipboard(.duplicateSelectedItems))
     }
 
     @objc
     func contextMenuCreateAliasForSelectedItems() {
-        store.send(.delegate(.executeCommand(.mutation(.createAliasForSelectedItems))))
+        executeCommand(.mutation(.createAliasForSelectedItems))
     }
 
     @objc
     func contextMenuCompressSelectedItems() {
-        store.send(.delegate(.executeCommand(.mutation(.compressSelectedItems))))
+        executeCommand(.mutation(.compressSelectedItems))
     }
 
     @objc
     func contextMenuExtractSelectedItem() {
-        store.send(.delegate(.executeCommand(.mutation(.extractSelectedItem))))
+        executeCommand(.mutation(.extractSelectedItem))
     }
 
     @objc
     func contextMenuMoveSelectedItemsToTrash() {
-        store.send(.delegate(.executeCommand(.mutation(.moveSelectedItemsToTrash))))
+        executeCommand(.mutation(.moveSelectedItemsToTrash))
     }
 
     @objc
     func contextMenuDeleteSelectedItemsImmediately() {
-        store.send(.delegate(.executeCommand(.mutation(.deleteSelectedItemsImmediately))))
+        executeCommand(.mutation(.deleteSelectedItemsImmediately))
     }
 
     @objc
     func contextMenuPutBackSelectedItems() {
-        store.send(.delegate(.executeCommand(.mutation(.putBackSelectedItems))))
+        executeCommand(.mutation(.putBackSelectedItems))
     }
 
     @objc
@@ -124,25 +144,25 @@ final class EntryContextMenuCoordinator: NSObject {
 
     @objc
     func contextMenuOpenWithOther() {
-        store.send(.delegate(.executeCommand(.navigation(.openWithSelectedItem(
+        executeCommand(.navigation(.openWithSelectedItem(
             bundleID: nil,
             shouldSetAsDefault: false,
-        )))))
+        )))
     }
 
     @objc
     func contextMenuOpenWithApp(_ sender: NSMenuItem) {
         let bundleID = sender.representedObject as? String
-        store.send(.delegate(.executeCommand(.navigation(.openWithSelectedItem(
+        executeCommand(.navigation(.openWithSelectedItem(
             bundleID: bundleID,
             shouldSetAsDefault: false,
-        )))))
+        )))
     }
 
     @objc
     func contextMenuToggleTag(_ sender: NSMenuItem) {
         guard let tagName = sender.representedObject as? String else { return }
-        store.send(.delegate(.executeCommand(.mutation(.toggleTagForSelectedItem(tag: tagName)))))
+        executeCommand(.mutation(.toggleTagForSelectedItem(tag: tagName)))
     }
 }
 
