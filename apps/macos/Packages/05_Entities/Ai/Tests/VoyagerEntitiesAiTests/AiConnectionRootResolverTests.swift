@@ -12,7 +12,7 @@ final class AiConnectionRootResolverTests: XCTestCase {
         let env = ["VOYAGER_PROJECT_ROOT": ""]
         let result = AiConnectionRootResolver.resolveBaseRoot(
             environment: env,
-            bundle: Bundle(for: type(of: self))
+            bundle: Bundle(for: type(of: self)),
         )
         XCTAssertNotEqual(result.path, "/custom/root", "Empty env should be ignored")
     }
@@ -20,7 +20,7 @@ final class AiConnectionRootResolverTests: XCTestCase {
     func testResolvesToValidURLWhenNoEnvSet() {
         let result = AiConnectionRootResolver.resolveBaseRoot(
             environment: [:],
-            bundle: Bundle(for: type(of: self))
+            bundle: Bundle(for: type(of: self)),
         )
         XCTAssertTrue(result.isFileURL, "Should resolve to a file URL")
     }

@@ -33,9 +33,9 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         let file = makeSnapshotFile(
             query: "report",
             scopes: ["/tmp"],
-            includeSubfolders: false,
             conditions: [],
             snapshotItems: [.string("/tmp/report.txt")],
+            includeSubfolders: false,
         )
 
         let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
@@ -47,9 +47,9 @@ final class CollectionSnapshotHydrationTests: XCTestCase {
         let file = makeSnapshotFile(
             query: "report",
             scopes: ["/tmp"],
-            excludedScopes: ["/tmp/ignored"],
             conditions: [],
             snapshotItems: [.string("/tmp/report.txt")],
+            excludedScopes: ["/tmp/ignored"],
         )
 
         let response = CollectionSnapshotHydration.syntheticSearchResponse(for: file)
@@ -184,10 +184,10 @@ private func makeCondition(
 private func makeSnapshotFile(
     query: String,
     scopes: [String],
-    excludedScopes: [String] = [],
-    includeSubfolders: Bool = true,
     conditions: [CollectionCondition],
     snapshotItems: [VoyagerShared.JSONValue],
+    excludedScopes: [String] = [],
+    includeSubfolders: Bool = true,
     fingerprint: String? = nil,
 ) -> VoyagerCollectionFile {
     let resolvedFingerprint = fingerprint

@@ -379,7 +379,9 @@ extension MainContainerSplitCoordinator {
         return index == 0
     }
 
-    func splitView(_: NSSplitView, canCollapseSubview _: NSView) -> Bool { false }
+    func splitView(_: NSSplitView, canCollapseSubview _: NSView) -> Bool {
+        false
+    }
 
     func splitViewDidResizeSubviews(_ notification: Notification) {
         guard let splitView = notification.object as? NSSplitView,

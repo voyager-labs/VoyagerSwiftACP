@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
@@ -9,11 +8,9 @@ import XCTest
 // provider connection update, partial provider failure, Codex model listing, stale response cancellation contract를
 // 보존한다.
 
-// swiftlint:disable:next type_body_length
 @MainActor
 final class AiChatFeatureModelListLoadingTests: XCTestCase {
-    // provider connection 변경이 진행 중 model list batch를 취소하고 stale response를 무시하는지 검증
-    // swiftlint:disable:next function_body_length
+    /// provider connection 변경이 진행 중 model list batch를 취소하고 stale response를 무시하는지 검증
     func testProviderConnectionUpdatesCancelInFlightBatchAndIgnoreStaleResponse() async {
         actor LoadDriver {
             var startedProviders: [AiProvider] = []
@@ -140,8 +137,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.unavailableSelectedModelHandle, catalogRows[0].handle)
     }
 
-    // 여러 connected provider의 model list가 하나의 catalog로 병합되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// 여러 connected provider의 model list가 하나의 catalog로 병합되는지 검증
     func testProviderConnectionsUpdatedMergesModelsFromMultipleConnectedProviders() async {
         actor LoadDriver {
             func load(provider: AiProvider, credential _: StoredCredentialPayload?) async throws -> [AiProviderModel] {
@@ -249,8 +245,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelCatalogState.sections.last?.rows.first?.providerBadge, "Reasoning-first chat")
     }
 
-    // 일부 provider model list 실패 시 다른 provider의 성공 결과가 유지되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// 일부 provider model list 실패 시 다른 provider의 성공 결과가 유지되는지 검증
     func testModelListPartialFailurePreservesSuccessfulModelsFromAnotherProvider() async {
         actor LoadDriver {
             func load(provider: AiProvider, credential _: StoredCredentialPayload?) async throws -> [AiProviderModel] {
@@ -354,8 +349,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelListFailedProviders, [.anthropic: anthropicFailure])
     }
 
-    // Codex model list 실패가 성공한 OpenAI model 결과를 지우지 않는지 검증
-    // swiftlint:disable:next function_body_length
+    /// Codex model list 실패가 성공한 OpenAI model 결과를 지우지 않는지 검증
     func testModelListCodexFailurePreservesSuccessfulOpenAIModels() async {
         actor LoadDriver {
             func load(provider: AiProvider, credential _: StoredCredentialPayload?) async throws -> [AiProviderModel] {
@@ -461,8 +455,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         XCTAssertEqual(store.state.modelListFailedProviders, [.chatgptCodex: codexFailure])
     }
 
-    // Codex-only connection에서 Codex model과 thinking metadata가 로드되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// Codex-only connection에서 Codex model과 thinking metadata가 로드되는지 검증
     func testModelListCodexOnlySuccessLoadsCodexModelsAndThinkingMetadata() async {
         let codexCredential = StoredCredentialPayload.oauth(OAuthCredentialFile(accessToken: "codex-token"))
         let connectionsFile = makeConnectionsFile(
@@ -551,8 +544,7 @@ final class AiChatFeatureModelListLoadingTests: XCTestCase {
         )
     }
 
-    // Codex-only model list 실패가 failed state와 unsupported provider 정보를 노출하는지 검증
-    // swiftlint:disable:next function_body_length
+    /// Codex-only model list 실패가 failed state와 unsupported provider 정보를 노출하는지 검증
     func testModelListCodexOnlyFailureTransitionsToFailedStateAndExposesUnsupportedProvider() async {
         let codexCredential = StoredCredentialPayload.oauth(OAuthCredentialFile(accessToken: "codex-token"))
         let connectionsFile = makeConnectionsFile(

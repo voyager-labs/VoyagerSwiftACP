@@ -12,7 +12,7 @@ final class HelperFolderAccessListener {
         case notGranted = "Not Granted"
     }
 
-    private nonisolated(unsafe) var observer: NSObjectProtocol?
+    nonisolated(unsafe) private var observer: NSObjectProtocol?
 
     deinit {
         guard let observer else { return }
@@ -76,7 +76,7 @@ final class HelperFolderAccessListener {
         }
     }
 
-    private nonisolated static func parseMode(_ userInfo: [AnyHashable: Any]?) -> RequestMode? {
+    nonisolated private static func parseMode(_ userInfo: [AnyHashable: Any]?) -> RequestMode? {
         guard let raw = userInfo?[HelperFolderAccessUserInfoKey.mode] as? String else { return nil }
         return RequestMode(rawValue: raw)
     }

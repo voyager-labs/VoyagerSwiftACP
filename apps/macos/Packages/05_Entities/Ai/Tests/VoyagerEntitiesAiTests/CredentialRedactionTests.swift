@@ -10,7 +10,7 @@ final class CredentialRedactionTests: XCTestCase {
             tokenType: "Bearer",
             scopes: ["read"],
             expiresAtMs: 1_700_000_000_000,
-            chatGPTAccountId: "account-123"
+            chatGPTAccountId: "account-123",
         )
         let payload = StoredCredentialPayload.oauth(oauth)
         let redacted = payload.redacted
@@ -55,7 +55,7 @@ final class CredentialRedactionTests: XCTestCase {
     func testDebugDescriptionExcludesRealSecrets() {
         let oauth = OAuthCredentialFile(
             accessToken: "real-access-token-abc",
-            refreshToken: "real-refresh-token-xyz"
+            refreshToken: "real-refresh-token-xyz",
         )
         let payload = StoredCredentialPayload.oauth(oauth)
         let debug = payload.debugDescription
@@ -71,7 +71,7 @@ final class CredentialRedactionTests: XCTestCase {
             providerId: .chatgptCodex,
             authMethod: .oauth,
             credential: .oauth(oauth),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let redacted = record.redacted
 
@@ -90,12 +90,12 @@ final class CredentialRedactionTests: XCTestCase {
             providerId: .chatgptCodex,
             authMethod: .oauth,
             credential: .oauth(oauth),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
             lastUsedProviderId: .chatgptCodex,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
 
         let redacted = file.redacted

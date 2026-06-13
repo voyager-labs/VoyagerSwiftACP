@@ -6,14 +6,14 @@ final class AuthFixtureTests: XCTestCase {
         try fixture.writeAuthFile(FixtureCredentials.authJSON)
 
         let data = try fixture.readAuthFile()
-        let contents = String(data: data, encoding: .utf8)!
+        let contents = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(
             contents.contains("chatgpt-codex"),
-            "Auth file should contain provider name"
+            "Auth file should contain provider name",
         )
         XCTAssertTrue(
             fixture.authFileURL.path.contains(fixture.homeURL.lastPathComponent),
-            "Auth file must live under the temporary home, not real ~/.voyager"
+            "Auth file must live under the temporary home, not real ~/.voyager",
         )
     }
 
@@ -23,7 +23,7 @@ final class AuthFixtureTests: XCTestCase {
 
         XCTAssertTrue(
             fixture.authFileHasRestrictedPermissions(),
-            "Auth file must be 0o600 (owner read/write only)"
+            "Auth file must be 0o600 (owner read/write only)",
         )
     }
 
@@ -32,7 +32,7 @@ final class AuthFixtureTests: XCTestCase {
         let realHome = NSHomeDirectory()
         XCTAssertFalse(
             fixture.homeURL.path.hasPrefix(realHome),
-            "Temp fixture home must not overlap with real HOME"
+            "Temp fixture home must not overlap with real HOME",
         )
     }
 }

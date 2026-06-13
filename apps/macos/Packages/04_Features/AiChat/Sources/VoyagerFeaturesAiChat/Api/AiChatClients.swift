@@ -94,15 +94,15 @@ public struct AiChatContextPartResolverClient: Sendable {
 }
 
 extension AiChatContextPartResolverClient: DependencyKey {
-    public nonisolated static var liveValue: AiChatContextPartResolverClient {
+    nonisolated public static var liveValue: AiChatContextPartResolverClient {
         .live(fileManagerClient: .liveValue)
     }
 
-    public nonisolated static var testValue: AiChatContextPartResolverClient {
+    nonisolated public static var testValue: AiChatContextPartResolverClient {
         .live()
     }
 
-    public nonisolated static var previewValue: AiChatContextPartResolverClient {
+    nonisolated public static var previewValue: AiChatContextPartResolverClient {
         .live()
     }
 }
@@ -189,21 +189,26 @@ public extension AiChatContextPartResolverClient {
             makeAttachmentDescriptor(
                 draft: $0.0,
                 snapshot: $0.1,
-                provider: input.provider,
-                rawModelID: input.rawModelID,
-                requestFamily: input.requestFamily,
-                fileManagerClient: fileManagerClient,
+                config: AiChatContextResolveConfig(
+                    provider: input.provider,
+                    rawModelID: input.rawModelID,
+                    requestFamily: input.requestFamily,
+                    attachmentCanonicalPaths: [],
+                    fileManagerClient: fileManagerClient,
+                ),
             )
         }
         let attachmentCanonicalPaths = Set(attachmentDescriptors.compactMap(\.part.canonicalPath))
 
         let currentContextResolution = resolveCurrentContext(
             input.currentContext,
-            provider: input.provider,
-            rawModelID: input.rawModelID,
-            requestFamily: input.requestFamily,
-            attachmentCanonicalPaths: attachmentCanonicalPaths,
-            fileManagerClient: fileManagerClient,
+            config: AiChatContextResolveConfig(
+                provider: input.provider,
+                rawModelID: input.rawModelID,
+                requestFamily: input.requestFamily,
+                attachmentCanonicalPaths: attachmentCanonicalPaths,
+                fileManagerClient: fileManagerClient,
+            ),
         )
 
         let sanitizedAttachments = attachmentDescriptors.map(\.snapshot)
@@ -232,15 +237,15 @@ public struct AiChatAttachmentResolverClient: Sendable {
 }
 
 extension AiChatAttachmentResolverClient: DependencyKey {
-    public nonisolated static var liveValue: AiChatAttachmentResolverClient {
+    nonisolated public static var liveValue: AiChatAttachmentResolverClient {
         .live()
     }
 
-    public nonisolated static var testValue: AiChatAttachmentResolverClient {
+    nonisolated public static var testValue: AiChatAttachmentResolverClient {
         .live()
     }
 
-    public nonisolated static var previewValue: AiChatAttachmentResolverClient {
+    nonisolated public static var previewValue: AiChatAttachmentResolverClient {
         .live()
     }
 }

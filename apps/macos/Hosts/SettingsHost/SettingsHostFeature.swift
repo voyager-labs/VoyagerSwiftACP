@@ -35,7 +35,9 @@ public struct SettingsHostFeature {
                 return .none
 
             case .settings(.general(.toggleAutomaticUpdate)):
-                state.notice = "Automatic update scheduling is disabled in the standalone Settings host. Preference is still persisted locally."
+                state.notice =
+                    "Automatic update scheduling is disabled in the standalone Settings host. "
+                        + "Preference is still persisted locally."
                 return .none
 
             case .dismissNotice:

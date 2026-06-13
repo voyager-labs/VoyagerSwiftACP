@@ -10,9 +10,9 @@ public enum AppliedFiltersUtils {
 
         public init(
             scopes: [String],
-            excludedScopes: [String] = [],
             conditions: [Condition],
             unknownKeys: [String],
+            excludedScopes: [String] = [],
         ) {
             self.scopes = scopes
             self.excludedScopes = excludedScopes
@@ -64,16 +64,16 @@ public enum AppliedFiltersUtils {
             ).sorted()
             return ResolutionResult(
                 scopes: scopes,
-                excludedScopes: excludedScopes,
                 conditions: resolved.map(\.condition),
                 unknownKeys: unknownKeys,
+                excludedScopes: excludedScopes,
             )
         }
         return ResolutionResult(
             scopes: scopes,
-            excludedScopes: excludedScopes,
             conditions: fallbackConditions,
             unknownKeys: [],
+            excludedScopes: excludedScopes,
         )
     }
 

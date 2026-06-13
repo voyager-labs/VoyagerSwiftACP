@@ -56,8 +56,7 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         XCTAssertEqual(store.state.catalogRows, catalogRows)
     }
 
-    // new chat을 열어도 기존 in-flight request completion을 보존하는지 검증
-    // swiftlint:disable:next function_body_length
+    /// new chat을 열어도 기존 in-flight request completion을 보존하는지 검증
     func testNewChatTappedPreservesInFlightRequestAndSavesOriginalCompletion() async {
         let oldSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111331"))
         let newSessionID = AiChatSessionID(rawValue: makeUUID("00000000-0000-0000-0000-000000000002"))
@@ -182,8 +181,7 @@ final class AiChatFeatureSessionListTests: XCTestCase {
         XCTAssertTrue(savedSnapshots.value.contains(expectedOriginalSnapshot))
     }
 
-    // teardown 요청이 session list delete/rename effect를 취소하는지 검증
-    // swiftlint:disable:next function_body_length
+    /// teardown 요청이 session list delete/rename effect를 취소하는지 검증
     func testTeardownRequestedCancelsSessionListDeleteAndRenameEffects() async {
         let renameSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111441"))
         let deleteSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222441"))

@@ -8,8 +8,7 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureOffscreenFailureTests: XCTestCase {
-    // 다른 session을 열람하는 동안 원 request 실패가 현재 session 화면을 오염시키지 않는지 검증
-    // swiftlint:disable:next function_body_length
+    /// 다른 session을 열람하는 동안 원 request 실패가 현재 session 화면을 오염시키지 않는지 검증
     func testOffscreenRequestFailureDoesNotPolluteVisibleSessionAndRestoresOriginalFailure() async {
         let activeSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111241"))
         let targetSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222241"))

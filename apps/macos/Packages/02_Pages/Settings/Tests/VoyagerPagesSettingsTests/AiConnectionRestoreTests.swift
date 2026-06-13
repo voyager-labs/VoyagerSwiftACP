@@ -257,7 +257,6 @@ final class AiConnectionRestoreTests: XCTestCase {
 
     // MARK: 10. Multiple providers with mixed states
 
-    // swiftlint:disable:next function_body_length
     func testRestore_multipleProviders_mixedStates() async {
         let file = AIConnectionsFile(
             updatedAtMs: 1_760_000_000_000,

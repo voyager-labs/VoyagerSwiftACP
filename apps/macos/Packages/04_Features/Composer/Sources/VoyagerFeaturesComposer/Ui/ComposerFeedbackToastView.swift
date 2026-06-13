@@ -12,6 +12,7 @@ struct ComposerFeedbackToastView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(VoyagerDS.BrandPrimaryColor.c500)
+                .accessibilityLabel("Warning")
 
             Text(feedback.message)
                 .font(VoyagerDS.Typography.caption)

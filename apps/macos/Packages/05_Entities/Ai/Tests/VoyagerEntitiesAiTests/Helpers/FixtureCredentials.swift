@@ -13,29 +13,6 @@ enum FixtureCredentials {
     static let openAIApiKey = "sk-test-openai-fixture-key-000000000000"
     static let anthropicApiKey = "sk-ant-test-anthropic-fixture-key-000000"
 
-    // MARK: - JSON payloads
-
-    /// A complete auth.json fixture with OAuth-style tokens.
-    static var authJSON: Data {
-        """
-        {
-          "provider": "chatgpt-codex",
-          "refreshToken": "\(refreshToken)",
-          "accessToken": "\(accessToken)"
-        }
-        """.data(using: .utf8)!
-    }
-
-    /// An API-key style credential fixture.
-    static var apiKeyJSON: Data {
-        """
-        {
-          "provider": "openai",
-          "apiKey": "\(openAIApiKey)"
-        }
-        """.data(using: .utf8)!
-    }
-
     // MARK: - Sentinel collection (for redaction checks)
 
     /// All secret-bearing strings that must never appear in logs.
@@ -45,4 +22,27 @@ enum FixtureCredentials {
         openAIApiKey,
         anthropicApiKey,
     ]
+
+    // MARK: - JSON payloads
+
+    /// A complete auth.json fixture with OAuth-style tokens.
+    static var authJSON: Data {
+        Data("""
+        {
+          "provider": "chatgpt-codex",
+          "refreshToken": "\(refreshToken)",
+          "accessToken": "\(accessToken)"
+        }
+        """.utf8)
+    }
+
+    /// An API-key style credential fixture.
+    static var apiKeyJSON: Data {
+        Data("""
+        {
+          "provider": "openai",
+          "apiKey": "\(openAIApiKey)"
+        }
+        """.utf8)
+    }
 }

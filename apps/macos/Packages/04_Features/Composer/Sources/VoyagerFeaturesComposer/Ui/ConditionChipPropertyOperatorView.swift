@@ -41,6 +41,7 @@ struct ConditionChipPropertyOperatorView: View {
             .font(.system(size: 10, weight: .medium))
             .foregroundColor(.secondary)
             .frame(width: 12, height: 12)
+            .accessibilityHidden(true)
 
             Text(condition.propertyLabel)
                 .font(.system(size: 11, weight: .medium))

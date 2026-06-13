@@ -10,23 +10,6 @@ public enum AiChatSessionDateBucket: Hashable, Sendable {
     case month(Int)
     case year(Int)
 
-    public init(_ bucket: DateGroupBucket) {
-        switch bucket {
-        case .today:
-            self = .today
-        case .yesterday:
-            self = .yesterday
-        case .previous7Days:
-            self = .previous7Days
-        case .previous30Days:
-            self = .previous30Days
-        case let .month(month):
-            self = .month(month)
-        case let .year(year):
-            self = .year(year)
-        }
-    }
-
     public var title: String {
         switch self {
         case .today:
@@ -61,6 +44,23 @@ public enum AiChatSessionDateBucket: Hashable, Sendable {
         }
     }
 
+    public init(_ bucket: DateGroupBucket) {
+        switch bucket {
+        case .today:
+            self = .today
+        case .yesterday:
+            self = .yesterday
+        case .previous7Days:
+            self = .previous7Days
+        case .previous30Days:
+            self = .previous30Days
+        case let .month(month):
+            self = .month(month)
+        case let .year(year):
+            self = .year(year)
+        }
+    }
+
     private static func monthTitle(_ month: Int) -> String {
         let calendar = Calendar.current
         let currentYear = calendar.component(.year, from: Date())
@@ -82,7 +82,9 @@ public enum AiChatSessionRowActivityState: Equatable, Sendable {
 }
 
 public struct AiChatSessionRowDisplayModel: Identifiable, Equatable, Sendable {
-    public var id: AiChatSessionID { summary.sessionID }
+    public var id: AiChatSessionID {
+        summary.sessionID
+    }
 
     public let summary: AiChatSessionSummary
     public let title: String
@@ -91,17 +93,19 @@ public struct AiChatSessionRowDisplayModel: Identifiable, Equatable, Sendable {
 
     public init(
         summary: AiChatSessionSummary,
-        activityState: AiChatSessionRowActivityState = .idle
+        activityState: AiChatSessionRowActivityState = .idle,
     ) {
         self.summary = summary
-        self.title = summary.title
-        self.detail = activityState == .processing ? nil : summary.preview ?? summary.contextTitle
+        title = summary.title
+        detail = activityState == .processing ? nil : summary.preview ?? summary.contextTitle
         self.activityState = activityState
     }
 }
 
 public struct AiChatSessionSectionDisplayModel: Identifiable, Equatable, Sendable {
-    public var id: AiChatSessionDateBucket { bucket }
+    public var id: AiChatSessionDateBucket {
+        bucket
+    }
 
     public let bucket: AiChatSessionDateBucket
     public let title: String
@@ -109,7 +113,7 @@ public struct AiChatSessionSectionDisplayModel: Identifiable, Equatable, Sendabl
 
     public init(bucket: AiChatSessionDateBucket, rows: [AiChatSessionRowDisplayModel]) {
         self.bucket = bucket
-        self.title = bucket.title
+        title = bucket.title
         self.rows = rows
     }
 }
@@ -130,7 +134,7 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
         totalRowCount: Int? = nil,
         processingSessionID: AiChatSessionID? = nil,
         unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
-        hiddenSessionIDs: Set<AiChatSessionID> = []
+        hiddenSessionIDs: Set<AiChatSessionID> = [],
     ) {
         title = "Sessions"
         newChatTitle = "New Chat"
@@ -152,7 +156,7 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
             calendar: calendar,
             processingSessionID: processingSessionID,
             unreadCompletedSessionIDs: unreadCompletedSessionIDs,
-            hiddenSessionIDs: hiddenSessionIDs
+            hiddenSessionIDs: hiddenSessionIDs,
         )
     }
 
@@ -166,7 +170,7 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
         calendar: Calendar = .current,
         processingSessionID: AiChatSessionID? = nil,
         unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
-        hiddenSessionIDs: Set<AiChatSessionID> = []
+        hiddenSessionIDs: Set<AiChatSessionID> = [],
     ) -> [AiChatSessionSectionDisplayModel] {
         let visibleRows = rows.filter { !hiddenSessionIDs.contains($0.sessionID) }
         let grouped = Dictionary(grouping: visibleRows) { summary in
@@ -187,10 +191,10 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
                             activityState: Self.activityState(
                                 for: summary.sessionID,
                                 processingSessionID: processingSessionID,
-                                unreadCompletedSessionIDs: unreadCompletedSessionIDs
-                            )
+                                unreadCompletedSessionIDs: unreadCompletedSessionIDs,
+                            ),
                         )
-                    }
+                    },
                 )
             }
     }
@@ -198,7 +202,7 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
     private static func activityState(
         for sessionID: AiChatSessionID,
         processingSessionID: AiChatSessionID?,
-        unreadCompletedSessionIDs: Set<AiChatSessionID>
+        unreadCompletedSessionIDs: Set<AiChatSessionID>,
     ) -> AiChatSessionRowActivityState {
         if processingSessionID == sessionID {
             return .processing
@@ -212,7 +216,7 @@ public struct AiChatSessionsDisplayModel: Equatable, Sendable {
     public static func bucket(
         forUpdatedAtMs updatedAtMs: Int64,
         now: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
     ) -> AiChatSessionDateBucket {
         let updatedAt = Date(timeIntervalSince1970: TimeInterval(updatedAtMs) / 1000)
         return AiChatSessionDateBucket(DateGroupBucket.bucket(for: updatedAt, now: now, calendar: calendar))

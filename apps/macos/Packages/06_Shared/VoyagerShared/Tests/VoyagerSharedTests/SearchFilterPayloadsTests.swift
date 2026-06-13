@@ -5,8 +5,9 @@ import XCTest
 @MainActor
 final class SearchFilterPayloadsTests: XCTestCase {
     func testSearchResponsePayloadDecodesMissingQueryConversionAsNil() throws {
-        let data = Data(#"{"itemCount":0,"appliedFilters":{"scopes":["/tmp"],"conditions":[]},"items":null,"error":null}"#
-            .utf8)
+        let payload = #"{"itemCount":0,"appliedFilters":{"scopes":["/tmp"],"conditions":[]},"#
+            + #""items":null,"error":null}"#
+        let data = Data(payload.utf8)
 
         let decoded = try JSONDecoder().decode(SearchResponsePayload.self, from: data)
 

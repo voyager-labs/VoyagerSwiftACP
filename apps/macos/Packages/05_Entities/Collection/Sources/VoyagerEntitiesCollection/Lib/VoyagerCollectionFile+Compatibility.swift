@@ -1,8 +1,6 @@
 // swiftformat:disable modifierOrder
 import Foundation
 
-// swiftlint:disable file_length
-
 public enum CollectionFileSchemaVersion {
     nonisolated public static let definitionOnlyCurrent = SchemaVersion(major: 1, minor: 0)
     nonisolated public static let snapshotBearingCurrent = SchemaVersion(major: 1, minor: 1)
@@ -133,7 +131,6 @@ public enum CollectionFileCompatibilityError: LocalizedError, Equatable {
     }
 }
 
-// swiftlint:disable type_body_length
 public enum VoyagerCollectionFileCompatibilityOwner {
     private struct SchemaProbe: Equatable {
         let sourceSchemaVersion: SchemaVersion?
@@ -523,8 +520,6 @@ public enum VoyagerCollectionFileCompatibilityOwner {
     }
 }
 
-// swiftlint:enable type_body_length
-
 nonisolated private struct CompatibilityPayload: Decodable {
     let schemaVersion: SchemaVersion?
     let id: String
@@ -604,5 +599,3 @@ nonisolated private struct LossyOptionalField<Value: Decodable>: Decodable {
         wasPresent = true
     }
 }
-
-// swiftlint:enable file_length

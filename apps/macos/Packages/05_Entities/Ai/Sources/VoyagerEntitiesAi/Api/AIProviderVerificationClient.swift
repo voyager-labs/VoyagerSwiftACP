@@ -5,31 +5,31 @@ public struct AIProviderVerificationClient: Sendable {
     public var verify: @Sendable (AiProvider, StoredCredentialPayload?) async
         -> AiProviderVerificationResult
 
-    public nonisolated init(
+    nonisolated public init(
         verify: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async
-            -> AiProviderVerificationResult
+            -> AiProviderVerificationResult,
     ) {
         self.verify = verify
     }
 }
 
 extension AIProviderVerificationClient: DependencyKey {
-    public nonisolated static var liveValue: AIProviderVerificationClient {
+    nonisolated public static var liveValue: AIProviderVerificationClient {
         let runtimeClient = AiConnectionRuntimeClient.live()
         return AIProviderVerificationClient(
             verify: { provider, credential in
                 await runtimeClient.verifyProvider(provider, credential)
-            }
+            },
         )
     }
 
-    public nonisolated static var testValue: AIProviderVerificationClient {
+    nonisolated public static var testValue: AIProviderVerificationClient {
         AIProviderVerificationClient(
-            verify: { _, _ in .valid }
+            verify: { _, _ in .valid },
         )
     }
 
-    public nonisolated static var previewValue: AIProviderVerificationClient {
+    nonisolated public static var previewValue: AIProviderVerificationClient {
         AIProviderVerificationClient(
             verify: { provider, _ in
                 switch provider {
@@ -37,7 +37,7 @@ extension AIProviderVerificationClient: DependencyKey {
                 case .chatgptCodex: .valid
                 case .anthropic: .valid
                 }
-            }
+            },
         )
     }
 }

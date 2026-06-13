@@ -419,7 +419,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         ]
     }
 
-    private var fixedTimestampMs: Int64 { 1_700_000_000_000 }
+    private var fixedTimestampMs: Int64 {
+        1_700_000_000_000
+    }
 
     private func makeRestoreHydrationStore(
         sessionID: AiChatSessionID,

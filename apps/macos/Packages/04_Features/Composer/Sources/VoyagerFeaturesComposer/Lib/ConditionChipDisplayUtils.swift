@@ -3,6 +3,14 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 
 enum ConditionChipDisplayUtils {
+    /// date picker 상태 캡슐화
+    struct DatePickerState: Equatable {
+        var propertyKey: String?
+        var presented: Bool
+        var values: [String]
+        var dateValueState: DateValueState?
+    }
+
     static func displayValueText(for condition: Condition, displayValues: [String]? = nil) -> String {
         let values = displayValues ?? condition.values
         guard let values, !values.isEmpty else { return "Value" }
@@ -42,19 +50,16 @@ enum ConditionChipDisplayUtils {
     static func displayedValuesForDate(
         conditionValues: [String]?,
         conditionPropertyKey: String,
-        pickerPropertyKey: String?,
-        pickerPresented: Bool,
-        pickerValues: [String],
-        pickerDateValueState: DateValueState?,
+        pickerState: DatePickerState,
     ) -> [String]? {
-        if pickerPresented, pickerPropertyKey == conditionPropertyKey {
-            if let pickerDateValueState, pickerValues.count <= 1 {
-                return [pickerDateValueState.displayText()]
+        if pickerState.presented, pickerState.propertyKey == conditionPropertyKey {
+            if let pickerState.dateValueState, pickerState.values.count <= 1 {
+                return [pickerState.dateValueState.displayText()]
             }
-            if pickerValues.count >= 2 {
-                return pickerValues.map(absoluteDateText)
+            if pickerState.values.count >= 2 {
+                return pickerState.values.map(absoluteDateText)
             }
-            return pickerValues.map(displayDateValueText)
+            return pickerState.values.map(displayDateValueText)
         }
 
         guard let conditionValues else { return nil }

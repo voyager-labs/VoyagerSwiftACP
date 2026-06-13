@@ -14,7 +14,7 @@ extension OAuthCredentialFile {
         tokenType: String? = "Bearer",
         scopes: [String] = ["openid", "profile"],
         expiresAtMs: Int64? = nil,
-        chatGPTAccountId: String? = nil
+        chatGPTAccountId: String? = nil,
     ) -> OAuthCredentialFile {
         OAuthCredentialFile(
             accessToken: accessToken,
@@ -23,7 +23,7 @@ extension OAuthCredentialFile {
             tokenType: tokenType,
             scopes: scopes,
             expiresAtMs: expiresAtMs,
-            chatGPTAccountId: chatGPTAccountId
+            chatGPTAccountId: chatGPTAccountId,
         )
     }
 }
@@ -42,26 +42,26 @@ extension AiProviderConnectionResult {
     static func connectSuccess(
         provider: AiProvider,
         state: ProviderConnectionState = .connected,
-        file: AIConnectionsFile = .empty()
+        file: AIConnectionsFile = .empty(),
     ) -> AiProviderConnectionResult {
         AiProviderConnectionResult(
             provider: provider,
             state: state,
             reason: .none,
-            updatedFile: file
+            updatedFile: file,
         )
     }
 
     /// Successful disconnect result — provider returns to `.notVerified`.
     static func disconnectSuccess(
         provider: AiProvider,
-        file: AIConnectionsFile = .empty()
+        file: AIConnectionsFile = .empty(),
     ) -> AiProviderConnectionResult {
         AiProviderConnectionResult(
             provider: provider,
             state: .notVerified,
             reason: .none,
-            updatedFile: file
+            updatedFile: file,
         )
     }
 
@@ -69,13 +69,13 @@ extension AiProviderConnectionResult {
     static func failed(
         provider: AiProvider,
         reason: ProviderStatusReason = .unknown,
-        file: AIConnectionsFile = .empty()
+        file: AIConnectionsFile = .empty(),
     ) -> AiProviderConnectionResult {
         AiProviderConnectionResult(
             provider: provider,
             state: .connectionFailed,
             reason: reason,
-            updatedFile: file
+            updatedFile: file,
         )
     }
 }
@@ -88,7 +88,7 @@ extension AIConnectionsFile {
         _ provider: AiProvider,
         state: ProviderConnectionState,
         credential: StoredCredentialPayload? = nil,
-        errorCode: ProviderStatusReason = .none
+        errorCode: ProviderStatusReason = .none,
     ) -> AIConnectionsFile {
         let resolvedCredential = credential ?? defaultCredential(for: provider)
         let authMethod: ProviderAuthMethod = provider == .chatgptCodex ? .oauth : .apiKey
@@ -102,19 +102,19 @@ extension AIConnectionsFile {
                     credential: resolvedCredential,
                     snapshot: ProviderSnapshotFile(
                         lastKnownStatus: state,
-                        lastErrorCode: errorCode
-                    )
+                        lastErrorCode: errorCode,
+                    ),
                 ),
-            ]
+            ],
         )
     }
 
     private static func defaultCredential(for provider: AiProvider) -> StoredCredentialPayload? {
         switch provider {
         case .chatgptCodex:
-            return .oauth(OAuthCredentialFile.testFixture())
+            .oauth(OAuthCredentialFile.testFixture())
         case .openai, .anthropic:
-            return .apiKey(APIKeyCredentialFile.testFixture())
+            .apiKey(APIKeyCredentialFile.testFixture())
         }
     }
 }

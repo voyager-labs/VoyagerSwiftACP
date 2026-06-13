@@ -8,7 +8,6 @@ import XCTest
 
 @MainActor
 final class AiChatRequestContextSnapshotTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     func testSubmitLocksResolvedPickerAttachmentsIntoRequestContextSnapshot() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -139,12 +138,10 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         let collectionURL = sandbox.appendingPathComponent("Broken.voycoll")
         try "not a collection".write(to: collectionURL, atomically: true, encoding: .utf8)
 
-        // swiftlint:disable multiline_literal_brackets
         let request = await submitRequest(attachments: [makeDraftAttachment(
             url: collectionURL,
             source: .collectionDocument,
         )])
-        // swiftlint:enable multiline_literal_brackets
         let attachment = try XCTUnwrap(request.context.requestContext.addedAttachments.first)
         XCTAssertResolvedReference(attachment.resolutionResult, collectionSnapshotStatus: "unreadable")
     }
@@ -167,12 +164,10 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         let collectionURL = sandbox.appendingPathComponent("Large.voycoll")
         try writeCollectionFile(to: collectionURL, name: "Large", snapshotPaths: paths)
 
-        // swiftlint:disable multiline_literal_brackets
         let request = await submitRequest(attachments: [makeDraftAttachment(
             url: collectionURL,
             source: .collectionDocument,
         )])
-        // swiftlint:enable multiline_literal_brackets
         let attachment = try XCTUnwrap(request.context.requestContext.addedAttachments.first)
         XCTAssertResolvedReference(
             attachment.resolutionResult,
@@ -505,7 +500,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertLessThan(directoryFilePathLines, 1200)
     }
 
-    // swiftlint:disable:next function_body_length
     func testRemoteCurrentContextSelectedFileUsesProviderNativeBase64AndRedactedPathMetadata() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -589,7 +583,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         }
     }
 
-    // swiftlint:disable:next function_body_length
     func testRemoteProviderAttachmentPartsUseProviderNativeBase64ForSupportedFiles() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -660,7 +653,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         }
     }
 
-    // swiftlint:disable:next function_body_length
     func testRegenerateReusesOriginalLockedRequestContextSnapshot() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -770,7 +762,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         }
     }
 
-    // swiftlint:disable:next function_body_length
     func testRegenerateAfterModelSwitchReResolvesLockedRequestContextForSelectedProvider() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -914,7 +905,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(metadata["attachmentID"], attachmentID.rawValue)
     }
 
-    // swiftlint:disable:next function_body_length
     func testRegenerateAfterRestoreReusesPersistedLockedRequestContextSnapshot() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -973,7 +963,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Restored.txt"])
     }
 
-    // swiftlint:disable:next function_body_length
     func testSubmitAfterNewChatUsesLatestCurrentContextInsteadOfSeedSnapshot() async throws {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -1096,7 +1085,6 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
     }
 }
 
-// swiftlint:disable function_default_parameter_at_end
 @MainActor
 private func submitRequest(
     currentContext: AiChatCurrentContextSnapshot = makeContextSnapshot(summary: "Current folder"),
@@ -1152,8 +1140,6 @@ private func submitRequest(
     }
     return request
 }
-
-// swiftlint:enable function_default_parameter_at_end
 
 private func makeTemporaryDirectory() throws -> URL {
     let sandbox = FileManager.default.temporaryDirectory

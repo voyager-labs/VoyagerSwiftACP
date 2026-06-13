@@ -95,10 +95,12 @@ extension ConditionChipValueSectionView {
         let displayedValues = ConditionChipDisplayUtils.displayedValuesForDate(
             conditionValues: condition.values,
             conditionPropertyKey: condition.propertyKey,
-            pickerPropertyKey: valueViewStore.propertyKey,
-            pickerPresented: valueViewStore.isPresented,
-            pickerValues: valueViewStore.values,
-            pickerDateValueState: valueViewStore.dateValueState,
+            pickerState: .init(
+                propertyKey: valueViewStore.propertyKey,
+                presented: valueViewStore.isPresented,
+                values: valueViewStore.values,
+                dateValueState: valueViewStore.dateValueState,
+            ),
         )
         let context = ConditionChipDateButtonContext(
             displayedValues: displayedValues,

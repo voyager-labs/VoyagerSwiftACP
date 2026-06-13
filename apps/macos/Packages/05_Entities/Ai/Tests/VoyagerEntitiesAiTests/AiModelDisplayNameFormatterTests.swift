@@ -20,11 +20,11 @@ final class AiModelDisplayNameFormatterTests: XCTestCase {
     func testDisplayName_preservesProviderDisplayNameForCustomOrSpecialModels() {
         XCTAssertEqual(
             format(.chatgptCodex, rawModelID: "codex-auto-review", providerDisplayName: "Codex Auto Review"),
-            "Codex Auto Review"
+            "Codex Auto Review",
         )
         XCTAssertEqual(
             format(.anthropic, rawModelID: "claude-custom", providerDisplayName: "Custom Claude Router"),
-            "Custom Claude Router"
+            "Custom Claude Router",
         )
         XCTAssertEqual(format(.openai, rawModelID: "custom-openai-model"), "custom-openai-model")
     }
@@ -32,12 +32,12 @@ final class AiModelDisplayNameFormatterTests: XCTestCase {
     private func format(
         _ provider: AiProvider,
         rawModelID: String,
-        providerDisplayName: String? = nil
+        providerDisplayName: String? = nil,
     ) -> String {
         AiModelDisplayNameFormatter.displayName(
             provider: provider,
             rawModelID: rawModelID,
-            providerDisplayName: providerDisplayName
+            providerDisplayName: providerDisplayName,
         )
     }
 }

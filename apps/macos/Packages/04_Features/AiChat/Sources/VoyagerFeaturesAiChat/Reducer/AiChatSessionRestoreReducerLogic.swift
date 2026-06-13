@@ -280,6 +280,33 @@ extension AiChatFeature {
     }
 }
 
+extension AiChatFeature {
+    func handleRestoreOutcome(
+        requestedSessionID: AiChatSessionID,
+        result: AiChatSessionRestoreResult,
+        restoreFailure: AiChatSessionRestoreFailure?,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.restoreSessionID == requestedSessionID else { return .none }
+        let isSessionListRestore = state.mode == .sessions && state.sessionList
+            .selectedSessionID == requestedSessionID
+        if isSessionListRestore,
+           let restoreFailure,
+           restoreFailure != .contextMismatch
+        {
+            state.sessionList.selectedSessionID = nil
+            state.sessionList.errorMessage = sessionRestoreFailureMessage(for: restoreFailure)
+            return .none
+        }
+        applyRestoreOutcome(result, restoreFailure: restoreFailure, state: &state)
+        if isSessionListRestore {
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+        return .none
+    }
+}
+
 struct AiChatRestoreContext {
     var sessionID: AiChatSessionID
     var catalogRows: [AiModelCatalogRow]

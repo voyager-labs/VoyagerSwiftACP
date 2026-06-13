@@ -1,12 +1,9 @@
-// swiftlint:disable file_length
-
 import ComposableArchitecture
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesOnboarding
 import XCTest
 
-// swiftlint:disable type_body_length
 @MainActor
 final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
     // MARK: - ONB-004-show_onboarding_ai_provider_setup
@@ -542,8 +539,6 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 }
-
-// swiftlint:enable type_body_length
 
 private extension ONB004ConfigureAIProviderDuringOnboardingTests {
     static func waitUntil(

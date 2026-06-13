@@ -24,7 +24,7 @@ public struct AiChatSetupState: Equatable, Sendable {
         selectedModelHandle: AiModelHandle? = nil,
         selectedThinking: AiThinkingSelection? = nil,
         lockedModelHandle: AiModelHandle? = nil,
-        lastExecutionFailure: AiChatExecutionFailure? = nil
+        lastExecutionFailure: AiChatExecutionFailure? = nil,
     ) {
         self.restoreSessionID = restoreSessionID
         self.sessionID = sessionID

@@ -74,9 +74,11 @@ enum EntryOperationsAlertPresenter {
 
         switch context {
         case .putBack:
-            alert.messageText = "A newer item named \"\(itemName)\" already exists in this location. Do you want to replace it with the older one you're moving?"
+            alert.messageText = "A newer item named \"\(itemName)\" already exists in this location. "
+                + "Do you want to replace it with the older one you're moving?"
         case .move:
-            alert.messageText = "An older item named \"\(itemName)\" already exists in this location. Do you want to replace it with the newer one you're moving?"
+            alert.messageText = "An older item named \"\(itemName)\" already exists in this location. "
+                + "Do you want to replace it with the newer one you're moving?"
         }
 
         alert.addButton(withTitle: "Stop")

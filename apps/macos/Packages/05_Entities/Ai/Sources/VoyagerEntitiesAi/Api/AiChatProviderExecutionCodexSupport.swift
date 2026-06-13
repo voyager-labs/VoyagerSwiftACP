@@ -165,7 +165,8 @@ extension AiChatProviderExecutionClient {
             || lowered.contains("usage cap")
             || lowered.contains("insufficient funds")
             || lowered.contains("upgrade")
-            || lowered.contains("subscription") {
+            || lowered.contains("subscription")
+        {
             return .quotaExceeded
         }
         if lowered.contains("model"), lowered.contains("not found") || lowered.contains("unknown") {
@@ -175,7 +176,7 @@ extension AiChatProviderExecutionClient {
     }
 }
 
-struct CodexJSONEvent: Decodable, Sendable {
+struct CodexJSONEvent: Decodable {
     let type: String?
     let method: String?
     let item: CodexJSONItem?
@@ -186,7 +187,8 @@ struct CodexJSONEvent: Decodable, Sendable {
         let normalizedMethod = method?.lowercased() ?? ""
         if normalizedMethod.contains("agentmessage/delta")
             || normalizedMethod.contains("agent_message/delta")
-            || normalizedMethod.contains("agent-message/delta") {
+            || normalizedMethod.contains("agent-message/delta")
+        {
             return params?.delta ?? params?.text ?? delta
         }
         if normalizedMethod == "item/completed" || normalizedMethod == "item.completed" {
@@ -204,13 +206,13 @@ struct CodexJSONEvent: Decodable, Sendable {
     }
 }
 
-struct CodexJSONParams: Decodable, Sendable {
+struct CodexJSONParams: Decodable {
     let delta: String?
     let text: String?
     let item: CodexJSONItem?
 }
 
-struct CodexJSONItem: Decodable, Sendable {
+struct CodexJSONItem: Decodable {
     let type: String?
     let role: String?
     let text: String?
@@ -238,12 +240,12 @@ struct CodexJSONItem: Decodable, Sendable {
     }
 }
 
-struct CodexJSONContent: Decodable, Sendable {
+struct CodexJSONContent: Decodable {
     let type: String?
     let text: String?
 }
 
-struct CodexCLIAuthFile: Encodable, Sendable {
+struct CodexCLIAuthFile: Encodable {
     let tokens: CodexCLIAuthTokens
     let lastRefresh: String
 
@@ -258,7 +260,7 @@ struct CodexCLIAuthFile: Encodable, Sendable {
     }
 }
 
-struct CodexCLIAuthTokens: Encodable, Sendable {
+struct CodexCLIAuthTokens: Encodable {
     let accessToken: String
     let refreshToken: String?
     let idToken: String?
@@ -279,7 +281,7 @@ struct CodexCLIAuthTokens: Encodable, Sendable {
     }
 }
 
-enum CodexCLIExecutionError: Error, Equatable, Sendable {
+enum CodexCLIExecutionError: Error, Equatable {
     case launchFailed
     case outputMissing(String)
     case nonZeroExit(String)

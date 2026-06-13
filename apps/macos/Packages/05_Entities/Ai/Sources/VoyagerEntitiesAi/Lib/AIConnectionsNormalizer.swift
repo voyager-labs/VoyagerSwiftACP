@@ -24,12 +24,12 @@ public enum AIConnectionsNormalizer {
             updatedAtMs: file.updatedAtMs,
             lastUsedProviderId: file.lastUsedProviderId,
             lastUsedAtMs: file.lastUsedAtMs,
-            providers: normalizedProviders
+            providers: normalizedProviders,
         )
     }
 
     public static func renderableProviders(
-        from file: AIConnectionsFile
+        from file: AIConnectionsFile,
     ) -> [String: ProviderRecordFile] {
         file.providers.filter { key, _ in
             guard let provider = AiProvider(rawValue: key) else { return false }
@@ -42,7 +42,7 @@ public enum AIConnectionsNormalizer {
         let credentialMatchesAuth = credentialKindMatches(
             record.credential,
             record.authMethod,
-            expectedAuthMethod
+            expectedAuthMethod,
         )
 
         if record.credential == nil {
@@ -53,8 +53,8 @@ public enum AIConnectionsNormalizer {
                 snapshot: ProviderSnapshotFile(
                     lastKnownStatus: .notVerified,
                     lastVerifiedAtMs: record.snapshot.lastVerifiedAtMs,
-                    lastErrorCode: .missingCredential
-                )
+                    lastErrorCode: .missingCredential,
+                ),
             )
         }
 
@@ -66,8 +66,8 @@ public enum AIConnectionsNormalizer {
                 snapshot: ProviderSnapshotFile(
                     lastKnownStatus: .connectionFailed,
                     lastVerifiedAtMs: record.snapshot.lastVerifiedAtMs,
-                    lastErrorCode: .credentialKindMismatch
-                )
+                    lastErrorCode: .credentialKindMismatch,
+                ),
             )
         }
 
@@ -77,7 +77,7 @@ public enum AIConnectionsNormalizer {
     private static func credentialKindMatches(
         _ credential: StoredCredentialPayload?,
         _ recordAuthMethod: ProviderAuthMethod,
-        _ expectedAuthMethod: ProviderAuthMethod?
+        _ expectedAuthMethod: ProviderAuthMethod?,
     ) -> Bool {
         guard let credential else { return true }
 

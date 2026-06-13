@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
@@ -58,7 +57,7 @@ private actor SuspensionGate {
 }
 
 @MainActor
-final class AiConnectionOAuthTests: XCTestCase { // swiftlint:disable:this type_body_length
+final class AiConnectionOAuthTests: XCTestCase {
     private func makeCredential(
         accessToken: String = "test-access-token",
         refreshToken: String? = "test-refresh-token",

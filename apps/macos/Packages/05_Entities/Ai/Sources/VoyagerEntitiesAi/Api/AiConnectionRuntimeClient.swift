@@ -13,7 +13,7 @@ public struct AiAdapterDescriptor: Equatable, Sendable {
 
     public init(
         provider: AiProvider,
-        adapterName: String
+        adapterName: String,
     ) {
         self.provider = provider
         self.adapterName = adapterName
@@ -28,7 +28,7 @@ public struct AiConnectionRuntimeClient: Sendable {
     public init(
         verifyProvider: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async
             -> AiProviderVerificationResult,
-        resolveAdapter: @escaping @Sendable (AiProvider, StoredCredentialPayload?) -> AiAdapterDescriptor?
+        resolveAdapter: @escaping @Sendable (AiProvider, StoredCredentialPayload?) -> AiAdapterDescriptor?,
     ) {
         self.verifyProvider = verifyProvider
         self.resolveAdapter = resolveAdapter
@@ -59,7 +59,7 @@ extension AiConnectionRuntimeClient {
                 return await Self.performSmokeRequest(
                     provider: provider,
                     secret: secret,
-                    session: session
+                    session: session,
                 )
             },
             resolveAdapter: { provider, credential in
@@ -72,14 +72,14 @@ extension AiConnectionRuntimeClient {
                 case .anthropic:
                     return AiAdapterDescriptor(provider: .anthropic, adapterName: "AnthropicAdapter")
                 }
-            }
+            },
         )
     }
 
     private static func performSmokeRequest(
         provider: AiProvider,
         secret: String,
-        session: URLSession
+        session: URLSession,
     ) async -> AiProviderVerificationResult {
         let url: String
         var request: URLRequest
@@ -119,14 +119,10 @@ extension AiConnectionRuntimeClient {
             let error = AiHTTPError.httpError(statusCode: httpResponse.statusCode, body: body)
             return Self.mapHTTPError(error)
         } catch let error as URLError {
-            switch error.code {
-            case .timedOut, .networkConnectionLost:
-                return .networkError
-            case .cancelled:
+            if error.code == .cancelled {
                 return .invalid(.verificationFailed)
-            default:
-                return .networkError
             }
+            return .networkError
         } catch {
             return .networkError
         }
@@ -135,26 +131,26 @@ extension AiConnectionRuntimeClient {
     public static func mapHTTPError(_ error: AiHTTPError) -> AiProviderVerificationResult {
         switch error {
         case let .httpError(statusCode, body):
-            switch statusCode {
-            case 200 ... 299: .valid
-            case 401: .invalid(.invalidAPIKey)
-            case 403:
-                if let code = extractErrorCode(from: body) {
-                    switch code {
-                    case "expired_api_key": .invalid(.expired)
-                    default: .invalid(.invalidAPIKey)
-                    }
-                } else {
-                    .invalid(.invalidAPIKey)
-                }
-            case 429: .invalid(.verificationFailed)
-            case 500 ... 599: .networkError
-            default: .invalid(.verificationFailed)
+            mapHTTPStatusCode(statusCode, body: body)
+        case .networkError, .timeout:
+            .networkError
+        case .invalidURL, .cancelled:
+            .invalid(.verificationFailed)
+        }
+    }
+
+    private static func mapHTTPStatusCode(_ statusCode: Int, body: String) -> AiProviderVerificationResult {
+        switch statusCode {
+        case 200 ... 299: return .valid
+        case 401: return .invalid(.invalidAPIKey)
+        case 403:
+            if extractErrorCode(from: body) == "expired_api_key" {
+                return .invalid(.expired)
             }
-        case .networkError: .networkError
-        case .timeout: .networkError
-        case .invalidURL: .invalid(.verificationFailed)
-        case .cancelled: .invalid(.verificationFailed)
+            return .invalid(.invalidAPIKey)
+        case 429: return .invalid(.verificationFailed)
+        case 500 ... 599: return .networkError
+        default: return .invalid(.verificationFailed)
         }
     }
 

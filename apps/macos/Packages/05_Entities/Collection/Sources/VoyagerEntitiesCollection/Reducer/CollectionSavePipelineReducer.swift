@@ -38,9 +38,11 @@ public struct CollectionSavePipelineReducer {
                     state: &state,
                     payload: payload,
                     url: url,
-                    collectionFileClient: collectionFileClient,
-                    collectionStalenessClient: collectionStalenessClient,
-                    collectionMetricClient: collectionMetricClient,
+                    clients: SavePipelineClients(
+                        file: collectionFileClient,
+                        staleness: collectionStalenessClient,
+                        metric: collectionMetricClient,
+                    ),
                 )
 
             case let .savePanelResponse(url):
@@ -306,13 +308,18 @@ private func handleSaveRequested(
     }
 }
 
+/// 저장 파이프라인 클라이언트 모음
+private struct SavePipelineClients {
+    var file: CollectionFileClient
+    var staleness: CollectionStalenessClient
+    var metric: CollectionMetricClient
+}
+
 private func handleSaveToExisting(
     state: inout CollectionState,
     payload: SaveRequestPayload,
     url: URL,
-    collectionFileClient: CollectionFileClient,
-    collectionStalenessClient: CollectionStalenessClient,
-    collectionMetricClient: CollectionMetricClient,
+    clients: SavePipelineClients,
 ) -> Effect<CollectionAction> {
     let source = state.collectionSession.phase.isInflightWriteBack ? "write_back" : "save_existing"
     guard canStartSave(state: state, payload: payload) else {
@@ -321,7 +328,7 @@ private func handleSaveToExisting(
             reason: CollectionFilterSaveMetrics.reasonForInFlightBlock(state: state, payload: payload),
             source: source,
             payload: payload,
-            collectionMetricClient: collectionMetricClient,
+            collectionMetricClient: clients.metric,
             level: .warn,
         )
         return .none
@@ -334,7 +341,7 @@ private func handleSaveToExisting(
             reason: failure.reason,
             source: source,
             payload: payload,
-            collectionMetricClient: collectionMetricClient,
+            collectionMetricClient: clients.metric,
             level: .warn,
         )
         return showSaveError(failure)
@@ -344,9 +351,9 @@ private func handleSaveToExisting(
             snapshot: result.snapshot,
             savedContext: result.context,
             url: url,
-            collectionFileClient: collectionFileClient,
-            collectionStalenessClient: collectionStalenessClient,
-            collectionMetricClient: collectionMetricClient,
+            collectionFileClient: clients.file,
+            collectionStalenessClient: clients.staleness,
+            collectionMetricClient: clients.metric,
             source: source,
         )
     }
@@ -456,7 +463,6 @@ private func performSave(
         source: source,
         snapshot: snapshot,
         savedContext: savedContext,
-        collectionFileClient: collectionFileClient,
-        collectionMetricClient: collectionMetricClient,
+        clients: (file: collectionFileClient, metric: collectionMetricClient),
     )
 }

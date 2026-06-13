@@ -143,10 +143,13 @@ extension ConditionChipValueSectionView {
         } else if isActive || !hasCommittedValues {
             inlineValueInputs(
                 valueViewStore: valueStore,
-                valueArity: valueArity,
-                valueType: condition.valueType,
-                valueUIKind: valueUIKind,
-                errorMessage: valueStore.errorMessage,
+                context: ConditionChipInlineInputContext(
+                    valueArity: valueArity,
+                    valueType: condition.valueType,
+                    valueUIKind: valueUIKind,
+                    hasError: valueStore.errorMessage != nil,
+                    errorMessage: valueStore.errorMessage,
+                ),
                 editingIndex: nil,
             )
             .onAppear { if needsPrepare { prepare() } }
@@ -192,10 +195,13 @@ extension ConditionChipValueSectionView {
         } else if isEditingValue {
             inlineValueInputs(
                 valueViewStore: valueStore,
-                valueArity: valueArity,
-                valueType: condition.valueType,
-                valueUIKind: valueUIKind,
-                errorMessage: valueStore.errorMessage,
+                context: ConditionChipInlineInputContext(
+                    valueArity: valueArity,
+                    valueType: condition.valueType,
+                    valueUIKind: valueUIKind,
+                    hasError: valueStore.errorMessage != nil,
+                    errorMessage: valueStore.errorMessage,
+                ),
                 editingIndex: nil,
             )
         } else if valueArity >= 2, let values = displayState?.values ?? condition.values, values.count >= 2 {
@@ -210,8 +216,7 @@ extension ConditionChipValueSectionView {
                 currentText: condition.values?.first ?? "",
                 index: 0,
                 valueViewStore: valueStore,
-                operatorCode: operatorCode,
-                valueUIKind: valueUIKind,
+                prepareConfig: (operatorCode: operatorCode, valueUIKind: valueUIKind),
             )
         } else {
             singleValueButton(operatorCode: operatorCode, valueUIKind: valueUIKind, valueArity: valueArity)
@@ -240,10 +245,13 @@ extension ConditionChipValueSectionView {
 
             inlineValueInputs(
                 valueViewStore: valueStore,
-                valueArity: 2,
-                valueType: condition.valueType,
-                valueUIKind: valueUIKind,
-                errorMessage: valueStore.errorMessage,
+                context: ConditionChipInlineInputContext(
+                    valueArity: 2,
+                    valueType: condition.valueType,
+                    valueUIKind: valueUIKind,
+                    hasError: valueStore.errorMessage != nil,
+                    errorMessage: valueStore.errorMessage,
+                ),
                 editingIndex: editingIndex,
             )
 
@@ -383,27 +391,17 @@ extension ConditionChipValueSectionView {
 
     func inlineValueInputs(
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
-        valueArity: Int,
-        valueType: String,
-        valueUIKind: String,
-        errorMessage: String?,
+        context: ConditionChipInlineInputContext,
         editingIndex: Int?,
     ) -> some View {
-        let hasError = errorMessage != nil
-        let fieldCount = max(max(valueArity, valueViewStore.values.count), 1)
+        let hasError = context.hasError
+        let fieldCount = max(max(context.valueArity, valueViewStore.values.count), 1)
         let indices: [Int] = {
             if let editingIndex {
                 return [editingIndex]
             }
             return Array(0 ..< fieldCount)
         }()
-        let context = ConditionChipInlineInputContext(
-            valueArity: valueArity,
-            valueType: valueType,
-            valueUIKind: valueUIKind,
-            hasError: hasError,
-            errorMessage: errorMessage,
-        )
         let focusTarget = valueViewStore.editingIndex ?? indices.first
         let shouldFocus = valueViewStore.isPresented && valueViewStore.propertyKey == condition.propertyKey
 
@@ -444,8 +442,7 @@ extension ConditionChipValueSectionView {
                     currentText: currentText,
                     index: index,
                     valueViewStore: valueViewStore,
-                    operatorCode: condition.operatorCode ?? "eq",
-                    valueUIKind: context.valueUIKind,
+                    prepareConfig: (operatorCode: condition.operatorCode ?? "eq", valueUIKind: context.valueUIKind),
                 )
             } else {
                 inlineTextInputField(

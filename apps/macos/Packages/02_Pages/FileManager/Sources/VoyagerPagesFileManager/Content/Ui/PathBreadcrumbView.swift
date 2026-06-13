@@ -44,6 +44,7 @@ private struct BreadcrumbItemView: View {
             Image(nsImage: icon)
                 .resizable()
                 .scaledToFit()
+                .accessibilityHidden(true)
                 .frame(width: 14, height: 14)
 
             Text(item.name)
@@ -197,6 +198,7 @@ struct PathBreadcrumbView: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -206,6 +208,7 @@ struct PathBreadcrumbView: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .accessibilityHidden(true)
                 }
 
                 BreadcrumbItemView(

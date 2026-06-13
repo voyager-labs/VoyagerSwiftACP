@@ -13,7 +13,7 @@ final class AIConnectionNormalizationTests: XCTestCase {
         let file = AIConnectionsFile(
             schemaVersion: 99,
             updatedAtMs: 1000,
-            providers: [:]
+            providers: [:],
         )
         let normalized = AIConnectionsNormalizer.normalize(file)
         XCTAssertTrue(normalized.providers.isEmpty)
@@ -24,11 +24,11 @@ final class AIConnectionNormalizationTests: XCTestCase {
         let record = ProviderRecordFile(
             providerId: .chatgptCodex,
             authMethod: .oauth,
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["wrongKey": record]
+            providers: ["wrongKey": record],
         )
         let normalized = AIConnectionsNormalizer.normalize(file)
         XCTAssertTrue(normalized.providers.isEmpty)
@@ -38,11 +38,11 @@ final class AIConnectionNormalizationTests: XCTestCase {
         let record = ProviderRecordFile(
             providerId: .chatgptCodex,
             authMethod: .oauth,
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["chatgptCodex": record, "unknownProvider": record]
+            providers: ["chatgptCodex": record, "unknownProvider": record],
         )
         let normalized = AIConnectionsNormalizer.normalize(file)
         XCTAssertEqual(normalized.providers.count, 1)
@@ -54,11 +54,11 @@ final class AIConnectionNormalizationTests: XCTestCase {
             providerId: .chatgptCodex,
             authMethod: .oauth,
             credential: nil,
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
         let normalized = AIConnectionsNormalizer.normalize(file)
         let normalizedRecord = normalized.providers["chatgptCodex"]
@@ -72,11 +72,11 @@ final class AIConnectionNormalizationTests: XCTestCase {
             providerId: .chatgptCodex,
             authMethod: .oauth,
             credential: .apiKey(apiCred),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
         let normalized = AIConnectionsNormalizer.normalize(file)
         let normalizedRecord = normalized.providers["chatgptCodex"]
@@ -90,11 +90,11 @@ final class AIConnectionNormalizationTests: XCTestCase {
             providerId: .chatgptCodex,
             authMethod: .oauth,
             credential: .oauth(oauth),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
         let normalized = AIConnectionsNormalizer.normalize(file)
         XCTAssertEqual(normalized.providers["chatgptCodex"], record)
@@ -106,11 +106,11 @@ final class AIConnectionNormalizationTests: XCTestCase {
             providerId: .openai,
             authMethod: .apiKey,
             credential: .apiKey(apiCred),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["openai": record]
+            providers: ["openai": record],
         )
         let normalized = AIConnectionsNormalizer.normalize(file)
         XCTAssertEqual(normalized.providers["openai"], record)
@@ -120,11 +120,11 @@ final class AIConnectionNormalizationTests: XCTestCase {
         let record = ProviderRecordFile(
             providerId: .chatgptCodex,
             authMethod: .oauth,
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["chatgptCodex": record, "nonExistentProvider": record]
+            providers: ["chatgptCodex": record, "nonExistentProvider": record],
         )
         let renderable = AIConnectionsNormalizer.renderableProviders(from: file)
         XCTAssertEqual(renderable.count, 1)

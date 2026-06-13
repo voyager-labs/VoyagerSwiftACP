@@ -107,9 +107,10 @@ private enum SharedContextPromptBuilder {
     }
 
     private static func makeReferenceLines(_ reference: AiChatContextReference) -> [String] {
+        let title = displayValue(title: reference.title, fallback: reference.identifier)
         var lines =
             [
-                "    - [\(reference.kind.rawValue)] \(displayValue(title: reference.title, fallback: reference.identifier))",
+                "    - [\(reference.kind.rawValue)] \(title)",
             ]
         if let subtitle = normalized(reference.subtitle) {
             lines.append("      subtitle: \(subtitle)")
@@ -134,9 +135,10 @@ private enum SharedContextPromptBuilder {
     }
 
     private static func makeContextAttachmentLines(_ attachment: AiChatContextAttachment) -> [String] {
+        let title = displayValue(title: attachment.title, fallback: attachment.identifier)
         var lines =
             [
-                "    - [\(attachment.kind.rawValue)] \(displayValue(title: attachment.title, fallback: attachment.identifier))",
+                "    - [\(attachment.kind.rawValue)] \(title)",
             ]
         if let subtitle = normalized(attachment.subtitle) {
             lines.append("      subtitle: \(subtitle)")

@@ -275,15 +275,14 @@ public enum ComposerScopeUtils {
         currentDepth: Int,
         queue: inout [(path: String, depth: Int)],
         results: inout [DirectoryItem],
-        context: SearchExecutionContext,
-        entryLoadingClient: EntryLoadingClient,
+        context: (match: SearchMatchContext, entryLoadingClient: EntryLoadingClient),
     ) {
         for item in contents {
-            if shouldStopSearch(resultsCount: results.count, context: context) {
+            if shouldStopSearch(resultsCount: results.count, context: context.match) {
                 break
             }
 
-            guard let values = try? item.resourceValues(forKeys: context.resourceKeySet),
+            guard let values = try? item.resourceValues(forKeys: context.match.resourceKeySet),
                   values.isDirectory == true
             else {
                 continue
@@ -295,7 +294,7 @@ public enum ComposerScopeUtils {
                 quickName: item.lastPathComponent,
                 results: &results,
                 context: context.match,
-                entryLoadingClient: entryLoadingClient,
+                entryLoadingClient: context.entryLoadingClient,
             )
             queue.append((fullPath, currentDepth + 1))
         }
@@ -337,8 +336,7 @@ public enum ComposerScopeUtils {
                 currentDepth: current.depth,
                 queue: &queue,
                 results: &results,
-                context: context,
-                entryLoadingClient: entryLoadingClient,
+                context: (match: context.match, entryLoadingClient: entryLoadingClient),
             )
         }
 

@@ -84,7 +84,6 @@ final class ComposerScopeEditorEditingTests: XCTestCase {
         await store.finish()
     }
 
-    // swiftlint:disable:next function_body_length
     func testScopeEditorOpenPreservesPendingScopeRuleWhenAlreadyPresented() async {
         var initialState = ComposerState()
         initialState.collectionContext = CollectionContext(

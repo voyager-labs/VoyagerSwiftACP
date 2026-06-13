@@ -16,14 +16,14 @@ final class RedactionTestHelper {
         in output: String,
         redactedPlaceholder _: String = defaultRedacted,
         file: StaticString = #filePath,
-        line: UInt = #line
+        line: UInt = #line,
     ) {
         for secret in secrets {
             XCTAssertFalse(
                 output.contains(secret),
                 "Raw secret \"\(secret.prefix(8))…\" found in output.",
                 file: file,
-                line: line
+                line: line,
             )
         }
     }
@@ -33,7 +33,7 @@ final class RedactionTestHelper {
     func assertRedaction(
         _ redact: (String) -> String,
         file: StaticString = #filePath,
-        line: UInt = #line
+        line: UInt = #line,
     ) {
         for secret in secrets {
             let raw = "token=\(secret)"
@@ -42,7 +42,7 @@ final class RedactionTestHelper {
                 result.contains(secret),
                 "Redaction failed for secret \"\(secret.prefix(8))…\". Result: \(result)",
                 file: file,
-                line: line
+                line: line,
             )
         }
     }

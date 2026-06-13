@@ -45,6 +45,7 @@ struct ConditionPropertyPickerView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+                    .accessibilityHidden(true)
 
                 ZStack(alignment: .leading) {
                     if viewStore.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -74,6 +75,7 @@ struct ConditionPropertyPickerView: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                            .accessibilityLabel("Clear search")
                     }
                     .buttonStyle(.borderless)
                 }
@@ -149,6 +151,7 @@ struct ConditionPropertyPickerView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 11, weight: .semibold))
+                            .accessibilityHidden(true)
                         Text(ConditionPropertyPickerDisplayUtils.categoryTitle(for: categoryKey))
                             .font(.system(size: 12, weight: .semibold))
                     }
@@ -237,6 +240,7 @@ struct ConditionPropertyPickerView: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .frame(width: 16)
+                    .accessibilityHidden(true)
                 Text(ConditionPropertyPickerDisplayUtils.categoryTitle(for: categoryKey))
                     .font(.system(size: 13))
                     .foregroundColor(.primary)
@@ -283,6 +287,7 @@ struct ConditionPropertyPickerView: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .frame(width: 16)
+                    .accessibilityHidden(true)
                 }
 
                 Text(label)
@@ -314,6 +319,7 @@ private extension ConditionPropertyPickerView {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12))
                 .foregroundColor(.yellow)
+                .accessibilityLabel("Warning")
             Text(message)
                 .font(.system(size: 12))
                 .foregroundColor(.primary)
@@ -324,6 +330,7 @@ private extension ConditionPropertyPickerView {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+                    .accessibilityLabel("Dismiss warning")
             }
             .buttonStyle(.borderless)
         }

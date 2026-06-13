@@ -116,7 +116,9 @@ struct AiChatSelectorPopoverContainer<Content: View>: View {
             .shadow(color: Color.black.opacity(0.16), radius: 12, x: 0, y: 6)
     }
 
-    private static var width: CGFloat { 260 }
+    private static var width: CGFloat {
+        260
+    }
 }
 
 private struct AiChatModelSelectorStatusRow: View {

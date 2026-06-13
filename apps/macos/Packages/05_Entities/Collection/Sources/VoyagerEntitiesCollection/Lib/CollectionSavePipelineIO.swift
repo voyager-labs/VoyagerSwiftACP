@@ -78,18 +78,17 @@ func executeSave(
     source: String,
     snapshot: CollectionSaveSnapshot,
     savedContext: CollectionContext,
-    collectionFileClient: CollectionFileClient,
-    collectionMetricClient: CollectionMetricClient,
+    clients: (file: CollectionFileClient, metric: CollectionMetricClient),
 ) -> Effect<CollectionAction> {
     .run { send in
         do {
-            try await collectionFileClient.save(request.file, request.url)
+            try await clients.file.save(request.file, request.url)
             logCollectionSaveResult(
                 outcome: "saved",
                 reason: "none",
                 source: source,
                 snapshot: snapshot,
-                collectionMetricClient: collectionMetricClient,
+                collectionMetricClient: clients.metric,
             )
             await send(.saveCompleted(.success(.init(
                 url: request.url,
@@ -102,7 +101,7 @@ func executeSave(
                 reason: "storage_error",
                 source: source,
                 snapshot: snapshot,
-                collectionMetricClient: collectionMetricClient,
+                collectionMetricClient: clients.metric,
                 level: .error,
             )
             await send(.saveCompleted(.failure(error)))

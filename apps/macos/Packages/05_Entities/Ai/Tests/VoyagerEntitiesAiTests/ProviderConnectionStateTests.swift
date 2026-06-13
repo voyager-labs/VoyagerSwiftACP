@@ -58,7 +58,7 @@ final class ProviderConnectionStateTests: XCTestCase {
             let action = state.primaryAction
             XCTAssertTrue(
                 [.connect, .retry, .disconnect, .cancel, .disabled].contains(action),
-                "State \(state) returned unmapped action \(action)"
+                "State \(state) returned unmapped action \(action)",
             )
         }
     }
