@@ -198,7 +198,7 @@ func makeCompletedDisplayModelState(
     )
 }
 
-func makeCompletedLiveContextSnapshot() -> AiChatContextSnapshot {
+func makeCompletedLiveContextSnapshot() -> AiChatCurrentContextSnapshot {
     makeContextSnapshot(
         summary: "Edited live context",
         references: [

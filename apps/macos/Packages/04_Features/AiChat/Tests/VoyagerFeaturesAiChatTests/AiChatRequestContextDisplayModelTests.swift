@@ -381,7 +381,7 @@ func assertDraftDisplayModelGroupSeparation(_ displayModel: AiChatRequestContext
 
 func makeLockedFolderProcessingState(
     catalogRows: [AiModelCatalogRow],
-) -> (state: AiChatFeature.State, currentContext: AiChatRequestContextDisplayModel.CurrentContext?) {
+) -> (state: AiChatFeature.State, currentContext: AiChatCurrentContextChipDisplayModel?) {
     let selectedHandle = catalogRows[0].handle
     let lockedRequestContext = makeDesktopLockedRequestContext()
     let lock = makeRequestLock(

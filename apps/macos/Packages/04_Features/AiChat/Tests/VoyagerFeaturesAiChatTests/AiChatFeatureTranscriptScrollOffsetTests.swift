@@ -26,7 +26,8 @@ final class AiChatFeatureTranscriptScrollOffsetTests: XCTestCase {
             $0.userDefaultsClient = udc
         }
 
-        await store.send(.onAppear) {
+        await store.send(.onAppear)
+        await store.receive(.transcriptScrollOffsetsLoaded([sessionID: 150.0])) {
             $0.transcriptScrollOffsets = [sessionID: 150.0]
         }
     }
@@ -40,9 +41,8 @@ final class AiChatFeatureTranscriptScrollOffsetTests: XCTestCase {
             $0.userDefaultsClient = udc
         }
 
-        await store.send(.onAppear) {
-            $0.transcriptScrollOffsets = [:]
-        }
+        await store.send(.onAppear)
+        await store.receive(.transcriptScrollOffsetsLoaded([:]))
     }
 
     // MARK: - 오프셋 변경 + 클램프
@@ -135,7 +135,7 @@ final class AiChatFeatureTranscriptScrollOffsetTests: XCTestCase {
 
 // MARK: - 테스트 헬퍼
 
-private final class LockedStorage {
+private final class LockedStorage: @unchecked Sendable {
     private var storage: [String: Any] = [:]
     private let lock = NSLock()
 
