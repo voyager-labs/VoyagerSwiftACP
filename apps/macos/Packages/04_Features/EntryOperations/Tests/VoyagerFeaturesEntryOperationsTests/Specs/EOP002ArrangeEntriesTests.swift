@@ -622,6 +622,46 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-move_entries: Option-drop은 move 대신 copy operation을 수행한다.
+    /// `dropItems` action이 isOptionDrag=true로 전송되면 내부적으로 copy paste가 수행된다.
+    /// - 검증 내용: `.routing(.dropItems)`가 copy operation을 수행하고 FileOpsRecorder에 복사 기록이 남는다.
+    /// - 사전 조건: source 파일이 존재하고, target directory가 다른 경로에 존재한다.
+    /// - 기대 결과: FileOpsRecorder의 copiedPaths count == 1, source와 destination이 모두 존재한다.
+    func testDropExecution_optionDragPerformsCopyOperation() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let recorder = FileOpsRecorder()
+        let destinationFolder = sandbox.root.appendingPathComponent("DropTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+
+        let sourcePath = sandbox.fileURL.path
+        let destinationPath = destinationFolder.appendingPathComponent(sandbox.fileURL.lastPathComponent).path
+
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+        }
+
+        // store.exhaustivity = .off: drop execution은 async filesystem mutation; 최종 state와 recorder로 contract 검증.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.dropItems(
+            sourcePaths: [sourcePath],
+            destinationPath: destinationFolder.path,
+            isOptionDrag: true,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.copiedPaths.count, 1)
+        XCTAssertEqual(recorder.copiedPaths.first?.source.path, sourcePath)
+        XCTAssertEqual(recorder.copiedPaths.first?.destination.path, destinationPath)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destinationPath))
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
     // AC: EOP-002-move_entries Edge Case #13
     /// EOP-002-move_entries: 드롭 수행 중 이름 충돌이 발생하면 사용자에게 확인 후 거부 시 이동이 취소된다.
     /// 대상 directory에 동일 이름 파일이 존재하고, replace alert에서 사용자가 거부(.stop)하면 move가 수행되지 않는다.
