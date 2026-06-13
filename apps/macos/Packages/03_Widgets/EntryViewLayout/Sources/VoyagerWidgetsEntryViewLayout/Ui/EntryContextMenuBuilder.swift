@@ -7,7 +7,7 @@ enum EntryContextMenuBuilder {
     struct Configuration {
         let target: EntryContextMenuCoordinator
         let selectedCount: Int
-        let rowEntryPathForOpenInNewTab: String?
+        let rowEntryPathForOpenInNewWindow: String?
         let canPaste: Bool
         let showCompress: Bool
         let showExtract: Bool
@@ -39,14 +39,14 @@ enum EntryContextMenuBuilder {
             target: configuration.target,
         ))
 
-        if let path = configuration.rowEntryPathForOpenInNewTab {
-            let openInNewTab = menuItem(
-                title: "Open in New Tab",
-                action: #selector(EntryContextMenuCoordinator.contextMenuOpenSelectedItemInNewTab(_:)),
+        if let path = configuration.rowEntryPathForOpenInNewWindow {
+            let openInNewWindow = menuItem(
+                title: "Open in New Window",
+                action: #selector(EntryContextMenuCoordinator.contextMenuOpenSelectedItemInNewWindow(_:)),
                 target: configuration.target,
             )
-            openInNewTab.representedObject = path
-            menu.addItem(openInNewTab)
+            openInNewWindow.representedObject = path
+            menu.addItem(openInNewWindow)
         }
 
         if configuration.showOpenWith {

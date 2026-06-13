@@ -18,7 +18,7 @@ enum EntryContextMenuTagSelection {
 /// 더 좋은 구조 생각
 struct EntryContextMenuSpec {
     let selectedCount: Int
-    let rowEntryPathForOpenInNewTab: String?
+    let rowEntryPathForOpenInNewWindow: String?
     let canPaste: Bool
     let showCompress: Bool
     let showExtract: Bool
@@ -51,7 +51,7 @@ enum EntryContextMenuSpecFactory {
 
         return .init(
             selectedCount: effectiveSelectedCount,
-            rowEntryPathForOpenInNewTab: rowEntry?.isFolder == true ? rowEntry?.fullPath : nil,
+            rowEntryPathForOpenInNewWindow: rowEntry?.isFolder == true ? rowEntry?.fullPath : nil,
             canPaste: canPaste,
             showCompress: showCompress,
             showExtract: showExtract,

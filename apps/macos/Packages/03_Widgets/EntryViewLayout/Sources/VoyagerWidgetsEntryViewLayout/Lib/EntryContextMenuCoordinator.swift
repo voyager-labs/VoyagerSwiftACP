@@ -40,9 +40,9 @@ final class EntryContextMenuCoordinator: NSObject {
     }
 
     @objc
-    func contextMenuOpenSelectedItemInNewTab(_ sender: NSMenuItem) {
+    func contextMenuOpenSelectedItemInNewWindow(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String else { return }
-        store.send(.delegate(.openPathInNewTab(path)))
+        store.send(.delegate(.openPathInNewWindow(path)))
     }
 
     @objc

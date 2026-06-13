@@ -64,6 +64,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .saveScrollOffset(offset, path):
             return .send(.internal(.saveScrollOffset(offset, forPath: path)))
 
+        case let .openPathInNewWindow(path):
+            return .send(.delegate(.openPathInNewWindow(path)))
+
         case let .openPathInNewTab(path):
             return .send(.delegate(.openPathInNewTab(path)))
 
