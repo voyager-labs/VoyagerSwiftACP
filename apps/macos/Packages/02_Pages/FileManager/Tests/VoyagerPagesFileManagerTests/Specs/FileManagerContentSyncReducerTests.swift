@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
@@ -44,6 +45,48 @@ final class FileManagerContentSyncReducerTests: XCTestCase {
             collectionURL.path,
             collectionURL.appendingPathComponent("metadata.json").path,
         ]))
+    }
+
+    func testFolderNavigationStartsWatcherAndForwardsExternalChanges() async {
+        let currentPath = "/Users/test/Folder"
+        let changedPath = "/Users/test/Folder/new.txt"
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(currentPath)
+        let store = TestStore(initialState: state) {
+            FileManagerContentNavigationBridgeReducer()
+        } withDependencies: {
+            $0.entryWatchingClient.startWatchingDirectory = { url in
+                XCTAssertEqual(url.path, currentPath)
+                return AsyncStream { continuation in
+                    continuation.yield([changedPath])
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(.folder(currentPath))))
+        await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
+        await store.receive(\.externalFileSystemChanged, [changedPath])
+    }
+
+    func testExternalFolderChildChangeReloadsCurrentFolder() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/Users/test/Folder")
+        state.entryViewLayout.showHiddenFiles = true
+        let store = makeStore(initialState: state)
+
+        await store.send(.externalFileSystemChanged(["/Users/test/Folder/new.txt"]))
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
+    }
+
+    func testExternalSiblingChangeDoesNotReloadCurrentFolder() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/Users/test/Folder")
+        let store = makeStore(initialState: state)
+
+        await store.send(.externalFileSystemChanged(["/Users/test/Other/file.txt"]))
     }
 
     private func makeStore(initialState: FileManagerContentState)
