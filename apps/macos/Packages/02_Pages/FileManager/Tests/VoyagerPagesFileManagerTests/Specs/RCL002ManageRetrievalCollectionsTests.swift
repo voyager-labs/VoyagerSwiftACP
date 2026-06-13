@@ -7,8 +7,19 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
 import XCTest
 
+// RCL-002 manage_retrieval_collections의 collection filter 변경 저장 및
+// write-back 성공/실패 시나리오를 검증하는 package-scoped 결정론적 TCA TestStore 테스트 모음.
+
 @MainActor
-final class FileManagerContentSaveWriteBackPackageTests: XCTestCase {
+final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
+    // MARK: - RCL-002-save_collection_filter_changes
+
+    /// RCL-002-save_collection_filter_changes: save_ready 상태에서 Save 시 .voycoll 갱신 및 dirty baseline 갱신
+    /// 임시 collection을 저장하면 file-backed collection으로 승격되고 unsaved/stale indicator가 해제되는지 검증.
+    /// - 검증 내용: saveCompleted(.success) 전송 시 writeBackCompleted, writeBackNavigationPrepared, requestNavigation,
+    /// syncCollectionState 수신 및 baseline 갱신
+    /// - 사전 조건: temporary collection, isOpenedCollectionDirty == true, phase.isStale == true
+    /// - 기대 결과: savedURL로 navigation 전환, baseline 갱신, isOpenedCollectionDirty == false, showsUnsavedIndicator == false
     func testSaveSuccessPromotesTemporaryCollectionAndClearsUnsavedIndicator() async {
         let savedURL = URL(fileURLWithPath: "/tmp/voyager/saved.voycoll")
         let savedContext = CollectionContext(query: "draft", scopes: ["/tmp/voyager"], conditions: [])
@@ -73,6 +84,11 @@ final class FileManagerContentSaveWriteBackPackageTests: XCTestCase {
         XCTAssertEqual(store.state.navigation.currentPath, "saved")
     }
 
+    /// RCL-002-save_collection_filter_changes: 저장 실패 시 save_failed 피드백과 dirty change 유지
+    /// 컴포저가 닫혀 있을 때 저장 실패 피드백이 컴포저를 열고 error 상태를 표시하는지 검증.
+    /// - 검증 내용: saveFeedback(.saveFailed) 전송 시 composer.isPresented = true, transientFeedback에 error/saveFailed 설정
+    /// - 사전 조건: composer.isPresented == false, saveFailed feedback
+    /// - 기대 결과: composer 열림, transientFeedback.stage == .save, category == .saveFailed
     func testSaveFeedbackPresentsComposerWhenClosed() async {
         var initialState = makeWriteBackState()
         initialState.composer.isPresented = false
@@ -105,6 +121,14 @@ final class FileManagerContentSaveWriteBackPackageTests: XCTestCase {
         await store.finish()
     }
 
+    /// RCL-002-save_collection_filter_changes: file-backed navigation이 opened collection 상태로 파생 (session document lag
+    /// 허용)
+    /// session document가 없어도 file-backed collection navigation이 opened collection URL과 dirty 상태를 올바르게 파생하는지 검증.
+    /// - 검증 내용: collectionSession.document == nil이어도 navigationState의 file URL로 openedCollectionURL,
+    /// openedCollectionURLExists 파생
+    /// - 사전 조건: navigationState == .collection(.file), collectionSession.document == nil, baseline 설정됨
+    /// - 기대 결과: openedCollectionURL == savedURL, openedCollectionURLExists == true, isOpenedCollectionDirty == false,
+    /// showsUnsavedIndicator == false
     func testFileBackedNavigationCountsAsOpenedCollectionWhenSessionDocumentLags() {
         let savedURL = URL(fileURLWithPath: "/tmp/voyager/test.voycoll")
         let savedContext = CollectionContext(query: "test", scopes: ["/tmp/voyager"], conditions: [])
