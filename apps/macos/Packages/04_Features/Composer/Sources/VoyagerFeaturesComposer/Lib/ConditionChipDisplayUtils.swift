@@ -53,8 +53,8 @@ enum ConditionChipDisplayUtils {
         pickerState: DatePickerState,
     ) -> [String]? {
         if pickerState.presented, pickerState.propertyKey == conditionPropertyKey {
-            if let pickerState.dateValueState, pickerState.values.count <= 1 {
-                return [pickerState.dateValueState.displayText()]
+            if let dateValueState = pickerState.dateValueState, pickerState.values.count <= 1 {
+                return [dateValueState.displayText()]
             }
             if pickerState.values.count >= 2 {
                 return pickerState.values.map(absoluteDateText)

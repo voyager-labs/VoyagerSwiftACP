@@ -81,8 +81,10 @@ struct FileManagerSidebarSync {
             sidebarVisible: sidebarVisible,
             sidebarWidth: clamped,
             splitView: layout.splitView,
-            mainContainerLeading: layout.mainContainerLeading,
-            contentVerticalMargin: layout.contentVerticalMargin,
+            layout: (
+                mainContainerLeading: layout.mainContainerLeading,
+                contentVerticalMargin: layout.contentVerticalMargin,
+            ),
             onTrafficLightUpdate: callbacks.onTrafficLightUpdate,
         )
 

@@ -8,7 +8,7 @@ public struct EntryWatchingClient: Sendable {
     public var startWatchingDirectory: @Sendable (URL) -> AsyncStream<[String]>
     public var stopWatchingDirectory: @Sendable () -> Void
 
-    nonisolated public init(
+    public nonisolated init(
         observeFileSystemChanged: @escaping @Sendable () -> AsyncStream<[String]>,
         startWatchingDirectory: @escaping @Sendable (URL) -> AsyncStream<[String]>,
         stopWatchingDirectory: @escaping @Sendable () -> Void,
@@ -20,7 +20,7 @@ public struct EntryWatchingClient: Sendable {
 }
 
 extension EntryWatchingClient: DependencyKey {
-    nonisolated public static var liveValue: EntryWatchingClient {
+    public nonisolated static var liveValue: EntryWatchingClient {
         EntryWatchingClient(
             observeFileSystemChanged: EntryWatchingLive.observeFileSystemChanged,
             startWatchingDirectory: EntryWatchingLive.startWatchingDirectory,
@@ -28,7 +28,7 @@ extension EntryWatchingClient: DependencyKey {
         )
     }
 
-    nonisolated public static var testValue: EntryWatchingClient {
+    public nonisolated static var testValue: EntryWatchingClient {
         EntryWatchingClient(
             observeFileSystemChanged: { AsyncStream { _ in } },
             startWatchingDirectory: { _ in AsyncStream { _ in } },
@@ -36,7 +36,7 @@ extension EntryWatchingClient: DependencyKey {
         )
     }
 
-    nonisolated public static var previewValue: EntryWatchingClient {
+    public nonisolated static var previewValue: EntryWatchingClient {
         testValue
     }
 }
@@ -50,9 +50,9 @@ public extension DependencyValues {
 
 public enum EntryWatchingLive {
     final class FSEventsWatcher: @unchecked Sendable {
-        nonisolated(unsafe) private var eventStream: FSEventStreamRef?
+        private nonisolated(unsafe) var eventStream: FSEventStreamRef?
         private let lock = NSLock()
-        nonisolated(unsafe) private var isTerminated = false
+        private nonisolated(unsafe) var isTerminated = false
 
         nonisolated init() {}
 
@@ -97,9 +97,7 @@ public enum EntryWatchingLive {
         }
     }
 
-    nonisolated public static let fileSystemChangedNotificationName = NSNotification.Name("VoyagerFileSystemChanged")
-
-    nonisolated private static let sharedWatcher = FSEventsWatcher()
+    public nonisolated static let fileSystemChangedNotificationName = NSNotification.Name("VoyagerFileSystemChanged")
 
     nonisolated static var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]> {
         {
@@ -133,9 +131,9 @@ public enum EntryWatchingLive {
     }
 
     nonisolated static var startWatchingDirectory: @Sendable (URL) -> AsyncStream<[String]> {
-        let watcher = sharedWatcher
-        return { url in
+        { url in
             AsyncStream { continuation in
+                let watcher = FSEventsWatcher()
                 let box = FSEventsContinuationBox(continuation)
                 let callback = makeFSEventsCallback()
                 var context = makeStreamContext(box: box)
@@ -156,7 +154,6 @@ public enum EntryWatchingLive {
                 watcher.setStream(stream)
 
                 continuation.onTermination = { @Sendable _ in
-                    watcher.terminate()
                     if let stream = watcher.getStream() {
                         stopStream(stream)
                         watcher.setStream(nil)
@@ -167,21 +164,10 @@ public enum EntryWatchingLive {
     }
 
     nonisolated static var stopWatchingDirectory: @Sendable () -> Void {
-        let watcher = sharedWatcher
-        return {
-            guard !watcher.getIsTerminated() else { return }
-
-            if let stream = watcher.getStream() {
-                watcher.terminate()
-                FSEventStreamStop(stream)
-                FSEventStreamInvalidate(stream)
-                FSEventStreamRelease(stream)
-                watcher.setStream(nil)
-            }
-        }
+        {  }
     }
 
-    nonisolated private static func makeFSEventsCallback() -> FSEventStreamCallback {
+    private nonisolated static func makeFSEventsCallback() -> FSEventStreamCallback {
         { _, info, _, eventPaths, _, _ in
             guard let info else { return }
 
@@ -196,7 +182,7 @@ public enum EntryWatchingLive {
         }
     }
 
-    nonisolated private static func makeStreamContext(
+    private nonisolated static func makeStreamContext(
         box: FSEventsContinuationBox,
     ) -> FSEventStreamContext {
         FSEventStreamContext(
@@ -211,7 +197,7 @@ public enum EntryWatchingLive {
         )
     }
 
-    nonisolated private static func createStream(
+    private nonisolated static func createStream(
         url: URL,
         callback: FSEventStreamCallback,
         context: inout FSEventStreamContext,
@@ -227,7 +213,7 @@ public enum EntryWatchingLive {
         )
     }
 
-    nonisolated private static func stopStream(_ stream: FSEventStreamRef) {
+    private nonisolated static func stopStream(_ stream: FSEventStreamRef) {
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)

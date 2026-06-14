@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -11,9 +12,12 @@ struct FileManagerContentNavigationBridgeReducer {
     typealias Action = FileManagerContentAction
 
     private enum CancelID {
+        static let folderWatcher = "FileManagerContent.folderWatcher"
         static let systemNotifications = "FileManagerContent.systemNotifications"
     }
 
+    @Dependency(\.entryWatchingClient)
+    private var entryWatchingClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
 
@@ -67,7 +71,10 @@ struct FileManagerContentNavigationBridgeReducer {
                 .cancellable(id: CancelID.systemNotifications, cancelInFlight: true)
 
             case .internal(.stopObservingSystemNotifications):
-                return .cancel(id: CancelID.systemNotifications)
+                return .merge(
+                    .cancel(id: CancelID.systemNotifications),
+                    .cancel(id: CancelID.folderWatcher),
+                )
 
             case .internal(.systemAppDidBecomeActive):
                 let entryOperationsAction = EntryOperationsAction.lifecycle(.appDidBecomeActive)
@@ -91,10 +98,12 @@ struct FileManagerContentNavigationBridgeReducer {
                     path: path,
                     showHidden: state.entryViewLayout.showHiddenFiles,
                 ))),
+                observeFolderChangesEffect(path: path),
             )
 
         case .recents:
             .concatenate(
+                .cancel(id: CancelID.folderWatcher),
                 .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
                 sendEntryOperations(.loading(.loadRecentItems(
                     showHidden: state.entryViewLayout.showHiddenFiles,
@@ -103,6 +112,7 @@ struct FileManagerContentNavigationBridgeReducer {
 
         case let .tags(tagName):
             .concatenate(
+                .cancel(id: CancelID.folderWatcher),
                 .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
                 sendEntryOperations(.loading(.loadTagItems(
                     tagName: tagName,
@@ -112,13 +122,24 @@ struct FileManagerContentNavigationBridgeReducer {
 
         case .computer:
             .concatenate(
+                .cancel(id: CancelID.folderWatcher),
                 .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
                 sendEntryOperations(.loading(.loadComputerItems)),
             )
 
         case .collection:
-            .none
+            .cancel(id: CancelID.folderWatcher)
         }
+    }
+
+    private func observeFolderChangesEffect(path: String) -> Effect<Action> {
+        let url = URL(fileURLWithPath: path)
+        return .run { [entryWatchingClient] send in
+            for await changedPaths in entryWatchingClient.startWatchingDirectory(url) {
+                await send(.externalFileSystemChanged(changedPaths))
+            }
+        }
+        .cancellable(id: CancelID.folderWatcher, cancelInFlight: true)
     }
 
     private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {

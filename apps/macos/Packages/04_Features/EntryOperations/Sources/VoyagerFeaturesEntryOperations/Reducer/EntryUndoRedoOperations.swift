@@ -319,7 +319,7 @@ struct EntryUndoRedoOperationsReducer { typealias State = EntryOperationsState
 // MARK: - Operation Factories
 
 private extension EntryUndoRedoOperationsReducer {
-    func makeCreateAliasOperation(
+    private func makeCreateAliasOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -351,7 +351,7 @@ private extension EntryUndoRedoOperationsReducer {
         }
     }
 
-    func makeRenameOperation(
+    private func makeRenameOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -376,7 +376,7 @@ private extension EntryUndoRedoOperationsReducer {
         )
     }
 
-    func makeMoveOperation(
+    private func makeMoveOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -401,7 +401,7 @@ private extension EntryUndoRedoOperationsReducer {
         )
     }
 
-    func makeCopyOperation(
+    private func makeCopyOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
         operationKind: OperationKind,
@@ -434,7 +434,7 @@ private extension EntryUndoRedoOperationsReducer {
         }
     }
 
-    func makeCreateFolderOperation(
+    private func makeCreateFolderOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -465,7 +465,7 @@ private extension EntryUndoRedoOperationsReducer {
         }
     }
 
-    func makeMoveToTrashOperation(
+    private func makeMoveToTrashOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -499,7 +499,7 @@ private extension EntryUndoRedoOperationsReducer {
         }
     }
 
-    func makePutBackOperation(
+    private func makePutBackOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
@@ -533,7 +533,7 @@ private extension EntryUndoRedoOperationsReducer {
         }
     }
 
-    func makeSetTagsOperation(
+    private func makeSetTagsOperation(
         target: EntryActionRecord.Target,
         direction: EntryActionDirection,
     ) throws -> EntryActionOperation {
