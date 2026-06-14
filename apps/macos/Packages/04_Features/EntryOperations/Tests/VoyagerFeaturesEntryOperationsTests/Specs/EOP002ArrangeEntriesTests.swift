@@ -419,7 +419,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
-    // MARK: - EOP-002-move_entries drag_drop_validation
+    // MARK: - EOP-002-move_entries
 
     /// EOP-002-move_entries: 같은 부모 directory에 드롭하면 resolveDropValidation이 none을 반환한다
     /// 내부 드래그(non-copy)에서 source와 destination의 부모가 같으면 no-op이어야 한다.
@@ -579,7 +579,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(store.state.dropValidationResult.resolvedOperation, .none)
     }
 
-    // MARK: - EOP-002-move_entries drag_drop_execution
+    // MARK: - EOP-002-move_entries
 
     // AC: EOP-002-move_entries Edge Case #8
     /// EOP-002-move_entries: 사용자가 Entry를 유효한 대상 directory로 드롭하면 move가 수행된다.
@@ -703,7 +703,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
-    // MARK: - EOP-002-cut_entries cut_clear
+    // MARK: - EOP-002-cut_entries
 
     /// EOP-002-cut_entries: clipboard가 copy 상태에서 appDidBecomeActive 시 cut-clear를 수행하지 않는다
     /// clipboard operation이 cut이 아니면 appDidBecomeActive가 no-op이어야 한다.
