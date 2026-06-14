@@ -64,12 +64,11 @@
     },
     {
       "id": 6,
-      "prompt": "I updated Voyager verifier skill references in .agents and mirrored .claude, and added one eval case. What final verification evidence should I capture before closeout?",
-      "expected_output": "A closeout checklist that treats skill reflection as code: run mirror diff across .agents/.claude verifier trees, parse touched evals.json files with python3 -m json.tool, confirm .agents/rules did not change unless explicitly in scope, document any missing eval runner fallback, and record evidence paths.",
+      "prompt": "I updated Voyager verifier skill references in .agents and added one eval case. What final verification evidence should I capture before closeout?",
+      "expected_output": "A closeout checklist that verifies skill integrity: parse touched evals.json files with python3 -m json.tool, confirm .agents/rules did not change unless explicitly in scope, document any missing eval runner fallback, and record evidence paths.",
       "files": [],
       "assertions": [
-        "Output requires diff -rq or equivalent mirror parity check between .agents/skills/voyager-dev/verifier and .claude/skills/voyager-dev/verifier.",
-        "Output requires python3 -m json.tool or equivalent JSON validation for touched evals.json mirrors.",
+        "Output requires python3 -m json.tool or equivalent JSON validation for touched evals.json.",
         "Output requires confirming .agents/rules/** did not change unless a rule update was explicitly authorized.",
         "Output says to document missing eval runner discovery or fallback validation when no runner exists.",
         "Output records the verification as evidence, not just an informal note."
