@@ -81,14 +81,13 @@ Prefer running formatting/lint before the final test pass so style-only churn do
 - For multi-step async flows, search for durable writes or persistence calls that can execute after cancellation, supersession, or failed verification.
 - When tests reveal spec/implementation mismatches, document gaps in `.sisyphus/evidence/{plan_slug}/` files with source, spec reference, current behavior, and rationale for deferral. Confirm zero canonical spec changes needed.
 
-## Skill reflection checks
+## Skill integrity checks
 
-When a task updates verifier skills, references, or evals under `.agents/skills/**`, verify the reflection as code:
+When a task updates verifier skills, references, or evals under `.agents/skills/**`, verify the integrity:
 
-- Mirror parity: `diff -rq .agents/skills/voyager-dev/verifier .claude/skills/voyager-dev/verifier` must have no unexpected output.
-- Eval validity: parse every touched `evals.json` mirror with `python3 -m json.tool`.
+- Eval validity: parse every touched `evals.json` with `python3 -m json.tool`.
 - Scope guardrail: confirm `.agents/rules/**` did not change unless the plan explicitly authorized a rule update.
-- Evidence: record the mirror diff result, JSON parse result, and any missing eval runner discovery in `.sisyphus/evidence/`.
+- Evidence: record the JSON parse result and any missing eval runner discovery in `.sisyphus/evidence/`.
 
 ## Layer checks
 
@@ -117,7 +116,6 @@ When a spec spans two test targets (app and package), apply these additional gat
 - Confirm each suite only asserts behavior within its own target ownership scope.
 - Run focused tests per target (see `../../testing/references/testing-playbook.md` for filter commands). Report pass/fail per target, not merged.
 - Verify no support files cross target boundaries (no symlinks, no shared file paths between targets).
-- When the split-target spec docs or filter commands change, confirm `.agents/skills` and `.claude/skills` mirrors are byte-identical via `cmp`.
 
 ## Few-shot examples
 
