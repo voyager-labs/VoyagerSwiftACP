@@ -294,6 +294,7 @@ For TCA tests, check:
 - Failure, cancel, restore, teardown, and late-event paths are covered.
 - Tests model external coordinator/system state explicitly when runtime code receives it from AppKit or system callbacks.
 - Test support helpers reuse existing fixtures instead of creating parallel fixture formats.
+- New or renamed test files under `Tests/.../Specs/` follow the spec-based naming convention `<SpecID><PascalCaseSpecTitle>Tests.swift` (e.g. `FMW001FileManagerWindowRequestRoutingTests`). Test files named after individual reducers, helpers, or implementation details (e.g. `FileManagerContentSyncReducerTests`) are P1 naming violations. The spec-test-authoring skill (`voyager-dev/verifier/spec-test-authoring`) defines the canonical topology, `// MARK:` format, and traceability doc comment shape.
 
 Do not ask for tests generically. Name the missing behavior and why it matters.
 

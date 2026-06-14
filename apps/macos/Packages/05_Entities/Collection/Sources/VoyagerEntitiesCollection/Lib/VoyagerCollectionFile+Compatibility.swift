@@ -1,6 +1,5 @@
+// swiftformat:disable modifierOrder
 import Foundation
-
-// swiftlint:disable file_length
 
 public enum CollectionFileSchemaVersion {
     nonisolated public static let definitionOnlyCurrent = SchemaVersion(major: 1, minor: 0)
@@ -132,7 +131,6 @@ public enum CollectionFileCompatibilityError: LocalizedError, Equatable {
     }
 }
 
-// swiftlint:disable type_body_length
 public enum VoyagerCollectionFileCompatibilityOwner {
     private struct SchemaProbe: Equatable {
         let sourceSchemaVersion: SchemaVersion?
@@ -218,6 +216,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             scopes: file.scopes,
             excludedScopes: file.excludedScopes,
             includeSubfolders: file.includeSubfolders,
+            includeDirectories: file.includeDirectories,
             conditions: file.conditions,
             snapshot: file.snapshot,
             snapshotMeta: file.snapshotMeta,
@@ -351,6 +350,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             scopes: payload.scopes,
             excludedScopes: payload.excludedScopes,
             includeSubfolders: payload.includeSubfolders,
+            includeDirectories: payload.includeDirectories,
             conditions: payload.conditions,
             snapshot: snapshotPair.snapshot,
             snapshotMeta: snapshotPair.snapshotMeta,
@@ -472,6 +472,7 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             scopes: file.scopes,
             excludedScopes: file.excludedScopes,
             includeSubfolders: file.includeSubfolders,
+            includeDirectories: file.includeDirectories,
             conditions: file.conditions,
             snapshot: nil,
             snapshotMeta: nil,
@@ -519,8 +520,6 @@ public enum VoyagerCollectionFileCompatibilityOwner {
     }
 }
 
-// swiftlint:enable type_body_length
-
 nonisolated private struct CompatibilityPayload: Decodable {
     let schemaVersion: SchemaVersion?
     let id: String
@@ -531,6 +530,7 @@ nonisolated private struct CompatibilityPayload: Decodable {
     let scopes: [String]
     let excludedScopes: [String]
     let includeSubfolders: Bool
+    let includeDirectories: Bool
     let conditions: [CollectionCondition]
     let snapshot: LossyOptionalField<CollectionPersistedSnapshot>
     let snapshotMeta: LossyOptionalField<CollectionSnapshotMeta>
@@ -546,6 +546,7 @@ nonisolated private struct CompatibilityPayload: Decodable {
         case scopes
         case excludedScopes
         case includeSubfolders
+        case includeDirectories
         case conditions
         case snapshot
         case snapshotMeta
@@ -563,6 +564,7 @@ nonisolated private struct CompatibilityPayload: Decodable {
         scopes = try container.decode([String].self, forKey: .scopes)
         excludedScopes = try container.decodeIfPresent([String].self, forKey: .excludedScopes) ?? []
         includeSubfolders = try container.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
+        includeDirectories = try container.decodeIfPresent(Bool.self, forKey: .includeDirectories) ?? false
         conditions = try container.decode([CollectionCondition].self, forKey: .conditions)
         snapshot = try container.decodeIfPresent(
             LossyOptionalField<CollectionPersistedSnapshot>.self,
@@ -597,5 +599,3 @@ nonisolated private struct LossyOptionalField<Value: Decodable>: Decodable {
         wasPresent = true
     }
 }
-
-// swiftlint:enable file_length

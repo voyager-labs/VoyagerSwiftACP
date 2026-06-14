@@ -9,8 +9,7 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureExecutionTests: XCTestCase {
-    // connections file load 실패가 provider 실행 없이 unknown failure로 전환되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// connections file load 실패가 provider 실행 없이 unknown failure로 전환되는지 검증
     func testSubmitConnectionsFileLoadFailureEmitsUnknownFailureWithoutProviderExecution() async {
         actor ProviderDriver {
             var requestCount = 0
@@ -100,8 +99,7 @@ final class AiChatFeatureExecutionTests: XCTestCase {
         XCTAssertEqual(store.state.requestStatusText, "An unknown chat error occurred.")
     }
 
-    // 두 번째 submit 요청에 이전 assistant turn이 execution request로 포함되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// 두 번째 submit 요청에 이전 assistant turn이 execution request로 포함되는지 검증
     func testSecondSubmitIncludesPreviousAssistantTurnInExecutionRequest() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()

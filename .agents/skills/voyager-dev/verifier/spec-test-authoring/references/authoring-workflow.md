@@ -29,6 +29,7 @@ Do not use this workflow only to select or run existing tests; use `../../testin
 - Put executable spec tests under `Tests/<TestTargetName>/Specs/` when establishing or cleaning topology.
 - Put fixtures, recorders, dependency doubles, builders, and helper assertions under `Tests/<TestTargetName>/Support/` as flat files named by role/type, not by spec ID.
 - Keep product behavior in the spec suite. Support files must never become behavior owners.
+- For entry-manipulation, entry collection, `.voycoll`, or entry path-display specs, default representative file inputs to the root `fixtures/` submodule fixture source. The payload root is `fixtures/fixtures/`; use repo-relative paths in comments and evidence.
 
 ### 3. Author interaction AC methods
 
@@ -40,6 +41,7 @@ Do not use this workflow only to select or run existing tests; use `../../testin
     - `- 검증 내용`: the reducer/action/effect/state contract under test.
     - `- 사전 조건`: the initial state, fixture, dependency override, or stored snapshot.
     - `- 기대 결과`: the observable state, emitted action, dependency call, persistence, or completion result.
+    - When the scenario depends on real files, include the fixture path or category in `- 사전 조건`, for example `fixtures/fixtures/documents/pdf/...` or `fixtures/fixtures/images/jpeg/...`.
 4. Keep `// MARK:` for interaction section navigation only. Do not replace method traceability docs with plain `//` line comments.
 5. If a product behavior currently lives in `PolicyTests`, `ContractTests`, or `LifecycleTests`, move it under the spec owner unless it is a true technical contract with no AC owner.
 
@@ -79,6 +81,7 @@ xcrun swift test --package-path <package-path> \
 - **Mixed policy + product tests in one file**: Extract product behavior lines into the spec owner suite. Leave only pure technical contract assertions, such as parser conformance, serialization, or adapter invariants, in the original file.
 - **Split-target spec**: When a single logical spec spans two test targets (one app target, one package target), create a suite with the same spec ID in each target. Each suite owns only the behavior its target is responsible for. Traceability comments and `// MARK:` sections use identical spec IDs and interaction IDs across targets so grepping the spec ID finds all related tests. See `spec-test-topology.md` for the full topology.
 - **Empty Support directory**: Do not create an empty `Support/<SpecID>/` directory. Only create the directory when at least one support file is ready to place there. An empty `Support/Shared/` is acceptable when shared helpers are anticipated imminently, but remove it if no shared helper materializes.
+- **Fixture-backed entry/collection/path specs**: Do not generate throwaway temp text files when the behavior depends on real entry ingestion, collection/listing/grouping/selection behavior, `.voycoll` open/save/compatibility behavior, file type handling, metadata, or path rendering. Use `fixtures/fixtures/**`; copy selected fixtures to a temporary directory before mutation.
 
 ## Example
 
@@ -193,4 +196,5 @@ If two tests look similar but test different initial states, entry paths, or ass
 | Method doc comment        | `/// <SPEC-ID>-<interaction_id>: <scenario>` + intent + 검증 내용/사전 조건/기대 결과 |
 | Product behavior location | Owning spec suite under `Specs/`                                                      |
 | Fixture/recorder location | Flat files under `Support/`, named by role/type such as `PaymentFixtures.swift`       |
+| Fixture source default       | Root `fixtures/` submodule payload under `fixtures/fixtures/**`                       |
 | Verification handoff      | `../../testing/SKILL.md` with focused class filter                                    |

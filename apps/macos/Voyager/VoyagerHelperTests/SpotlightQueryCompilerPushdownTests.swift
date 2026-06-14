@@ -31,6 +31,20 @@ final class SpotlightQueryCompilerPushdownTests: XCTestCase {
         XCTAssertEqual(plan.pushdownConditions.count, 1)
     }
 
+    func testCompilePlanPushesDownDirectoryExclusionCondition() throws {
+        let compiler = try makeCompiler()
+        let condition = SearchConditionPayload(
+            propertyKey: "content_type_tree",
+            operator: "neq",
+            value: .string("public.folder"),
+        )
+
+        let plan = try compiler.compilePlan(conditions: [condition])
+
+        XCTAssertEqual(plan.pushdownConditions.count, 1)
+        XCTAssertTrue(plan.predicate.contains("kMDItemContentTypeTree != \"public.folder\""), plan.predicate)
+    }
+
     func testCompilePlanRejectsHiddenNsurlOnlyProperty() throws {
         let compiler = try makeCompiler()
         let condition = SearchConditionPayload(

@@ -1,36 +1,28 @@
 import ComposableArchitecture
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesAiProviderConnection
 
 @CasePathable
 public enum AiSettingsAction: CasePathable, Equatable, Sendable {
     case delegate(Delegate)
 
     case onAppear
-    case bootstrapCompleted([AiProviderBootstrapResult])
-    case bootstrapVerificationCompleted([AiProviderBootstrapResult])
+    case bootstrapCompleted([AIProviderBootstrapResult])
+    case bootstrapVerificationCompleted([AIProviderBootstrapResult])
     case bootstrapFailed
     case retryBootstrapTapped
     case row(IdentifiedActionOf<AiConnectionRowReducer>)
 
+    case collectionSearchSettingsLoaded(CollectionSearchAISettings)
+    case collectionSearchModelsLoaded(modelsByProvider: [AiProvider: [AiProviderModel]], errorMessage: String?)
+    case collectionSearchProviderChanged(CollectionSearchAIProviderPreference)
+    case collectionSearchModelChanged(CollectionSearchAIModelPreference)
+    case collectionSearchThinkingChanged(CollectionSearchAIThinkingPreference)
+    case collectionSearchResetTapped
+
     @CasePathable
     public enum Delegate: CasePathable, Equatable, Sendable {
         case connectionsFileUpdated(AIConnectionsFile)
-    }
-}
-
-/// Result of bootstrapping a single provider from persisted credentials.
-public struct AiProviderBootstrapResult: Equatable, Sendable {
-    public let provider: AiProvider
-    public let connectionState: ProviderConnectionState
-    public let statusReason: ProviderStatusReason
-
-    public init(
-        provider: AiProvider,
-        connectionState: ProviderConnectionState,
-        statusReason: ProviderStatusReason = .none
-    ) {
-        self.provider = provider
-        self.connectionState = connectionState
-        self.statusReason = statusReason
     }
 }

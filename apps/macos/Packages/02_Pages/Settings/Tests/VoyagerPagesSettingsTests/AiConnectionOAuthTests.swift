@@ -1,7 +1,7 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerFeaturesAiProviderConnection
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -58,7 +58,7 @@ private actor SuspensionGate {
 }
 
 @MainActor
-final class AiConnectionOAuthTests: XCTestCase { // swiftlint:disable:this type_body_length
+final class AiConnectionOAuthTests: XCTestCase {
     private func makeCredential(
         accessToken: String = "test-access-token",
         refreshToken: String? = "test-refresh-token",
@@ -122,7 +122,7 @@ final class AiConnectionOAuthTests: XCTestCase { // swiftlint:disable:this type_
 
         await gate.open()
 
-        await store.receive(\._connectionResponse) { state in
+        await store.receive(\.connectionResponse) { state in
             state.connectionState = .connected
             state.statusReason = .none
             state.flowState = .idle
@@ -567,7 +567,7 @@ final class AiConnectionOAuthTests: XCTestCase { // swiftlint:disable:this type_
             state.connectionState = .connectInProgress
         }
 
-        await store.receive(\._connectionResponse) { state in
+        await store.receive(\.connectionResponse) { state in
             state.connectionState = .connected
             state.statusReason = .none
             state.flowState = .idle
@@ -662,7 +662,7 @@ final class AiConnectionOAuthTests: XCTestCase { // swiftlint:disable:this type_
             state.connectionState = .connectInProgress
         }
 
-        await store.receive(\._connectionResponse) { state in
+        await store.receive(\.connectionResponse) { state in
             state.connectionState = .connected
             state.statusReason = .none
             state.flowState = .idle

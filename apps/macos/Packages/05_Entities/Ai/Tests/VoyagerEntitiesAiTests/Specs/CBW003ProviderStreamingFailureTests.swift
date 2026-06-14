@@ -2,6 +2,8 @@
 @testable import VoyagerEntitiesAi
 import XCTest
 
+// MARK: - CBW-003 Codex / Registry / OpenAI
+
 final class CBW003ProviderStreamingFailureTests: XCTestCase {
     override func tearDown() {
         ProviderExecutionURLProtocol.reset()
@@ -242,6 +244,15 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .started(context: request.context),
             .failed(context: request.context, reason: .network),
         ])
+    }
+}
+
+// MARK: - CBW-003 Anthropic
+
+final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
+    override func tearDown() {
+        ProviderExecutionURLProtocol.reset()
+        super.tearDown()
     }
 
     /// CBW-003-stream_contextual_chat_response: Anthropic streaming SSE는 started, delta, final 순서로 방출된다.

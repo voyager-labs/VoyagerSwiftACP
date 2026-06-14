@@ -241,8 +241,13 @@ public enum AiChatExecutionPhase: Equatable, Sendable {
         }
     }
 
-    public var requestID: AiChatRequestID? { lock?.requestID }
-    public var runID: AiChatRunID? { lock?.runID }
+    public var requestID: AiChatRequestID? {
+        lock?.requestID
+    }
+
+    public var runID: AiChatRunID? {
+        lock?.runID
+    }
 
     public var isProcessing: Bool {
         if case .processing = self {

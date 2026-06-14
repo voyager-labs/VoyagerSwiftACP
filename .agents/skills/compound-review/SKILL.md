@@ -20,12 +20,12 @@ This skill does not replace Work-phase verification skills (`pr-review`, `voyage
 These boundaries are non-negotiable. They are defined in full at `references/workflow-boundaries.md`. The summary below is the quick reference; the reference doc is the source of truth.
 
 | Boundary              | Rule                                                                                                                                                     |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
 | **Trigger**           | Manual only. No auto-trigger from hooks, CI, or skills.                                                                                                  |
 | **Temporal**          | Post-Work only. Plan must be completed with evidence.                                                                                                    |
 | **Scope**             | Local-repo only. No network, no remote artifacts.                                                                                                        |
-| **Read**              | `.sisyphus/plans/`, `.sisyphus/evidence/{plan_slug}/`, `.sisyphus/notepads/` — never modify.                                                                         |
-| **Write**             | `.sisyphus/reviews/` — nowhere else. Learning, draft, run summary, findings, manifest, and failures all live under the review run root. |                                                                         |
+| **Read**              | `.sisyphus/plans/`, `.sisyphus/evidence/{plan_slug}/`, `.sisyphus/notepads/` — never modify.                                                             |
+| **Write**             | `.sisyphus/reviews/` — nowhere else. Learning, draft, run summary, findings, manifest, and failures all live under the review run root.                  |     |
 | **Hard prohibitions** | No re-planning, code mutation, commits, PRs, auto-Work loops, inference on missing artifacts, silent degradation, branch mutation, environment mutation. |
 
 ---
@@ -74,6 +74,12 @@ Read `references/target-selection.md` for the full target resolution algorithm. 
     Facets are slug-independent. Detect by exact filename match, not by slug interpolation. Each facet file MUST follow the format defined in `references/artifact-contract.md` §Facet File Requirements (Reviewer, Session, Verdict, Findings, Evidence fields).
 
 4. **Collect notepad files.** Look in `.sisyphus/notepads/{plan_slug}/` for `learnings.md`, `decisions.md`, `issues.md`, `problems.md`.
+5. **Discover and collect knowledge entries (optional).** Knowledge is a cross-session input family managed by `sisyphus-wiki`, not plan-scoped:
+    - Read `.sisyphus/knowledge/index.json` to discover available entries (each entry has `id`, `title`, `type`, `status`, `path`, `tags[]`).
+    - Associate entries by **tag matching**: match entry tags against `plan_slug` substrings, plan context keywords, and notepad topics. See `references/target-selection.md` §6 for full association rules.
+    - Read matched knowledge entry files (`.sisyphus/knowledge/entries/*.md`).
+    - Optionally read `.sisyphus/knowledge/graph.jsonl` for cross-entry edges relevant to matched entries.
+    - If `index.json` is missing or empty, or no entries match, skip knowledge consumption entirely (degrade-gracefully).
 
 **Stop conditions:**
 

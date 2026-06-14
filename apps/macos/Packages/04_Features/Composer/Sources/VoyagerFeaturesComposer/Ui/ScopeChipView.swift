@@ -18,6 +18,7 @@ struct ScopeChipView: View {
             Image(systemName: "folder")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.primaryText)
@@ -76,6 +77,7 @@ struct ScopeChipView: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(dropdownHovering ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : .clear),
                 )
+                .accessibilityLabel(summary.accessibilityText)
         }
         .buttonStyle(.borderless)
         .onHover { hovering in

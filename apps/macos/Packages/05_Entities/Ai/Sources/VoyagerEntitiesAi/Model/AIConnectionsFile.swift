@@ -11,11 +11,11 @@ public struct AIConnectionsFile: Equatable, Sendable {
     public let providers: [String: ProviderRecordFile]
 
     public init(
-        schemaVersion: Int = 1,
         updatedAtMs: Int64,
+        schemaVersion: Int = 1,
         lastUsedProviderId: AiProvider? = nil,
         lastUsedAtMs: Int64? = nil,
-        providers: [String: ProviderRecordFile] = [:]
+        providers: [String: ProviderRecordFile] = [:],
     ) {
         self.schemaVersion = schemaVersion
         self.updatedAtMs = updatedAtMs
@@ -24,12 +24,28 @@ public struct AIConnectionsFile: Equatable, Sendable {
         self.providers = providers
     }
 
+    public init(
+        schemaVersion: Int,
+        updatedAtMs: Int64,
+        lastUsedProviderId: AiProvider? = nil,
+        lastUsedAtMs: Int64? = nil,
+        providers: [String: ProviderRecordFile] = [:],
+    ) {
+        self.init(
+            updatedAtMs: updatedAtMs,
+            schemaVersion: schemaVersion,
+            lastUsedProviderId: lastUsedProviderId,
+            lastUsedAtMs: lastUsedAtMs,
+            providers: providers,
+        )
+    }
+
     /// Creates an empty file payload for missing-file or reset scenarios.
     public static func empty(updatedAtMs: Int64 = 0) -> AIConnectionsFile {
         AIConnectionsFile(
-            schemaVersion: 1,
             updatedAtMs: updatedAtMs,
-            providers: [:]
+            schemaVersion: 1,
+            providers: [:],
         )
     }
 
@@ -40,7 +56,7 @@ public struct AIConnectionsFile: Equatable, Sendable {
             updatedAtMs: updatedAtMs,
             lastUsedProviderId: lastUsedProviderId,
             lastUsedAtMs: lastUsedAtMs,
-            providers: providers.mapValues { $0.redacted }
+            providers: providers.mapValues { $0.redacted },
         )
     }
 }

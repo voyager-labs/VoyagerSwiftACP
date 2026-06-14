@@ -1,0 +1,17 @@
+id: observable-state-on-typealias
+language: swift
+severity: error
+message: "@ObservableState는 typealias가 아니라 실제 struct 정의에 적용해야 합니다."
+note: >
+  @ObservableState must be applied to a concrete struct, never a typealias.
+  Applying it to a typealias silently breaks observation.
+  Correct:
+    @ObservableState struct MyState { ... }
+  Wrong:
+    @ObservableState typealias State = MyState  // observation will not work
+ast-grep-essentials: false
+rule:
+  kind: typealias_declaration
+  has:
+    stopBy: end
+    pattern: "@ObservableState"

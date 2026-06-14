@@ -4,6 +4,7 @@ import Foundation
 import Logging
 import SwiftUI
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
@@ -24,23 +25,8 @@ struct VoyagerApp: App {
         appRootStore = Store(initialState: AppRootState()) {
             AppRootFeature()
         } withDependencies: {
-            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
-                let appLevel: MetricLogLevel = switch level {
-                case .trace: .trace
-                case .debug: .debug
-                case .info: .info
-                case .warn: .warn
-                case .error: .error
-                }
-                MainActor.assumeIsolated {
-                    VoyagerSentryMetricLogger.logMetric(
-                        name,
-                        value: value,
-                        tags: tags,
-                        level: appLevel,
-                    )
-                }
-            }
+            $0.composerMetricClient = Self.makeComposerMetricClient()
+            $0.collectionMetricClient = Self.makeCollectionMetricClient()
             $0.onboardingWindowClient = OnboardingWindowClient.makeLive(openMainWindow: { request in
                 await MainActor.run {
                     let resolvedPath: String = switch request {
@@ -60,34 +46,90 @@ struct VoyagerApp: App {
                     resolveFileManagerUndoManager(windowID: windowID)
                 }
             })
-            $0.metricsClient = .init(
-                logMetric: { name, value, tags in
-                    Task { @MainActor in
-                        VoyagerSentryMetricLogger.logMetric(name, value: value, tags: tags)
-                    }
-                },
-                logDAUNavigation: { kind in
-                    Task { @MainActor in
-                        switch kind {
-                        case .folder: VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
-                        case .collection: VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
-                        }
-                    }
-                },
-                logDAUEntryAction: { actionKind, entryKind in
-                    let sentryActionKind = DAUEntryActionKind(rawValue: actionKind.rawValue)
-                    let sentryEntryKind = DAUEntryKind(rawValue: entryKind.rawValue)
-                    Task { @MainActor in
-                        guard let sentryActionKind, let sentryEntryKind else { return }
-                        VoyagerSentryMetricLogger.logDAUEntryAction(
-                            actionKind: sentryActionKind,
-                            entryKind: sentryEntryKind,
-                        )
-                    }
-                },
-            )
+            $0.metricsClient = Self.makeFileManagerMetricsClient()
         }
 
+        configureFileManagerWindowCallbacks()
+        appDelegate.configure(appRootStore: appRootStore)
+        configureLogging()
+    }
+
+    private static func makeComposerMetricClient() -> ComposerMetricClient {
+        ComposerMetricClient { name, value, tags, level in
+            Task { @MainActor in
+                VoyagerSentryMetricLogger.logMetric(
+                    name,
+                    value: value,
+                    tags: tags,
+                    level: metricLogLevel(for: level),
+                )
+            }
+        }
+    }
+
+    private static func makeCollectionMetricClient() -> CollectionMetricClient {
+        CollectionMetricClient { name, value, tags, level in
+            Task { @MainActor in
+                VoyagerSentryMetricLogger.logMetric(
+                    name,
+                    value: value,
+                    tags: tags,
+                    level: metricLogLevel(for: level),
+                )
+            }
+        }
+    }
+
+    private static func makeFileManagerMetricsClient() -> MetricsClient {
+        .init(
+            logMetric: { name, value, tags in
+                Task { @MainActor in
+                    VoyagerSentryMetricLogger.logMetric(name, value: value, tags: tags)
+                }
+            },
+            logDAUNavigation: { kind in
+                Task { @MainActor in
+                    switch kind {
+                    case .folder: VoyagerSentryMetricLogger.logDAUNavigation(kind: .folder)
+                    case .collection: VoyagerSentryMetricLogger.logDAUNavigation(kind: .collection)
+                    }
+                }
+            },
+            logDAUEntryAction: { actionKind, entryKind in
+                let sentryActionKind = DAUEntryActionKind(rawValue: actionKind.rawValue)
+                let sentryEntryKind = DAUEntryKind(rawValue: entryKind.rawValue)
+                Task { @MainActor in
+                    guard let sentryActionKind, let sentryEntryKind else { return }
+                    VoyagerSentryMetricLogger.logDAUEntryAction(
+                        actionKind: sentryActionKind,
+                        entryKind: sentryEntryKind,
+                    )
+                }
+            },
+        )
+    }
+
+    private static func metricLogLevel(for level: ComposerMetricLevel) -> MetricLogLevel {
+        switch level {
+        case .trace: .trace
+        case .debug: .debug
+        case .info: .info
+        case .warn: .warn
+        case .error: .error
+        }
+    }
+
+    private static func metricLogLevel(for level: CollectionMetricLevel) -> MetricLogLevel {
+        switch level {
+        case .trace: .trace
+        case .debug: .debug
+        case .info: .info
+        case .warn: .warn
+        case .error: .error
+        }
+    }
+
+    private func configureFileManagerWindowCallbacks() {
         configureFileManagerWindowClientLive(
             requestNewWindow: { [appRootStore] path in
                 appRootStore.send(.windowManager(.file(.newWindow(path: path))))
@@ -102,18 +144,18 @@ struct VoyagerApp: App {
                 return sessionStores.first(where: { $0.state.id == windowID })?
                     .scope(state: \.window, action: \.window)
             },
-            onWindowBecameKey: { [appRootStore] id in
-                appRootStore.send(.windowManager(.event(.windowBecameKey(id))))
-            },
-            onWindowResignedKey: { [appRootStore] id in
-                appRootStore.send(.windowManager(.event(.windowResignedKey(id))))
-            },
-            onWindowClosed: { [appRootStore] id in
-                appRootStore.send(.windowManager(.event(.windowClosed(id))))
-            },
+            windowKeyCallbacks: FileManagerWindowKeyCallbacks(
+                onBecameKey: { [appRootStore] id in
+                    appRootStore.send(.windowManager(.event(.windowBecameKey(id))))
+                },
+                onResignedKey: { [appRootStore] id in
+                    appRootStore.send(.windowManager(.event(.windowResignedKey(id))))
+                },
+                onClosed: { [appRootStore] id in
+                    appRootStore.send(.windowManager(.event(.windowClosed(id))))
+                },
+            ),
         )
-        appDelegate.configure(appRootStore: appRootStore)
-        configureLogging()
     }
 
     private func configureLogging() {

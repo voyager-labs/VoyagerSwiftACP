@@ -1,0 +1,51 @@
+{
+  "skill_name": "code-tooling",
+  "evals": [
+    {
+      "id": 1,
+      "name": "multi-concern-reference-and-impact",
+      "prompt": "I need to understand the FileManagerReducer in the Voyager app. First, find where it's defined and show me its source. Then find all places that call it. Finally, analyze what would break if I changed its public API. This is in apps/macos/ under the Voyager TCA architecture.",
+      "expected_output": "Agent routes to CodeGraph tools: codegraph_search/codegraph_node for definition, codegraph_callers for references, codegraph_impact for impact analysis. Does not use LSP tools or manual file reading for definitions.",
+      "files": [],
+      "assertions": [
+        "Response uses CodeGraph tools (codegraph_search, codegraph_node, or codegraph_context) to find the definition",
+        "Response uses codegraph_callers to find references",
+        "Response uses codegraph_impact to analyze change impact",
+        "Response checks codegraph_status before queries",
+        "Response does NOT suggest reading entire files manually to find the definition",
+        "Response does NOT suggest lsp_goto_definition or lsp_find_references"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "pattern-rewrite-and-build-verify",
+      "prompt": "We're migrating from print() debugging to a proper Logger across all Swift files in apps/macos/Packages/. Find all print() calls and replace them with Logger.debug(). After the rewrite, verify the changes compile correctly. Don't just do text search — use AST-aware tools to catch all variations like print(\"msg\", terminator) etc.",
+      "expected_output": "Agent routes to ast-grep for AST-aware pattern search and replace, then XcodeBuildMCP for build verification. Uses session_show_defaults before building.",
+      "files": [],
+      "assertions": [
+        "Response uses ast_grep_search or ast-grep_find_code for pattern discovery",
+        "Response uses ast_grep_replace for the code rewrite",
+        "Response mentions dry-run before applying changes",
+        "Response uses XcodeBuildMCP_build_sim for compile verification",
+        "Response mentions XcodeBuildMCP_session_show_defaults before building",
+        "Response does NOT suggest calling xcodebuild directly in shell",
+        "Response does NOT suggest using text grep for the pattern search"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "diagnose-compile-error-and-explore",
+      "prompt": "After a recent refactor in apps/macos/Voyager/Voyager/ I'm getting a weird error where a TCA Reducer.Action case says 'cannot find type in scope' but the type is clearly defined in the same file. I already tried cleaning the build folder. Check what's wrong and also show me how the affected module is organized so I can understand the visibility boundaries.",
+      "expected_output": "Agent routes to XcodeBuildMCP for actual compile errors, CodeGraph for module structure exploration, and possibly ast-grep for pattern investigation. Uses codegraph_explore for module organization.",
+      "files": [],
+      "assertions": [
+        "Response uses XcodeBuildMCP_build_sim to get actual compile errors",
+        "Response uses XcodeBuildMCP_session_show_defaults before building",
+        "Response uses CodeGraph codegraph_explore or codegraph_files to understand module structure",
+        "Response considers using ast-grep or CodeGraph as supplementary investigation",
+        "Response does NOT suggest lsp_diagnostics",
+        "Response does NOT suggest calling xcodebuild directly"
+      ]
+    }
+  ]
+}

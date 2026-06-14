@@ -88,18 +88,18 @@ Findings are **immutable per run**: once written, they are not modified. A new r
 
 ### Finding Record Fields
 
-| Field              | Type     | Required | Description                                                                                                                        |
-| ------------------ | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `id`               | string   | yes      | Unique per-run ID. Format: `FIND-{NNN}` (e.g., `FIND-001`, `FIND-002`).                                                            |
-| `severity`         | string   | yes      | One of: `critical`, `high`, `medium`, `low`, `informational`.                                                                      |
-| `owner`            | string   | yes      | Who can act on this finding. One of: `agent`, `human`, `orchestrator`.                                                             |
-| `action_class`     | string   | yes      | What kind of action is needed. One of: `test-coverage`, `code-quality`, `design`, `scope`, `guardrail`.                            |
-| `category`         | string   | yes      | Freeform topic tag for discovery and grouping. Lowercase hyphenated (e.g., `drag-option-lifecycle`).                               |
-| `title`            | string   | yes      | Single-line summary. Imperative mood preferred (e.g., "Add test for X").                                                           |
-| `description`      | string   | yes      | 1–3 sentence description of the finding. Plain text, no markdown formatting required.                                              |
-| `source_artifacts` | string[] | yes      | Exact paths to artifacts that contributed this finding. Used for lineage and deduplication.                                        |
-| `dedupe_key`       | string   | yes      | String that uniquely identifies the issue. Same key from different sources = duplicate. Lowercase hyphenated identifier preferred. |
-| `verdict`          | string   | yes      | Final status. One of: `APPROVE`, `REJECT`, `CONDITIONAL`.                                                                          |
+| Field              | Type     | Required | Description                                                                                                                                                                                                                  |
+| ------------------ | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | string   | yes      | Unique per-run ID. Format: `FIND-{NNN}` (e.g., `FIND-001`, `FIND-002`).                                                                                                                                                      |
+| `severity`         | string   | yes      | One of: `critical`, `high`, `medium`, `low`, `informational`.                                                                                                                                                                |
+| `owner`            | string   | yes      | Who can act on this finding. One of: `agent`, `human`, `orchestrator`.                                                                                                                                                       |
+| `action_class`     | string   | yes      | What kind of action is needed. One of: `test-coverage`, `code-quality`, `design`, `scope`, `guardrail`.                                                                                                                      |
+| `category`         | string   | yes      | Freeform topic tag for discovery and grouping. Lowercase hyphenated (e.g., `drag-option-lifecycle`).                                                                                                                         |
+| `title`            | string   | yes      | Single-line summary. Imperative mood preferred (e.g., "Add test for X").                                                                                                                                                     |
+| `description`      | string   | yes      | 1–3 sentence description of the finding. Plain text, no markdown formatting required.                                                                                                                                        |
+| `source_artifacts` | string[] | yes      | Exact paths to artifacts that contributed this finding. Used for lineage and deduplication. Valid values include evidence files, facet files, notepad files, and knowledge entry paths (`.sisyphus/knowledge/entries/*.md`). |
+| `dedupe_key`       | string   | yes      | String that uniquely identifies the issue. Same key from different sources = duplicate. Lowercase hyphenated identifier preferred.                                                                                           |
+| `verdict`          | string   | yes      | Final status. One of: `APPROVE`, `REJECT`, `CONDITIONAL`.                                                                                                                                                                    |
 
 ---
 

@@ -22,6 +22,7 @@ private struct ToolbarButtonLabel: View {
                 .frame(width: style.size, height: style.size)
 
             Image(systemName: systemName)
+                .accessibilityHidden(true)
                 .font(style.font)
                 .foregroundColor(isEnabled ? style.enabledColor : style.disabledColor)
                 .frame(width: style.size, height: style.size)

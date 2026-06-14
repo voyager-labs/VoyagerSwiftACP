@@ -1,5 +1,5 @@
-import ComposableArchitecture
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 
 struct AiChatSessionsView: View {
@@ -45,7 +45,7 @@ struct AiChatSessionsView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .background(
                                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                                .fill(Color.primary.opacity(0.05))
+                                                .fill(Color.primary.opacity(0.05)),
                                         )
                                 }
                             }
@@ -75,8 +75,8 @@ struct AiChatSessionsView: View {
                 displayModel.searchPlaceholder,
                 text: Binding(
                     get: { state.sessionList.query },
-                    set: { store.send(.sessionSearchQueryChanged($0)) }
-                )
+                    set: { store.send(.sessionSearchQueryChanged($0)) },
+                ),
             )
             .textFieldStyle(.plain)
             .font(.system(size: 13, weight: .medium))
@@ -85,11 +85,11 @@ struct AiChatSessionsView: View {
         .frame(height: 30)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.05))
+                .fill(Color.primary.opacity(0.05)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1),
         )
         .accessibilityElement(children: .contain)
     }
@@ -116,7 +116,7 @@ struct AiChatSessionsView: View {
 
             AiChatSessionActionsMenuButton(
                 onRename: { store.send(.renameSessionTapped(row.id)) },
-                onDelete: { store.send(.deleteSessionTapped(row.id)) }
+                onDelete: { store.send(.deleteSessionTapped(row.id)) },
             )
             .frame(width: 24, height: 24)
             .help("Session actions")
@@ -144,8 +144,8 @@ struct AiChatSessionsView: View {
                 "Session title",
                 text: Binding(
                     get: { state.sessionList.renameDraftText },
-                    set: { store.send(.renameSessionTitleChanged($0)) }
-                )
+                    set: { store.send(.renameSessionTitleChanged($0)) },
+                ),
             )
             .textFieldStyle(.roundedBorder)
 
@@ -174,7 +174,7 @@ struct AiChatSessionsView: View {
         _ title: String,
         action: RenameAction,
         weight: Font.Weight = .medium,
-        perform: @escaping () -> Void
+        perform: @escaping () -> Void,
     ) -> some View {
         Button(action: perform) {
             Text(title)
@@ -184,7 +184,7 @@ struct AiChatSessionsView: View {
                 .frame(height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(hoveredRenameAction == action ? Color.primary.opacity(0.08) : Color.clear)
+                        .fill(hoveredRenameAction == action ? Color.primary.opacity(0.08) : Color.clear),
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
@@ -218,7 +218,6 @@ struct AiChatSessionsView: View {
 private struct AiChatProcessingRowTextEffect: ViewModifier {
     let isActive: Bool
 
-    @ViewBuilder
     func body(content: Content) -> some View {
         if isActive {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
@@ -250,7 +249,7 @@ private struct AiChatProcessingRowTextEffect: ViewModifier {
                     .init(color: Color.primary.opacity(0.34), location: 1),
                 ],
                 startPoint: .leading,
-                endPoint: .trailing
+                endPoint: .trailing,
             )
             .frame(width: width * 1.15)
             .offset(x: offset)
@@ -269,7 +268,7 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
         button.title = ""
         button.image = NSImage(
             systemSymbolName: "ellipsis",
-            accessibilityDescription: "Session actions"
+            accessibilityDescription: "Session actions",
         )
         button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
         button.imagePosition = .imageOnly
@@ -282,7 +281,7 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
         return button
     }
 
-    func updateNSView(_ button: NSButton, context: Context) {
+    func updateNSView(_: NSButton, context: Context) {
         context.coordinator.onRename = onRename
         context.coordinator.onDelete = onDelete
     }
@@ -301,32 +300,35 @@ private struct AiChatSessionActionsMenuButton: NSViewRepresentable {
             self.onDelete = onDelete
         }
 
-        @objc func showMenu(_ sender: NSButton) {
+        @objc
+        func showMenu(_ sender: NSButton) {
             let menu = NSMenu()
             menu.addItem(menuItem(title: "Rename", action: #selector(rename)))
             menu.addItem(menuItem(title: "Delete", action: #selector(delete), isDestructive: true))
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY + 2), in: sender)
         }
 
-        @objc private func rename() {
+        @objc
+        private func rename() {
             onRename()
         }
 
-        @objc private func delete() {
+        @objc
+        private func delete() {
             onDelete()
         }
 
         private func menuItem(
             title: String,
             action: Selector,
-            isDestructive: Bool = false
+            isDestructive: Bool = false,
         ) -> NSMenuItem {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
             if isDestructive {
                 item.attributedTitle = NSAttributedString(
                     string: title,
-                    attributes: [.foregroundColor: NSColor.systemRed]
+                    attributes: [.foregroundColor: NSColor.systemRed],
                 )
             }
             return item

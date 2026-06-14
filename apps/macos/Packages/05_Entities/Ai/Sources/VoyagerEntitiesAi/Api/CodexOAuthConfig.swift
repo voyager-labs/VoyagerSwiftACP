@@ -18,7 +18,12 @@ public struct CodexOAuthConfig: Sendable, Equatable {
     public static let `default` = CodexOAuthConfig(
         clientId: ProcessInfo.processInfo.environment["OPENAI_CODEX_OAUTH_CLIENT_ID"]
             ?? "app_EMoamEEZ73f0CkXaXp7hrann",
-        issuer: URL(string: "https://auth.openai.com")!,
+        issuer: {
+            guard let url = URL(string: "https://auth.openai.com") else {
+                fatalError("Invalid hardcoded issuer URL")
+            }
+            return url
+        }(),
         authorizePath: "/oauth/authorize",
         tokenPath: "/oauth/token",
         redirectPort: ProcessInfo.processInfo.environment["OPENAI_CODEX_OAUTH_REDIRECT_PORT"]
@@ -32,7 +37,7 @@ public struct CodexOAuthConfig: Sendable, Equatable {
             "api.connectors.read",
             "api.connectors.invoke",
         ],
-        originator: "codex_cli_rs"
+        originator: "codex_cli_rs",
     )
 
     public var redirectURI: String {
@@ -49,7 +54,9 @@ public struct CodexOAuthConfig: Sendable, Equatable {
 
     /// Build the full authorize URL with PKCE parameters.
     public func authorizeURL(pkceChallenge: String, state: String) -> URL {
-        var components = URLComponents(url: authorizeEndpoint, resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: authorizeEndpoint, resolvingAgainstBaseURL: false) else {
+            return authorizeEndpoint
+        }
         components.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: clientId),
@@ -62,6 +69,6 @@ public struct CodexOAuthConfig: Sendable, Equatable {
             URLQueryItem(name: "codex_cli_simplified_flow", value: "true"),
             URLQueryItem(name: "originator", value: originator),
         ]
-        return components.url!
+        return components.url ?? authorizeEndpoint
     }
 }

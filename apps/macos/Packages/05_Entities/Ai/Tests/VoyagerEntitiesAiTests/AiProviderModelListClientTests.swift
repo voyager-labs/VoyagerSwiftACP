@@ -28,7 +28,7 @@ extension AiProviderModelListClientTests {
             models.map(\.thinkingCapability),
             [
                 .effort(values: [.low, .medium, .high], defaultValue: .medium),
-                kUnknownThinkingCapability
+                kUnknownThinkingCapability,
             ],
         )
         XCTAssertEqual(models.map(\.supportsThinkingNone), [true, false])
@@ -50,7 +50,7 @@ extension AiProviderModelListClientTests {
         XCTAssertEqual(
             models.map(\.thinkingCapability),
             [
-                .effort(values: [.low, .medium, .high], defaultValue: .medium)
+                .effort(values: [.low, .medium, .high], defaultValue: .medium),
             ],
         )
         XCTAssertEqual(models.map(\.supportsThinkingNone), [false])
@@ -102,7 +102,7 @@ extension AiProviderModelListClientTests {
                 .effort(values: [.high], defaultValue: .high),
                 .effort(values: [.minimal, .low, .medium, .high, .xhigh], defaultValue: .medium),
                 .effort(values: [.minimal, .low, .medium, .high, .xhigh], defaultValue: .medium),
-                kUnknownThinkingCapability
+                kUnknownThinkingCapability,
             ],
         )
         XCTAssertEqual(models.map(\.supportsThinkingNone), [false, true, false, true, false, false])
@@ -123,7 +123,7 @@ extension AiProviderModelListClientTests {
             models.map(\.thinkingCapability),
             [
                 .effort(values: [.low, .high], defaultValue: .high),
-                .effort(values: [.minimal, .medium], defaultValue: nil)
+                .effort(values: [.minimal, .medium], defaultValue: nil),
             ],
         )
         XCTAssertEqual(models.map(\.supportsThinkingNone), [true, false])
@@ -149,7 +149,7 @@ extension AiProviderModelListClientTests {
             [
                 .effort(values: [.low, .medium, .high, .max], defaultValue: nil),
                 .adaptive(effortValues: [.low, .high], defaultValue: nil),
-                kUnknownThinkingCapability
+                kUnknownThinkingCapability,
             ],
         )
         XCTAssertEqual(models.map(\.unavailableReason), [nil, nil, nil])
@@ -232,15 +232,17 @@ private func assertCodexRequestMatchesCLIIdentity(_ request: URLRequest) throws 
 }
 
 private final class ModelListURLProtocol: URLProtocol, @unchecked Sendable {
-    private nonisolated(unsafe) static var count = 0
-    private nonisolated(unsafe) static var currentHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
+    nonisolated(unsafe) private static var count = 0
+    nonisolated(unsafe) private static var currentHandler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
 
     static var handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))? {
         get { currentHandler }
         set { currentHandler = newValue }
     }
 
-    static var requestCount: Int { count }
+    static var requestCount: Int {
+        count
+    }
 
     static func reset() {
         count = 0

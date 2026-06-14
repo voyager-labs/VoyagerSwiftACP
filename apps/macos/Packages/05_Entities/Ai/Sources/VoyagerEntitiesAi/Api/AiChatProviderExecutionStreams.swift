@@ -233,7 +233,7 @@ extension AiChatProviderExecutionClient {
                 "[AiChatProviderExecution] OpenAI URL error requestID=%@ code=%ld description=%@",
                 context.requestID.rawValue.uuidString,
                 error.errorCode,
-                error.localizedDescription
+                error.localizedDescription,
             )
             continuation.yield(.failed(
                 context: context,
@@ -243,14 +243,14 @@ extension AiChatProviderExecutionClient {
             NSLog(
                 "[AiChatProviderExecution] OpenAI HTTP failure requestID=%@ reason=%@",
                 context.requestID.rawValue.uuidString,
-                providerHTTPLogReason(error)
+                providerHTTPLogReason(error),
             )
             continuation.yield(.failed(context: context, reason: AiChatProviderExecutionFailureMapper.map(error)))
         default:
             NSLog(
                 "[AiChatProviderExecution] OpenAI unknown failure requestID=%@ error=%@",
                 context.requestID.rawValue.uuidString,
-                String(describing: error)
+                String(describing: error),
             )
             continuation.yield(.failed(context: context, reason: .unknown))
         }
@@ -310,39 +310,19 @@ extension AiChatProviderExecutionClient {
                     }
                     .trimmingCharacters(in: .whitespacesAndNewlines)
 
-                    guard !Task.isCancelled else {
-                        continuation.finish()
-                        return
-                    }
-
-                    guard !finalText.isEmpty else {
-                        continuation.yield(.failed(context: context, reason: .invalidRequest))
-                        continuation.finish()
-                        return
-                    }
-
-                    continuation.yield(.final(response: AiChatResponse(
+                    yieldCodexFinal(
                         context: context,
-                        assistantMessage: AiChatMessage(role: .assistant, content: finalText),
-                        completedAtMs: now(),
-                    )))
+                        finalText: finalText,
+                        now: now,
+                        continuation: continuation,
+                    )
                 } catch is CancellationError {
                     continuation.finish()
                     return
                 } catch let error as CodexCLIExecutionError {
-                    NSLog(
-                        "[AiChatProviderExecution] Codex CLI failure requestID=%@ reason=%@",
-                        context.requestID.rawValue.uuidString,
-                        codexLogReason(error)
-                    )
-                    continuation.yield(.failed(context: context, reason: error.failureReason))
+                    yieldCodexError(context: context, error: error, continuation: continuation)
                 } catch {
-                    NSLog(
-                        "[AiChatProviderExecution] Codex unknown failure requestID=%@ error=%@",
-                        context.requestID.rawValue.uuidString,
-                        String(describing: error)
-                    )
-                    continuation.yield(.failed(context: context, reason: .transportError))
+                    yieldCodexUnknownError(context: context, error: error, continuation: continuation)
                 }
 
                 continuation.finish()
@@ -350,21 +330,70 @@ extension AiChatProviderExecutionClient {
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
-}
 
+    private static func yieldCodexFinal(
+        context: AiChatRequestContextSnapshot,
+        finalText: String,
+        now: @escaping @Sendable () -> Int64,
+        continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
+    ) {
+        guard !Task.isCancelled else {
+            continuation.finish()
+            return
+        }
+
+        guard !finalText.isEmpty else {
+            continuation.yield(.failed(context: context, reason: .invalidRequest))
+            continuation.finish()
+            return
+        }
+
+        continuation.yield(.final(response: AiChatResponse(
+            context: context,
+            assistantMessage: AiChatMessage(role: .assistant, content: finalText),
+            completedAtMs: now(),
+        )))
+    }
+
+    private static func yieldCodexError(
+        context: AiChatRequestContextSnapshot,
+        error: CodexCLIExecutionError,
+        continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
+    ) {
+        NSLog(
+            "[AiChatProviderExecution] Codex CLI failure requestID=%@ reason=%@",
+            context.requestID.rawValue.uuidString,
+            codexLogReason(error),
+        )
+        continuation.yield(.failed(context: context, reason: error.failureReason))
+    }
+
+    private static func yieldCodexUnknownError(
+        context: AiChatRequestContextSnapshot,
+        error: Error,
+        continuation: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>.Continuation,
+    ) {
+        NSLog(
+            "[AiChatProviderExecution] Codex unknown failure requestID=%@ error=%@",
+            context.requestID.rawValue.uuidString,
+            String(describing: error),
+        )
+        continuation.yield(.failed(context: context, reason: .transportError))
+    }
+}
 
 private func providerHTTPLogReason(_ error: AiHTTPError) -> String {
     switch error {
     case let .httpError(statusCode, body):
-        return "httpError(status: \(statusCode), body: \(redactedProviderErrorBody(body)))"
+        "httpError(status: \(statusCode), body: \(redactedProviderErrorBody(body)))"
     case let .networkError(description):
-        return "networkError(\(description))"
+        "networkError(\(description))"
     case .timeout:
-        return "timeout"
+        "timeout"
     case .cancelled:
-        return "cancelled"
+        "cancelled"
     case let .invalidURL(url):
-        return "invalidURL(\(url))"
+        "invalidURL(\(url))"
     }
 }
 
@@ -378,10 +407,10 @@ private func redactedProviderErrorBody(_ body: String) -> String {
 private func codexLogReason(_ error: CodexCLIExecutionError) -> String {
     switch error {
     case .launchFailed:
-        return "launchFailed"
+        "launchFailed"
     case let .outputMissing(message):
-        return "outputMissing(\(redactedProviderErrorBody(message)))"
+        "outputMissing(\(redactedProviderErrorBody(message)))"
     case let .nonZeroExit(message):
-        return "nonZeroExit(\(redactedProviderErrorBody(message)))"
+        "nonZeroExit(\(redactedProviderErrorBody(message)))"
     }
 }

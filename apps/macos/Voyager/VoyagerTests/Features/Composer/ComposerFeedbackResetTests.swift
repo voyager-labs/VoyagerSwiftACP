@@ -48,6 +48,7 @@ final class ComposerFeedbackResetTests: XCTestCase {
         )
         var initialState = ComposerState()
         initialState.scopeEditor.selection = addedSelection
+        initialState.includeDirectories = true
         initialState.isLoadingFilters = true
         initialState.activeFiltersRequestID = requestID
         initialState.lastScopeChangeFeedback = ComposerScopeChangeFeedback(
@@ -76,6 +77,7 @@ final class ComposerFeedbackResetTests: XCTestCase {
         XCTAssertNil(store.state.lastScopeChangeFeedback)
         XCTAssertNil(store.state.lastScopeChangeFeedbackDisplay)
         XCTAssertFalse(store.state.isLoadingFilters)
+        XCTAssertFalse(store.state.includeDirectories)
         XCTAssertNil(store.state.activeFiltersRequestID)
         XCTAssertTrue(store.state.scopeEditor.selection.isRootOnly)
     }
@@ -86,7 +88,7 @@ final class ComposerFeedbackResetTests: XCTestCase {
         let initialFeedback = ComposerTransientFeedback(
             id: UUID(),
             kind: .error,
-            message: "Search couldn't be completed. Check Helper/Gateway and try again.",
+            message: "Search couldn't be completed. Check AI provider and Helper status, then try again.",
         )
         var initialState = ComposerState()
         initialState.transientFeedback = initialFeedback

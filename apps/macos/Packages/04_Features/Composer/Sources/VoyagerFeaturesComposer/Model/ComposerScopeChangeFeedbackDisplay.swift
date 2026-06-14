@@ -49,16 +49,31 @@ struct ComposerScopeChangeFeedbackDisplay: Equatable {
         case .addBase, .replaceBase:
             return "Scope updated to \(afterSummary.primaryText)"
         case .removeBase:
-            return "Removed \(changedBaseName(before: feedback.beforeScope, after: feedback.afterScope, fallback: beforeSummary.primaryText)) from scope"
+            let baseName = changedBaseName(
+                before: feedback.beforeScope,
+                after: feedback.afterScope,
+                fallback: beforeSummary.primaryText,
+            )
+            return "Removed \(baseName) from scope"
         case .exclude:
             let baseName = changedBaseName(
                 before: feedback.beforeScope,
                 after: feedback.afterScope,
                 fallback: beforeSummary.primaryText,
             )
-            return "Excluded \(changedExceptionName(before: feedback.beforeScope, after: feedback.afterScope, fallback: afterSummary.primaryText)) from \(baseName)"
+            let exceptionName = changedExceptionName(
+                before: feedback.beforeScope,
+                after: feedback.afterScope,
+                fallback: afterSummary.primaryText,
+            )
+            return "Excluded \(exceptionName) from \(baseName)"
         case .restore:
-            return "Restored \(changedExceptionName(before: feedback.beforeScope, after: feedback.afterScope, fallback: beforeSummary.primaryText))"
+            let exceptionName = changedExceptionName(
+                before: feedback.beforeScope,
+                after: feedback.afterScope,
+                fallback: beforeSummary.primaryText,
+            )
+            return "Restored \(exceptionName)"
         case .includeSubfolders:
             return feedback.afterScope.includeSubfolders ? "Included subfolders" : "Limited to this folder"
         }

@@ -1,25 +1,28 @@
 import Foundation
+import VoyagerShared
 
-struct ParsedOpenAIResponse: Equatable, Sendable {
+struct ParsedOpenAIResponse: Equatable {
     let deltas: [String]
     let finalText: String?
 }
 
-struct ParsedAnthropicResponse: Equatable, Sendable {
+struct ParsedAnthropicResponse: Equatable {
     let deltas: [String]
     let finalText: String?
 }
 
-struct OpenAIResponsesCreateRequest: Encodable, Sendable {
+struct OpenAIResponsesCreateRequest: Encodable {
     let model: String
     let input: [OpenAIResponsesInputItem]
     let reasoning: OpenAIResponsesReasoning?
+    let text: OpenAIResponsesTextConfig?
     let stream: Bool
 
     init(payload: AiChatProviderRequestPayload) {
         model = payload.rawModelID
         input = Self.makeInput(from: payload)
         reasoning = OpenAIResponsesReasoning(payload: payload.thinking)
+        text = OpenAIResponsesTextConfig(contract: payload.responseContract)
         stream = true
     }
 
@@ -38,13 +41,15 @@ struct OpenAIResponsesCreateRequest: Encodable, Sendable {
             OpenAIResponsesInputItem(
                 role: .init(messageRole: message.role),
                 text: message.content,
-                appendedContent: index == targetUserIndex ? nativeAttachmentContent : []
+                appendedContent: index == targetUserIndex ? nativeAttachmentContent : [],
             )
         })
         return items
     }
 
-    private static func nativeAttachmentContentBlocks(from payload: AiChatProviderRequestPayload) -> [OpenAIResponsesInputContent] {
+    private static func nativeAttachmentContentBlocks(from payload: AiChatProviderRequestPayload)
+        -> [OpenAIResponsesInputContent]
+    {
         payload.context.requestContext.parts.compactMap { part in
             nativeAttachmentContentBlock(from: part, payload: payload)
         }
@@ -63,8 +68,8 @@ struct OpenAIResponsesCreateRequest: Encodable, Sendable {
             requestFamily: .openAIResponses,
             fileExtension: preferredFileExtension(filename: filename, metadata: metadata),
             detectedMIMEType: declaredMIMEType,
+            sizeBytes: preferredByteCount(part: part, metadata: metadata),
             detectedContentTypeIdentifier: metadata["contentTypeIdentifier"],
-            sizeBytes: preferredByteCount(part: part, metadata: metadata)
         ))
         guard case let .providerNativeUpload(capabilityKind, normalizedMIMEType) = capability.disposition,
               capabilityKind == kind
@@ -82,7 +87,7 @@ struct OpenAIResponsesCreateRequest: Encodable, Sendable {
         case .pdf, .plainTextDocument, .openAIDocument, .spreadsheet:
             return .inputFile(
                 fileData: "data:\(normalizedMIMEType);base64,\(base64Data)",
-                filename: filename
+                filename: filename,
             )
 
         case .codexPathScope:
@@ -163,7 +168,29 @@ struct OpenAIResponsesCreateRequest: Encodable, Sendable {
     }
 }
 
-struct OpenAIResponsesInputItem: Encodable, Sendable {
+struct OpenAIResponsesTextConfig: Encodable {
+    let format: OpenAIResponsesTextFormat
+
+    init?(contract: AiChatProviderResponseContract?) {
+        guard let contract else { return nil }
+        format = OpenAIResponsesTextFormat(contract: contract)
+    }
+}
+
+struct OpenAIResponsesTextFormat: Encodable {
+    let type = "json_schema"
+    let name: String
+    let schema: [String: JSONValue]
+    let strict: Bool
+
+    init(contract: AiChatProviderResponseContract) {
+        name = contract.name
+        schema = contract.schema
+        strict = contract.strict
+    }
+}
+
+struct OpenAIResponsesInputItem: Encodable {
     let type = "message"
     let role: Role
     let content: Content
@@ -182,7 +209,7 @@ struct OpenAIResponsesInputItem: Encodable, Sendable {
         }
     }
 
-    enum Content: Encodable, Sendable {
+    enum Content: Encodable {
         case text(String)
         case parts([OpenAIResponsesInputContent])
 
@@ -198,7 +225,7 @@ struct OpenAIResponsesInputItem: Encodable, Sendable {
         }
     }
 
-    enum Role: String, Encodable, Sendable {
+    enum Role: String, Encodable {
         case developer
         case user
         case assistant
@@ -216,10 +243,31 @@ struct OpenAIResponsesInputItem: Encodable, Sendable {
     }
 }
 
-enum OpenAIResponsesInputContent: Encodable, Sendable {
+enum OpenAIResponsesInputContent: Encodable {
     case inputText(String)
     case inputImage(imageURL: String)
     case inputFile(fileData: String, filename: String)
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case detail
+        case imageURL = "image_url"
+        case fileData = "file_data"
+        case filename
+    }
+
+    enum FileDetail: String, Encodable {
+        case low
+        case high
+    }
+
+    enum OpenAIResponsesImageDetail: String, Encodable {
+        case low
+        case high
+        case auto
+        case original
+    }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -237,30 +285,9 @@ enum OpenAIResponsesInputContent: Encodable, Sendable {
             try container.encode(filename, forKey: .filename)
         }
     }
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case text
-        case detail
-        case imageURL = "image_url"
-        case fileData = "file_data"
-        case filename
-    }
-
-    enum FileDetail: String, Encodable, Sendable {
-        case low
-        case high
-    }
-
-    enum OpenAIResponsesImageDetail: String, Encodable, Sendable {
-        case low
-        case high
-        case auto
-        case original
-    }
 }
 
-struct OpenAIResponsesReasoning: Encodable, Sendable {
+struct OpenAIResponsesReasoning: Encodable {
     let effort: String?
     let budgetTokens: Int?
 
@@ -291,7 +318,7 @@ struct OpenAIResponsesReasoning: Encodable, Sendable {
     }
 }
 
-struct OpenAIResponsesFinalResponse: Decodable, Sendable {
+struct OpenAIResponsesFinalResponse: Decodable {
     let outputText: String?
     let output: [OpenAIResponsesOutputItem]?
 
@@ -313,7 +340,7 @@ struct OpenAIResponsesFinalResponse: Decodable, Sendable {
     }
 }
 
-struct OpenAIResponsesOutputItem: Decodable, Sendable {
+struct OpenAIResponsesOutputItem: Decodable {
     let content: [OpenAIResponsesOutputContent]?
 
     var assistantText: String? {
@@ -326,12 +353,12 @@ struct OpenAIResponsesOutputItem: Decodable, Sendable {
     }
 }
 
-struct OpenAIResponsesOutputContent: Decodable, Sendable {
+struct OpenAIResponsesOutputContent: Decodable {
     let type: String
     let text: String?
 }
 
-struct OpenAIResponsesStreamEvent: Decodable, Sendable {
+struct OpenAIResponsesStreamEvent: Decodable {
     let type: String
     let delta: String?
     let text: String?
@@ -367,7 +394,7 @@ struct OpenAIResponsesStreamEvent: Decodable, Sendable {
     }
 }
 
-struct OpenAIResponsesStreamError: Decodable, Sendable {
+struct OpenAIResponsesStreamError: Decodable {
     let message: String?
     let type: String?
     let code: String?

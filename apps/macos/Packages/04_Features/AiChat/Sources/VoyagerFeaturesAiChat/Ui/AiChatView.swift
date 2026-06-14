@@ -14,13 +14,11 @@ public struct AiChatView: View {
     @State private var chatInputTextHeight = Self.chatInputMinTextHeight
     @State private var isModelSelectorPopoverPresented = false
     @State private var isThinkingSelectorPresented = false
-    @State private var transcriptScrollOffsets: [AiChatSessionID: CGFloat]
     @State private var transcriptScrollRestoreRequest: AiChatTranscriptScrollRestoreRequest?
     @State private var transcriptScrollRestoreSequence = 0
 
     public init(store: StoreOf<AiChatFeature>) {
         self.store = store
-        _transcriptScrollOffsets = State(initialValue: Self.loadTranscriptScrollOffsets())
     }
 
     public var body: some View {
@@ -61,7 +59,10 @@ public struct AiChatView: View {
                                             AiChatTranscriptScrollObserver(
                                                 sessionID: state.sessionID,
                                                 restoreRequest: transcriptScrollRestoreRequest,
-                                                onScrollOffsetChanged: rememberTranscriptScrollOffset,
+                                                onScrollOffsetChanged: { offsetY, sessionID in
+                                                    guard let sessionID else { return }
+                                                    store.send(.transcriptScrollOffsetChanged(sessionID, offsetY))
+                                                },
                                             ),
                                         )
 
@@ -103,18 +104,15 @@ public struct AiChatView: View {
                     }
                 }
             }
+            .onAppear {
+                store.send(.onAppear)
+            }
         }
-    }
-
-    private func rememberTranscriptScrollOffset(_ offsetY: CGFloat, for sessionID: AiChatSessionID?) {
-        guard let sessionID else { return }
-        transcriptScrollOffsets[sessionID] = max(0, offsetY)
-        Self.saveTranscriptScrollOffsets(transcriptScrollOffsets)
     }
 
     private func requestTranscriptScrollOffsetRestore(for state: AiChatState) {
         guard let sessionID = state.sessionID,
-              let offsetY = transcriptScrollOffsets[sessionID]
+              let offsetY = store.withState({ $0.transcriptScrollOffsets[sessionID] })
         else { return }
 
         transcriptScrollRestoreSequence += 1
@@ -136,25 +134,6 @@ public struct AiChatView: View {
     static let transcriptBottomAnchorID = "ai-chat-transcript-bottom"
     static let chatInputMinTextHeight: CGFloat = 34
     static let chatInputMaxTextHeight: CGFloat = 96
-    static let transcriptScrollOffsetsKey = "voyager.aiChat.transcriptScrollOffsets"
-
-    static func loadTranscriptScrollOffsets() -> [AiChatSessionID: CGFloat] {
-        guard let storedOffsets = UserDefaults.standard
-            .dictionary(forKey: transcriptScrollOffsetsKey) as? [String: Double]
-        else { return [:] }
-
-        return storedOffsets.reduce(into: [AiChatSessionID: CGFloat]()) { result, element in
-            guard let uuid = UUID(uuidString: element.key) else { return }
-            result[AiChatSessionID(rawValue: uuid)] = CGFloat(max(0, element.value))
-        }
-    }
-
-    static func saveTranscriptScrollOffsets(_ offsets: [AiChatSessionID: CGFloat]) {
-        let storedOffsets = offsets.reduce(into: [String: Double]()) { result, element in
-            result[element.key.rawValue.uuidString] = Double(max(0, element.value))
-        }
-        UserDefaults.standard.set(storedOffsets, forKey: transcriptScrollOffsetsKey)
-    }
 }
 
 private struct AiChatTranscriptScrollRestoreRequest: Equatable {

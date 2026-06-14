@@ -22,7 +22,7 @@ final class TemporaryHomeFixture {
         if createVoyagerDirectory {
             try FileManager.default.createDirectory(
                 at: voyagerHomeURL,
-                withIntermediateDirectories: true
+                withIntermediateDirectories: true,
             )
         }
 

@@ -188,7 +188,7 @@ private extension AiChatSessionFileStore {
     func setOwnerOnlyPermissions(_ url: URL) throws {
         try fileManager.setAttributes(
             [.posixPermissions: NSNumber(value: 0o600)],
-            ofItemAtPath: url.path
+            ofItemAtPath: url.path,
         )
     }
 
@@ -212,7 +212,7 @@ private extension AiChatSessionFileStore {
         let didCreateFile = fileManager.createFile(
             atPath: fileURL.path,
             contents: Data(),
-            attributes: [.posixPermissions: NSNumber(value: 0o600)]
+            attributes: [.posixPermissions: NSNumber(value: 0o600)],
         )
         guard didCreateFile else { throw CocoaError(.fileWriteUnknown) }
     }
@@ -227,7 +227,6 @@ private extension AiChatSessionFileStore {
         return try operation()
     }
 }
-
 
 private extension AiChatSessionSummary {
     func matches(query: String) -> Bool {

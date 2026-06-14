@@ -14,135 +14,183 @@ excluded:
   - Voyager/Voyager.xcodeproj/project.xcworkspace/xcuserdata
   - Hosts/**/.build
   - Packages/**/.build
+  - Voyager/VoyagerTests # 앱 테스트 타겟은 .swiftlint-tests.yml로 별도 검사합니다.
+  - Voyager/VoyagerHelperTests # 헬퍼 테스트 타겟은 .swiftlint-tests.yml로 별도 검사합니다.
+  - Voyager/VoyagerUITests # UI 테스트 타겟은 .swiftlint-tests.yml로 별도 검사합니다.
+  - '**/Tests/**' # 패키지 테스트 디렉토리는 .swiftlint-tests.yml로 별도 검사합니다.
 
 # 활성화할 규칙들
 opt_in_rules:
-  - array_init
-  - attributes
-  - closure_body_length
-  - closure_end_indentation
-  - closure_spacing
-  - collection_alignment
-  - contains_over_filter_count
-  - contains_over_filter_is_empty
-  - contains_over_first_not_nil
-  - contains_over_range_nil_comparison
-  - discouraged_object_literal
-  - empty_collection_literal
-  - empty_count
-  - empty_string
-  - enum_case_associated_values_count
-  - explicit_init
-  - extension_access_modifier
-  - fallthrough
-  - fatal_error_message
-  - first_where
-  - force_unwrapping
-  - function_default_parameter_at_end
-  - identical_operands
-  - implicit_return
-  - joined_default_parameter
-  - last_where
-  - legacy_random
-  - literal_expression_end_indentation
-  - lower_acl_than_parent
-  - modifier_order
-  - multiline_arguments
-  - multiline_function_chains
-  - multiline_literal_brackets
-  - multiline_parameters
-  - multiline_parameters_brackets
-  - operator_usage_whitespace
-  - overridden_super_call
-  - pattern_matching_keywords
-  - prefer_self_type_over_type_of_self
-  - prefer_zero_over_explicit_init
-  - prefixed_toplevel_constant
-  - prohibited_interface_builder
-  - prohibited_super_call
-  - quick_discouraged_call
-  - quick_discouraged_focused_test
-  - quick_discouraged_pending_test
-  - redundant_nil_coalescing
-  - redundant_type_annotation
-  - required_enum_case
-  - single_test_class
-  - sorted_first_last
-  - sorted_imports
-  - strong_iboutlet
-  - switch_case_alignment
-  - toggle_bool
-  - unavailable_function
-  - unneeded_parentheses_in_closure_argument
-  - untyped_error_in_catch
-  - vertical_parameter_alignment_on_call
-  - vertical_whitespace_closing_braces
-  - vertical_whitespace_opening_braces
-  - xct_specific_matcher
-  - yoda_condition
+  - accessibility_label_for_image # SwiftUI Image에 접근성 label 또는 hidden 명시를 요구합니다.
+  - array_init # seq.map { $0 } 대신 Array(seq)를 써서 변환 의도를 명확히 합니다.
+  # - async_without_await # 일단 비활성화: 기존 코드에 async 없이 async 선언한 패턴이 많아 단계적으로 정리 후 활성화 예정
+  - attributes # attribute 줄 배치를 통일해 선언부 스타일을 맞춥니다.
+  - closure_end_indentation # closure 닫는 brace indentation을 시작 줄과 맞춥니다.
+  - closure_spacing # closure brace 안쪽 공백을 한 칸으로 통일합니다.
+  - collection_alignment # multiline collection literal 요소 세로 정렬을 맞춥니다.
+  - contains_over_filter_count # filter(...).count 비교보다 contains를 쓰게 합니다.
+  - contains_over_filter_is_empty # filter(...).isEmpty보다 contains 기반 표현을 쓰게 합니다.
+  - contains_over_first_not_nil # first(where:) != nil보다 contains를 쓰게 합니다.
+  - contains_over_range_nil_comparison # range(of:) nil 비교보다 contains를 쓰게 합니다.
+  - discouraged_object_literal # image/color literal 대신 initializer 사용을 권장합니다.
+  - empty_collection_literal # 빈 배열/딕셔너리 literal 비교보다 isEmpty를 쓰게 합니다.
+  - empty_count # count == 0보다 isEmpty를 쓰게 합니다.
+  - empty_string # 문자열 빈 값 비교보다 isEmpty를 쓰게 합니다.
+  - enum_case_associated_values_count # enum case associated value 개수를 낮게 유지합니다.
+  - explicit_init # 불필요한 .init() 호출을 줄입니다.
+  - extension_access_modifier # extension 단위 access modifier 사용을 선호합니다.
+  - fallthrough # switch fallthrough 사용을 피하게 합니다.
+  - fatal_error_message # fatalError 호출에 디버깅용 메시지를 요구합니다.
+  - file_name_no_space # 파일명 공백을 금지합니다.
+  - first_where # filter(...).first보다 first(where:)를 쓰게 합니다.
+  - force_unwrapping # optional 강제 언래핑으로 인한 런타임 crash를 줄입니다.
+  - function_default_parameter_at_end # default parameter를 파라미터 목록 뒤쪽에 둡니다.
+  - identical_operands # a == a 같은 동일 operand 비교 실수를 잡습니다.
+  - implicit_return # 단일 표현식 closure/function에서 return 생략을 허용합니다.
+  - joined_default_parameter # joined(separator: "") 대신 joined()를 쓰게 합니다.
+  - last_where # filter(...).last보다 last(where:)를 쓰게 합니다.
+  - legacy_random # legacy random API 대신 Swift random API를 쓰게 합니다.
+  - literal_expression_end_indentation # literal 닫는 부분 indentation을 시작 줄과 맞춥니다.
+  - lower_acl_than_parent # parent보다 낮은 access level 명시를 정리합니다.
+  - modifier_order # public/nonisolated/static 등 modifier 순서를 통일합니다.
+  - multiline_arguments # multiline 호출 인자를 한 줄 또는 인자별 줄로 통일합니다.
+  - multiline_function_chains # chained call 줄바꿈 방식을 통일합니다.
+  - multiline_literal_brackets # multiline literal bracket 위치를 통일합니다.
+  - multiline_parameters # multiline 함수 파라미터 배치를 통일합니다.
+  - multiline_parameters_brackets # multiline parameter bracket 위치를 통일합니다.
+  - operator_usage_whitespace # 연산자 주변 공백을 통일합니다.
+  - overridden_super_call # 필요한 override 메서드에서 super 호출을 요구합니다.
+  - pattern_matching_keywords # pattern matching의 let/var 위치를 Swift 관례에 맞춥니다.
+  - prefer_self_type_over_type_of_self # type(of: self)보다 Self 사용을 권장합니다.
+  - prefer_zero_over_explicit_init # zero 값 explicit init보다 .zero/0 사용을 권장합니다.
+  - prohibited_interface_builder # Interface Builder 기반 UI 사용을 막습니다.
+  - prohibited_super_call # 호출하면 안 되는 super 호출을 막습니다.
+  - quick_discouraged_call # Quick describe/context 내부의 권장되지 않는 호출을 막습니다.
+  - quick_discouraged_focused_test # fit/fdescribe 같은 focused test 커밋을 막습니다.
+  - quick_discouraged_pending_test # xit/xdescribe 같은 pending test 커밋을 막습니다.
+  - redundant_nil_coalescing # x ?? nil 같은 중복 nil coalescing을 제거합니다.
+  - redundant_type_annotation # 추론 가능한 타입 명시를 줄입니다.
+  - required_enum_case # 특정 protocol 채택 enum에 필수 case를 요구합니다.
+  - single_test_class # 테스트 파일당 테스트 클래스 하나만 두게 합니다.
+  - sorted_first_last # sorted().first/last보다 min/max 사용을 권장합니다.
+  - sorted_imports # import 목록을 정렬합니다.
+  - strong_iboutlet # IBOutlet을 weak로 선언하지 않게 합니다.
+  - switch_case_alignment # switch case indentation을 통일합니다.
+  - toggle_bool # bool = !bool 대신 bool.toggle()을 권장합니다.
+  - unavailable_function # 미구현 함수는 body 대신 unavailable로 표시하게 합니다.
+  - unneeded_parentheses_in_closure_argument # closure argument 선언의 불필요한 괄호를 제거합니다.
+  - untyped_error_in_catch # catch error 변수에 타입 캐스팅을 명시하게 합니다.
+  - vertical_parameter_alignment_on_call # multiline 호출부 argument 세로 정렬을 맞춥니다.
+  - vertical_whitespace_closing_braces # 닫는 brace 앞 불필요한 빈 줄을 막습니다.
+  - vertical_whitespace_opening_braces # 여는 brace 뒤 불필요한 빈 줄을 막습니다.
+  - xct_specific_matcher # XCTAssertTrue/False보다 구체적인 XCTest matcher를 쓰게 합니다.
+  - yoda_condition # literal을 비교식 오른쪽에 두게 합니다.
 
 # 비활성화할 규칙들
 disabled_rules:
-  - todo
-  - opening_brace
-  - closure_body_length
-  - trailing_comma
-  - file_name
+  - mark # source에서는 MARK 형식 검사를 끕니다. 테스트 config에서만 다시 켭니다.
+  - prefixed_toplevel_constant # top-level constant에 k prefix를 강제하지 않습니다.
+  - todo # TODO/FIXME 해결 강제는 개발 중 노이즈가 커서 끕니다.
+  - opening_brace # brace 같은 줄 스타일 검사는 SwiftFormat에 맡깁니다.
+  - closure_body_length # TCA/SwiftUI builder closure가 길어지는 경우가 많아 끕니다.
+  - redundant_void_return # 반환 타입 명시를 선호하므로 -> Void 생략 강제는 끕니다.
+  - trailing_comma # collection trailing comma 정책은 SwiftFormat에 맡깁니다.
+  - void_return # SwiftFormat의 void rule과 충돌은 아니지만 SwiftLint 중복 검사는 끕니다.
+  - file_name # 테스트 파일과 source extension 파일의 naming 패턴이 다양해 일치 검사를 끕니다. SwiftFormat이 기본 naming 규칙을 관리합니다.
+  - type_contents_order # SwiftFormat organizeDeclarations --organizationmode type의 그룹이 SwiftLint보다 coarse하므로 중복 검사를 끕니다. SwiftFormat에서 type 선언 순서를 관리합니다.
 
 # 규칙별 설정
 line_length:
-  warning: 120
-  error: 200
-  ignores_urls: true
-  ignores_function_declarations: true
-  ignores_comments: true
+  warning: 120 # 일반 코드 한 줄 권장 길이입니다.
+  error: 200 # 긴 URL/선언을 제외한 hard limit입니다.
+  ignores_urls: true # URL은 길이 검사에서 제외합니다.
+  ignores_function_declarations: true # 긴 함수 시그니처는 길이 검사에서 제외합니다.
+  ignores_comments: true # 문서/설명 주석은 길이 검사에서 제외합니다.
 
 function_body_length:
-  warning: 50
-  error: 100
+  warning: 50 # 함수가 커지기 시작하는 경고 기준입니다.
+  error: 100 # 함수 분리를 강하게 요구하는 기준입니다.
 
 function_parameter_count:
-  warning: 6
-  error: 8
+  warning: 5 # API 호출부가 복잡해지기 시작하는 기준입니다.
+  error: 7 # 파라미터 객체/모델 추출을 검토할 기준입니다.
 
 type_body_length:
-  warning: 300
-  error: 500
+  warning: 400 # reducer/view/model 타입이 커지기 시작하는 기준입니다.
+  error: 800 # 타입 분리 또는 하위 reducer 추출을 검토할 기준입니다.
 
 type_name:
   max_length:
-    warning: 60
-    error: 80
+    warning: 60 # 긴 도메인/테스트 타입 이름을 허용하되 경고합니다.
+    error: 100 # 과도하게 긴 타입 이름의 hard limit입니다.
 
 file_length:
-  warning: 500
-  error: 1000
+  warning: 800 # feature/test 파일이 커지기 시작하는 기준입니다.
+  error: 1500 # 파일 분리를 강하게 검토할 기준입니다.
 
 cyclomatic_complexity:
-  warning: 10
-  error: 20
+  warning: 10 # 분기(if/switch/guard/loop)가 많아지는 경고 기준입니다.
+  error: 20 # 함수 로직 분리를 강하게 요구하는 기준입니다.
 
 identifier_name:
   min_length:
-    warning: 2
-    error: 1
+    warning: 2 # 한 글자 이름은 대부분 경고합니다.
+    error: 1 # 한 글자 이름을 완전히 금지하지는 않습니다.
   max_length:
-    warning: 40
-    error: 60
-  excluded:
+    warning: 40 # 긴 변수/파라미터 이름 경고 기준입니다.
+    error: 60 # 과도하게 긴 identifier의 hard limit입니다.
+  excluded: # 도메인에서 흔한 짧은 약어는 허용합니다.
     - id
     - url
     - uri
     - api
     - ui
     - db
+    - access_token # Codex OAuth JSON 응답의 snake_case 키 매핑입니다.
+    - refresh_token # Codex OAuth JSON 응답의 snake_case 키 매핑입니다.
+    - id_token # Codex OAuth JSON 응답의 snake_case 키 매핑입니다.
+    - expires_in # Codex OAuth JSON 응답의 snake_case 키 매핑입니다.
+    - token_type # Codex OAuth JSON 응답의 snake_case 키 매핑입니다.
+    - r # credential redaction test에서 shorten/redact 결과 변수명입니다.
+    - i # 테스트 loop index 변수입니다.
+    - j # 테스트 nested loop index 변수입니다.
+    - a # 테스트 fixture 단일 값 변수입니다.
+    - b # 테스트 fixture 단일 값 변수입니다.
+    - e # 테스트 error 변수입니다.
+
+modifier_order:
+  preferred_modifier_order:
+    - override # override 여부가 가장 먼저 보여야 합니다.
+    - isolation # .swiftformat --modifier-order와 맞춰 nonisolated public 순서를 유지합니다.
+    - acl # public/private/internal 같은 access level입니다.
+    - setterACL # private(set) 같은 setter 전용 access level입니다.
+    - dynamic # Objective-C/runtime dispatch 관련 modifier입니다.
+    - mutators # mutating/nonmutating 계열 modifier입니다.
+    - lazy # lazy 저장 프로퍼티 modifier입니다.
+    - final # 상속/override 금지 modifier입니다.
+    - required # subclass initializer 구현 요구 modifier입니다.
+    - convenience # convenience initializer modifier입니다.
+    - typeMethods # static/class 같은 type member modifier입니다.
+    - owned # borrowing/consuming 등 ownership modifier입니다.
+
+type_contents_order:
+  severity: warning # 타입 내부 선언 순서를 SwiftFormat organizeDeclarations와 같은 큰 그룹으로 맞춥니다.
+  order:
+    - [case] # enum case를 먼저 둡니다.
+    - [type_alias, associated_type] # alias/associated type은 nested type 앞에 둡니다.
+    - [subtype] # SwiftFormat nestedType 그룹과 맞춥니다.
+    - [type_property] # static/class property 그룹입니다.
+    - [instance_property, ib_inspectable, ib_outlet] # instance property 계열을 한 그룹으로 둡니다.
+    - [initializer, deinitializer, view_life_cycle_method] # SwiftFormat Lifecycle 그룹과 맞춥니다.
+    - [type_method, ib_action, ib_segue_action, other_method, subscript] # SwiftFormat Functions 그룹과 맞춥니다.
 
 # 린터 실행 옵션
 analyzer_rules:
-  - explicit_self
-  - unused_declaration
-  - unused_import
-  - unused_parameter
+  - capture_variable # var를 closure capture list에 넣어 값 캡처처럼 보이는 혼동을 analyze 단계에서 잡습니다.
+  - explicit_self # instance member 접근에 self.를 명시해 캡처/참조를 분명히 합니다.
+  - unused_declaration # lint 대상 전체에서 참조되지 않는 선언을 잡습니다.
+  - unused_import # 컴파일에 필요 없는 import를 제거하게 합니다.
+  - unused_parameter # 사용하지 않는 파라미터를 제거하거나 _로 표시하게 합니다.
 
 # 경고 레벨
-warning_threshold: 25
+warning_threshold: 25 # 전체 warning 임계값입니다. violation이 0이므로 새 위반 누적을 즉시 감지합니다.

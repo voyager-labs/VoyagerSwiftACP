@@ -4,13 +4,18 @@ import VoyagerShared
 
 struct OnboardingProgressClient {
     var load: @Sendable () -> LoadResult
-    var save: @Sendable (OnboardingProgressSnapshot) -> Void
+    var save: @Sendable (OnboardingProgressSnapshot) -> SaveResult
     var reset: @Sendable () -> Void
 
     enum LoadResult: Equatable {
         case empty
         case resetRequired
         case success(OnboardingProgressSnapshot)
+    }
+
+    enum SaveResult: Equatable {
+        case success
+        case failure
     }
 }
 
@@ -21,7 +26,7 @@ extension OnboardingProgressClient: DependencyKey {
         static let stepState = "onboardingStepState"
     }
 
-    nonisolated static let currentVersion = 1.1
+    nonisolated static let currentVersion = 1.2
 
     nonisolated static var liveValue: OnboardingProgressClient {
         OnboardingProgressClient(
@@ -45,9 +50,6 @@ extension OnboardingProgressClient: DependencyKey {
                     return .resetRequired
                 }
 
-                guard version == currentVersion else {
-                    return .resetRequired
-                }
                 guard let step = OnboardingStep(rawValue: currentStepRaw) else {
                     return .resetRequired
                 }
@@ -58,17 +60,25 @@ extension OnboardingProgressClient: DependencyKey {
                     return .resetRequired
                 }
 
+                if version != currentVersion {
+                    guard let snapshot = Self.migratedSnapshot(
+                        version: version,
+                        currentStep: step,
+                        stepState: stepState,
+                    ) else { return .resetRequired }
+                    guard Self.persist(snapshot, userDefaultsClient: userDefaultsClient) == .success else {
+                        return .resetRequired
+                    }
+                    return .success(snapshot)
+                }
+
                 return .success(OnboardingProgressSnapshot(currentStep: step, stepState: stepState))
             },
             save: { snapshot in
                 @Dependency(\.userDefaultsClient)
                 var userDefaultsClient
-                userDefaultsClient.setObject(currentVersion, Keys.version)
-                userDefaultsClient.setObject(snapshot.currentStep.rawValue, Keys.currentStep)
 
-                if let data = try? JSONEncoder().encode(snapshot.stepState) {
-                    userDefaultsClient.setObject(data, Keys.stepState)
-                }
+                return Self.persist(snapshot, userDefaultsClient: userDefaultsClient)
             },
             reset: {
                 @Dependency(\.userDefaultsClient)
@@ -80,10 +90,42 @@ extension OnboardingProgressClient: DependencyKey {
         )
     }
 
+    nonisolated static func migratedSnapshot(
+        version: Double,
+        currentStep: OnboardingStep,
+        stepState: OnboardingStepState,
+    ) -> OnboardingProgressSnapshot? {
+        guard version == 1.1 else { return nil }
+
+        var migratedStepState = stepState
+        if migratedStepState.completeComplete {
+            migratedStepState.aiProviderSetupComplete = true
+            migratedStepState.aiProviderSetupSkipped = true
+            migratedStepState.aiProviderSetupChoice = .setUpLater
+            migratedStepState.aiProviderSetupStatus = .skipped
+        }
+
+        return OnboardingProgressSnapshot(currentStep: currentStep, stepState: migratedStepState)
+    }
+
+    nonisolated private static func persist(
+        _ snapshot: OnboardingProgressSnapshot,
+        userDefaultsClient: UserDefaultsClient,
+    ) -> OnboardingProgressClient.SaveResult {
+        guard let data = try? JSONEncoder().encode(snapshot.stepState) else {
+            return .failure
+        }
+
+        userDefaultsClient.setObject(currentVersion, Keys.version)
+        userDefaultsClient.setObject(snapshot.currentStep.rawValue, Keys.currentStep)
+        userDefaultsClient.setObject(data, Keys.stepState)
+        return .success
+    }
+
     nonisolated static var testValue: OnboardingProgressClient {
         OnboardingProgressClient(
             load: { .empty },
-            save: { _ in },
+            save: { _ in .success },
             reset: {},
         )
     }

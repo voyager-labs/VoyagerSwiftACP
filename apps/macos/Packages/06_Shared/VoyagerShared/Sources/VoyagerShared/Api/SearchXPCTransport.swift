@@ -3,10 +3,11 @@ import Logging
 
 public enum SearchXPCTransport {
     nonisolated private static let logger = Logger(label: "Voyager.FilterSearchXPC")
-    nonisolated private static let filterTimeoutSeconds: TimeInterval = 20
-    nonisolated private static let queryTimeoutSeconds: TimeInterval = 25
-    nonisolated private static let recentTimeoutSeconds: TimeInterval = 20
-    nonisolated private static let tagTimeoutSeconds: TimeInterval = 20
+    nonisolated private static let filterTimeoutSeconds = SearchXPCTransportTimeoutPolicy.deterministicSearchSeconds
+    nonisolated private static let queryTimeoutSeconds = SearchXPCTransportTimeoutPolicy.providerBackedQuerySeconds
+    nonisolated private static let recentTimeoutSeconds = SearchXPCTransportTimeoutPolicy.deterministicSearchSeconds
+    nonisolated private static let tagTimeoutSeconds = SearchXPCTransportTimeoutPolicy.deterministicSearchSeconds
+    nonisolated private static let modelCatalogWarmupTimeoutSeconds = SearchXPCTransportTimeoutPolicy.warmupSeconds
 
     nonisolated public static func applyFilters(
         _ request: FiltersOnlyRequestPayload,
@@ -20,7 +21,7 @@ public enum SearchXPCTransport {
                 requestId: requestId,
                 logger: logger,
                 continuation: continuation,
-                decodeResponse: decodeSearchResponse,
+                decodeResponse: decodeFilterResponse,
             )
             context.start(requestData: requestData, timeout: filterTimeoutSeconds)
         }
@@ -38,10 +39,26 @@ public enum SearchXPCTransport {
                 requestId: requestId,
                 logger: logger,
                 continuation: continuation,
-                decodeResponse: decodeSearchResponse,
+                decodeResponse: decodeQueryResponse,
             )
             context.startQuery(requestData: requestData, timeout: queryTimeoutSeconds)
         }
+    }
+
+    nonisolated public static func warmUpAIModelCatalog() async throws {
+        let requestId = UUID().uuidString
+        logger.info("Dispatching AI model catalog warmup XPC request: id=\(requestId)")
+        let requestData = Data()
+
+        _ = try await withCheckedThrowingContinuation(isolation: nil) { @Sendable continuation in
+            let context = RequestContext(
+                requestId: requestId,
+                logger: logger,
+                continuation: continuation,
+                decodeResponse: { data in data },
+            )
+            context.startModelCatalogWarmup(requestData: requestData, timeout: modelCatalogWarmupTimeoutSeconds)
+        } as Data
     }
 
     nonisolated public static func recentSearch(
@@ -129,7 +146,7 @@ private extension SearchXPCTransport {
         }
     }
 
-    nonisolated static func decodeSearchResponse(from data: Data) throws -> SearchResponsePayload {
+    nonisolated static func decodeFilterResponse(from data: Data) throws -> SearchResponsePayload {
         let response = try decodeResponse(SearchResponsePayload.self, from: data)
         if let payloadError = response.error {
             throw HelperSearchError(code: payloadError.code, message: payloadError.details)
@@ -137,11 +154,16 @@ private extension SearchXPCTransport {
         return response
     }
 
+    nonisolated static func decodeQueryResponse(from data: Data) throws -> SearchResponsePayload {
+        try decodeResponse(SearchResponsePayload.self, from: data)
+    }
+
     enum OperationKind {
         case filter
         case query
         case recent
         case tag
+        case modelCatalogWarmup
 
         nonisolated var label: String {
             switch self {
@@ -153,6 +175,8 @@ private extension SearchXPCTransport {
                 "Recent search"
             case .tag:
                 "Tag search"
+            case .modelCatalogWarmup:
+                "AI model catalog warmup"
             }
         }
     }
@@ -197,6 +221,10 @@ private extension SearchXPCTransport {
             startOperation(kind: .tag, requestData: requestData, timeout: timeout)
         }
 
+        nonisolated func startModelCatalogWarmup(requestData: Data, timeout: TimeInterval) {
+            startOperation(kind: .modelCatalogWarmup, requestData: requestData, timeout: timeout)
+        }
+
         nonisolated private func startOperation(
             kind: OperationKind,
             requestData: Data,
@@ -232,6 +260,12 @@ private extension SearchXPCTransport {
                     }
                 case .tag:
                     proxy.tagSearch(requestData) { [self] responseData, error in
+                        queue.async {
+                            self.handleReply(responseData: responseData, error: error, operationLabel: operationLabel)
+                        }
+                    }
+                case .modelCatalogWarmup:
+                    proxy.warmUpAIModelCatalog(requestData) { [self] responseData, error in
                         queue.async {
                             self.handleReply(responseData: responseData, error: error, operationLabel: operationLabel)
                         }
@@ -338,6 +372,19 @@ private extension SearchXPCTransport {
             lock.unlock()
         }
     }
+}
+
+enum SearchXPCTransportTimeoutPolicy {
+    static let deterministicSearchSeconds: TimeInterval = 20
+    static let providerModelListSeconds: TimeInterval = 30
+    static let providerStreamingExecutionSeconds: TimeInterval = 300
+    static let providerBackedQueryEnvelopeBufferSeconds: TimeInterval = 30
+    static let warmupSeconds: TimeInterval = 20
+
+    /// provider-backed querySearch는 model list 조회와 streaming provider 실행을 같은 XPC 요청 안에서 수행합니다.
+    static let providerBackedQuerySeconds: TimeInterval = providerModelListSeconds
+        + providerStreamingExecutionSeconds
+        + providerBackedQueryEnvelopeBufferSeconds
 }
 
 private struct HelperSearchError: LocalizedError {

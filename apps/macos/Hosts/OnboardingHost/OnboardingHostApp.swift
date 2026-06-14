@@ -86,7 +86,8 @@ private enum SmokeMode {
         if isRequiredAfterCompletedSnapshot != expectedAfterCompleted {
             failures
                 .append(
-                    "isRequiredAfterCompletedSnapshot expected \(expectedAfterCompleted), got \(isRequiredAfterCompletedSnapshot)",
+                    "isRequiredAfterCompletedSnapshot expected \(expectedAfterCompleted), "
+                        + "got \(isRequiredAfterCompletedSnapshot)",
                 )
         }
 

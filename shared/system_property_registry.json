@@ -2042,7 +2042,7 @@
           "tag name",
           "label name"
         ],
-        "system_keys": ["nsurl:NSURLTagNamesKey"],
+        "system_keys": ["mditem:kMDItemUserTags", "nsurl:NSURLTagNamesKey"],
         "type": "categorical",
         "ui_label": "Tag names"
       },

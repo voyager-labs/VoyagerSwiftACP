@@ -80,11 +80,13 @@ struct ScopeTreeRowView: View {
                     .scaledToFit()
                     .foregroundColor(iconColor)
                     .frame(width: 16, height: 16)
+                    .accessibilityHidden(true)
             } else {
                 Image(systemName: row.iconName)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(iconColor)
                     .frame(width: 16, height: 16)
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -96,6 +98,7 @@ struct ScopeTreeRowView: View {
                 HStack(spacing: isHovering ? 4 : 0) {
                     Image(systemName: actionSymbolName(for: action))
                         .font(.system(size: 9, weight: .semibold))
+                        .accessibilityHidden(true)
                     if isHovering {
                         Text(actionLabel(for: action))
                             .font(.system(size: 10, weight: .medium))

@@ -27,9 +27,9 @@ Seven angles to measure. Each angle has a target threshold and a verdict categor
 
 ### 3. Impact Analysis Coverage
 
-**Target:** 0 misses vs. `macos_checks`, under 20% over-inclusion.
+**Target:** No missed dependent symbols when cross-checked with XcodeBuildMCP compilation results.
 
-**How to measure:** Run `codegraph_impact` on 5 recently changed symbols. Compare the affected symbol list against what `macos_checks.py` reports as affected targets. Count misses (symbols in checks but not in CodeGraph) and over-inclusions (symbols in CodeGraph but not in checks).
+**How to measure:** Run `codegraph_impact` on 5 recently changed symbols. Verify the identified dependents by attempting an XcodeBuildMCP build and checking if any compilation errors originated from symbols CodeGraph missed.
 
 ### 4. Cross-Language Tracing
 
@@ -68,7 +68,7 @@ If maintenance time exceeds the time saved by having CodeGraph, this is a failed
 
 - 4 or more angles rated **Improved**.
 - Maintenance cost is acceptable (does not dominate the benefit).
-- No conflicts with existing tools (SourceKit-LSP, macos_checks, build systems).
+- No conflicts with existing tools (XcodeBuildMCP, build systems).
 
 ### No-Go (Remove CodeGraph)
 

@@ -60,31 +60,34 @@ The skill is **read-mostly** over `.sisyphus` and **write-only** to approved out
 
 ### Read paths (no mutation)
 
-| Path                                          | Purpose                                                                       |
-| --------------------------------------------- | ----------------------------------------------------------------------------- |
-| `.sisyphus/plans/{plan-name}.md`              | Source plan. Read for compliance checking and scope fidelity. Never modified. |
-| `.sisyphus/evidence/{plan_slug}/task-{N}-*.*`        | Per-task evidence. Read for finding extraction. Never modified.               |
-| `.sisyphus/evidence/{plan_slug}/f1-plan-compliance.md`    | Final review facet (stable filename).                                         |
-| `.sisyphus/evidence/{plan_slug}/f2-code-quality.md`       | Final review facet (stable filename).                                         |
-| `.sisyphus/evidence/{plan_slug}/f3-manual-qa.md`          | Final review facet (stable filename).                                         |
-| `.sisyphus/evidence/{plan_slug}/f4-scope-fidelity.md`     | Final review facet (stable filename).                                         |
-| `.sisyphus/notepads/{plan-name}/learnings.md` | Notepad family member.                                                        |
-| `.sisyphus/notepads/{plan-name}/decisions.md` | Notepad family member.                                                        |
-| `.sisyphus/notepads/{plan-name}/issues.md`    | Notepad family member.                                                        |
-| `.sisyphus/notepads/{plan-name}/problems.md`  | Notepad family member.                                                        |
+| Path                                                   | Purpose                                                                          |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `.sisyphus/plans/{plan-name}.md`                       | Source plan. Read for compliance checking and scope fidelity. Never modified.    |
+| `.sisyphus/evidence/{plan_slug}/task-{N}-*.*`          | Per-task evidence. Read for finding extraction. Never modified.                  |
+| `.sisyphus/evidence/{plan_slug}/f1-plan-compliance.md` | Final review facet (stable filename).                                            |
+| `.sisyphus/evidence/{plan_slug}/f2-code-quality.md`    | Final review facet (stable filename).                                            |
+| `.sisyphus/evidence/{plan_slug}/f3-manual-qa.md`       | Final review facet (stable filename).                                            |
+| `.sisyphus/evidence/{plan_slug}/f4-scope-fidelity.md`  | Final review facet (stable filename).                                            |
+| `.sisyphus/notepads/{plan-name}/learnings.md`          | Notepad family member.                                                           |
+| `.sisyphus/notepads/{plan-name}/decisions.md`          | Notepad family member.                                                           |
+| `.sisyphus/notepads/{plan-name}/issues.md`             | Notepad family member.                                                           |
+| `.sisyphus/notepads/{plan-name}/problems.md`           | Notepad family member.                                                           |
+| `.sisyphus/knowledge/index.json`                       | Knowledge entry index. Cross-session, not plan-scoped. Managed by sisyphus-wiki. |
+| `.sisyphus/knowledge/entries/*.md`                     | Knowledge entry files. Associated by tag matching, not directory name.           |
+| `.sisyphus/knowledge/graph.jsonl`                      | Knowledge edge graph (optional). Cross-entry relationship edges.                 |
 
 The skill must not modify, rename, move, or delete any file it reads. If a read path has changed since the run started (stale detection), the skill reports and stops per the artifact contract failure rules.
 
 ### Approved write paths
 
-| Path                                                   | Purpose                       | Condition                                      |
-| ------------------------------------------------------ | ----------------------------- | ---------------------------------------------- |
-| `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json` | Run manifest.                 | Created once per run.                          |
-| `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json` | Structured findings.          | Created once per run.                          |
-| `.sisyphus/reviews/{plan_slug}/{run_id}/FAILURE.md`    | Failure artifact.             | Created only on report-and-stop conditions.    |
-| `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`  | Compound learning document.   | Created once per run (not created on failure). |
+| Path                                                    | Purpose                       | Condition                                      |
+| ------------------------------------------------------- | ----------------------------- | ---------------------------------------------- |
+| `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json`  | Run manifest.                 | Created once per run.                          |
+| `.sisyphus/reviews/{plan_slug}/{run_id}/findings.json`  | Structured findings.          | Created once per run.                          |
+| `.sisyphus/reviews/{plan_slug}/{run_id}/FAILURE.md`     | Failure artifact.             | Created only on report-and-stop conditions.    |
+| `.sisyphus/reviews/{plan_slug}/{run_id}/learning.md`    | Compound learning document.   | Created once per run (not created on failure). |
 | `.sisyphus/reviews/{plan_slug}/{run_id}/skill-draft.md` | Skill/harness draft proposal. | Created once per run (not created on failure). |
-| `.sisyphus/reviews/{plan_slug}/{run_id}/run-summary.md`    | Run summary.                  | Created once per run (not created on failure). |
+| `.sisyphus/reviews/{plan_slug}/{run_id}/run-summary.md` | Run summary.                  | Created once per run (not created on failure). |
 
 The skill must not write anywhere else. Specifically, it must not:
 
@@ -117,22 +120,23 @@ These actions are **unconditionally forbidden** for the compound-review skill:
 
 Before the skill can execute its review + compound synthesis, all of the following must hold. If any precondition fails, the skill reports the failure and stops.
 
-| ID  | Precondition                                                                             | Check Method                                                                    | Failure Action                        |
-| --- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------- |
-| P1  | A completed plan exists at `.sisyphus/plans/{plan-name}.md`.                             | File exists and is readable.                                                    | Report-and-stop.                      |
+| ID  | Precondition                                                                                    | Check Method                                                                    | Failure Action                        |
+| --- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------- |
+| P1  | A completed plan exists at `.sisyphus/plans/{plan-name}.md`.                                    | File exists and is readable.                                                    | Report-and-stop.                      |
 | P2  | At least one evidence file matching `task-{N}-*.*` exists in `.sisyphus/evidence/{plan_slug}/`. | Directory listing for files matching the pattern.                               | Report-and-stop.                      |
-| P3  | The plan slug is unambiguous (see `target-selection.md`).                                | Exactly one candidate plan matches, or operator has specified the target.       | Report-and-stop with ambiguity error. |
-| P4  | No conflicting run exists for the same plan_slug and run_id.                             | Check if `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json` already exists. | Report-and-stop.                      |
-| P5  | The target plan has not been modified after Work completion evidence timestamps.         | Compare plan file mtime against the latest evidence file mtime for the plan.    | Report-and-stop (stale lineage).      |
-| P6  | The run_id can be determined or generated.                                               | Current timestamp in `YYYY-MM-DD-HHMMSS` format.                                | Generate automatically.               |
+| P3  | The plan slug is unambiguous (see `target-selection.md`).                                       | Exactly one candidate plan matches, or operator has specified the target.       | Report-and-stop with ambiguity error. |
+| P4  | No conflicting run exists for the same plan_slug and run_id.                                    | Check if `.sisyphus/reviews/{plan_slug}/{run_id}/manifest.json` already exists. | Report-and-stop.                      |
+| P5  | The target plan has not been modified after Work completion evidence timestamps.                | Compare plan file mtime against the latest evidence file mtime for the plan.    | Report-and-stop (stale lineage).      |
+| P6  | The run_id can be determined or generated.                                                      | Current timestamp in `YYYY-MM-DD-HHMMSS` format.                                | Generate automatically.               |
 
 ### Optional precondition checks (degrade, not stop)
 
-| ID  | Precondition                                                                | Check Method                                               | On Failure                                 |
-| --- | --------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------ |
-| OP1 | Final review facets (f1-f4) are present.                                    | Check for exact stable filenames in `.sisyphus/evidence/{plan_slug}/`. | Degrade-gracefully. Note `facets_missing`. |
-| OP2 | Notepad directory exists for the plan.                                      | Directory listing at `.sisyphus/notepads/{plan_slug}/`.    | Continue with warning in manifest.         |
-| OP3 | At least one of `learnings.md` or `decisions.md` exists in the notepad dir. | File existence check.                                      | Degrade-gracefully. Note in manifest.      |
+| ID  | Precondition                                                                   | Check Method                                                                                                       | On Failure                                               |
+| --- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| OP1 | Final review facets (f1-f4) are present.                                       | Check for exact stable filenames in `.sisyphus/evidence/{plan_slug}/`.                                             | Degrade-gracefully. Note `facets_missing`.               |
+| OP2 | Notepad directory exists for the plan.                                         | Directory listing at `.sisyphus/notepads/{plan_slug}/`.                                                            | Continue with warning in manifest.                       |
+| OP3 | At least one of `learnings.md` or `decisions.md` exists in the notepad dir.    | File existence check.                                                                                              | Degrade-gracefully. Note in manifest.                    |
+| OP4 | At least one knowledge entry exists whose tags overlap with plan context tags. | Read `.sisyphus/knowledge/index.json`, check `tags[]` overlap with plan_slug substrings and plan context keywords. | Degrade-gracefully. Skip knowledge consumption entirely. |
 
 ---
 

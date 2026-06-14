@@ -10,6 +10,7 @@ public enum CollectionSnapshotHydration {
         scopes: [String],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false, // swiftlint:disable:this function_default_parameter_at_end
         conditions: [CollectionCondition],
     ) -> String {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -26,7 +27,7 @@ public enum CollectionSnapshotHydration {
             query: normalizedQuery,
             scopes: normalizedScopes,
             excludedScopes: normalizedExcludedScopes,
-            includeSubfolders: includeSubfolders,
+            directoryPolicy: (includeSubfolders: includeSubfolders, includeDirectories: includeDirectories),
             conditions: normalizedConditions,
         )
     }
@@ -37,6 +38,7 @@ public enum CollectionSnapshotHydration {
             scopes: file.scopes,
             excludedScopes: file.excludedScopes,
             includeSubfolders: file.includeSubfolders,
+            includeDirectories: file.includeDirectories,
             conditions: file.conditions,
         )
     }
@@ -46,6 +48,7 @@ public enum CollectionSnapshotHydration {
         scopes: [String],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
+        includeDirectories: Bool = false, // swiftlint:disable:this function_default_parameter_at_end
         conditions: [Condition],
     ) -> String {
         definitionFingerprint(
@@ -53,6 +56,7 @@ public enum CollectionSnapshotHydration {
             scopes: scopes,
             excludedScopes: excludedScopes,
             includeSubfolders: includeSubfolders,
+            includeDirectories: includeDirectories,
             conditions: collectionConditions(from: conditions),
         )
     }
@@ -60,7 +64,7 @@ public enum CollectionSnapshotHydration {
     public static func usableSnapshot(for file: VoyagerCollectionFile) -> CollectionPersistedSnapshot? {
         guard let snapshot = file.snapshot,
               let snapshotMeta = file.snapshotMeta,
-              snapshotMeta.definitionFingerprint == definitionFingerprint(file: file)
+              isCurrentOrLegacyFingerprint(snapshotMeta.definitionFingerprint, for: file)
         else {
             return nil
         }
@@ -110,6 +114,35 @@ public enum CollectionSnapshotHydration {
         return paths
     }
 
+    private static func isCurrentOrLegacyFingerprint(_ fingerprint: String, for file: VoyagerCollectionFile) -> Bool {
+        if fingerprint == definitionFingerprint(file: file) {
+            return true
+        }
+
+        guard file.includeDirectories == false else { return false }
+        return fingerprint == legacyDefinitionFingerprintBeforeDirectoryPolicy(file: file)
+    }
+
+    private static func legacyDefinitionFingerprintBeforeDirectoryPolicy(file: VoyagerCollectionFile) -> String {
+        let normalizedQuery = file.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedScopes = normalizePaths(file.scopes)
+        let normalizedExcludedScopes = normalizePaths(file.excludedScopes)
+        let normalizedConditions = file.conditions
+            .map { condition in
+                let value = canonicalValueString(condition.value)
+                return [condition.propertyKey, condition.operatorCode, value].joined(separator: "\u{1E}")
+            }
+            .sorted()
+
+        return legacyDigestBeforeDirectoryPolicy(
+            query: normalizedQuery,
+            scopes: normalizedScopes,
+            excludedScopes: normalizedExcludedScopes,
+            includeSubfolders: file.includeSubfolders,
+            conditions: normalizedConditions,
+        )
+    }
+
     private static func normalizePaths(_ paths: [String]) -> [String] {
         paths
             .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
@@ -140,7 +173,7 @@ public enum CollectionSnapshotHydration {
         }
     }
 
-    private static func digest(
+    private static func legacyDigestBeforeDirectoryPolicy(
         query: String,
         scopes: [String],
         excludedScopes: [String],
@@ -152,6 +185,26 @@ public enum CollectionSnapshotHydration {
             scopes.joined(separator: "\u{1D}"),
             excludedScopes.joined(separator: "\u{1E}"),
             includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
+            conditions.joined(separator: "\u{1C}"),
+        ].joined(separator: "\u{1B}")
+
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func digest(
+        query: String,
+        scopes: [String],
+        excludedScopes: [String],
+        directoryPolicy: (includeSubfolders: Bool, includeDirectories: Bool),
+        conditions: [String],
+    ) -> String {
+        let canonical = [
+            query,
+            scopes.joined(separator: "\u{1D}"),
+            excludedScopes.joined(separator: "\u{1E}"),
+            directoryPolicy.includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
+            directoryPolicy.includeDirectories ? "includeDirectories:true" : "includeDirectories:false",
             conditions.joined(separator: "\u{1C}"),
         ].joined(separator: "\u{1B}")
 

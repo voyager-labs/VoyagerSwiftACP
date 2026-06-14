@@ -9,7 +9,12 @@ struct FilterSearchXPCServiceMain {
         loadEnvironment(logger: logger)
 
         let service = initializeService(logger: logger)
-        let delegate = FilterSearchXPCServiceDelegate(logger: logger, service: service)
+        let modelCatalogCache = AIProviderModelCatalogCache(logger: logger)
+        let delegate = FilterSearchXPCServiceDelegate(
+            logger: logger,
+            service: service,
+            modelCatalogCache: modelCatalogCache,
+        )
         let listener = NSXPCListener.service()
         listener.delegate = delegate
         logger.info("Filter search XPC service started")
@@ -49,10 +54,16 @@ struct FilterSearchXPCServiceMain {
 final class FilterSearchXPCServiceDelegate: NSObject, NSXPCListenerDelegate {
     private let logger: Logger
     private let service: SpotlightSearchService
+    private let modelCatalogCache: AIProviderModelCatalogCache
 
-    init(logger: Logger, service: SpotlightSearchService) {
+    init(
+        logger: Logger,
+        service: SpotlightSearchService,
+        modelCatalogCache: AIProviderModelCatalogCache,
+    ) {
         self.logger = logger
         self.service = service
+        self.modelCatalogCache = modelCatalogCache
         super.init()
     }
 
@@ -61,7 +72,11 @@ final class FilterSearchXPCServiceDelegate: NSObject, NSXPCListenerDelegate {
         shouldAcceptNewConnection newConnection: NSXPCConnection,
     ) -> Bool {
         newConnection.exportedInterface = NSXPCInterface(with: FilterSearchXPCServiceProtocol.self)
-        newConnection.exportedObject = XPCSearchService(service: service, logger: logger)
+        newConnection.exportedObject = XPCSearchService(
+            service: service,
+            logger: logger,
+            modelCatalogCache: modelCatalogCache,
+        )
         newConnection.resume()
         return true
     }

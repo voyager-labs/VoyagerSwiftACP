@@ -57,7 +57,7 @@ extension AiChatProviderExecutionClient {
 
         if let filesystemText = CodexContextPromptBuilder.makeFilesystemPrompt(
             from: payload.context.requestContext,
-            workingDirectory: codexWorkingDirectory()
+            workingDirectory: codexWorkingDirectory(),
         ), !filesystemText.isEmpty {
             sections.append(filesystemText)
         }
@@ -327,7 +327,9 @@ extension AiChatProviderExecutionClient {
     }
 
     static func codexWorkingDirectory() -> URL? {
-        if let workingDirectory = ProcessInfo.processInfo.environment["VOYAGER_CODEX_WORKING_DIRECTORY"], !workingDirectory.isEmpty {
+        if let workingDirectory = ProcessInfo.processInfo.environment["VOYAGER_CODEX_WORKING_DIRECTORY"],
+           !workingDirectory.isEmpty
+        {
             return URL(fileURLWithPath: workingDirectory)
         }
         return nil
@@ -351,11 +353,49 @@ extension AiChatProviderExecutionClient {
     }
 }
 
-
 private enum CodexContextPromptBuilder {
+    private struct FilePathPair {
+        let displayPath: String?
+        let realPath: String?
+    }
+
+    private struct CodexPathEntry {
+        let path: String
+        let resolvesTo: String?
+        let access: String
+        let status: String
+        let origin: String
+        let kind: String
+        let note: String
+
+        var promptLines: [String] {
+            var lines = [
+                "  - path: \(path)",
+                "    origin: \(origin)",
+                "    kind: \(kind)",
+                "    access: \(access)",
+                "    status: \(status)",
+            ]
+            if let resolvesTo {
+                lines.append("    resolves_to: \(resolvesTo)")
+            }
+            lines.append("    note: \(note)")
+            return lines
+        }
+    }
+
+    private struct CodexPathScopeInput {
+        var providerKind: AiChatProviderNativeFileKind?
+        var forcedReferenceOnly: Bool
+        var hasWorkingDirectory: Bool
+        var inScope: Bool
+        var isSymlinkEscape: Bool
+        var fileKind: AiChatContextItemKind
+    }
+
     static func makeFilesystemPrompt(
         from requestContext: AiChatLockedRequestContextSnapshot,
-        workingDirectory: URL?
+        workingDirectory: URL?,
     ) -> String? {
         let normalizedWorkingDirectory = normalizedRealPathURL(workingDirectory)
         let entries = requestContext.parts.flatMap { part in
@@ -366,14 +406,19 @@ private enum CodexContextPromptBuilder {
         var lines = [
             "codex_filesystem_references:",
             "  access_mode: path_scope_only",
-            "  note: Treat these as referenced paths for Codex filesystem access. Do not claim provider-native file transfer or extra directory grants for this request.",
+            "  note: Treat these as referenced paths for Codex filesystem access. "
+                + "Do not claim provider-native file transfer or extra directory grants for this request.",
         ]
 
         if let normalizedWorkingDirectory {
             lines.append("  working_directory: \(normalizedWorkingDirectory.path(percentEncoded: false))")
         } else {
             lines.append("  working_directory: unavailable")
-            lines.append("  working_directory_note: Codex working directory is unavailable, so every path below is reference-only.")
+            lines
+                .append(
+                    "  working_directory_note: Codex working directory is unavailable, "
+                        + "so every path below is reference-only.",
+                )
         }
 
         lines.append(contentsOf: entries.flatMap(\.promptLines))
@@ -382,41 +427,51 @@ private enum CodexContextPromptBuilder {
 
     private static func makeEntries(
         from part: AiChatLockedContextPartSnapshot,
-        workingDirectory: URL?
+        workingDirectory: URL?,
     ) -> [CodexPathEntry] {
         switch part.resolution {
         case let .providerNativeFile(kind, _, metadata):
             let displayPath = preferredDisplayPath(part: part, metadata: metadata)
-            return [makeEntry(
-                displayPath: displayPath,
-                realPath: preferredRealPath(part: part, metadata: metadata),
-                fileKind: part.fileKind,
-                providerKind: kind,
-                originLabel: originLabel(for: part.source),
-                workingDirectory: workingDirectory
-            )]
+            return [
+                makeEntry(
+                    paths: FilePathPair(
+                        displayPath: displayPath,
+                        realPath: preferredRealPath(part: part, metadata: metadata),
+                    ),
+                    fileKind: part.fileKind,
+                    providerKind: kind,
+                    originLabel: originLabel(for: part.source),
+                    workingDirectory: workingDirectory,
+                ),
+            ]
 
         case let .referenceOnly(metadata):
             let displayPath = preferredDisplayPath(part: part, metadata: metadata)
-            return [makeEntry(
-                displayPath: displayPath,
-                realPath: preferredRealPath(part: part, metadata: metadata),
-                fileKind: part.fileKind,
-                providerKind: nil,
-                originLabel: originLabel(for: part.source),
-                workingDirectory: workingDirectory,
-                forcedReferenceOnly: true
-            )]
+            return [
+                makeEntry(
+                    paths: FilePathPair(
+                        displayPath: displayPath,
+                        realPath: preferredRealPath(part: part, metadata: metadata),
+                    ),
+                    fileKind: part.fileKind,
+                    providerKind: nil,
+                    originLabel: originLabel(for: part.source),
+                    workingDirectory: workingDirectory,
+                    forcedReferenceOnly: true,
+                ),
+            ]
 
         case let .collectionPathList(paths, _):
             return paths.map { rawPath in
                 makeEntry(
-                    displayPath: rawPath,
-                    realPath: normalizedRealPath(from: rawPath),
+                    paths: FilePathPair(
+                        displayPath: rawPath,
+                        realPath: normalizedRealPath(from: rawPath),
+                    ),
                     fileKind: .attachment,
                     providerKind: .codexPathScope,
                     originLabel: "collection member",
-                    workingDirectory: workingDirectory
+                    workingDirectory: workingDirectory,
                 )
             }
 
@@ -426,42 +481,38 @@ private enum CodexContextPromptBuilder {
     }
 
     private static func makeEntry(
-        displayPath: String?,
-        realPath: String?,
+        paths: FilePathPair,
         fileKind: AiChatContextItemKind,
         providerKind: AiChatProviderNativeFileKind?,
         originLabel: String,
         workingDirectory: URL?,
-        forcedReferenceOnly: Bool = false
+        forcedReferenceOnly: Bool = false,
     ) -> CodexPathEntry {
-        let trimmedDisplayPath = normalizedNonEmpty(displayPath)
-        let trimmedRealPath = normalizedNonEmpty(realPath)
+        let trimmedDisplayPath = normalizedNonEmpty(paths.displayPath)
+        let trimmedRealPath = normalizedNonEmpty(paths.realPath)
         let resolvedDisplayURL = normalizedDisplayPathURL(from: trimmedDisplayPath)
         let resolvedRealURL = normalizedRealPathURL(from: trimmedRealPath)
         let effectiveRealURL = resolvedRealURL ?? resolvedDisplayURL
         let effectiveRealPath = effectiveRealURL?.path(percentEncoded: false) ?? trimmedRealPath
 
-        let displayWithinWorkingDirectory = isWithinWorkingDirectory(resolvedDisplayURL, workingDirectory: workingDirectory)
+        let displayWithinWorkingDirectory = isWithinWorkingDirectory(
+            resolvedDisplayURL,
+            workingDirectory: workingDirectory,
+        )
         let realWithinWorkingDirectory = isWithinWorkingDirectory(effectiveRealURL, workingDirectory: workingDirectory)
         let isSymlinkEscape = displayWithinWorkingDirectory && !realWithinWorkingDirectory
 
-        let status = statusLabel(
+        let scopeInput = CodexPathScopeInput(
             providerKind: providerKind,
             forcedReferenceOnly: forcedReferenceOnly,
             hasWorkingDirectory: workingDirectory != nil,
             inScope: realWithinWorkingDirectory,
             isSymlinkEscape: isSymlinkEscape,
-            fileKind: fileKind
+            fileKind: fileKind,
         )
+        let status = statusLabel(scopeInput: scopeInput)
         let access = accessLabel(status: status)
-        let note = noteLabel(
-            providerKind: providerKind,
-            forcedReferenceOnly: forcedReferenceOnly,
-            hasWorkingDirectory: workingDirectory != nil,
-            inScope: realWithinWorkingDirectory,
-            isSymlinkEscape: isSymlinkEscape,
-            fileKind: fileKind
-        )
+        let note = noteLabel(scopeInput: scopeInput)
 
         let shouldRenderRealPath = status == "in_scope"
         let renderedPath = shouldRenderRealPath
@@ -474,13 +525,13 @@ private enum CodexContextPromptBuilder {
             status: status,
             origin: originLabel,
             kind: fileKind.rawValue,
-            note: note
+            note: note,
         )
     }
 
     private static func preferredDisplayPath(
         part: AiChatLockedContextPartSnapshot,
-        metadata: [String: String]
+        metadata: [String: String],
     ) -> String? {
         [
             part.displayPath,
@@ -493,7 +544,7 @@ private enum CodexContextPromptBuilder {
 
     private static func preferredRealPath(
         part: AiChatLockedContextPartSnapshot,
-        metadata: [String: String]
+        metadata: [String: String],
     ) -> String? {
         [
             part.canonicalPath,
@@ -510,48 +561,38 @@ private enum CodexContextPromptBuilder {
             : "reference-only"
     }
 
-    private static func statusLabel(
-        providerKind: AiChatProviderNativeFileKind?,
-        forcedReferenceOnly: Bool,
-        hasWorkingDirectory: Bool,
-        inScope: Bool,
-        isSymlinkEscape: Bool,
-        fileKind: AiChatContextItemKind
-    ) -> String {
-        if !hasWorkingDirectory { return "reference_only" }
-        if isSymlinkEscape { return "out_of_scope" }
-        if !inScope { return "out_of_scope" }
-        if forcedReferenceOnly { return "reference_only" }
-        if providerKind != .codexPathScope { return "reference_only" }
-        if providerKind == .image { return "reference_only" }
+    private static func statusLabel(scopeInput: CodexPathScopeInput) -> String {
+        if !scopeInput.hasWorkingDirectory { return "reference_only" }
+        if scopeInput.isSymlinkEscape { return "out_of_scope" }
+        if !scopeInput.inScope { return "out_of_scope" }
+        if scopeInput.forcedReferenceOnly { return "reference_only" }
+        if scopeInput.providerKind != .codexPathScope { return "reference_only" }
+        if scopeInput.providerKind == .image { return "reference_only" }
         return "in_scope"
     }
 
-    private static func noteLabel(
-        providerKind: AiChatProviderNativeFileKind?,
-        forcedReferenceOnly: Bool,
-        hasWorkingDirectory: Bool,
-        inScope: Bool,
-        isSymlinkEscape: Bool,
-        fileKind: AiChatContextItemKind
-    ) -> String {
-        if !hasWorkingDirectory {
+    private static func noteLabel(scopeInput: CodexPathScopeInput) -> String {
+        if !scopeInput.hasWorkingDirectory {
             return "Codex working directory is unavailable for scope checks; treat this as a reference only."
         }
-        if isSymlinkEscape {
-            return "This workspace path resolves outside the Codex working directory (symlink escape); do not assume Codex can read it."
+        if scopeInput.isSymlinkEscape {
+            return "This workspace path resolves outside the Codex working directory (symlink escape); "
+                + "do not assume Codex can read it."
         }
-        if !inScope {
+        if !scopeInput.inScope {
             return "This path resolves outside the Codex working directory; do not assume Codex can read it."
         }
-        if forcedReferenceOnly {
-            return "This path stays reference-only because the locked request context did not grant Codex path-scope access for it."
+        if scopeInput.forcedReferenceOnly {
+            return "This path stays reference-only because the locked request context did not grant "
+                + "Codex path-scope access for it."
         }
-        if providerKind != .codexPathScope {
-            return "This path stays reference-only because Codex uses filesystem references instead of provider-native file transfer semantics."
+        if scopeInput.providerKind != .codexPathScope {
+            return "This path stays reference-only because Codex uses filesystem references instead of "
+                + "provider-native file transfer semantics."
         }
-        if providerKind == .image {
-            return "This image path is in scope, but images remain reference-only in this MVP because no Codex image arguments are passed."
+        if scopeInput.providerKind == .image {
+            return "This image path is in scope, but images remain reference-only in this MVP because "
+                + "no Codex image arguments are passed."
         }
         return "This path resolves inside the Codex working directory and may be read through Codex filesystem access."
     }
@@ -603,30 +644,5 @@ private enum CodexContextPromptBuilder {
     private static func normalizedPathForComparison(_ value: String) -> String {
         guard value.count > 1 else { return value }
         return value.hasSuffix("/") ? String(value.dropLast()) : value
-    }
-
-    private struct CodexPathEntry {
-        let path: String
-        let resolvesTo: String?
-        let access: String
-        let status: String
-        let origin: String
-        let kind: String
-        let note: String
-
-        var promptLines: [String] {
-            var lines = [
-                "  - path: \(path)",
-                "    origin: \(origin)",
-                "    kind: \(kind)",
-                "    access: \(access)",
-                "    status: \(status)",
-            ]
-            if let resolvesTo {
-                lines.append("    resolves_to: \(resolvesTo)")
-            }
-            lines.append("    note: \(note)")
-            return lines
-        }
     }
 }

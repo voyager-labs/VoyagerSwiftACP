@@ -38,6 +38,10 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
             "decisions": ".sisyphus/notepads/grid-drop-folder-thumbnail-ux-naturalization/decisions.md",
             "issues": ".sisyphus/notepads/grid-drop-folder-thumbnail-ux-naturalization/issues.md",
             "problems": ".sisyphus/notepads/grid-drop-folder-thumbnail-ux-naturalization/problems.md"
+        },
+        "knowledge": {
+            "entries": [".sisyphus/knowledge/entries/drag-drop-lifecycle-patterns.md"],
+            "graph": ".sisyphus/knowledge/graph.jsonl"
         }
     },
     "outputs": {
@@ -51,7 +55,8 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
         "source_plan": ".sisyphus/plans/voy-208-grid-drop-interaction-stabilization.md",
         "source_evidence": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/task-1-grid-drop-contract.txt", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/task-5-grid-drop-evidence-index.txt"],
         "source_facets": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f1-plan-compliance.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f2-code-quality.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f3-manual-qa.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f4-scope-fidelity.md"],
-        "source_notepads": ["grid-drop-folder-thumbnail-ux-naturalization"]
+        "source_notepads": ["grid-drop-folder-thumbnail-ux-naturalization"],
+        "source_knowledge": [".sisyphus/knowledge/entries/drag-drop-lifecycle-patterns.md"]
     },
     "evidence_sources_consumed": {
         "for_findings": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f1-plan-compliance.md"],
@@ -90,22 +95,25 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
 
 ### Inputs Object
 
-| Field                       | Type     | Required | Description                                                               |
-| --------------------------- | -------- | -------- | ------------------------------------------------------------------------- |
-| `inputs.plan`               | object   | yes      | The completed plan file consumed. Always present (required input).        |
-| `inputs.plan.path`          | string   | yes      | Exact path to the plan file.                                              |
-| `inputs.plan.plan_slug`     | string   | yes      | Plan slug extracted from filename.                                        |
-| `inputs.evidence_files`     | string[] | yes      | Sorted list of evidence file paths actually found. At least one required. |
-| `inputs.facets`             | object   | yes      | Present facets keyed by facet ID. Empty object if none found.             |
-| `inputs.facets.f1`          | string   | no       | Path to `f1-plan-compliance.md` if present.                               |
-| `inputs.facets.f2`          | string   | no       | Path to `f2-code-quality.md` if present.                                  |
-| `inputs.facets.f3`          | string   | no       | Path to `f3-manual-qa.md` if present.                                     |
-| `inputs.facets.f4`          | string   | no       | Path to `f4-scope-fidelity.md` if present.                                |
-| `inputs.notepads`           | object   | yes      | Present notepad files keyed by filename. Empty object if none found.      |
-| `inputs.notepads.learnings` | string   | no       | Path to `learnings.md` if present.                                        |
-| `inputs.notepads.decisions` | string   | no       | Path to `decisions.md` if present.                                        |
-| `inputs.notepads.issues`    | string   | no       | Path to `issues.md` if present.                                           |
-| `inputs.notepads.problems`  | string   | no       | Path to `problems.md` if present.                                         |
+| Field                       | Type     | Required | Description                                                                   |
+| --------------------------- | -------- | -------- | ----------------------------------------------------------------------------- |
+| `inputs.plan`               | object   | yes      | The completed plan file consumed. Always present (required input).            |
+| `inputs.plan.path`          | string   | yes      | Exact path to the plan file.                                                  |
+| `inputs.plan.plan_slug`     | string   | yes      | Plan slug extracted from filename.                                            |
+| `inputs.evidence_files`     | string[] | yes      | Sorted list of evidence file paths actually found. At least one required.     |
+| `inputs.facets`             | object   | yes      | Present facets keyed by facet ID. Empty object if none found.                 |
+| `inputs.facets.f1`          | string   | no       | Path to `f1-plan-compliance.md` if present.                                   |
+| `inputs.facets.f2`          | string   | no       | Path to `f2-code-quality.md` if present.                                      |
+| `inputs.facets.f3`          | string   | no       | Path to `f3-manual-qa.md` if present.                                         |
+| `inputs.facets.f4`          | string   | no       | Path to `f4-scope-fidelity.md` if present.                                    |
+| `inputs.notepads`           | object   | yes      | Present notepad files keyed by filename. Empty object if none found.          |
+| `inputs.notepads.learnings` | string   | no       | Path to `learnings.md` if present.                                            |
+| `inputs.notepads.decisions` | string   | no       | Path to `decisions.md` if present.                                            |
+| `inputs.notepads.issues`    | string   | no       | Path to `issues.md` if present.                                               |
+| `inputs.notepads.problems`  | string   | no       | Path to `problems.md` if present.                                             |
+| `inputs.knowledge`          | object   | no       | Knowledge entries matched by tag overlap. Omitted if no knowledge consumed.   |
+| `inputs.knowledge.entries`  | string[] | no       | Paths to knowledge entry files consumed. Empty array if none matched.         |
+| `inputs.knowledge.graph`    | string   | no       | Path to `graph.jsonl` if present and entries were matched. Omitted otherwise. |
 
 ---
 
@@ -123,12 +131,13 @@ The run manifest is a JSON artifact that enumerates every input consumed and out
 
 ### Lineage Object
 
-| Field                     | Type     | Required | Description                                    |
-| ------------------------- | -------- | -------- | ---------------------------------------------- |
-| `lineage.source_plan`     | string   | yes      | Path to the source plan file.                  |
-| `lineage.source_evidence` | string[] | yes      | Full paths to evidence files consumed.         |
-| `lineage.source_facets`   | string[] | yes      | Full paths to facet files consumed.            |
-| `lineage.source_notepads` | string[] | yes      | Flat list of notepad directory slugs consumed. |
+| Field                      | Type     | Required | Description                                                                         |
+| -------------------------- | -------- | -------- | ----------------------------------------------------------------------------------- |
+| `lineage.source_plan`      | string   | yes      | Path to the source plan file.                                                       |
+| `lineage.source_evidence`  | string[] | yes      | Full paths to evidence files consumed.                                              |
+| `lineage.source_facets`    | string[] | yes      | Full paths to facet files consumed.                                                 |
+| `lineage.source_notepads`  | string[] | yes      | Flat list of notepad directory slugs consumed.                                      |
+| `lineage.source_knowledge` | string[] | no       | Flat list of knowledge entry file paths consumed. Omitted if no knowledge consumed. |
 
 **Note:** v2 stores full evidence and facet paths in lineage so plan-scoped evidence remains unambiguous.
 

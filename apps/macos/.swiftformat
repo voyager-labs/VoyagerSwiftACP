@@ -9,6 +9,7 @@
 --closingparen balanced
 --header strip
 --self remove
+--modifier-order override,isolated,nonisolated,nonisolated(unsafe),private,fileprivate,internal,package,public,open,private(set),fileprivate(set),internal(set),package(set),public(set),open(set),dynamic,mutating,nonmutating,lazy,final,required,convenience,static,class,weak,unowned,unowned(safe),unowned(unsafe),optional,indirect,borrowing,consuming,prefix,infix,postfix,async
 
 # Exclude build artifacts and generated files
 --exclude build,Pods,.build,DerivedData

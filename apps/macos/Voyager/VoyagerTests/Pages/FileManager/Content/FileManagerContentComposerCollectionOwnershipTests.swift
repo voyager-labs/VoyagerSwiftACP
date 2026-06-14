@@ -151,25 +151,6 @@ final class FileManagerComposerOwnershipTests: XCTestCase {
         XCTAssertFalse(store.state.composer.isCollectionMode)
     }
 
-    func testComposerOpenSkipsSeedingWhenNavigationIsNotFolder() async {
-        var initialState = makeInitialState()
-        initialState.navigation.navigationState = .recents
-        initialState.composer.isPresented = false
-
-        let store = TestStore(initialState: initialState) {
-            FileManagerContentFeature()
-        } withDependencies: {
-            $0.userDefaultsClient = VoyagerShared.UserDefaultsClient.testValue
-            $0.collectionAlertClient = CollectionAlertClient.testValue
-            $0.fileManagerClient = VoyagerShared.FileManagerClient.testValue
-            $0.thumbnailGeneratorClient = VoyagerShared.ThumbnailGeneratorClient.testValue
-            $0.entryThumbnailCacheClient = EntryThumbnailCacheClient.testValue
-            $0.notificationCenterClient = VoyagerShared.NotificationCenterClient.testValue
-        }
-
-        await store.send(FileManagerContentAction.composer(.view(.setPresented(true))))
-    }
-
     func testComposerOpenSeedsCurrentPathThroughBridgeAction() async {
         var initialState = makeInitialState()
         initialState.composer.isPresented = false

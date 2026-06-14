@@ -201,8 +201,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         )
     }
 
-    // completed session 삭제 시 final snapshot save를 취소한 뒤 삭제하는지 검증
-    // swiftlint:disable:next function_body_length
+    /// completed session 삭제 시 final snapshot save를 취소한 뒤 삭제하는지 검증
     func testDeleteCurrentCompletedSessionCancelsFinalSnapshotSaveBeforeDelete() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("dddddddd-dddd-dddd-dddd-dddddddddddd"))
         let requestID = AiChatRequestID(rawValue: makeUUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"))
@@ -291,8 +290,7 @@ final class AiChatFeatureSessionDeleteTests: XCTestCase {
         XCTAssertTrue(completedSaves.value.isEmpty)
     }
 
-    // processing session 삭제 시 request-start snapshot save를 취소한 뒤 삭제하는지 검증
-    // swiftlint:disable:next function_body_length
+    /// processing session 삭제 시 request-start snapshot save를 취소한 뒤 삭제하는지 검증
     func testDeleteCurrentProcessingSessionCancelsRequestStartSnapshotBeforeDelete() async {
         let sessionID = AiChatSessionID(rawValue: makeUUID("cccccccc-cccc-cccc-cccc-cccccccccccc"))
         let row = makeDeleteTestSessionSummary(sessionID: sessionID, title: "Processing chat")

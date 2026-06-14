@@ -3,6 +3,7 @@ name: release-macos-prod
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 concurrency:
   group: release-macos-prod-${{ github.ref }}
@@ -23,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Prepare Sparkle baseline directory
         shell: bash
@@ -32,7 +33,7 @@ jobs:
           mkdir -p "${BUILD_DIR}"
 
       - name: Fetch Sparkle appcast from R2
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         continue-on-error: true
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -64,7 +65,7 @@ jobs:
 
       - name: Fetch previous Sparkle update from R2
         if: ${{ steps.baseline-meta.outputs.prev_key != '' && steps.baseline-meta.outputs.prev_name != '' }}
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         continue-on-error: true
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -75,7 +76,7 @@ jobs:
 
       - name: Upload Sparkle baseline artifacts
         if: ${{ steps.baseline-meta.outputs.has_baseline == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sparkle-baseline
           retention-days: 1
@@ -108,7 +109,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install mise tools
         uses: jdx/mise-action@v4
@@ -121,7 +122,7 @@ jobs:
           ./scripts/ci/resolve-version-from-tag.sh
 
       - name: Import macOS signing certificate
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@v7
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -130,7 +131,7 @@ jobs:
 
       - name: Download Sparkle baseline artifacts
         if: ${{ needs.fetch-sparkle-baseline.outputs.has_baseline == 'true' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sparkle-baseline
           path: .
@@ -149,7 +150,7 @@ jobs:
           ./scripts/ci/release-macos-prod.sh build-notarize
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prod-release
           retention-days: 1
@@ -158,31 +159,6 @@ jobs:
             ${{ env.BUILD_DIR }}/Voyager.dmg
             ${{ env.BUILD_DIR }}/Voyager-${{ steps.version.outputs.version }}.zip
             ${{ env.BUILD_DIR }}/appcast.xml
-
-      - name: Cleanup temp signing keychain
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          keychain="${SIGNING_KEYCHAIN}"
-          keychain_file="${keychain}.keychain"
-          keychain_db="${keychain}.keychain-db"
-
-          security delete-keychain "${keychain}" 2>/dev/null || true
-          security delete-keychain "${keychain_file}" 2>/dev/null || true
-          security delete-keychain "${keychain_db}" 2>/dev/null || true
-          security delete-keychain "${HOME}/Library/Keychains/${keychain}" 2>/dev/null || true
-          security delete-keychain "${HOME}/Library/Keychains/${keychain_file}" 2>/dev/null || true
-          security delete-keychain "${HOME}/Library/Keychains/${keychain_db}" 2>/dev/null || true
-
-          rm -f \
-            "${keychain}" \
-            "${keychain_file}" \
-            "${keychain_db}" \
-            "${HOME}/Library/Keychains/${keychain}" \
-            "${HOME}/Library/Keychains/${keychain_file}" \
-            "${HOME}/Library/Keychains/${keychain_db}" \
-            || true
 
   upload-release:
     name: Upload release artifacts (prod)
@@ -200,10 +176,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: prod-release
           path: ${{ env.BUILD_DIR }}
@@ -215,7 +191,7 @@ jobs:
           ./scripts/ci/release-macos-prod.sh generate-latest
 
       - name: Upload to R2 (version + latest)
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

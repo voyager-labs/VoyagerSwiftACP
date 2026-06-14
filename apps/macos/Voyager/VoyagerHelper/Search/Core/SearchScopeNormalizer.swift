@@ -1,6 +1,22 @@
 import Foundation
 
 enum SearchScopeNormalizer {
+    static func normalizeScopes(_ scopes: [String]) -> [String] {
+        var orderedUnique: [String] = []
+        var seen: Set<String> = []
+
+        for scope in scopes {
+            guard let normalized = normalizeOne(scope),
+                  seen.insert(normalized).inserted
+            else {
+                continue
+            }
+            orderedUnique.append(normalized)
+        }
+
+        return orderedUnique
+    }
+
     private static func normalizeOne(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -30,21 +46,5 @@ enum SearchScopeNormalizer {
             normalized.removeLast()
         }
         return normalized
-    }
-
-    static func normalizeScopes(_ scopes: [String]) -> [String] {
-        var orderedUnique: [String] = []
-        var seen: Set<String> = []
-
-        for scope in scopes {
-            guard let normalized = normalizeOne(scope),
-                  seen.insert(normalized).inserted
-            else {
-                continue
-            }
-            orderedUnique.append(normalized)
-        }
-
-        return orderedUnique
     }
 }

@@ -41,8 +41,7 @@ extension ConditionChipValueSectionView {
         currentText: String,
         index: Int,
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
-        operatorCode: String,
-        valueUIKind: String,
+        prepareConfig: (operatorCode: String, valueUIKind: String),
     ) -> some View {
         let isPresented = Binding<Bool>(
             get: { boolPopoverIndex == index },
@@ -54,8 +53,8 @@ extension ConditionChipValueSectionView {
 
         return Button {
             sendPrepare(
-                operatorCode: operatorCode,
-                valueUIKind: valueUIKind,
+                operatorCode: prepareConfig.operatorCode,
+                valueUIKind: prepareConfig.valueUIKind,
                 valueArity: 1,
                 editingIndex: index,
                 existingValues: condition.values,

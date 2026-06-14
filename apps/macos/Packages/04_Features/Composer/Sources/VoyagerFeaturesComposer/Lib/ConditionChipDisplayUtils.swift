@@ -1,21 +1,31 @@
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerShared
 
 enum ConditionChipDisplayUtils {
+    /// date picker 상태 캡슐화
+    struct DatePickerState: Equatable {
+        var propertyKey: String?
+        var presented: Bool
+        var values: [String]
+        var dateValueState: DateValueState?
+    }
+
     static func displayValueText(for condition: Condition, displayValues: [String]? = nil) -> String {
         let values = displayValues ?? condition.values
         guard let values, !values.isEmpty else { return "Value" }
 
         if condition.valueType == "date" || condition.valueType == "datetime" {
-            let first = ValueNormalizerUtils.formatDateOnlyString(values[0]) ?? values[0]
             if values.count >= 2 {
-                let second = ValueNormalizerUtils.formatDateOnlyString(values[1]) ?? values[1]
+                let first = absoluteDateText(values[0])
+                let second = absoluteDateText(values[1])
                 if first == second {
                     return first
                 }
                 return first + " ~ " + second
             }
-            return first
+
+            return displayDateValueText(values[0])
         }
 
         if values.count >= 2 {
@@ -40,13 +50,49 @@ enum ConditionChipDisplayUtils {
     static func displayedValuesForDate(
         conditionValues: [String]?,
         conditionPropertyKey: String,
-        pickerPropertyKey: String?,
-        pickerPresented: Bool,
-        pickerValues: [String],
+        pickerState: DatePickerState,
     ) -> [String]? {
-        if pickerPresented, pickerPropertyKey == conditionPropertyKey {
-            return pickerValues
+        if pickerState.presented, pickerState.propertyKey == conditionPropertyKey {
+            if let dateValueState = pickerState.dateValueState, pickerState.values.count <= 1 {
+                return [dateValueState.displayText()]
+            }
+            if pickerState.values.count >= 2 {
+                return pickerState.values.map(absoluteDateText)
+            }
+            return pickerState.values.map(displayDateValueText)
         }
-        return conditionValues
+
+        guard let conditionValues else { return nil }
+        if conditionValues.count >= 2 {
+            return conditionValues.map(absoluteDateText)
+        }
+        return conditionValues.map(displayDateValueText)
+    }
+
+    static func displayDateValueText(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        if trimmed == AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral {
+            return "Ever opened"
+        }
+
+        if let literal = RelativeDateConditionLiteral(canonicalLiteral: trimmed) {
+            return literal.displayText()
+        }
+
+        guard let date = ValueNormalizerUtils.parseDate(trimmed) else {
+            return trimmed
+        }
+
+        if DateNormalizerUtils.formatDateOnly(date) == DateNormalizerUtils.formatDateOnly(Date()) {
+            return "Today"
+        }
+
+        return DateNormalizerUtils.formatDateOnly(date)
+    }
+
+    private static func absoluteDateText(_ value: String) -> String {
+        ValueNormalizerUtils.formatDateOnlyString(value) ?? value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

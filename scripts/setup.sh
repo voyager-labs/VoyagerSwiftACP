@@ -12,4 +12,7 @@ mise trust -q 2>/dev/null || true
 echo "📦 mise run setup 실행 중..."
 mise run setup
 
+echo "🔌 RTK OpenCode plugin 설치 중..."
+mise exec -- rtk init -g --opencode 2>/dev/null || echo "  (skip — RTK not ready)"
+
 echo "✅ setup 완료"

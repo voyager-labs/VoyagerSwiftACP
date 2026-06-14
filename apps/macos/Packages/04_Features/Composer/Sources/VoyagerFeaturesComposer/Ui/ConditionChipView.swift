@@ -65,6 +65,7 @@ struct ConditionChipView: View {
                                 : .clear)
                             .frame(width: 14, height: 14),
                     )
+                    .accessibilityLabel("Remove condition")
             }
             .buttonStyle(.borderless)
             .padding(2)

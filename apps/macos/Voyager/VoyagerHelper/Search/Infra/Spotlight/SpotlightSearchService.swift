@@ -1,3 +1,4 @@
+// swiftformat:disable modifierOrder
 import CoreServices
 import Darwin
 import Foundation
@@ -59,22 +60,12 @@ struct SpotlightSearchService: SearchExecutionServicing {
 
         let scopeURLs = resolveFilterScopeURLs(prepared.scopes)
         let normalizedFilterScopes = SearchScopeNormalizer.normalizeScopes(prepared.scopes)
-        let paths: [String] = if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
-            try executionEngine.loadPaths(
-                queryString: compiledPlan.predicate,
-                scopes: scopeURLs,
-                limit: maxCandidates,
-            )
-        } else {
-            try executionEngine.loadPaths(
-                queryString: compiledPlan.predicate,
-                scopes: scopeURLs,
-                limit: maxCandidates,
-                shouldIncludePath: { path in
-                    pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
-                },
-            )
-        }
+        let paths = try loadFilterCandidatePaths(
+            filters: filters,
+            compiledPlan: compiledPlan,
+            scopeURLs: scopeURLs,
+            normalizedFilterScopes: normalizedFilterScopes,
+        )
         let filteredPaths = filterPaths(
             paths,
             scopes: prepared.scopes,
@@ -88,8 +79,11 @@ struct SpotlightSearchService: SearchExecutionServicing {
 
         let items = makeJSONItems(from: filteredPaths)
 
-        logger.info(
-            "MDQuery applyFilters completed: id=\(requestId) scopes=\(scopeURLs.count) pushdown_conditions=\(compiledPlan.pushdownConditions.count) items=\(items.count)",
+        logApplyFiltersCompleted(
+            requestId: requestId,
+            scopeCount: scopeURLs?.count ?? 0,
+            pushdownConditionCount: compiledPlan.pushdownConditions.count,
+            itemCount: items.count,
         )
 
         return SearchResponsePayload(
@@ -105,8 +99,49 @@ struct SpotlightSearchService: SearchExecutionServicing {
         )
     }
 
+    private func loadFilterCandidatePaths(
+        filters: SearchFiltersPayload,
+        compiledPlan: SpotlightQueryCompiler.CompilePlan,
+        scopeURLs: [URL]?,
+        normalizedFilterScopes: [String],
+    ) throws -> [String] {
+        if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
+            return try executionEngine.loadPaths(
+                queryString: compiledPlan.predicate,
+                scopes: scopeURLs,
+                limit: maxCandidates,
+            )
+        }
+
+        return try executionEngine.loadPaths(
+            queryString: compiledPlan.predicate,
+            scopes: scopeURLs,
+            limit: maxCandidates,
+            shouldIncludePath: { path in
+                pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
+            },
+        )
+    }
+
+    private func logApplyFiltersCompleted(
+        requestId: String,
+        scopeCount: Int,
+        pushdownConditionCount: Int,
+        itemCount: Int,
+    ) {
+        logger.info(
+            "MDQuery applyFilters completed",
+            metadata: [
+                "id": .string(requestId),
+                "scopes": .stringConvertible(scopeCount),
+                "pushdown_conditions": .stringConvertible(pushdownConditionCount),
+                "items": .stringConvertible(itemCount),
+            ],
+        )
+    }
+
     func searchRecent(_ request: RecentSearchRequestPayload) async throws -> RecentSearchResponsePayload {
-        let predicate = "kMDItemLastUsedDate > $time.today(-1000000)"
+        let predicate = "kMDItemLastUsedDate > \(AppliedFilterValueUtils.recentsSinceAnyOpenedLiteral)"
         let matches = try executionEngine.loadMatches(
             queryString: predicate,
             scopes: resolveMetadataScopeURLs(mode: request.scopeMode, scopes: request.scopes),
@@ -181,10 +216,10 @@ extension SpotlightSearchService {
         return "kMDItemUserTags == \"\(escapedTag)\"c || kMDItemUserTags == \"*\(escapedTag)*\"c"
     }
 
-    func resolveFilterScopeURLs(_ scopes: [String]) -> [URL] {
+    func resolveFilterScopeURLs(_ scopes: [String]) -> [URL]? {
         let normalized = SearchScopeNormalizer.normalizeScopes(scopes)
         if normalized.isEmpty {
-            return [defaultScopeURL().standardizedFileURL]
+            return nil
         }
         return normalized.map { URL(fileURLWithPath: $0).standardizedFileURL }
     }

@@ -2,7 +2,6 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
-import VoyagerFeaturesEntryOperations
 
 @Reducer
 struct FileManagerContentSyncReducer {
@@ -25,16 +24,10 @@ struct FileManagerContentSyncReducer {
                     guard pathsAffectCurrentFolder(paths, currentPath: path) else {
                         return .none
                     }
-                    return reloadEntryItemsEffect(
-                        navigationState: state.navigation.navigationState,
-                        showHidden: state.entryViewLayout.showHiddenFiles,
-                    )
+                    return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
 
                 case .recents, .tags, .computer:
-                    return reloadEntryItemsEffect(
-                        navigationState: state.navigation.navigationState,
-                        showHidden: state.entryViewLayout.showHiddenFiles,
-                    )
+                    return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
                 }
 
             default:
@@ -88,23 +81,5 @@ struct FileManagerContentSyncReducer {
 
         let packagePrefix = normalizedOpenedPath == "/" ? "/" : normalizedOpenedPath + "/"
         return normalizedPath.hasPrefix(packagePrefix)
-    }
-
-    private func reloadEntryItemsEffect(
-        navigationState: ContentPageNavigationRoute,
-        showHidden: Bool,
-    ) -> Effect<Action> {
-        switch navigationState {
-        case let .folder(path):
-            .send(.entryViewLayout(.entryOperations(.loading(.loadItems(path: path, showHidden: showHidden)))))
-        case .recents:
-            .send(.entryViewLayout(.entryOperations(.loading(.loadRecentItems(showHidden: showHidden)))))
-        case let .tags(tagName):
-            .send(.entryViewLayout(.entryOperations(.loading(.loadTagItems(tagName: tagName, showHidden: showHidden)))))
-        case .computer:
-            .send(.entryViewLayout(.entryOperations(.loading(.loadComputerItems))))
-        case .collection:
-            .none
-        }
     }
 }

@@ -1,3 +1,4 @@
+// swiftformat:disable modifierOrder
 import ComposableArchitecture
 import Foundation
 import Logging
@@ -87,6 +88,17 @@ public struct ComposerFeature {
                     state.transientFeedback = nil
                 }
                 return .none
+
+            case let .internal(.presentTransientFeedback(feedback)):
+                state.transientFeedback = feedback
+                return .concatenate(
+                    .cancel(id: CancelID.feedbackDismiss),
+                    .run { [feedbackID = feedback.id] send in
+                        try await Task.sleep(for: .seconds(4))
+                        await send(.internal(.dismissTransientFeedback(feedbackID)))
+                    }
+                    .cancellable(id: CancelID.feedbackDismiss, cancelInFlight: true),
+                )
 
             case .view(.submit),
                  .view(.cancelSearch),
@@ -344,15 +356,18 @@ func applyFiltersIfNeeded(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
     requestID: UUID = UUID(),
+    metricSource: String = ComposerCollectionFilterMetrics.sourceManualApply,
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = requestID
+    state.activeFiltersMetricSource = metricSource
     let filters = buildFilters(from: state)
     guard !filters.scopes.isEmpty || !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil
+        state.activeFiltersMetricSource = nil
         state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters)
     }

@@ -71,6 +71,7 @@ struct GeneralSettingsView: View {
                                     HStack {
                                         Image(systemName: selected.iconName)
                                             .frame(width: 14, height: 14)
+                                            .accessibilityHidden(true)
                                         Text("\(selected.displayName) (default)")
                                     }
                                 },
@@ -90,6 +91,7 @@ struct GeneralSettingsView: View {
                                     HStack {
                                         Image(systemName: selected.iconName)
                                             .frame(width: 14, height: 14)
+                                            .accessibilityHidden(true)
                                         Text("\(selected.displayName) (default)")
                                     }
                                 },
@@ -107,6 +109,7 @@ struct GeneralSettingsView: View {
                                     HStack {
                                         Image(systemName: option.iconName)
                                             .frame(width: 14, height: 14)
+                                            .accessibilityHidden(true)
                                         Text(option.displayName)
                                     }
                                 },
@@ -122,10 +125,12 @@ struct GeneralSettingsView: View {
                         HStack(spacing: 4) {
                             Image(systemName: store.selectedDirectoryOption.iconName)
                                 .frame(width: 14, height: 14)
+                                .accessibilityHidden(true)
                             Text(store.selectedDirectoryOption.displayName)
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
+                                .accessibilityHidden(true)
                         }
                     }
                     .buttonStyle(.plain)

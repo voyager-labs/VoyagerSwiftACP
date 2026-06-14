@@ -3,10 +3,16 @@ import Foundation
 nonisolated public struct SearchRequestPayload: Codable, Equatable, Sendable {
     public let query: String
     public let filters: SearchFiltersPayload
+    public let collectionSearchAISettings: CollectionSearchAISettingsPayload?
 
-    public init(query: String, filters: SearchFiltersPayload) {
+    public init(
+        query: String,
+        filters: SearchFiltersPayload,
+        collectionSearchAISettings: CollectionSearchAISettingsPayload? = nil,
+    ) {
         self.query = query
         self.filters = filters
+        self.collectionSearchAISettings = collectionSearchAISettings
     }
 }
 
@@ -25,14 +31,28 @@ nonisolated public struct SearchFiltersPayload: Codable, Equatable, Sendable {
 
     public init(
         scopes: [String],
+        conditions: [SearchConditionPayload],
         excludedScopes: [String] = [],
         includeSubfolders: Bool = true,
-        conditions: [SearchConditionPayload],
     ) {
         self.scopes = scopes
         self.excludedScopes = excludedScopes
         self.includeSubfolders = includeSubfolders
         self.conditions = conditions
+    }
+
+    public init(
+        scopes: [String],
+        excludedScopes: [String],
+        includeSubfolders: Bool,
+        conditions: [SearchConditionPayload],
+    ) {
+        self.init(
+            scopes: scopes,
+            conditions: conditions,
+            excludedScopes: excludedScopes,
+            includeSubfolders: includeSubfolders,
+        )
     }
 
     public init(from decoder: Decoder) throws {
@@ -78,22 +98,46 @@ nonisolated public struct FiltersOnlyRequestPayload: Codable, Equatable, Sendabl
     }
 }
 
+nonisolated public enum SearchQueryConversionOutcomePayload: String, Codable, Equatable, Sendable {
+    case generatedChangeSet
+    case unchangedResult
+    case fallbackReuse
+    case providerNotConfigured
+    case invalidCredential
+    case providerUnavailable
+    case networkFailure
+    case conversionFailure
+}
+
+nonisolated public struct SearchQueryConversionMetadataPayload: Codable, Equatable, Sendable {
+    public let outcome: SearchQueryConversionOutcomePayload
+
+    public init(
+        outcome: SearchQueryConversionOutcomePayload,
+    ) {
+        self.outcome = outcome
+    }
+}
+
 nonisolated public struct SearchResponsePayload: Codable, Equatable, Sendable {
     public let itemCount: Int
     public let appliedFilters: AppliedFiltersPayload?
     public let items: [JSONValue]?
     public let error: SearchErrorPayload?
+    public let queryConversion: SearchQueryConversionMetadataPayload?
 
     public init(
         itemCount: Int,
         appliedFilters: AppliedFiltersPayload? = nil,
         items: [JSONValue]? = nil,
         error: SearchErrorPayload? = nil,
+        queryConversion: SearchQueryConversionMetadataPayload? = nil,
     ) {
         self.itemCount = itemCount
         self.appliedFilters = appliedFilters
         self.items = items
         self.error = error
+        self.queryConversion = queryConversion
     }
 }
 
