@@ -18,7 +18,7 @@ public struct AIConnectionsFileClient: Sendable {
     public var save: @Sendable (AIConnectionsFile) async throws -> AiConnectionMutationResult
     public var deleteCredential: @Sendable (AiProvider) async throws -> AiConnectionMutationResult
 
-    public nonisolated init(
+    nonisolated public init(
         load: @escaping @Sendable () async throws -> AIConnectionsFile,
         save: @escaping @Sendable (AIConnectionsFile) async throws -> AiConnectionMutationResult,
         deleteCredential: @escaping @Sendable (AiProvider) async throws -> AiConnectionMutationResult,
@@ -30,7 +30,7 @@ public struct AIConnectionsFileClient: Sendable {
 }
 
 extension AIConnectionsFileClient: DependencyKey {
-    public nonisolated static var liveValue: AIConnectionsFileClient {
+    nonisolated public static var liveValue: AIConnectionsFileClient {
         let store = AIConnectionFileStore.withDefaultHome()
 
         return AIConnectionsFileClient(
@@ -64,7 +64,7 @@ extension AIConnectionsFileClient: DependencyKey {
         )
     }
 
-    public nonisolated static func liveForRepoRoot(
+    nonisolated public static func liveForRepoRoot(
         repoRootURL: URL,
         fileManager: FileManager = .default,
     ) -> AIConnectionsFileClient {
@@ -99,7 +99,7 @@ extension AIConnectionsFileClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: AIConnectionsFileClient {
+    nonisolated public static var testValue: AIConnectionsFileClient {
         AIConnectionsFileClient(
             load: { AIConnectionsFile.empty() },
             save: { .success($0) },
@@ -107,7 +107,7 @@ extension AIConnectionsFileClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: AIConnectionsFileClient {
+    nonisolated public static var previewValue: AIConnectionsFileClient {
         AIConnectionsFileClient(
             load: {
                 AIConnectionsFile(

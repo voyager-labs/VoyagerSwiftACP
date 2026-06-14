@@ -8,11 +8,9 @@ import XCTest
 // context freeze, history truncation, persistence failure, session switch cancellation, snapshot redaction contract를
 // 보존한다.
 
-// swiftlint:disable type_body_length
 @MainActor
 final class AiChatFeatureExecutionContinuationTests: XCTestCase {
-    // 다른 session을 열람해도 기존 request는 원 session에서 완료되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// 다른 session을 열람해도 기존 request는 원 session에서 완료되는지 검증
     func testSwitchingToDifferentSessionPreservesCurrentRequestAndSavesOriginalSessionCompletion() async {
         let activeSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111221"))
         let targetSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222221"))
@@ -258,8 +256,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(persistence.snapshots, [expectedStartSnapshot, expectedOriginalSnapshot])
     }
 
-    // back-to-sessions 후 같은 session 재진입과 off-chat final completion을 보존하는지 검증
-    // swiftlint:disable:next function_body_length
+    /// back-to-sessions 후 같은 session 재진입과 off-chat final completion을 보존하는지 검증
     func testInFlightChatContinuesFromSessionHistoryAndUpdatesSessionRow() async {
         let stream = AiChatExecutionStreamDriver()
         let persistence = AiChatSessionPersistenceSpy()
@@ -426,8 +423,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(persistence.snapshots, [expectedStartSnapshot, expectedFinalSnapshot])
     }
 
-    // session 저장 실패가 recovery state로 전환되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// session 저장 실패가 recovery state로 전환되는지 검증
     func testPersistenceFailureCreatesRecoveryState() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -618,8 +614,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
     }
 
-    // session snapshot 저장 시 provider-native binary payload metadata가 제거되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// session snapshot 저장 시 provider-native binary payload metadata가 제거되는지 검증
     func testMakeSessionSnapshotDropsProviderNativeBinaryPayloadMetadata() throws {
         let feature = makeFeatureWithFrozenRequestDependencies()
         let catalogRows = makeCatalogRows()
@@ -741,8 +736,7 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(lock.context.requestContext.parts[0].resolution, requestContext.parts[0].resolution)
     }
 
-    // submit 시 context timing과 deterministic history truncation이 고정되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// submit 시 context timing과 deterministic history truncation이 고정되는지 검증
     func testSubmitFreezesContextTimingAndDeterministicHistoryTruncation() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -869,8 +863,6 @@ final class AiChatFeatureExecutionContinuationTests: XCTestCase {
         XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello empty context")])
     }
 }
-
-// swiftlint:enable type_body_length
 
 @MainActor
 private func waitUntil(

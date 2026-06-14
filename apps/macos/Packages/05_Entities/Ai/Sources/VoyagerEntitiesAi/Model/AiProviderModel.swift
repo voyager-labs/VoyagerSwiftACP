@@ -67,7 +67,8 @@ public enum AiModelDisplayNameFormatter {
         }
 
         if let trimmedDisplayName = providerDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !trimmedDisplayName.isEmpty {
+           !trimmedDisplayName.isEmpty
+        {
             return trimmedDisplayName
         }
 

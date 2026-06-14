@@ -27,8 +27,7 @@ public enum CollectionSnapshotHydration {
             query: normalizedQuery,
             scopes: normalizedScopes,
             excludedScopes: normalizedExcludedScopes,
-            includeSubfolders: includeSubfolders,
-            includeDirectories: includeDirectories,
+            directoryPolicy: (includeSubfolders: includeSubfolders, includeDirectories: includeDirectories),
             conditions: normalizedConditions,
         )
     }
@@ -197,16 +196,15 @@ public enum CollectionSnapshotHydration {
         query: String,
         scopes: [String],
         excludedScopes: [String],
-        includeSubfolders: Bool,
-        includeDirectories: Bool,
+        directoryPolicy: (includeSubfolders: Bool, includeDirectories: Bool),
         conditions: [String],
     ) -> String {
         let canonical = [
             query,
             scopes.joined(separator: "\u{1D}"),
             excludedScopes.joined(separator: "\u{1E}"),
-            includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
-            includeDirectories ? "includeDirectories:true" : "includeDirectories:false",
+            directoryPolicy.includeSubfolders ? "includeSubfolders:true" : "includeSubfolders:false",
+            directoryPolicy.includeDirectories ? "includeDirectories:true" : "includeDirectories:false",
             conditions.joined(separator: "\u{1C}"),
         ].joined(separator: "\u{1B}")
 

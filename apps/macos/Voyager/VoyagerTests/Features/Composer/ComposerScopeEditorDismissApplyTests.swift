@@ -6,7 +6,6 @@ import XCTest
 
 @MainActor
 final class ComposerScopeEditorDismissApplyTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     func testScopeEditorDismissReappliesFiltersWhenIncludeSubfoldersChanged() async throws {
         let applyRecorder = DismissApplyFiltersRecorder()
 
@@ -104,7 +103,6 @@ final class ComposerScopeEditorDismissApplyTests: XCTestCase {
         XCTAssertEqual(store.state.lastScopeChangeFeedback?.pendingResultRequest, .filters(activeFiltersRequestID))
     }
 
-    // swiftlint:disable:next function_body_length
     func testScopeEditorDismissReappliesFiltersForScopeOnlyCollectionChange() async {
         let applyRecorder = DismissApplyFiltersRecorder()
 
@@ -173,7 +171,6 @@ final class ComposerScopeEditorDismissApplyTests: XCTestCase {
         XCTAssertEqual(recordedRequest?.filters.conditions, [])
     }
 
-    // swiftlint:disable:next function_body_length
     func testScopeEditorDismissReappliesFiltersWhenScopeChanged() async throws {
         let applyRecorder = DismissApplyFiltersRecorder()
 

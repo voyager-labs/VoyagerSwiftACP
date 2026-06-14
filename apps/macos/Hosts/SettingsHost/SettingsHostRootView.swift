@@ -22,10 +22,10 @@ public struct SettingsHostRootView: View {
         }
     }
 
-    @ViewBuilder
     private func noticeBanner(_ notice: String) -> some View {
         HStack {
             Image(systemName: "info.circle.fill")
+                .accessibilityLabel("Notice")
                 .foregroundStyle(.blue)
             Text(notice)
                 .font(.footnote)

@@ -10,7 +10,7 @@ public struct ProviderSnapshotFile: Equatable, Sendable {
     public init(
         lastKnownStatus: ProviderConnectionState,
         lastVerifiedAtMs: Int64? = nil,
-        lastErrorCode: ProviderStatusReason = .none
+        lastErrorCode: ProviderStatusReason = .none,
     ) {
         self.lastKnownStatus = lastKnownStatus
         self.lastVerifiedAtMs = lastVerifiedAtMs
@@ -31,9 +31,9 @@ public struct ProviderRecordFile: Equatable, Sendable {
     public init(
         providerId: AiProvider,
         authMethod: ProviderAuthMethod,
-        credential: StoredCredentialPayload? = nil,
         snapshot: ProviderSnapshotFile,
-        provenance: ProviderConnectPath? = nil
+        credential: StoredCredentialPayload? = nil,
+        provenance: ProviderConnectPath? = nil,
     ) {
         self.providerId = providerId
         self.authMethod = authMethod
@@ -42,13 +42,29 @@ public struct ProviderRecordFile: Equatable, Sendable {
         self.provenance = provenance
     }
 
+    public init(
+        providerId: AiProvider,
+        authMethod: ProviderAuthMethod,
+        credential: StoredCredentialPayload?,
+        snapshot: ProviderSnapshotFile,
+        provenance: ProviderConnectPath? = nil,
+    ) {
+        self.init(
+            providerId: providerId,
+            authMethod: authMethod,
+            snapshot: snapshot,
+            credential: credential,
+            provenance: provenance,
+        )
+    }
+
     public var redacted: ProviderRecordFile {
         ProviderRecordFile(
             providerId: providerId,
             authMethod: authMethod,
-            credential: credential?.redacted,
             snapshot: snapshot,
-            provenance: provenance
+            credential: credential?.redacted,
+            provenance: provenance,
         )
     }
 }

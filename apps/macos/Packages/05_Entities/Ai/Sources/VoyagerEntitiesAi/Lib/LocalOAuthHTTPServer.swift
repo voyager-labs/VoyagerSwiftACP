@@ -2,13 +2,13 @@ import Foundation
 import Network
 
 /// The result of a successful OAuth callback.
-struct OAuthCallbackResult: Sendable {
+struct OAuthCallbackResult {
     let code: String
     let state: String
 }
 
 /// Errors that can occur during the local OAuth callback.
-enum OAuthCallbackError: Error, Sendable, Equatable {
+enum OAuthCallbackError: Error, Equatable {
     case cancelled
     case invalidCallback(String)
     case accessDenied(String)

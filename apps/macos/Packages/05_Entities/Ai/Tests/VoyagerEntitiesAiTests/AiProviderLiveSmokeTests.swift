@@ -10,15 +10,19 @@ final class AiProviderLiveSmokeTests: XCTestCase {
     private func liveSecret(
         envVar: String,
         file: StaticString = #filePath,
-        line: UInt = #line
+        line: UInt = #line,
     ) throws -> String {
         try XCTSkipIf(
             ProcessInfo.processInfo.environment[envVar]?.isEmpty ?? true,
             "Environment variable \(envVar) not set — skipping live smoke test",
             file: file,
-            line: line
+            line: line,
         )
-        return ProcessInfo.processInfo.environment[envVar]!
+        guard let value = ProcessInfo.processInfo.environment[envVar], !value.isEmpty else {
+            XCTFail("Environment variable \(envVar) unexpectedly nil after XCTSkipIf", file: file, line: line)
+            fatalError("unreachable after XCTFail")
+        }
+        return value
     }
 
     // MARK: - OpenAI
@@ -40,10 +44,10 @@ final class AiProviderLiveSmokeTests: XCTestCase {
         }
     }
 
-    func testLiveVerify_openAI_invalidKey() async throws {
+    func testLiveVerify_openAI_invalidKey() async {
         let client = makeRuntimeClient()
         let credential = StoredCredentialPayload.apiKey(
-            APIKeyCredentialFile(secret: "sk-clearly-invalid-test-key")
+            APIKeyCredentialFile(secret: "sk-clearly-invalid-test-key"),
         )
         let result = await client.verifyProvider(.openai, credential)
         switch result {
@@ -77,10 +81,10 @@ final class AiProviderLiveSmokeTests: XCTestCase {
         }
     }
 
-    func testLiveVerify_anthropic_invalidKey() async throws {
+    func testLiveVerify_anthropic_invalidKey() async {
         let client = makeRuntimeClient()
         let credential = StoredCredentialPayload.apiKey(
-            APIKeyCredentialFile(secret: "sk-ant-clearly-invalid-test-key")
+            APIKeyCredentialFile(secret: "sk-ant-clearly-invalid-test-key"),
         )
         let result = await client.verifyProvider(.anthropic, credential)
         switch result {
@@ -97,11 +101,11 @@ final class AiProviderLiveSmokeTests: XCTestCase {
 
     // MARK: - Codex OAuth (non-interactive fixture not available)
 
-    func testLiveVerify_codexOAuth_skipped() async throws {
+    func testLiveVerify_codexOAuth_skipped() throws {
         try XCTSkipIf(
             true,
             "Codex OAuth requires interactive browser login — " +
-                "no non-interactive fixture available for automated smoke testing"
+                "no non-interactive fixture available for automated smoke testing",
         )
     }
 }

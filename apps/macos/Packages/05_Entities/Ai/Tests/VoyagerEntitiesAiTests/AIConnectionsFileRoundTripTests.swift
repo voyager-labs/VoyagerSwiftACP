@@ -2,8 +2,13 @@
 import XCTest
 
 final class AIConnectionsFileRoundTripTests: XCTestCase {
-    private var encoder: JSONEncoder { .init() }
-    private var decoder: JSONDecoder { .init() }
+    private var encoder: JSONEncoder {
+        .init()
+    }
+
+    private var decoder: JSONDecoder {
+        .init()
+    }
 
     func testEmptyFileRoundTrip() throws {
         let original = AIConnectionsFile.empty()

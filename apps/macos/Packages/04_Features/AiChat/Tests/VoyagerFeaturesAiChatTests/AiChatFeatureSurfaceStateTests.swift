@@ -6,7 +6,6 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureSurfaceStateTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     func testSurfaceStateCoversEmptyReadyProcessingAndError() {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
@@ -22,7 +21,7 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         if case let .empty(summaryDisplay, selectedModel) = emptyState.surfaceState {
@@ -50,7 +49,7 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         if case let .empty(summaryDisplay, selectedModel) = currentContextInitialState.surfaceState {
@@ -80,7 +79,7 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .idle
+            executionPhase: .idle,
         )
 
         if case let .ready(summaryDisplay, selectedModel) = readyState.surfaceState {
@@ -114,14 +113,14 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: catalogRows[1].handle,
-                        selectedRow: catalogRows[1]
+                        selectedRow: catalogRows[1],
                     ),
-                    messages: []
+                    messages: [],
                 ),
                 selectedHandle: catalogRows[1].handle,
                 selectedRow: catalogRows[1],
-                assistantReplacementIndex: nil
-            ))
+                assistantReplacementIndex: nil,
+            )),
         )
 
         if case let .processing(processing, _, selectedModel) = processingState.surfaceState {
@@ -154,7 +153,7 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             selectedModelHandle: nil,
             lockedModelHandle: catalogRows[1].handle,
             lastExecutionFailure: nil,
-            executionPhase: processingState.executionPhase
+            executionPhase: processingState.executionPhase,
         )
 
         if case let .processing(processing, _, selectedModel) = refreshedProcessingState.surfaceState {
@@ -186,14 +185,14 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: selectedHandle,
-                        selectedRow: catalogRows[0]
+                        selectedRow: catalogRows[0],
                     ),
-                    messages: []
+                    messages: [],
                 ),
                 selectedHandle: selectedHandle,
                 selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil
-            ), .transportError)
+                assistantReplacementIndex: nil,
+            ), .transportError),
         )
 
         if case let .ready(_, selectedModel) = errorState.surfaceState {
@@ -219,16 +218,16 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
                 requestID: AiChatRequestID(rawValue: UUID()),
                 runID: AiChatRunID(rawValue: UUID()),
                 model: selectedHandle,
-                selectedRow: catalogRows[0]
+                selectedRow: catalogRows[0],
             ),
-            messages: []
+            messages: [],
         )
         let lock = makeRequestLock(
             kind: .submit,
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
         let disconnectedState = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -236,14 +235,14 @@ final class AiChatFeatureSurfaceStateTests: XCTestCase {
             currentContext: makeContextSnapshot(),
             transcriptHistory: [
                 AiChatMessage(role: .user, content: "Hello"),
-                AiChatMessage(role: .assistant, content: "Hi")
+                AiChatMessage(role: .assistant, content: "Hi"),
             ],
             draftText: "Follow up",
             catalogRows: [],
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .completed(lock)
+            executionPhase: .completed(lock),
         )
 
         if case let .ready(summary, selectedModel) = disconnectedState.surfaceState {

@@ -36,7 +36,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
             response: response,
             expectedContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
             openedURL: url,
-            wasDirtyBeforeApplyingResponse: false,
             shouldWriteBack: true,
         )
         await receiveWriteBackSaveEffects(store)
@@ -78,7 +77,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
             response: response,
             expectedContext: .init(query: "report", scopes: ["/tmp/applied"], conditions: []),
             openedURL: url,
-            wasDirtyBeforeApplyingResponse: false,
             shouldWriteBack: true,
         )
         await receiveWriteBackSaveEffects(store)
@@ -146,7 +144,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
             response: response,
             expectedContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
             openedURL: URL(fileURLWithPath: "/tmp/dirty.voycoll"),
-            wasDirtyBeforeApplyingResponse: true,
             shouldWriteBack: false,
         )
 
@@ -194,7 +191,6 @@ final class FileManagerCollectionRefreshPolicyTests: XCTestCase {
             response: response,
             expectedContext: .init(query: "report", scopes: ["/tmp"], conditions: []),
             openedURL: URL(fileURLWithPath: "/tmp/fallback.voycoll"),
-            wasDirtyBeforeApplyingResponse: false,
             shouldWriteBack: false,
         )
 
@@ -286,7 +282,6 @@ private func receiveSuccessfulRefreshEffects(
     response _: VoyagerShared.SearchResponsePayload,
     expectedContext: CollectionContext,
     openedURL: URL,
-    wasDirtyBeforeApplyingResponse _: Bool,
     shouldWriteBack: Bool,
 ) async {
     await store.receive(\.composer.internal.updateLastFiltersResponse)

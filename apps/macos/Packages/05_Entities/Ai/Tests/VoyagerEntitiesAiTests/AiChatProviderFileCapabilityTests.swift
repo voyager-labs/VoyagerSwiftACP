@@ -4,14 +4,17 @@ import XCTest
 
 final class AiChatProviderFileCapabilityTests: XCTestCase {
     func testOpenAIPDFAllowedOnResponsesButBlockedByRouteAndModel() {
-        let allowed = lookup(
-            provider: .openai,
-            rawModelID: "gpt-5",
-            requestFamily: .openAIResponses,
+        let file = FileMeta(
             fileExtension: "pdf",
             mimeType: "application/pdf",
             contentTypeIdentifier: "com.adobe.pdf",
             sizeBytes: 512_000,
+        )
+        let allowed = lookup(
+            provider: .openai,
+            rawModelID: "gpt-5",
+            requestFamily: .openAIResponses,
+            file: file,
         )
         XCTAssertEqual(
             allowed.disposition,
@@ -22,10 +25,7 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
             provider: .openai,
             rawModelID: "gpt-5",
             requestFamily: .openAIChatCompletions,
-            fileExtension: "pdf",
-            mimeType: "application/pdf",
-            contentTypeIdentifier: "com.adobe.pdf",
-            sizeBytes: 512_000,
+            file: file,
         )
         XCTAssertEqual(blockedRoute.disposition, .fallback(.routeNotAllowlisted))
 
@@ -33,10 +33,7 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
             provider: .openai,
             rawModelID: "gpt-3.5-turbo",
             requestFamily: .openAIResponses,
-            fileExtension: "pdf",
-            mimeType: "application/pdf",
-            contentTypeIdentifier: "com.adobe.pdf",
-            sizeBytes: 512_000,
+            file: file,
         )
         XCTAssertEqual(blockedModel.disposition, .fallback(.modelNotAllowlisted))
     }
@@ -46,10 +43,12 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
             provider: .anthropic,
             rawModelID: "claude-sonnet-4-20250514",
             requestFamily: .anthropicMessages,
-            fileExtension: "docx",
-            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            contentTypeIdentifier: "org.openxmlformats.wordprocessingml.document",
-            sizeBytes: 128_000,
+            file: FileMeta(
+                fileExtension: "docx",
+                mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                contentTypeIdentifier: "org.openxmlformats.wordprocessingml.document",
+                sizeBytes: 128_000,
+            ),
         )
 
         XCTAssertEqual(decision.disposition, .fallback(.unknownExtension))
@@ -61,10 +60,12 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
             provider: .openai,
             rawModelID: "gpt-5",
             requestFamily: .openAIResponses,
-            fileExtension: "pdf",
-            mimeType: "text/plain",
-            contentTypeIdentifier: "public.plain-text",
-            sizeBytes: 1_024,
+            file: FileMeta(
+                fileExtension: "pdf",
+                mimeType: "text/plain",
+                contentTypeIdentifier: "public.plain-text",
+                sizeBytes: 1024,
+            ),
         )
         XCTAssertEqual(mismatchedPDF.disposition, .fallback(.mimeTypeMismatch))
 
@@ -72,10 +73,12 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
             provider: .openai,
             rawModelID: "gpt-5",
             requestFamily: .openAIResponses,
-            fileExtension: "txt",
-            mimeType: "application/octet-stream",
-            contentTypeIdentifier: nil,
-            sizeBytes: 1_024,
+            file: FileMeta(
+                fileExtension: "txt",
+                mimeType: "application/octet-stream",
+                contentTypeIdentifier: nil,
+                sizeBytes: 1024,
+            ),
         )
         XCTAssertEqual(octetStreamText.disposition, .fallback(.unknownMIMEType))
     }
@@ -85,10 +88,12 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
             provider: .openai,
             rawModelID: "gpt-5",
             requestFamily: .openAIResponses,
-            fileExtension: "foo",
-            mimeType: "text/plain",
-            contentTypeIdentifier: "public.plain-text",
-            sizeBytes: 2_048,
+            file: FileMeta(
+                fileExtension: "foo",
+                mimeType: "text/plain",
+                contentTypeIdentifier: "public.plain-text",
+                sizeBytes: 2048,
+            ),
         )
 
         XCTAssertEqual(decision.disposition, .fallback(.unknownExtension))
@@ -100,10 +105,12 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
             provider: .openai,
             rawModelID: "gpt-5",
             requestFamily: .openAIResponses,
-            fileExtension: "png",
-            mimeType: "image/png",
-            contentTypeIdentifier: "public.png",
-            sizeBytes: AiChatProviderFileCapability.nativeUploadSafeLimitBytes + 1,
+            file: FileMeta(
+                fileExtension: "png",
+                mimeType: "image/png",
+                contentTypeIdentifier: "public.png",
+                sizeBytes: AiChatProviderFileCapability.nativeUploadSafeLimitBytes + 1,
+            ),
         )
 
         XCTAssertEqual(decision.disposition, .fallback(.tooLargeForNative))
@@ -115,10 +122,12 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
             provider: .chatgptCodex,
             rawModelID: "gpt-5-codex",
             requestFamily: .codexCLI,
-            fileExtension: "pdf",
-            mimeType: "application/octet-stream",
-            contentTypeIdentifier: nil,
-            sizeBytes: 50 * 1024 * 1024,
+            file: FileMeta(
+                fileExtension: "pdf",
+                mimeType: "application/octet-stream",
+                contentTypeIdentifier: nil,
+                sizeBytes: 50 * 1024 * 1024,
+            ),
         )
 
         XCTAssertEqual(decision.disposition, .codexPathScope)
@@ -136,24 +145,28 @@ final class AiChatProviderFileCapabilityTests: XCTestCase {
         )
     }
 
+    private struct FileMeta {
+        let fileExtension: String?
+        let mimeType: String
+        let contentTypeIdentifier: String?
+        let sizeBytes: Int64
+    }
+
     private func lookup(
         provider: AiProvider,
         rawModelID: String,
         requestFamily: AiChatProviderRequestFamily,
-        fileExtension: String?,
-        mimeType: String,
-        contentTypeIdentifier: String?,
-        sizeBytes: Int64,
+        file: FileMeta,
     ) -> AiChatProviderFileCapabilityDecision {
         AiChatProviderFileCapability.lookup(
             AiChatProviderFileCapabilityLookup(
                 provider: provider,
                 rawModelID: rawModelID,
                 requestFamily: requestFamily,
-                fileExtension: fileExtension,
-                detectedMIMEType: mimeType,
-                detectedContentTypeIdentifier: contentTypeIdentifier,
-                sizeBytes: sizeBytes,
+                fileExtension: file.fileExtension,
+                detectedMIMEType: file.mimeType,
+                sizeBytes: file.sizeBytes,
+                detectedContentTypeIdentifier: file.contentTypeIdentifier,
             ),
         )
     }

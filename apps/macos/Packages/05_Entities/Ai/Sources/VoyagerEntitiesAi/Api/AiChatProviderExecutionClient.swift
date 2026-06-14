@@ -20,7 +20,7 @@ public struct AiChatProviderExecutionClient: Sendable {
     public var execute: @Sendable (AiChatRequest, StoredCredentialPayload?) throws
         -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error>
 
-    public nonisolated init(
+    nonisolated public init(
         execute: @escaping @Sendable (AiChatRequest, StoredCredentialPayload?) throws
             -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
     ) {
@@ -29,11 +29,11 @@ public struct AiChatProviderExecutionClient: Sendable {
 }
 
 extension AiChatProviderExecutionClient: DependencyKey {
-    public nonisolated static var liveValue: AiChatProviderExecutionClient {
+    nonisolated public static var liveValue: AiChatProviderExecutionClient {
         live()
     }
 
-    public nonisolated static var testValue: AiChatProviderExecutionClient {
+    nonisolated public static var testValue: AiChatProviderExecutionClient {
         AiChatProviderExecutionClient(
             execute: { request, credential in
                 let result = try AiChatProviderPreflight.prepare(request, credential: credential)
@@ -42,7 +42,7 @@ extension AiChatProviderExecutionClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: AiChatProviderExecutionClient {
+    nonisolated public static var previewValue: AiChatProviderExecutionClient {
         testValue
     }
 }
@@ -62,7 +62,7 @@ public extension AiChatProviderExecutionClient {
         live(session: session, now: now, codexExecutor: executeCodexCLI)
     }
 
-    internal nonisolated static func live(
+    nonisolated internal static func live(
         session: URLSession = .shared,
         now: @escaping @Sendable () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1000.0).rounded()) },
         codexExecutor: @escaping AiChatProviderCodexExecutor = executeCodexCLI,
@@ -72,7 +72,8 @@ public extension AiChatProviderExecutionClient {
         return AiChatProviderExecutionClient(
             execute: { request, credential in
                 NSLog(
-                    "[AiChatProviderExecution] Preparing provider request provider=%@ model=%@ requestID=%@ credentialPresent=%@",
+                    "[AiChatProviderExecution] Preparing provider request provider=%@ model=%@ "
+                        + "requestID=%@ credentialPresent=%@",
                     request.context.provider.rawValue,
                     request.context.selectedModel?.rawModelID ?? request.context.model.rawValue,
                     request.context.requestID.rawValue.uuidString,
@@ -84,7 +85,8 @@ public extension AiChatProviderExecutionClient {
                     result = try AiChatProviderPreflight.prepare(request, credential: credential)
                 } catch let error as AiChatProviderPreflightError {
                     NSLog(
-                        "[AiChatProviderExecution] Provider preflight failed provider=%@ model=%@ requestID=%@ reason=%@",
+                        "[AiChatProviderExecution] Provider preflight failed provider=%@ model=%@ "
+                            + "requestID=%@ reason=%@",
                         request.context.provider.rawValue,
                         request.context.selectedModel?.rawModelID ?? request.context.model.rawValue,
                         request.context.requestID.rawValue.uuidString,
@@ -94,7 +96,8 @@ public extension AiChatProviderExecutionClient {
                 }
 
                 NSLog(
-                    "[AiChatProviderExecution] Provider request prepared provider=%@ model=%@ requestID=%@ parts=%ld messages=%ld",
+                    "[AiChatProviderExecution] Provider request prepared provider=%@ model=%@ "
+                        + "requestID=%@ parts=%ld messages=%ld",
                     result.payload.provider.rawValue,
                     result.payload.rawModelID,
                     request.context.requestID.rawValue.uuidString,

@@ -102,6 +102,7 @@ struct ComposerBottomConditionRowView: View {
                                 .fill(isAddButtonHovering ? VoyagerDS.Interaction
                                     .controlHoverFill(for: colorScheme) : .clear),
                         )
+                        .accessibilityLabel("Add condition")
                 }
                 .buttonStyle(.borderless)
                 .onHover { hovering in

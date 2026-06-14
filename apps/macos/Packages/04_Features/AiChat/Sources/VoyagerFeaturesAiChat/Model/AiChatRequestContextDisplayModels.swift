@@ -22,7 +22,7 @@ public struct AiChatCurrentContextChipDisplayModel: Equatable, Sendable {
         iconAssetName: String? = nil,
         iconFilePath: String? = nil,
         folderStructureMode: AiChatFolderStructureMode? = nil,
-        supportsFolderStructureMode: Bool = false
+        supportsFolderStructureMode: Bool = false,
     ) {
         self.title = title
         self.detail = detail
@@ -35,7 +35,9 @@ public struct AiChatCurrentContextChipDisplayModel: Equatable, Sendable {
 }
 
 public struct AiChatAddedAttachmentChipDisplayModel: Identifiable, Equatable, Sendable {
-    public var id: AiChatAttachmentID { attachmentID }
+    public var id: AiChatAttachmentID {
+        attachmentID
+    }
 
     public var attachmentID: AiChatAttachmentID
     public var title: String
@@ -60,7 +62,7 @@ public struct AiChatAddedAttachmentChipDisplayModel: Identifiable, Equatable, Se
         iconAssetName: String? = nil,
         iconFilePath: String? = nil,
         folderStructureMode: AiChatFolderStructureMode? = nil,
-        supportsFolderStructureMode: Bool = false
+        supportsFolderStructureMode: Bool = false,
     ) {
         self.attachmentID = attachmentID
         self.title = title
@@ -84,7 +86,7 @@ public struct AiChatRequestContextDisplayModel: Equatable, Sendable {
     public init(
         source: AiChatRequestContextDisplaySource,
         currentContext: AiChatCurrentContextChipDisplayModel?,
-        addedAttachments: [AiChatAddedAttachmentChipDisplayModel]
+        addedAttachments: [AiChatAddedAttachmentChipDisplayModel],
     ) {
         self.source = source
         self.currentContext = currentContext

@@ -5,9 +5,17 @@ import Foundation
 final class AuthTestFixture {
     private let fixture: TemporaryHomeFixture
 
-    var homeURL: URL { fixture.homeURL }
-    var voyagerHomeURL: URL { fixture.voyagerHomeURL }
-    var authFileURL: URL { fixture.authFileURL }
+    var homeURL: URL {
+        fixture.homeURL
+    }
+
+    var voyagerHomeURL: URL {
+        fixture.voyagerHomeURL
+    }
+
+    var authFileURL: URL {
+        fixture.authFileURL
+    }
 
     init() throws {
         fixture = try TemporaryHomeFixture()
@@ -18,7 +26,7 @@ final class AuthTestFixture {
         try data.write(to: authFileURL, options: .atomic)
         try FileManager.default.setAttributes(
             [.posixPermissions: NSNumber(value: 0o600)],
-            ofItemAtPath: authFileURL.path
+            ofItemAtPath: authFileURL.path,
         )
     }
 
@@ -30,7 +38,7 @@ final class AuthTestFixture {
     /// Returns `true` when the auth file has `0o600` permissions.
     func authFileHasRestrictedPermissions() -> Bool {
         guard let attrs = try? FileManager.default.attributesOfItem(
-            atPath: authFileURL.path
+            atPath: authFileURL.path,
         ),
             let perms = attrs[.posixPermissions] as? UInt16
         else { return false }

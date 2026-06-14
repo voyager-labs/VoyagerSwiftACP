@@ -40,7 +40,7 @@ public struct AIProviderConnectionClient: Sendable {
         -> AiProviderConnectionResult
     public var disconnect: @Sendable (AiProvider) async -> AiProviderConnectionResult
 
-    public nonisolated init(
+    nonisolated public init(
         connectOAuth: @escaping @Sendable (AiProvider, OAuthCredentialFile, ProviderConnectionState) async
             -> AiProviderConnectionResult,
         connectAPIKey: @escaping @Sendable (AiProvider, String, ProviderConnectionState) async
@@ -54,12 +54,12 @@ public struct AIProviderConnectionClient: Sendable {
 }
 
 extension AIProviderConnectionClient: DependencyKey {
-    public nonisolated static var liveValue: AIProviderConnectionClient {
+    nonisolated public static var liveValue: AIProviderConnectionClient {
         let store = AIConnectionFileStore.withDefaultHome()
         return Self.persistenceClient(store: store)
     }
 
-    public nonisolated static func liveForRepoRoot(
+    nonisolated public static func liveForRepoRoot(
         repoRootURL: URL,
         fileManager: FileManager = .default,
     ) -> AIProviderConnectionClient {
@@ -70,7 +70,7 @@ extension AIProviderConnectionClient: DependencyKey {
         return Self.persistenceClient(store: store)
     }
 
-    private nonisolated static func persistenceClient(
+    nonisolated private static func persistenceClient(
         store: AIConnectionFileStore,
     ) -> AIProviderConnectionClient {
         AIProviderConnectionClient(
@@ -80,7 +80,7 @@ extension AIProviderConnectionClient: DependencyKey {
         )
     }
 
-    private nonisolated static func connectOAuthHandler(
+    nonisolated private static func connectOAuthHandler(
         store: AIConnectionFileStore,
     ) -> @Sendable (AiProvider, OAuthCredentialFile, ProviderConnectionState) async -> AiProviderConnectionResult {
         { provider, credential, connectionState in
@@ -98,13 +98,12 @@ extension AIProviderConnectionClient: DependencyKey {
                 provider: provider,
                 authMethod: descriptor.authMethod,
                 credential: credentialPayload,
-                connectionState: connectionState,
-                reason: reason,
+                outcome: (connectionState: connectionState, reason: reason),
             )
         }
     }
 
-    private nonisolated static func connectAPIKeyHandler(
+    nonisolated private static func connectAPIKeyHandler(
         store: AIConnectionFileStore,
     ) -> @Sendable (AiProvider, String, ProviderConnectionState) async -> AiProviderConnectionResult {
         { provider, secret, connectionState in
@@ -122,13 +121,12 @@ extension AIProviderConnectionClient: DependencyKey {
                 provider: provider,
                 authMethod: descriptor.authMethod,
                 credential: credentialPayload,
-                connectionState: connectionState,
-                reason: reason,
+                outcome: (connectionState: connectionState, reason: reason),
             )
         }
     }
 
-    private nonisolated static func disconnectHandler(
+    nonisolated private static func disconnectHandler(
         store: AIConnectionFileStore,
     ) -> @Sendable (AiProvider) async -> AiProviderConnectionResult {
         { provider in
@@ -155,7 +153,7 @@ extension AIProviderConnectionClient: DependencyKey {
         }
     }
 
-    private nonisolated static func unsupportedProviderResult(provider: AiProvider) -> AiProviderConnectionResult {
+    nonisolated private static func unsupportedProviderResult(provider: AiProvider) -> AiProviderConnectionResult {
         AiProviderConnectionResult(
             provider: provider,
             state: .connectionFailed,
@@ -164,22 +162,23 @@ extension AIProviderConnectionClient: DependencyKey {
         )
     }
 
-    private nonisolated static func persistAndReturn(
+    nonisolated private static func persistAndReturn(
         store: AIConnectionFileStore,
         provider: AiProvider,
         authMethod: ProviderAuthMethod,
         credential: StoredCredentialPayload,
-        connectionState: ProviderConnectionState,
-        reason: ProviderStatusReason,
+        outcome: (connectionState: ProviderConnectionState, reason: ProviderStatusReason),
     ) async -> AiProviderConnectionResult {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let record = providerRecord(
             provider: provider,
             authMethod: authMethod,
             credential: credential,
-            connectionState: connectionState,
-            reason: reason,
-            now: now,
+            snapshot: ProviderConnectionSnapshot(
+                connectionState: outcome.connectionState,
+                reason: outcome.reason,
+                now: now,
+            ),
         )
 
         do {
@@ -193,8 +192,8 @@ extension AIProviderConnectionClient: DependencyKey {
             }
             return AiProviderConnectionResult(
                 provider: provider,
-                state: connectionState,
-                reason: reason,
+                state: outcome.connectionState,
+                reason: outcome.reason,
                 updatedFile: updated,
             )
         } catch {
@@ -208,28 +207,33 @@ extension AIProviderConnectionClient: DependencyKey {
         }
     }
 
-    private nonisolated static func providerRecord(
+    /// 프로바이더 연결 상태 스냅샷
+    private struct ProviderConnectionSnapshot {
+        var connectionState: ProviderConnectionState
+        var reason: ProviderStatusReason
+        var now: Int64
+    }
+
+    nonisolated private static func providerRecord(
         provider: AiProvider,
         authMethod: ProviderAuthMethod,
         credential: StoredCredentialPayload,
-        connectionState: ProviderConnectionState,
-        reason: ProviderStatusReason,
-        now: Int64,
+        snapshot: ProviderConnectionSnapshot,
     ) -> ProviderRecordFile {
-        let snapshotReason: ProviderStatusReason = connectionState == .connected ? .none : reason
+        let snapshotReason: ProviderStatusReason = snapshot.connectionState == .connected ? .none : snapshot.reason
         return ProviderRecordFile(
             providerId: provider,
             authMethod: authMethod,
             credential: credential,
             snapshot: ProviderSnapshotFile(
-                lastKnownStatus: connectionState,
-                lastVerifiedAtMs: connectionState == .connected ? now : nil,
+                lastKnownStatus: snapshot.connectionState,
+                lastVerifiedAtMs: snapshot.connectionState == .connected ? snapshot.now : nil,
                 lastErrorCode: snapshotReason,
             ),
         )
     }
 
-    private nonisolated static func updatedConnectionsFile(
+    nonisolated private static func updatedConnectionsFile(
         current: AIConnectionsFile,
         provider: AiProvider,
         record: ProviderRecordFile,
@@ -247,7 +251,7 @@ extension AIProviderConnectionClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: AIProviderConnectionClient {
+    nonisolated public static var testValue: AIProviderConnectionClient {
         AIProviderConnectionClient(
             connectOAuth: { provider, _, connectionState in
                 AiProviderConnectionResult(
@@ -276,7 +280,7 @@ extension AIProviderConnectionClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: AIProviderConnectionClient {
+    nonisolated public static var previewValue: AIProviderConnectionClient {
         AIProviderConnectionClient(
             connectOAuth: { provider, _, _ in
                 AiProviderConnectionResult(

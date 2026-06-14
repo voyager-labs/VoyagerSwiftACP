@@ -132,7 +132,9 @@ public struct AiChatSelectedModelDisplayModel: Equatable, Sendable {
     public var handle: AiModelHandle
     public var label: AiChatModelLabel
 
-    public var title: String { label.title }
+    public var title: String {
+        label.title
+    }
 
     public init(handle: AiModelHandle, label: AiChatModelLabel) {
         self.handle = handle
@@ -144,7 +146,9 @@ public struct AiChatLockedModelDisplayModel: Equatable, Sendable {
     public var handle: AiModelHandle
     public var label: AiChatModelLabel
 
-    public var title: String { label.title }
+    public var title: String {
+        label.title
+    }
 
     public init(handle: AiModelHandle, label: AiChatModelLabel) {
         self.handle = handle
@@ -183,7 +187,9 @@ public struct AiChatStreamingAssistantDisplayModel: Equatable, Sendable {
 }
 
 public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendable {
-    public var id: AiModelHandle { handle }
+    public var id: AiModelHandle {
+        handle
+    }
 
     public var handle: AiModelHandle
     public var label: AiChatModelLabel
@@ -193,7 +199,9 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
     public var isDefault: Bool
     public var isRecommended: Bool
 
-    public var title: String { label.title }
+    public var title: String {
+        label.title
+    }
 
     public init(
         handle: AiModelHandle,
@@ -215,7 +223,9 @@ public struct AiChatModelCatalogRowDisplayModel: Identifiable, Equatable, Sendab
 }
 
 public struct AiChatModelCatalogSectionDisplayModel: Identifiable, Equatable, Sendable {
-    public var id: AiProvider { provider }
+    public var id: AiProvider {
+        provider
+    }
 
     public var provider: AiProvider
     public var title: String

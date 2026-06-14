@@ -13,7 +13,7 @@ public enum AiProviderModelListError: Error, Equatable, Sendable {
 public struct AiProviderModelListClient: Sendable {
     public var loadModels: @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel]
 
-    public nonisolated init(
+    nonisolated public init(
         loadModels: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel],
     ) {
         self.loadModels = loadModels
@@ -21,11 +21,11 @@ public struct AiProviderModelListClient: Sendable {
 }
 
 extension AiProviderModelListClient: DependencyKey {
-    public nonisolated static var liveValue: AiProviderModelListClient {
+    nonisolated public static var liveValue: AiProviderModelListClient {
         live()
     }
 
-    public nonisolated static var testValue: AiProviderModelListClient {
+    nonisolated public static var testValue: AiProviderModelListClient {
         AiProviderModelListClient(
             loadModels: { provider, _ in
                 throw AiProviderModelListError.unsupportedProvider(provider)
@@ -33,7 +33,7 @@ extension AiProviderModelListClient: DependencyKey {
         )
     }
 
-    public nonisolated static var previewValue: AiProviderModelListClient {
+    nonisolated public static var previewValue: AiProviderModelListClient {
         AiProviderModelListClient(
             loadModels: { provider, _ in
                 throw AiProviderModelListError.unsupportedProvider(provider)
@@ -228,7 +228,7 @@ private extension AiProviderModelListClient {
         let osVersion = [
             operatingSystemVersion.majorVersion,
             operatingSystemVersion.minorVersion,
-            operatingSystemVersion.patchVersion
+            operatingSystemVersion.patchVersion,
         ]
         .map(String.init)
         .joined(separator: ".")

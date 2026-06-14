@@ -63,7 +63,6 @@ final class AiChatFeatureExecutionFailureTests: XCTestCase {
         XCTAssertNil(store.state.lockedModelHandle)
     }
 
-    // swiftlint:disable:next function_body_length
     private func assertFailureRecovery(reason: AiChatExecutionFailure, sessionIDRaw: String) async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()

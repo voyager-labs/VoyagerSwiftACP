@@ -6,7 +6,6 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureErrorRecoveryTests: XCTestCase {
-    // swiftlint:disable:next function_body_length
     func testErrorRecoveryRetriesPersistenceSaveAndClearsRecoveryState() async {
         let persistence = AiChatSessionPersistenceSpy()
         let catalogRows = makeCatalogRows()
@@ -19,20 +18,20 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
                 requestID: AiChatRequestID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444")),
                 runID: AiChatRunID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555")),
                 model: selectedHandle,
-                selectedRow: catalogRows[0]
+                selectedRow: catalogRows[0],
             ),
-            messages: [AiChatMessage(role: .user, content: "Hello")]
+            messages: [AiChatMessage(role: .user, content: "Hello")],
         )
         let lock = makeRequestLock(
             kind: .submit,
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         ).recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
         let transcript = [
             AiChatMessage(role: .user, content: "Hello"),
-            AiChatMessage(role: .assistant, content: "Hi")
+            AiChatMessage(role: .assistant, content: "Hi"),
         ]
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -43,7 +42,7 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lastExecutionFailure: .unknown,
-            executionPhase: .persistenceRecovery(lock, .unknown)
+            executionPhase: .persistenceRecovery(lock, .unknown),
         )) {
             AiChatFeature()
         } withDependencies: {
@@ -52,7 +51,7 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
                 saveSession: { snapshot in
                     await persistence.save(snapshot)
                 },
-                deleteSession: { _ in }
+                deleteSession: { _ in },
             )
         }
 
@@ -79,16 +78,16 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
                 requestID: AiChatRequestID(rawValue: makeUUID("88888888-8888-8888-8888-888888888888")),
                 runID: AiChatRunID(rawValue: makeUUID("99999999-9999-9999-9999-999999999999")),
                 model: selectedHandle,
-                selectedRow: catalogRows[0]
+                selectedRow: catalogRows[0],
             ),
-            messages: [AiChatMessage(role: .user, content: "Hello")]
+            messages: [AiChatMessage(role: .user, content: "Hello")],
         )
         let lock = makeRequestLock(
             kind: .submit,
             request: request,
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
         let store = TestStore(initialState: AiChatFeature.State(
             sessionID: sessionID,
@@ -99,7 +98,7 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
             catalogRows: catalogRows,
             selectedModelHandle: selectedHandle,
             lastExecutionFailure: .unknown,
-            executionPhase: .persistenceRecovery(lock, .unknown)
+            executionPhase: .persistenceRecovery(lock, .unknown),
         )) {
             AiChatFeature()
         }
@@ -123,7 +122,7 @@ final class AiChatFeatureErrorRecoveryTests: XCTestCase {
             currentContext: makeContextSnapshot(),
             catalogRows: catalogRows,
             selectedModelHandle: catalogRows[0].handle,
-            executionPhase: .idle
+            executionPhase: .idle,
         )) {
             AiChatFeature()
         }

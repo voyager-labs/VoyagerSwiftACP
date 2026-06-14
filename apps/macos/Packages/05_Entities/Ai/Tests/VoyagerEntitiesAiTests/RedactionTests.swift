@@ -5,7 +5,7 @@ final class RedactionTests: XCTestCase {
         let dirty = "refresh=\(FixtureCredentials.refreshToken)"
         XCTAssertTrue(
             dirty.contains(FixtureCredentials.refreshToken),
-            "Dirty output must contain the raw fixture token"
+            "Dirty output must contain the raw fixture token",
         )
     }
 
@@ -22,7 +22,7 @@ final class RedactionTests: XCTestCase {
             for secret in FixtureCredentials.allSecrets {
                 result = result.replacingOccurrences(
                     of: secret,
-                    with: RedactionTestHelper.defaultRedacted
+                    with: RedactionTestHelper.defaultRedacted,
                 )
             }
             return result

@@ -90,6 +90,7 @@ struct ToolbarNavigationButtons: View {
     private func historyMenuLabel(for item: ToolbarHistoryItem) -> some View {
         HStack(spacing: 6) {
             Image(systemName: item.iconSystemName)
+                .accessibilityHidden(true)
                 .frame(width: 10, height: 10)
             Text(item.title)
         }

@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiProviderConnection
@@ -45,7 +44,6 @@ private final class ConnectionsFileLoadSpy: @unchecked Sendable {
     }
 }
 
-// swiftlint:disable type_body_length
 @MainActor
 final class AiSettingsFeatureTests: XCTestCase {
     func testConnectionResponseEmitsConnectionsFileUpdatedDelegate() async {
@@ -649,5 +647,3 @@ final class AiSettingsFeatureTests: XCTestCase {
         await store.finish()
     }
 }
-
-// swiftlint:enable type_body_length

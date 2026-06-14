@@ -130,7 +130,8 @@ final class ScopePickerViewScopeFeedbackDisplayTests: XCTestCase {
         XCTAssertEqual(display.phaseLabel, "Failed")
         XCTAssertEqual(
             display.accessibilityLabel,
-            "Excluded Secrets from Documents, Scope change could not be fully applied. Current selection was kept., Failed",
+            "Excluded Secrets from Documents, "
+                + "Scope change could not be fully applied. Current selection was kept., Failed",
         )
         XCTAssertTrue(display.isFailure)
         XCTAssertFalse(display.isDelayed)

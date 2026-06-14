@@ -17,13 +17,13 @@ final class AiChatFeatureTerminalSurfaceStateTests: XCTestCase {
                     requestID: AiChatRequestID(rawValue: UUID()),
                     runID: AiChatRunID(rawValue: UUID()),
                     model: selectedHandle,
-                    selectedRow: catalogRows[0]
+                    selectedRow: catalogRows[0],
                 ),
-                messages: []
+                messages: [],
             ),
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
         let failedSessionState = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -35,7 +35,7 @@ final class AiChatFeatureTerminalSurfaceStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: nil,
-            executionPhase: .completed(lock)
+            executionPhase: .completed(lock),
         )
 
         if case let .ready(summary, selectedModel) = failedSessionState.surfaceState {
@@ -63,13 +63,13 @@ final class AiChatFeatureTerminalSurfaceStateTests: XCTestCase {
                     requestID: AiChatRequestID(rawValue: UUID()),
                     runID: AiChatRunID(rawValue: UUID()),
                     model: selectedHandle,
-                    selectedRow: catalogRows[0]
+                    selectedRow: catalogRows[0],
                 ),
-                messages: []
+                messages: [],
             ),
             selectedHandle: selectedHandle,
             selectedRow: catalogRows[0],
-            assistantReplacementIndex: nil
+            assistantReplacementIndex: nil,
         )
         let recoveryState = AiChatFeature.State(
             sessionID: AiChatSessionID(rawValue: UUID()),
@@ -81,7 +81,7 @@ final class AiChatFeatureTerminalSurfaceStateTests: XCTestCase {
             selectedModelHandle: selectedHandle,
             lockedModelHandle: nil,
             lastExecutionFailure: .unknown,
-            executionPhase: .persistenceRecovery(lock, .unknown)
+            executionPhase: .persistenceRecovery(lock, .unknown),
         )
 
         if case let .error(connection, summary) = recoveryState.surfaceState {

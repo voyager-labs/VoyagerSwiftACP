@@ -25,7 +25,7 @@ final class AiRuntimeAdapterTests: XCTestCase {
     func testResolveAdapter_chatgptCodex_withOAuthCredential_returnsDescriptor() {
         let client = makeStubClient()
         let credential = StoredCredentialPayload.oauth(
-            OAuthCredentialFile(accessToken: "tok")
+            OAuthCredentialFile(accessToken: "tok"),
         )
         let descriptor = client.resolveAdapter(.chatgptCodex, credential)
 
@@ -61,7 +61,7 @@ final class AiRuntimeAdapterTests: XCTestCase {
                 didCallVerify = true
                 return .valid
             },
-            resolveAdapter: { _, _ in nil }
+            resolveAdapter: { _, _ in nil },
         )
 
         let credential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-valid"))
@@ -73,7 +73,7 @@ final class AiRuntimeAdapterTests: XCTestCase {
     func testVerifyProvider_anthropic_validCredential_returnsValid() {
         let client = AiConnectionRuntimeClient(
             verifyProvider: { _, _ in .valid },
-            resolveAdapter: { _, _ in nil }
+            resolveAdapter: { _, _ in nil },
         )
 
         let credential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: "sk-ant-valid"))
@@ -88,7 +88,7 @@ final class AiRuntimeAdapterTests: XCTestCase {
         let session = URLSession(configuration: configuration)
         let client = AiConnectionRuntimeClient.live(session: session)
         let credential = StoredCredentialPayload.oauth(
-            OAuthCredentialFile(accessToken: "codex-access-token")
+            OAuthCredentialFile(accessToken: "codex-access-token"),
         )
 
         let result = awaitTest { await client.verifyProvider(.chatgptCodex, credential) }
@@ -109,7 +109,7 @@ final class AiRuntimeAdapterTests: XCTestCase {
         let session = URLSession(configuration: configuration)
         let client = AiConnectionRuntimeClient.live(session: session)
         let credential = StoredCredentialPayload.oauth(
-            OAuthCredentialFile(accessToken: "codex-oauth-access-token-voY218")
+            OAuthCredentialFile(accessToken: "codex-oauth-access-token-voY218"),
         )
 
         let result = awaitTest { await client.verifyProvider(.chatgptCodex, credential) }
@@ -117,8 +117,9 @@ final class AiRuntimeAdapterTests: XCTestCase {
         // Core VOY-218 contract: non-empty OAuth credential = valid, zero network calls
         XCTAssertEqual(result, .valid, "chatgptCodex with non-empty OAuth must return .valid")
         XCTAssertEqual(
-            NetworkTrapURLProtocol.requestCount, 0,
-            "chatgptCodex verification must NOT issue any HTTP request"
+            NetworkTrapURLProtocol.requestCount,
+            0,
+            "chatgptCodex verification must NOT issue any HTTP request",
         )
     }
 
@@ -130,15 +131,16 @@ final class AiRuntimeAdapterTests: XCTestCase {
         let session = URLSession(configuration: configuration)
         let client = AiConnectionRuntimeClient.live(session: session)
         let credential = StoredCredentialPayload.oauth(
-            OAuthCredentialFile(accessToken: "")
+            OAuthCredentialFile(accessToken: ""),
         )
 
         let result = awaitTest { await client.verifyProvider(.chatgptCodex, credential) }
 
         XCTAssertNotEqual(result, .valid, "Empty OAuth credential must not be treated as valid")
         XCTAssertEqual(
-            NetworkTrapURLProtocol.requestCount, 0,
-            "chatgptCodex verification must NOT issue any HTTP request even for empty credential"
+            NetworkTrapURLProtocol.requestCount,
+            0,
+            "chatgptCodex verification must NOT issue any HTTP request even for empty credential",
         )
     }
 
@@ -200,26 +202,28 @@ final class AiRuntimeAdapterTests: XCTestCase {
                 case .anthropic:
                     return AiAdapterDescriptor(provider: .anthropic, adapterName: "AnthropicAdapter")
                 }
-            }
+            },
         )
     }
 }
 
 private final class NetworkTrapURLProtocol: URLProtocol, @unchecked Sendable {
-    private nonisolated(unsafe) static var count = 0
+    nonisolated(unsafe) private static var count = 0
 
-    static var requestCount: Int { count }
+    static var requestCount: Int {
+        count
+    }
 
     static func reset() {
         count = 0
     }
 
-    override class func canInit(with _: URLRequest) -> Bool {
+    override static func canInit(with _: URLRequest) -> Bool {
         count += 1
         return true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 
@@ -233,7 +237,7 @@ private final class NetworkTrapURLProtocol: URLProtocol, @unchecked Sendable {
 
 private func awaitTest<T: Sendable>(
     timeout: TimeInterval = 2.0,
-    _ operation: @escaping @Sendable () async -> T
+    _ operation: @escaping @Sendable () async -> T,
 ) -> T {
     let expectation = XCTestExpectation()
     nonisolated(unsafe) var result: T?
@@ -242,5 +246,9 @@ private func awaitTest<T: Sendable>(
         expectation.fulfill()
     }
     _ = XCTWaiter.wait(for: [expectation], timeout: timeout)
-    return result!
+    guard let unwrapped = result else {
+        XCTFail("awaitTest timed out or returned nil")
+        fatalError("awaitTest: result was nil after wait")
+    }
+    return unwrapped
 }

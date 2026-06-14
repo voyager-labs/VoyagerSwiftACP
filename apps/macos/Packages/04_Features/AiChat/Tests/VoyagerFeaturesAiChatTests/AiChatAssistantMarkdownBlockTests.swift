@@ -23,7 +23,7 @@ final class AiChatAssistantMarkdownBlockTests: XCTestCase {
             .bullet("second bullet"),
             .numbered(number: 1, text: "numbered item"),
             .paragraph("Paragraph with **bold** text."),
-            .code("let value = 1")
+            .code("let value = 1"),
         ])
     }
 
@@ -34,7 +34,7 @@ final class AiChatAssistantMarkdownBlockTests: XCTestCase {
         """)
 
         XCTAssertEqual(blocks, [
-            .paragraph("```\nlet value = 1")
+            .paragraph("```\nlet value = 1"),
         ])
     }
 }

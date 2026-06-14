@@ -12,7 +12,7 @@ public enum AIConnectionStatus: Equatable, Sendable {
 public struct AiConnectionStatusClient: Sendable {
     public var checkStatus: @Sendable (AiProvider) async -> AIConnectionStatus
 
-    public nonisolated init(
+    nonisolated public init(
         checkStatus: @escaping @Sendable (AiProvider) async -> AIConnectionStatus,
     ) {
         self.checkStatus = checkStatus
@@ -20,12 +20,12 @@ public struct AiConnectionStatusClient: Sendable {
 }
 
 extension AiConnectionStatusClient: DependencyKey {
-    public nonisolated static var liveValue: AiConnectionStatusClient {
+    nonisolated public static var liveValue: AiConnectionStatusClient {
         let store = AIConnectionFileStore.withDefaultHome()
         return persistenceClient(store: store)
     }
 
-    public nonisolated static func liveForRepoRoot(
+    nonisolated public static func liveForRepoRoot(
         repoRootURL: URL,
         fileManager: FileManager = .default,
     ) -> AiConnectionStatusClient {
@@ -36,7 +36,7 @@ extension AiConnectionStatusClient: DependencyKey {
         return persistenceClient(store: store)
     }
 
-    private nonisolated static func persistenceClient(store: AIConnectionFileStore) -> AiConnectionStatusClient {
+    nonisolated private static func persistenceClient(store: AIConnectionFileStore) -> AiConnectionStatusClient {
         let runtimeClient = AiConnectionRuntimeClient.live()
         return AiConnectionStatusClient(
             checkStatus: { provider in
@@ -56,7 +56,7 @@ extension AiConnectionStatusClient: DependencyKey {
         )
     }
 
-    private nonisolated static func status(from result: AiProviderVerificationResult) -> AIConnectionStatus {
+    nonisolated private static func status(from result: AiProviderVerificationResult) -> AIConnectionStatus {
         switch result {
         case .valid:
             .ready
@@ -69,7 +69,7 @@ extension AiConnectionStatusClient: DependencyKey {
         }
     }
 
-    private nonisolated static func status(from snapshot: ProviderSnapshotFile) -> AIConnectionStatus {
+    nonisolated private static func status(from snapshot: ProviderSnapshotFile) -> AIConnectionStatus {
         switch snapshot.lastKnownStatus {
         case .connected:
             .ready
@@ -82,11 +82,11 @@ extension AiConnectionStatusClient: DependencyKey {
         }
     }
 
-    public nonisolated static var testValue: AiConnectionStatusClient {
+    nonisolated public static var testValue: AiConnectionStatusClient {
         AiConnectionStatusClient(checkStatus: { _ in .ready })
     }
 
-    public nonisolated static var previewValue: AiConnectionStatusClient {
+    nonisolated public static var previewValue: AiConnectionStatusClient {
         testValue
     }
 }

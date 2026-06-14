@@ -143,8 +143,20 @@ private enum FileManagerHostFixtureSampleData {
 
     static let entries: [EntryModel] = [
         makeEntry(name: "Projects", isFolder: true, size: 0, kind: "Folder"),
-        makeEntry(name: "Voyager Notes.md", isFolder: false, size: 24_576, kind: "Markdown Document", fileExtension: "md"),
-        makeEntry(name: "Design Reference.png", isFolder: false, size: 1_572_864, kind: "PNG Image", fileExtension: "png"),
+        makeEntry(
+            name: "Voyager Notes.md",
+            isFolder: false,
+            size: 24576,
+            kind: "Markdown Document",
+            fileExtension: "md",
+        ),
+        makeEntry(
+            name: "Design Reference.png",
+            isFolder: false,
+            size: 1_572_864,
+            kind: "PNG Image",
+            fileExtension: "png",
+        ),
     ]
 
     private static let referenceDate = Date(timeIntervalSince1970: 1_735_689_600)

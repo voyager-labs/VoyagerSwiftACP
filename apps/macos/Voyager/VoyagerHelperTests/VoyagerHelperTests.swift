@@ -1,4 +1,3 @@
-// swiftlint:disable file_length single_test_class
 import Foundation
 import VoyagerEntitiesAi
 @testable import VoyagerHelper
@@ -765,7 +764,7 @@ final class ProviderAwareQueryConverterAutoFallbackTests: XCTestCase {
         })
     }
 
-    private nonisolated static func makeSuccessfulStream(
+    nonisolated private static func makeSuccessfulStream(
         for request: AiChatRequest,
     ) -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error> {
         AsyncThrowingStream { continuation in

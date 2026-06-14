@@ -103,7 +103,7 @@ enum ContextPromptTransmission {
 }
 
 enum ContextPromptMetadataFormatting {
-    // prompt에 출력할 metadata는 외부 provider 전송 안전성이 확인된 요약 키만 명시적으로 허용한다.
+    /// prompt에 출력할 metadata는 외부 provider 전송 안전성이 확인된 요약 키만 명시적으로 허용한다.
     private static let promptMetadataAllowedKeys: Set<String> = [
         "collectionItemCount",
         "collectionItemsIncluded",
