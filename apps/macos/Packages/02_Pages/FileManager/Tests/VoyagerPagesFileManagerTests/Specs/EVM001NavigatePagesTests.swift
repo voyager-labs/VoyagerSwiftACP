@@ -138,7 +138,7 @@ final class EVM001NavigatePagesTests: XCTestCase {
         }
     }
 
-    // MARK: - Fixture path helpers
+    // Fixture path helpers
 
     /// `fixtures/fixtures/` 하위 디렉토리의 절대 경로를 반환.
     private static func fixtureDir(_ subpath: String) -> String {

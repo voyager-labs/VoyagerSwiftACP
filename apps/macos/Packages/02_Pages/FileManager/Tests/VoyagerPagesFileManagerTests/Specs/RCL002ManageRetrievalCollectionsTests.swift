@@ -159,6 +159,161 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertFalse(collectionStatus.showsUnsavedIndicator)
     }
 
+    // MARK: - RCL-002-save_current_filter_as_new_collection
+
+    /// RCL-002-save_current_filter_as_new_collection: Tags route의 현재 filter context seed 생성
+    /// Tags virtual route를 새 collection으로 저장 가능한 현재 filter context로 변환하는지 검증.
+    /// - 검증 내용: tags route에서 tag_names 조건과 registry 기반 label/operator metadata 생성
+    /// - 사전 조건: navigation route == .tags("Work"), registryClient가 tag_names metadata 제공
+    /// - 기대 결과: query/scopes는 비어 있고 tag_names any Work 조건이 active 상태로 생성됨
+    func testTagsRouteMapsToRegistryDerivedTagCondition() throws {
+        let context = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .tags("Work"),
+                registryClient: makeRegistryClient(),
+            ),
+        )
+
+        XCTAssertEqual(context.query, "")
+        XCTAssertEqual(context.scopes, [])
+        XCTAssertEqual(context.excludedScopes, [])
+        XCTAssertTrue(context.includeSubfolders)
+        XCTAssertTrue(context.includeDirectories)
+        let condition = try XCTUnwrap(context.conditions.first)
+        XCTAssertEqual(condition.propertyKey, "tag_names")
+        XCTAssertEqual(condition.propertyLabel, "Registry Tag Label")
+        XCTAssertEqual(condition.propertyType, "categorical")
+        XCTAssertEqual(condition.operatorCode, "any")
+        XCTAssertEqual(condition.operatorLabel, "Registry Any Label")
+        XCTAssertEqual(condition.operatorValueArity, 1)
+        XCTAssertEqual(condition.operatorValueUIKind, "listText")
+        XCTAssertEqual(condition.valueType, "string_list")
+        XCTAssertEqual(condition.values, ["Work"])
+        XCTAssertTrue(condition.isActive)
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: Recents route의 현재 filter context seed 생성
+    /// Recents virtual route를 새 collection으로 저장 가능한 현재 filter context로 변환하는지 검증.
+    /// - 검증 내용: recents route에서 last_used_date 조건과 folder 제외 조건 생성
+    /// - 사전 조건: navigation route == .recents, registryClient가 date/content_type_tree metadata 제공
+    /// - 기대 결과: includeDirectories == false이고 last_used_date, content_type_tree 조건이 active 상태로 생성됨
+    func testRecentsRouteMapsToRegistryDerivedRecentCondition() throws {
+        let context = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .recents,
+                registryClient: makeRegistryClient(),
+            ),
+        )
+
+        XCTAssertEqual(context.query, "")
+        XCTAssertEqual(context.scopes, [])
+        XCTAssertEqual(context.excludedScopes, [])
+        XCTAssertTrue(context.includeSubfolders)
+        XCTAssertFalse(context.includeDirectories)
+        XCTAssertEqual(context.conditions.count, 2)
+        let recentCondition = try XCTUnwrap(context.conditions.first { $0.propertyKey == "last_used_date" })
+        XCTAssertEqual(recentCondition.propertyLabel, "Registry Last Used Label")
+        XCTAssertEqual(recentCondition.propertyType, "date")
+        XCTAssertEqual(recentCondition.operatorCode, "gt")
+        XCTAssertEqual(recentCondition.operatorLabel, "Registry Greater Than Label")
+        XCTAssertEqual(recentCondition.operatorValueArity, 1)
+        XCTAssertEqual(recentCondition.operatorValueUIKind, "singleDate")
+        XCTAssertEqual(recentCondition.valueType, "date")
+        XCTAssertEqual(
+            recentCondition.values,
+            [FileManagerVirtualCollectionContextFactory.recentsSinceAnyOpenedLiteral],
+        )
+        XCTAssertTrue(recentCondition.isActive)
+
+        let directoryExclusion = try XCTUnwrap(context.conditions.first { $0.propertyKey == "content_type_tree" })
+        XCTAssertEqual(directoryExclusion.propertyLabel, "Registry Content Type Tree Label")
+        XCTAssertEqual(directoryExclusion.propertyType, "string")
+        XCTAssertEqual(directoryExclusion.operatorCode, "neq")
+        XCTAssertEqual(directoryExclusion.operatorLabel, "Registry Not Equal Label")
+        XCTAssertEqual(directoryExclusion.operatorValueArity, 1)
+        XCTAssertEqual(directoryExclusion.operatorValueUIKind, "singleText")
+        XCTAssertEqual(directoryExclusion.valueType, "string")
+        XCTAssertEqual(directoryExclusion.values, ["public.folder"])
+        XCTAssertTrue(directoryExclusion.isActive)
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: Recents virtual route seed 조건 인식
+    /// Recents route에서 자동 생성한 조건 묶음을 Voyager 기본 virtual route seed로 인식하는지 검증.
+    /// - 검증 내용: recents collection context의 conditions를 isVirtualRouteSeedConditionSet으로 판정
+    /// - 사전 조건: navigation route == .recents
+    /// - 기대 결과: Recents 기본 조건 묶음은 virtual route seed로 판정됨
+    func testRecognizesRecentsVirtualRouteSeedConditionSet() throws {
+        let context = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .recents,
+                registryClient: makeRegistryClient(),
+            ),
+        )
+
+        XCTAssertTrue(FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(context.conditions))
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: Tags virtual route seed 조건 인식
+    /// Tags route에서 자동 생성한 조건 묶음을 Voyager 기본 virtual route seed로 인식하는지 검증.
+    /// - 검증 내용: tags collection context의 conditions를 isVirtualRouteSeedConditionSet으로 판정
+    /// - 사전 조건: navigation route == .tags("Work")
+    /// - 기대 결과: Tags 기본 조건 묶음은 virtual route seed로 판정됨
+    func testRecognizesTagVirtualRouteSeedConditionSet() throws {
+        let context = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .tags("Work"),
+                registryClient: makeRegistryClient(),
+            ),
+        )
+
+        XCTAssertTrue(FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(context.conditions))
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: 사용자가 수정한 조건 묶음은 virtual route seed에서 제외
+    /// Recents route 기본 조건이 편집되면 더 이상 Voyager 기본 seed로 취급하지 않는지 검증.
+    /// - 검증 내용: recents seed condition의 operatorCode 변경 후 isVirtualRouteSeedConditionSet 판정
+    /// - 사전 조건: Recents 기본 context 생성 후 첫 조건 operatorCode를 eq로 변경
+    /// - 기대 결과: 편집된 조건 묶음은 virtual route seed가 아님
+    func testRejectsEditedVirtualRouteSeedConditionSet() throws {
+        let context = try XCTUnwrap(
+            FileManagerVirtualCollectionContextFactory.collectionContext(
+                for: .recents,
+                registryClient: makeRegistryClient(),
+            ),
+        )
+        var conditions = context.conditions
+        conditions[0].operatorCode = "eq"
+
+        XCTAssertFalse(FileManagerVirtualCollectionContextFactory.isVirtualRouteSeedConditionSet(conditions))
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: non-virtual route는 current filter context seed를 생성하지 않음
+    /// 일반 folder, Computer, 저장된 Collection route는 Recents/Tags 전용 virtual seed context를 만들지 않는지 검증.
+    /// - 검증 내용: folder/computer/collection route별 collectionContext 반환값
+    /// - 사전 조건: route == .folder, .computer, .collection
+    /// - 기대 결과: 세 route 모두 nil 반환
+    func testFolderComputerAndCollectionRoutesDoNotSeedVirtualContext() {
+        let registryClient = makeRegistryClient()
+        XCTAssertNil(FileManagerVirtualCollectionContextFactory.collectionContext(
+            for: .folder("/tmp"),
+            registryClient: registryClient,
+        ))
+        XCTAssertNil(FileManagerVirtualCollectionContextFactory.collectionContext(
+            for: .computer,
+            registryClient: registryClient,
+        ))
+        XCTAssertNil(FileManagerVirtualCollectionContextFactory.collectionContext(
+            for: .collection(.init(
+                kind: .temporary,
+                context: .init(),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            )),
+            registryClient: registryClient,
+        ))
+    }
+
     private func makeStore(
         initialState: FileManagerContentState,
     ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
@@ -197,6 +352,72 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
 
     private func makeReportContext() -> CollectionContext {
         .init(query: "report", scopes: ["/tmp/voyager"], conditions: [])
+    }
+
+    private func makeRegistryClient() -> RegistryClient {
+        RegistryClient(
+            allProperties: { [] },
+            labelForKey: Self.registryLabel(for:),
+            propertyTypeString: Self.registryType(for:),
+            propertyUnitSpec: { _ in nil },
+            operatorCodes: { _ in ["any", "gt", "neq"] },
+            operatorDefinition: Self.registryOperatorDefinition(for:),
+            operatorValueUIKind: Self.registryOperatorUIKind(for:typeKey:),
+            resolvePropertyKey: { .canonical($0) },
+        )
+    }
+
+    private nonisolated static func registryLabel(for key: String) -> String {
+        switch key {
+        case "tag_names": "Registry Tag Label"
+        case "last_used_date": "Registry Last Used Label"
+        case "content_type_tree": "Registry Content Type Tree Label"
+        default: key
+        }
+    }
+
+    private nonisolated static func registryType(for key: String) -> String {
+        switch key {
+        case "tag_names": "categorical"
+        case "last_used_date": "date"
+        case "content_type_tree": "string"
+        default: "unknown"
+        }
+    }
+
+    private nonisolated static func registryOperatorDefinition(for code: String) -> OperatorDefinition {
+        switch code {
+        case "any":
+            OperatorDefinition(
+                uiLabel: "Registry Any Label",
+                uiValueKind: ["categorical": "listText"],
+            )
+        case "gt":
+            OperatorDefinition(
+                uiLabel: "Registry Greater Than Label",
+                uiValueKind: ["date": "singleDate"],
+            )
+        case "neq":
+            OperatorDefinition(
+                uiLabel: "Registry Not Equal Label",
+                uiValueKind: ["string": "singleText"],
+            )
+        default:
+            OperatorDefinition(uiLabel: code, uiValueKind: ["unknown": "singleText"])
+        }
+    }
+
+    private nonisolated static func registryOperatorUIKind(for code: String, typeKey: String) -> String {
+        switch (code, typeKey) {
+        case ("any", "categorical"):
+            "listText"
+        case ("gt", "date"):
+            "singleDate"
+        case ("neq", "string"):
+            "singleText"
+        default:
+            "singleText"
+        }
     }
 
     private func makeAllowedCompatibility() -> CollectionFileCompatibilityMetadata {
