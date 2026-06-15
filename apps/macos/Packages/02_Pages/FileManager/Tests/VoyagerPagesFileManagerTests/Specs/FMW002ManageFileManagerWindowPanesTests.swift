@@ -189,9 +189,9 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
             sidebarVisible: true,
             sidebarWidth: SidebarWidth.inRange,
             splitView: splitView,
-            mainContainerLeading: nil,
-            contentVerticalMargin: 4,
-        ) { _ in }
+            layout: (mainContainerLeading: nil, contentVerticalMargin: 4),
+            onTrafficLightUpdate: { _ in },
+        )
 
         splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth, ofDividerAt: 0)
         splitView.adjustSubviews()
