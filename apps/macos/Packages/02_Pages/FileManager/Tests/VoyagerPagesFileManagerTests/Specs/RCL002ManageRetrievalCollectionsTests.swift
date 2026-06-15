@@ -367,7 +367,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         )
     }
 
-    private nonisolated static func registryLabel(for key: String) -> String {
+    nonisolated private static func registryLabel(for key: String) -> String {
         switch key {
         case "tag_names": "Registry Tag Label"
         case "last_used_date": "Registry Last Used Label"
@@ -376,7 +376,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         }
     }
 
-    private nonisolated static func registryType(for key: String) -> String {
+    nonisolated private static func registryType(for key: String) -> String {
         switch key {
         case "tag_names": "categorical"
         case "last_used_date": "date"
@@ -385,7 +385,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         }
     }
 
-    private nonisolated static func registryOperatorDefinition(for code: String) -> OperatorDefinition {
+    nonisolated private static func registryOperatorDefinition(for code: String) -> OperatorDefinition {
         switch code {
         case "any":
             OperatorDefinition(
@@ -407,7 +407,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         }
     }
 
-    private nonisolated static func registryOperatorUIKind(for code: String, typeKey: String) -> String {
+    nonisolated private static func registryOperatorUIKind(for code: String, typeKey: String) -> String {
         switch (code, typeKey) {
         case ("any", "categorical"):
             "listText"
