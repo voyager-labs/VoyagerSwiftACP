@@ -389,12 +389,11 @@ extension ConditionChipValueSectionView {
         }
     }
 
-    func inlineValueInputs(
+    private func inlineValueInputs(
         valueViewStore: ViewStore<ValuePickerFeature.State, ValuePickerFeature.Action>,
         context: ConditionChipInlineInputContext,
         editingIndex: Int?,
     ) -> some View {
-        let hasError = context.hasError
         let fieldCount = max(max(context.valueArity, valueViewStore.values.count), 1)
         let indices: [Int] = {
             if let editingIndex {
