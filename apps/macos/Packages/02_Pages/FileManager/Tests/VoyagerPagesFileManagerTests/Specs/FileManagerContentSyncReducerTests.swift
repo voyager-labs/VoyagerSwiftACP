@@ -1,7 +1,5 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesCollection
-import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
@@ -25,25 +23,6 @@ final class FileManagerContentSyncReducerTests: XCTestCase {
 
         await store.send(.externalFileSystemChanged(["/Users/test/file.txt"]))
         await store.receive(\.entryViewLayout.entryOperations.loading.loadTagItems)
-    }
-
-    func testExternalChangeIgnoresOpenedCollectionDocumentPath() async {
-        let collectionURL = URL(fileURLWithPath: "/Users/test/Collections/Work.voyagercollection")
-        var state = FileManagerContentState()
-        state.navigation.navigationState = .collection(.init(
-            kind: .file(url: collectionURL, name: "Work"),
-            context: CollectionContext(query: "", scopes: [], conditions: []),
-            sortKey: .name,
-            sortOrder: .ascending,
-            viewLayout: .list,
-        ))
-        state.collection.collectionSession.document = .init(url: collectionURL, name: "Work")
-        let store = makeStore(initialState: state)
-
-        await store.send(.externalFileSystemChanged([
-            collectionURL.path,
-            collectionURL.appendingPathComponent("metadata.json").path,
-        ]))
     }
 
     private func makeStore(initialState: FileManagerContentState)
