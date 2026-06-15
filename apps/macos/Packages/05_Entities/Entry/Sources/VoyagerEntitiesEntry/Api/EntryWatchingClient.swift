@@ -99,8 +99,6 @@ public enum EntryWatchingLive {
 
     nonisolated public static let fileSystemChangedNotificationName = NSNotification.Name("VoyagerFileSystemChanged")
 
-    nonisolated private static let sharedWatcher = FSEventsWatcher()
-
     nonisolated static var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]> {
         {
             let notificationCenterClient = NotificationCenterClient.liveValue
@@ -133,9 +131,9 @@ public enum EntryWatchingLive {
     }
 
     nonisolated static var startWatchingDirectory: @Sendable (URL) -> AsyncStream<[String]> {
-        let watcher = sharedWatcher
-        return { url in
+        { url in
             AsyncStream { continuation in
+                let watcher = FSEventsWatcher()
                 let box = FSEventsContinuationBox(continuation)
                 let callback = makeFSEventsCallback()
                 var context = makeStreamContext(box: box)
@@ -156,7 +154,6 @@ public enum EntryWatchingLive {
                 watcher.setStream(stream)
 
                 continuation.onTermination = { @Sendable _ in
-                    watcher.terminate()
                     if let stream = watcher.getStream() {
                         stopStream(stream)
                         watcher.setStream(nil)
@@ -167,18 +164,7 @@ public enum EntryWatchingLive {
     }
 
     nonisolated static var stopWatchingDirectory: @Sendable () -> Void {
-        let watcher = sharedWatcher
-        return {
-            guard !watcher.getIsTerminated() else { return }
-
-            if let stream = watcher.getStream() {
-                watcher.terminate()
-                FSEventStreamStop(stream)
-                FSEventStreamInvalidate(stream)
-                FSEventStreamRelease(stream)
-                watcher.setStream(nil)
-            }
-        }
+        {  }
     }
 
     nonisolated private static func makeFSEventsCallback() -> FSEventStreamCallback {

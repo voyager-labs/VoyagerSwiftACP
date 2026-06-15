@@ -98,7 +98,11 @@ extension EntryListCoordinator: NSOutlineViewDataSource {
         }
 
         if !internalPaths.isEmpty {
-            sendEntryOperations(.routing(.handleDrop(providers: [], destinationPath: destinationPath)))
+            sendEntryOperations(.routing(.dropItems(
+                sourcePaths: internalPaths,
+                destinationPath: destinationPath,
+                isOptionDrag: validation.isOptionDrag,
+            )))
             store.send(.view(.setDropTargeted(false)))
             return true
         }

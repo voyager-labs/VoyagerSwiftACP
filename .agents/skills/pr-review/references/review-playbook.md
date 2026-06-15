@@ -372,6 +372,39 @@ grep -nE 'Task\.detached|@MainActor|nonisolated|actor ' <changed-file>
 
 3. Do not ask for tests generically. Name the missing behavior.
 
+### Spec AC Test Naming Compliance
+
+**Policy reference:** `.greptile/rules.md` §Test review, `voyager-dev/verifier/spec-test-authoring` skill
+
+Use this check when a PR adds or renames test files under `Tests/.../Specs/`.
+
+1. Extract new or renamed test files from the diff:
+
+    ```bash
+    git diff --name-only origin/develop...HEAD | grep -E 'Tests/.*Specs/.*Tests\.swift'
+    ```
+
+2. For each file, verify it follows the spec-based naming convention:
+    - **File/class name pattern**: `<SpecID><PascalCaseSpecTitle>Tests.swift`
+    - Spec ID is a compact prefix: `FMW-001` → `FMW001`, `EOP-002` → `EOP002`
+    - Example: `FMW001FileManagerWindowRequestRoutingTests.swift`
+    - Reference: `voyager-dev/verifier/spec-test-authoring/references/spec-test-topology.md`
+
+3. Flag as P1 when a new or renamed file under `Specs/` is named after an
+   implementation detail (reducer, helper, coordinator) instead of a spec ID.
+   Common violation patterns:
+    - `<ReducerName>Tests.swift` (e.g. `FileManagerContentSyncReducerTests`)
+    - `<FeatureName>PackageTests.swift` without a spec ID prefix
+
+4. For files that are already non-compliant prior to the PR, flag only the PR's
+   new additions, not the pre-existing file name, unless the PR renames the file.
+
+5. Optionally audit `// MARK:` headings and `///` traceability doc comments in
+   the PR's new test methods. The spec-test-authoring skill defines the
+   canonical format; non-compliant MARK headings or missing traceability
+   comments are observations, not P1 findings, unless the PR introduces a new
+   suite file that should follow the convention from the start.
+
 ### Xcode Test Plan Visibility
 
 **Policy reference:** `.greptile/rules.md` §Test review

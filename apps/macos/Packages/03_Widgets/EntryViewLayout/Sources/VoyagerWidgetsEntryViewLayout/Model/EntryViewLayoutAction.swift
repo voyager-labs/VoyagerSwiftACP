@@ -54,6 +54,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     @CasePathable
     public enum Delegate: Sendable {
         case executeCommand(EntryOperationsCommand)
+        case openPathInNewWindow(String)
         case openPathInNewTab(String)
         case startRename(item: EntryModel, text: String)
         case saveScrollOffset(CGPoint, forPath: String)
