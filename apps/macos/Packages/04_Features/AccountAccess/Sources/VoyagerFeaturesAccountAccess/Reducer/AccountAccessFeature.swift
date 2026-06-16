@@ -28,6 +28,7 @@ public struct AccountAccessFeature {
     private enum CancelID {
         static let fetchStatus = "accountAccessFetchStatus"
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
+        static let ttlTimer = "accountAccessTtlTimer"
     }
 
     public init() {}
@@ -54,8 +55,8 @@ public struct AccountAccessFeature {
             case let ._handoffExchangeCompleted(result):
                 return handleHandoffExchangeCompleted(&state, result: result)
 
-            case let ._onAppearSessionRestored(hasSession):
-                return handleOnAppearSessionRestored(&state, hasSession: hasSession)
+            case let ._onAppearSessionRestored(session):
+                return handleOnAppearSessionRestored(&state, session: session)
 
             case let ._loginSessionRestored(hasSession):
                 return handleLoginSessionRestored(&state, hasSession: hasSession)
@@ -86,6 +87,15 @@ public struct AccountAccessFeature {
             case .openBetaCodeHelpTapped:
                 return handleOpenBetaCodeHelp(&state)
 
+            case ._ttlTimerTicked:
+                return handleTtlTimerTicked(&state)
+
+            case let ._refreshTokenResult(result):
+                return handleRefreshTokenResult(&state, result: result)
+
+            case ._sessionExpiredDetected:
+                return handleSessionExpiredDetected(&state)
+
             case .delegate:
                 return .none
             }
@@ -96,21 +106,33 @@ public struct AccountAccessFeature {
         .merge(
             .run { [accountAccessClient] send in
                 let session = try? await accountAccessClient.restoreSession()
-                await send(._onAppearSessionRestored(session != nil))
+                await send(._onAppearSessionRestored(session))
             },
             observeAppDidBecomeActive(),
         )
     }
 
-    private func handleOnAppearSessionRestored(_ state: inout State, hasSession: Bool) -> Effect<Action> {
-        state.hasAccountSession = hasSession
+    private func handleOnAppearSessionRestored(_ state: inout State, session: AccountSession?) -> Effect<Action> {
+        state.hasAccountSession = session != nil
 
-        guard hasSession else {
-            return .none
+        guard let session else {
+            state.ttlTimerActive = false
+            state.sessionExpiresAt = nil
+            return .cancel(id: CancelID.ttlTimer)
         }
 
+        state.sessionExpiresAt = session.expiresAt
+        state.isSessionExpired = false
         state.fetchGeneration += 1
-        return fetchAccessStatusEffect(generation: state.fetchGeneration)
+
+        // TTL 타이머 시작: 세션이 복원되면 access token 만료를 추적한다.
+        state.ttlTimerActive = true
+        let ttlEffect = startTtlTimer()
+
+        return .merge(
+            fetchAccessStatusEffect(generation: state.fetchGeneration),
+            ttlEffect,
+        )
     }
 
     private func fetchAccessStatusEffect(generation: Int) -> Effect<Action> {
@@ -234,13 +256,13 @@ public struct AccountAccessFeature {
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
+            state.isSessionExpired = false
             state.fetchGeneration += 1
             return fetchAccessStatusEffect(generation: state.fetchGeneration)
 
         case .failure:
             state.isSignInInProgress = false
-            state.didSignInFail = true
-            return .none
+            return .send(._sessionExpiredDetected)
         }
     }
 
@@ -258,8 +280,7 @@ public struct AccountAccessFeature {
             state.fetchGeneration += 1
             return fetchAccessStatusEffect(generation: state.fetchGeneration)
         } else {
-            state.didSignInFail = true
-            return .none
+            return .send(._sessionExpiredDetected)
         }
     }
 
@@ -362,6 +383,84 @@ private extension AccountAccessFeature {
             }
         }
         .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true)
+    }
+
+    // MARK: - TTL 타이머
+
+    /// 60초 간격으로 TTL을 확인하는 타이머를 시작한다.
+    private func startTtlTimer() -> Effect<Action> {
+        .run { send in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                await send(._ttlTimerTicked)
+            }
+        }
+        .cancellable(id: CancelID.ttlTimer, cancelInFlight: true)
+    }
+
+    /// TTL 타이머 틱: access token이 90% 이상 소모되었거나 5분 미만 남았으면 refresh를 트리거한다.
+    private func handleTtlTimerTicked(_ state: inout State) -> Effect<Action> {
+        guard state.hasAccountSession, state.ttlTimerActive else { return .none }
+        guard let expiresAt = state.sessionExpiresAt else { return .none }
+
+        let now = date()
+        let remaining = expiresAt.timeIntervalSince(now)
+
+        // 90% elapsed (remaining <= 360s for typical 1h TTL)
+        guard remaining <= 360 else { return .none }
+
+        return .run { [accountAccessClient] send in
+            do {
+                let session = try await accountAccessClient.refreshToken()
+                await send(._refreshTokenResult(.success(session)))
+            } catch let error as AccessError {
+                await send(._refreshTokenResult(.failure(error)))
+            } catch {
+                await send(._refreshTokenResult(.failure(.networkFailure)))
+            }
+        }
+    }
+
+    /// refresh token 결과 처리.
+    private func handleRefreshTokenResult(_ state: inout State,
+                                          result: Result<AccountSession, AccessError>) -> Effect<Action>
+    {
+        switch result {
+        case let .success(session):
+            state.consecutiveRefreshFailures = 0
+            state.sessionExpiresAt = session.expiresAt
+            return .none
+
+        case let .failure(error):
+            let isPermanent = error == .decodingFailure
+                || error == .notConfigured
+
+            if isPermanent {
+                return .send(._sessionExpiredDetected)
+            }
+
+            state.consecutiveRefreshFailures += 1
+
+            if state.consecutiveRefreshFailures >= 3 {
+                return .send(._sessionExpiredDetected)
+            }
+
+            return .none
+        }
+    }
+
+    /// 세션 만료 처리. dedup guard: 이미 만료 상태면 무시.
+    private func handleSessionExpiredDetected(_ state: inout State) -> Effect<Action> {
+        guard !state.isSessionExpired else { return .none }
+
+        state.hasAccountSession = false
+        state.didSignInFail = true
+        state.isSessionExpired = true
+        state.ttlTimerActive = false
+        state.sessionExpiresAt = nil
+        state.consecutiveRefreshFailures = 0
+
+        return .cancel(id: CancelID.ttlTimer)
     }
 
     // MARK: - 외부 URL 리다이렉트

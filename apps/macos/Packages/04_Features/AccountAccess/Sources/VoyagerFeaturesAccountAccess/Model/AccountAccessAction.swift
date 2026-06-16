@@ -11,7 +11,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case signInHandoffCompleted(SignInHandoffResult)
     case loginCallbackReceived(URL)
     case _handoffExchangeCompleted(Result<AccountSession, AppHandoffExchangeError>)
-    case _onAppearSessionRestored(Bool)
+    case _onAppearSessionRestored(AccountSession?)
     case _loginSessionRestored(Bool)
     case accessStatusResponse(generation: Int, result: Result<AccessStatusResponse, AccessError>)
     case refreshAccessTapped
@@ -20,6 +20,9 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case openPricingTapped
     case openAccessHelpTapped
     case openBetaCodeHelpTapped
+    case _ttlTimerTicked
+    case _refreshTokenResult(Result<AccountSession, AccessError>)
+    case _sessionExpiredDetected
     case delegate(Delegate)
 
     @CasePathable

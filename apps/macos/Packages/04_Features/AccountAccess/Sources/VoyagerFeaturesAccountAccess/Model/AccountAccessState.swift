@@ -16,6 +16,18 @@ public struct AccountAccessState: Equatable {
     /// 현재 대기 중인 handoff state. awaitingCallback에서 설정, callback 처리 후 초기화.
     public var handoffPendingState: String?
 
+    // MARK: - TTL Timer
+
+    /// TTL 갱신 타이머 활성화 여부.
+    public var ttlTimerActive: Bool = false
+    /// TTL 갱신 연속 실패 횟수 (최대 임계값 초과 시 타이머 중단).
+    public var consecutiveRefreshFailures: Int = 0
+    /// 현재 세션의 access token 만료 시각. TTL 타이머가 이 값을 기준으로 갱신 시점을 계산.
+    public var sessionExpiresAt: Date?
+
+    /// 세션 만료 여부. true이면 중복 _sessionExpiredDetected를 무시한다 (dedup guard).
+    public var isSessionExpired: Bool = false
+
     public init() {}
 
     public var showsRetry: Bool {
