@@ -52,6 +52,16 @@ Agents must never run destructive git or filesystem operations (`git checkout --
 - This applies to commit subjects, bodies, and footers alike.
 - The only exception is when the user explicitly requests such a trailer.
 
+## Lint suppression policy
+
+Agents must never silence lint/type warnings with inline suppression comments or pragma directives as a per-edit workaround. This applies to every language and toolchain in the repo.
+
+- Forbidden as workarounds: `swiftlint:disable`, `swiftlint:disable:this`, `swiftlint:disable:next`, file-level `swiftlint:disable` blocks, `# type: ignore`, `# noqa`, `# pylint: disable=`, `@SuppressWarnings`, and equivalents.
+- Required response to a lint warning: fix the underlying code (restructure, extract helper, use safer API, shorten line). The warning is the signal.
+- Escalate when the fix is out of scope: report rule name, file, line, and reason to the user. Never suppress silently.
+- Project-wide configuration changes in `.swiftlint.yml`, `pyproject.toml`, `ruff.toml`, etc. are policy decisions, not per-edit workarounds. They require explicit user approval with rationale before applying — never bundle them into an unrelated fix.
+- See `.agents/rules/30-macos/00-macos-rules.md` (Lint-disable policy section) for the Swift-specific enforcement of this rule.
+
 ## Validation
 
 Run the commands that match your change scope.
@@ -73,6 +83,7 @@ mise run macos-test    # Dev tests
 ```
 
 Swift lint/format:
+
 ```bash
 mise exec -- swiftlint --config apps/macos/.swiftlint.yml apps/macos
 mise exec -- swiftformat --config apps/macos/.swiftformat apps/macos --verbose

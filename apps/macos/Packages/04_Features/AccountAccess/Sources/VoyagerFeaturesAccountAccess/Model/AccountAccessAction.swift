@@ -1,8 +1,6 @@
 import ComposableArchitecture
 import Foundation
 
-// swiftlint:disable identifier_name
-
 @CasePathable
 public enum AccountAccessAction: CasePathable, Sendable {
     case onAppear
@@ -30,5 +28,3 @@ public enum AccountAccessAction: CasePathable, Sendable {
         case unlocked(AccessStatusSnapshot)
     }
 }
-
-// swiftlint:enable identifier_name
