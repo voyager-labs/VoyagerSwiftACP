@@ -201,20 +201,15 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
 
     /// ONB-002-mock_sign_in_handoff UI: Login CTA가 signInHandoffClient를 통해 sign-in을 시작하고 진행 상태로 전환한다.
     /// onboarding scope를 통해 loginTapped가 전달될 때 signInHandoffClient를 사용하면 sign-in 진행 상태가 올바르게 반영되는지 검증한다.
-    /// - 검증 내용: `.betaAccess(.loginTapped)` 전송 → isSignInInProgress=true, loginURLClient 미호출.
+    /// - 검증 내용: `.betaAccess(.loginTapped)` 전송 → isSignInInProgress=true.
     /// - 사전 조건: signed-out 상태 (hasAccountSession=false), signInHandoffClient가 failure 반환.
-    /// - 기대 결과: isSignInInProgress=true, loginURLClient.openLoginURL 미호출.
+    /// - 기대 결과: isSignInInProgress=true.
     func testLoginCTADispatchesLoginTappedThroughOnboardingScope() async {
-        nonisolated(unsafe) var openURLCallCount = 0
-
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
             $0.signInHandoffClient = SignInHandoffClient { .failure }
-            $0.loginURLClient = LoginURLClient(openLoginURL: { _ in
-                openURLCallCount += 1
-            })
         }
 
         // betaAccess step으로 이동
@@ -233,7 +228,6 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         }
 
         XCTAssertTrue(store.state.betaAccess.isSignInInProgress)
-        XCTAssertEqual(openURLCallCount, 0, "signInHandoffClient를 사용하면 loginURLClient를 호출하지 않아야 함")
 
         // signInHandoffClient가 .failure 반환 → signInHandoffCompleted(.failure)
         await store.receive(\.betaAccess.signInHandoffCompleted) { state in
@@ -403,7 +397,6 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
                 // swiftlint:disable:next force_unwrapping
                 .success(callbackURL: URL(string: "voyager://auth/callback")!)
             }
-            $0.loginURLClient = LoginURLClient(openLoginURL: { _ in })
         }
 
         // betaAccess step으로 이동

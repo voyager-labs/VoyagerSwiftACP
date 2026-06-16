@@ -16,7 +16,7 @@ public struct CheckoutURLClient: Sendable {
     /// 고객지원/도움 페이지 URL을 반환한다.
     public var supportURL: @Sendable () -> URL
 
-    public nonisolated init(
+    nonisolated public init(
         openURL: @escaping @Sendable (URL) -> Void,
         checkoutURL: @escaping @Sendable () -> URL,
         pricingURL: @escaping @Sendable () -> URL,
@@ -63,7 +63,7 @@ extension CheckoutURLClient: DependencyKey {
         return baseURL.appendingPathComponent(cleanPath)
     }
 
-    public nonisolated static var liveValue: CheckoutURLClient {
+    nonisolated public static var liveValue: CheckoutURLClient {
         CheckoutURLClient(
             openURL: { url in
                 Task { @MainActor in
@@ -95,7 +95,7 @@ extension CheckoutURLClient: DependencyKey {
     }
 
     // swiftlint:disable force_unwrapping
-    public nonisolated static var testValue: CheckoutURLClient {
+    nonisolated public static var testValue: CheckoutURLClient {
         CheckoutURLClient(
             openURL: { _ in },
             checkoutURL: { URL(string: "http://test.test/checkout")! },
@@ -106,7 +106,7 @@ extension CheckoutURLClient: DependencyKey {
 
     // swiftlint:enable force_unwrapping
 
-    public nonisolated static var previewValue: CheckoutURLClient {
+    nonisolated public static var previewValue: CheckoutURLClient {
         testValue
     }
 }
@@ -117,29 +117,5 @@ public extension DependencyValues {
     nonisolated var checkoutURLClient: CheckoutURLClient {
         get { self[CheckoutURLClient.self] }
         set { self[CheckoutURLClient.self] = newValue }
-    }
-}
-
-// MARK: - 상태 → URL 매핑
-
-public extension CheckoutURLClient {
-    /// 라이선스 인증 상태에 따라 리다이렉트할 URL을 반환한다.
-    /// 차단 상태가 아니면 `nil`을 반환하여 리다이렉트가 불필요함을 나타낸다.
-    func url(for status: AccessStatus) -> URL? {
-        switch status {
-        case .none:
-            checkoutURL()
-        case .trialExpired:
-            pricingURL()
-        case .revoked, .refunded:
-            supportURL()
-        case .coreLicenseActive, .betaTrialActive, .internalTestActive, .networkFailure:
-            // 차단 상태가 아니므로 리다이렉트 불필요
-            nil
-        }
-    }
-
-    static func url(for status: AccessStatus) -> URL? {
-        liveValue.url(for: status)
     }
 }
