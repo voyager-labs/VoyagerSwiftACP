@@ -14,7 +14,15 @@ private final class CollectionSearchSettingsSaveSpy: @unchecked Sendable {
 }
 
 @MainActor
-final class CollectionSearchAISettingsFeatureTests: XCTestCase {
+final class SET009CollectionSearchAiSettingsTests: XCTestCase {
+    // MARK: - SET-009-select_collection_search_ai_provider
+
+    /// SET-009-select_collection_search_ai_provider: bootstrap verification은 연결 provider 모델을 불러오고 stale selection을
+    /// auto/default로 정규화한다.
+    /// 저장된 collection search AI 선택이 현재 provider 모델 목록과 맞지 않을 때 안전한 기본값으로 회복되는지 검증한다.
+    /// - 검증 내용: bootstrap verification completion, model loading, stale model/thinking reset, settings persistence
+    /// - 사전 조건: OpenAI는 connected이고 저장된 설정은 더 이상 존재하지 않는 모델과 thinking effort를 가리킨다.
+    /// - 기대 결과: provider는 OpenAI로 유지되고 model은 auto, thinking은 providerDefault로 저장된다.
     func testBootstrapVerificationLoadsModelsAndNormalizesStaleSavedSelection() async {
         let saveSpy = CollectionSearchSettingsSaveSpy()
         let settings = Self.staleOpenAISettings
@@ -66,6 +74,11 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
         ])
     }
 
+    /// SET-009-select_collection_search_ai_provider: provider 변경은 model auto와 provider default thinking을 함께 저장한다.
+    /// 사용자가 collection search provider를 선택할 때 이전 모델/thinking 선택이 새 provider에 누수되지 않는지 검증한다.
+    /// - 검증 내용: provider changed action, auto model reset, providerDefault thinking reset, settings persistence
+    /// - 사전 조건: 기본 AI settings state에서 OpenAI provider를 선택한다.
+    /// - 기대 결과: OpenAI provider와 auto/providerDefault 조합이 저장된다.
     func testProviderChangePersistsAutoModelAndDefaultThinking() async {
         let saveSpy = CollectionSearchSettingsSaveSpy()
         let store = TestStore(initialState: AiSettingsState()) {
@@ -91,6 +104,11 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
         ])
     }
 
+    /// SET-009-select_collection_search_ai_provider: provider dropdown은 connected provider만 노출한다.
+    /// 연결 실패나 미검증 provider가 collection search provider 후보로 표시되지 않는지 검증한다.
+    /// - 검증 내용: connectedProviderDescriptors filtering, hasConnectedProviders flag
+    /// - 사전 조건: ChatGPT Codex만 connected이고 OpenAI/Anthropic은 미연결 상태다.
+    /// - 기대 결과: dropdown 후보는 ChatGPT Codex 하나뿐이다.
     func testProviderDropdownOnlyIncludesConnectedProviders() {
         let state = AiSettingsState(rows: [
             AiConnectionRowState(provider: .chatgptCodex, connectionState: .connected),
@@ -105,6 +123,11 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
         )
     }
 
+    /// SET-009-select_collection_search_ai_provider: connected provider가 없으면 dropdown 후보가 비어 있다.
+    /// collection search AI 설정이 연결되지 않은 provider를 선택지로 만들지 않는지 검증한다.
+    /// - 검증 내용: no connected providers, empty descriptors, hasConnectedProviders false
+    /// - 사전 조건: 모든 provider가 notVerified/connectionFailed/disconnected 상태다.
+    /// - 기대 결과: connected provider 후보가 없다.
     func testProviderDropdownHasNoOptionsWithoutConnectedProviders() {
         let state = AiSettingsState(rows: [
             AiConnectionRowState(provider: .chatgptCodex, connectionState: .notVerified),
@@ -116,6 +139,11 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
         XCTAssertTrue(state.connectedProviderDescriptors.isEmpty)
     }
 
+    /// SET-009-select_collection_search_ai_provider: bootstrap은 disconnected provider 설정을 default로 reset한다.
+    /// 저장된 collection search provider가 현재 연결되지 않았다면 잘못된 검색 설정을 유지하지 않는지 검증한다.
+    /// - 검증 내용: bootstrap completed, disconnected provider detection, settings reset persistence
+    /// - 사전 조건: 저장된 설정은 OpenAI specific model/thinking이고 bootstrap 결과 OpenAI는 disconnected다.
+    /// - 기대 결과: collectionSearchSettings가 default로 초기화되고 저장된다.
     func testBootstrapResetsDisconnectedCollectionSearchProvider() async {
         let saveSpy = CollectionSearchSettingsSaveSpy()
         let initialState = AiSettingsState(
@@ -146,6 +174,11 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
         XCTAssertEqual(saveSpy.saved, [.default])
     }
 
+    /// SET-009-select_collection_search_ai_provider: checkingStatus provider는 bootstrap 중 즉시 reset하지 않는다.
+    /// verification이 끝나기 전 임시 checking 상태를 disconnected로 오판하지 않는지 검증한다.
+    /// - 검증 내용: bootstrap completed checkingStatus, settings preservation, no save
+    /// - 사전 조건: 저장된 설정은 OpenAI이고 bootstrap 결과 OpenAI는 checkingStatus다.
+    /// - 기대 결과: 저장된 설정은 유지되고 추가 저장은 발생하지 않는다.
     func testBootstrapKeepsCollectionSearchProviderWhileCheckingStatus() async {
         let saveSpy = CollectionSearchSettingsSaveSpy()
         let settings = CollectionSearchAISettings(
@@ -173,6 +206,11 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
         XCTAssertTrue(saveSpy.saved.isEmpty)
     }
 
+    /// SET-009-select_collection_search_ai_provider: model load 후 누락된 specific model은 auto/default thinking으로 reset된다.
+    /// provider는 유효하지만 저장된 model id가 현재 모델 목록에 없을 때 안전한 기본 선택으로 돌아가는지 검증한다.
+    /// - 검증 내용: collectionSearchModelsLoaded, missing specific model detection, settings persistence
+    /// - 사전 조건: OpenAI settings가 존재하지 않는 모델과 high thinking effort를 저장하고 있다.
+    /// - 기대 결과: model은 auto, thinking은 providerDefault로 저장된다.
     func testLoadedModelsResetMissingSelectionAndPersist() async {
         let saveSpy = CollectionSearchSettingsSaveSpy()
         let initialState = AiSettingsState(
@@ -215,7 +253,7 @@ final class CollectionSearchAISettingsFeatureTests: XCTestCase {
     }
 }
 
-private extension CollectionSearchAISettingsFeatureTests {
+private extension SET009CollectionSearchAiSettingsTests {
     static var staleOpenAISettings: CollectionSearchAISettings {
         CollectionSearchAISettings(
             provider: .specific(AiProvider.openai.rawValue),
