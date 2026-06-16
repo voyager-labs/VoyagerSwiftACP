@@ -1,12 +1,3 @@
-/*
- ACC-002-show_paywall_cta spec-owner 테스트
-
- interaction_id: ACC-002-show_paywall_cta
- spec: docs/canonical/PRODUCT/05_FEATURE_SPECS/acc/ACC-002-evaluate_account_entitlement/ACC-002-show_paywall_cta.md
-
- 테스트 방식: AccountAccessState derived property를 통한 state derivation test (TestStore 미사용)
- */
-
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
 
