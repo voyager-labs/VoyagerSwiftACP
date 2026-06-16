@@ -4,6 +4,8 @@ import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
 
+// CBW-004 모델 선택 복구 회귀 테스트만 남긴다.
+
 @MainActor
 final class AiChatFeatureRecoveryTests: XCTestCase {
     func testSelectedModelChangedClearsUnavailableSelectionWithoutMutatingLockedModel() async {
@@ -55,103 +57,5 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
         } else {
             XCTFail("Expected processing surface state after clearing invalid selection")
         }
-    }
-
-    func testDraftTextChangeClearsStaleFailureAndResetStillClearsTranscript() async {
-        let catalogRows = makeCatalogRows()
-        let selectedHandle = catalogRows[0].handle
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
-            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
-            draftText: "Draft",
-            catalogRows: catalogRows,
-            selectedModelHandle: selectedHandle,
-            lastExecutionFailure: .transportError,
-            executionPhase: .failed(makeRequestLock(
-                kind: .submit,
-                request: AiChatRequest(
-                    context: makeRequestContext(
-                        sessionID: AiChatSessionID(rawValue: UUID()),
-                        requestID: AiChatRequestID(rawValue: UUID()),
-                        runID: AiChatRunID(rawValue: UUID()),
-                        model: selectedHandle,
-                        selectedRow: catalogRows[0],
-                    ),
-                    messages: [],
-                ),
-                selectedHandle: selectedHandle,
-                selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil,
-            ), .transportError),
-        )) {
-            AiChatFeature()
-        }
-
-        XCTAssertFalse(store.state.canSubmit)
-
-        await store.send(.draftTextChanged("Updated")) { state in
-            state.draftText = "Updated"
-            state.lastExecutionFailure = nil
-            state.executionPhase = .idle
-        }
-
-        XCTAssertTrue(store.state.canSubmit)
-
-        await store.send(.resetTapped) { state in
-            state.draftText = ""
-            state.transcriptHistory = []
-            state.lastExecutionFailure = nil
-            state.lockedModelHandle = nil
-            state.executionPhase = .idle
-        }
-
-        await store.finish()
-    }
-
-    func testSelectedModelChangeClearsStaleFailureAndRestoresSubmitEligibility() async {
-        let catalogRows = makeCatalogRows()
-        let firstHandle = catalogRows[0].handle
-        let secondHandle = catalogRows[1].handle
-        let store = TestStore(initialState: AiChatFeature.State(
-            sessionID: AiChatSessionID(rawValue: UUID()),
-            sessionStatus: .active,
-            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
-            transcriptHistory: [],
-            draftText: "Retry me",
-            catalogRows: catalogRows,
-            selectedModelHandle: firstHandle,
-            lastExecutionFailure: .transportError,
-            executionPhase: .failed(makeRequestLock(
-                kind: .submit,
-                request: AiChatRequest(
-                    context: makeRequestContext(
-                        sessionID: AiChatSessionID(rawValue: UUID()),
-                        requestID: AiChatRequestID(rawValue: UUID()),
-                        runID: AiChatRunID(rawValue: UUID()),
-                        model: firstHandle,
-                        selectedRow: catalogRows[0],
-                    ),
-                    messages: [],
-                ),
-                selectedHandle: firstHandle,
-                selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil,
-            ), .transportError),
-        )) {
-            AiChatFeature()
-        }
-
-        XCTAssertFalse(store.state.canSubmit)
-
-        await store.send(.selectedModelChanged(secondHandle)) { state in
-            state.selectedModelHandle = secondHandle
-            state.lastExecutionFailure = nil
-            state.executionPhase = .idle
-        }
-
-        XCTAssertTrue(store.state.canSubmit)
-        await store.finish()
     }
 }

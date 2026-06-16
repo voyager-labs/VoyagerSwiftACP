@@ -17,6 +17,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         let store = TestStore(initialState: AiChatFeature.State()) {
             AiChatFeature()
         }
+        applyObservationFocusedExhaustivity(to: store)
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
 
@@ -186,6 +187,1838 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         )
         await fixture.store.finish()
         XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, regeneratedTranscript)
+    }
+
+    // MARK: - CBW-001-open_contextual_chat
+
+    /// CBW-001-open_contextual_chat: current context summary fixture가 진입 표면 계약과 일치한다.
+    /// context summary가 selection 유무에 따라 title/detail을 안정적으로 구성하는지 검증합니다.
+    /// - 검증 내용: selected entries, location only, empty context의 summary title/detail을 확인합니다.
+    /// - 사전 조건: provider는 연결되어 있고 current context fixture만 서로 다르게 주입됩니다.
+    /// - 기대 결과: summary display는 inspector와 동일한 텍스트 계약을 유지합니다.
+    func testOpenContextualChatUsesCurrentContextSummaryFixturesThatMatchInspectorContract() {
+        let selectedHandle = makeCatalogRows()[0].handle
+
+        let selectedEntriesState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(
+                summary: "Documents · 2 selected",
+                references: [],
+                items: [],
+                attachments: [],
+            ),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: makeCatalogRows(),
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+        XCTAssertEqual(selectedEntriesState.currentContextSummaryDisplayModel.title, "Documents · 2 selected")
+        XCTAssertNil(selectedEntriesState.currentContextSummaryDisplayModel.detail)
+
+        let locationOnlyState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: makeCatalogRows(),
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+        XCTAssertEqual(locationOnlyState.currentContextSummaryDisplayModel.title, "Documents")
+        XCTAssertNil(locationOnlyState.currentContextSummaryDisplayModel.detail)
+
+        let emptyContextState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: .init(),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: makeCatalogRows(),
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+        XCTAssertEqual(emptyContextState.currentContextSummaryDisplayModel.title, "No current selection")
+        XCTAssertNil(emptyContextState.currentContextSummaryDisplayModel.detail)
+    }
+
+    /// CBW-001-open_contextual_chat: provider unavailable 상태는 고정 배너와 비활성 composer로 노출된다.
+    /// 모델이 전혀 없는 진입 상태에서 사용자가 submit할 수 없고 빈 모델 라벨을 보는지 검증합니다.
+    /// - 검증 내용: connectionState, canSubmit, modelLabel, empty surface summary를 확인합니다.
+    /// - 사전 조건: current context는 존재하지만 catalogRows와 selectedModelHandle은 비어 있습니다.
+    /// - 기대 결과: provider unavailable banner와 No models available composer label이 유지됩니다.
+    func testOpenContextualChatShowsProviderUnavailableSurfaceAndEmptyComposerModelLabel() {
+        let state = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+
+        XCTAssertEqual(state.connectionState, .connected)
+        XCTAssertFalse(state.canSubmit)
+        XCTAssertEqual(state.chatInputDisplayModel.modelLabel, "No models available")
+        XCTAssertEqual(state.chatInputDisplayModel.effortLabel, "No models available")
+
+        if case let .empty(summary, selectedModel) = state.surfaceState {
+            XCTAssertNil(selectedModel)
+            XCTAssertEqual(summary.title, "Documents")
+        } else {
+            XCTFail("Expected empty surface with no loaded models")
+        }
+    }
+
+    /// CBW-001-open_contextual_chat: 연결되지 않은 provider CTA는 AI Settings 열기로 위임된다.
+    /// 빈 provider 상태에서 사용자가 fix action을 눌렀을 때 delegate 이벤트가 올바르게 발생하는지 검증합니다.
+    /// - 검증 내용: openSettingsTapped 이후 delegate(.openAISettings)와 connectionState를 확인합니다.
+    /// - 사전 조건: active session은 존재하지만 providerConnectionSnapshot은 빈 known 상태입니다.
+    /// - 기대 결과: 표면은 그대로 유지되고 Settings 열기 delegate만 방출됩니다.
+    func testOpenContextualChatDelegatesOpenAISettingsForNoProviderCTA() async {
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            providerConnectionSnapshot: .known([]),
+        )) {
+            AiChatFeature()
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.openSettingsTapped)
+        await store.receive(.delegate(.openAISettings))
+
+        XCTAssertEqual(
+            store.state.connectionState,
+            .unconnected(.init(
+                title: "Connect an AI provider",
+                detail: "Set up a provider in Settings to chat with this context.",
+                fixLabel: "Open Settings",
+            )),
+        )
+    }
+
+    // MARK: - CBW-001-submit_chat_request
+
+    /// CBW-001-submit_chat_request: 선택 모델이 현재 loaded catalog에 없으면 submit은 시작되지 않는다.
+    /// stale selectedModelHandle이 남아 있어도 잘못된 실행 요청이 만들어지지 않는지 검증합니다.
+    /// - 검증 내용: canSubmit, execution request count, executionPhase, draftText 보존을 확인합니다.
+    /// - 사전 조건: selectedModelHandle은 존재하지만 loaded model list와 catalogRows가 서로 불일치합니다.
+    /// - 기대 결과: submitTapped는 no-op이고 request는 한 건도 생성되지 않습니다.
+    func testSubmitChatRequestDoesNotStartWhenSelectedModelIsMissingFromLoadedCatalog() async {
+        final class RequestSpy: @unchecked Sendable {
+            private(set) var requests: [AiChatRequest] = []
+
+            func append(_ request: AiChatRequest) {
+                requests.append(request)
+            }
+        }
+
+        let spy = RequestSpy()
+        let catalogRows = makeCatalogRows()
+        let loadedModels = [makeThinkingCapableProviderModels()[1]]
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("dddddddd-dddd-dddd-dddd-dddddddddddd")),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: [catalogRows[1]],
+            modelListState: .loaded(loadedModels),
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                spy.append(request)
+                return AsyncStream { continuation in
+                    continuation.finish()
+                }
+            })
+        }
+
+        XCTAssertFalse(store.state.canSubmit)
+
+        await store.send(.submitTapped)
+
+        XCTAssertTrue(spy.requests.isEmpty)
+        XCTAssertEqual(store.state.draftText, "Hello")
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lockedModelHandle)
+    }
+
+    /// CBW-001-submit_chat_request: canSubmit이 false면 submitTapped는 no-op이다.
+    /// provider/model 미선택 상태에서 submit 액션이 side effect를 만들지 않는지 검증합니다.
+    /// - 검증 내용: execution request count, draftText, executionPhase, lockedModelHandle을 확인합니다.
+    /// - 사전 조건: current context는 있으나 catalogRows와 selectedModelHandle이 비어 있어 canSubmit이 false입니다.
+    /// - 기대 결과: submitTapped 이후에도 상태 변화 없이 기존 draft가 유지됩니다.
+    func testSubmitChatRequestIsNoOpWhenCanSubmitIsFalse() async {
+        final class ExecutionRequestSpy: @unchecked Sendable {
+            private(set) var requests: [AiChatRequest] = []
+
+            func append(_ request: AiChatRequest) {
+                requests.append(request)
+            }
+        }
+
+        let requestSpy = ExecutionRequestSpy()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                requestSpy.append(request)
+                return AsyncStream { continuation in
+                    continuation.finish()
+                }
+            })
+        }
+
+        XCTAssertFalse(store.state.canSubmit)
+
+        await store.send(.submitTapped)
+
+        XCTAssertTrue(requestSpy.requests.isEmpty)
+        XCTAssertEqual(store.state.draftText, "Hello")
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lockedModelHandle)
+        await store.finish()
+    }
+
+    /// CBW-001-submit_chat_request: 두 번째 submit은 이전 assistant turn을 포함한 contiguous history를 전달한다.
+    /// 한 번 완료된 assistant 응답 이후 후속 질문을 보낼 때 provider request history가 누락 없이 이어지는지 검증합니다.
+    /// - 검증 내용: 첫 번째 final 이후 두 번째 request.messages와 transcriptHistory 누적을 확인합니다.
+    /// - 사전 조건: 동일 session에서 첫 요청이 완료된 뒤 두 번째 user draft를 입력합니다.
+    /// - 기대 결과: 두 번째 provider request는 user-assistant-user 순서의 history를 포함합니다.
+    func testSubmitChatRequestIncludesPreviousAssistantTurnInSecondExecutionRequest() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111121"))
+        let fixedMs: Int64 = 1_700_000_000_260
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
+            state.lockedModelHandle = selectedHandle
+            state.streamingAssistantDraft = nil
+        }
+
+        guard let firstRequest = stream.requests.first else {
+            XCTFail("Expected first execution request")
+            return
+        }
+        stream.yield(.final(response: AiChatResponse(
+            context: firstRequest.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "First answer"),
+            completedAtMs: fixedMs,
+        )))
+        await store.receive(.executionEvent(.final(response: AiChatResponse(
+            context: firstRequest.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "First answer"),
+            completedAtMs: fixedMs,
+        )))) { state in
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "First answer"),
+            ]
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+        }
+
+        await store.send(.draftTextChanged("Second question")) { state in
+            state.draftText = "Second question"
+        }
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "First answer"),
+                AiChatMessage(role: .user, content: "Second question"),
+            ]
+            state.lockedModelHandle = selectedHandle
+            state.streamingAssistantDraft = nil
+        }
+
+        XCTAssertEqual(stream.requests.count, 2)
+        XCTAssertEqual(stream.requests[1].messages, [
+            AiChatMessage(role: .user, content: "Hello"),
+            AiChatMessage(role: .assistant, content: "First answer"),
+            AiChatMessage(role: .user, content: "Second question"),
+        ])
+
+        stream.finish()
+        stream.finish(at: 1)
+        await store.finish()
+    }
+
+    /// CBW-001-submit_chat_request: oversized recent turn은 contiguous context를 지키기 위해 잘린다.
+    /// history budget을 초과한 turn이 있어도 가장 최신 연속 대화만 provider request에 포함되는지 검증합니다.
+    /// - 검증 내용: request.messages, historyTruncation included/excluded count와 truncationReason을 확인합니다.
+    /// - 사전 조건: transcript에는 oversized recent turn과 latest turn이 함께 존재하고 draft가 추가됩니다.
+    /// - 기대 결과: request는 latest contiguous turn과 current draft만 포함하고 truncation metadata가 기록됩니다.
+    func testSubmitChatRequestTruncatesHistoryAtOversizedRecentTurnToKeepContiguousContext() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let fixedMs: Int64 = 1_700_000_001_000
+        let olderUser = String(repeating: "o", count: 500)
+        let olderAssistant = String(repeating: "p", count: 500)
+        let oversizedRecentUser = String(repeating: "x", count: 11000)
+        let oversizedRecentAssistant = String(repeating: "y", count: 11000)
+        let latestUser = String(repeating: "u", count: 1700)
+        let latestAssistant = String(repeating: "a", count: 1800)
+        let draft = "Current prompt"
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111119")),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: olderUser),
+                AiChatMessage(role: .assistant, content: olderAssistant),
+                AiChatMessage(role: .user, content: oversizedRecentUser),
+                AiChatMessage(role: .assistant, content: oversizedRecentAssistant),
+                AiChatMessage(role: .user, content: latestUser),
+                AiChatMessage(role: .assistant, content: latestAssistant),
+            ],
+            draftText: draft,
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.lockedModelHandle = catalogRows[0].handle
+        }
+
+        guard let request = stream.requests.first,
+              case let .processing(lock) = store.state.executionPhase
+        else {
+            return XCTFail("Expected frozen request lock")
+        }
+
+        XCTAssertEqual(request.messages, [
+            AiChatMessage(role: .user, content: latestUser),
+            AiChatMessage(role: .assistant, content: latestAssistant),
+            AiChatMessage(role: .user, content: draft),
+        ])
+        XCTAssertFalse(request.messages.contains(AiChatMessage(role: .user, content: olderUser)))
+        XCTAssertFalse(request.messages.contains(AiChatMessage(role: .assistant, content: olderAssistant)))
+        XCTAssertEqual(lock.historyTruncation.includedMessageCount, 3)
+        XCTAssertEqual(lock.historyTruncation.excludedMessageCount, 4)
+        XCTAssertEqual(lock.historyTruncation.truncationReason, .characterBudgetExceeded)
+    }
+
+    /// CBW-001-submit_chat_request: submit 시점의 context timing과 truncation 계산은 요청 동안 고정된다.
+    /// 사용자가 제출 후 thinking 선택을 바꾸더라도 실제 request context와 observability summary는 흔들리지 않는지 검증합니다.
+    /// - 검증 내용: frozen currentContext, selectedThinking, submittedAtMs, request.messages, historyTruncation을 확인합니다.
+    /// - 사전 조건: 긴 transcript, medium thinking, deterministic clock이 설정된 상태에서 submit을 시작합니다.
+    /// - 기대 결과: request는 submit 시점 값으로 고정되고 이후 UI 변경은 in-flight request에 영향을 주지 않습니다.
+    func testSubmitChatRequestFreezesContextTimingAndDeterministicHistoryTruncation() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let fixedMs: Int64 = 1_700_000_000_800
+        let frozenContext = makeContextSnapshot(summary: "Before submit")
+        let largeUser1 = String(repeating: "u", count: 9000)
+        let largeAssistant1 = String(repeating: "a", count: 9000)
+        let largeUser2 = String(repeating: "x", count: 9000)
+        let largeAssistant2 = String(repeating: "y", count: 9000)
+        let draft = "Current prompt"
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111117")),
+            sessionStatus: .active,
+            currentContext: frozenContext,
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: largeUser1),
+                AiChatMessage(role: .assistant, content: largeAssistant1),
+                AiChatMessage(role: .user, content: largeUser2),
+                AiChatMessage(role: .assistant, content: largeAssistant2),
+            ],
+            draftText: draft,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium),
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: largeUser1),
+                AiChatMessage(role: .assistant, content: largeAssistant1),
+                AiChatMessage(role: .user, content: largeUser2),
+                AiChatMessage(role: .assistant, content: largeAssistant2),
+                AiChatMessage(role: .user, content: draft),
+            ]
+            state.lockedModelHandle = catalogRows[0].handle
+            state.transcriptAutoScrollVersion = 1
+        }
+
+        guard let request = stream.requests.first,
+              case let .processing(lock) = store.state.executionPhase
+        else {
+            return XCTFail("Expected frozen request lock")
+        }
+
+        XCTAssertEqual(request.context.currentContext, frozenContext)
+        XCTAssertEqual(request.context.selectedThinking, .effort(.medium))
+        XCTAssertEqual(request.context.submittedAtMs, fixedMs)
+        XCTAssertEqual(request.messages, [
+            AiChatMessage(role: .user, content: largeUser2),
+            AiChatMessage(role: .assistant, content: largeAssistant2),
+            AiChatMessage(role: .user, content: draft),
+        ])
+        XCTAssertEqual(lock.historyTruncation.includedMessageCount, 3)
+        XCTAssertEqual(lock.historyTruncation.excludedMessageCount, 2)
+        XCTAssertEqual(lock.historyTruncation.budget, 24000)
+        XCTAssertEqual(lock.historyTruncation.truncationReason, .characterBudgetExceeded)
+        XCTAssertEqual(lock.observabilitySummary.submittedAtMs, fixedMs)
+
+        await store.send(.selectedThinkingChanged(.effort(.high))) { state in
+            state.selectedThinking = .effort(.high)
+        }
+        XCTAssertEqual(request.context.currentContext.summary, "Before submit")
+        XCTAssertEqual(request.context.selectedThinking, .effort(.medium))
+    }
+
+    /// CBW-001-submit_chat_request: 빈 context에서도 deterministic submitted timestamp로 요청이 준비된다.
+    /// current context가 비어 있어도 실행 request 자체는 안정적으로 준비되는지 검증합니다.
+    /// - 검증 내용: request.context.currentContext, submittedAtMs, request.messages를 확인합니다.
+    /// - 사전 조건: empty current context와 non-empty draft를 가진 active session입니다.
+    /// - 기대 결과: request는 empty context snapshot과 단일 user message로 생성됩니다.
+    func testSubmitChatRequestPreparesEmptyContextWithDeterministicSubmittedTimestamp() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let fixedMs: Int64 = 1_700_000_000_900
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111118")),
+            sessionStatus: .active,
+            currentContext: .init(),
+            transcriptHistory: [],
+            draftText: "Hello empty context",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello empty context")]
+            state.lockedModelHandle = catalogRows[0].handle
+            state.transcriptAutoScrollVersion = 1
+        }
+
+        guard let request = stream.requests.first else {
+            return XCTFail("Expected request for empty context")
+        }
+
+        XCTAssertEqual(request.context.currentContext, .init())
+        XCTAssertEqual(request.context.submittedAtMs, fixedMs)
+        XCTAssertEqual(request.messages, [AiChatMessage(role: .user, content: "Hello empty context")])
+    }
+
+    // MARK: - CBW-001-show_request_processing_state
+
+    /// CBW-001-show_request_processing_state: empty/ready/processing/error surface는 실행 단계에 맞춰 전환된다.
+    /// request 전후와 terminal failure에서 message area와 skeleton surface가 각각 어떤 상태를 노출하는지 검증합니다.
+    /// - 검증 내용: surfaceState, skeletonSurfaceDisplayModel, chatInputDisplayModel, canSubmit을 확인합니다.
+    /// - 사전 조건: 동일 spec에서 empty, current-context draft, ready, processing, disconnected, failed state를 각각 구성합니다.
+    /// - 기대 결과: 각 상태는 user-visible surface contract를 유지하며 processing 중 stop affordance를 노출합니다.
+    func testShowRequestProcessingStateCoversEmptyReadyProcessingAndErrorSurfaces() {
+        let catalogRows = makeCatalogRows()
+        let summary = makeContextSnapshot()
+        let selectedHandle = catalogRows[0].handle
+
+        let emptyState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: .init(),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+
+        if case let .empty(summaryDisplay, selectedModel) = emptyState.surfaceState {
+            XCTAssertTrue(summaryDisplay.isEmpty)
+            XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertEqual(selectedModel?.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
+        } else {
+            XCTFail("Expected empty surface state")
+        }
+        if case let .empty(emptyDisplay) = emptyState.skeletonSurfaceDisplayModel {
+            XCTAssertEqual(emptyDisplay.title, "Ask about this context")
+            XCTAssertEqual(emptyDisplay.detail, "Send a message to start a contextual chat.")
+        } else {
+            XCTFail("Expected skeleton empty surface state")
+        }
+
+        let currentContextInitialState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: summary,
+            transcriptHistory: [],
+            draftText: "What changed?",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+
+        if case let .empty(summaryDisplay, selectedModel) = currentContextInitialState.surfaceState {
+            XCTAssertFalse(summaryDisplay.isEmpty)
+            XCTAssertEqual(summaryDisplay.title, "Four files selected")
+            XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
+        } else {
+            XCTFail("Expected current-context draft to keep empty surface state")
+        }
+        XCTAssertTrue(currentContextInitialState.canSubmit)
+        XCTAssertEqual(currentContextInitialState.chatInputDisplayModel.placeholder, "Ask anything…")
+        XCTAssertEqual(currentContextInitialState.chatInputDisplayModel.modelLabel, "GPT-4.1 Mini")
+        XCTAssertEqual(currentContextInitialState.chatInputDisplayModel.effortLabel, "Thinking unavailable")
+        XCTAssertTrue(currentContextInitialState.chatInputDisplayModel.canSubmit)
+        XCTAssertTrue(currentContextInitialState.chatInputDisplayModel.isSubmitVisible)
+        XCTAssertFalse(currentContextInitialState.chatInputDisplayModel.isStopVisible)
+        XCTAssertNil(currentContextInitialState.modelCatalogState.rows.first?.providerBadge)
+
+        let readyState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: summary,
+            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
+            draftText: "Draft",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+
+        if case let .ready(summaryDisplay, selectedModel) = readyState.surfaceState {
+            XCTAssertFalse(summaryDisplay.isEmpty)
+            XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertEqual(selectedModel?.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
+        } else {
+            XCTFail("Expected ready surface state")
+        }
+        if case .ready = readyState.skeletonSurfaceDisplayModel {
+        } else {
+            XCTFail("Expected ready skeleton surface state")
+        }
+
+        let processingState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: summary,
+            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
+            draftText: "Draft",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: catalogRows[1].handle,
+            lastExecutionFailure: nil,
+            executionPhase: .processing(makeRequestLock(
+                kind: .submit,
+                request: AiChatRequest(
+                    context: makeRequestContext(
+                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: catalogRows[1].handle,
+                        selectedRow: catalogRows[1],
+                    ),
+                    messages: [],
+                ),
+                selectedHandle: catalogRows[1].handle,
+                selectedRow: catalogRows[1],
+                assistantReplacementIndex: nil,
+            )),
+        )
+
+        if case let .processing(processing, _, selectedModel) = processingState.surfaceState {
+            XCTAssertEqual(processing.lockedModel.label.title, "Claude Sonnet 4")
+            XCTAssertEqual(processing.lockedModel.title, "Claude Sonnet 4")
+            XCTAssertEqual(processing.cancelAffordance.title, "Cancel request")
+            XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertEqual(selectedModel?.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
+        } else {
+            XCTFail("Expected processing surface state")
+        }
+        if case let .processing(processing) = processingState.skeletonSurfaceDisplayModel {
+            XCTAssertEqual(processing.lockedModel.label.title, "Claude Sonnet 4")
+        } else {
+            XCTFail("Expected processing skeleton surface state")
+        }
+        XCTAssertFalse(processingState.canSubmit)
+        XCTAssertTrue(processingState.chatInputDisplayModel.isStopVisible)
+        XCTAssertFalse(processingState.chatInputDisplayModel.isSubmitVisible)
+        XCTAssertTrue(processingState.chatInputDisplayModel.canStop)
+
+        let refreshedProcessingState = AiChatFeature.State(
+            sessionID: processingState.sessionID,
+            sessionStatus: .active,
+            currentContext: summary,
+            transcriptHistory: processingState.transcriptHistory,
+            draftText: processingState.draftText,
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: catalogRows[1].handle,
+            lastExecutionFailure: nil,
+            executionPhase: processingState.executionPhase,
+        )
+
+        if case let .processing(processing, _, selectedModel) = refreshedProcessingState.surfaceState {
+            XCTAssertEqual(processing.lockedModel.label.title, "Claude Sonnet 4")
+            XCTAssertNil(selectedModel)
+        } else {
+            XCTFail("Expected processing surface state to survive model refresh")
+        }
+        XCTAssertTrue(refreshedProcessingState.isProcessing)
+        XCTAssertEqual(refreshedProcessingState.chatInputDisplayModel.modelLabel, "No models available")
+        XCTAssertTrue(refreshedProcessingState.chatInputDisplayModel.isStopVisible)
+        XCTAssertTrue(refreshedProcessingState.chatInputDisplayModel.canStop)
+
+        let errorState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .failed,
+            currentContext: summary,
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: .transportError,
+            executionPhase: .failed(makeRequestLock(
+                kind: .submit,
+                request: AiChatRequest(
+                    context: makeRequestContext(
+                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: selectedHandle,
+                        selectedRow: catalogRows[0],
+                    ),
+                    messages: [],
+                ),
+                selectedHandle: selectedHandle,
+                selectedRow: catalogRows[0],
+                assistantReplacementIndex: nil,
+            ), .transportError),
+        )
+
+        if case let .ready(_, selectedModel) = errorState.surfaceState {
+            XCTAssertEqual(selectedModel?.label.title, "GPT-4.1 Mini")
+            XCTAssertEqual(selectedModel?.title, "GPT-4.1 Mini")
+            XCTAssertNil(selectedModel?.label.subtitle)
+        } else {
+            XCTFail("Expected terminal failure to remain in message-area ready surface")
+        }
+        if case .ready = errorState.skeletonSurfaceDisplayModel {
+        } else {
+            XCTFail("Expected terminal failure skeleton to remain in ready surface")
+        }
+        XCTAssertEqual(errorState.requestStatusText, "The chat service response could not be read.")
+    }
+
+    /// CBW-001-show_request_processing_state: completed session은 provider 연결이 끊겨도 ready surface를 유지한다.
+    /// terminal completion 이후 모델 선택만 unavailable이 되었을 때 transcript 표면이 오류 상태로 후퇴하지 않는지 검증합니다.
+    /// - 검증 내용: ready surface, skeleton ready, selectedModel nil, canSubmit false를 확인합니다.
+    /// - 사전 조건: completed execution lock은 존재하지만 catalogRows는 비어 있습니다.
+    /// - 기대 결과: message area는 ready 상태를 유지하고 composer만 submit 불가로 남습니다.
+    func testShowRequestProcessingStateKeepsCompletedSessionReadyWhenProviderBecomesDisconnected() {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: AiChatSessionID(rawValue: UUID()),
+                requestID: AiChatRequestID(rawValue: UUID()),
+                runID: AiChatRunID(rawValue: UUID()),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let disconnectedState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "Hi"),
+            ],
+            draftText: "Follow up",
+            catalogRows: [],
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .completed(lock),
+        )
+
+        if case let .ready(summary, selectedModel) = disconnectedState.surfaceState {
+            XCTAssertFalse(summary.isEmpty)
+            XCTAssertNil(selectedModel)
+        } else {
+            XCTFail("Expected completed session to remain ready while model selection is unavailable")
+        }
+        if case .ready = disconnectedState.skeletonSurfaceDisplayModel {
+        } else {
+            XCTFail("Expected skeleton surface to remain ready after request completion")
+        }
+        XCTAssertFalse(disconnectedState.canSubmit)
+        XCTAssertFalse(disconnectedState.chatInputDisplayModel.canSubmit)
+    }
+
+    /// CBW-001-show_request_processing_state: legacy sessionStatus error는 restore flow가 없으면 terminal surface를 오염시키지
+    /// 않는다.
+    /// 완료된 request가 있는 session에서 오래된 failed status만으로 에러 표면이 다시 나타나지 않는지 검증합니다.
+    /// - 검증 내용: ready surface, skeleton ready, canSubmit true, sessionStatusText nil을 확인합니다.
+    /// - 사전 조건: executionPhase는 completed이고 sessionStatus만 failed로 설정됩니다.
+    /// - 기대 결과: terminal surface는 ready 상태를 유지하고 restore 전용 상태 문구는 노출되지 않습니다.
+    func testShowRequestProcessingStateIgnoresLegacySessionStatusErrorWithoutRestoreFlow() {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(
+                context: makeRequestContext(
+                    sessionID: AiChatSessionID(rawValue: UUID()),
+                    requestID: AiChatRequestID(rawValue: UUID()),
+                    runID: AiChatRunID(rawValue: UUID()),
+                    model: selectedHandle,
+                    selectedRow: catalogRows[0],
+                ),
+                messages: [],
+            ),
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let failedSessionState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .failed,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
+            draftText: "Follow up",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .completed(lock),
+        )
+
+        if case let .ready(summary, selectedModel) = failedSessionState.surfaceState {
+            XCTAssertFalse(summary.isEmpty)
+            XCTAssertEqual(selectedModel?.handle, selectedHandle)
+        } else {
+            XCTFail("Expected terminal surface to remain ready when restore flow is disabled")
+        }
+        if case .ready = failedSessionState.skeletonSurfaceDisplayModel {
+        } else {
+            XCTFail("Expected skeleton surface to remain ready when restore flow is disabled")
+        }
+        XCTAssertTrue(failedSessionState.canSubmit)
+        XCTAssertNil(failedSessionState.sessionStatusText)
+    }
+
+    /// CBW-001-show_request_processing_state: persistence recovery는 execution failure를 error surface로 노출한다.
+    /// final 응답은 확보됐지만 session persistence가 실패한 경우 retry affordance가 사용자에게 드러나는지 검증합니다.
+    /// - 검증 내용: surfaceState.error, skeleton error, requestStatusText, canSubmit false를 확인합니다.
+    /// - 사전 조건: transcript는 존재하고 executionPhase는 persistenceRecovery(.unknown)입니다.
+    /// - 기대 결과: surface는 Chat unavailable과 Retry affordance를 노출합니다.
+    func testShowRequestProcessingStateReflectsPersistenceRecoveryFailureOnSurface() {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(
+                context: makeRequestContext(
+                    sessionID: AiChatSessionID(rawValue: UUID()),
+                    requestID: AiChatRequestID(rawValue: UUID()),
+                    runID: AiChatRunID(rawValue: UUID()),
+                    model: selectedHandle,
+                    selectedRow: catalogRows[0],
+                ),
+                messages: [],
+            ),
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let recoveryState = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "Recovered locally")],
+            draftText: "Follow up",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: .unknown,
+            executionPhase: .persistenceRecovery(lock, .unknown),
+        )
+
+        if case let .error(connection, summary) = recoveryState.surfaceState {
+            XCTAssertEqual(connection.title, "Chat unavailable")
+            XCTAssertEqual(connection.detail, "An unknown chat error occurred.")
+            XCTAssertFalse(summary.isEmpty)
+        } else {
+            XCTFail("Expected persistence recovery to surface execution error")
+        }
+        if case let .error(connection) = recoveryState.skeletonSurfaceDisplayModel {
+            XCTAssertEqual(connection.fixLabel, "Retry")
+        } else {
+            XCTFail("Expected skeleton surface to expose persistence recovery error")
+        }
+        XCTAssertEqual(recoveryState.requestStatusText, "Finalized locally; An unknown chat error occurred.")
+        XCTAssertFalse(recoveryState.canSubmit)
+    }
+
+    // MARK: - CBW-001-recover_failed_chat_request
+
+    /// CBW-001-recover_failed_chat_request: connections file load 실패는 provider 실행 없이 unknown failure로 전환된다.
+    /// credential 조회가 실패한 경우 provider client가 호출되지 않고 terminal failure만 남는지 검증합니다.
+    /// - 검증 내용: provider request count, failed executionPhase, lastExecutionFailure, requestStatusText를 확인합니다.
+    /// - 사전 조건: submit 가능한 상태이지만 aiConnectionsFileClient.load가 unreadable error를 던집니다.
+    /// - 기대 결과: provider execution은 0회이며 UI는 unknown failure recovery 상태로 전환됩니다.
+    func testRecoverFailedChatRequestEmitsUnknownFailureWhenConnectionsFileLoadFails() async {
+        actor ProviderDriver {
+            var requestCount = 0
+
+            func increment() {
+                requestCount += 1
+            }
+
+            func snapshot() -> Int {
+                requestCount
+            }
+        }
+
+        enum LoadFailure: Error {
+            case unreadable
+        }
+
+        let driver = ProviderDriver()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111122"))
+        let fixedMs: Int64 = 1_700_000_000_700
+        let providerClient = AiChatProviderExecutionClient(execute: { request, _ in
+            AsyncThrowingStream { continuation in
+                Task {
+                    await driver.increment()
+                    continuation.yield(.started(context: request.context))
+                    continuation.finish()
+                }
+            }
+        })
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = .live(providerExecutionClient: providerClient)
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { throw LoadFailure.unreadable },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) },
+            )
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
+            state.selectedModelHandle = selectedHandle
+            state.lockedModelHandle = selectedHandle
+            state.lastExecutionFailure = nil
+            state.streamingAssistantDraft = nil
+        }
+
+        guard case let .processing(lock) = store.state.executionPhase else {
+            XCTFail("Expected processing state after submit")
+            return
+        }
+
+        let failedLock = lock.recordingTerminal(at: fixedMs, failure: .unknown, wasCancelled: false)
+        await store.receive(.executionEvent(.failed(context: lock.request.context, reason: .unknown))) { state in
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = .unknown
+            state.executionPhase = .failed(failedLock, .unknown)
+        }
+
+        let requestCount = await driver.snapshot()
+        XCTAssertEqual(requestCount, 0)
+        XCTAssertEqual(store.state.requestStatusText, "An unknown chat error occurred.")
+    }
+
+    /// CBW-001-recover_failed_chat_request: failure surface가 남아 있으면 submit 재시도는 차단된다.
+    /// stale failure banner가 존재하는 동안 사용자가 바로 submit을 다시 누르지 못하는지 검증합니다.
+    /// - 검증 내용: canSubmit이 false인지 확인합니다.
+    /// - 사전 조건: active session, non-empty draft, transportError failure가 idle phase 위에 남아 있습니다.
+    /// - 기대 결과: composer는 retry surface를 지우기 전까지 submit 불가 상태를 유지합니다.
+    func testRecoverFailedChatRequestDisallowsSubmitWhileFailureSurfaceExists() {
+        let catalogRows = makeCatalogRows()
+        let state = AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "Retry after failure",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: .transportError,
+            executionPhase: .idle,
+        )
+        let store = TestStore(initialState: state) {
+            AiChatFeature()
+        }
+        XCTAssertFalse(store.state.canSubmit)
+    }
+
+    /// CBW-001-recover_failed_chat_request: draft 수정과 reset은 stale failure surface를 제거한다.
+    /// 사용자가 새 prompt를 입력하거나 reset을 눌렀을 때 이전 transport failure가 더 이상 composer를 막지 않는지 검증합니다.
+    /// - 검증 내용: draftTextChanged 후 canSubmit 복구와 reset 후 transcript/lock/failure 초기화를 확인합니다.
+    /// - 사전 조건: failed execution lock과 stale draft, transcript가 존재합니다.
+    /// - 기대 결과: 새 입력은 failure를 지우고 reset은 대화 상태를 완전히 초기화합니다.
+    func testRecoverFailedChatRequestClearsStaleFailureOnDraftChangeAndReset() async {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
+            draftText: "Draft",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lastExecutionFailure: .transportError,
+            executionPhase: .failed(makeRequestLock(
+                kind: .submit,
+                request: AiChatRequest(
+                    context: makeRequestContext(
+                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: selectedHandle,
+                        selectedRow: catalogRows[0],
+                    ),
+                    messages: [],
+                ),
+                selectedHandle: selectedHandle,
+                selectedRow: catalogRows[0],
+                assistantReplacementIndex: nil,
+            ), .transportError),
+        )) {
+            AiChatFeature()
+        }
+
+        XCTAssertFalse(store.state.canSubmit)
+
+        await store.send(.draftTextChanged("Updated")) { state in
+            state.draftText = "Updated"
+            state.lastExecutionFailure = nil
+            state.executionPhase = .idle
+        }
+
+        XCTAssertTrue(store.state.canSubmit)
+
+        await store.send(.resetTapped) { state in
+            state.draftText = ""
+            state.transcriptHistory = []
+            state.lastExecutionFailure = nil
+            state.lockedModelHandle = nil
+            state.executionPhase = .idle
+        }
+
+        await store.finish()
+    }
+
+    /// CBW-001-recover_failed_chat_request: 모델 변경은 stale failure를 지우고 submit 가능 상태를 복원한다.
+    /// 사용자가 다른 모델을 고르면 이전 failure surface가 즉시 내려가고 재시도 가능해지는지 검증합니다.
+    /// - 검증 내용: selectedModelHandle 변경, lastExecutionFailure 초기화, executionPhase idle 복귀를 확인합니다.
+    /// - 사전 조건: firstHandle로 실패한 뒤 secondHandle이 같은 catalog에 존재합니다.
+    /// - 기대 결과: 새 모델 선택 후 canSubmit은 true가 됩니다.
+    func testRecoverFailedChatRequestClearsStaleFailureWhenModelChanges() async {
+        let catalogRows = makeCatalogRows()
+        let firstHandle = catalogRows[0].handle
+        let secondHandle = catalogRows[1].handle
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Documents", references: [], items: [], attachments: []),
+            transcriptHistory: [],
+            draftText: "Retry me",
+            catalogRows: catalogRows,
+            selectedModelHandle: firstHandle,
+            lastExecutionFailure: .transportError,
+            executionPhase: .failed(makeRequestLock(
+                kind: .submit,
+                request: AiChatRequest(
+                    context: makeRequestContext(
+                        sessionID: AiChatSessionID(rawValue: UUID()),
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: firstHandle,
+                        selectedRow: catalogRows[0],
+                    ),
+                    messages: [],
+                ),
+                selectedHandle: firstHandle,
+                selectedRow: catalogRows[0],
+                assistantReplacementIndex: nil,
+            ), .transportError),
+        )) {
+            AiChatFeature()
+        }
+
+        XCTAssertFalse(store.state.canSubmit)
+
+        await store.send(.selectedModelChanged(secondHandle)) { state in
+            state.selectedModelHandle = secondHandle
+            state.lastExecutionFailure = nil
+            state.executionPhase = .idle
+        }
+
+        XCTAssertTrue(store.state.canSubmit)
+        await store.finish()
+    }
+
+    // MARK: - CBW-001-retry_failed_chat_request
+
+    /// CBW-001-retry_failed_chat_request: authentication failure는 같은 user prompt로 retry를 시작한다.
+    /// authentication terminal failure 이후 recovery tap이 regenerate flow로 재실행되는지 검증합니다.
+    /// - 검증 내용: retry request messages, processing lock, locked model, failure cleanup을 확인합니다.
+    /// - 사전 조건: active session에서 첫 submit이 authentication failure로 종료됩니다.
+    /// - 기대 결과: errorRecoveryTapped는 동일 prompt의 새 request를 만들고 lastExecutionFailure를 제거합니다.
+    func testRetryFailedChatRequestSupportsAuthenticationRecovery() async {
+        await assertFailureRecovery(reason: .authentication, sessionIDRaw: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    }
+
+    /// CBW-001-retry_failed_chat_request: model unavailable failure는 같은 user prompt로 retry를 시작한다.
+    /// 모델 가용성 오류 이후 recovery tap이 사용자 입력을 보존한 채 재실행되는지 검증합니다.
+    /// - 검증 내용: retry request messages, processing lock, locked model, failure cleanup을 확인합니다.
+    /// - 사전 조건: active session에서 첫 submit이 modelUnavailable failure로 종료됩니다.
+    /// - 기대 결과: errorRecoveryTapped는 동일 prompt의 새 request를 만들고 recovery surface를 닫습니다.
+    func testRetryFailedChatRequestSupportsModelUnavailableRecovery() async {
+        await assertFailureRecovery(reason: .modelUnavailable, sessionIDRaw: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+    }
+
+    /// CBW-001-retry_failed_chat_request: network failure는 같은 user prompt로 retry를 시작한다.
+    /// 네트워크 terminal failure 이후 recovery tap이 재시도 경로를 정상적으로 여는지 검증합니다.
+    /// - 검증 내용: retry request messages, processing lock, locked model, failure cleanup을 확인합니다.
+    /// - 사전 조건: active session에서 첫 submit이 network failure로 종료됩니다.
+    /// - 기대 결과: errorRecoveryTapped는 동일 prompt의 새 request를 만들고 processing 상태로 복귀합니다.
+    func testRetryFailedChatRequestSupportsNetworkRecovery() async {
+        await assertFailureRecovery(reason: .network, sessionIDRaw: "cccccccc-cccc-cccc-cccc-cccccccccccc")
+    }
+
+    // MARK: - CBW-001-recover_persisted_chat_state
+
+    /// CBW-001-recover_persisted_chat_state: final transcript persistence 실패는 recovery state를 만든다.
+    /// assistant final까지는 성공했지만 snapshot 저장이 실패한 경우 로컬 finalized 상태와 recovery 배너가 남는지 검증합니다.
+    /// - 검증 내용: executionEvent.final 이후 persistenceFailed, transcript 보존, requestStatusText를 확인합니다.
+    /// - 사전 조건: saveSession dependency는 항상 throw하고 provider stream은 final response를 반환합니다.
+    /// - 기대 결과: executionPhase는 persistenceRecovery로 전환되고 transcript는 손실되지 않습니다.
+    func testRecoverPersistedChatStateCreatesRecoveryStateWhenPersistenceFails() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111114"))
+        let fixedMs: Int64 = 1_700_000_000_400
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in
+                    struct PersistenceBoom: Error {}
+                    throw PersistenceBoom()
+                },
+                deleteSession: { _ in },
+            )
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello")]
+            state.lockedModelHandle = selectedHandle
+            state.transcriptAutoScrollVersion = 1
+        }
+
+        guard let request = stream.requests.first else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+
+        let finalResponse = AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "Hi"),
+            completedAtMs: fixedMs,
+        )
+        stream.yield(.final(response: finalResponse))
+        stream.finish()
+
+        let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "Hi"),
+            ]
+            state.lockedModelHandle = nil
+            state.executionPhase = .completed(finalizedLock)
+        }
+
+        await store.receive(.persistenceFailed(finalizedLock, .unknown)) { state in
+            state.lastExecutionFailure = .unknown
+            state.executionPhase = .persistenceRecovery(finalizedLock, .unknown)
+        }
+
+        XCTAssertEqual(store.state.transcriptHistory, [
+            AiChatMessage(role: .user, content: "Hello"),
+            AiChatMessage(role: .assistant, content: "Hi"),
+        ])
+        XCTAssertEqual(store.state.requestStatusText, "Finalized locally; An unknown chat error occurred.")
+
+        await store.finish()
+    }
+
+    /// CBW-001-recover_persisted_chat_state: persistence retry는 저장을 다시 시도하고 recovery state를 제거한다.
+    /// errorRecoveryTapped가 persistenceRecovery 경로에서 saveSession을 재실행해 completed로 복귀하는지 검증합니다.
+    /// - 검증 내용: persistence snapshot count, persisted transcript, persistenceRecoverySucceeded 이후 상태를 확인합니다.
+    /// - 사전 조건: transcript와 completed lock은 이미 있고 executionPhase는 persistenceRecovery(.unknown)입니다.
+    /// - 기대 결과: snapshot이 한 번 저장되고 lastExecutionFailure는 nil로 초기화됩니다.
+    func testRecoverPersistedChatStateRetriesSaveAndClearsRecoveryState() async {
+        let persistence = AiChatSessionPersistenceSpy()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333"))
+        let fixedMs: Int64 = 1_700_000_001_000
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444")),
+                runID: AiChatRunID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [AiChatMessage(role: .user, content: "Hello")],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        ).recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        let transcript = [
+            AiChatMessage(role: .user, content: "Hello"),
+            AiChatMessage(role: .assistant, content: "Hi"),
+        ]
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: transcript,
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lastExecutionFailure: .unknown,
+            executionPhase: .persistenceRecovery(lock, .unknown),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    await persistence.save(snapshot)
+                },
+                deleteSession: { _ in },
+            )
+        }
+
+        await store.send(.errorRecoveryTapped)
+
+        await store.receive(.persistenceRecoverySucceeded(lock)) { state in
+            state.lastExecutionFailure = nil
+            state.executionPhase = .completed(lock)
+        }
+
+        XCTAssertEqual(persistence.snapshots.count, 1)
+        XCTAssertEqual(persistence.snapshots.first?.sessionID, sessionID)
+        XCTAssertEqual(persistence.snapshots.first?.transcriptHistory, transcript)
+        await store.finish()
+    }
+
+    /// CBW-001-recover_persisted_chat_state: 이미 성공한 persistence retry 뒤에 늦은 실패 이벤트가 와도 무시된다.
+    /// recovery success와 retry failure가 경합할 때 success state가 다시 오염되지 않는지 검증합니다.
+    /// - 검증 내용: persistenceRecoverySucceeded 이후 lastExecutionFailure nil, executionPhase completed 유지 여부를 확인합니다.
+    /// - 사전 조건: executionPhase는 persistenceRecovery이며 뒤이어 success와 stale retry failure를 순서대로 보냅니다.
+    /// - 기대 결과: completed 상태가 유지되고 stale retry failure는 무시됩니다.
+    func testRecoverPersistedChatStateIgnoresRetryFailureAfterSuccess() async {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("77777777-7777-7777-7777-777777777777"))
+        let request = AiChatRequest(
+            context: makeRequestContext(
+                sessionID: sessionID,
+                requestID: AiChatRequestID(rawValue: makeUUID("88888888-8888-8888-8888-888888888888")),
+                runID: AiChatRunID(rawValue: makeUUID("99999999-9999-9999-9999-999999999999")),
+                model: selectedHandle,
+                selectedRow: catalogRows[0],
+            ),
+            messages: [AiChatMessage(role: .user, content: "Hello")],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
+            draftText: "",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lastExecutionFailure: .unknown,
+            executionPhase: .persistenceRecovery(lock, .unknown),
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.persistenceRecoverySucceeded(lock)) { state in
+            state.lastExecutionFailure = nil
+            state.executionPhase = .completed(lock)
+        }
+
+        await store.send(.persistenceRecoveryRetryFailed(lock, .unknown))
+
+        XCTAssertNil(store.state.lastExecutionFailure)
+        XCTAssertEqual(store.state.executionPhase, .completed(lock))
+        await store.finish()
+    }
+
+    /// CBW-001-recover_persisted_chat_state: retryable recovery state가 없으면 errorRecoveryTapped는 no-op이다.
+    /// idle surface에서 recovery action이 잘못 실행되어 상태를 바꾸지 않는지 검증합니다.
+    /// - 검증 내용: executionPhase idle과 lastExecutionFailure nil 유지 여부를 확인합니다.
+    /// - 사전 조건: sessionStatus는 idle이고 executionPhase도 idle입니다.
+    /// - 기대 결과: errorRecoveryTapped 이후에도 아무 상태 변화가 없습니다.
+    func testRecoverPersistedChatStateDoesNothingWithoutRetryableState() async {
+        let catalogRows = makeCatalogRows()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionStatus: .idle,
+            currentContext: makeContextSnapshot(),
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.errorRecoveryTapped)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lastExecutionFailure)
+        await store.finish()
+    }
+
+    // MARK: - CBW-001-continue_inflight_chat_request
+
+    /// CBW-001-continue_inflight_chat_request: 다른 session을 열람했다가 돌아와도 원 request completion은 원 session에 저장된다.
+    /// in-flight request 중 session 전환이 발생해도 원래 request lock과 persistence snapshot이 active session 기준으로 마무리되는지 검증합니다.
+    /// - 검증 내용: restore 이후 processing lock 유지, final completion transcript, saved session summary, persistence
+    /// snapshots를 확인합니다.
+    /// - 사전 조건: active session에서 submit을 시작한 뒤 target session으로 이동하고 다시 active session으로 복귀합니다.
+    /// - 기대 결과: 원 request final은 active session transcript와 session row를 갱신하고 target session을 오염시키지 않습니다.
+    func testContinueInFlightChatRequestPreservesOriginalSessionCompletionAcrossSessionSwitch() async {
+        let activeSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111221"))
+        let targetSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222221"))
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let fixedMs: Int64 = 1_700_000_001_221
+        let activeRow = AiChatSessionSummary(
+            sessionID: activeSessionID,
+            title: "Active request",
+            preview: "Question A",
+            messageCount: 1,
+            contextTitle: "Docs",
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            createdAtMs: fixedMs - 10,
+            updatedAtMs: fixedMs - 10,
+            status: .active,
+        )
+        let targetSnapshot = AiChatSessionSnapshot(
+            sessionID: targetSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Earlier target chat")],
+            updatedAtMs: fixedMs - 1,
+        )
+        let targetRow = AiChatSessionSummary(snapshot: targetSnapshot)
+        let activeRestoreSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            updatedAtMs: fixedMs,
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let persistence = AiChatSessionPersistenceSpy(loadHandler: { id in
+            switch id {
+            case targetSessionID:
+                targetSnapshot
+            case activeSessionID:
+                activeRestoreSnapshot
+            default:
+                nil
+            }
+        })
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [activeRow, targetRow], selectedSessionID: activeSessionID),
+            sessionID: activeSessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Current docs"),
+            draftText: "Question A",
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: selectedHandle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in [] },
+                loadSession: { try await persistence.loadSession($0) },
+                saveSession: { snapshot in await persistence.save(snapshot) },
+                deleteSession: { _ in },
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { AIConnectionsFile.empty() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) },
+            )
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Question A")]
+            state.lockedModelHandle = selectedHandle
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.transcriptAutoScrollVersion = 1
+        }
+
+        guard let request = stream.requests.first else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+
+        await store.send(.sessionRowTapped(targetSessionID)) { state in
+            state.mode = .sessions
+            state.sessionList.selectedSessionID = targetSessionID
+            state.restoreSessionID = targetSessionID
+            state.currentContextFolderStructureModes = [:]
+        }
+
+        await store.receive(.restoreOutcome(
+            requestedSessionID: targetSessionID,
+            .restored(snapshot: targetSnapshot),
+            restoreFailure: nil,
+        )) { state in
+            state.sessionID = targetSessionID
+            state.sessionStatus = .active
+            state.transcriptHistory = targetSnapshot.transcriptHistory
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = targetSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = nil
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.executionPhase = .processing(lock)
+            state.selectedModelHandle = targetSnapshot.model
+            state.selectedThinking = targetSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: targetSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.send(.sessionRowTapped(activeSessionID)) { state in
+            state.mode = .sessions
+            state.sessionList.selectedSessionID = activeSessionID
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.restoreSessionID = activeSessionID
+            state.currentContextFolderStructureModes = [:]
+        }
+
+        await store.receive(.restoreOutcome(
+            requestedSessionID: activeSessionID,
+            .restored(snapshot: activeRestoreSnapshot),
+            restoreFailure: nil,
+        )) { state in
+            state.sessionID = activeSessionID
+            state.sessionStatus = .active
+            state.transcriptHistory = activeRestoreSnapshot.transcriptHistory
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = activeRestoreSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = nil
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.executionPhase = .processing(lock)
+            state.selectedModelHandle = activeRestoreSnapshot.model
+            state.selectedThinking = activeRestoreSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: activeRestoreSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+        XCTAssertEqual(store.state.surfaceState, .processing(
+            processing: AiChatProcessingState(
+                lockedModel: AiChatLockedModelDisplayModel(
+                    handle: selectedHandle,
+                    label: AiChatModelLabel(title: catalogRows[0].displayName),
+                ),
+                cancelAffordance: AiChatCancelAffordance(title: "Cancel request", isEnabled: true),
+            ),
+            summary: store.state.currentContextSummaryDisplayModel,
+            selectedModel: store.state.selectedModelDisplayModel,
+        ))
+        XCTAssertTrue(store.state.isProcessing)
+
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Original request completed")
+        let finalResponse = AiChatResponse(
+            context: request.context,
+            assistantMessage: assistantMessage,
+            completedAtMs: fixedMs,
+        )
+        stream.yield(.final(response: finalResponse))
+        stream.finish()
+
+        let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+            state.transcriptHistory = [
+                AiChatMessage(role: .user, content: "Question A"),
+                assistantMessage,
+            ]
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = lock.context.requestContext
+            state.lastRequestContextModelHandle = selectedHandle
+            state.executionPhase = .completed(finalizedLock)
+            state.transcriptAutoScrollVersion = 2
+        }
+
+        let expectedOriginalSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Question A"),
+                assistantMessage,
+            ],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let expectedOriginalSummary = AiChatSessionSummary(snapshot: expectedOriginalSnapshot)
+        await store.receive(.sessionSnapshotSaved(expectedOriginalSummary)) { state in
+            state.sessionList.replaceRow(expectedOriginalSummary)
+            state.sessionList.selectedSessionID = activeSessionID
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.finish()
+        XCTAssertEqual(store.state.sessionID, activeSessionID)
+        XCTAssertEqual(store.state.transcriptHistory, expectedOriginalSnapshot.transcriptHistory)
+        if case .processing = store.state.surfaceState {
+            XCTFail("The restored original session must leave processing after final completion")
+        }
+        XCTAssertFalse(store.state.isProcessing)
+        let expectedStartSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        XCTAssertEqual(persistence.snapshots, [expectedStartSnapshot, expectedOriginalSnapshot])
+    }
+
+    /// CBW-001-continue_inflight_chat_request: offscreen session failure는 현재 보이는 session을 오염시키지 않는다.
+    /// 다른 session을 보는 동안 원 request가 failure로 끝나도 visible session의 transcript와 error surface가 변하지 않는지 검증합니다.
+    /// - 검증 내용: target session visible state 보호, active session 복귀 후 original failure 복원, persistence snapshot count를
+    /// 확인합니다.
+    /// - 사전 조건: active session submit 후 target session으로 이동한 상태에서 원 request가 network failure로 종료됩니다.
+    /// - 기대 결과: target session은 깨끗하게 유지되고 active session 복귀 시에만 original failure가 드러납니다.
+    func testContinueInFlightChatRequestDoesNotPolluteVisibleSessionWhenOffscreenFailureArrives() async {
+        let activeSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111241"))
+        let targetSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222241"))
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let fixedMs: Int64 = 1_700_000_001_241
+        let activeRow = AiChatSessionSummary(
+            sessionID: activeSessionID,
+            title: "Active request",
+            preview: "Question A",
+            messageCount: 1,
+            contextTitle: "Docs",
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            createdAtMs: fixedMs - 10,
+            updatedAtMs: fixedMs - 10,
+            status: .active,
+        )
+        let targetSnapshot = AiChatSessionSnapshot(
+            sessionID: targetSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Earlier target chat")],
+            updatedAtMs: fixedMs - 1,
+        )
+        let targetRow = AiChatSessionSummary(snapshot: targetSnapshot)
+        let activeRestoreSnapshot = AiChatSessionSnapshot(
+            sessionID: activeSessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [AiChatMessage(role: .user, content: "Question A")],
+            updatedAtMs: fixedMs,
+        )
+        let stream = AiChatExecutionStreamDriver()
+        let persistence = AiChatSessionPersistenceSpy(loadHandler: { id in
+            switch id {
+            case targetSessionID:
+                targetSnapshot
+            case activeSessionID:
+                activeRestoreSnapshot
+            default:
+                nil
+            }
+        })
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .sessions,
+            sessionList: .init(allRows: [activeRow, targetRow], selectedSessionID: activeSessionID),
+            sessionID: activeSessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(summary: "Current docs"),
+            draftText: "Question A",
+            catalogRows: catalogRows,
+            modelListState: .loaded(makeThinkingCapableProviderModels()),
+            selectedModelHandle: selectedHandle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in [] },
+                loadSession: { try await persistence.loadSession($0) },
+                saveSession: { snapshot in await persistence.save(snapshot) },
+                deleteSession: { _ in },
+            )
+            $0.aiConnectionsFileClient = AIConnectionsFileClient(
+                load: { AIConnectionsFile.empty() },
+                save: { .success($0) },
+                deleteCredential: { _ in .success(AIConnectionsFile.empty()) },
+            )
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Question A")]
+            state.lockedModelHandle = selectedHandle
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.transcriptAutoScrollVersion = 1
+        }
+
+        guard let request = stream.requests.first else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+
+        await store.send(.sessionRowTapped(targetSessionID)) { state in
+            state.mode = .sessions
+            state.sessionList.selectedSessionID = targetSessionID
+            state.restoreSessionID = targetSessionID
+            state.currentContextFolderStructureModes = [:]
+        }
+        await store.receive(.restoreOutcome(
+            requestedSessionID: targetSessionID,
+            .restored(snapshot: targetSnapshot),
+            restoreFailure: nil,
+        )) { state in
+            state.sessionID = targetSessionID
+            state.sessionStatus = .active
+            state.transcriptHistory = targetSnapshot.transcriptHistory
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = targetSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = nil
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.executionPhase = .processing(lock)
+            state.selectedModelHandle = targetSnapshot.model
+            state.selectedThinking = targetSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: targetSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+        XCTAssertNil(store.state.requestStatusText)
+
+        stream.yield(.failed(context: request.context, reason: .network))
+        stream.finish()
+
+        let failedLock = lock.recordingTerminal(at: fixedMs, failure: .network, wasCancelled: false)
+        await store.receive(.executionEvent(.failed(context: request.context, reason: .network))) { state in
+            state.lockedModelHandle = nil
+            state.executionPhase = .failed(failedLock, .network)
+        }
+        XCTAssertEqual(store.state.sessionID, targetSessionID)
+        XCTAssertEqual(store.state.transcriptHistory, targetSnapshot.transcriptHistory)
+        XCTAssertNil(store.state.lastExecutionFailure)
+        XCTAssertNil(store.state.requestStatusText)
+        if case .processing = store.state.surfaceState {
+            XCTFail("The visible target session must not show another session's failed request as processing")
+        }
+
+        await store.send(.sessionRowTapped(activeSessionID)) { state in
+            state.mode = .sessions
+            state.sessionList.selectedSessionID = activeSessionID
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.restoreSessionID = activeSessionID
+            state.currentContextFolderStructureModes = [:]
+        }
+        await store.receive(.restoreOutcome(
+            requestedSessionID: activeSessionID,
+            .restored(snapshot: activeRestoreSnapshot),
+            restoreFailure: nil,
+        )) { state in
+            state.sessionID = activeSessionID
+            state.sessionStatus = .active
+            state.transcriptHistory = activeRestoreSnapshot.transcriptHistory
+            state.streamingAssistantDraft = nil
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = activeRestoreSnapshot.lastRequestContext
+            state.lastRequestContextModelHandle = nil
+            state.addedAttachments = []
+            state.currentContextFolderStructureModes = [:]
+            state.executionPhase = .failed(failedLock, .network)
+            state.selectedModelHandle = activeRestoreSnapshot.model
+            state.selectedThinking = activeRestoreSnapshot.selectedThinking
+            state.restoreOutcome = .restored(snapshot: activeRestoreSnapshot)
+            state.restoreFailure = nil
+            state.mode = .chat
+            state.sessionList.errorMessage = nil
+        }
+
+        XCTAssertEqual(store.state.requestStatusText, AiChatExecutionFailure.network.displayMessage)
+        XCTAssertEqual(persistence.snapshots.count, 1)
+        await store.finish()
     }
 }
 
@@ -700,5 +2533,101 @@ private extension CBW001ContextualChatRequestTests {
 
     func submitCompletedTranscript(assistant: String) -> [AiChatMessage] {
         [AiChatMessage(role: .user, content: "Hello"), AiChatMessage(role: .assistant, content: assistant)]
+    }
+
+    func assertFailureRecovery(reason: AiChatExecutionFailure, sessionIDRaw: String) async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let selectedHandle = catalogRows[0].handle
+        let prompt = "Retry me"
+        let sessionID = AiChatSessionID(rawValue: makeUUID(sessionIDRaw))
+        let fixedMs: Int64 = 1_700_000_001_100
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: prompt,
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
+        }
+        applyObservationFocusedExhaustivity(to: store)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: prompt)]
+            state.lockedModelHandle = selectedHandle
+            state.streamingAssistantDraft = nil
+        }
+
+        guard let request = stream.requests.first else {
+            return XCTFail("Expected execution request")
+        }
+
+        let failedLock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        ).recordingTerminal(at: fixedMs, failure: reason, wasCancelled: false)
+
+        stream.yield(.failed(context: request.context, reason: reason))
+
+        await store.receive(.executionEvent(.failed(context: request.context, reason: reason))) { state in
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = reason
+            state.executionPhase = .failed(failedLock, reason)
+        }
+
+        if case .ready = store.state.surfaceState {
+        } else {
+            XCTFail("Expected ready surface state after failure")
+        }
+
+        XCTAssertEqual(store.state.requestStatusText, reason.displayMessage)
+        XCTAssertEqual(store.state.lastExecutionFailure, reason)
+
+        await store.send(.errorRecoveryTapped)
+
+        guard let retryRequest = stream.requests.last, stream.requests.count == 2 else {
+            return XCTFail("Expected a retry request")
+        }
+
+        let retryLock = makeRequestLock(
+            kind: .regenerate,
+            request: retryRequest,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+
+        XCTAssertEqual(retryRequest.messages, [AiChatMessage(role: .user, content: prompt)])
+        XCTAssertEqual(store.state.executionPhase, .processing(retryLock))
+        XCTAssertEqual(store.state.lockedModelHandle, selectedHandle)
+        XCTAssertNil(store.state.lastExecutionFailure)
+
+        stream.finish(at: 1)
+        await store.finish()
     }
 }
