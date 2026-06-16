@@ -2,30 +2,30 @@ import Foundation
 import VoyagerEntitiesAi
 
 // REFACTOR: 향후 VoyagerShared/CredentialStore로 AIConnectionFileStore와 통합 예정
-public actor AccountTokenFileStore {
+actor AccountTokenFileStore {
     private let fileManager = FileManager.default
     private let payloadURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    public init(payloadURL: URL) {
+    init(payloadURL: URL) {
         self.payloadURL = payloadURL
         encoder.outputFormatting = [.sortedKeys]
     }
 
-    public static func withDefaultHome(
+    static func withDefaultHome(
         homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
     ) -> AccountTokenFileStore {
         let payloadURL = AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeDirectoryURL)
         return AccountTokenFileStore(payloadURL: payloadURL)
     }
 
-    public static func withCustomHome(homeURL: URL) -> AccountTokenFileStore {
+    static func withCustomHome(homeURL: URL) -> AccountTokenFileStore {
         let payloadURL = AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeURL)
         return AccountTokenFileStore(payloadURL: payloadURL)
     }
 
-    public func read() throws -> AccountTokensFile? {
+    func read() throws -> AccountTokensFile? {
         guard fileManager.fileExists(atPath: payloadURL.path) else {
             return nil
         }
@@ -44,12 +44,12 @@ public actor AccountTokenFileStore {
         }
     }
 
-    public func write(_ file: AccountTokensFile) throws {
+    func write(_ file: AccountTokensFile) throws {
         let data = try encoder.encode(file)
         try replacePayload(with: data)
     }
 
-    public func delete() throws {
+    func delete() throws {
         if fileManager.fileExists(atPath: payloadURL.path) {
             try fileManager.removeItem(at: payloadURL)
         }

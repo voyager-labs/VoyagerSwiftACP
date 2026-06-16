@@ -2,24 +2,24 @@ import Foundation
 import VoyagerEntitiesAi
 
 // REFACTOR: 향후 VoyagerShared/CredentialStore로 AIConnectionFileStore와 통합 예정
-public enum AccountTokenFSLocation {
-    public static let directoryName = ".voyager"
-    public static let payloadFileName = "account_tokens.json"
-    public static let quarantinePrefix = "account_tokens.corrupted"
+enum AccountTokenFSLocation {
+    static let directoryName = ".voyager"
+    static let payloadFileName = "account_tokens.json"
+    static let quarantinePrefix = "account_tokens.corrupted"
 
-    public static func directoryURL(homeDirectoryURL: URL) -> URL {
+    static func directoryURL(homeDirectoryURL: URL) -> URL {
         homeDirectoryURL
             .appendingPathComponent(directoryName, isDirectory: true)
     }
 
-    public static func accountTokensFileURL(
+    static func accountTokensFileURL(
         homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
     ) -> URL {
         directoryURL(homeDirectoryURL: homeDirectoryURL)
             .appendingPathComponent(payloadFileName)
     }
 
-    public static func quarantineFileURL(
+    static func quarantineFileURL(
         directoryURL: URL,
         iso8601String: String,
     ) -> URL {
@@ -27,7 +27,7 @@ public enum AccountTokenFSLocation {
         return directoryURL.appendingPathComponent("\(quarantinePrefix)-\(safeTimestamp).json")
     }
 
-    public static func quarantineFileURL(
+    static func quarantineFileURL(
         directoryURL: URL,
         generatedAt: Date = Date(),
     ) -> URL {
