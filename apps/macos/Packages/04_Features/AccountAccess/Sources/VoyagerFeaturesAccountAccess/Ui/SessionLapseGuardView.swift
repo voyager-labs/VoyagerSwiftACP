@@ -22,6 +22,15 @@ struct VisualEffectView: NSViewRepresentable {
     }
 }
 
+// MARK: - Guard observation state
+
+private struct SessionLapseGuardObservedState: Equatable {
+    let didSignInFail: Bool
+    let hasAccountSession: Bool
+    let isSignInInProgress: Bool
+    let errorMessage: String?
+}
+
 // MARK: - SessionLapseGuardView
 
 /// ACC-003-guard_session_lapse: 세션 만료 또는 로그아웃 상태에서 현재 window 콘텐츠를
@@ -53,9 +62,21 @@ public struct SessionLapseGuardView: View {
     }
 
     public var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
-            let shouldShow = viewStore.didSignInFail
-                || (!viewStore.hasAccountSession && !viewStore.isSignInInProgress)
+        WithViewStore(store, observe: { state in
+            SessionLapseGuardObservedState(
+                didSignInFail: state.didSignInFail,
+                hasAccountSession: state.hasAccountSession,
+                isSignInInProgress: state.isSignInInProgress,
+                errorMessage: state.errorMessage,
+            )
+        }) { viewStore in
+            let didSignInFail = viewStore.didSignInFail
+            let hasAccountSession = viewStore.hasAccountSession
+            let isSignInInProgress = viewStore.isSignInInProgress
+            let errorMessage = viewStore.errorMessage
+
+            let shouldShow = didSignInFail
+                || (!hasAccountSession && !isSignInInProgress)
 
             if shouldShow {
                 ZStack {
@@ -72,11 +93,11 @@ public struct SessionLapseGuardView: View {
                             .font(.system(size: 40))
                             .foregroundStyle(.secondary)
 
-                        Text(dialogTitle(for: viewStore))
+                        Text(dialogTitle(didSignInFail: didSignInFail))
                             .font(.title3)
                             .fontWeight(.semibold)
 
-                        if let error = viewStore.errorMessage {
+                        if let error = errorMessage {
                             Text(error)
                                 .font(.caption)
                                 .foregroundColor(.red)
@@ -88,9 +109,9 @@ public struct SessionLapseGuardView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
-                        .disabled(viewStore.isSignInInProgress)
+                        .disabled(isSignInInProgress)
 
-                        if viewStore.isSignInInProgress {
+                        if isSignInInProgress {
                             ProgressView()
                                 .controlSize(.small)
                         }
@@ -108,8 +129,8 @@ public struct SessionLapseGuardView: View {
     /// 다이얼로그 제목을 auth state에 따라 반환한다.
     /// - session_expired → "세션이 만료되었습니다"
     /// - logged_out → "로그인이 필요합니다"
-    private func dialogTitle(for viewStore: ViewStoreOf<AccountAccessFeature>) -> String {
-        if viewStore.didSignInFail {
+    private func dialogTitle(didSignInFail: Bool) -> String {
+        if didSignInFail {
             return "세션이 만료되었습니다"
         }
         return "로그인이 필요합니다"
