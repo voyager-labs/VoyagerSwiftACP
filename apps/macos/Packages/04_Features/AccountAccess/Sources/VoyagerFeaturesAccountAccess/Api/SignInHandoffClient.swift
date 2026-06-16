@@ -2,27 +2,19 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 
-/// 인증 handoff 결과
-public enum SignInHandoffResult: Sendable, Equatable {
-    case success(callbackURL: URL)
-    case awaitingCallback(state: String)
-    case failure
-    case cancelled
-}
-
 /// 인증 handoff를 수행하는 dependency.
 /// Mock 경로에서는 즉시 callback URL을 반환하고,
 /// 실제 live 경로에서는 외부 브라우저를 열고 콜백 대기 상태로 진입한다.
 public struct SignInHandoffClient: Sendable {
     public var performHandoff: @Sendable () async -> SignInHandoffResult
 
-    public nonisolated init(performHandoff: @escaping @Sendable () async -> SignInHandoffResult) {
+    nonisolated public init(performHandoff: @escaping @Sendable () async -> SignInHandoffResult) {
         self.performHandoff = performHandoff
     }
 }
 
 extension SignInHandoffClient: DependencyKey {
-    public nonisolated static var liveValue: SignInHandoffClient {
+    nonisolated public static var liveValue: SignInHandoffClient {
         SignInHandoffClient {
             guard let webBaseURL = ProcessInfo.processInfo.environment["PUBLIC_WEB_BASE_URL"],
                   !webBaseURL.isEmpty
@@ -57,11 +49,11 @@ extension SignInHandoffClient: DependencyKey {
         }
     }
 
-    public nonisolated static var testValue: SignInHandoffClient {
+    nonisolated public static var testValue: SignInHandoffClient {
         SignInHandoffClient { .failure }
     }
 
-    public nonisolated static var previewValue: SignInHandoffClient {
+    nonisolated public static var previewValue: SignInHandoffClient {
         SignInHandoffClient { .failure }
     }
 }
