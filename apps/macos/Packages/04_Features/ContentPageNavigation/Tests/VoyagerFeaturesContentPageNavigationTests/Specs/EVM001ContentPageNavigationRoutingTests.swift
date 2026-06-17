@@ -5,7 +5,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class EVM001NavigatePagesTests: XCTestCase {
+final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
     // MARK: - EVM-001-navigate_pages
 
     /// EVM-001-navigate_pages: 동일 경로 재네비게이션 시 history 미기록
