@@ -1,3 +1,7 @@
+// TODO(VOY-XXX): CheckoutURLClient는 auth가 아닌 billing concern이다.
+// 별도 작업에서 빌링/커머스 패키지로 이동 필요.
+// 이 테스크에서는 이동하지 않고 표식만 남긴다.
+
 import AppKit
 import ComposableArchitecture
 import Foundation
