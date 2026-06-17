@@ -2122,7 +2122,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertTrue(completedSaves.value.isEmpty)
     }
 
-// MARK: - CBW-005-show_chat_session_list
+    // MARK: - CBW-005-show_chat_session_list
 
     /// CBW-005-show_chat_session_list: Bucketing Groups Rows Using Content Pane Date Sections
     /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
@@ -2263,10 +2263,11 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertTrue(displayModel.sections.isEmpty)
     }
 
-   /// back-to-sessions 후 같은 session 재진입과 off-chat final completion을 보존하는지 검증
+    /// back-to-sessions 후 같은 session 재진입과 off-chat final completion을 보존하는지 검증
     // MARK: - CBW-005-continue_chat_conversation_session
 
-    /// CBW-005-continue_chat_conversation_session: In Flight Chat Continues From Session History And Updates Session Row
+    /// CBW-005-continue_chat_conversation_session: In Flight Chat Continues From Session History And Updates Session
+    /// Row
     /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.

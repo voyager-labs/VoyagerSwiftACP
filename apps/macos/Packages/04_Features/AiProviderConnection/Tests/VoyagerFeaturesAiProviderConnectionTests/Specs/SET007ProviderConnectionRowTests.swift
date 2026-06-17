@@ -74,10 +74,10 @@ private actor SuspensionGate {
     }
 }
 
-/// Regression tests for the "unavailable in build" provider connection behavior.
-///
-/// These tests prove unavailable rows stay inert across connect/retry/start-flow paths
-/// and never reach browser login, verification, or persistence clients.
+// Regression tests for the "unavailable in build" provider connection behavior.
+//
+// These tests prove unavailable rows stay inert across connect/retry/start-flow paths
+// and never reach browser login, verification, or persistence clients.
 
 @MainActor
 final class SET007ProviderConnectionRowTests: XCTestCase {
@@ -348,7 +348,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         )
     }
 
-
     // MARK: - SET-007-connect_ai_provider
 
     /// SET-007-connect_ai_provider: browser Login delayed Completion waits For Verification Before Persisting
@@ -420,7 +419,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         XCTAssertEqual(store.state.flowState, .idle)
     }
 
-
     /// SET-007-connect_ai_provider: browser Login cancelled is Recoverable
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
@@ -457,7 +455,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         XCTAssertEqual(store.state.connectionState, .notVerified)
         XCTAssertEqual(store.state.flowState, .idle)
     }
-
 
     /// SET-007-connect_ai_provider: browser Login failure marks Connection Failed
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
@@ -612,7 +609,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         XCTAssertEqual(store.state.statusReason, .verificationFailed)
     }
 
-
     /// SET-007-connect_ai_provider: cancel Button during Browser Login resets To Not Verified
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
@@ -663,7 +659,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         XCTAssertEqual(store.state.flowState, .idle)
     }
 
-
     /// SET-007-connect_ai_provider: connect Button o Auth Provider starts Browser Login
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
@@ -697,7 +692,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
 
         await store.finish()
     }
-
 
     /// SET-007-connect_ai_provider: oAuth Credential refresh Token Stored for Future Refresh
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
@@ -779,7 +773,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         let isExpired = credential.expiresAtMs.map { $0 < Int64(Date().timeIntervalSince1970 * 1000) } ?? true
         XCTAssertTrue(isExpired, "Nil expiresAtMs should be treated as expired")
     }
-
 
     /// SET-007-connect_ai_provider: browser Login verification Failure marks Connection Failed
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
@@ -868,7 +861,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         await store.finish()
     }
 
-
     /// SET-007-connect_ai_provider: device Auth success marks Connected
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
@@ -952,7 +944,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         await store.finish()
     }
 
-
     /// SET-007-connect_ai_provider: connect Button api Key Provider does Not Start Browser Login
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
@@ -971,7 +962,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         XCTAssertEqual(store.state.flowState, .idle)
         XCTAssertEqual(store.state.connectionState, .notVerified)
     }
-
 
     /// SET-007-connect_ai_provider: retry For OAuth retriggers Browser Login
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
@@ -1055,7 +1045,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         XCTAssertEqual(store.state.connectionState, .notVerified)
         XCTAssertFalse(store.state.isShowingDisconnectConfirmation)
     }
-
 
     /// SET-007-disconnect_ai_provider: disconnect While Disconnecting no Duplicate Effect
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.

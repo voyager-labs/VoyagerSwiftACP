@@ -50,7 +50,8 @@ final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
         XCTAssertEqual(items.first?.facets.creatorApplication, "TextEdit")
     }
 
-    /// EVM-001-reload_directory_page_on_external_change: Tags route loader falls back to an empty result on helper failure.
+    /// EVM-001-reload_directory_page_on_external_change: Tags route loader falls back to an empty result on helper
+    /// failure.
     /// Recents/Tags route refresh must not crash or mutate route identity when the route-specific helper fails.
     /// - 검증 내용: Tags helper failure fallback behavior
     /// - 사전 조건: Tags route loader receives a failing helper search dependency

@@ -2,8 +2,8 @@ import ComposableArchitecture
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAiProviderConnection
-import VoyagerShared
 @testable import VoyagerPagesSettings
+import VoyagerShared
 import XCTest
 
 private final class CollectionSearchSettingsSaveSpy: @unchecked Sendable {
@@ -327,7 +327,6 @@ final class SET009CollectionSearchAiSettingsTests: XCTestCase {
         XCTAssertNil(userDefaultsClient.object(SettingsKeys.collectionSearchAISettings) as? Data)
         XCTAssertEqual(client.load(), .default)
     }
-
 }
 
 private extension SET009CollectionSearchAiSettingsTests {

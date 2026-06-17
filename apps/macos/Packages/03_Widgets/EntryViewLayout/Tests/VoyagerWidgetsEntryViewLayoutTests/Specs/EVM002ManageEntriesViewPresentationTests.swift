@@ -415,7 +415,6 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         XCTAssertEqual(store.state.selectedIds.count, 4)
     }
 
-
     // MARK: - EVM-002-customize_list_view_column
 
     /// EVM-002-customize_list_view_column: 헤더 메뉴가 컬럼 모델을 그대로 렌더링하는지 검증
@@ -713,5 +712,4 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
         XCTAssertEqual(rowView.selectionHighlightStyle, .regular)
     }
-
 }

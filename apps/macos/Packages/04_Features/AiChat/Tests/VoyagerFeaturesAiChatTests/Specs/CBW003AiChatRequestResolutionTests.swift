@@ -1,17 +1,18 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
-@testable import VoyagerFeaturesAiChat
-import XCTest
 import VoyagerEntitiesCollection
+@testable import VoyagerFeaturesAiChat
 import VoyagerShared
+import XCTest
 
 @MainActor
 final class CBW003AiChatRequestResolutionTests: XCTestCase {
     /// session snapshot이 다음 요청 선택값 대신 locked model/thinking을 사용하는지 검증
     // MARK: - CBW-003-prepare_contextual_chat_request
 
-    /// CBW-003-prepare_contextual_chat_request: Make Session Snapshot Uses Locked Model And Thinking Instead Of Next Request Selection
+    /// CBW-003-prepare_contextual_chat_request: Make Session Snapshot Uses Locked Model And Thinking Instead Of Next
+    /// Request Selection
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -72,6 +73,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedThinking, AiThinkingSelection.effort(.medium))
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
     }
+
     /// session snapshot 저장 시 provider-native binary payload metadata가 제거되는지 검증
     // MARK: - CBW-003-prepare_contextual_chat_request
 
@@ -201,7 +203,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertEqual(lock.context.requestContext.parts[0].resolution, requestContext.parts[0].resolution)
     }
 
-// MARK: - CBW-003-build_contextual_request_payload
+    // MARK: - CBW-003-build_contextual_request_payload
 
     /// CBW-003-build_contextual_request_payload: Submit Locks Resolved Picker Attachments Into Request Context Snapshot
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
@@ -389,7 +391,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         )
     }
 
-    /// CBW-003-build_contextual_request_payload: Submit Counts Collection Reference Item Paths Against Total Attachment Budget
+    /// CBW-003-build_contextual_request_payload: Submit Counts Collection Reference Item Paths Against Total Attachment
+    /// Budget
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -487,7 +490,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         }
     }
 
-    /// CBW-003-build_contextual_request_payload: Submit Dedupes Current Context Canonical Path When Attachment Targets Same File
+    /// CBW-003-build_contextual_request_payload: Submit Dedupes Current Context Canonical Path When Attachment Targets
+    /// Same File
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -651,7 +655,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertEqual(metadata["path"], "Workspace")
     }
 
-    /// CBW-003-build_contextual_request_payload: Remote Current Context Folder Redacts Collection Item Paths For Non Codex Provider
+    /// CBW-003-build_contextual_request_payload: Remote Current Context Folder Redacts Collection Item Paths For Non
+    /// Codex Provider
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -750,7 +755,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertLessThan(directoryFilePathLines, 1200)
     }
 
-    /// CBW-003-build_contextual_request_payload: Remote Current Context Selected File Uses Provider Native Base64 And Redacted Path Metadata
+    /// CBW-003-build_contextual_request_payload: Remote Current Context Selected File Uses Provider Native Base64 And
+    /// Redacted Path Metadata
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -838,7 +844,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         }
     }
 
-    /// CBW-003-build_contextual_request_payload: Remote Provider Attachment Parts Use Provider Native Base64 For Supported Files
+    /// CBW-003-build_contextual_request_payload: Remote Provider Attachment Parts Use Provider Native Base64 For
+    /// Supported Files
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -1032,7 +1039,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         }
     }
 
-    /// CBW-003-build_contextual_request_payload: Regenerate After Model Switch Re Resolves Locked Request Context For Selected Provider
+    /// CBW-003-build_contextual_request_payload: Regenerate After Model Switch Re Resolves Locked Request Context For
+    /// Selected Provider
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -1180,7 +1188,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertEqual(metadata["attachmentID"], attachmentID.rawValue)
     }
 
-    /// CBW-003-build_contextual_request_payload: Regenerate After Restore Reuses Persisted Locked Request Context Snapshot
+    /// CBW-003-build_contextual_request_payload: Regenerate After Restore Reuses Persisted Locked Request Context
+    /// Snapshot
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -1243,7 +1252,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Restored.txt"])
     }
 
-    /// CBW-003-build_contextual_request_payload: Submit After New Chat Uses Latest Current Context Instead Of Seed Snapshot
+    /// CBW-003-build_contextual_request_payload: Submit After New Chat Uses Latest Current Context Instead Of Seed
+    /// Snapshot
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.

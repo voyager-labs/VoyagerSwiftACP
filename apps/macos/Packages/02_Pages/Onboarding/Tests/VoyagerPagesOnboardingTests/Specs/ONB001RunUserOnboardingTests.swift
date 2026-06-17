@@ -1597,7 +1597,8 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// ONB-001-resume_onboarding_session: legacy completed progress snapshot은 reset 없이 현재 schema로 migration됨
     /// 1.1 completed onboarding snapshot을 읽을 때 AI provider setup 필드를 안전하게 기본 완료/skip 상태로 보강하는지 검증한다.
     /// - 검증 내용: legacy step state decode, currentVersion write-back, AI provider setup migration 값
-    /// - 사전 조건: UserDefaults에 `onboardingProgressVersion=1.1`, complete current step, legacy `OnboardingStepState` data가 저장됨
+    /// - 사전 조건: UserDefaults에 `onboardingProgressVersion=1.1`, complete current step, legacy `OnboardingStepState`
+    /// data가 저장됨
     /// - 기대 결과: load 결과가 resetRequired가 아닌 success이며 migrated snapshot과 persisted state가 current schema 기본값을 포함함
     func testLoadMigratesLegacyCompletedSnapshotWithoutResettingSession() throws {
         let userDefaultsClient = UserDefaultsClient.testValue
@@ -1641,5 +1642,4 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(migratedStepState.aiProviderSetupChoice, .setUpLater)
         XCTAssertEqual(migratedStepState.aiProviderSetupStatus, .skipped)
     }
-
 }

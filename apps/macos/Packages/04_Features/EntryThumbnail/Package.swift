@@ -28,6 +28,6 @@ let kPackage = Package(
                 .product(name: "Dependencies", package: "swift-dependencies"),
                 .product(name: "PerceptionCore", package: "swift-perception"),
             ],
-        )
+        ),
     ],
 )

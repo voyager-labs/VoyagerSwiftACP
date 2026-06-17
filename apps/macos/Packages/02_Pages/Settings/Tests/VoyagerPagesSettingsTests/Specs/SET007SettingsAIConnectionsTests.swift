@@ -28,9 +28,13 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             .retry,
         )
     }
+
     // MARK: - SET-007-connect_ai_provider
+
     // MARK: - SET-007-connect_ai_provider
+
     // MARK: - SET-007-disconnect_ai_provider
+
     /// SET-007-disconnect_ai_provider: confirmation success는 credential 제거 file update를 전달하고 not_verified로 돌아간다.
     /// Settings 소유 범위에서 연결 해제 결과가 row state와 저장 파일의 credential 제거 사실을 함께 갱신하는지 검증한다.
     /// - 검증 내용: disconnecting transition, disconnect response, credential nil updatedFile delegate, connect action
@@ -74,6 +78,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         XCTAssertNil(updatedFile.providers[AiProvider.openai.rawValue]?.credential)
         XCTAssertEqual(store.state.rows[id: .openai]?.primaryAction, .connect)
     }
+
     // MARK: - SET-007-restore_ai_provider_connection_status
 
     /// SET-007-restore_ai_provider_connection_status: 저장 credential은 checking_status를 거쳐 connected로 복원된다.
@@ -375,6 +380,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         }
         await store.finish()
     }
+
     /// SET-007-restore_ai_provider_connection_status: catalog load 실패 뒤 onAppear 재진입은 자동 retry를 실행하지 않는다.
     /// 실패 상태에서 사용자의 명시적 retry 없이 catalog load를 반복하지 않는지 검증한다.
     /// - 검증 내용: initial onAppear failure, second onAppear ignored, load call count
@@ -406,6 +412,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         XCTAssertEqual(loadCalls, 1)
         XCTAssertEqual(store.state.bootstrapPhase, .failed)
     }
+
     /// SET-007-restore_ai_provider_connection_status: unavailable snapshot은 verification 후 disabled 상태로 복원된다.
     /// 저장된 provider가 현재 build에서 지원되지 않을 때 연결 가능한 상태로 오인하지 않는지 검증한다.
     /// - 검증 내용: persisted unavailable snapshot, checking status, unsupported verification, disabled primary action

@@ -32,7 +32,6 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         XCTAssertNil(viewState.refreshBlockingReason)
     }
 
-
     /// RCL-003-indicate_collection_results_staleness: dirty collection은 unsaved indicator만 노출됨
     /// dirty collection 상태가 stale refresh affordance와 섞이지 않고 저장 필요 상태로만 표시되는지 검증한다.
     /// - 검증 내용: unsaved/stale indicator, refresh affordance, blocking reason 확인
@@ -209,7 +208,6 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
     }
 
     // MARK: - RCL-003-update_collection_results_on_filter_change
-
 
     /// RCL-003-update_collection_results_on_filter_change: 빈 query refresh는 현재 filter 실행으로 라우팅됨
     /// query가 없는 collection refresh가 Composer applyFilters로 이어지는지 검증한다.

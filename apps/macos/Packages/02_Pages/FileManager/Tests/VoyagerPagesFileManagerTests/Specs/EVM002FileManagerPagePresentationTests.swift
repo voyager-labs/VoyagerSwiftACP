@@ -110,7 +110,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
 
     /// store.exhaustivity = .off: loadItems 이후 itemsLoaded→arrangements 체인은 검증 대상이 아님
     /// EVM-002-show_hide_hidden_entry: 숨김 파일 토글 + 리로드 시 네비게이션/히스토리 불변 검증
-    /// FileManagerContentFeature 전체 리듀서에서 toggleShowHiddenFilesAndReload가 entryViewLayout.toggleShowHiddenFiles + reload 체인을 트리거하며 네비게이션 라우트와 히스토리가 변경되지 않음을 증명한다.
+    /// FileManagerContentFeature 전체 리듀서에서 toggleShowHiddenFilesAndReload가 entryViewLayout.toggleShowHiddenFiles +
+    /// reload 체인을 트리거하며 네비게이션 라우트와 히스토리가 변경되지 않음을 증명한다.
     /// - 검증 내용: showHiddenFiles 토글, 현재 폴더 reload 액션 수신, navigationState/backHistory/forwardHistory 불변 확인
     /// - 사전 조건: navigationState == .folder("/seed"), showHiddenFiles == false
     /// - 기대 결과:
@@ -181,7 +182,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
 
     /// EVM-002-view_entry_counts_in_current_page: 선택 항목이 있는 상태 표시 소스 데이터 검증
     /// statusText가 `displayItems.count`와 `selectedIds.count`에서 계산될 수 있도록 reducer 상태의 소스 값을 증명한다.
-    /// - 검증 내용: entryOperations.loadingContext.items 기반 displayItems와 selectedIds 개수가 breadcrumb statusText 입력으로 유지되는지 확인
+    /// - 검증 내용: entryOperations.loadingContext.items 기반 displayItems와 selectedIds 개수가 breadcrumb statusText 입력으로 유지되는지
+    /// 확인
     /// - 사전 조건: displayItems에 3개 항목, selectedIds에 2개 선택
     /// - 기대 결과: displayItems.count == 3, selectedIds.count == 2
     func testStatusTextSourceMatchesDisplayItemsAndSelectedIds() {

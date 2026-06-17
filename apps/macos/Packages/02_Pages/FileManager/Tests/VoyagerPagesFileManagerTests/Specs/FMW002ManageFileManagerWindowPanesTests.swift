@@ -60,7 +60,6 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         )
     }
 
-
     /// FMW-002-show_sidebar: 미세한 sidebar width 변화 무시
     /// 현재 width와 0.5pt 이내 차이는 layout 잡음으로 보고 상태를 변경하지 않는지 검증.
     /// - 검증 내용: setSidebarWidth(현재값+0.3) 전송 후 sidebarWidth 유지

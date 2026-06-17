@@ -1739,10 +1739,11 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.chatInputDisplayModel.modelLabel, "No models available")
     }
 
-/// 현재 loaded model 목록에 없는 선택 모델로 regenerate가 차단되는지 검증
+    /// 현재 loaded model 목록에 없는 선택 모델로 regenerate가 차단되는지 검증
     // MARK: - CBW-004-show_unavailable_chat_model_state
 
-    /// CBW-004-show_unavailable_chat_model_state: Regenerate Is Blocked When Selected Model Is Not In Current Loaded List
+    /// CBW-004-show_unavailable_chat_model_state: Regenerate Is Blocked When Selected Model Is Not In Current Loaded
+    /// List
     /// CBW-004 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
@@ -1790,7 +1791,8 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
 
     // MARK: - CBW-004-show_unavailable_chat_model_state
 
-    /// CBW-004-show_unavailable_chat_model_state: Selected Model Changed Clears Unavailable Selection Without Mutating Locked Model
+    /// CBW-004-show_unavailable_chat_model_state: Selected Model Changed Clears Unavailable Selection Without Mutating
+    /// Locked Model
     /// CBW-004 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
     /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
     /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
