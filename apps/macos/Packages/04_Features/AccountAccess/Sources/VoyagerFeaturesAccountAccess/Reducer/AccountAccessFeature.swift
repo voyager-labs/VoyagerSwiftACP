@@ -99,6 +99,12 @@ public struct AccountAccessFeature {
             case ._sessionExpiredDetected:
                 return handleSessionExpiredDetected(&state)
 
+            case let ._cachedSnapshotRestored(snapshot):
+                return handleCachedSnapshotRestored(&state, snapshot: snapshot)
+
+            case let ._fetchRetryScheduled(retryStep):
+                return handleFetchRetryScheduled(&state, retryStep: retryStep)
+
             case .delegate:
                 return .none
             }
@@ -348,6 +354,7 @@ private extension AccountAccessFeature {
         case let .success(response):
             state.status = response.status
             state.trialExpiresAt = response.expiresAt
+            state.fetchRetryCount = 0
 
             let snapshot = AccessStatusSnapshot(
                 status: response.status,
@@ -375,11 +382,54 @@ private extension AccountAccessFeature {
         case let .failure(error):
             state.isComplete = false
             state.errorMessage = errorMessage(for: error)
-            if error == .networkFailure {
-                state.status = .networkFailure
+
+            // Permanent errors — no retry, use normal failure path
+            if error == .notConfigured || error == .decodingFailure {
+                return .none
             }
+
+            if error == .networkFailure {
+                if state.fetchRetryCount >= 3 {
+                    // Retry budget exhausted → fall back to cached snapshot
+                    state.fetchRetryCount = 0
+                    return .run { [snapshotClient] send in
+                        let snapshot = await snapshotClient.load()
+                        await send(._cachedSnapshotRestored(snapshot))
+                    }
+                }
+
+                // Retry budget remaining → set network failure and schedule staggered retry
+                state.status = .networkFailure
+                let retryStep = state.fetchRetryCount
+                state.fetchRetryCount += 1
+                return .send(._fetchRetryScheduled(retryStep))
+            }
+
             return .none
         }
+    }
+
+    private func handleFetchRetryScheduled(_ state: inout State, retryStep: Int) -> Effect<Action> {
+        // fetchRetryCount는 handleAccessStatusResponse에서 이미 증가함
+        let delay = Double(1 << retryStep) // 1s, 2s, 4s
+        let generation = state.fetchGeneration
+        return .run { _ in
+            try? await Task.sleep(for: .seconds(delay))
+        }
+        .concatenate(with: fetchAccessStatusEffect(generation: generation))
+    }
+
+    private func handleCachedSnapshotRestored(_ state: inout State, snapshot: AccessStatusSnapshot?) -> Effect<Action> {
+        if let snapshot {
+            state.status = snapshot.status
+            state.snapshot = snapshot
+            state.isComplete = snapshot.isActive
+            state.errorMessage = "일시적인 네트워크 오류"
+        } else {
+            state.status = AccessStatus.none
+            state.errorMessage = "Access denied."
+        }
+        return .none
     }
 
     private func errorMessage(for error: AccessError) -> String {

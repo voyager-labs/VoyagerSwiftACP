@@ -189,12 +189,80 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
 
     // MARK: - ACC-005-fetch_access_status
 
-    /// ACC-005-fetch_access_status: fetchAccessStatus stub이 notConfigured를 throw한다.
-    /// fetchAccessStatus가 현재 stub 상태임을 보장하는지 검증한다.
-    /// - 검증 내용: AccessError.notConfigured throw
-    /// - 사전 조건: fetchAccessStatus가 notConfigured throw로 설정됨
-    /// - 기대 결과: AccessError.notConfigured 에러 throw
-    func testFetchAccessStatusThrowsNotConfigured() async {
+    /// ACC-005-fetch_access_status: fetchAccessStatus 성공 시 AccessStatusResponse를 반환한다.
+    /// mock fetchAccessStatus closure가 정상 응답을 반환할 때 호출자에게 응답이 전달되는지 검증한다.
+    /// - 검증 내용: 반환된 AccessStatusResponse의 status/expiresAt/entitlements 일치
+    /// - 사전 조건: AuthNetworkClient.fetchAccessStatus mock이 유효한 AccessStatusResponse 반환
+    /// - 기대 결과: 반환된 응답이 mock이 설정한 값과 일치
+    func testFetchAccessStatusSuccess() async throws {
+        let expectedResponse = AccessStatusResponse(
+            status: .coreLicenseActive,
+            expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
+            entitlements: [],
+            message: "welcome",
+            reasonCode: nil,
+        )
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { expectedResponse },
+            refreshToken: { throw AccessError.notConfigured },
+        )
+
+        let response = try await client.fetchAccessStatus()
+
+        XCTAssertEqual(response.status, .coreLicenseActive)
+        XCTAssertEqual(response.expiresAt?.timeIntervalSince1970, 1_800_000_000)
+        XCTAssertEqual(response.entitlements, [])
+        XCTAssertEqual(response.message, "welcome")
+        XCTAssertNil(response.reasonCode)
+    }
+
+    /// ACC-005-fetch_access_status: fetchAccessStatus가 networkFailure를 throw한다.
+    /// mock fetchAccessStatus closure가 networkFailure를 throw할 때 전파되는지 검증한다.
+    /// - 검증 내용: AccessError.networkFailure 전파
+    /// - 사전 조건: mock fetchAccessStatus가 AccessError.networkFailure throw
+    /// - 기대 결과: 동일한 networkFailure 에러가 throw됨
+    func testFetchAccessStatusNetworkFailureThrows() async {
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.networkFailure },
+            refreshToken: { throw AccessError.notConfigured },
+        )
+
+        do {
+            _ = try await client.fetchAccessStatus()
+            XCTFail("networkFailure 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .networkFailure)
+        }
+    }
+
+    /// ACC-005-fetch_access_status: fetchAccessStatus가 decodingFailure를 throw한다.
+    /// mock fetchAccessStatus closure가 decodingFailure를 throw할 때 전파되는지 검증한다.
+    /// - 검증 내용: AccessError.decodingFailure 전파
+    /// - 사전 조건: mock fetchAccessStatus가 AccessError.decodingFailure throw
+    /// - 기대 결과: 동일한 decodingFailure 에러가 throw됨
+    func testFetchAccessStatusDecodingFailureThrows() async {
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.decodingFailure },
+            refreshToken: { throw AccessError.notConfigured },
+        )
+
+        do {
+            _ = try await client.fetchAccessStatus()
+            XCTFail("decodingFailure 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .decodingFailure)
+        }
+    }
+
+    /// ACC-005-fetch_access_status: fetchAccessStatus가 notConfigured를 throw한다.
+    /// mock fetchAccessStatus closure가 notConfigured를 throw할 때 전파되는지 검증한다.
+    /// - 검증 내용: AccessError.notConfigured 전파
+    /// - 사전 조건: mock fetchAccessStatus가 AccessError.notConfigured throw
+    /// - 기대 결과: 동일한 notConfigured 에러가 throw됨
+    func testFetchAccessStatusNotConfiguredThrows() async {
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
             fetchAccessStatus: { throw AccessError.notConfigured },

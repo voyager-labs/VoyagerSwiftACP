@@ -21,6 +21,8 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case _ttlTimerTicked
     case _refreshTokenResult(Result<AccountSession, AccessError>)
     case _sessionExpiredDetected
+    case _fetchRetryScheduled(Int)
+    case _cachedSnapshotRestored(AccessStatusSnapshot?)
     case delegate(Delegate)
 
     @CasePathable
