@@ -2121,4 +2121,619 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertTrue(saveCancelled.value)
         XCTAssertTrue(completedSaves.value.isEmpty)
     }
+
+// MARK: - CBW-005-show_chat_session_list
+
+    /// CBW-005-show_chat_session_list: Bucketing Groups Rows Using Content Pane Date Sections
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testBucketingGroupsRowsUsingContentPaneDateSections() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let now = makeDate(year: 2026, month: 5, day: 25, calendar: calendar)
+
+        let rows = makeBucketingTestRows(calendar: calendar, now: now)
+
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [rows.year, rows.previous30Days, rows.today, rows.month, rows.yesterday, rows.previous7Days],
+            now: now,
+            calendar: calendar,
+        )
+
+        assertBucketingSections(displayModel)
+        assertBucketingTitles(displayModel)
+        assertBucketingRowTitles(displayModel)
+    }
+
+    /// CBW-005-show_chat_session_list: Empty State Uses Exact Strings
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testEmptyStateUsesExactStrings() {
+        let displayModel = AiChatSessionsDisplayModel(rows: [], now: makeFixedDate(milliseconds: 1_700_000_000_000))
+
+        XCTAssertTrue(displayModel.isEmpty)
+        XCTAssertEqual(displayModel.title, "Sessions")
+        XCTAssertEqual(displayModel.newChatTitle, "New Chat")
+        XCTAssertEqual(displayModel.searchPlaceholder, "Search")
+        XCTAssertEqual(displayModel.emptyTitle, "No sessions yet")
+        XCTAssertEqual(displayModel.emptyDetail, "Start a new chat with the current context")
+        XCTAssertTrue(displayModel.sections.isEmpty)
+    }
+
+    /// CBW-005-show_chat_session_list: Search Empty State Uses Exact Strings When Rows Are Filtered Out
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testSearchEmptyStateUsesExactStringsWhenRowsAreFilteredOut() {
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [],
+            now: makeFixedDate(milliseconds: 1_700_000_000_000),
+            query: "  missing  ",
+            totalRowCount: 2,
+        )
+
+        XCTAssertTrue(displayModel.isEmpty)
+        XCTAssertEqual(displayModel.emptyTitle, "No matching sessions")
+        XCTAssertEqual(displayModel.emptyDetail, "Try a different search term.")
+        XCTAssertTrue(displayModel.sections.isEmpty)
+    }
+
+    /// CBW-005-show_chat_session_list: Row Activity States Prefer Processing Over Unread Completion
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testRowActivityStatesPreferProcessingOverUnreadCompletion() {
+        let now = makeFixedDate(milliseconds: 1_700_000_000_000)
+        let processingID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111181"))
+        let unreadID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111182"))
+        let idleID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111183"))
+        let processing = makeSessionSummary(
+            sessionID: processingID,
+            title: "Processing",
+            updatedAtMs: milliseconds(for: now),
+        )
+        let unread = makeSessionSummary(sessionID: unreadID, title: "Unread", updatedAtMs: milliseconds(for: now))
+        let idle = makeSessionSummary(sessionID: idleID, title: "Idle", updatedAtMs: milliseconds(for: now))
+
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [processing, unread, idle],
+            now: now,
+            processingSessionID: processingID,
+            unreadCompletedSessionIDs: [processingID, unreadID],
+        )
+        let rows = displayModel.sections.flatMap(\.rows)
+
+        XCTAssertEqual(rows.map(\.id), [processingID, unreadID, idleID])
+        XCTAssertEqual(rows.map(\.activityState), [.processing, .unreadCompleted, .idle])
+        XCTAssertNil(rows[0].detail)
+        XCTAssertEqual(rows[1].detail, "Preview")
+        XCTAssertEqual(rows[2].detail, "Preview")
+    }
+
+    /// CBW-005-show_chat_session_list: Hidden Empty Draft Rows Are Excluded From Sections
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testHiddenEmptyDraftRowsAreExcludedFromSections() {
+        let now = makeFixedDate(milliseconds: 1_700_000_000_000)
+        let draftID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111184"))
+        let visibleID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111185"))
+        let draft = makeSessionSummary(sessionID: draftID, title: "New Chat", updatedAtMs: milliseconds(for: now))
+        let visible = makeSessionSummary(
+            sessionID: visibleID,
+            title: "Visible prompt",
+            updatedAtMs: milliseconds(for: now),
+        )
+
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [draft, visible],
+            now: now,
+            totalRowCount: 2,
+            hiddenSessionIDs: [draftID],
+        )
+        let rows = displayModel.sections.flatMap(\.rows)
+
+        XCTAssertEqual(rows.map(\.id), [visibleID])
+        XCTAssertEqual(rows.map(\.title), ["Visible prompt"])
+    }
+
+    /// CBW-005-show_chat_session_list: Search Query Still Uses No Sessions Copy When There Are No Saved Sessions
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testSearchQueryStillUsesNoSessionsCopyWhenThereAreNoSavedSessions() {
+        let displayModel = AiChatSessionsDisplayModel(
+            rows: [],
+            now: makeFixedDate(milliseconds: 1_700_000_000_000),
+            query: "  missing  ",
+            totalRowCount: 0,
+        )
+
+        XCTAssertTrue(displayModel.isEmpty)
+        XCTAssertEqual(displayModel.emptyTitle, "No sessions yet")
+        XCTAssertEqual(displayModel.emptyDetail, "Start a new chat with the current context")
+        XCTAssertTrue(displayModel.sections.isEmpty)
+    }
+
+   /// back-to-sessions 후 같은 session 재진입과 off-chat final completion을 보존하는지 검증
+    // MARK: - CBW-005-continue_chat_conversation_session
+
+    /// CBW-005-continue_chat_conversation_session: In Flight Chat Continues From Session History And Updates Session Row
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testInFlightChatContinuesFromSessionHistoryAndUpdatesSessionRow() async {
+        let stream = AiChatExecutionStreamDriver()
+        let persistence = AiChatSessionPersistenceSpy()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111120"))
+        let fixedMs: Int64 = 1_700_000_001_200
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(selectedSessionID: sessionID, unreadCompletedSessionIDs: [sessionID]),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello while browsing history",
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                listSessions: { _, _ in
+                    persistence.snapshots.map(AiChatSessionSummary.init(snapshot:))
+                },
+                loadSession: { _ in nil },
+                saveSession: { snapshot in
+                    await persistence.save(snapshot)
+                },
+                deleteSession: { _ in },
+            )
+        }
+        // store.exhaustivity = .off: session row 갱신과 unread 마킹만 관찰하고 내부 보조 액션 전부를 열거하지 않기 위함입니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.submitTapped)
+        await resolvePendingRequestContext(store) { state in
+            state.draftText = ""
+            state.transcriptHistory = [AiChatMessage(role: .user, content: "Hello while browsing history")]
+            state.lockedModelHandle = selectedHandle
+            state.transcriptAutoScrollVersion = 1
+        }
+
+        guard let request = stream.requests.first else {
+            XCTFail("Expected execution request")
+            return
+        }
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, sessionID)
+        XCTAssertEqual(store.state.sessionList.unreadCompletedSessionIDs, [])
+        XCTAssertEqual(store.state.sessionList.allRows.first?.sessionID, sessionID)
+        XCTAssertEqual(store.state.sessionList.allRows.first?.title, "Hello while browsing history")
+        XCTAssertEqual(store.state.sessionList.allRows.first?.status, .active)
+
+        let userMessage = AiChatMessage(role: .user, content: "Hello while browsing history")
+        let expectedStartSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let expectedStartSummary = AiChatSessionSummary(snapshot: expectedStartSnapshot)
+        XCTAssertEqual(expectedStartSummary.title, "Hello while browsing history")
+        await store.receive(.sessionSnapshotUpdated(
+            expectedStartSummary,
+            requestID: lock.requestID,
+            runID: lock.runID,
+        )) { state in
+            state.sessionList.allRows = [expectedStartSummary]
+            state.sessionList.rows = [expectedStartSummary]
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = []
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.send(.sessionsAppeared) { state in
+            state.mode = .sessions
+            state.sessionList.isLoading = true
+            state.sessionList.errorMessage = nil
+        }
+        await store.receive(.sessionListLoaded([expectedStartSummary])) { state in
+            state.sessionList.allRows = [expectedStartSummary]
+            state.sessionList.rows = [expectedStartSummary]
+            state.sessionList.isLoading = false
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+        }
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+
+        await store.send(.sessionRowTapped(sessionID)) { state in
+            state.mode = .chat
+        }
+        XCTAssertEqual(store.state.executionPhase, .processing(lock))
+
+        await store.send(.backToSessionsTapped) { state in
+            state.mode = .sessions
+        }
+
+        let assistantMessage = AiChatMessage(role: .assistant, content: "Still completed")
+        let finalResponse = AiChatResponse(
+            context: request.context,
+            assistantMessage: assistantMessage,
+            completedAtMs: fixedMs,
+        )
+        stream.yield(.final(response: finalResponse))
+        stream.finish()
+
+        let finalizedLock = lock.recordingTerminal(at: fixedMs, failure: nil, wasCancelled: false)
+        await store.receive(.executionEvent(.final(response: finalResponse))) { state in
+            state.transcriptHistory = [userMessage, assistantMessage]
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = nil
+            state.lastRequestContext = lock.context.requestContext
+            state.lastRequestContextModelHandle = selectedHandle
+            state.executionPhase = .completed(finalizedLock)
+            state.transcriptAutoScrollVersion = 2
+        }
+
+        let expectedFinalSnapshot = AiChatSessionSnapshot(
+            sessionID: sessionID,
+            status: .active,
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: catalogRows[0],
+            transcriptHistory: [userMessage, assistantMessage],
+            lastRequestID: lock.requestID,
+            lastRunID: lock.runID,
+            lastRequestContext: lock.context.requestContext,
+            updatedAtMs: fixedMs,
+        )
+        let expectedFinalSummary = AiChatSessionSummary(snapshot: expectedFinalSnapshot)
+        await store.receive(.sessionSnapshotSaved(expectedFinalSummary)) { state in
+            state.sessionList.allRows = [expectedFinalSummary]
+            state.sessionList.rows = [expectedFinalSummary]
+            state.sessionList.selectedSessionID = sessionID
+            state.sessionList.unreadCompletedSessionIDs = [sessionID]
+            state.sessionList.errorMessage = nil
+        }
+
+        await store.finish()
+        XCTAssertEqual(persistence.snapshots, [expectedStartSnapshot, expectedFinalSnapshot])
+    }
+
+    // MARK: - CBW-005-restore_chat_conversation_session
+
+    /// CBW-005-restore_chat_conversation_session: Restore Outcome From Superseded Session Is Ignored
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testRestoreOutcomeFromSupersededSessionIsIgnored() async {
+        let catalogRows = makeCatalogRows()
+        let currentRestoreSessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222222"))
+        let staleRestoreSessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111111"))
+        let currentTranscript = [AiChatMessage(role: .user, content: "current draft context")]
+        let staleSnapshot = AiChatSessionSnapshot(
+            sessionID: staleRestoreSessionID,
+            status: .active,
+            provider: catalogRows[1].handle.provider,
+            model: catalogRows[1].handle,
+            selectedModelRow: catalogRows[1],
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "stale restore")],
+            updatedAtMs: 0,
+        )
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: currentRestoreSessionID,
+            sessionID: nil,
+            sessionStatus: .restoring,
+            currentContext: makeContextSnapshot(summary: "Current restore"),
+            transcriptHistory: currentTranscript,
+            draftText: "Current draft",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.restoreOutcome(
+            requestedSessionID: staleRestoreSessionID,
+            .restored(snapshot: staleSnapshot),
+            restoreFailure: nil,
+        ))
+
+        XCTAssertEqual(store.state.restoreSessionID, currentRestoreSessionID)
+        XCTAssertNil(store.state.sessionID)
+        XCTAssertEqual(store.state.sessionStatus, .restoring)
+        XCTAssertEqual(store.state.transcriptHistory, currentTranscript)
+        XCTAssertEqual(store.state.selectedModelHandle, catalogRows[0].handle)
+        XCTAssertNil(store.state.restoreOutcome)
+        XCTAssertNil(store.state.restoreFailure)
+    }
+
+    /// CBW-005-restore_chat_conversation_session: Late Snapshot Saved Does Not Steal Selection During Session Restore
+    /// CBW-005 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testLateSnapshotSavedDoesNotStealSelectionDuringSessionRestore() async {
+        let catalogRows = makeCatalogRows()
+        let activeSessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333"))
+        let targetSessionID = AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444"))
+        let snapshots = makeLateSnapshotFixtures(
+            catalogRows: catalogRows,
+            activeSessionID: activeSessionID,
+            targetSessionID: targetSessionID,
+        )
+        let store = makeLateSnapshotStore(
+            catalogRows: catalogRows,
+            activeSessionID: activeSessionID,
+            targetSessionID: targetSessionID,
+            activeSummary: snapshots.activeSummary,
+            targetSummary: snapshots.targetSummary,
+        )
+
+        await store.send(AiChatAction.sessionSnapshotSaved(snapshots.activeSummary)) { state in
+            state.sessionList.replaceRow(snapshots.activeSummary)
+            state.sessionList.unreadCompletedSessionIDs.insert(activeSessionID)
+            state.sessionList.errorMessage = nil
+        }
+
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, targetSessionID)
+
+        await applyRestoredTargetSession(store: store, targetSessionID: targetSessionID, snapshot: snapshots.target)
+
+        XCTAssertEqual(store.state.mode, AiChatMode.chat)
+        XCTAssertEqual(store.state.sessionID, targetSessionID)
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, targetSessionID)
+    }
+}
+
+// Legacy helper support from AiChatSessionDisplayModelTests.swift
+
+private func makeDate(
+    year: Int,
+    month: Int,
+    day: Int,
+    calendar: Calendar,
+) -> Date {
+    calendar.date(from: DateComponents(year: year, month: month, day: day)) ?? Date(timeIntervalSince1970: 0)
+}
+
+private func milliseconds(for date: Date) -> Int64 {
+    Int64(date.timeIntervalSince1970 * 1000)
+}
+
+private func makeSessionSummary(
+    sessionID: AiChatSessionID,
+    title: String,
+    updatedAtMs: Int64,
+) -> AiChatSessionSummary {
+    AiChatSessionSummary(
+        sessionID: sessionID,
+        title: title,
+        preview: "Preview",
+        messageCount: 2,
+        contextTitle: "Context",
+        provider: .openai,
+        model: AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
+        createdAtMs: updatedAtMs,
+        updatedAtMs: updatedAtMs,
+        status: .active,
+    )
+}
+
+private struct BucketingTestRows {
+    let today: AiChatSessionSummary
+    let yesterday: AiChatSessionSummary
+    let previous7Days: AiChatSessionSummary
+    let previous30Days: AiChatSessionSummary
+    let month: AiChatSessionSummary
+    let year: AiChatSessionSummary
+}
+
+private func makeBucketingTestRows(calendar: Calendar, now: Date) -> BucketingTestRows {
+    BucketingTestRows(
+        today: makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111111")),
+            title: "Today session",
+            updatedAtMs: milliseconds(for: now),
+        ),
+        yesterday: makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222222")),
+            title: "Yesterday session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2026, month: 5, day: 24, calendar: calendar)),
+        ),
+        previous7Days: makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333333")),
+            title: "Previous 7 Days session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2026, month: 5, day: 21, calendar: calendar)),
+        ),
+        previous30Days: makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("44444444-4444-4444-4444-444444444444")),
+            title: "Previous 30 Days session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2026, month: 5, day: 1, calendar: calendar)),
+        ),
+        month: makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("55555555-5555-5555-5555-555555555555")),
+            title: "Month session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2026, month: 2, day: 1, calendar: calendar)),
+        ),
+        year: makeSessionSummary(
+            sessionID: AiChatSessionID(rawValue: makeUUID("66666666-6666-6666-6666-666666666666")),
+            title: "Year session",
+            updatedAtMs: milliseconds(for: makeDate(year: 2024, month: 12, day: 1, calendar: calendar)),
+        ),
+    )
+}
+
+private func assertBucketingSections(_ displayModel: AiChatSessionsDisplayModel) {
+    XCTAssertEqual(displayModel.sections.map(\.bucket), [
+        .today,
+        .yesterday,
+        .previous7Days,
+        .previous30Days,
+        .month(2),
+        .year(2024),
+    ])
+}
+
+private func assertBucketingTitles(_ displayModel: AiChatSessionsDisplayModel) {
+    XCTAssertEqual(displayModel.sections.map(\.title), [
+        "Today",
+        "Yesterday",
+        "Previous 7 Days",
+        "Previous 30 Days",
+        "February",
+        "2024",
+    ])
+}
+
+private func assertBucketingRowTitles(_ displayModel: AiChatSessionsDisplayModel) {
+    XCTAssertEqual(displayModel.sections.map { $0.rows.map(\.title) }, [
+        ["Today session"],
+        ["Yesterday session"],
+        ["Previous 7 Days session"],
+        ["Previous 30 Days session"],
+        ["Month session"],
+        ["Year session"],
+    ])
+}
+
+// Legacy helper support from AiChatFeatureRestoreRaceTests.swift
+
+private struct LateSnapshotFixtures {
+    let active: AiChatSessionSnapshot
+    let target: AiChatSessionSnapshot
+    let activeSummary: AiChatSessionSummary
+    let targetSummary: AiChatSessionSummary
+}
+
+private func makeLateSnapshotFixtures(
+    catalogRows: [AiModelCatalogRow],
+    activeSessionID: AiChatSessionID,
+    targetSessionID: AiChatSessionID,
+) -> LateSnapshotFixtures {
+    let active = AiChatSessionSnapshot(
+        sessionID: activeSessionID,
+        status: .active,
+        provider: catalogRows[0].handle.provider,
+        model: catalogRows[0].handle,
+        selectedModelRow: catalogRows[0],
+        transcriptHistory: [
+            AiChatMessage(role: .user, content: "Previous prompt"),
+            AiChatMessage(role: .assistant, content: "Late final"),
+        ],
+        updatedAtMs: 2000,
+    )
+    let target = AiChatSessionSnapshot(
+        sessionID: targetSessionID,
+        status: .active,
+        provider: catalogRows[1].handle.provider,
+        model: catalogRows[1].handle,
+        selectedModelRow: catalogRows[1],
+        transcriptHistory: [AiChatMessage(role: .user, content: "Target session")],
+        updatedAtMs: 1500,
+    )
+    return LateSnapshotFixtures(
+        active: active,
+        target: target,
+        activeSummary: AiChatSessionSummary(snapshot: active),
+        targetSummary: AiChatSessionSummary(snapshot: target),
+    )
+}
+
+@MainActor
+private func makeLateSnapshotStore(
+    catalogRows: [AiModelCatalogRow],
+    activeSessionID: AiChatSessionID,
+    targetSessionID: AiChatSessionID,
+    activeSummary: AiChatSessionSummary,
+    targetSummary: AiChatSessionSummary,
+) -> TestStore<AiChatFeature.State, AiChatFeature.Action> {
+    TestStore(initialState: AiChatFeature.State(
+        restoreSessionID: targetSessionID,
+        mode: .sessions,
+        sessionList: .init(
+            allRows: [targetSummary, activeSummary],
+            selectedSessionID: targetSessionID,
+        ),
+        sessionID: activeSessionID,
+        sessionStatus: .active,
+        catalogRows: catalogRows,
+        modelListState: .loaded(makeProviderModels()),
+        selectedModelHandle: catalogRows[0].handle,
+    )) {
+        AiChatFeature()
+    }
+}
+
+@MainActor
+private func applyRestoredTargetSession(
+    store: TestStore<AiChatFeature.State, AiChatFeature.Action>,
+    targetSessionID: AiChatSessionID,
+    snapshot: AiChatSessionSnapshot,
+) async {
+    await store.send(AiChatAction.restoreOutcome(
+        requestedSessionID: targetSessionID,
+        .restored(snapshot: snapshot),
+        restoreFailure: nil,
+    )) { state in
+        state.sessionID = targetSessionID
+        state.sessionStatus = .active
+        state.currentSessionCustomTitle = snapshot.customTitle
+        state.transcriptHistory = snapshot.transcriptHistory
+        state.streamingAssistantDraft = nil
+        state.lockedModelHandle = nil
+        state.lastExecutionFailure = nil
+        state.lastRequestContext = snapshot.lastRequestContext
+        state.lastRequestContextModelHandle = nil
+        state.executionPhase = .idle
+        state.selectedModelHandle = snapshot.model
+        state.selectedThinking = snapshot.selectedThinking
+        state.unavailableSelectedModelHandle = nil
+        state.restoreOutcome = .restored(snapshot: snapshot)
+        state.restoreFailure = nil
+        state.mode = .chat
+        state.sessionList.errorMessage = nil
+    }
 }

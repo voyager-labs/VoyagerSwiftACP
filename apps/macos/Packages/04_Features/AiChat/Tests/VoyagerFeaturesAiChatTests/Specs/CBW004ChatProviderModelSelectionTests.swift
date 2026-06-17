@@ -1738,6 +1738,113 @@ final class CBW004ChatProviderModelSelectionTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
         XCTAssertEqual(store.state.chatInputDisplayModel.modelLabel, "No models available")
     }
+
+/// 현재 loaded model 목록에 없는 선택 모델로 regenerate가 차단되는지 검증
+    // MARK: - CBW-004-show_unavailable_chat_model_state
+
+    /// CBW-004-show_unavailable_chat_model_state: Regenerate Is Blocked When Selected Model Is Not In Current Loaded List
+    /// CBW-004 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testRegenerateIsBlockedWhenSelectedModelIsNotInCurrentLoadedList() async {
+        let stream = AiChatExecutionStreamDriver()
+        let catalogRows = makeCatalogRows()
+        let models = [makeThinkingCapableProviderModels()[1]]
+        let missingHandle = catalogRows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111115"))
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [
+                AiChatMessage(role: .user, content: "Hello"),
+                AiChatMessage(role: .assistant, content: "Old answer"),
+            ],
+            draftText: "",
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: missingHandle,
+            selectedThinking: .effort(.medium),
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in
+                stream.stream(for: request)
+            })
+        }
+        // store.exhaustivity = .off: regenerate guard가 no-op인지와 request 미생성만 확인하면 충분합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.regenerateTapped)
+
+        XCTAssertTrue(stream.requests.isEmpty)
+        XCTAssertEqual(store.state.executionPhase, .idle)
+        XCTAssertNil(store.state.lockedModelHandle)
+    }
+
+    // MARK: - CBW-004-show_unavailable_chat_model_state
+
+    /// CBW-004-show_unavailable_chat_model_state: Selected Model Changed Clears Unavailable Selection Without Mutating Locked Model
+    /// CBW-004 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testSelectedModelChangedClearsUnavailableSelectionWithoutMutatingLockedModel() async {
+        let catalogRows = makeCatalogRows()
+        let summary = makeContextSnapshot()
+        let sessionID = AiChatSessionID(rawValue: makeUUID("22222222-2222-2222-2222-222222222222"))
+        let unresolvableHandle = makeUnresolvableModelHandle()
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: summary,
+            transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
+            draftText: "Draft",
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[1].handle,
+            lockedModelHandle: catalogRows[1].handle,
+            lastExecutionFailure: nil,
+            executionPhase: .processing(makeRequestLock(
+                kind: .submit,
+                request: AiChatRequest(
+                    context: makeRequestContext(
+                        sessionID: sessionID,
+                        requestID: AiChatRequestID(rawValue: UUID()),
+                        runID: AiChatRunID(rawValue: UUID()),
+                        model: catalogRows[1].handle,
+                        selectedRow: catalogRows[1],
+                    ),
+                    messages: [],
+                ),
+                selectedHandle: catalogRows[1].handle,
+                selectedRow: catalogRows[1],
+                assistantReplacementIndex: nil,
+            )),
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.selectedModelChanged(unresolvableHandle)) { state in
+            state.selectedModelHandle = nil
+            state.unavailableSelectedModelHandle = nil
+        }
+
+        XCTAssertEqual(store.state.lockedModelHandle, catalogRows[1].handle)
+        XCTAssertNil(store.state.selectedModelHandle)
+
+        if case let .processing(processing, _, selectedModel) = store.state.surfaceState {
+            XCTAssertEqual(processing.lockedModel.label.title, "Claude Sonnet 4")
+            XCTAssertNil(selectedModel)
+        } else {
+            XCTFail("Expected processing surface state after clearing invalid selection")
+        }
+    }
 }
 
 @MainActor

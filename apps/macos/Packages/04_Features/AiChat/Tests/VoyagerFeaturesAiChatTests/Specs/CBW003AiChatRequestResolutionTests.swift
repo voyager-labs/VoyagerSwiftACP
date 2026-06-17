@@ -1,13 +1,213 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
-import VoyagerEntitiesCollection
 @testable import VoyagerFeaturesAiChat
-import VoyagerShared
 import XCTest
+import VoyagerEntitiesCollection
+import VoyagerShared
 
 @MainActor
-final class AiChatRequestContextSnapshotTests: XCTestCase {
+final class CBW003AiChatRequestResolutionTests: XCTestCase {
+    /// session snapshot이 다음 요청 선택값 대신 locked model/thinking을 사용하는지 검증
+    // MARK: - CBW-003-prepare_contextual_chat_request
+
+    /// CBW-003-prepare_contextual_chat_request: Make Session Snapshot Uses Locked Model And Thinking Instead Of Next Request Selection
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testMakeSessionSnapshotUsesLockedModelAndThinkingInsteadOfNextRequestSelection() async {
+        let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111116"))
+        let catalogRows = makeCatalogRows()
+        let models = makeThinkingCapableProviderModels()
+        let feature = makeFeatureWithFrozenRequestDependencies()
+        var state = AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            transcriptHistory: [],
+            draftText: "Hello",
+            catalogRows: catalogRows,
+            modelListState: .loaded(models),
+            selectedModelHandle: catalogRows[0].handle,
+            selectedThinking: .effort(.medium),
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+            executionPhase: .idle,
+        )
+
+        _ = withDependencies {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_500))
+        } operation: {
+            feature.startRequest(kind: .submit, state: &state)
+        }
+
+        guard let pendingRequest = state.pendingRequestStart else {
+            return XCTFail("Expected pending request context resolution")
+        }
+        let resolverInput = feature.makeRequestContextResolverInput(for: pendingRequest, state: state)
+        let resolvedContext = await AiChatContextPartResolverClient.live().resolve(resolverInput)
+        _ = feature.completeRequestContextResolution(
+            resolutionID: pendingRequest.resolutionID,
+            resolvedContext: resolvedContext,
+            state: &state,
+        )
+
+        guard case let .processing(lock) = state.executionPhase else {
+            return XCTFail("Expected processing lock")
+        }
+
+        state.selectedModelHandle = catalogRows[1].handle
+        state.selectedThinking = .effort(.minimal)
+
+        let snapshot = feature.makeSessionSnapshot(state: state, lock: lock)
+
+        XCTAssertEqual(lock.context.model, catalogRows[0].handle)
+        XCTAssertEqual(lock.context.selectedModel, models[0])
+        XCTAssertEqual(lock.context.selectedThinking, .effort(.medium))
+        XCTAssertEqual(state.selectedModelHandle, catalogRows[1].handle)
+        XCTAssertEqual(state.selectedThinking, .effort(.minimal))
+        XCTAssertEqual(snapshot.model, catalogRows[0].handle)
+        XCTAssertEqual(snapshot.selectedThinking, AiThinkingSelection.effort(.medium))
+        XCTAssertEqual(snapshot.selectedModelRow, catalogRows[0])
+    }
+    /// session snapshot 저장 시 provider-native binary payload metadata가 제거되는지 검증
+    // MARK: - CBW-003-prepare_contextual_chat_request
+
+    /// CBW-003-prepare_contextual_chat_request: Make Session Snapshot Drops Provider Native Binary Payload Metadata
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
+    func testMakeSessionSnapshotDropsProviderNativeBinaryPayloadMetadata() throws {
+        let feature = makeFeatureWithFrozenRequestDependencies()
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let requestContext = AiChatLockedRequestContextSnapshot(
+            currentContext: AiChatCurrentContextSnapshot(
+                references: [
+                    AiChatContextReference(
+                        kind: .file,
+                        identifier: "ref",
+                        title: "Reference.pdf",
+                        metadata: ["base64Data": "REFERENCE_BYTES", "path": "/tmp/Reference.pdf"],
+                    ),
+                ],
+                items: [
+                    AiChatContextItem(
+                        kind: .file,
+                        identifier: "item",
+                        title: "Item.pdf",
+                        metadata: ["nativeBase64Data": "ITEM_BYTES", "path": "/tmp/Item.pdf"],
+                        references: [
+                            AiChatContextReference(
+                                kind: .file,
+                                identifier: "nested",
+                                title: "Nested.pdf",
+                                metadata: ["fileDataBase64": "NESTED_BYTES", "path": "/tmp/Nested.pdf"],
+                            ),
+                        ],
+                    ),
+                ],
+                attachments: [
+                    AiChatContextAttachment(
+                        identifier: "current-attachment",
+                        title: "CurrentAttachment.pdf",
+                        metadata: ["base64Data": "CURRENT_ATTACHMENT_BYTES", "path": "/tmp/CurrentAttachment.pdf"],
+                    ),
+                ],
+            ),
+            addedAttachments: [
+                AiChatAttachmentSnapshot(
+                    id: AiChatAttachmentID(rawValue: "native-attachment"),
+                    source: .file,
+                    displayTitle: "Native.pdf",
+                    sourceLocation: AiChatAttachmentSourceLocation(filePath: "/tmp/Native.pdf"),
+                    metadata: ["nativeBase64Data": "ATTACHMENT_METADATA_BYTES"],
+                    resolutionResult: .resolvedReference(metadata: [
+                        "base64Data": "ATTACHMENT_RESULT_BYTES",
+                        "path": "/tmp/Native.pdf",
+                    ]),
+                ),
+            ],
+            parts: [
+                AiChatLockedContextPartSnapshot(
+                    source: .attachment,
+                    resolution: .providerNativeFile(
+                        kind: .pdf,
+                        mimeType: "application/pdf",
+                        metadata: [
+                            "base64Data": "PART_BYTES",
+                            "nativeBase64Data": "PART_NATIVE_BYTES",
+                            "fileDataBase64": "PART_FILE_BYTES",
+                            "path": "/tmp/Native.pdf",
+                        ],
+                    ),
+                    canonicalPath: "/tmp/Native.pdf",
+                    displayPath: "Native.pdf",
+                    fileKind: .file,
+                    displayTitle: "Native.pdf",
+                    byteCount: 128,
+                    mimeType: "application/pdf",
+                ),
+            ],
+        )
+        let context = AiChatRequestContextSnapshot(
+            sessionID: AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111161")),
+            requestID: AiChatRequestID(rawValue: makeUUID("11111111-1111-1111-1111-111111111162")),
+            runID: AiChatRunID(rawValue: makeUUID("11111111-1111-1111-1111-111111111163")),
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModel: makeProviderModels()[0],
+            selectedModelRow: catalogRows[0],
+            sessionStatus: .active,
+            requestContext: requestContext,
+            promptSummary: "Hello",
+        )
+        let request = AiChatRequest(context: context, messages: [AiChatMessage(role: .user, content: "Hello")])
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let state = AiChatFeature.State(
+            sessionID: request.context.sessionID,
+            sessionStatus: .active,
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "Done")],
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .completed(lock),
+        )
+
+        let snapshot = feature.makeSessionSnapshot(state: state, lock: lock)
+        let persisted = try XCTUnwrap(snapshot.lastRequestContext)
+
+        XCTAssertEqual(
+            persisted.addedAttachments[0].resolutionResult,
+            .resolvedReference(metadata: ["path": "/tmp/Native.pdf"]),
+        )
+        XCTAssertEqual(persisted.parts[0].resolution, .providerNativeFile(
+            kind: .pdf,
+            mimeType: "application/pdf",
+            metadata: ["path": "/tmp/Native.pdf"],
+        ))
+        XCTAssertNil(persisted.currentContext.references[0].metadata["base64Data"])
+        XCTAssertNil(persisted.currentContext.items[0].metadata["nativeBase64Data"])
+        XCTAssertNil(persisted.currentContext.items[0].references[0].metadata["fileDataBase64"])
+        XCTAssertNil(persisted.currentContext.attachments[0].metadata["base64Data"])
+        XCTAssertEqual(lock.context.requestContext.parts[0].resolution, requestContext.parts[0].resolution)
+    }
+
+// MARK: - CBW-003-build_contextual_request_payload
+
+    /// CBW-003-build_contextual_request_payload: Submit Locks Resolved Picker Attachments Into Request Context Snapshot
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testSubmitLocksResolvedPickerAttachmentsIntoRequestContextSnapshot() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -129,6 +329,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
             .contains("Folder/Subfolder\tFolder/Subfolder/Nested.md") ?? false)
     }
 
+    /// CBW-003-build_contextual_request_payload: Submit Keeps Unreadable Collection Reference Without Item Paths
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testSubmitKeepsUnreadableCollectionReferenceWithoutItemPaths() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -146,6 +351,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertResolvedReference(attachment.resolutionResult, collectionSnapshotStatus: "unreadable")
     }
 
+    /// CBW-003-build_contextual_request_payload: Submit Truncates Collection Reference Item Paths By UTF8 Budget
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testSubmitTruncatesCollectionReferenceItemPathsByUTF8Budget() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -179,6 +389,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         )
     }
 
+    /// CBW-003-build_contextual_request_payload: Submit Counts Collection Reference Item Paths Against Total Attachment Budget
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testSubmitCountsCollectionReferenceItemPathsAgainstTotalAttachmentBudget() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -217,6 +432,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         )
     }
 
+    /// CBW-003-build_contextual_request_payload: Submit Truncated UTF8 Attachment Backs Up To Valid Scalar Boundary
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testSubmitTruncatedUTF8AttachmentBacksUpToValidScalarBoundary() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -240,6 +460,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         }
     }
 
+    /// CBW-003-build_contextual_request_payload: Submit Bounds Large UTF8 Attachment Read To Text Budget
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testSubmitBoundsLargeUTF8AttachmentReadToTextBudget() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -262,6 +487,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         }
     }
 
+    /// CBW-003-build_contextual_request_payload: Submit Dedupes Current Context Canonical Path When Attachment Targets Same File
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testSubmitDedupesCurrentContextCanonicalPathWhenAttachmentTargetsSameFile() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -302,6 +532,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         )
     }
 
+    /// CBW-003-build_contextual_request_payload: Remote Current Context Collection Includes Snapshot Item Paths
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testRemoteCurrentContextCollectionIncludesSnapshotItemPaths() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -357,6 +592,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         )
     }
 
+    /// CBW-003-build_contextual_request_payload: Current Context Folder Default Keeps Direct File List Metadata
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testCurrentContextFolderDefaultKeepsDirectFileListMetadata() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -411,6 +651,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(metadata["path"], "Workspace")
     }
 
+    /// CBW-003-build_contextual_request_payload: Remote Current Context Folder Redacts Collection Item Paths For Non Codex Provider
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testRemoteCurrentContextFolderRedactsCollectionItemPathsForNonCodexProvider() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -466,6 +711,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(metadata["path"], "Workspace")
     }
 
+    /// CBW-003-build_contextual_request_payload: Folder Structure Directory File Paths Share Metadata Budget
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testFolderStructureDirectoryFilePathsShareMetadataBudget() async throws {
         let sandbox = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: sandbox) }
@@ -500,6 +750,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertLessThan(directoryFilePathLines, 1200)
     }
 
+    /// CBW-003-build_contextual_request_payload: Remote Current Context Selected File Uses Provider Native Base64 And Redacted Path Metadata
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testRemoteCurrentContextSelectedFileUsesProviderNativeBase64AndRedactedPathMetadata() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -583,6 +838,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         }
     }
 
+    /// CBW-003-build_contextual_request_payload: Remote Provider Attachment Parts Use Provider Native Base64 For Supported Files
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testRemoteProviderAttachmentPartsUseProviderNativeBase64ForSupportedFiles() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -653,6 +913,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         }
     }
 
+    /// CBW-003-build_contextual_request_payload: Regenerate Reuses Original Locked Request Context Snapshot
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testRegenerateReusesOriginalLockedRequestContextSnapshot() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -734,6 +999,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Original.txt"])
     }
 
+    /// CBW-003-build_contextual_request_payload: Codex Missing Attachment Does Not Become Path Scope Reference
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testCodexMissingAttachmentDoesNotBecomePathScopeReference() async throws {
         let missingURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("missing-codex-attachment-\(UUID().uuidString).txt")
@@ -762,6 +1032,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         }
     }
 
+    /// CBW-003-build_contextual_request_payload: Regenerate After Model Switch Re Resolves Locked Request Context For Selected Provider
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testRegenerateAfterModelSwitchReResolvesLockedRequestContextForSelectedProvider() async throws {
         let sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -905,6 +1180,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(metadata["attachmentID"], attachmentID.rawValue)
     }
 
+    /// CBW-003-build_contextual_request_payload: Regenerate After Restore Reuses Persisted Locked Request Context Snapshot
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testRegenerateAfterRestoreReusesPersistedLockedRequestContextSnapshot() async {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -963,6 +1243,11 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Restored.txt"])
     }
 
+    /// CBW-003-build_contextual_request_payload: Submit After New Chat Uses Latest Current Context Instead Of Seed Snapshot
+    /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
+    /// - 검증 내용: 기존 legacy 테스트가 검증하던 관찰 가능한 상태와 출력 값을 확인합니다.
+    /// - 사전 조건: 기존 테스트 fixture와 dependency 설정을 그대로 사용합니다.
+    /// - 기대 결과: CBW AC에 필요한 사용자 관찰 동작이 회귀 없이 유지됩니다.
     func testSubmitAfterNewChatUsesLatestCurrentContextInsteadOfSeedSnapshot() async throws {
         let stream = AiChatExecutionStreamDriver()
         let catalogRows = makeCatalogRows()
@@ -1084,6 +1369,17 @@ final class AiChatRequestContextSnapshotTests: XCTestCase {
         XCTAssertNotEqual(request.context.requestContext.currentContext, originalContext)
     }
 }
+
+private func makeFeatureWithFrozenRequestDependencies() -> AiChatFeature {
+    withDependencies {
+        $0.uuid = .incrementing
+        $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_000_500))
+    } operation: {
+        AiChatFeature()
+    }
+}
+
+// Legacy helper support from AiChatRequestContextSnapshotTests.swift
 
 @MainActor
 private func submitRequest(

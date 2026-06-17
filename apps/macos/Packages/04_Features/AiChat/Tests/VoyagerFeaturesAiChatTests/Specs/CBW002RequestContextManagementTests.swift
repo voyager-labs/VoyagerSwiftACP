@@ -3,6 +3,7 @@ import Foundation
 import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiChat
 import XCTest
+import AppKit
 
 @MainActor
 final class CBW002RequestContextManagementTests: XCTestCase {
@@ -536,6 +537,456 @@ final class CBW002RequestContextManagementTests: XCTestCase {
         XCTAssertEqual(request.context.requestContext.addedAttachments.map(\.displayTitle), ["Notes.txt"])
         XCTAssertEqual(request.context.requestContext.parts.map(\.source), [.attachment, .currentContext])
     }
+
+// MARK: - CBW-002-show_request_context
+
+    /// CBW-002-show_request_context: Current Context Attachment Uses Attachment Icon Instead Of Folder Route Icon
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testCurrentContextAttachmentUsesAttachmentIconInsteadOfFolderRouteIcon() {
+        let state = AiChatFeature.State(
+            currentContext: makeImageAttachmentCurrentContext(),
+            addedAttachments: [],
+        )
+
+        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+
+        XCTAssertEqual(currentContext?.title, "Screenshot.png")
+        XCTAssertEqual(currentContext?.iconSystemName, "paperclip")
+        XCTAssertNil(currentContext?.iconFilePath)
+        XCTAssertNil(currentContext?.folderStructureMode)
+        XCTAssertEqual(currentContext?.supportsFolderStructureMode, true)
+    }
+
+    /// CBW-002-show_request_context: Locked Current Context Selected File Does Not Fallback To Folder Reference Icon Path
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testLockedCurrentContextSelectedFileDoesNotFallbackToFolderReferenceIconPath() {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let lockedRequestContext = makeLockedSelectedImageFileRequestContext()
+        let lock = makeImageAttachmentRequestLock(
+            context: lockedRequestContext,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+        )
+        let state = AiChatFeature.State(
+            sessionID: lock.context.sessionID,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .processing(lock),
+        )
+
+        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+
+        XCTAssertEqual(currentContext?.title, "SCR-20260528-suth.png")
+        XCTAssertEqual(currentContext?.iconSystemName, "doc")
+        XCTAssertNil(currentContext?.iconFilePath)
+        XCTAssertEqual(currentContext?.supportsFolderStructureMode, true)
+    }
+
+    /// CBW-002-show_request_context: Locked Current Context Attachment Keeps Attachment Icon During Processing
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testLockedCurrentContextAttachmentKeepsAttachmentIconDuringProcessing() {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let lockedRequestContext = makeLockedImageAttachmentRequestContext()
+        let lock = makeImageAttachmentRequestLock(
+            context: lockedRequestContext,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+        )
+        let state = AiChatFeature.State(
+            sessionID: lock.context.sessionID,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .processing(lock),
+        )
+
+        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+
+        XCTAssertEqual(currentContext?.title, "Screenshot.png")
+        XCTAssertEqual(currentContext?.iconSystemName, "paperclip")
+        XCTAssertNil(currentContext?.iconFilePath)
+        XCTAssertNil(currentContext?.folderStructureMode)
+        XCTAssertEqual(currentContext?.supportsFolderStructureMode, true)
+    }
+
+    // MARK: - CBW-002-show_request_context
+
+    /// CBW-002-show_request_context: Request Context Display Model Separates Groups And Hides Empty Placeholder
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testRequestContextDisplayModelSeparatesGroupsAndHidesEmptyPlaceholder() {
+        let emptyState = AiChatFeature.State(currentContext: .init(), addedAttachments: [])
+        XCTAssertTrue(AiChatStateDisplayModelBuilder(state: emptyState).requestContextDisplayModel.isEmpty)
+        XCTAssertNil(AiChatStateDisplayModelBuilder(state: emptyState).requestContextDisplayModel.currentContext)
+        XCTAssertTrue(AiChatStateDisplayModelBuilder(state: emptyState).requestContextDisplayModel.addedAttachments
+            .isEmpty)
+
+        let displayModel = AiChatStateDisplayModelBuilder(state: makeLiveStateForGroupSeparation())
+            .requestContextDisplayModel
+        assertDraftDisplayModelGroupSeparation(displayModel)
+
+        let multiSelectState = AiChatFeature.State(
+            currentContext: makeContextSnapshot(
+                summary: "Documents",
+                references: [makeContextReference(title: "Documents")],
+                items: [
+                    makeContextItem(title: "One.txt"),
+                    makeContextItem(title: "Two.txt"),
+                    makeContextItem(title: "Three.txt"),
+                ],
+            ),
+            addedAttachments: [],
+        )
+        XCTAssertEqual(
+            AiChatStateDisplayModelBuilder(state: multiSelectState).requestContextDisplayModel.currentContext?.title,
+            "3 Selected",
+        )
+    }
+
+    /// CBW-002-show_request_context: Current Folder Context Uses Finder Folder Icon Path
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testCurrentFolderContextUsesFinderFolderIconPath() {
+        let state = AiChatFeature.State(
+            currentContext: makeContextSnapshot(
+                summary: "Desktop",
+                references: [
+                    makeContextReference(
+                        title: "Desktop",
+                        metadata: ["route": "folder", "path": "/Users/test/Desktop"],
+                    ),
+                ],
+                items: [],
+                attachments: [],
+            ),
+            addedAttachments: [],
+        )
+
+        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+        let currentContextTooltip = aiChatRequestContextTooltipText(
+            sourceLabel: "Current context",
+            destinationLabel: "ChatGPT Codex",
+            statusLabel: aiChatCurrentContextStatusLabel(for: state.currentContext, destinationProvider: .chatgptCodex),
+            statusDetail: aiChatCurrentContextStatusDetail(
+                for: state.currentContext,
+                destinationProvider: .chatgptCodex,
+            ),
+        )
+
+        XCTAssertEqual(currentContext?.title, "Desktop")
+        XCTAssertEqual(currentContext?.iconFilePath, "/Users/test/Desktop")
+        XCTAssertTrue(currentContextTooltip.contains("Source: Current context"))
+        XCTAssertTrue(currentContextTooltip.contains("Destination: ChatGPT Codex"))
+        XCTAssertTrue(currentContextTooltip.contains("Status: Reference only"))
+        XCTAssertTrue(currentContextTooltip.contains("contents not included"))
+    }
+
+    /// CBW-002-show_request_context: Locked Current Context Chip Uses Resolved Folder Metadata During Processing
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testLockedCurrentContextChipUsesResolvedFolderMetadataDuringProcessing() {
+        let catalogRows = makeCatalogRows()
+        let (state, currentContext) = makeLockedFolderProcessingState(catalogRows: catalogRows)
+
+        XCTAssertEqual(currentContext?.title, "Desktop")
+        XCTAssertEqual(currentContext?.iconSystemName, "folder")
+        XCTAssertEqual(currentContext?.iconFilePath, "/tmp/Desktop")
+        XCTAssertEqual(currentContext?.folderStructureMode, .includeSubfolders)
+    }
+
+    /// CBW-002-show_request_context: Current File Context Does Not Expose Folder Structure Mode
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testCurrentFileContextDoesNotExposeFolderStructureMode() {
+        let state = AiChatFeature.State(
+            currentContext: makeContextSnapshot(
+                summary: "Selected file",
+                references: [],
+                items: [
+                    makeContextItem(
+                        title: "Notes.pdf",
+                        metadata: ["path": "/Users/test/Notes.pdf", "folderStructureMode": "includeSubfolders"],
+                    ),
+                ],
+                attachments: [],
+            ),
+            addedAttachments: [],
+        )
+
+        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+
+        XCTAssertNil(currentContext?.folderStructureMode)
+        XCTAssertEqual(currentContext?.supportsFolderStructureMode, false)
+    }
+
+    /// CBW-002-show_request_context: Current File Context Tooltip Mentions Provider Inclusion
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testCurrentFileContextTooltipMentionsProviderInclusion() {
+        let state = AiChatFeature.State(
+            currentContext: makeContextSnapshot(
+                summary: "Selected file",
+                references: [],
+                items: [
+                    makeContextItem(
+                        title: "Notes.pdf",
+                        metadata: ["path": "/Users/test/Notes.pdf"],
+                    ),
+                ],
+                attachments: [],
+            ),
+            addedAttachments: [],
+        )
+
+        let currentContextTooltip = aiChatRequestContextTooltipText(
+            sourceLabel: "Current context",
+            destinationLabel: "OpenAI",
+            statusLabel: aiChatCurrentContextStatusLabel(for: state.currentContext, destinationProvider: .openai),
+            statusDetail: aiChatCurrentContextStatusDetail(for: state.currentContext, destinationProvider: .openai),
+        )
+
+        XCTAssertTrue(currentContextTooltip.contains("Source: Current context"))
+        XCTAssertTrue(currentContextTooltip.contains("Status: Included"))
+        XCTAssertTrue(currentContextTooltip.contains("provider-native file when supported"))
+    }
+
+    /// CBW-002-show_request_context: Selected Collection Current Context Removes Voycoll Extension
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testSelectedCollectionCurrentContextRemovesVoycollExtension() {
+        let state = AiChatFeature.State(
+            currentContext: makeContextSnapshot(
+                summary: "Selected collection",
+                references: [makeContextReference(title: "Desktop")],
+                items: [
+                    makeContextItem(
+                        title: "Workspace.voycoll",
+                        metadata: ["path": "/tmp/Workspace.voycoll"],
+                    ),
+                ],
+                attachments: [],
+            ),
+            addedAttachments: [],
+        )
+
+        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+
+        XCTAssertEqual(currentContext?.title, "Workspace")
+        XCTAssertEqual(currentContext?.iconAssetName, "voycollFileIcon")
+    }
+
+    /// CBW-002-show_request_context: Current Collection Route Removes Voycoll Extension
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testCurrentCollectionRouteRemovesVoycollExtension() {
+        let state = AiChatFeature.State(
+            currentContext: makeContextSnapshot(
+                summary: "Workspace.voycoll",
+                references: [
+                    makeContextReference(
+                        title: "Workspace.voycoll",
+                        metadata: ["route": "collection", "path": "/tmp/Workspace.voycoll"],
+                    ),
+                ],
+                items: [],
+                attachments: [],
+            ),
+            addedAttachments: [],
+        )
+
+        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+
+        XCTAssertEqual(currentContext?.title, "Workspace")
+        XCTAssertEqual(currentContext?.iconAssetName, "voycollFileIcon")
+    }
+
+    /// CBW-002-show_request_context: Context Part Resolution Maps To Closed Chip States
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testContextPartResolutionMapsToClosedChipStates() {
+        let fixtures = makeContextPartResolutionFixtures()
+
+        for fixture in fixtures {
+            XCTAssertEqual(aiChatContextPartStatusLabel(for: fixture.resolution), fixture.expectedLabel)
+            XCTAssertEqual(aiChatContextPartStatusDetail(for: fixture.resolution), fixture.expectedDetail)
+        }
+    }
+
+    // MARK: - CBW-002-show_request_context
+
+    /// CBW-002-show_request_context: Locked Folder Reference Uses Finder Icon Path During Processing
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testLockedFolderReferenceUsesFinderIconPathDuringProcessing() {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let lockedRequestContext = makeLockedFolderReferenceContext()
+        let lock = makeFolderIconRequestLock(
+            context: lockedRequestContext,
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+        )
+        let state = AiChatFeature.State(
+            sessionID: lock.context.sessionID,
+            sessionStatus: .active,
+            catalogRows: catalogRows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .processing(lock),
+        )
+
+        let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+
+        XCTAssertEqual(currentContext?.title, "Desktop")
+        XCTAssertEqual(currentContext?.iconSystemName, "folder")
+        XCTAssertEqual(currentContext?.iconFilePath, "/tmp/Desktop")
+        XCTAssertEqual(currentContext?.folderStructureMode, .includeSubfolders)
+    }
+
+    // MARK: - CBW-002-add_attachment_by_drop
+
+    /// CBW-002-add_attachment_by_drop: File URLPasteboard Resolves Attachment URLs
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testFileURLPasteboardResolvesAttachmentURLs() {
+        let firstURL = URL(fileURLWithPath: "/tmp/Notes.txt")
+        let duplicateURL = URL(fileURLWithPath: "/tmp/Folder/../Notes.txt")
+        let folderURL = URL(filePath: "/tmp/Projects", directoryHint: .isDirectory)
+        let pasteboard = NSPasteboard(name: .init("AiChatInputTextViewDropTests-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects([firstURL as NSURL, duplicateURL as NSURL, folderURL as NSURL])
+
+        let urls = AiChatInputTextView.Coordinator.fileURLs(from: pasteboard)
+
+        XCTAssertEqual(urls, [firstURL.standardizedFileURL, folderURL.standardizedFileURL])
+    }
+
+    /// CBW-002-add_attachment_by_drop: File URLString Pasteboard Resolves Attachment URL
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testFileURLStringPasteboardResolvesAttachmentURL() {
+        let collectionURL = URL(fileURLWithPath: "/tmp/Workspace.voycoll")
+        let pasteboard = NSPasteboard(name: .init("AiChatInputTextViewDropTests-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.setString(collectionURL.absoluteString, forType: .fileURL)
+
+        let urls = AiChatInputTextView.Coordinator.fileURLs(from: pasteboard)
+
+        XCTAssertEqual(urls, [collectionURL.standardizedFileURL])
+    }
+
+    @MainActor
+    /// CBW-002-add_attachment_by_drop: Attachment Dropping Text View Consumes File URLDrops
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testAttachmentDroppingTextViewConsumesFileURLDrops() {
+        let fileURL = URL(fileURLWithPath: "/tmp/Dropped.txt")
+        let pasteboard = NSPasteboard(name: .init("AiChatInputTextViewDropTests-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects([fileURL as NSURL])
+        let textView = AiChatInputTextView.AttachmentDroppingTextView()
+        var droppedURLs: [URL] = []
+        textView.onAttachmentsDropped = { droppedURLs = $0 }
+
+        let consumed = textView.consumeFileURLs(from: pasteboard)
+
+        XCTAssertTrue(consumed)
+        XCTAssertEqual(droppedURLs, [fileURL.standardizedFileURL])
+        XCTAssertEqual(textView.string, "")
+    }
+
+    // MARK: - CBW-002-show_request_context
+
+    /// CBW-002-show_request_context: Request Context Display Model Uses Locked Snapshot During Processing And Terminal States
+    /// 요청 context 표시와 첨부 동작이 CBW-002 사용자 흐름에 맞게 유지되는지 검증합니다.
+    /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
+    /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
+    /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
+    func testRequestContextDisplayModelUsesLockedSnapshotDuringProcessingAndTerminalStates() {
+        let catalogRows = makeCatalogRows()
+        let selectedHandle = catalogRows[0].handle
+        let lockedRequestContext = makeLockedRequestContextForDisplayTest()
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(
+                context: AiChatRequestContextSnapshot(
+                    sessionID: AiChatSessionID(rawValue: UUID()),
+                    requestID: AiChatRequestID(rawValue: UUID()),
+                    runID: AiChatRunID(rawValue: UUID()),
+                    provider: selectedHandle.provider,
+                    model: selectedHandle,
+                    selectedModel: nil,
+                    selectedModelRow: catalogRows[0],
+                    selectedThinking: nil,
+                    sessionStatus: .active,
+                    currentContext: makeContextSnapshot(summary: "Live context"),
+                    requestContext: lockedRequestContext,
+                    promptSummary: "Hello",
+                    submittedAtMs: nil,
+                ),
+                messages: [],
+            ),
+            selectedHandle: selectedHandle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+
+        let processingState = makeProcessingDisplayModelState(
+            catalogRows: catalogRows,
+            selectedHandle: selectedHandle,
+            lock: lock,
+        )
+
+        let processingDisplayModel = AiChatStateDisplayModelBuilder(state: processingState).requestContextDisplayModel
+        assertProcessingLockedDisplayModel(processingDisplayModel)
+
+        let completedState = makeCompletedDisplayModelState(
+            processingState: processingState,
+            catalogRows: catalogRows,
+            selectedHandle: selectedHandle,
+            lock: lock,
+        )
+
+        let completedDisplayModel = AiChatStateDisplayModelBuilder(state: completedState).requestContextDisplayModel
+        XCTAssertEqual(completedDisplayModel.source, AiChatRequestContextDisplaySource.draft)
+        XCTAssertEqual(completedDisplayModel.currentContext?.title, "LiveOnly.txt")
+        XCTAssertEqual(completedDisplayModel.addedAttachments.map(\.title), ["LiveOnly.txt"])
+    }
 }
 
 private extension CBW002RequestContextManagementTests {
@@ -778,4 +1229,665 @@ private extension AiChatRequestContextSnapshot {
             submittedAtMs: submittedAtMs,
         )
     }
+}
+
+// Request context display model fixture helpers
+
+private struct ContextPartResolutionFixture {
+    let resolution: AiChatContextPartResolution
+    let expectedLabel: String
+    let expectedDetail: String
+}
+
+private func makeContextPartResolutionFixtures() -> [ContextPartResolutionFixture] {
+    makeContextPartSuccessResolutionFixtures() + makeContextPartFailureResolutionFixtures()
+}
+
+private func makeContextPartSuccessResolutionFixtures() -> [ContextPartResolutionFixture] {
+    [
+        ContextPartResolutionFixture(
+            resolution: .inlineText(text: "Hello", metadata: [:]),
+            expectedLabel: "Included",
+            expectedDetail: "Included as text",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .partialText(text: "Hello", truncated: true, metadata: [:]),
+            expectedLabel: "Partial",
+            expectedDetail: "Included first 64 KiB as text",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .partialText(text: "Hello", truncated: false, metadata: [:]),
+            expectedLabel: "Included",
+            expectedDetail: "Included as text",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .referenceOnly(metadata: [:]),
+            expectedLabel: "Reference only",
+            expectedDetail: "Reference only; contents not included",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .referenceOnly(metadata: ["collectionItemPaths": "/tmp/A\n/tmp/B"]),
+            expectedLabel: "Collection paths",
+            expectedDetail: "Collection paths only; contents not included",
+        ),
+    ]
+}
+
+private func makeContextPartFailureResolutionFixtures() -> [ContextPartResolutionFixture] {
+    [
+        ContextPartResolutionFixture(
+            resolution: .collectionPathList(paths: ["/tmp/A", "/tmp/B"], metadata: [:]),
+            expectedLabel: "Collection paths",
+            expectedDetail: "Collection paths only; contents not included",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .providerNativeFile(kind: .plainTextDocument, mimeType: "text/plain", metadata: [:]),
+            expectedLabel: "Uploaded/native",
+            expectedDetail: "Uploaded natively as text/plain",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .providerNativeFile(kind: .codexPathScope, mimeType: "text/plain", metadata: [:]),
+            expectedLabel: "Codex path",
+            expectedDetail: "Codex path reference; not uploaded",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .failure(reason: .unsupportedType, metadata: [:]),
+            expectedLabel: "Unsupported",
+            expectedDetail: "Not sent: unsupported type",
+        ),
+        ContextPartResolutionFixture(
+            resolution: .failure(reason: .permissionDenied, metadata: [:]),
+            expectedLabel: "Failed",
+            expectedDetail: "Not sent: permissionDenied",
+        ),
+    ]
+}
+
+private func makeDraftAttachment(
+    id: String,
+    status: AiChatAttachmentDraftStatus,
+    source: AiChatAttachmentSource = .file,
+    displayTitle: String? = nil,
+    filePath: String? = nil,
+    metadata: [String: String] = [:],
+) -> AiChatAttachmentDraft {
+    AiChatAttachmentDraft(
+        id: AiChatAttachmentID(rawValue: id),
+        source: source,
+        displayTitle: displayTitle,
+        sourceLocation: AiChatAttachmentSourceLocation(filePath: filePath),
+        metadata: metadata,
+        currentStatus: status,
+    )
+}
+
+private func makeLockedAttachment(
+    id: String,
+    result: AiChatAttachmentResolutionResult,
+    source: AiChatAttachmentSource = .file,
+    displayTitle: String? = nil,
+    filePath: String? = nil,
+    metadata: [String: String] = [:],
+) -> AiChatAttachmentSnapshot {
+    AiChatAttachmentSnapshot(
+        id: AiChatAttachmentID(rawValue: id),
+        source: source,
+        displayTitle: displayTitle,
+        sourceLocation: AiChatAttachmentSourceLocation(filePath: filePath),
+        metadata: metadata,
+        resolutionResult: result,
+    )
+}
+
+private func makeContextReference(
+    title: String,
+    kind: AiChatContextItemKind = .reference,
+    metadata: [String: String] = [:],
+) -> AiChatContextReference {
+    AiChatContextReference(kind: kind, identifier: title, title: title, subtitle: nil, metadata: metadata)
+}
+
+private func makeContextItem(
+    title: String,
+    kind: AiChatContextItemKind = .file,
+    metadata: [String: String] = [:],
+) -> AiChatContextItem {
+    AiChatContextItem(kind: kind, identifier: title, title: title, subtitle: nil, metadata: metadata)
+}
+
+private func makeLiveStateForGroupSeparation() -> AiChatFeature.State {
+    AiChatFeature.State(
+        currentContext: makeContextSnapshot(
+            summary: "Inspector selection",
+            references: [
+                makeContextReference(
+                    title: "Documents",
+                    kind: .folder,
+                    metadata: ["path": "/tmp", "folderStructureMode": "includeSubfolders"],
+                ),
+            ],
+            items: [makeContextItem(title: "ProjectPlan.md")],
+        ),
+        addedAttachments: [
+            makeDraftAttachment(
+                id: "notes",
+                status: .resolved(.resolvedText(text: "Hello", metadata: [:])),
+                displayTitle: "Notes.txt",
+                metadata: ["folderStructureMode": "includeSubfolders"],
+            ),
+            makeDraftAttachment(
+                id: "folder",
+                status: .resolved(.resolvedReference(metadata: [
+                    "collectionItemPaths": "/tmp/One\n/tmp/Two",
+                    "folderStructureMode": "includeSubfolders",
+                ])),
+                source: .collectionDocument,
+                displayTitle: "Workspace.voycoll",
+                filePath: "/tmp/Workspace.voycoll",
+                metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two", "folderStructureMode": "includeSubfolders"],
+            ),
+            makeDraftAttachment(
+                id: "pending",
+                status: .pending,
+                filePath: "/tmp/Pending.txt",
+            ),
+            makeDraftAttachment(
+                id: "partial",
+                status: .resolved(.resolvedPartial(text: "Trimmed", truncated: true, metadata: [:])),
+                filePath: "/tmp/Long.txt",
+            ),
+            makeDraftAttachment(
+                id: "failed",
+                status: .resolved(.failure(reason: .brokenReference, metadata: [:])),
+                filePath: "/tmp/Broken.txt",
+            ),
+        ],
+    )
+}
+
+private func assertDraftDisplayModelGroupSeparation(_ displayModel: AiChatRequestContextDisplayModel) {
+    XCTAssertEqual(displayModel.source, AiChatRequestContextDisplaySource.draft)
+    XCTAssertEqual(displayModel.currentContext?.title, "ProjectPlan.md")
+    XCTAssertEqual(displayModel.addedAttachments.map(\.title), [
+        "Notes.txt", "Workspace", "Pending.txt", "Long.txt", "Broken.txt",
+    ])
+    XCTAssertEqual(displayModel.addedAttachments.map(\.statusLabel), [
+        "Included", "Collection paths", "", "Partial", "Failed",
+    ])
+    XCTAssertEqual(displayModel.addedAttachments.map(\.statusDetail), [
+        "Included as text",
+        "Collection paths only; contents not included",
+        "",
+        "Included first 64 KiB as text",
+        "Not sent: brokenReference",
+    ])
+    XCTAssertEqual(displayModel.addedAttachments[1].iconFilePath, "/tmp/Workspace.voycoll")
+    XCTAssertEqual(displayModel.addedAttachments[1].iconAssetName, "voycollFileIcon")
+    XCTAssertTrue(displayModel.addedAttachments.allSatisfy(\.isRemovable))
+    XCTAssertEqual(displayModel.currentContext?.folderStructureMode, .includeSubfolders)
+    XCTAssertEqual(displayModel.currentContext?.supportsFolderStructureMode, true)
+    XCTAssertEqual(displayModel.addedAttachments[1].folderStructureMode, .includeSubfolders)
+}
+
+private func makeLockedFolderProcessingState(
+    catalogRows: [AiModelCatalogRow],
+) -> (state: AiChatFeature.State, currentContext: AiChatCurrentContextChipDisplayModel?) {
+    let selectedHandle = catalogRows[0].handle
+    let lockedRequestContext = makeDesktopLockedRequestContext()
+    let lock = makeRequestLock(
+        kind: .submit,
+        request: AiChatRequest(
+            context: AiChatRequestContextSnapshot(
+                sessionID: AiChatSessionID(rawValue: UUID()),
+                requestID: AiChatRequestID(rawValue: UUID()),
+                runID: AiChatRunID(rawValue: UUID()),
+                provider: selectedHandle.provider,
+                model: selectedHandle,
+                selectedModelRow: catalogRows[0],
+                sessionStatus: .active,
+                currentContext: makeContextSnapshot(summary: "Live context"),
+                requestContext: lockedRequestContext,
+                promptSummary: "Hello",
+            ),
+            messages: [],
+        ),
+        selectedHandle: selectedHandle,
+        selectedRow: catalogRows[0],
+        assistantReplacementIndex: nil,
+    )
+    let state = AiChatFeature.State(
+        sessionStatus: .active,
+        catalogRows: catalogRows,
+        selectedModelHandle: selectedHandle,
+        executionPhase: .processing(lock),
+    )
+    let currentContext = AiChatStateDisplayModelBuilder(state: state).requestContextDisplayModel.currentContext
+    return (state, currentContext)
+}
+
+private func makeDesktopLockedRequestContext() -> AiChatLockedRequestContextSnapshot {
+    AiChatLockedRequestContextSnapshot(
+        currentContext: makeContextSnapshot(
+            summary: "Desktop",
+            references: [],
+            items: [
+                makeContextItem(
+                    title: "Desktop",
+                    kind: .folder,
+                    metadata: ["path": "Desktop"],
+                ),
+            ],
+            attachments: [],
+        ),
+        addedAttachments: [],
+        parts: [
+            AiChatLockedContextPartSnapshot(
+                source: .currentContext,
+                resolution: .referenceOnly(metadata: ["folderStructureMode": "includeSubfolders"]),
+                canonicalPath: "/tmp/Desktop",
+                displayPath: "Desktop",
+                fileKind: .folder,
+                displayTitle: "Desktop",
+            ),
+        ],
+    )
+}
+
+// Attachment icon display fixture helpers
+
+private func makeLockedSelectedImageFileRequestContext() -> AiChatLockedRequestContextSnapshot {
+    AiChatLockedRequestContextSnapshot(
+        currentContext: AiChatCurrentContextSnapshot(
+            summary: "Desktop · 1 selected",
+            references: [makeImageAttachmentRouteReference()],
+            items: [
+                AiChatContextItem(
+                    kind: .file,
+                    identifier: "/Users/test/Desktop/SCR-20260528-suth.png",
+                    title: "SCR-20260528-suth.png",
+                    subtitle: "/Users/test/Desktop/SCR-20260528-suth.png",
+                    metadata: [
+                        "kind": "file",
+                        "path": "/Users/test/Desktop/SCR-20260528-suth.png",
+                        "selected": "true",
+                    ],
+                    references: [makeImageAttachmentRouteReference()],
+                ),
+            ],
+            attachments: [],
+        ),
+        addedAttachments: [],
+        parts: [
+            makeLockedFolderReferencePart(),
+            makeLockedSelectedImageFilePart(),
+        ],
+    )
+}
+
+private func makeLockedFolderReferencePart() -> AiChatLockedContextPartSnapshot {
+    AiChatLockedContextPartSnapshot(
+        source: .currentContext,
+        resolution: .referenceOnly(metadata: ["route": "folder"]),
+        canonicalPath: "/Users/test/Desktop",
+        displayPath: "Desktop",
+        fileKind: .reference,
+        displayTitle: "Desktop",
+    )
+}
+
+private func makeLockedSelectedImageFilePart() -> AiChatLockedContextPartSnapshot {
+    AiChatLockedContextPartSnapshot(
+        source: .currentContext,
+        resolution: .providerNativeFile(
+            kind: .image,
+            mimeType: "image/png",
+            metadata: ["mimeType": "image/png"],
+        ),
+        canonicalPath: "/Users/test/Desktop/SCR-20260528-suth.png",
+        displayPath: "SCR-20260528-suth.png",
+        fileKind: .file,
+        displayTitle: "SCR-20260528-suth.png",
+        mimeType: "image/png",
+    )
+}
+
+private func makeImageAttachmentCurrentContext() -> AiChatCurrentContextSnapshot {
+    AiChatCurrentContextSnapshot(
+        summary: "Screenshot.png",
+        references: [makeImageAttachmentRouteReference()],
+        items: [],
+        attachments: [makeImageContextAttachment()],
+    )
+}
+
+private func makeImageAttachmentRouteReference() -> AiChatContextReference {
+    AiChatContextReference(
+        kind: .reference,
+        identifier: "Desktop",
+        title: "Desktop",
+        subtitle: nil,
+        metadata: ["route": "folder", "path": "/Users/test/Desktop"],
+    )
+}
+
+private func makeImageContextAttachment() -> AiChatContextAttachment {
+    AiChatContextAttachment(
+        identifier: "/Users/test/Desktop/Screenshot.png",
+        title: "Screenshot.png",
+        subtitle: "/Users/test/Desktop/Screenshot.png",
+        kind: .attachment,
+        metadata: ["mimeType": "image/png", "path": "/Users/test/Desktop/Screenshot.png"],
+    )
+}
+
+private func makeLockedImageAttachmentRequestContext() -> AiChatLockedRequestContextSnapshot {
+    AiChatLockedRequestContextSnapshot(
+        currentContext: makeImageAttachmentCurrentContext(),
+        addedAttachments: [],
+        parts: [makeLockedImageAttachmentPart()],
+    )
+}
+
+private func makeLockedImageAttachmentPart() -> AiChatLockedContextPartSnapshot {
+    AiChatLockedContextPartSnapshot(
+        source: .currentContext,
+        resolution: .providerNativeFile(
+            kind: .image,
+            mimeType: "image/png",
+            metadata: ["mimeType": "image/png"],
+        ),
+        canonicalPath: "/Users/test/Desktop/Screenshot.png",
+        displayPath: "Screenshot.png",
+        fileKind: .attachment,
+        displayTitle: "Screenshot.png",
+        mimeType: "image/png",
+    )
+}
+
+private func makeImageAttachmentRequestLock(
+    context: AiChatLockedRequestContextSnapshot,
+    selectedHandle: AiModelHandle,
+    selectedRow: AiModelCatalogRow,
+) -> AiChatRequestLock {
+    makeRequestLock(
+        kind: .submit,
+        request: makeImageAttachmentRequest(
+            context: context,
+            selectedHandle: selectedHandle,
+            selectedRow: selectedRow,
+        ),
+        selectedHandle: selectedHandle,
+        selectedRow: selectedRow,
+        assistantReplacementIndex: nil,
+    )
+}
+
+private func makeImageAttachmentRequest(
+    context: AiChatLockedRequestContextSnapshot,
+    selectedHandle: AiModelHandle,
+    selectedRow: AiModelCatalogRow,
+) -> AiChatRequest {
+    AiChatRequest(
+        context: AiChatRequestContextSnapshot(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            requestID: AiChatRequestID(rawValue: UUID()),
+            runID: AiChatRunID(rawValue: UUID()),
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: selectedRow,
+            sessionStatus: .active,
+            currentContext: AiChatCurrentContextSnapshot(summary: "Live context"),
+            requestContext: context,
+            promptSummary: "Hello",
+        ),
+        messages: [],
+    )
+}
+
+// Folder icon display fixture helpers
+
+private func makeLockedFolderReferenceContext() -> AiChatLockedRequestContextSnapshot {
+    AiChatLockedRequestContextSnapshot(
+        currentContext: makeFolderIconContextSnapshot(),
+        addedAttachments: [],
+        parts: [makeFolderIconLockedFolderReferencePart()],
+    )
+}
+
+private func makeFolderIconContextSnapshot() -> AiChatCurrentContextSnapshot {
+    AiChatCurrentContextSnapshot(
+        summary: "Desktop",
+        references: [
+            AiChatContextReference(
+                kind: .reference,
+                identifier: "Desktop",
+                title: "Desktop",
+                subtitle: nil,
+                metadata: ["route": "folder", "path": "Desktop"],
+            ),
+        ],
+        items: [],
+        attachments: [],
+    )
+}
+
+private func makeFolderIconLockedFolderReferencePart() -> AiChatLockedContextPartSnapshot {
+    AiChatLockedContextPartSnapshot(
+        source: .currentContext,
+        resolution: .referenceOnly(metadata: [
+            "route": "folder",
+            "folderStructureMode": "includeSubfolders",
+        ]),
+        canonicalPath: "/tmp/Desktop",
+        displayPath: "Desktop",
+        fileKind: .reference,
+        displayTitle: "Desktop",
+    )
+}
+
+private func makeFolderIconRequestLock(
+    context: AiChatLockedRequestContextSnapshot,
+    selectedHandle: AiModelHandle,
+    selectedRow: AiModelCatalogRow,
+) -> AiChatRequestLock {
+    makeRequestLock(
+        kind: .submit,
+        request: makeFolderIconRequest(
+            context: context,
+            selectedHandle: selectedHandle,
+            selectedRow: selectedRow,
+        ),
+        selectedHandle: selectedHandle,
+        selectedRow: selectedRow,
+        assistantReplacementIndex: nil,
+    )
+}
+
+private func makeFolderIconRequest(
+    context: AiChatLockedRequestContextSnapshot,
+    selectedHandle: AiModelHandle,
+    selectedRow: AiModelCatalogRow,
+) -> AiChatRequest {
+    AiChatRequest(
+        context: AiChatRequestContextSnapshot(
+            sessionID: AiChatSessionID(rawValue: UUID()),
+            requestID: AiChatRequestID(rawValue: UUID()),
+            runID: AiChatRunID(rawValue: UUID()),
+            provider: selectedHandle.provider,
+            model: selectedHandle,
+            selectedModelRow: selectedRow,
+            sessionStatus: .active,
+            currentContext: AiChatCurrentContextSnapshot(summary: "Live context"),
+            requestContext: context,
+            promptSummary: "Hello",
+        ),
+        messages: [],
+    )
+}
+
+// Locked request context display fixture helpers
+
+private func makeLockedRequestContextForDisplayTest() -> AiChatLockedRequestContextSnapshot {
+    AiChatLockedRequestContextSnapshot(
+        currentContext: makeContextSnapshot(
+            summary: "Locked request context",
+            references: [
+                makeContextReference(
+                    title: "Locked request context",
+                    metadata: ["folderStructureMode": "includeSubfolders"],
+                ),
+            ],
+        ),
+        addedAttachments: makeLockedDisplayTestAttachments(),
+        parts: makeLockedDisplayTestParts(),
+    )
+}
+
+private func makeLockedDisplayTestAttachments() -> [AiChatAttachmentSnapshot] {
+    [
+        makeLockedAttachment(
+            id: "locked-ref",
+            result: .resolvedReference(metadata: [
+                "collectionItemPaths": "/tmp/One\n/tmp/Two",
+                "folderStructureMode": "includeSubfolders",
+            ]),
+            source: .collectionDocument,
+            displayTitle: "Workspace.voycoll",
+            filePath: "/tmp/Workspace.voycoll",
+            metadata: ["collectionItemPaths": "/tmp/One\n/tmp/Two", "folderStructureMode": "includeSubfolders"],
+        ),
+        makeLockedAttachment(
+            id: "locked-native",
+            result: .resolvedReference(metadata: [:]),
+            displayTitle: "Design.pdf",
+            filePath: "/tmp/Design.pdf",
+        ),
+        makeLockedAttachment(
+            id: "locked-fail",
+            result: .failure(reason: .permissionDenied, metadata: [:]),
+            filePath: "/tmp/Secret.txt",
+        ),
+    ]
+}
+
+private func makeLockedDisplayTestParts() -> [AiChatLockedContextPartSnapshot] {
+    [
+        AiChatLockedContextPartSnapshot(
+            source: .attachment,
+            resolution: .collectionPathList(
+                paths: ["/tmp/One", "/tmp/Two"],
+                metadata: ["attachmentID": "locked-ref", "folderStructureMode": "includeSubfolders"],
+            ),
+            fileKind: .attachment,
+            displayTitle: "Workspace.voycoll",
+        ),
+        AiChatLockedContextPartSnapshot(
+            source: .attachment,
+            resolution: .providerNativeFile(
+                kind: .pdf,
+                mimeType: "application/pdf",
+                metadata: ["attachmentID": "locked-native"],
+            ),
+            fileKind: .file,
+            displayTitle: "Design.pdf",
+            mimeType: "application/pdf",
+        ),
+        AiChatLockedContextPartSnapshot(
+            source: .attachment,
+            resolution: .failure(
+                reason: .permissionDenied,
+                metadata: ["attachmentID": "locked-fail"],
+            ),
+            fileKind: .file,
+            displayTitle: "Secret.txt",
+        ),
+    ]
+}
+
+private func makeProcessingDisplayModelState(
+    catalogRows: [AiModelCatalogRow],
+    selectedHandle: AiModelHandle,
+    lock: AiChatRequestLock,
+) -> AiChatFeature.State {
+    AiChatFeature.State(
+        sessionID: AiChatSessionID(rawValue: UUID()),
+        sessionStatus: .active,
+        currentContext: makeContextSnapshot(summary: "Live context"),
+        addedAttachments: [
+            makeDraftAttachment(
+                id: "draft-only",
+                status: .resolved(.resolvedText(text: "Draft", metadata: [:])),
+                displayTitle: "DraftOnly.txt",
+            ),
+        ],
+        transcriptHistory: [AiChatMessage(role: .user, content: "Hello")],
+        draftText: "Follow up",
+        catalogRows: catalogRows,
+        selectedModelHandle: selectedHandle,
+        executionPhase: .processing(lock),
+    )
+}
+
+private func assertProcessingLockedDisplayModel(_ displayModel: AiChatRequestContextDisplayModel) {
+    XCTAssertEqual(displayModel.source, AiChatRequestContextDisplaySource.locked)
+    XCTAssertEqual(displayModel.currentContext?.title, "VoyagerEntitiesAi.swift")
+    XCTAssertEqual(displayModel.addedAttachments.map(\.title), ["Workspace", "Design.pdf", "Secret.txt"])
+    XCTAssertEqual(
+        displayModel.addedAttachments.map(\.statusLabel),
+        ["Collection paths", "Uploaded/native", "Failed"],
+    )
+    XCTAssertEqual(displayModel.addedAttachments.map(\.statusDetail), [
+        "Collection paths only; contents not included",
+        "Uploaded natively as application/pdf",
+        "Not sent: permissionDenied",
+    ])
+    XCTAssertEqual(displayModel.addedAttachments[0].iconFilePath, "/tmp/Workspace.voycoll")
+    XCTAssertEqual(displayModel.addedAttachments[0].iconAssetName, "voycollFileIcon")
+    XCTAssertTrue(displayModel.addedAttachments.allSatisfy { !$0.isRemovable })
+    XCTAssertNil(displayModel.currentContext?.folderStructureMode)
+    XCTAssertEqual(displayModel.currentContext?.supportsFolderStructureMode, false)
+    XCTAssertEqual(displayModel.addedAttachments[0].folderStructureMode, .includeSubfolders)
+}
+
+private func makeCompletedDisplayModelState(
+    processingState: AiChatFeature.State,
+    catalogRows: [AiModelCatalogRow],
+    selectedHandle: AiModelHandle,
+    lock: AiChatRequestLock,
+) -> AiChatFeature.State {
+    AiChatFeature.State(
+        sessionID: processingState.sessionID,
+        sessionStatus: .active,
+        currentContext: makeCompletedLiveContextSnapshot(),
+        addedAttachments: makeCompletedLiveAttachments(),
+        transcriptHistory: [AiChatMessage(role: .assistant, content: "Done")],
+        draftText: "",
+        catalogRows: catalogRows,
+        selectedModelHandle: selectedHandle,
+        executionPhase: .completed(lock),
+    )
+}
+
+private func makeCompletedLiveContextSnapshot() -> AiChatCurrentContextSnapshot {
+    makeContextSnapshot(
+        summary: "Edited live context",
+        references: [
+            makeContextReference(
+                title: "Documents",
+                metadata: ["folderStructureMode": "includeSubfolders"],
+            ),
+        ],
+        items: [makeContextItem(title: "LiveOnly.txt")],
+    )
+}
+
+private func makeCompletedLiveAttachments() -> [AiChatAttachmentDraft] {
+    [
+        makeDraftAttachment(
+            id: "live-only",
+            status: .resolved(.resolvedText(text: "Live", metadata: [:])),
+            displayTitle: "LiveOnly.txt",
+            metadata: ["folderStructureMode": "includeSubfolders"],
+        ),
+    ]
 }
