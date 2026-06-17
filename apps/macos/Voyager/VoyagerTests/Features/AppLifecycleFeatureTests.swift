@@ -63,7 +63,11 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.accountAccessClient = .mock
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense]) },
+                refreshToken: { throw AccessError.notConfigured },
+            )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
                 save: { snapshot in savedSnapshots.append(snapshot) },
@@ -137,12 +141,12 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { nil },
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     AccessStatusResponse(status: .revoked, entitlements: [])
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
@@ -195,13 +199,13 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { nil },
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     accessCheckCalled = true
                     return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
@@ -248,12 +252,12 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { nil },
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     throw AccessError.networkFailure
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
@@ -329,12 +333,12 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { nil },
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
-                    throw AccessError.notConfigured
+                    throw AccessError.networkFailure
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { cachedSnapshot },
@@ -398,12 +402,12 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { nil },
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     throw AccessError.networkFailure
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
@@ -461,12 +465,12 @@ final class AppLifecycleFeatureTests: XCTestCase {
         ) {
             AppLifecycleFeature()
         } withDependencies: {
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { nil },
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     throw AccessError.networkFailure
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { expiredSnapshot },

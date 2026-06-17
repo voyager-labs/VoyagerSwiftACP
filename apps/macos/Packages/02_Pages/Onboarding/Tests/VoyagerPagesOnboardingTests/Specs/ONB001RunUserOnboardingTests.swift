@@ -774,6 +774,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.receive(\.betaAccess._onAppearSessionRestored) { state in
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
+            state.betaAccess.ttlTimerActive = true
         }
         await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -901,6 +902,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.receive(\.betaAccess._onAppearSessionRestored) { state in
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
+            state.betaAccess.ttlTimerActive = true
         }
         await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -992,6 +994,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.receive(\.betaAccess._onAppearSessionRestored) { state in
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
+            state.betaAccess.ttlTimerActive = true
         }
         await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -1083,10 +1086,15 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
                 snapshot: snapshot,
                 saveRecorder: saveRecorder,
             )
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
+            $0.accountSessionClient = AccountSessionClient(
+                read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
+                persist: { _ in },
+                delete: {},
+            )
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { revokedResponse },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessSnapshotClient.recording(
                 recorder: accessSnapshotRecorder,
@@ -1109,6 +1117,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.receive(\.betaAccess._onAppearSessionRestored) { state in
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
+            state.betaAccess.ttlTimerActive = true
         }
         await store.receive(\.betaAccess.accessStatusResponse) { state in
             state.currentStep = .betaAccess
@@ -1285,6 +1294,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.receive(\.betaAccess._onAppearSessionRestored) { state in
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
+            state.betaAccess.ttlTimerActive = true
         }
         await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)
@@ -1608,6 +1618,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.receive(\.betaAccess._onAppearSessionRestored) { state in
             state.betaAccess.hasAccountSession = true
             state.betaAccess.fetchGeneration = 1
+            state.betaAccess.ttlTimerActive = true
         }
         await store.receive(\.betaAccess.accessStatusResponse)
         await store.receive(\.betaAccess.delegate.unlocked)

@@ -259,10 +259,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { nil },
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { revokedResponse },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
             $0.date = .constant(testDate)
         }
@@ -365,10 +365,10 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         let store = TestStore(initialState: AccountAccessFeature.State()) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountAccessClient = AccountAccessClient(
-                restoreSession: { nil },
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: { StateMutation.activeAccessResponse },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             )
         }
 
@@ -424,7 +424,11 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         await store.receive(\.betaAccess.loginCallbackReceived)
         await store.receive(\.betaAccess._loginSessionRestored) { state in
             state.betaAccess.isSignInInProgress = false
+        }
+        await store.receive(\.betaAccess._sessionExpiredDetected) { state in
             state.betaAccess.didSignInFail = true
+            state.betaAccess.hasAccountSession = false
+            state.betaAccess.isSessionExpired = true
         }
 
         await store.finish()

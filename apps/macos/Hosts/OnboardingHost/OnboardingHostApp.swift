@@ -202,7 +202,8 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return true
             },
-            accountAccessClient: authClients.accountAccessClient,
+            accountSessionClient: authClients.accountSessionClient,
+            authNetworkClient: authClients.authNetworkClient,
             signInHandoffClient: authClients.signInHandoffClient,
             permissionDebugScenario: { [debugStore] in
                 debugStore.currentScenario
@@ -211,17 +212,43 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeAuthClients()
-        -> (accountAccessClient: AccountAccessClient, signInHandoffClient: SignInHandoffClient)
+        -> (accountSessionClient: AccountSessionClient, authNetworkClient: AuthNetworkClient,
+            signInHandoffClient: SignInHandoffClient)
     {
         switch OnboardingHostAuthMode.current {
         case .mock:
             (
-                accountAccessClient: .mockSignInBacked(by: sessionHolder),
+                accountSessionClient: AccountSessionClient(
+                    read: { sessionHolder.session },
+                    persist: { _ in },
+                    delete: { sessionHolder.setSession(nil) },
+                ),
+                authNetworkClient: AuthNetworkClient(
+                    exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                    fetchAccessStatus: { AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    },
+                    refreshToken: { throw AccessError.notConfigured },
+                ),
                 signInHandoffClient: makeMockSignInHandoffClient(),
             )
         case .live:
             (
-                accountAccessClient: makeLiveAccountAccessClient(),
+                accountSessionClient: AccountSessionClient(
+                    read: { sessionHolder.session },
+                    persist: { _ in },
+                    delete: { sessionHolder.setSession(nil) },
+                ),
+                authNetworkClient: AuthNetworkClient(
+                    exchangeHandoff: { ticket, state, context in
+                        let session = try await AuthNetworkClient.liveValue.exchangeHandoff(ticket, state, context)
+                        sessionHolder.setSession(session)
+                        return session
+                    },
+                    fetchAccessStatus: {
+                        AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    },
+                    refreshToken: { throw AccessError.notConfigured },
+                ),
                 signInHandoffClient: .liveValue,
             )
         }
@@ -239,18 +266,6 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
             }
             return .success(callbackURL: callbackURL)
         }
-    }
-
-    private func makeLiveAccountAccessClient() -> AccountAccessClient {
-        AccountAccessClient.handoffBacked(
-            sessionHolder: sessionHolder,
-            exchangeClient: .liveValue,
-            fetchAccessStatus: {
-                // Host live auth 검증: entitlement 백엔드 미구현이므로 활성 상태 반환
-                // TODO(VOY-334): 실제 entitlement API 연동 후 교체
-                AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-            },
-        )
     }
 
     func showDebugPanel() {
@@ -298,7 +313,7 @@ private final class OnboardingHostDebugStore: ObservableObject, @unchecked Senda
     var onScenarioChanged: (@MainActor () -> Void)?
 
     private let lock = NSLock()
-    private nonisolated(unsafe) var lockedScenario: OnboardingPermissionDebugScenario
+    nonisolated(unsafe) private var lockedScenario: OnboardingPermissionDebugScenario
 
     init(initialScenario: OnboardingPermissionDebugScenario) {
         scenario = initialScenario

@@ -59,14 +59,16 @@ extension OnboardingWindowClient: DependencyKey {
 
     nonisolated public static func makeLive(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        accountAccessClient: AccountAccessClient? = nil,
+        accountSessionClient: AccountSessionClient? = nil,
+        authNetworkClient: AuthNetworkClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
     ) -> OnboardingWindowClient {
         makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
-            accountAccessClient: accountAccessClient,
+            accountSessionClient: accountSessionClient,
+            authNetworkClient: authNetworkClient,
             signInHandoffClient: signInHandoffClient,
             permissionDebugScenario: permissionDebugScenario,
         )
@@ -75,7 +77,8 @@ extension OnboardingWindowClient: DependencyKey {
     nonisolated static func makeClient(
         progressClient: OnboardingProgressClient,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
-        accountAccessClient: AccountAccessClient? = nil,
+        accountSessionClient: AccountSessionClient? = nil,
+        authNetworkClient: AuthNetworkClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
@@ -87,7 +90,8 @@ extension OnboardingWindowClient: DependencyKey {
                 if onboardingWindowController == nil {
                     onboardingWindowController = OnboardingWindowController(
                         openMainWindow: openMainWindow,
-                        accountAccessClient: accountAccessClient,
+                        accountSessionClient: accountSessionClient,
+                        authNetworkClient: authNetworkClient,
                         signInHandoffClient: signInHandoffClient,
                         permissionDebugScenario: permissionDebugScenario,
                     )

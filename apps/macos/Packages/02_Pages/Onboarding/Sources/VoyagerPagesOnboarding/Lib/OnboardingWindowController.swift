@@ -14,7 +14,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
             false
         },
-        accountAccessClient: AccountAccessClient? = nil,
+        accountSessionClient: AccountSessionClient? = nil,
+        authNetworkClient: AuthNetworkClient? = nil,
         signInHandoffClient: SignInHandoffClient? = nil,
         permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
     ) {
@@ -30,8 +31,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                 openMainWindow: openMainWindow,
                 resetStoredProgress: base.resetStoredProgress,
             )
-            if let accountAccessClient {
-                $0.accountAccessClient = accountAccessClient
+            if let accountSessionClient {
+                $0.accountSessionClient = accountSessionClient
+            }
+            if let authNetworkClient {
+                $0.authNetworkClient = authNetworkClient
             }
             if let signInHandoffClient {
                 $0.signInHandoffClient = signInHandoffClient

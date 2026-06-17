@@ -27,8 +27,8 @@ struct AppLifecycleFeature {
     var appTerminationReplyClient
     @Dependency(\.uuid)
     var uuid
-    @Dependency(\.accountAccessClient)
-    var accountAccessClient
+    @Dependency(\.authNetworkClient)
+    var authNetwork
     @Dependency(\.accessStatusSnapshotClient)
     var snapshotClient
     @Dependency(\.unlockSurfaceWindowClient)
@@ -90,10 +90,10 @@ struct AppLifecycleFeature {
 
             case .accountAccessGate(.checkAccessStatus):
                 state.isCheckingAccountAccess = true
-                let accountAccessClient = accountAccessClient
+                let authNetwork = authNetwork
                 return .run { send in
                     do {
-                        let response = try await accountAccessClient.fetchAccessStatus()
+                        let response = try await authNetwork.fetchAccessStatus()
                         await send(.accountAccessGate(.accessStatusResponse(.success(response))))
                     } catch let error as AccessError {
                         await send(.accountAccessGate(.accessStatusResponse(.failure(error))))

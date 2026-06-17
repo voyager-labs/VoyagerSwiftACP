@@ -18,14 +18,21 @@ enum StateMutation {
         fetchedAt: Date(timeIntervalSince1970: 0),
     )
 
-    static let activeAccountAccessClient = AccountAccessClient(
-        restoreSession: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
+    static let activeAccountSessionClient = AccountSessionClient(
+        read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
+        persist: { _ in },
+        delete: {},
+    )
+
+    static let activeAuthNetworkClient = AuthNetworkClient(
+        exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
         fetchAccessStatus: { activeAccessResponse },
-        signOut: {},
+        refreshToken: { throw AccessError.notConfigured },
     )
 
     static func installActiveAccessRefresh(_ dependencies: inout DependencyValues) {
-        dependencies.accountAccessClient = activeAccountAccessClient
+        dependencies.accountSessionClient = activeAccountSessionClient
+        dependencies.authNetworkClient = activeAuthNetworkClient
         dependencies.accessStatusSnapshotClient = AccessStatusSnapshotClient(
             load: { activeAccessSnapshot },
             save: { _ in },
