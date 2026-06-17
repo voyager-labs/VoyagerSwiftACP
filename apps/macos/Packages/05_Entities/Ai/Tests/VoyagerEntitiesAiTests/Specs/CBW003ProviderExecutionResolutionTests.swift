@@ -2,7 +2,7 @@ import Foundation
 @testable import VoyagerEntitiesAi
 import XCTest
 
-final class CBW003ResolveContextualChatRequestsTests: XCTestCase {
+final class CBW003ProviderExecutionResolutionTests: XCTestCase {
     // MARK: - CBW-003-prepare_contextual_chat_request
 
     /// CBW-003-prepare_contextual_chat_request: locked context와 active provider/model을 실행 입력으로 확정한다.
@@ -177,7 +177,7 @@ final class CBW003ResolveContextualChatRequestsTests: XCTestCase {
     }
 }
 
-private extension CBW003ResolveContextualChatRequestsTests {
+private extension CBW003ProviderExecutionResolutionTests {
     func makeCBW003Request() -> AiChatRequest {
         let selectedModel = AiProviderModel(
             id: AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
