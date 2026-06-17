@@ -2,6 +2,7 @@ import ComposableArchitecture
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAiProviderConnection
+import VoyagerShared
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -251,6 +252,82 @@ final class SET009CollectionSearchAiSettingsTests: XCTestCase {
         XCTAssertEqual(saveSpy.saved.first?.model, .auto)
         XCTAssertEqual(saveSpy.saved.first?.thinking, .providerDefault)
     }
+
+    // MARK: - SET-009-show_collection_search_ai_settings_section
+
+    /// SET-009-show_collection_search_ai_settings_section: 저장된 collection search AI 설정이 없으면 기본값을 표시한다.
+    /// 설정 화면이 최초 진입 시 빈 저장소를 안전하게 기본 provider/model/thinking 선택으로 해석하는지 검증한다.
+    /// - 검증 내용: live collectionSearchAISettingsClient load, missing persisted data, default selection
+    /// - 사전 조건: collection search AI settings key가 UserDefaults에 존재하지 않는다.
+    /// - 기대 결과: provider/model/thinking이 모두 기본 선택으로 로드된다.
+    func testLiveSettingsClientLoadReturnsDefaultWhenMissing() {
+        let userDefaultsClient = UserDefaultsClient.testValue
+        let client = CollectionSearchAISettingsClient.live(userDefaultsClient: userDefaultsClient)
+
+        XCTAssertEqual(client.load(), .default)
+    }
+
+    /// SET-009-show_collection_search_ai_settings_section: 손상된 collection search AI 설정은 기본값으로 복구된다.
+    /// 설정 화면이 decode할 수 없는 저장값 때문에 중단되지 않고 안전한 기본 선택을 표시하는지 검증한다.
+    /// - 검증 내용: live collectionSearchAISettingsClient corrupt payload fallback, default selection
+    /// - 사전 조건: collection search AI settings key에 Codable payload가 아닌 bytes가 저장되어 있다.
+    /// - 기대 결과: 저장값은 그대로 남아도 화면 입력값은 기본 선택으로 로드된다.
+    func testLiveSettingsClientLoadReturnsDefaultWhenDataIsCorrupt() {
+        let userDefaultsClient = UserDefaultsClient.testValue
+        let client = CollectionSearchAISettingsClient.live(userDefaultsClient: userDefaultsClient)
+        userDefaultsClient.setObject(Data([0x00, 0x01, 0x02]), SettingsKeys.collectionSearchAISettings)
+
+        XCTAssertEqual(client.load(), .default)
+        XCTAssertNotNil(userDefaultsClient.object(SettingsKeys.collectionSearchAISettings) as? Data)
+    }
+
+    // MARK: - SET-009-select_collection_search_ai_provider
+
+    /// SET-009-select_collection_search_ai_provider: 선택한 provider/model/thinking 설정은 저장 후 다시 로드된다.
+    /// collection search AI 설정 변경이 persisted settings payload로 round-trip 되는지 검증한다.
+    /// - 검증 내용: live collectionSearchAISettingsClient save/load round-trip, provider/model/thinking persistence
+    /// - 사전 조건: OpenAI provider, specific model, low thinking effort 설정을 저장한다.
+    /// - 기대 결과: load 결과가 저장한 collection search AI 설정과 동일하다.
+    func testLiveSettingsClientSaveAndLoadRoundTripPersistsSelection() {
+        let userDefaultsClient = UserDefaultsClient.testValue
+        let client = CollectionSearchAISettingsClient.live(userDefaultsClient: userDefaultsClient)
+        let settings = CollectionSearchAISettings(
+            provider: .specific("openai"),
+            model: .specific(provider: "openai", model: "gpt-4o-mini"),
+            thinking: .effort("low"),
+        )
+
+        client.save(settings)
+
+        XCTAssertEqual(client.load(), settings)
+    }
+
+    // MARK: - SET-009-reset_collection_search_ai_settings
+
+    /// SET-009-reset_collection_search_ai_settings: reset은 저장된 collection search AI 설정을 제거한다.
+    /// 사용자가 collection search AI 설정을 초기화하면 persisted payload가 제거되고 기본값으로 돌아가는지 검증한다.
+    /// - 검증 내용: live collectionSearchAISettingsClient reset, persisted key removal, default fallback
+    /// - 사전 조건: Anthropic provider와 specific model 설정이 저장되어 있다.
+    /// - 기대 결과: UserDefaults key가 제거되고 load 결과는 기본값이다.
+    func testLiveSettingsClientResetRemovesStoredValue() {
+        let userDefaultsClient = UserDefaultsClient.testValue
+        let client = CollectionSearchAISettingsClient.live(userDefaultsClient: userDefaultsClient)
+        client.save(
+            CollectionSearchAISettings(
+                provider: .specific("anthropic"),
+                model: .specific(provider: "anthropic", model: "claude-3-5-sonnet"),
+                thinking: .providerDefault,
+            ),
+        )
+
+        XCTAssertNotNil(userDefaultsClient.object(SettingsKeys.collectionSearchAISettings) as? Data)
+
+        client.reset()
+
+        XCTAssertNil(userDefaultsClient.object(SettingsKeys.collectionSearchAISettings) as? Data)
+        XCTAssertEqual(client.load(), .default)
+    }
+
 }
 
 private extension SET009CollectionSearchAiSettingsTests {
