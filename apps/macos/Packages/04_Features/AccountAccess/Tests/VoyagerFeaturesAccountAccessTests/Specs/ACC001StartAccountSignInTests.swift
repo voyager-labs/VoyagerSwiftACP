@@ -27,7 +27,8 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountAccessClient = .mock
+            $0.accountSessionClient = .testValue
+            $0.authNetworkClient = .testValue
             $0.signInHandoffClient = signInHandoffClient
             $0.date = .constant(referenceDate)
         }

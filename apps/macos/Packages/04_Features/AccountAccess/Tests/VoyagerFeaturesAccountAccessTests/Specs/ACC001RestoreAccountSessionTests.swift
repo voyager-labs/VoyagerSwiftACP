@@ -20,13 +20,15 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func makeTestStore(
-        accountAccessClient: AccountAccessClient = .mock,
+        accountSessionClient: AccountSessionClient = .testValue,
+        authNetworkClient: AuthNetworkClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountAccessClient = accountAccessClient
+            $0.accountSessionClient = accountSessionClient
+            $0.authNetworkClient = authNetworkClient
             $0.date = .constant(referenceDate)
         }
     }
@@ -36,20 +38,25 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     /// ACC-001-restore_account_session: 저장된 유효 session이 onAppear에서 logged_in으로 복원된다.
     /// 유효한 session이 저장되어 있을 때 onAppear에서 hasAccountSession=true로 복원되는지 검증한다.
     /// - 검증 내용: restoreSession이 session 반환 → hasAccountSession=true, fetchAccessStatus 트리거
-    /// - 사전 조건: accountAccessClient.restoreSession이 유효한 AccountSession 반환
+    /// - 사전 조건: sessionClient.read가 유효한 AccountSession 반환
     /// - 기대 결과: hasAccountSession=true, accountAccessAuthAxis=.signedIn, fetchCalled=true
     func testValidSessionRestoresAsLoggedIn() async {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: {
+            accountSessionClient: AccountSessionClient(
+                read: {
                     AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
                 },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             ),
         )
         // store.exhaustivity = .off: _onAppearSessionRestored가 내부적으로 다수 필드를 갱신하나 검증 대상은
@@ -77,7 +84,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     /// ACC-001-restore_account_session: 만료된 session 복원 실패 시 session_expired로 전환된다.
     /// loginCallbackReceived 후 restoreSession=nil일 때 didSignInFail=true로 전환되는지 검증한다.
     /// - 검증 내용: loginCallbackReceived 후 restoreSession=nil → didSignInFail=true, signInFailed axis
-    /// - 사전 조건: isSignInInProgress=true, accountAccessClient.restoreSession이 nil 반환
+    /// - 사전 조건: isSignInInProgress=true, sessionClient.read가 nil 반환
     /// - 기대 결과: didSignInFail=true, isSessionExpired=true, canStartLogin=true
     func testExpiredSessionRestoreFailsSetsSessionExpired() async throws {
         nonisolated(unsafe) var fetchCalled = false
@@ -87,13 +94,18 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let callbackURL = try XCTUnwrap(URL(string: "voyager://auth/callback"))
 
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: { nil },
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: initialState,
         )
@@ -120,18 +132,23 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     /// ACC-001-restore_account_session: 저장된 session이 없으면 onAppear에서 logged_out으로 진입한다.
     /// restoreSession=nil일 때 onAppear에서 logged_out 상태로 진입하는지 검증한다.
     /// - 검증 내용: restoreSession=nil → hasAccountSession=false, fetchAccessStatus 미호출
-    /// - 사전 조건: accountAccessClient.restoreSession이 nil 반환
+    /// - 사전 조건: sessionClient.read가 nil 반환
     /// - 기대 결과: hasAccountSession=false, accountAccessAuthAxis=.signedOut, fetchCalled=false
     func testNoStoredSessionShowsLoggedOut() async {
         nonisolated(unsafe) var fetchCalled = false
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: { nil },
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
                     return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
-                signOut: {},
+                refreshToken: { throw AccessError.notConfigured },
             ),
         )
         // store.exhaustivity = .off: _onAppearSessionRestored가 다수 필드를 갱신하나 검증 대상은

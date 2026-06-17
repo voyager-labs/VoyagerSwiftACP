@@ -7,8 +7,11 @@ public struct AccountAccessFeature {
     public typealias State = AccountAccessState
     public typealias Action = AccountAccessAction
 
-    @Dependency(\.accountAccessClient)
-    var accountAccessClient
+    @Dependency(\.accountSessionClient)
+    var sessionClient
+
+    @Dependency(\.authNetworkClient)
+    var authNetwork
 
     @Dependency(\.accessStatusSnapshotClient)
     var snapshotClient
@@ -104,8 +107,8 @@ public struct AccountAccessFeature {
 
     private func handleOnAppear(_: inout State) -> Effect<Action> {
         .merge(
-            .run { [accountAccessClient] send in
-                let session = try? await accountAccessClient.restoreSession()
+            .run { [sessionClient] send in
+                let session = try? await sessionClient.read()
                 await send(._onAppearSessionRestored(session))
             },
             observeAppDidBecomeActive(),
@@ -136,10 +139,10 @@ public struct AccountAccessFeature {
     }
 
     private func fetchAccessStatusEffect(generation: Int) -> Effect<Action> {
-        .run { [accountAccessClient] send in
+        .run { [authNetwork] send in
             let result: Result<AccessStatusResponse, AccessError>
             do {
-                let response = try await accountAccessClient.fetchAccessStatus()
+                let response = try await authNetwork.fetchAccessStatus()
                 result = .success(response)
             } catch let error as AccessError {
                 result = .failure(error)
@@ -198,8 +201,8 @@ public struct AccountAccessFeature {
             return .none
         }
 
-        return .run { [accountAccessClient] send in
-            let session = try? await accountAccessClient.restoreSession()
+        return .run { [sessionClient] send in
+            let session = try? await sessionClient.read()
             await send(._loginSessionRestored(session != nil))
         }
     }
@@ -231,20 +234,7 @@ public struct AccountAccessFeature {
 
         state.handoffPendingState = nil
 
-        return .run { [accountAccessClient] send in
-            let result: Result<AccountSession, AppHandoffExchangeError>
-            do {
-                let session = try await accountAccessClient.exchangeAppHandoff(
-                    callback.ticket, callback.state, callback.context,
-                )
-                result = .success(session)
-            } catch let error as AppHandoffExchangeError {
-                result = .failure(error)
-            } catch {
-                result = .failure(.networkFailure)
-            }
-            await send(._handoffExchangeCompleted(result))
-        }
+        return performHandoffExchange(ticket: callback.ticket, state: callback.state, context: callback.context)
     }
 
     private func handleHandoffExchangeCompleted(
@@ -289,6 +279,48 @@ public struct AccountAccessFeature {
         guard url.host == "auth" else { return false }
         guard url.path == "/callback" else { return false }
         return true
+    }
+
+    // MARK: - Cross-seam coordination helpers
+
+    // Per design rule: sequence cross-seam operations via reducer-private helper.
+    // Do NOT introduce a new DependencyKey for the coordinator.
+
+    /// Handoff exchange → persist session (network + file I/O cross-seam).
+    /// TODO(VOY-XXX): persist failure handling — 현재 silent skip 보존 (기존 동작)
+    private func performHandoffExchange(
+        ticket: String, state: String, context: AppHandoffContext,
+    ) -> Effect<Action> {
+        .run { [authNetwork, sessionClient] send in
+            let session = try await authNetwork.exchangeHandoff(ticket, state, context)
+            // Silent-skip on persist failure (preserves original behavior from AccountAccessClient:82-84)
+            try? await sessionClient.persist(session)
+            await send(._handoffExchangeCompleted(.success(session)))
+        } catch: { error, send in
+            let mappedError: AppHandoffExchangeError = if let exchangeError = error as? AppHandoffExchangeError {
+                exchangeError
+            } else {
+                .networkFailure
+            }
+            await send(._handoffExchangeCompleted(.failure(mappedError)))
+        }
+    }
+
+    /// Token refresh → persist session (network + file I/O cross-seam).
+    /// TODO(VOY-XXX): persist failure handling — 현재 silent skip 보존
+    private func performTokenRefresh() -> Effect<Action> {
+        .run { [authNetwork, sessionClient] send in
+            let session = try await authNetwork.refreshToken()
+            try? await sessionClient.persist(session)
+            await send(._refreshTokenResult(.success(session)))
+        } catch: { error, send in
+            let mappedError: AccessError = if let accessError = error as? AccessError {
+                accessError
+            } else {
+                .networkFailure
+            }
+            await send(._refreshTokenResult(.failure(mappedError)))
+        }
     }
 }
 
@@ -409,16 +441,7 @@ private extension AccountAccessFeature {
         // 90% elapsed (remaining <= 360s for typical 1h TTL)
         guard remaining <= 360 else { return .none }
 
-        return .run { [accountAccessClient] send in
-            do {
-                let session = try await accountAccessClient.refreshToken()
-                await send(._refreshTokenResult(.success(session)))
-            } catch let error as AccessError {
-                await send(._refreshTokenResult(.failure(error)))
-            } catch {
-                await send(._refreshTokenResult(.failure(.networkFailure)))
-            }
-        }
+        return performTokenRefresh()
     }
 
     /// refresh token 결과 처리.

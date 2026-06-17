@@ -24,43 +24,35 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         URL(string: "voyager://auth/callback?ticket=\(validTicket)&state=\(validState)&context=onboarding")!
     }
 
-    /// liveValue의 exchangeAppHandoff 로직과 동일한 wiring을 가진 테스트용 클라이언트 생성.
-    /// mock exchange client + 제어 가능한 FileStore로 exchange → map → write → return flow를 검증한다.
-    private func makeWiredClient(
-        exchangeClient: AppHandoffExchangeClient,
+    /// live session client + mock exchange client로 exchange → persist flow 검증용 helper.
+    /// AccountSessionClient.live(store:)로 실제 파일 I/O를 수행하고,
+    /// AuthNetworkClient의 exchangeHandoff만 mock 처리한다.
+    private func makeWiredClients(
+        exchangeHandoff: @escaping @Sendable (
+            _ ticket: String, _ state: String, _ context: AppHandoffContext,
+        ) async throws -> AccountSession,
         store: AccountTokenFileStore,
-    ) -> AccountAccessClient {
-        AccountAccessClient(
-            restoreSession: {
-                let file = try await store.read()
-                guard let file else { return nil }
-                let expiresAt = Date(
-                    timeIntervalSince1970: TimeInterval(file.accessTokenExpiresAtMs) / 1000,
-                )
-                if expiresAt <= Date() { return nil }
-                return AccountTokenSessionMapper.tokensFileToSession(file)
-            },
-            fetchAccessStatus: { throw AccessError.notConfigured },
-            signOut: { try await store.delete() },
-            exchangeAppHandoff: { ticket, state, context in
-                let session = try await exchangeClient.exchange(ticket, state, context)
-                if let tokensFile = AccountTokenSessionMapper.sessionToTokensFile(session) {
-                    try await store.write(tokensFile)
-                }
-                return session
-            },
-            refreshToken: { throw AccessError.notConfigured },
+    ) -> (authNetwork: AuthNetworkClient, sessionClient: AccountSessionClient) {
+        (
+            authNetwork: AuthNetworkClient(
+                exchangeHandoff: exchangeHandoff,
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            sessionClient: AccountSessionClient.live(store: store),
         )
     }
 
     private func makeTestStore(
-        accountAccessClient: AccountAccessClient = .mock,
+        accountSessionClient: AccountSessionClient = .testValue,
+        authNetworkClient: AuthNetworkClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountAccessClient = accountAccessClient
+            $0.accountSessionClient = accountSessionClient
+            $0.authNetworkClient = authNetworkClient
             $0.date = .constant(referenceDate)
         }
     }
@@ -75,16 +67,6 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         return state
     }
 
-    private func successExchangeClient(
-        session: AccountSession = AccountSession(
-            accessToken: "exchanged-access-token",
-            status: .coreLicenseActive,
-            refreshToken: "exchanged-refresh-token",
-        ),
-    ) -> AppHandoffExchangeClient {
-        AppHandoffExchangeClient { _, _, _ in session }
-    }
-
     // MARK: - ACC-001-exchange_handoff_token
 
     /// ACC-001-exchange_handoff_token: exchange 성공 시 hasAccountSession=true로 전환된다.
@@ -95,13 +77,9 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     func testExchangeSuccessSetsLoggedIn() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: { nil },
-                fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-                exchangeAppHandoff: { ticket, state, context in
+            accountSessionClient: .testValue,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { ticket, state, context in
                     exchangeCalled = true
                     XCTAssertEqual(ticket, "exchange-ticket-001")
                     XCTAssertEqual(state, "handoff-state-789")
@@ -111,6 +89,9 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                         status: .coreLicenseActive,
                         refreshToken: "ac1-refresh",
                     )
+                },
+                fetchAccessStatus: {
+                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -145,13 +126,12 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     /// - 기대 결과: isSignInInProgress=false, didSignInFail=true, isSessionExpired=true
     func testNetworkErrorSetsSignInFail() async {
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: { nil },
-                fetchAccessStatus: { throw AccessError.notConfigured },
-                signOut: {},
-                exchangeAppHandoff: { _, _, _ in
+            accountSessionClient: .testValue,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
                     throw AppHandoffExchangeError.networkFailure
                 },
+                fetchAccessStatus: { throw AccessError.notConfigured },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -182,13 +162,12 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     /// - 기대 결과: isSignInInProgress=false, didSignInFail=true, isSessionExpired=true, canStartLogin=true
     func testServerRejectionSetsSignInFailAndCanRestart() async {
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: { nil },
-                fetchAccessStatus: { throw AccessError.notConfigured },
-                signOut: {},
-                exchangeAppHandoff: { _, _, _ in
+            accountSessionClient: .testValue,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
                     throw AppHandoffExchangeError.ticketAlreadyUsed
                 },
+                fetchAccessStatus: { throw AccessError.notConfigured },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -227,12 +206,15 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             refreshToken: "ac4-refresh-token",
         )
 
-        let exchangeClient = AppHandoffExchangeClient { _, _, _ in expectedSession }
-        let client = makeWiredClient(exchangeClient: exchangeClient, store: store)
+        let clients = makeWiredClients(
+            exchangeHandoff: { _, _, _ in expectedSession },
+            store: store,
+        )
 
-        let returnedSession = try await client.exchangeAppHandoff(
+        let returnedSession = try await clients.authNetwork.exchangeHandoff(
             Self.validTicket, Self.validState, .onboarding,
         )
+        try? await clients.sessionClient.persist(returnedSession)
 
         XCTAssertEqual(returnedSession.accessToken, "ac4-access-token")
 
@@ -254,13 +236,17 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         let fixture = try TemporaryHomeFixture(createVoyagerDirectory: false)
         let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
 
-        let exchangeClient = AppHandoffExchangeClient { _, _, _ in
-            throw AppHandoffExchangeError.networkFailure
-        }
-        let client = makeWiredClient(exchangeClient: exchangeClient, store: store)
+        let clients = makeWiredClients(
+            exchangeHandoff: { _, _, _ in
+                throw AppHandoffExchangeError.networkFailure
+            },
+            store: store,
+        )
 
         do {
-            _ = try await client.exchangeAppHandoff(Self.validTicket, Self.validState, .onboarding)
+            _ = try await clients.authNetwork.exchangeHandoff(
+                Self.validTicket, Self.validState, .onboarding,
+            )
             XCTFail("교환 실패 시 에러가 throw되어야 함")
         } catch {
             XCTAssertEqual(error as? AppHandoffExchangeError, .networkFailure)
@@ -289,15 +275,18 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         )
 
         nonisolated(unsafe) var capturedContext: AppHandoffContext?
-        let exchangeClient = AppHandoffExchangeClient { _, _, context in
-            capturedContext = context
-            return expectedSession
-        }
-        let client = makeWiredClient(exchangeClient: exchangeClient, store: store)
+        let clients = makeWiredClients(
+            exchangeHandoff: { _, _, context in
+                capturedContext = context
+                return expectedSession
+            },
+            store: store,
+        )
 
-        let returnedSession = try await client.exchangeAppHandoff(
+        let returnedSession = try await clients.authNetwork.exchangeHandoff(
             "paywall-ticket", "paywall-state", .paywall,
         )
+        try? await clients.sessionClient.persist(returnedSession)
 
         XCTAssertEqual(capturedContext, .paywall, "paywall context로 exchange 호출")
         XCTAssertEqual(returnedSession.accessToken, "ac6-paywall-access")
@@ -317,23 +306,26 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
         let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
 
         nonisolated(unsafe) var callCount = 0
-        let exchangeClient = AppHandoffExchangeClient { _, _, _ in
-            callCount += 1
-            if callCount == 1 {
-                return AccountSession(
-                    accessToken: "first-access",
-                    status: .coreLicenseActive,
-                    refreshToken: "first-refresh",
-                )
-            }
-            throw AppHandoffExchangeError.ticketAlreadyUsed
-        }
-        let client = makeWiredClient(exchangeClient: exchangeClient, store: store)
+        let clients = makeWiredClients(
+            exchangeHandoff: { _, _, _ in
+                callCount += 1
+                if callCount == 1 {
+                    return AccountSession(
+                        accessToken: "first-access",
+                        status: .coreLicenseActive,
+                        refreshToken: "first-refresh",
+                    )
+                }
+                throw AppHandoffExchangeError.ticketAlreadyUsed
+            },
+            store: store,
+        )
 
         // 첫 번째 교환: 성공
-        let firstSession = try await client.exchangeAppHandoff(
+        let firstSession = try await clients.authNetwork.exchangeHandoff(
             "replay-ticket", "replay-state", .onboarding,
         )
+        try? await clients.sessionClient.persist(firstSession)
         XCTAssertEqual(firstSession.accessToken, "first-access")
         XCTAssertEqual(callCount, 1)
 
@@ -343,7 +335,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
 
         // 두 번째 교환 (동일 ticket): ticketAlreadyUsed 에러
         do {
-            _ = try await client.exchangeAppHandoff(
+            _ = try await clients.authNetwork.exchangeHandoff(
                 "replay-ticket", "replay-state", .onboarding,
             )
             XCTFail("티켓 재사용 시 에러가 throw되어야 함")

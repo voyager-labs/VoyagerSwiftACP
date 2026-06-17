@@ -38,13 +38,15 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     }
 
     private func makeTestStore(
-        accountAccessClient: AccountAccessClient = .mock,
+        accountSessionClient: AccountSessionClient = .testValue,
+        authNetworkClient: AuthNetworkClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountAccessClient = accountAccessClient
+            $0.accountSessionClient = accountSessionClient
+            $0.authNetworkClient = authNetworkClient
             $0.date = .constant(referenceDate)
         }
     }
@@ -201,18 +203,21 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testValidCallbackAutoTriggersExchange() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: { nil },
-                fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-                exchangeAppHandoff: { ticket, state, context in
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { ticket, state, context in
                     exchangeCalled = true
                     XCTAssertEqual(ticket, "abc123")
                     XCTAssertEqual(state, "xyz789")
                     XCTAssertEqual(context, .onboarding)
                     return AccountSession(accessToken: "exchanged-token", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: {
+                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -253,15 +258,18 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testValidFlowCallbackProcessedNormally() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: { nil },
-                fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-                exchangeAppHandoff: { _, _, _ in
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
                     exchangeCalled = true
                     return AccountSession(accessToken: "valid-flow-token", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: {
+                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -298,15 +306,18 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     func testInvalidatedFlowCallbackRejectedByCurrentImpl() async {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
-            accountAccessClient: AccountAccessClient(
-                restoreSession: { nil },
-                fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
-                },
-                signOut: {},
-                exchangeAppHandoff: { _, _, _ in
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
                     exchangeCalled = true
                     return AccountSession(accessToken: "should-not-reach", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: {
+                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),

@@ -24,13 +24,15 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     private let newExpiryDate = Date(timeIntervalSince1970: 1_700_003_600)
 
     private func makeTestStore(
-        accountAccessClient: AccountAccessClient = .mock,
+        accountSessionClient: AccountSessionClient = .testValue,
+        authNetworkClient: AuthNetworkClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
-            $0.accountAccessClient = accountAccessClient
+            $0.accountSessionClient = accountSessionClient
+            $0.authNetworkClient = authNetworkClient
             $0.date = .constant(referenceDate)
         }
     }
@@ -52,21 +54,18 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     /// - 기대 결과: sessionExpiresAt이 새로운 시각으로 갱신되고 hasAccountSession과 ttlTimerActive가 true로 유지된다.
     func testRefreshNearExpiryMaintainsSession() async {
         let newExpiry = newExpiryDate
-        let mockClient = AccountAccessClient(
-            restoreSession: { nil },
-            fetchAccessStatus: { throw AccessError.notConfigured },
-            signOut: {},
-            exchangeAppHandoff: { _, _, _ in throw AccessError.notConfigured },
-            refreshToken: {
-                AccountSession(
-                    accessToken: "refreshed-token",
-                    status: .coreLicenseActive,
-                    expiresAt: newExpiry,
-                )
-            },
-        )
         let store = makeTestStore(
-            accountAccessClient: mockClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: {
+                    AccountSession(
+                        accessToken: "refreshed-token",
+                        status: .coreLicenseActive,
+                        expiresAt: newExpiry,
+                    )
+                },
+            ),
             initialState: sessionNearExpiryState(),
         )
         // store.exhaustivity = .off: TTL timer tick이 sessionExpiresAt/consecutiveRefreshFailures 외 다수 상태를 갱신하나 검증 대상은 두
@@ -92,22 +91,19 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     /// - 기대 결과: sessionExpiresAt이 새로운 시각으로 갱신되고 hasAccountSession이 true로 유지된다.
     func testRefreshSuccessUpdatesSession() async {
         let newExpiry = newExpiryDate
-        let mockClient = AccountAccessClient(
-            restoreSession: { nil },
-            fetchAccessStatus: { throw AccessError.notConfigured },
-            signOut: {},
-            exchangeAppHandoff: { _, _, _ in throw AccessError.notConfigured },
-            refreshToken: {
-                AccountSession(
-                    accessToken: "rotated-token",
-                    status: .coreLicenseActive,
-                    refreshToken: "new-refresh-token",
-                    expiresAt: newExpiry,
-                )
-            },
-        )
         let store = makeTestStore(
-            accountAccessClient: mockClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: {
+                    AccountSession(
+                        accessToken: "rotated-token",
+                        status: .coreLicenseActive,
+                        refreshToken: "new-refresh-token",
+                        expiresAt: newExpiry,
+                    )
+                },
+            ),
             initialState: sessionNearExpiryState(),
         )
         // store.exhaustivity = .off: TTL timer tick이 sessionExpiresAt 외 다수 상태를 갱신하나 검증 대상은 sessionExpiresAt 갱신만 해당
@@ -131,15 +127,12 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     /// - 사전 조건: 세션이 존재하고 TTL timer가 활성화된 near-expiry 상태.
     /// - 기대 결과: 세션이 만료되고 로그인 실패 상태로 전환되며 TTL timer가 중단된다.
     func testPermanentFailureSetsSessionExpired() async {
-        let mockClient = AccountAccessClient(
-            restoreSession: { nil },
-            fetchAccessStatus: { throw AccessError.notConfigured },
-            signOut: {},
-            exchangeAppHandoff: { _, _, _ in throw AccessError.notConfigured },
-            refreshToken: { throw AccessError.decodingFailure },
-        )
         let store = makeTestStore(
-            accountAccessClient: mockClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: { throw AccessError.decodingFailure },
+            ),
             initialState: sessionNearExpiryState(),
         )
         // store.exhaustivity = .off: 영구 실패 처리가 6개 필드를 동시 갱신하나 검증 대상은 최종 4개
@@ -171,15 +164,12 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     /// - 사전 조건: 세션이 존재하고 TTL timer가 활성화된 near-expiry 상태.
     /// - 기대 결과: hasAccountSession과 ttlTimerActive가 true로 유지되고 consecutiveRefreshFailures가 1이 된다.
     func testNetworkErrorMaintainsSession() async {
-        let mockClient = AccountAccessClient(
-            restoreSession: { nil },
-            fetchAccessStatus: { throw AccessError.notConfigured },
-            signOut: {},
-            exchangeAppHandoff: { _, _, _ in throw AccessError.notConfigured },
-            refreshToken: { throw AccessError.networkFailure },
-        )
         let store = makeTestStore(
-            accountAccessClient: mockClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: { throw AccessError.networkFailure },
+            ),
             initialState: sessionNearExpiryState(),
         )
         // store.exhaustivity = .off: _refreshTokenResult가 다수 필드를 갱신할 수 있으나 검증 대상은 consecutiveRefreshFailures 증가만 해당
@@ -202,15 +192,12 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     /// - 사전 조건: 세션이 존재하고 TTL timer가 활성화된 near-expiry 상태에서 decodingFailure 발생.
     /// - 기대 결과: ttlTimerActive=false, hasAccountSession=false로 전환되고 추가 tick이 무시된다.
     func testSessionExpiredStopsTTL() async {
-        let mockClient = AccountAccessClient(
-            restoreSession: { nil },
-            fetchAccessStatus: { throw AccessError.notConfigured },
-            signOut: {},
-            exchangeAppHandoff: { _, _, _ in throw AccessError.notConfigured },
-            refreshToken: { throw AccessError.decodingFailure },
-        )
         let store = makeTestStore(
-            accountAccessClient: mockClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: { throw AccessError.decodingFailure },
+            ),
             initialState: sessionNearExpiryState(),
         )
         // store.exhaustivity = .off: _sessionExpiredDetected가 다수 상태를 갱신한 이후 추가 tick이 no-op임을 검증하며 중간 상태 변화는 불필요
@@ -235,15 +222,12 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
     /// - 사전 조건: 세션이 존재하고 TTL timer가 활성화된 near-expiry 상태.
     /// - 기대 결과: 3회째 tick에서 hasAccountSession=false, isSessionExpired=true, ttlTimerActive=false로 전환된다.
     func testThreeConsecutiveFailuresSetsSessionExpired() async {
-        let mockClient = AccountAccessClient(
-            restoreSession: { nil },
-            fetchAccessStatus: { throw AccessError.notConfigured },
-            signOut: {},
-            exchangeAppHandoff: { _, _, _ in throw AccessError.notConfigured },
-            refreshToken: { throw AccessError.networkFailure },
-        )
         let store = makeTestStore(
-            accountAccessClient: mockClient,
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: { throw AccessError.networkFailure },
+            ),
             initialState: sessionNearExpiryState(),
         )
         // store.exhaustivity = .off: 3회 연속 실패 처리 중 각 tick이 다수 상태를 갱신하나 검증은 단계별 consecutiveRefreshFailures만 해당

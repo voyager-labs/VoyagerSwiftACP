@@ -8,7 +8,7 @@ import XCTest
 
  interaction_id: ACC-001-sign_out_account
 
- signOut은 AccountAccessClient.signOut을 통해 로컬 token 파일 삭제 + best-effort 서버 무효화를 수행한다.
+ signOut은 AccountSessionClient.delete를 통해 로컬 token 파일 삭제 + best-effort 서버 무효화를 수행한다.
  Reducer에 signOut action이 없으므로, 클라이언트 레벨(FileStore) 및 상태 파생(state derivation) 테스트로 구성한다.
  */
 
