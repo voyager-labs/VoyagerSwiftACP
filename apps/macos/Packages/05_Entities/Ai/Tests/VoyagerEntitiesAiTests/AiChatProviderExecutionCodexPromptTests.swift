@@ -213,6 +213,7 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
 
     private func withoutCodexWorkingDirectoryOverride<T>(perform: () throws -> T) throws -> T {
         let key = "VOYAGER_CODEX_WORKING_DIRECTORY"
+        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
         let originalValue = ProcessInfo.processInfo.environment[key]
         unsetenv(key)
         defer {
