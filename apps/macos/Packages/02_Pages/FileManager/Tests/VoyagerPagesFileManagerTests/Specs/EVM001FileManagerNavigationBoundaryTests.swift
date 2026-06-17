@@ -11,7 +11,7 @@ import XCTest
 // package-scoped 결정론적 TCA TestStore 테스트 모음.
 
 @MainActor
-final class EVM001NavigatePagesTests: XCTestCase {
+final class EVM001FileManagerNavigationBoundaryTests: XCTestCase {
     // MARK: - EVM-001-reload_directory_page_on_external_change
 
     /// EVM-001-reload_directory_page_on_external_change: folder 내부 child path 변경 시 reload

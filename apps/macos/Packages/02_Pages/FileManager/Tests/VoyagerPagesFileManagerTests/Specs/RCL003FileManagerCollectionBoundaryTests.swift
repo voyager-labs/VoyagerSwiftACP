@@ -32,6 +32,138 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         XCTAssertNil(viewState.refreshBlockingReason)
     }
 
+
+    /// RCL-003-indicate_collection_results_staleness: dirty collection은 unsaved indicator만 노출됨
+    /// dirty collection 상태가 stale refresh affordance와 섞이지 않고 저장 필요 상태로만 표시되는지 검증한다.
+    /// - 검증 내용: unsaved/stale indicator, refresh affordance, blocking reason 확인
+    /// - 사전 조건: collection mode이며 opened collection이 dirty이고 stale은 아님
+    /// - 기대 결과: unsaved indicator만 표시되고 refresh는 비활성화됨
+    func testIndicateCollectionResultsStaleness_withDirtyCollection_showsUnsavedIndicatorOnly() {
+        let viewState = ToolbarCollectionStatusViewState(
+            isCollectionMode: true,
+            openedCollectionURLExists: true,
+            isOpenedCollectionDirty: true,
+            isOpenedCollectionStale: false,
+            refreshBlockingReason: .notStale,
+        )
+
+        XCTAssertTrue(viewState.showsUnsavedIndicator)
+        XCTAssertFalse(viewState.showsStaleIndicator)
+        XCTAssertFalse(viewState.showsRefreshAffordance)
+        XCTAssertFalse(viewState.isRefreshEnabled)
+        XCTAssertEqual(viewState.refreshBlockingReason, .notStale)
+    }
+
+    /// RCL-003-indicate_collection_results_staleness: dirty stale collection은 두 indicator를 보이되 refresh는 막힘
+    /// dirty와 stale 상태가 공존할 때 사용자가 현재 결과는 stale임을 보되 write-back 충돌 refresh는 막히는지 검증한다.
+    /// - 검증 내용: unsaved/stale indicator 동시 표시와 dirtyCollection 차단 확인
+    /// - 사전 조건: collection mode이며 opened collection이 dirty이면서 stale임
+    /// - 기대 결과: 두 indicator가 표시되고 refresh affordance는 비활성화됨
+    func testIndicateCollectionResultsStaleness_withDirtyAndStaleCollection_disablesRefresh() {
+        let viewState = ToolbarCollectionStatusViewState(
+            isCollectionMode: true,
+            openedCollectionURLExists: true,
+            isOpenedCollectionDirty: true,
+            isOpenedCollectionStale: true,
+            refreshBlockingReason: .dirtyCollection,
+        )
+
+        XCTAssertTrue(viewState.showsUnsavedIndicator)
+        XCTAssertTrue(viewState.showsStaleIndicator)
+        XCTAssertFalse(viewState.showsRefreshAffordance)
+        XCTAssertFalse(viewState.isRefreshEnabled)
+        XCTAssertEqual(viewState.refreshBlockingReason, .dirtyCollection)
+    }
+
+    /// RCL-003-indicate_collection_results_staleness: refresh 전제 조건이 없으면 stale affordance를 숨김
+    /// baseline/document 등 refresh 전제가 빠진 stale collection이 refresh 가능 상태로 보이지 않는지 검증한다.
+    /// - 검증 내용: stale indicator는 유지하되 refresh affordance와 enabled 상태 차단 확인
+    /// - 사전 조건: opened collection은 stale이나 refreshBlockingReason이 missingBaseline임
+    /// - 기대 결과: stale indicator만 표시되고 refresh action은 비활성화됨
+    func testIndicateCollectionResultsStaleness_withMissingPrerequisites_disablesRefreshAffordance() {
+        let viewState = ToolbarCollectionStatusViewState(
+            isCollectionMode: true,
+            openedCollectionURLExists: true,
+            isOpenedCollectionDirty: false,
+            isOpenedCollectionStale: true,
+            refreshBlockingReason: .missingBaseline,
+        )
+
+        XCTAssertTrue(viewState.showsStaleIndicator)
+        XCTAssertFalse(viewState.showsRefreshAffordance)
+        XCTAssertFalse(viewState.isRefreshEnabled)
+        XCTAssertEqual(viewState.refreshBlockingReason, .missingBaseline)
+    }
+
+    /// RCL-003-indicate_collection_results_staleness: collection mode가 아니면 indicator를 표시하지 않음
+    /// non-collection route의 dirty/stale-like input이 toolbar collection indicator로 새지 않는지 검증한다.
+    /// - 검증 내용: 모든 collection indicator와 refresh affordance 비활성화 확인
+    /// - 사전 조건: collection mode가 아닌 상태에서 dirty/stale 값이 들어옴
+    /// - 기대 결과: collection 전용 indicator가 모두 숨겨짐
+    func testIndicateCollectionResultsStaleness_outsideCollectionMode_hidesIndicators() {
+        let viewState = ToolbarCollectionStatusViewState(
+            isCollectionMode: false,
+            openedCollectionURLExists: false,
+            isOpenedCollectionDirty: true,
+            isOpenedCollectionStale: true,
+            refreshBlockingReason: .notInCollectionMode,
+        )
+
+        XCTAssertFalse(viewState.showsUnsavedIndicator)
+        XCTAssertFalse(viewState.showsStaleIndicator)
+        XCTAssertFalse(viewState.showsRefreshAffordance)
+        XCTAssertFalse(viewState.isRefreshEnabled)
+        XCTAssertEqual(viewState.refreshBlockingReason, .notInCollectionMode)
+    }
+
+    /// RCL-003-indicate_collection_results_staleness: toolbar refresh button은 hover와 refresh affordance를 모두 요구함
+    /// stale collection refresh button이 title hover와 refresh 가능 상태 둘 다 만족할 때만 표시되는지 검증한다.
+    /// - 검증 내용: hover false/true별 표시 여부와 enabled 상태 확인
+    /// - 사전 조건: stale opened collection이고 refreshBlockingReason이 없음
+    /// - 기대 결과: hover 중일 때만 refresh button이 보이고 enabled 상태가 유지됨
+    func testIndicateCollectionResultsStaleness_refreshButtonRequiresHoverAndAffordance() {
+        let status = ToolbarCollectionStatusViewState(
+            isCollectionMode: true,
+            openedCollectionURLExists: true,
+            isOpenedCollectionDirty: false,
+            isOpenedCollectionStale: true,
+            refreshBlockingReason: nil,
+        )
+
+        XCTAssertFalse(showsToolbarRefreshButton(status, isTitleAreaHovered: false))
+        XCTAssertTrue(showsToolbarRefreshButton(status, isTitleAreaHovered: true))
+        XCTAssertTrue(isToolbarRefreshButtonEnabled(status))
+    }
+
+    /// RCL-003-indicate_collection_results_staleness: refresh button은 stale collection 밖에서 숨겨짐
+    /// non-collection 또는 refresh 차단 상태가 toolbar refresh affordance로 노출되지 않는지 검증한다.
+    /// - 검증 내용: collection 외부와 dirty stale 상태의 button 표시/활성화 차단 확인
+    /// - 사전 조건: collection mode가 아니거나 dirtyCollection 차단 사유가 있음
+    /// - 기대 결과: refresh button은 hover 여부와 무관하게 숨겨지고 비활성화됨
+    func testIndicateCollectionResultsStaleness_refreshButtonHiddenWhenNotResolvable() {
+        let nonCollectionStatus = ToolbarCollectionStatusViewState(
+            isCollectionMode: false,
+            openedCollectionURLExists: false,
+            isOpenedCollectionDirty: false,
+            isOpenedCollectionStale: true,
+            refreshBlockingReason: .notInCollectionMode,
+        )
+        let dirtyStatus = ToolbarCollectionStatusViewState(
+            isCollectionMode: true,
+            openedCollectionURLExists: true,
+            isOpenedCollectionDirty: true,
+            isOpenedCollectionStale: true,
+            refreshBlockingReason: .dirtyCollection,
+        )
+
+        XCTAssertFalse(showsToolbarRefreshButton(nonCollectionStatus, isTitleAreaHovered: false))
+        XCTAssertFalse(showsToolbarRefreshButton(nonCollectionStatus, isTitleAreaHovered: true))
+        XCTAssertFalse(isToolbarRefreshButtonEnabled(nonCollectionStatus))
+        XCTAssertFalse(showsToolbarRefreshButton(dirtyStatus, isTitleAreaHovered: false))
+        XCTAssertFalse(showsToolbarRefreshButton(dirtyStatus, isTitleAreaHovered: true))
+        XCTAssertFalse(isToolbarRefreshButtonEnabled(dirtyStatus))
+    }
+
     // MARK: - RCL-003-mark_open_collection_as_stale_on_external_change
 
     /// RCL-003-mark_open_collection_as_stale_on_external_change: 외부 파일 변경은 collection stale reducer로 라우팅됨
@@ -77,6 +209,7 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
     }
 
     // MARK: - RCL-003-update_collection_results_on_filter_change
+
 
     /// RCL-003-update_collection_results_on_filter_change: 빈 query refresh는 현재 filter 실행으로 라우팅됨
     /// query가 없는 collection refresh가 Composer applyFilters로 이어지는지 검증한다.
