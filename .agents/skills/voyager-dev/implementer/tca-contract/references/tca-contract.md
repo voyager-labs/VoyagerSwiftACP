@@ -78,6 +78,8 @@ enum ParentAction {
 - Verify externally owned payloads, URLs, and config contracts with real or captured fixtures instead of relying only on mocks that mirror Swift property names.
 - Separate sensitive credential storage from non-sensitive snapshot/cache persistence; credentials must flow through secure storage clients, while status snapshots may use ordinary persistence clients.
 
+For client granularity, capability-boundary splitting, composition patterns (`live(_:)` factory vs `@Dependency` in closure), phantom dependency elimination, and `@DependencyClient` macro policy, see `.agents/rules/30-macos/11-dependency-client-design.md`.
+
 ## Dependency direction stance
 
 - Follow the structural dependency direction defined in `../../../reviewer/boundary/references/layer-and-segment-rules.md`.
