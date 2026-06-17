@@ -30,16 +30,6 @@ let kPackage = Package(
                 .product(name: "PerceptionCore", package: "swift-perception"),
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
-        ),
-        .testTarget(
-            name: "VoyagerFeaturesUpdateVersionTests",
-            dependencies: [
-                "VoyagerFeaturesUpdateVersion",
-                .product(name: "VoyagerShared", package: "VoyagerShared"),
-                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
-                .product(name: "Dependencies", package: "swift-dependencies"),
-                .product(name: "PerceptionCore", package: "swift-perception"),
-            ],
-        ),
+        )
     ],
 )
