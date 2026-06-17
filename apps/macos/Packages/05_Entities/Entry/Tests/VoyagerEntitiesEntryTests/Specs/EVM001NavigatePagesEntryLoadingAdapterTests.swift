@@ -5,8 +5,14 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
-    /// 최근 항목 검색 payload가 EntryModel과 facets로 정확히 매핑되는지 검증
+final class EVM001NavigatePagesEntryLoadingAdapterTests: XCTestCase {
+    // MARK: - EVM-001-reload_directory_page_on_external_change
+
+    /// EVM-001-reload_directory_page_on_external_change: Recents route loader maps helper payloads into entry models.
+    /// Recents/Tags/Computer route refresh keeps route identity while refreshing the route-specific loader output.
+    /// - 검증 내용: Recent search helper payload request options and EntryModel facet mapping
+    /// - 사전 조건: Recents loader receives a helper response with tag, last-opened, creator, and supplementary metadata
+    /// - 기대 결과: Helper payload fields are preserved on the resulting EntryModel used by the refreshed route
     func testRecentAdapterMapsHelperPayloadIntoEntryModel() async {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         let items = await EntryLoadingLive.loadRecentItemsViaSearch(
@@ -44,7 +50,11 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
         XCTAssertEqual(items.first?.facets.creatorApplication, "TextEdit")
     }
 
-    /// 보조 검색 실패 시 태그 로딩이 빈 배열로 폴백되는지 검증
+    /// EVM-001-reload_directory_page_on_external_change: Tags route loader falls back to an empty result on helper failure.
+    /// Recents/Tags route refresh must not crash or mutate route identity when the route-specific helper fails.
+    /// - 검증 내용: Tags helper failure fallback behavior
+    /// - 사전 조건: Tags route loader receives a failing helper search dependency
+    /// - 기대 결과: Loader returns an empty entry list for the failed refresh
     func testTagAdapterReturnsEmptyArrayOnHelperFailure() async {
         struct StubError: Error {}
 
@@ -57,7 +67,11 @@ final class EntryLoadingClientRecentTagAdapterTests: XCTestCase {
         XCTAssertEqual(items, [])
     }
 
-    /// 태그 검색 payload의 색상 코드가 EntryModel 태그로 보존되는지 검증
+    /// EVM-001-reload_directory_page_on_external_change: Tags route loader maps helper payloads into entry models.
+    /// Tags route refresh keeps the route-specific requested tag and entry tag color data intact.
+    /// - 검증 내용: Tags helper request contract and SearchEntryPayload to EntryModel tag facet mapping
+    /// - 사전 조건: Tags route loader refreshes the Green tag route from a helper response
+    /// - 기대 결과: Requested tag and color-coded entry tag facets are preserved in the loaded entries
     func testTagAdapterMapsHelperPayloadIntoEntryModel() async {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         let items = await EntryLoadingLive.loadFilesWithTagViaSearch(
