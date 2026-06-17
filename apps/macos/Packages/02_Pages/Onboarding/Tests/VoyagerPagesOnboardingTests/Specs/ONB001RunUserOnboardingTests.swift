@@ -1,6 +1,8 @@
 import ComposableArchitecture
+import Dependencies
 import VoyagerFeaturesBetaAccess
 @testable import VoyagerPagesOnboarding
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -790,6 +792,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     /// ONB-001-resume_onboarding_session: snapshot에 currentStep == .complete이지만 중간 선행 단계가 미완료면 복원하지 않는다.
     /// `currentStep = .complete`, `permissionsComplete = true`, `betaAccessComplete = false`인 불일치 snapshot에서
     /// complete 단계로 직접 복원하지 않고 가장 마지막 완료 단계인 welcome으로 되돌아갑니다.
+    /// - 검증 내용: 불일치 progress snapshot을 resume할 때 complete step으로 건너뛰지 않는지 확인합니다.
     /// - 사전 조건: snapshot에 welcome만 완료, betaAccess 미완료, permissions 완료(불일치), currentStep = .complete.
     /// - 기대 결과: `onAppear` 후 `currentStep = .betaAccess`으로 fallback (welcome은 완료이므로 betaAccess부터 재개).
     func testResumeCompleteStepWithIncompleteBetaAccessFallsBack() async {
@@ -1426,7 +1429,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
     // 검증 완료 후 자격 증명이 스냅샷에 포함되어 저장되고,
     // 복원 시 이전에 입력한 이메일/토큰이 복구되는지 확인합니다.
 
-    /// ONB-001:credential_persistence — betaAccess가 완료된 상태에서 snapshot을 생성하면 email/token이 snapshot에 포함된다.
+    /// ONB-001-credential_persistence: betaAccess가 완료된 상태에서 snapshot을 생성하면 email/token이 snapshot에 포함된다.
+    /// 검증 완료된 beta access credential이 onboarding progress snapshot에 함께 저장되는지 확인합니다.
+    /// - 검증 내용: `progressSnapshot.stepState`에 email/token이 포함됩니다.
+    /// - 사전 조건: betaAccess email/token/status/isComplete가 검증 완료 상태입니다.
+    /// - 기대 결과: snapshot의 betaAccessEmail/betaAccessToken이 입력 credential과 일치합니다.
     func testProgressSnapshotIncludesCredentialsWhenBetaAccessComplete() {
         var state = OnboardingFeature.State()
         state.betaAccess.email = "user@test.com"
@@ -1440,7 +1447,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(snapshot.stepState.betaAccessToken, "valid-token")
     }
 
-    /// ONB-001:credential_persistence — betaAccess가 미완료 상태에서 snapshot을 생성하면 email/token이 nil이다.
+    /// ONB-001-credential_persistence: betaAccess가 미완료 상태에서 snapshot을 생성하면 email/token이 nil이다.
+    /// 검증되지 않은 beta access credential이 progress snapshot에 저장되지 않는지 확인합니다.
+    /// - 검증 내용: 미완료 beta access 상태의 snapshot credential 필드가 비어 있습니다.
+    /// - 사전 조건: email/token은 입력되어 있으나 betaAccess는 완료되지 않았습니다.
+    /// - 기대 결과: snapshot의 betaAccessEmail/betaAccessToken이 nil입니다.
     func testProgressSnapshotExcludesCredentialsWhenBetaAccessIncomplete() {
         var state = OnboardingFeature.State()
         state.betaAccess.email = "user@test.com"
@@ -1452,7 +1463,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertNil(snapshot.stepState.betaAccessToken)
     }
 
-    /// ONB-001:credential_persistence — 자격 증명이 포함된 snapshot에서 복원하면 email/token이 복구된다.
+    /// ONB-001-credential_persistence: 자격 증명이 포함된 snapshot에서 복원하면 email/token이 복구된다.
+    /// 저장된 beta access credential을 포함한 progress snapshot이 onboarding resume 시 상태로 복원되는지 확인합니다.
+    /// - 검증 내용: snapshot의 email/token이 betaAccess state로 복원됩니다.
+    /// - 사전 조건: permissions step snapshot에 betaAccessComplete와 credential 필드가 포함되어 있습니다.
+    /// - 기대 결과: `onAppear` 후 email/token이 복구되고 restored-verified fallback은 사용하지 않습니다.
     func testResumeFromSnapshotWithCredentialsRestoresEmailAndToken() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .permissions,
@@ -1488,8 +1503,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:credential_persistence — 자격 증명이 없는 이전 snapshot에서 복원하면 email/token이 비어 있고 isRestoredVerifiedAccess가
-    /// true이다.
+    /// ONB-001-credential_persistence: 자격 증명이 없는 이전 snapshot에서 복원하면 restored verified 상태로 복구된다.
+    /// legacy snapshot에 credential 필드가 없어도 기존 검증 완료 상태를 안전하게 이어받는지 확인합니다.
+    /// - 검증 내용: credential 없는 betaAccessComplete snapshot은 restored verified fallback으로 복원됩니다.
+    /// - 사전 조건: snapshot에는 betaAccessComplete만 있고 email/token 필드는 없습니다.
+    /// - 기대 결과: email/token은 빈 값이고 isRestoredVerifiedAccess가 true입니다.
     func testResumeFromLegacySnapshotWithoutCredentialsShowsRestoredVerified() async {
         let snapshot = OnboardingProgressSnapshot(
             currentStep: .permissions,
@@ -1519,7 +1537,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:credential_persistence — 검증 완료 후 진행 상태를 저장하면 snapshot에 email/token이 포함된다.
+    /// ONB-001-credential_persistence: 검증 완료 후 진행 상태를 저장하면 snapshot에 email/token이 포함된다.
+    /// beta access verification response가 progress save snapshot에 credential을 포함시키는지 확인합니다.
+    /// - 검증 내용: verification response 이후 저장된 snapshot의 betaAccessEmail/betaAccessToken을 확인합니다.
+    /// - 사전 조건: 초기 state에 email/token이 있고 progress client save recorder가 설정되어 있습니다.
+    /// - 기대 결과: 저장된 snapshot에 입력 email/token이 유지됩니다.
     func testStepStateUpdateSavesCredentialsInSnapshot() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
 
@@ -1547,7 +1569,11 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-001:credential_persistence — credential 필드가 nil인 이전 JSON도 안전하게 디코딩된다.
+    /// ONB-001-credential_persistence: credential 필드가 nil인 이전 JSON도 안전하게 디코딩된다.
+    /// 이전 schema의 step state JSON이 credential 필드 없이도 migration-compatible하게 decode되는지 확인합니다.
+    /// - 검증 내용: credential key가 없는 JSON을 `OnboardingStepState`로 디코딩합니다.
+    /// - 사전 조건: JSON에는 welcome/betaAccess/permissions/complete 완료 여부만 포함되어 있습니다.
+    /// - 기대 결과: 완료 여부는 보존되고 betaAccessEmail/betaAccessToken은 nil입니다.
     func testOldSnapshotWithoutCredentialFieldsDecodesSafely() throws {
         let json = """
         {
@@ -1565,4 +1591,55 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertNil(stepState.betaAccessEmail)
         XCTAssertNil(stepState.betaAccessToken)
     }
+
+    // MARK: - ONB-001-resume_onboarding_session
+
+    /// ONB-001-resume_onboarding_session: legacy completed progress snapshot은 reset 없이 현재 schema로 migration됨
+    /// 1.1 completed onboarding snapshot을 읽을 때 AI provider setup 필드를 안전하게 기본 완료/skip 상태로 보강하는지 검증한다.
+    /// - 검증 내용: legacy step state decode, currentVersion write-back, AI provider setup migration 값
+    /// - 사전 조건: UserDefaults에 `onboardingProgressVersion=1.1`, complete current step, legacy `OnboardingStepState` data가 저장됨
+    /// - 기대 결과: load 결과가 resetRequired가 아닌 success이며 migrated snapshot과 persisted state가 current schema 기본값을 포함함
+    func testLoadMigratesLegacyCompletedSnapshotWithoutResettingSession() throws {
+        let userDefaultsClient = UserDefaultsClient.testValue
+        let legacyStepState = OnboardingStepState(
+            welcomeComplete: true,
+            betaAccessComplete: true,
+            permissionsComplete: true,
+            completeComplete: true,
+        )
+        let legacyData = try JSONEncoder().encode(legacyStepState)
+
+        userDefaultsClient.setObject(1.1, "onboardingProgressVersion")
+        userDefaultsClient.setObject(OnboardingStep.complete.rawValue, "onboardingCurrentStep")
+        userDefaultsClient.setObject(legacyData, "onboardingStepState")
+
+        let result = withDependencies {
+            $0.userDefaultsClient = userDefaultsClient
+        } operation: {
+            OnboardingProgressClient.liveValue.load()
+        }
+
+        guard case let .success(snapshot) = result else {
+            return XCTFail("1.1 completed snapshot must migrate instead of requiring reset")
+        }
+
+        XCTAssertEqual(snapshot.currentStep, .complete)
+        XCTAssertTrue(snapshot.stepState.aiProviderSetupComplete)
+        XCTAssertTrue(snapshot.stepState.aiProviderSetupSkipped)
+        XCTAssertEqual(snapshot.stepState.aiProviderSetupChoice, .setUpLater)
+        XCTAssertEqual(snapshot.stepState.aiProviderSetupStatus, .skipped)
+        XCTAssertTrue(snapshot.stepState.completeComplete)
+        XCTAssertEqual(
+            userDefaultsClient.object("onboardingProgressVersion") as? Double,
+            OnboardingProgressClient.currentVersion,
+        )
+
+        let migratedData = try XCTUnwrap(userDefaultsClient.object("onboardingStepState") as? Data)
+        let migratedStepState = try JSONDecoder().decode(OnboardingStepState.self, from: migratedData)
+        XCTAssertTrue(migratedStepState.aiProviderSetupComplete)
+        XCTAssertTrue(migratedStepState.aiProviderSetupSkipped)
+        XCTAssertEqual(migratedStepState.aiProviderSetupChoice, .setUpLater)
+        XCTAssertEqual(migratedStepState.aiProviderSetupStatus, .skipped)
+    }
+
 }
