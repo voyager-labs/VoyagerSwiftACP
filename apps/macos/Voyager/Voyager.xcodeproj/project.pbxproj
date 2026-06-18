@@ -67,7 +67,6 @@
 		E4F8A1B2C3D4E5F60718293A /* compose_filter_system.md in Resources */ = {isa = PBXBuildFile; fileRef = D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */; };
 		AF0F1E7B33B24D4A00A1F123 /* VoyagerHelper.app in Copy Helper into App */ = {isa = PBXBuildFile; fileRef = 7E14EE232E866E82005AC834 /* VoyagerHelper.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		B2AD8C7BD69A51C61EF4D9FC /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
-		B7A1F2E133C9F5AB00C0FFEE /* VoyagerHelperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */; };
 		F1000000000000000000000A /* FilterSearchXPC.xpc in Copy XPC Services */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* FilterSearchXPC.xpc */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		F10000000000000000000020 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
 		F10000000000000000000021 /* property_condition_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = 60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */; };
@@ -79,6 +78,11 @@
 		F20000000000000000000048 /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000047 /* VoyagerEntitiesAi */; };
 		F20000000000000000000049 /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000047 /* VoyagerEntitiesAi */; };
 		F2000000000000000000004A /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000047 /* VoyagerEntitiesAi */; };
+		F20000000000000000000052 /* VoyagerFeaturesAiChat in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000051 /* VoyagerFeaturesAiChat */; };
+		F20000000000000000000053 /* VoyagerFeaturesAiChat in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000051 /* VoyagerFeaturesAiChat */; };
+		F20000000000000000000054 /* VoyagerEntitiesAi in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000047 /* VoyagerEntitiesAi */; };
+		F20000000000000000000055 /* VoyagerWidgetsEntryViewLayout in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */; };
+		F20000000000000000000056 /* ConcurrencyExtras in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000017 /* ConcurrencyExtras */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -152,7 +156,6 @@
 		7E14EE232E866E82005AC834 /* VoyagerHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoyagerHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E14EE2F2E866E85005AC834 /* VoyagerHelperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoyagerHelperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A68896D2BA838902604FD30A /* system_property_registry.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = system_property_registry.json; path = ../../../shared/system_property_registry.json; sourceTree = SOURCE_ROOT; };
-		B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoyagerHelperTests.swift; path = VoyagerHelperTests/VoyagerHelperTests.swift; sourceTree = SOURCE_ROOT; };
 		D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */ = {isa = PBXFileReference; lastKnownFileType = text; name = compose_filter_system.md; path = ../../../shared/compose_filter_system.md; sourceTree = SOURCE_ROOT; };
 		F10000000000000000000002 /* FilterSearchXPC.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = FilterSearchXPC.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -219,6 +222,7 @@
 				F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */,
 				F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */,
+				F20000000000000000000052 /* VoyagerFeaturesAiChat in Frameworks */,
 				F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */,
 				F2000000000000000000003C /* Dependencies in Frameworks */,
 				F2000000000000000000003D /* Clocks in Frameworks */,
@@ -254,6 +258,10 @@
 				F2000000000000000000003A /* Dependencies in Frameworks */,
 				F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */,
+				F20000000000000000000053 /* VoyagerFeaturesAiChat in Frameworks */,
+				F20000000000000000000054 /* VoyagerEntitiesAi in Frameworks */,
+				F20000000000000000000055 /* VoyagerWidgetsEntryViewLayout in Frameworks */,
+				F20000000000000000000056 /* ConcurrencyExtras in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -316,7 +324,6 @@
 		6C37996C2F3E32BD0044D1A9 /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
-				B7A1F2E233C9F5AB00C0FFEE /* VoyagerHelperTests.swift */,
 				F10000000000000000000041 /* VoyagerHelper/Search */,
 			);
 			name = "Recovered References";
@@ -394,6 +401,7 @@
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
 				F2000000000000000000001E /* VoyagerPagesFileManager */,
+				F20000000000000000000051 /* VoyagerFeaturesAiChat */,
 				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
 				F21000000000000000000014 /* Dependencies */,
 				F21000000000000000000012 /* OrderedCollections */,
@@ -446,6 +454,10 @@
 				F21000000000000000000012 /* OrderedCollections */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
+				F20000000000000000000051 /* VoyagerFeaturesAiChat */,
+				F20000000000000000000047 /* VoyagerEntitiesAi */,
+				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
+				F21000000000000000000017 /* ConcurrencyExtras */,
 			);
 			productName = VoyagerTests;
 			productReference = 7E14EDDB2E86622E005AC834 /* VoyagerTests.xctest */;
@@ -625,6 +637,7 @@
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
 				F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */,
+				F20000000000000000000050 /* XCLocalSwiftPackageReference "04_Features/AiChat" */,
 				F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */,
 				F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
 				F21000000000000000000002 /* XCRemoteSwiftPackageReference "swift-collections" */,
@@ -635,6 +648,7 @@
 				7E19746F2E8BDC0700D041D3 /* XCRemoteSwiftPackageReference "InjectionNext" */,
 				7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */,
 				6CFB7B362E9D48B40005FDF6 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
+				F21000000000000000000016 /* XCRemoteSwiftPackageReference "swift-concurrency-extras" */,
 				7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */,
 				6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
@@ -855,7 +869,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B7A1F2E133C9F5AB00C0FFEE /* VoyagerHelperTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1551,6 +1564,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/02_Pages/FileManager;
 		};
+		F20000000000000000000050 /* XCLocalSwiftPackageReference "04_Features/AiChat" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/AiChat;
+		};
 		F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/03_Widgets/EntryViewLayout;
@@ -1612,6 +1629,14 @@
 			requirement = {
 				kind = exactVersion;
 				version = 1.22.3;
+			};
+		};
+		F21000000000000000000016 /* XCRemoteSwiftPackageReference "swift-concurrency-extras" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-concurrency-extras";
+			requirement = {
+				kind = exactVersion;
+				version = 1.3.2;
 			};
 		};
 		F21000000000000000000004 /* XCRemoteSwiftPackageReference "swift-dependencies" */ = {
@@ -1687,6 +1712,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F21000000000000000000003 /* XCRemoteSwiftPackageReference "swift-case-paths" */;
 			productName = CasePaths;
+		};
+		F21000000000000000000017 /* ConcurrencyExtras */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21000000000000000000016 /* XCRemoteSwiftPackageReference "swift-concurrency-extras" */;
+			productName = ConcurrencyExtras;
 		};
 		F21000000000000000000014 /* Dependencies */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1837,6 +1867,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */;
 			productName = VoyagerWidgetsEntryViewLayout;
+		};
+		F20000000000000000000051 /* VoyagerFeaturesAiChat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000050 /* XCLocalSwiftPackageReference "04_Features/AiChat" */;
+			productName = VoyagerFeaturesAiChat;
 		};
 		/* End XCSwiftPackageProductDependency section */
 	};
