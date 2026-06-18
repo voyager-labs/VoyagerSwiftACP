@@ -46,6 +46,9 @@ enum FileManagerContentComposerCoordinator {
             return handleSetPresented(isPresented, state: &state, dependencies: dependencies)
 
         case .view(.applyFilters):
+            guard state.composer.conditions.contains(where: \.isSearchReady) else {
+                return .none
+            }
             return .send(.composer(.setLoadingFilters(true)))
 
         case let .view(.setText(text)):

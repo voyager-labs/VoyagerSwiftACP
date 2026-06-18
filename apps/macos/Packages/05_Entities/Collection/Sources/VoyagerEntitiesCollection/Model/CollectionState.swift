@@ -218,6 +218,7 @@ public extension CollectionState {
             shouldRestoreStaleNavigation: isStale,
             queryTrigger: makeOpenQueryTrigger(
                 trimmedQuery: trimmedQuery,
+                hasConditions: !resolved.conditions.isEmpty,
                 kind: kind,
                 isStale: isStale,
             ),
@@ -295,13 +296,17 @@ public extension CollectionState {
 
     private func makeOpenQueryTrigger(
         trimmedQuery: String,
+        hasConditions: Bool,
         kind: CollectionSessionPhase.OpenKind,
         isStale _: Bool,
     ) -> CollectionRefreshTriggerPayload? {
         guard kind == .definition else {
             return nil
         }
-        return trimmedQuery.isEmpty ? .applyFilters : .submit
+        guard trimmedQuery.isEmpty else {
+            return .submit
+        }
+        return hasConditions ? .applyFilters : nil
     }
 }
 
