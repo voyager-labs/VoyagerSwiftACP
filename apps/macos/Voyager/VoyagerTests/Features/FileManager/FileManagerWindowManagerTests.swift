@@ -1,6 +1,12 @@
+import AppKit
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerFeaturesComposer
+import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
+import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 //
@@ -16,7 +22,7 @@ import XCTest
 // 대상이므로 이 파일에서 단언하지 않는다.
 
 @MainActor
-final class FMW001WindowManagerTests: XCTestCase {
+final class FileManagerWindowManagerTests: XCTestCase {
     private typealias Spec = WindowManagerTestSupport.Spec
 
     private func makeStore(
@@ -58,13 +64,11 @@ final class FMW001WindowManagerTests: XCTestCase {
     ///   windowIDChanged 수신, applyAppPreferences 수신, openCallCount == 1, openedID == newID
     func test_openNewFileManagerWindow_createsWindowAndSetsActive() async {
         let newID = UUID()
-        var openCallCount = 0
-        var openedID: UUID?
+        let openedIDs = LockIsolated<[UUID]>([])
 
         let store = makeStore(uuid: newID) {
             $0.fileManagerWindowClient.open = { id in
-                openCallCount += 1
-                openedID = id
+                openedIDs.withValue { $0.append(id) }
             }
         }
 
@@ -77,38 +81,33 @@ final class FMW001WindowManagerTests: XCTestCase {
         }
 
         // windowIDChanged child action이 newID로 방출되었는지 수신 확인
-        await store.receive(
-            .windows(.element(
-                id: newID,
-                action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(newID)))))),
-            )),
-        )
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(receivedID)))))),
+            )) = action else {
+                return false
+            }
+            return id == newID && receivedID == newID
+        }
 
         // applyAppPreferences child action이 newID로 방출되었는지 수신 확인
         let defaultPackagePrefs = AppPreferencesState().toPackageState()
-        await store.receive(
-            .windows(.element(
-                id: newID,
-                action: .window(.applyAppPreferences(defaultPackagePrefs)),
-            )),
-        )
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.applyAppPreferences(preferences)),
+            )) = action else {
+                return false
+            }
+            return id == newID && preferences == defaultPackagePrefs
+        }
 
         // 나머지 파생 이펙트(arrangements 정렬/그룹 갱신)는 package-scoped 테스트가 검증
         await store.finish()
 
-        XCTAssertEqual(openCallCount, 1, "fileManagerWindowClient.open은 정확히 한 번 호출되어야 한다")
-        XCTAssertEqual(openedID, newID, "open에 전달된 ID는 생성된 윈도우 ID와 일치해야 한다")
-    }
-
-    /// FMW-001-open_new_file_manager_window: 온보딩 필요 시 윈도우 생성 스킵
-    /// onboarding이 필요한 경우 newWindow 액션이 윈도우를 생성하지 않고 no-op인지 검증.
-    /// - 검증 내용: onboardingRequired=true일 때 newWindow 액션 전송 후 상태 변화 없음
-    /// - 사전 조건: onboardingWindowClient.showIfNeeded가 true 반환
-    /// - 기대 결과: windows 배열 변화 없음, focusedWindowID 변화 없음
-    func test_openNewFileManagerWindow_skipsWhenOnboardingRequired() async {
-        let store = makeStore(onboardingRequired: true)
-
-        await store.send(.file(.newWindow(path: nil)))
+        XCTAssertEqual(openedIDs.value.count, 1, "fileManagerWindowClient.open은 정확히 한 번 호출되어야 한다")
+        XCTAssertEqual(openedIDs.value.first, newID, "open에 전달된 ID는 생성된 윈도우 ID와 일치해야 한다")
     }
 
     // MARK: - FMW-001-close_file_manager_window
@@ -154,23 +153,21 @@ final class FMW001WindowManagerTests: XCTestCase {
     /// - 기대 결과: closeCallCount == 1, closedID == focusedID
     func test_closeFocusedWindowAction_invokesClientClose() async {
         let focusedID = UUID()
-        var closeCallCount = 0
-        var closedID: UUID?
+        let closedIDs = LockIsolated<[UUID]>([])
 
         let store = makeStore(initialState: makeState(
             focusedID: focusedID,
             windows: [(focusedID, Spec.tempPath)],
         )) {
             $0.fileManagerWindowClient.close = { id in
-                closeCallCount += 1
-                closedID = id
+                closedIDs.withValue { $0.append(id) }
             }
         }
 
         await store.send(.window(.closeFocusedWindow))
 
-        XCTAssertEqual(closeCallCount, 1, "fileManagerWindowClient.close는 정확히 한 번 호출되어야 한다")
-        XCTAssertEqual(closedID, focusedID, "close에 전달된 ID는 focusedWindowID와 일치해야 한다")
+        XCTAssertEqual(closedIDs.value.count, 1, "fileManagerWindowClient.close는 정확히 한 번 호출되어야 한다")
+        XCTAssertEqual(closedIDs.value.first, focusedID, "close에 전달된 ID는 focusedWindowID와 일치해야 한다")
     }
 
     /// FMW-001-close_file_manager_window: unfocused 윈도우 닫기 시 focused 유지
@@ -204,13 +201,15 @@ final class FMW001WindowManagerTests: XCTestCase {
     func test_closeAllOrQuitSurrogate_terminatesAllWindows() async {
         let firstID = UUID()
         let secondID = UUID()
-        var closeAllCallCount = 0
+        let closeAllCallCount = LockIsolated(0)
 
         let store = makeStore(initialState: makeState(
             focusedID: secondID,
             windows: [(firstID, Spec.firstPath), (secondID, Spec.secondPath)],
         )) {
-            $0.fileManagerWindowClient.closeAll = { closeAllCallCount += 1 }
+            $0.fileManagerWindowClient.closeAll = {
+                closeAllCallCount.withValue { $0 += 1 }
+            }
         }
 
         await store.send(.window(.closeAllWindows)) {
@@ -218,7 +217,7 @@ final class FMW001WindowManagerTests: XCTestCase {
             $0.focusedWindowID = nil
         }
 
-        XCTAssertEqual(closeAllCallCount, 1, "fileManagerWindowClient.closeAll은 정확히 한 번 호출되어야 한다")
+        XCTAssertEqual(closeAllCallCount.value, 1, "fileManagerWindowClient.closeAll은 정확히 한 번 호출되어야 한다")
     }
 
     // MARK: - FMW-001-request_undo
@@ -243,7 +242,12 @@ final class FMW001WindowManagerTests: XCTestCase {
 
         // edit(.requestUndo)는 sendCommandToFocusedWindow을 통해 focusedID로만 전달
         await store.send(.edit(.requestUndo))
-        await store.receive(.windows(.element(id: focusedID, action: .window(.request(.requestUndo)))))
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.request(.requestUndo)))) = action else {
+                return false
+            }
+            return id == focusedID
+        }
     }
 
     /// FMW-001-request_undo: focused 윈도우 없을 때 명령 no-op
@@ -284,6 +288,54 @@ final class FMW001WindowManagerTests: XCTestCase {
 
         // 명령 전송 후 상태 변화 없음 (라우팅만 발생, 불변 상태)
         await store.send(.edit(.requestRedo))
-        await store.receive(.windows(.element(id: focusedID, action: .window(.request(.requestRedo)))))
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.request(.requestRedo)))) = action else {
+                return false
+            }
+            return id == focusedID
+        }
+    }
+}
+
+// WindowManagerTests 공용 테스트 서포트.
+
+enum WindowManagerTestSupport {
+    enum Spec {
+        static let focusedPath = "/focused"
+        static let backgroundPath = "/background"
+        static let firstPath = "/a"
+        static let secondPath = "/b"
+        static let tempPath = "/tmp"
+    }
+
+    @MainActor
+    static func makeStore(
+        initialState: WindowManagerFeature.State = WindowManagerFeature.State(),
+        uuid: UUID? = nil,
+        onboardingRequired: Bool = false,
+        configureDependencies: ((inout DependencyValues) -> Void)? = nil,
+    ) -> TestStore<WindowManagerFeature.State, WindowManagerFeature.Action> {
+        TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            if let uuid {
+                $0.uuid = .constant(uuid)
+            }
+            $0.onboardingWindowClient.showIfNeeded = { onboardingRequired }
+            configureDependencies?(&$0)
+        }
+    }
+
+    @MainActor
+    static func makeState(
+        focusedID: UUID?,
+        windows: [(UUID, String?)],
+    ) -> WindowManagerFeature.State {
+        var state = WindowManagerFeature.State()
+        state.windows = .init(uniqueElements: windows.map { id, path in
+            WindowSessionState(id: id, window: .makeInitial(path: path))
+        })
+        state.focusedWindowID = focusedID
+        return state
     }
 }

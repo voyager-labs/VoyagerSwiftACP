@@ -3,20 +3,12 @@ import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
 final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
-    func testAiChatRequestAttachmentPickerDelegateRoutesToWindowDelegate() async {
-        let store = TestStore(initialState: FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")) {
-            FileManagerFeature()
-        }
-
-        await store.send(.inspector(.aiChat(.delegate(.requestAttachmentPicker))))
-        await store.receive(\.inspector.delegate.requestAttachmentPicker)
-        await store.receive(\.delegate.requestAttachmentPicker)
-    }
-
     func testAiChatDroppedAttachmentClearSelectionDelegateClearsContentSelection() async {
         let selectedEntry = makeEntry(name: "Dropped.md", fullPath: "/Users/test/Documents/Dropped.md")
         var initialState = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")

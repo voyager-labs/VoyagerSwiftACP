@@ -6,6 +6,8 @@ import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor

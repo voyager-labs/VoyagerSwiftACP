@@ -4,6 +4,9 @@ import Foundation
 import VoyagerEntitiesAi
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
+import VoyagerFeaturesEntryOperations
+@testable import VoyagerPagesFileManager
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
@@ -82,7 +85,10 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         fixture: FocusedWindowFixture,
     ) async {
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.request(.openContextualAiChat)))) = action else {
+            guard case let .windows(.element(id: id, action: windowAction)) = action else {
+                return false
+            }
+            guard case .window(.request(.openContextualAiChat)) = windowAction else {
                 return false
             }
             return id == fixture.focusedUUID
@@ -94,9 +100,13 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         fixture: FocusedWindowFixture,
     ) async {
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.inspector(.openChat(setup, connectionsFile))))) =
-                action
-            else {
+            guard case let .windows(.element(id: id, action: windowAction)) = action else {
+                return false
+            }
+            guard case let .window(.inspector(inspectorAction)) = windowAction else {
+                return false
+            }
+            guard case let .openChat(setup, connectionsFile) = inspectorAction else {
                 return false
             }
             return id == fixture.focusedUUID
@@ -130,10 +140,13 @@ final class FileManagerWindowCommandChatRoutingTests: XCTestCase {
         }
 
         await store.receive { action in
-            guard case let .windows(.element(
-                id: id,
-                action: .window(.inspector(.aiChat(.providerConnectionsUpdated(file)))),
-            )) = action else {
+            guard case let .windows(.element(id: id, action: windowAction)) = action else {
+                return false
+            }
+            guard case let .window(.inspector(.aiChat(aiChatAction))) = windowAction else {
+                return false
+            }
+            guard case let .providerConnectionsUpdated(file) = aiChatAction else {
                 return false
             }
             return id == fixture.focusedUUID && file == fixture.connectionsFile
