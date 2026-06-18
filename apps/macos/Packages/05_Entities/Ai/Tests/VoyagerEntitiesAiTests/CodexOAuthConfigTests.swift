@@ -23,12 +23,21 @@ final class CodexOAuthConfigTests: XCTestCase {
         XCTAssertEqual(config.tokenEndpoint, URL(string: "https://auth.openai.com/oauth/token"))
     }
 
-    func testAuthorizeURL_containsPKCEParameters() {
+    func testAuthorizeURL_containsPKCEParameters() throws {
         let config = CodexOAuthConfig.default
         let url = config.authorizeURL(pkceChallenge: "test-challenge", state: "test-state")
 
-        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        let queryItems = Dictionary(uniqueKeysWithValues: components.queryItems!.map { ($0.name, $0.value!) })
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let rawItems = try XCTUnwrap(components.queryItems)
+        let queryItems = Dictionary(
+            uniqueKeysWithValues: rawItems.map { item in
+                guard let value = item.value else {
+                    XCTFail("query item '\(item.name)' has nil value")
+                    return (item.name, "")
+                }
+                return (item.name, value)
+            },
+        )
 
         XCTAssertEqual(queryItems["response_type"], "code")
         XCTAssertEqual(queryItems["client_id"], config.clientId)
@@ -53,11 +62,11 @@ final class CodexOAuthConfigTests: XCTestCase {
                 "offline_access",
                 "api.connectors.read",
                 "api.connectors.invoke",
-            ]
+            ],
         )
     }
 
-    func testChatGPTAccountId_extractsNamespacedJWTClaim() throws {
+    func testChatGPTAccountId_extractsNamespacedJWTClaim() {
         let payload = """
         {"https://api.openai.com/auth":{"chatgpt_account_id":"account-123"}}
         """
@@ -70,16 +79,16 @@ final class CodexOAuthConfigTests: XCTestCase {
         XCTAssertEqual(CodexNativeAuthClient.chatGPTAccountId(from: token), "account-123")
     }
 
-    func testCustomConfig_differentPort() {
-        let config = CodexOAuthConfig(
+    func testCustomConfig_differentPort() throws {
+        let config = try CodexOAuthConfig(
             clientId: "test-client",
-            issuer: URL(string: "https://test.example.com")!,
+            issuer: XCTUnwrap(URL(string: "https://test.example.com")),
             authorizePath: "/auth",
             tokenPath: "/token",
             redirectPort: 8080,
             redirectPath: "/callback",
             scopes: ["read"],
-            originator: "test-originator"
+            originator: "test-originator",
         )
         XCTAssertEqual(config.redirectURI, "http://localhost:8080/callback")
         XCTAssertEqual(config.scopes, ["read"])

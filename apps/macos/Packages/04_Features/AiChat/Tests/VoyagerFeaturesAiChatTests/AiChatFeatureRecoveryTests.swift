@@ -29,14 +29,14 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: catalogRows[1].handle,
-                        selectedRow: catalogRows[1]
+                        selectedRow: catalogRows[1],
                     ),
-                    messages: []
+                    messages: [],
                 ),
                 selectedHandle: catalogRows[1].handle,
                 selectedRow: catalogRows[1],
-                assistantReplacementIndex: nil
-            ))
+                assistantReplacementIndex: nil,
+            )),
         )) {
             AiChatFeature()
         }
@@ -77,14 +77,14 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: selectedHandle,
-                        selectedRow: catalogRows[0]
+                        selectedRow: catalogRows[0],
                     ),
-                    messages: []
+                    messages: [],
                 ),
                 selectedHandle: selectedHandle,
                 selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil
-            ), .transportError)
+                assistantReplacementIndex: nil,
+            ), .transportError),
         )) {
             AiChatFeature()
         }
@@ -131,14 +131,14 @@ final class AiChatFeatureRecoveryTests: XCTestCase {
                         requestID: AiChatRequestID(rawValue: UUID()),
                         runID: AiChatRunID(rawValue: UUID()),
                         model: firstHandle,
-                        selectedRow: catalogRows[0]
+                        selectedRow: catalogRows[0],
                     ),
-                    messages: []
+                    messages: [],
                 ),
                 selectedHandle: firstHandle,
                 selectedRow: catalogRows[0],
-                assistantReplacementIndex: nil
-            ), .transportError)
+                assistantReplacementIndex: nil,
+            ), .transportError),
         )) {
             AiChatFeature()
         }

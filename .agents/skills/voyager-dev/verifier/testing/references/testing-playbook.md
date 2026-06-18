@@ -70,6 +70,7 @@ If the spec ID is the same in both targets, a grep for the spec ID should find t
 
 - Before writing multiple test files for the same domain, audit existing test helpers and extract shared fixtures first. This eliminates duplication across subsequent test files and establishes consistent patterns.
 - Name test files by domain/behavior (e.g., `AiConnectionOAuthTests`), not by issue identifier (e.g., `Voy218SettingsGapTests`). Coverage maps belong in notepad or evidence, not in runtime test code.
+- For entry-manipulation, entry collection, `.voycoll`, and entry path-display tests, initialize and use the root `fixtures/` submodule by default. Real fixture files live under `fixtures/fixtures/**`; copy them into temporary directories before mutation or destructive entry operations and record fixture paths in evidence.
 
 ## TCA TestStore patterns
 
@@ -79,6 +80,7 @@ If the spec ID is the same in both targets, a grep for the spec ID should find t
 
 - Override nondeterministic or external values in tests: time, UUID, clocks, storage, network, workspace, notifications, file system.
 - For filesystem-backed tests, isolate via dependency/env overrides and assert real user files are unchanged; do not assume the real file is absent.
+- For fixture-backed filesystem tests, never mutate `fixtures/fixtures/**` directly; copy the selected fixture file or directory into an isolated temporary location first.
 - Do not let reducers call direct globals like `UUID()`, `Date()`, `Task.sleep`, or `UserDefaults.standard` when tests should control them.
 - Prefer dependency clients and test overrides through `TestStore` dependencies.
 - Prefer shared test helper files over file-private helpers when multiple test classes need the same test infrastructure. If a helper must be file-private, colocate tests requiring it in the same file.

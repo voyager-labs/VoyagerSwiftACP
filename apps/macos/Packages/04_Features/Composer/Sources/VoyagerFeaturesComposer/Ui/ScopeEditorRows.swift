@@ -49,6 +49,7 @@ struct IncludeSubfoldersRow: View {
                     Image(systemName: includeSubfolders ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 14))
                         .foregroundColor(includeSubfolders ? .accentColor : .secondary)
+                        .accessibilityLabel(includeSubfolders ? "Included" : "Not included")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -168,6 +169,7 @@ struct ExceptionRow: View {
                     Image(systemName: "minus.circle")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .accessibilityLabel("Excluded")
                     Text(text)
                         .font(.system(size: 12))
                         .foregroundColor(.primary)

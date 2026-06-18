@@ -458,7 +458,11 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             return false
         }
         if !internalPaths.isEmpty {
-            sendEntryOperations(.routing(.handleDrop(providers: [], destinationPath: destinationPath)))
+            sendEntryOperations(.routing(.dropItems(
+                sourcePaths: internalPaths,
+                destinationPath: destinationPath,
+                isOptionDrag: validation.isOptionDrag,
+            )))
             return true
         }
         let pasteboard = draggingInfo.draggingPasteboard

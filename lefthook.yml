@@ -10,8 +10,16 @@ post-checkout:
       run: test -f "$(git rev-parse --git-path hooks/post-checkout)" || lefthook install
     submodules:
       run: git submodule update --init --recursive
+    docs-canonical-npm-ci:
+      run: |
+        if git diff --name-only {1} {2} | grep -qE '^docs/canonical/(package\.json|package-lock\.json)$'; then
+          echo ":: docs/canonical package manifest changed — running npm ci..."
+          cd docs/canonical && npm ci
+        fi
     codegraph:
-      run: test -d .codegraph || npx -y @colbymchenry/codegraph@0.9.6 init -i
+      run: test -d .codegraph || mise exec -- codegraph init -i
+    cupertino:
+      run: command -v cupertino >/dev/null 2>&1 || mise install cupertino
 
 post-merge:
   commands:
@@ -19,7 +27,7 @@ post-merge:
       run: git submodule update --init --recursive
 
 pre-commit:
-  parallel: true
+  parallel: false
   commands:
     sisyphus-artifacts-guard:
       run: |
@@ -29,13 +37,39 @@ pre-commit:
           echo "Run: git reset HEAD -- .sisyphus/" >&2
           exit 1
         fi
+    ast-grep:
+      glob: "apps/macos/**/*.swift"
+      run: |
+        swift_files=""
+        ui_files=""
+        for f in {staged_files}; do
+          case "$f" in
+            *Tests*) continue ;;
+            */Ui/*) ui_files="$ui_files $f" ;;
+            *) swift_files="$swift_files $f" ;;
+          esac
+        done
+        # Model & Reducer rules: non-Ui staged files
+        if [ -n "$swift_files" ]; then
+          for rule in .ast-grep/rules/model/*.yaml .ast-grep/rules/reducer/*.yaml; do
+            mise exec -- ast-grep scan --rule "$rule" $swift_files 2>&1
+          done
+        fi
+        # Ui rules: only Ui/ staged files
+        if [ -n "$ui_files" ]; then
+          for rule in .ast-grep/rules/ui/*.yaml; do
+            mise exec -- ast-grep scan --rule "$rule" $ui_files 2>&1
+          done
+        fi
     swiftformat:
       glob: "apps/macos/**/*.swift"
-      run: mise exec -- swiftformat --config apps/macos/.swiftformat --lint {staged_files}
+      run: mise exec -- swiftformat --config apps/macos/.swiftformat {staged_files}
     swiftlint:
       glob: "apps/macos/**/*.swift"
       exclude: "apps/macos/**/*Tests/**/*.swift"
-      run: mise exec -- swiftlint lint --config apps/macos/.swiftlint.yml --strict {staged_files}
+      run: mise exec -- swiftlint --fix --config apps/macos/.swiftlint.yml {staged_files}
     swiftlint-tests:
       glob: "apps/macos/**/*Tests/**/*.swift"
-      run: mise exec -- swiftlint lint --config apps/macos/.swiftlint-tests.yml --strict {staged_files}
+      run: mise exec -- swiftlint --fix --config apps/macos/.swiftlint-tests.yml {staged_files}
+    re-stage:
+      run: git add {staged_files}

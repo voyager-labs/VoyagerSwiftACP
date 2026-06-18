@@ -9,8 +9,7 @@ import XCTest
 
 @MainActor
 final class AiChatFeatureRestoreContinuationTests: XCTestCase {
-    // restore된 model handle이 현재 catalog에서 해석되면 최신 row metadata를 사용하는지 검증
-    // swiftlint:disable:next function_body_length
+    /// restore된 model handle이 현재 catalog에서 해석되면 최신 row metadata를 사용하는지 검증
     func testRestoreUsesCurrentCatalogRowMetadataWhenRestoredHandleStillResolves() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
@@ -110,8 +109,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedModelRow, catalogRows[1])
     }
 
-    // restore된 model이 현재 catalog에 없으면 선택이 정리되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// restore된 model이 현재 catalog에 없으면 선택이 정리되는지 검증
     func testRestoreClearsSelectionWhenRestoredModelIsMissing() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()
@@ -189,8 +187,7 @@ final class AiChatFeatureRestoreContinuationTests: XCTestCase {
         XCTAssertFalse(store.state.canSubmit)
     }
 
-    // restore 후 concrete model capability가 로드되면 incompatible thinking이 정리되는지 검증
-    // swiftlint:disable:next function_body_length
+    /// restore 후 concrete model capability가 로드되면 incompatible thinking이 정리되는지 검증
     func testRestoreClearsIncompatibleThinkingWhenConcreteModelCapabilitiesLoad() async {
         let catalogRows = makeCatalogRows()
         let summary = makeContextSnapshot()

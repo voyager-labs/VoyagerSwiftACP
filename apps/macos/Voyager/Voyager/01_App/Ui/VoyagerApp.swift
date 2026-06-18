@@ -144,15 +144,17 @@ struct VoyagerApp: App {
                 return sessionStores.first(where: { $0.state.id == windowID })?
                     .scope(state: \.window, action: \.window)
             },
-            onWindowBecameKey: { [appRootStore] id in
-                appRootStore.send(.windowManager(.event(.windowBecameKey(id))))
-            },
-            onWindowResignedKey: { [appRootStore] id in
-                appRootStore.send(.windowManager(.event(.windowResignedKey(id))))
-            },
-            onWindowClosed: { [appRootStore] id in
-                appRootStore.send(.windowManager(.event(.windowClosed(id))))
-            },
+            windowKeyCallbacks: FileManagerWindowKeyCallbacks(
+                onBecameKey: { [appRootStore] id in
+                    appRootStore.send(.windowManager(.event(.windowBecameKey(id))))
+                },
+                onResignedKey: { [appRootStore] id in
+                    appRootStore.send(.windowManager(.event(.windowResignedKey(id))))
+                },
+                onClosed: { [appRootStore] id in
+                    appRootStore.send(.windowManager(.event(.windowClosed(id))))
+                },
+            ),
         )
     }
 

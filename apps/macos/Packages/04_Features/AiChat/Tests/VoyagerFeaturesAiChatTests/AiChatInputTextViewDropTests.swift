@@ -27,6 +27,7 @@ final class AiChatInputTextViewDropTests: XCTestCase {
 
         XCTAssertEqual(urls, [collectionURL.standardizedFileURL])
     }
+
     @MainActor
     func testAttachmentDroppingTextViewConsumesFileURLDrops() {
         let fileURL = URL(fileURLWithPath: "/tmp/Dropped.txt")
@@ -43,5 +44,4 @@ final class AiChatInputTextViewDropTests: XCTestCase {
         XCTAssertEqual(droppedURLs, [fileURL.standardizedFileURL])
         XCTAssertEqual(textView.string, "")
     }
-
 }

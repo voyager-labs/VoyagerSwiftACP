@@ -32,7 +32,7 @@ final class AIConnectionPathTests: XCTestCase {
         let date = Date(timeIntervalSince1970: 0)
         let url = AIConnectionFSLocation.quarantineFileURL(
             directoryURL: dir,
-            generatedAt: date
+            generatedAt: date,
         )
         XCTAssertTrue(url.lastPathComponent.contains("auth.corrupted-"))
     }

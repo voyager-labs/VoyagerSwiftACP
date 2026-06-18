@@ -41,6 +41,38 @@ mise tasks
 - This applies to commit subjects, bodies, and footers alike.
 - The only exception is when the user explicitly requests such a trailer.
 
+## Validation
+
+Run the commands that match your change scope.
+
+### Backend (Python/FastAPI)
+
+```bash
+cd apps/backend
+uv run pytest          # tests
+uv run pyright         # type check
+uv run ruff check      # linter
+```
+
+### macOS (Voyager)
+
+```bash
+mise run macos-build   # Dev build
+mise run macos-test    # Dev tests
+```
+
+Swift lint/format:
+```bash
+mise exec -- swiftlint --config apps/macos/.swiftlint.yml apps/macos
+mise exec -- swiftformat --config apps/macos/.swiftformat apps/macos --verbose
+```
+
+### General
+
+```bash
+git diff --check       # whitespace/conflict markers
+```
+
 ## PR review rules
 
 Codex and other agents read `AGENTS.md`, but PR review policy must stay centralized in Greptile rules.

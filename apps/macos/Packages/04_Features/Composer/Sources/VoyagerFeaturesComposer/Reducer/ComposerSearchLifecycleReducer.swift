@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import Logging
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerShared
 
@@ -19,6 +20,8 @@ struct ComposerSearchLifecycleReducer {
     var clock
     @Dependency(\.composerMetricClient)
     var composerMetricClient
+    @Dependency(\.collectionSearchAISettingsClient)
+    var collectionSearchAISettingsClient
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -26,6 +29,7 @@ struct ComposerSearchLifecycleReducer {
                 return handleSubmit(
                     state: &state,
                     searchClient: searchClient,
+                    collectionSearchAISettingsClient: collectionSearchAISettingsClient,
                     composerMetricClient: composerMetricClient,
                 )
 
@@ -300,26 +304,17 @@ struct ComposerSearchLifecycleReducer {
 private func handleSubmit(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
+    collectionSearchAISettingsClient: CollectionSearchAISettingsClient,
     composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return .none }
     let filters = buildFilters(from: state)
     let searchRequestID = UUID()
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacyComposerSubmit,
-        value: 1,
+    logSubmitMetrics(
+        hasSubmittedInSession: state.hasSubmittedInSession,
+        composerMetricClient: composerMetricClient,
     )
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacySearchSubmit,
-        value: 1,
-    )
-    if state.hasSubmittedInSession {
-        composerMetricClient.logMetric(
-            ComposerCollectionFilterMetrics.legacySearchResubmit,
-            value: 1,
-        )
-    }
     state.hasSubmittedInSession = true
     state.searchStartedAt = Date()
     state.isLoadingSearch = true
@@ -335,11 +330,14 @@ private func handleSubmit(
     applyQueryPhaseTransition(.startSearch, state: &state)
     state.text = ""
 
+    let request = makeSearchRequest(
+        query: query,
+        filters: filters,
+        collectionSearchAISettingsClient: collectionSearchAISettingsClient,
+    )
     let searchEffect: Effect<ComposerFeature.Action> = .run { send in
         do {
-            let response = try await searchClient.search(
-                .init(query: query, filters: filters),
-            )
+            let response = try await searchClient.search(request)
             await send(.searchResponse(searchRequestID, .success(response)))
         } catch is CancellationError {
             return
@@ -353,6 +351,38 @@ private func handleSubmit(
     return .concatenate(
         .cancel(id: ComposerFeature.CancelID.filters),
         searchEffect,
+    )
+}
+
+private func logSubmitMetrics(
+    hasSubmittedInSession: Bool,
+    composerMetricClient: ComposerMetricClient,
+) {
+    composerMetricClient.logMetric(
+        ComposerCollectionFilterMetrics.legacyComposerSubmit,
+        value: 1,
+    )
+    composerMetricClient.logMetric(
+        ComposerCollectionFilterMetrics.legacySearchSubmit,
+        value: 1,
+    )
+    if hasSubmittedInSession {
+        composerMetricClient.logMetric(
+            ComposerCollectionFilterMetrics.legacySearchResubmit,
+            value: 1,
+        )
+    }
+}
+
+private func makeSearchRequest(
+    query: String,
+    filters: SearchFiltersPayload,
+    collectionSearchAISettingsClient: CollectionSearchAISettingsClient,
+) -> SearchRequestPayload {
+    SearchRequestPayload(
+        query: query,
+        filters: filters,
+        collectionSearchAISettings: collectionSearchAISettingsClient.load().payload,
     )
 }
 

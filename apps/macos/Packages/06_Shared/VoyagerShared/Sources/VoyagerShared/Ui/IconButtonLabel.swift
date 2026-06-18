@@ -19,6 +19,7 @@ public struct IconButtonLabel: View {
     public var body: some View {
         ZStack {
             Image(systemName: systemName)
+                .accessibilityHidden(true)
                 .font(style.font)
                 .foregroundColor(isEnabled ? style.enabledColor : style.disabledColor)
                 .frame(width: style.size, height: style.size)

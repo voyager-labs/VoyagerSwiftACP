@@ -459,6 +459,68 @@ extension AiChatFeature {
     func resolvedSelectedModelRow(in state: State) -> AiModelCatalogRow? {
         state.resolvedModelRow(for: state.selectedModelHandle)
     }
+
+    func cancelRequestLifecycle() -> Effect<Action> {
+        .merge(
+            .cancel(id: CancelID.request),
+            .cancel(id: CancelID.requestContextResolution),
+            .cancel(id: CancelID.requestStartPersistence),
+            .cancel(id: CancelID.requestFinalPersistence),
+        )
+    }
+
+    func cancelAllInFlightWork() -> Effect<Action> {
+        .merge(
+            cancelRequestLifecycle(),
+            .cancel(id: CancelID.restore),
+            .cancel(id: CancelID.persistenceRecovery),
+            .cancel(id: CancelID.modelList),
+            .cancel(id: CancelID.newChat),
+            .cancel(id: CancelID.sessionList),
+            .cancel(id: CancelID.sessionDelete),
+            .cancel(id: CancelID.sessionRename),
+            .cancel(id: CancelID.attachmentDrop),
+        )
+    }
+
+    func handleCancelTapped(state: inout State) -> Effect<Action> {
+        if state.pendingRequestStart != nil {
+            state.pendingRequestStart = nil
+            return .cancel(id: CancelID.requestContextResolution)
+        }
+        guard let lock = state.executionPhase.lock, state.executionPhase.isProcessing else { return .none }
+        state.lockedModelHandle = nil
+        state.streamingAssistantDraft = nil
+        state.executionPhase = .cancelled(lock.recordingTerminal(
+            at: currentTimestampMs(),
+            failure: .cancelled,
+            wasCancelled: true,
+        ))
+        return cancelRequestLifecycle()
+    }
+
+    func handleResetTapped(state: inout State) -> Effect<Action> {
+        state.pendingRequestStart = nil
+        state.emptyDraftSessionID = nil
+        state.restoreSessionID = nil
+        state.restoreOutcome = nil
+        state.restoreFailure = nil
+        state.draftText = ""
+        state.transcriptHistory = []
+        state.streamingAssistantDraft = nil
+        state.lastExecutionFailure = nil
+        state.lockedModelHandle = nil
+        state.executionPhase = .idle
+        return cancelAllInFlightWork()
+    }
+
+    func handleTeardownRequested(state: inout State) -> Effect<Action> {
+        state.pendingRequestStart = nil
+        state.streamingAssistantDraft = nil
+        state.lockedModelHandle = nil
+        state.executionPhase = .idle
+        return cancelAllInFlightWork()
+    }
 }
 
 extension AiChatAttachmentDraft {

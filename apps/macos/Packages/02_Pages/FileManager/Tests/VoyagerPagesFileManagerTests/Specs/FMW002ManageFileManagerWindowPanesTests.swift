@@ -189,8 +189,10 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
             sidebarVisible: true,
             sidebarWidth: SidebarWidth.inRange,
             splitView: splitView,
-            mainContainerLeading: nil,
-            contentVerticalMargin: 4,
+            layout: (
+                mainContainerLeading: nil,
+                contentVerticalMargin: 4,
+            ),
         ) { _ in }
 
         splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth, ofDividerAt: 0)
@@ -253,8 +255,7 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
             sidebarVisible: true,
             sidebarWidth: SidebarWidth.inRange,
             splitView: splitView,
-            mainContainerLeading: nil,
-            contentVerticalMargin: 4,
+            layout: (mainContainerLeading: nil, contentVerticalMargin: 4),
         ) { _ in }
 
         splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth - 1, ofDividerAt: 0)
@@ -288,11 +289,10 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         splitView.addArrangedSubview(contentView)
 
         sync.applyInitialLayoutIfNeeded(
-            sidebarVisible: false,
+            sidebarVisible: true,
             sidebarWidth: SidebarWidth.inRange,
             splitView: splitView,
-            mainContainerLeading: nil,
-            contentVerticalMargin: 4,
+            layout: (mainContainerLeading: nil, contentVerticalMargin: 4),
         ) { _ in }
 
         splitView.setPosition(FileManagerSidebarSync.sidebarMinWidth, ofDividerAt: 0)

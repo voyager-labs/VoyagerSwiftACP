@@ -9,7 +9,7 @@ import VoyagerFeaturesEntryArrangements
 
 @Reducer
 struct FileManagerWindowCommandRoutingReducer {
-    private nonisolated enum CancelID: Hashable {
+    nonisolated private enum CancelID: Hashable {
         case contextualAiChatOpen
     }
 

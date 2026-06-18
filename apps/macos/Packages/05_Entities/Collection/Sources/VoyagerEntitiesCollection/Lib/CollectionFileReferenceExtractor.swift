@@ -15,7 +15,7 @@ public struct CollectionFileReferenceSnapshot: Equatable, Sendable {
     public init(
         status: CollectionFileReferenceSnapshotStatus,
         itemPaths: [String] = [],
-        itemCount: Int? = nil
+        itemCount: Int? = nil,
     ) {
         self.status = status
         self.itemPaths = itemPaths
@@ -40,7 +40,7 @@ public enum CollectionFileReferenceExtractor {
             return CollectionFileReferenceSnapshot(
                 status: .usable,
                 itemPaths: paths,
-                itemCount: paths.count
+                itemCount: paths.count,
             )
         } catch {
             return CollectionFileReferenceSnapshot(status: .unreadable)
@@ -61,7 +61,7 @@ public enum CollectionFileReferenceExtractor {
         let data = try Data(contentsOf: payloadURL)
         return try VoyagerCollectionFileCompatibilityOwner.decode(
             data,
-            containerFormat: containerFormat
+            containerFormat: containerFormat,
         ).file
     }
 

@@ -50,30 +50,9 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
 
     func testOpenChatWithRestoreSessionIDPreservesExplicitRestoreFlow() async {
         let restoreSessionID = makeSessionID("00000000-0000-0000-0000-000000000060")
-        let setup = AiChatSetupState(
-            restoreSessionID: restoreSessionID,
-            sessionID: nil,
-            sessionStatus: .idle,
-            currentContext: AiChatCurrentContextSnapshot(summary: "Documents · restore requested"),
-            transcriptHistory: [],
-            draftText: "",
-            catalogRows: [],
-            selectedModelHandle: nil,
-            lockedModelHandle: nil,
-            lastExecutionFailure: nil,
-        )
+        let setup = makeRestoreSetup(restoreSessionID: restoreSessionID)
 
-        let store = TestStore(initialState: FileManagerInspectorFeature.State()) {
-            FileManagerInspectorFeature()
-        } withDependencies: {
-            $0.uuid = .incrementing
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
-                loadSession: { _ in nil },
-                saveSession: { _ in },
-                deleteSession: { _ in },
-            )
-        }
+        let store = makeRestoreFlowStore()
 
         await store.send(.openChat(setup, .empty())) {
             $0.inspectorVisible = true
@@ -97,16 +76,7 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
         }
 
         let fallbackSessionID = makeSessionID("00000000-0000-0000-0000-000000000000")
-        let fallbackSnapshot = AiChatSessionSnapshot(
-            sessionID: fallbackSessionID,
-            status: .idle,
-            provider: nil,
-            model: nil,
-            selectedModelRow: nil,
-            selectedThinking: nil,
-            transcriptHistory: [],
-            updatedAtMs: 0,
-        )
+        let fallbackSnapshot = makeFallbackSnapshot(fallbackSessionID: fallbackSessionID)
 
         await store.receive(\.aiChat.restoreOutcome) {
             $0.aiChat.restoreOutcome = .newSession(snapshot: fallbackSnapshot)
@@ -329,6 +299,50 @@ final class FileManagerInspectorFeatureTests: XCTestCase {
                 executionPhase: .processing(inFlightLock),
             ),
         ), inFlightLock)
+    }
+
+    private func makeRestoreSetup(restoreSessionID: AiChatSessionID) -> AiChatSetupState {
+        AiChatSetupState(
+            restoreSessionID: restoreSessionID,
+            sessionID: nil,
+            sessionStatus: .idle,
+            currentContext: AiChatCurrentContextSnapshot(summary: "Documents · restore requested"),
+            transcriptHistory: [],
+            draftText: "",
+            catalogRows: [],
+            selectedModelHandle: nil,
+            lockedModelHandle: nil,
+            lastExecutionFailure: nil,
+        )
+    }
+
+    private func makeRestoreFlowStore()
+        -> TestStore<FileManagerInspectorFeature.State, FileManagerInspectorFeature.Action>
+    {
+        TestStore(initialState: FileManagerInspectorFeature.State()) {
+            FileManagerInspectorFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { _ in },
+            )
+        }
+    }
+
+    private func makeFallbackSnapshot(fallbackSessionID: AiChatSessionID) -> AiChatSessionSnapshot {
+        AiChatSessionSnapshot(
+            sessionID: fallbackSessionID,
+            status: .idle,
+            provider: nil,
+            model: nil,
+            selectedModelRow: nil,
+            selectedThinking: nil,
+            transcriptHistory: [],
+            updatedAtMs: 0,
+        )
     }
 
     private func makeSetup(sessionID: AiChatSessionID?, summary: String) -> AiChatSetupState {

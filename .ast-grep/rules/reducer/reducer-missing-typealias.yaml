@@ -1,0 +1,24 @@
+id: reducer-missing-typealias
+language: swift
+severity: error
+message: "@Reducer struct에 typealias State 또는 typealias Action이 누락되었습니다."
+note: >
+  Every @Reducer struct must reference external Model types via typealias.
+  Required:
+    typealias State = XxxState
+    typealias Action = XxxAction
+ast-grep-essentials: false
+rule:
+  all:
+    - kind: class_declaration
+      has:
+        stopBy: end
+        pattern: "@Reducer"
+    - not:
+        has:
+          stopBy: end
+          any:
+            - kind: typealias_declaration
+              has:
+                field: name
+                regex: "^(State|Action)$"

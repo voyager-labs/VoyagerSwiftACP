@@ -1,11 +1,10 @@
-// swiftlint:disable file_length
 import ComposableArchitecture
 import VoyagerFeaturesBetaAccess
 @testable import VoyagerPagesOnboarding
 import XCTest
 
 @MainActor
-final class ONB001RunUserOnboardingTests: XCTestCase { // swiftlint:disable:this type_body_length
+final class ONB001RunUserOnboardingTests: XCTestCase {
     // MARK: - ONB-001-start_onboarding_session
 
     // 온보딩 세션 시작 상호작용을 검증합니다.

@@ -20,8 +20,7 @@ struct OnboardingProgressClient {
 }
 
 extension OnboardingProgressClient: DependencyKey {
-    // swiftlint:disable:next modifier_order
-    private nonisolated enum Keys {
+    nonisolated private enum Keys {
         static let version = "onboardingProgressVersion"
         static let currentStep = "onboardingCurrentStep"
         static let stepState = "onboardingStepState"
@@ -109,8 +108,7 @@ extension OnboardingProgressClient: DependencyKey {
         return OnboardingProgressSnapshot(currentStep: currentStep, stepState: migratedStepState)
     }
 
-    // swiftlint:disable:next modifier_order
-    private nonisolated static func persist(
+    nonisolated private static func persist(
         _ snapshot: OnboardingProgressSnapshot,
         userDefaultsClient: UserDefaultsClient,
     ) -> OnboardingProgressClient.SaveResult {

@@ -4,15 +4,16 @@ import XCTest
 
 final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
     func testMakeCodexPrompt_withoutWorkingDirectoryKeepsPathsReferenceOnly() throws {
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("codex-root-default-\(UUID().uuidString).txt")
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-root-default-\(UUID().uuidString).txt")
         try createFile(at: fileURL, contents: "root default\n")
         defer { try? FileManager.default.removeItem(at: fileURL) }
 
         try withoutCodexWorkingDirectoryOverride {
-            let prompt = AiChatProviderExecutionClient.makeCodexPrompt(payload: try makePayload(
+            let prompt = try AiChatProviderExecutionClient.makeCodexPrompt(payload: makePayload(
                 requestContext: .init(
-                    parts: [makeCodexPathScopePart(displayPath: fileURL.path, canonicalPath: fileURL.path)]
-                )
+                    parts: [makeCodexPathScopePart(displayPath: fileURL.path, canonicalPath: fileURL.path)],
+                ),
             ))
 
             XCTAssertTrue(prompt.contains("working_directory: unavailable"), prompt)
@@ -30,10 +31,10 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
         try createFile(at: fileURL, contents: "struct Feature {}\n")
 
         try withCodexWorkingDirectory(workspaceURL) {
-            let prompt = AiChatProviderExecutionClient.makeCodexPrompt(payload: try makePayload(
+            let prompt = try AiChatProviderExecutionClient.makeCodexPrompt(payload: makePayload(
                 requestContext: .init(
-                    parts: [makeCodexPathScopePart(displayPath: fileURL.path, canonicalPath: fileURL.path)]
-                )
+                    parts: [makeCodexPathScopePart(displayPath: fileURL.path, canonicalPath: fileURL.path)],
+                ),
             ))
 
             XCTAssertTrue(prompt.contains("codex_filesystem_references:"))
@@ -51,10 +52,10 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
         try createFile(at: fileURL, contents: "struct Feature {}\n")
 
         try withCodexWorkingDirectory(workspaceURL) {
-            let prompt = AiChatProviderExecutionClient.makeCodexPrompt(payload: try makePayload(
+            let prompt = try AiChatProviderExecutionClient.makeCodexPrompt(payload: makePayload(
                 requestContext: .init(
-                    parts: [makeCodexPathScopePart(displayPath: "Feature.swift", canonicalPath: fileURL.path)]
-                )
+                    parts: [makeCodexPathScopePart(displayPath: "Feature.swift", canonicalPath: fileURL.path)],
+                ),
             ))
 
             XCTAssertTrue(prompt.contains("path: \(fileURL.path)"), prompt)
@@ -70,10 +71,15 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
         try createFile(at: outsideFileURL, contents: "outside\n")
 
         try withCodexWorkingDirectory(workspaceURL) {
-            let prompt = AiChatProviderExecutionClient.makeCodexPrompt(payload: try makePayload(
+            let prompt = try AiChatProviderExecutionClient.makeCodexPrompt(payload: makePayload(
                 requestContext: .init(
-                    parts: [makeCodexPathScopePart(displayPath: outsideFileURL.path, canonicalPath: outsideFileURL.path)]
-                )
+                    parts: [
+                        makeCodexPathScopePart(
+                            displayPath: outsideFileURL.path,
+                            canonicalPath: outsideFileURL.path,
+                        ),
+                    ],
+                ),
             ))
 
             XCTAssertTrue(prompt.contains("path: \(outsideFileURL.path)"))
@@ -97,10 +103,12 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
         let resolvedTargetPath = symlinkURL.standardizedFileURL.resolvingSymlinksInPath().standardizedFileURL.path
 
         try withCodexWorkingDirectory(workspaceURL) {
-            let prompt = AiChatProviderExecutionClient.makeCodexPrompt(payload: try makePayload(
+            let prompt = try AiChatProviderExecutionClient.makeCodexPrompt(payload: makePayload(
                 requestContext: .init(
-                    parts: [makeCodexPathScopePart(displayPath: symlinkURL.path, canonicalPath: resolvedTargetPath)]
-                )
+                    parts: [
+                        makeCodexPathScopePart(displayPath: symlinkURL.path, canonicalPath: resolvedTargetPath),
+                    ],
+                ),
             ))
 
             XCTAssertTrue(prompt.contains("path: \(symlinkURL.path)"))
@@ -116,7 +124,7 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
             model: "gpt-5-codex",
             outputURL: URL(fileURLWithPath: "/tmp/codex-output.txt"),
             prompt: "Use the referenced files",
-            thinking: .effort(.medium)
+            thinking: .effort(.medium),
         )
 
         XCTAssertFalse(arguments.contains("--add-dir"))
@@ -124,13 +132,13 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
     }
 
     func testMakeCodexPrompt_marksAssistantTurnsAsTranscriptHistory() throws {
-        let prompt = AiChatProviderExecutionClient.makeCodexPrompt(payload: try makePayload(
+        let prompt = try AiChatProviderExecutionClient.makeCodexPrompt(payload: makePayload(
+            requestContext: .init(),
             messages: [
                 AiChatProviderMessage(role: .user, content: "First question"),
                 AiChatProviderMessage(role: .assistant, content: "First answer"),
                 AiChatProviderMessage(role: .user, content: "Follow-up question"),
             ],
-            requestContext: .init()
         ))
 
         XCTAssertTrue(prompt.contains("Conversation transcript:"), prompt)
@@ -142,8 +150,13 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
     }
 
     private func makePayload(
-        messages: [AiChatProviderMessage] = [AiChatProviderMessage(role: .user, content: "Inspect the referenced files")],
-        requestContext: AiChatLockedRequestContextSnapshot
+        requestContext: AiChatLockedRequestContextSnapshot,
+        messages: [AiChatProviderMessage] = [
+            AiChatProviderMessage(
+                role: .user,
+                content: "Inspect the referenced files",
+            ),
+        ],
     ) throws -> AiChatProviderRequestPayload {
         let requestUUID = try XCTUnwrap(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
         let runUUID = try XCTUnwrap(UUID(uuidString: "66666666-7777-8888-9999-AAAAAAAAAAAA"))
@@ -157,9 +170,9 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
                 runID: AiChatRunID(rawValue: runUUID),
                 requestContext: requestContext,
                 promptSummary: "Inspect the referenced files",
-                submittedAtMs: 1_700_000_000_000
+                submittedAtMs: 1_700_000_000_000,
             ),
-            thinking: nil
+            thinking: nil,
         )
     }
 
@@ -173,19 +186,22 @@ final class AiChatProviderExecutionCodexPromptTests: XCTestCase {
                     "path": displayPath,
                     "displayPath": displayPath,
                     "filePath": canonicalPath,
-                ]
+                ],
             ),
             canonicalPath: canonicalPath,
             displayPath: displayPath,
             fileKind: .file,
             displayTitle: URL(fileURLWithPath: displayPath).lastPathComponent,
             byteCount: 128,
-            mimeType: "text/plain"
+            mimeType: "text/plain",
         )
     }
 
     private func makeTemporaryDirectory(named prefix: String) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "\(prefix)-\(UUID().uuidString)",
+            isDirectory: true,
+        )
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

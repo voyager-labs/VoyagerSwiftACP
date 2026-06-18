@@ -7,22 +7,22 @@ enum AiModelCatalogFixture {
             rawValue: "codex-cli-chat",
             displayName: "Codex CLI Chat",
             sortOrder: 0,
-            flags: (isDefault: true, isRecommended: true)
+            flags: (isDefault: true, isRecommended: true),
         ),
         makeRow(
             provider: .openai,
             rawValue: "gpt-4.1-mini",
             displayName: "GPT-4.1 Mini",
             sortOrder: 10,
-            flags: (isDefault: false, isRecommended: true)
+            flags: (isDefault: false, isRecommended: true),
         ),
         makeRow(
             provider: .anthropic,
             rawValue: "claude-sonnet-4-20250514",
             displayName: "Claude Sonnet 4",
             sortOrder: 20,
-            flags: (isDefault: false, isRecommended: false)
-        )
+            flags: (isDefault: false, isRecommended: false),
+        ),
     ]
 
     static func row(for handle: AiModelHandle) -> AiModelCatalogRow? {
@@ -34,7 +34,7 @@ enum AiModelCatalogFixture {
         rawValue: String,
         displayName: String,
         sortOrder: Int,
-        flags: (isDefault: Bool, isRecommended: Bool)
+        flags: (isDefault: Bool, isRecommended: Bool),
     ) -> AiModelCatalogRow {
         guard let descriptor = ProviderDescriptor.descriptor(for: provider) else {
             fatalError("Missing provider descriptor for \(provider)")
@@ -47,7 +47,7 @@ enum AiModelCatalogFixture {
             subtitle: descriptor.displayName,
             sortOrder: sortOrder,
             isDefault: flags.isDefault,
-            isRecommended: flags.isRecommended
+            isRecommended: flags.isRecommended,
         )
     }
 }

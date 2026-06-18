@@ -31,7 +31,7 @@ public struct SettingsView: View {
                     store.send(.closeWindow)
                 }
                 .keyboardShortcut("w", modifiers: .command)
-                .hidden()
+                .hidden(),
             )
         })
     }

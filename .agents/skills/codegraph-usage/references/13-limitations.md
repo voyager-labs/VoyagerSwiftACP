@@ -65,13 +65,15 @@ CodeGraph does not provide:
 
 Use SourceKit-LSP (via your editor or the `voyager-lsp-context` skill) for these tasks.
 
-### Not a Replacement for macos_checks.py
+### Not a Replacement for Compilation
 
-The `scripts/dev/macos_checks.py` verification pipeline runs actual compilation and test targets. CodeGraph cannot detect:
+CodeGraph is a static analysis index and cannot detect:
 
 - Missing imports that only fail at compile time.
 - Type mismatches that the compiler catches.
 - Test failures.
+
+Use XcodeBuildMCP (`xcodebuild build|test`) for authoritative compilation and test verification.
 
 ### Not a Required Tool
 

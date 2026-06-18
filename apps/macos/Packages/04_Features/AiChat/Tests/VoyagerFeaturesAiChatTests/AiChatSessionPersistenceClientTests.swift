@@ -6,14 +6,15 @@ import XCTest
 final class AiChatSessionPersistenceClientTests: XCTestCase {
     func testLiveAdapterDelegatesToEntityPersistenceClient() async throws {
         let stub = StubSessionPersistenceClient()
-        let sessionID = AiChatSessionID(rawValue: UUID(uuidString: "77777777-7777-7777-7777-777777777777")!)
+        let sessionID =
+            try AiChatSessionID(rawValue: XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777")))
         let snapshot = AiChatSessionSnapshot(
             sessionID: sessionID,
             status: .active,
             provider: .anthropic,
             model: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
             transcriptHistory: [AiChatMessage(role: .user, content: "Restore me")],
-            updatedAtMs: 500
+            updatedAtMs: 500,
         )
         await stub.setLoadResult(snapshot)
         await stub.setListResult([AiChatSessionSummary(snapshot: snapshot)])

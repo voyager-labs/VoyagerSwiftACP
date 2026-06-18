@@ -8,26 +8,14 @@ typealias AiChatProviderCodexExecutor = @Sendable (
     _ onDelta: @escaping @Sendable (String) -> Void,
 ) async throws -> String
 
-struct AiChatProviderExecutionInput: Sendable {
+struct AiChatProviderExecutionInput {
     let preflight: AiChatProviderPreflightResult
     let session: URLSession
     let now: @Sendable () -> Int64
     let codexExecutor: AiChatProviderCodexExecutor
-
-    init(
-        preflight: AiChatProviderPreflightResult,
-        session: URLSession,
-        now: @escaping @Sendable () -> Int64,
-        codexExecutor: @escaping AiChatProviderCodexExecutor,
-    ) {
-        self.preflight = preflight
-        self.session = session
-        self.now = now
-        self.codexExecutor = codexExecutor
-    }
 }
 
-struct AiChatProviderExecutor: Sendable {
+struct AiChatProviderExecutor {
     var execute: @Sendable (AiChatProviderExecutionInput) -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error>
 
     init(
@@ -40,7 +28,7 @@ struct AiChatProviderExecutor: Sendable {
     }
 }
 
-struct AiChatProviderExecutorRegistry: Sendable {
+struct AiChatProviderExecutorRegistry {
     private let executors: [AiProvider: AiChatProviderExecutor]
 
     var registeredProviders: Set<AiProvider> {

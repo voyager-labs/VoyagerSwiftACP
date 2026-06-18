@@ -1,0 +1,12 @@
+id: ui-direct-userdefaults
+language: swift
+severity: error
+message: "Ui 파일에서 UserDefaults.standard를 직접 사용하지 마세요. @Dependency(\\.userDefaultsClient)를 사용하세요."
+note: >
+  Direct UserDefaults access in views is untestable and nondeterministic.
+  Use the abstracted userDefaultsClient dependency instead.
+  Correct:
+    @Dependency(\.userDefaultsClient) var userDefaultsClient
+  Scan: sg scan --rule .ast-grep/rules/ui-direct-userdefaults.yaml **/Ui/*.swift
+rule:
+  pattern: "UserDefaults.standard"

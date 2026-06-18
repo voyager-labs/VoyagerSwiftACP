@@ -105,35 +105,10 @@ enum AiChatStateSelection {
     }
 
     static func defaultThinkingLabel(for capability: AiModelThinkingCapability) -> String {
-        switch capability {
-        case .unsupported, .unknown:
-            "Thinking unavailable"
-        case .effort, .adaptive, .tokenBudget:
-            "default"
-        }
+        CollectionSearchAISelectionPolicy.defaultThinkingLabel(for: capability)
     }
 
     static func thinkingLabel(for selection: AiThinkingSelection) -> String {
-        switch selection {
-        case .none:
-            "none"
-        case let .effort(value):
-            switch value {
-            case .minimal:
-                "minimal"
-            case .low:
-                "low"
-            case .medium:
-                "medium"
-            case .high:
-                "high"
-            case .xhigh:
-                "x-high"
-            case .max:
-                "max"
-            }
-        case let .tokenBudget(value):
-            "\(value) tokens"
-        }
+        CollectionSearchAISelectionPolicy.thinkingLabel(for: selection)
     }
 }

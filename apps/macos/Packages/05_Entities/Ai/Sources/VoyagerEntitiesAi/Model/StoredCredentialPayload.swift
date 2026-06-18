@@ -24,7 +24,7 @@ public struct OAuthCredentialFile: Equatable, Sendable {
         tokenType: String? = nil,
         scopes: [String] = [],
         expiresAtMs: Int64? = nil,
-        chatGPTAccountId: String? = nil
+        chatGPTAccountId: String? = nil,
     ) {
         self.accessToken = accessToken
         self.refreshToken = refreshToken
@@ -64,7 +64,7 @@ extension StoredCredentialPayload: Codable {
             throw DecodingError.dataCorruptedError(
                 forKey: .kind,
                 in: container,
-                debugDescription: "Unknown credential kind: \(kind)"
+                debugDescription: "Unknown credential kind: \(kind)",
             )
         }
     }
@@ -93,7 +93,7 @@ public extension StoredCredentialPayload {
     var redacted: StoredCredentialPayload {
         switch self {
         case let .oauth(oauth):
-            return .oauth(
+            .oauth(
                 OAuthCredentialFile(
                     accessToken: "****",
                     refreshToken: oauth.refreshToken != nil ? "****" : nil,
@@ -101,11 +101,11 @@ public extension StoredCredentialPayload {
                     tokenType: oauth.tokenType,
                     scopes: oauth.scopes,
                     expiresAtMs: oauth.expiresAtMs,
-                    chatGPTAccountId: oauth.chatGPTAccountId
-                )
+                    chatGPTAccountId: oauth.chatGPTAccountId,
+                ),
             )
         case .apiKey:
-            return .apiKey(APIKeyCredentialFile(secret: "****"))
+            .apiKey(APIKeyCredentialFile(secret: "****"))
         }
     }
 }

@@ -21,7 +21,8 @@ private enum FileManagerHostSmokeMode {
 
 @main
 struct FileManagerHostApp: App {
-    @NSApplicationDelegateAdaptor(FileManagerHostAppDelegate.self) private var appDelegate
+    @NSApplicationDelegateAdaptor(FileManagerHostAppDelegate.self)
+    private var appDelegate
 
     init() {
         FileManagerHostSmokeMode.runIfNeeded()

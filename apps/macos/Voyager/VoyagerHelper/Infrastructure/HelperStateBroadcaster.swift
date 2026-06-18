@@ -5,7 +5,7 @@
 final class HelperStateBroadcaster {
     /// DB 초기화/마이그레이션 완료 전에는 false. 완료 후 true로 설정해 메인 앱에 준비 완료를 알린다.
     private var helperFullyReady = false
-    private nonisolated(unsafe) var observer: NSObjectProtocol?
+    nonisolated(unsafe) private var observer: NSObjectProtocol?
 
     /// 등록된 알림 옵저버를 정리한다
     deinit {

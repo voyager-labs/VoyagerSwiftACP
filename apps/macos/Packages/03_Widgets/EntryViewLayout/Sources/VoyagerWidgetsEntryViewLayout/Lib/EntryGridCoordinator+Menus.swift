@@ -22,7 +22,7 @@ extension EntryGridCoordinator: EntryGridView.EntryGridCollectionViewMenuProvidi
         return EntryContextMenuBuilder.makeMenu(configuration: .init(
             target: coordinator,
             selectedCount: menuSpec.selectedCount,
-            rowEntryPathForOpenInNewTab: menuSpec.rowEntryPathForOpenInNewTab,
+            rowEntryPathForOpenInNewWindow: menuSpec.rowEntryPathForOpenInNewWindow,
             canPaste: menuSpec.canPaste,
             showCompress: menuSpec.showCompress,
             showExtract: menuSpec.showExtract,

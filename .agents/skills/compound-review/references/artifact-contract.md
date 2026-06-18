@@ -32,6 +32,9 @@ The workflow is **post-Work only** and **manual-trigger only**. It reads complet
 | **Notepad Files**       | `.sisyphus/notepads/{plan-name}/decisions.md`                                                                                                                                                                        | Optional. Consumed as part of the notepad family.                                                                                                                                                                                                                                                               |
 | **Notepad Files**       | `.sisyphus/notepads/{plan-name}/issues.md`                                                                                                                                                                           | Optional. Consumed as part of the notepad family.                                                                                                                                                                                                                                                               |
 | **Notepad Files**       | `.sisyphus/notepads/{plan-name}/problems.md`                                                                                                                                                                         | Optional. Consumed as part of the notepad family. Records unresolved issues and technical debt.                                                                                                                                                                                                                 |
+| **Knowledge Entries**   | `.sisyphus/knowledge/index.json`                                                                                                                                                                                     | Optional. Cross-session knowledge entry index managed by sisyphus-wiki. Contains `nodes[]` with `id`, `title`, `type`, `status`, `path`, `tags[]` fields. Association is by tag matching against plan context, not directory name.                                                                              |
+| **Knowledge Entries**   | `.sisyphus/knowledge/entries/*.md`                                                                                                                                                                                   | Optional. Individual knowledge entry files. Only entries whose tags overlap with plan context are consumed. If no entries match, skip knowledge entirely.                                                                                                                                                       |
+| **Knowledge Entries**   | `.sisyphus/knowledge/graph.jsonl`                                                                                                                                                                                    | Optional. Cross-entry edge graph with `from`, `to`, `type` fields per line. Consumed only when knowledge entries were matched, to provide relationship context for associated entries.                                                                                                                          |
 
 ### Facet File Requirements
 
@@ -96,14 +99,16 @@ F4 reviewers MUST reference a baseline commit captured before the plan execution
 
 ### Input Field Reference
 
-| Field                   | Type     | Description                                                                               |
-| ----------------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `plan_slug`             | string   | Identifies the case. Extracted from the plan filename (`{plan-name}` without `.md`).      |
-| `run_id`                | string   | A unique run identifier. In v2, use the execution timestamp string (`YYYY-MM-DD-HHMMSS`). |
-| `evidence_files`        | string[] | List of evidence file paths actually found, sorted alphabetically.                        |
-| `facets_present`        | string[] | List of f1-f4 facets actually present (`f1`, `f2`, etc.).                                 |
-| `notepad_dir`           | string   | Path to the matching notepad directory (`.sisyphus/notepads/{plan_slug}/`).               |
-| `notepad_files_present` | string[] | List of notepad files found (`learnings.md`, `decisions.md`, `issues.md`, `problems.md`). |
+| Field                   | Type     | Description                                                                                |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `plan_slug`             | string   | Identifies the case. Extracted from the plan filename (`{plan-name}` without `.md`).       |
+| `run_id`                | string   | A unique run identifier. In v2, use the execution timestamp string (`YYYY-MM-DD-HHMMSS`).  |
+| `evidence_files`        | string[] | List of evidence file paths actually found, sorted alphabetically.                         |
+| `facets_present`        | string[] | List of f1-f4 facets actually present (`f1`, `f2`, etc.).                                  |
+| `notepad_dir`           | string   | Path to the matching notepad directory (`.sisyphus/notepads/{plan_slug}/`).                |
+| `notepad_files_present` | string[] | List of notepad files found (`learnings.md`, `decisions.md`, `issues.md`, `problems.md`).  |
+| `knowledge_entries`     | string[] | List of knowledge entry file paths matched by tag overlap. Empty if no knowledge consumed. |
+| `knowledge_graph`       | string   | Path to `graph.jsonl` if present and knowledge entries were matched. Omitted otherwise.    |
 
 ---
 
@@ -150,6 +155,10 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
         "notepads": {
             "learnings": ".sisyphus/notepads/grid-drop-folder-thumbnail-ux-naturalization/learnings.md",
             "decisions": ".sisyphus/notepads/grid-drop-folder-thumbnail-ux-naturalization/decisions.md"
+        },
+        "knowledge": {
+            "entries": [".sisyphus/knowledge/entries/drag-drop-lifecycle-patterns.md"],
+            "graph": ".sisyphus/knowledge/graph.jsonl"
         }
     },
     "outputs": {
@@ -163,7 +172,8 @@ All outputs are **run-scoped**: they live under a run directory named by `{plan_
         "source_plan": ".sisyphus/plans/voy-208-grid-drop-interaction-stabilization.md",
         "source_evidence": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/task-1-grid-drop-contract.txt", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/task-5-grid-drop-evidence-index.txt"],
         "source_facets": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f1-plan-compliance.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f2-code-quality.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f3-manual-qa.md", ".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f4-scope-fidelity.md"],
-        "source_notepads": ["grid-drop-folder-thumbnail-ux-naturalization"]
+        "source_notepads": ["grid-drop-folder-thumbnail-ux-naturalization"],
+        "source_knowledge": [".sisyphus/knowledge/entries/drag-drop-lifecycle-patterns.md"]
     },
     "evidence_sources_consumed": {
         "for_findings": [".sisyphus/evidence/voy-208-grid-drop-interaction-stabilization/f1-plan-compliance.md"],

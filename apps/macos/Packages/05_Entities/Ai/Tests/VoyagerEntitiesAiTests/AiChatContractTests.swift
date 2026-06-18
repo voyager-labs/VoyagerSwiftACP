@@ -20,7 +20,7 @@ final class AiChatContractTests: XCTestCase {
             subtitle: "Fast general-purpose chat",
             sortOrder: 10,
             isDefault: true,
-            isRecommended: true
+            isRecommended: true,
         )
         let encoded = try JSONEncoder().encode(row)
         let decoded = try JSONDecoder().decode(AiModelCatalogRow.self, from: encoded)
@@ -29,19 +29,22 @@ final class AiChatContractTests: XCTestCase {
         XCTAssertEqual(ProviderDescriptor.descriptor(for: decoded.handle.provider)?.authMethod, decoded.authMethod)
     }
 
-    // swiftlint:disable:next function_body_length
     func testRequestContextSnapshot_roundTrips() throws {
-        let snapshot = AiChatRequestContextSnapshot(
-            sessionID: AiChatSessionID(rawValue: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!),
-            requestID: AiChatRequestID(rawValue: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!),
-            runID: AiChatRunID(rawValue: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!),
+        let snapshot = try AiChatRequestContextSnapshot(
+            sessionID: AiChatSessionID(
+                rawValue: XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111")),
+            ),
+            requestID: AiChatRequestID(
+                rawValue: XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222")),
+            ),
+            runID: AiChatRunID(rawValue: XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333"))),
             provider: .anthropic,
             model: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
             selectedModelRow: AiModelCatalogRow(
                 handle: AiModelHandle(provider: .anthropic, rawValue: "claude-sonnet-4-20250514"),
                 displayName: "Claude Sonnet 4",
                 authMethod: .apiKey,
-                sortOrder: 2
+                sortOrder: 2,
             ),
             sessionStatus: .restoring,
             currentContext: AiChatCurrentContextSnapshot(
@@ -52,8 +55,8 @@ final class AiChatContractTests: XCTestCase {
                         identifier: "ref-1",
                         title: "Readme.md",
                         subtitle: "Project readme",
-                        metadata: ["path": "docs/Readme.md"]
-                    )
+                        metadata: ["path": "docs/Readme.md"],
+                    ),
                 ],
                 items: [
                     AiChatContextItem(
@@ -67,22 +70,22 @@ final class AiChatContractTests: XCTestCase {
                                 kind: .selection,
                                 identifier: "selection-1",
                                 title: "Selection",
-                                metadata: ["line": "12"]
-                            )
-                        ]
-                    )
+                                metadata: ["line": "12"],
+                            ),
+                        ],
+                    ),
                 ],
                 attachments: [
                     AiChatContextAttachment(
                         identifier: "attachment-1",
                         title: "Screenshot",
                         subtitle: "Current state",
-                        metadata: ["mimeType": "image/png"]
-                    )
-                ]
+                        metadata: ["mimeType": "image/png"],
+                    ),
+                ],
             ),
             promptSummary: "Summarize the selected files",
-            submittedAtMs: 1_700_000_000_000
+            submittedAtMs: 1_700_000_000_000,
         )
 
         let encoded = try JSONEncoder().encode(snapshot)
@@ -98,18 +101,22 @@ final class AiChatContractTests: XCTestCase {
     }
 
     func testSessionSnapshotAndRestoreResult_roundTrips() throws {
-        let session = AiChatSessionSnapshot(
-            sessionID: AiChatSessionID(rawValue: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!),
+        let session = try AiChatSessionSnapshot(
+            sessionID: AiChatSessionID(
+                rawValue: XCTUnwrap(UUID(uuidString: "44444444-4444-4444-4444-444444444444")),
+            ),
             status: .active,
             provider: .openai,
             model: AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
             transcriptHistory: [
                 AiChatMessage(role: .user, content: "Summarize the diffs"),
-                AiChatMessage(role: .assistant, content: "Here is a summary")
+                AiChatMessage(role: .assistant, content: "Here is a summary"),
             ],
-            lastRequestID: AiChatRequestID(rawValue: UUID(uuidString: "55555555-5555-5555-5555-555555555555")!),
-            lastRunID: AiChatRunID(rawValue: UUID(uuidString: "66666666-6666-6666-6666-666666666666")!),
-            updatedAtMs: 1_700_000_000_100
+            lastRequestID: AiChatRequestID(
+                rawValue: XCTUnwrap(UUID(uuidString: "55555555-5555-5555-5555-555555555555")),
+            ),
+            lastRunID: AiChatRunID(rawValue: XCTUnwrap(UUID(uuidString: "66666666-6666-6666-6666-666666666666"))),
+            updatedAtMs: 1_700_000_000_100,
         )
 
         let encodedSession = try JSONEncoder().encode(session)
@@ -133,9 +140,11 @@ final class AiChatContractTests: XCTestCase {
     }
 
     func testChatRequestResponseEvent_roundTrips() throws {
-        let context = AiChatRequestContextSnapshot(
-            requestID: AiChatRequestID(rawValue: UUID(uuidString: "77777777-7777-7777-7777-777777777777")!),
-            runID: AiChatRunID(rawValue: UUID(uuidString: "88888888-8888-8888-8888-888888888888")!),
+        let context = try AiChatRequestContextSnapshot(
+            requestID: AiChatRequestID(
+                rawValue: XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777")),
+            ),
+            runID: AiChatRunID(rawValue: XCTUnwrap(UUID(uuidString: "88888888-8888-8888-8888-888888888888"))),
             provider: .chatgptCodex,
             model: AiModelHandle(provider: .chatgptCodex, rawValue: "codex-cli-chat"),
             sessionStatus: .idle,
@@ -146,30 +155,30 @@ final class AiChatContractTests: XCTestCase {
                         kind: .note,
                         identifier: "note-1",
                         title: "Locked context",
-                        metadata: ["locked": "true"]
-                    )
-                ]
+                        metadata: ["locked": "true"],
+                    ),
+                ],
             ),
             promptSummary: "Keep it short",
-            submittedAtMs: 1_700_000_000_200
+            submittedAtMs: 1_700_000_000_200,
         )
         let request = AiChatRequest(
             context: context,
             messages: [
                 AiChatMessage(role: .system, content: "You are helpful."),
-                AiChatMessage(role: .user, content: "Hello")
-            ]
+                AiChatMessage(role: .user, content: "Hello"),
+            ],
         )
         let response = AiChatResponse(
             context: context,
             assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
-            completedAtMs: 1_700_000_000_300
+            completedAtMs: 1_700_000_000_300,
         )
         let events: [AiChatEvent] = [
             .started(context: context),
             .delta(context: context, text: "Hi"),
             .final(response: response),
-            .failed(context: context, reason: .transportError)
+            .failed(context: context, reason: .transportError),
         ]
 
         XCTAssertEqual(try JSONDecoder().decode(AiChatRequest.self, from: JSONEncoder().encode(request)), request)
@@ -183,7 +192,7 @@ final class AiChatContractTests: XCTestCase {
         for failure in AiChatExecutionFailure.allCases {
             XCTAssertEqual(
                 try JSONDecoder().decode(AiChatExecutionFailure.self, from: JSONEncoder().encode(failure)),
-                failure
+                failure,
             )
         }
     }
@@ -202,12 +211,12 @@ final class AiChatContractTests: XCTestCase {
                         AiChatContextReference(
                             kind: .attachment,
                             identifier: "attachment-2",
-                            title: "Design sketch"
-                        )
-                    ]
-                )
+                            title: "Design sketch",
+                        ),
+                    ],
+                ),
             ),
-            messages: []
+            messages: [],
         )
 
         _assertSendable(request)
@@ -217,14 +226,14 @@ final class AiChatContractTests: XCTestCase {
             provider: .openai,
             model: AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini"),
             transcriptHistory: [AiChatMessage(role: .user, content: "Hi")],
-            updatedAtMs: 0
+            updatedAtMs: 0,
         ))
         _assertSendable(TestExecutionClient())
         _assertSendable(TestPersistenceClient())
     }
 }
 
-private func _assertSendable<T: Sendable>(_ value: T) {
+private func _assertSendable(_ value: some Sendable) {
     _ = value
 }
 
@@ -238,8 +247,14 @@ private struct TestExecutionClient: AiChatExecutionClientProtocol {
 }
 
 private struct TestPersistenceClient: AiChatSessionPersistenceClientProtocol {
-    func listSessions(limit _: Int?, query _: String?) async throws -> [AiChatSessionSummary] { [] }
-    func loadSession(id _: AiChatSessionID) async throws -> AiChatSessionSnapshot? { nil }
+    func listSessions(limit _: Int?, query _: String?) async throws -> [AiChatSessionSummary] {
+        []
+    }
+
+    func loadSession(id _: AiChatSessionID) async throws -> AiChatSessionSnapshot? {
+        nil
+    }
+
     func saveSession(_: AiChatSessionSnapshot) async throws {}
     func deleteSession(id _: AiChatSessionID) async throws {}
 }

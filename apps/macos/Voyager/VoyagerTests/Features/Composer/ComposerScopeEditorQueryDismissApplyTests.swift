@@ -5,7 +5,7 @@ import VoyagerShared
 import XCTest
 
 @MainActor
-final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase { // swiftlint:disable:this type_name
+final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase {
     func testScopeEditorDismissSubmitsSearchForQueryOnlyIncludeSubfoldersChange() async {
         let searchRecorder = QueryDismissSearchRecorder()
         let store = makeQueryOnlyStore(recorder: searchRecorder) { state in
@@ -190,7 +190,6 @@ final class ComposerScopeEditorQueryDismissApplyTests: XCTestCase { // swiftlint
         XCTAssertEqual(store.state.text, "")
     }
 
-    // swiftlint:disable:next function_body_length
     private func performRepeatedCycle(on store: TestStore<ComposerState, ComposerAction>) async throws {
         await store.send(.scopeEditorOpen(editingPath: nil, favorites: [], backHistory: [])) {
             $0.scopeEditor.isPresented = true

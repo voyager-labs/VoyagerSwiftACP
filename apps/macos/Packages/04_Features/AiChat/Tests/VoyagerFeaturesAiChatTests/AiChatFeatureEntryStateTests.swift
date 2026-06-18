@@ -7,7 +7,6 @@ import XCTest
 // CBW001/CBW004 spec-owner suite 밖에 남긴 AiChat entry state 회귀 테스트.
 // current context fixture, provider unavailable surface, canSubmit guard 같은 display/state contract를 보존한다.
 
-// swiftlint:disable:next type_body_length
 @MainActor
 final class AiChatFeatureEntryStateTests: XCTestCase {
     /// current context summary fixture가 inspector 표시 contract와 일치하는지 검증

@@ -87,7 +87,7 @@ struct AiChatInputTextView: NSViewRepresentable {
         let textWidth = max(0, availableWidth - Self.trailingReservedWidth)
         textView.textContainer?.containerSize = NSSize(
             width: textWidth,
-            height: CGFloat.greatestFiniteMagnitude
+            height: CGFloat.greatestFiniteMagnitude,
         )
     }
 
@@ -124,7 +124,7 @@ struct AiChatInputTextView: NSViewRepresentable {
             let layoutManager = NSLayoutManager()
             let textContainer = NSTextContainer(containerSize: NSSize(
                 width: CGFloat.greatestFiniteMagnitude,
-                height: CGFloat.greatestFiniteMagnitude
+                height: CGFloat.greatestFiniteMagnitude,
             ))
             textContainer.widthTracksTextView = false
             layoutManager.addTextContainer(textContainer)
@@ -135,7 +135,7 @@ struct AiChatInputTextView: NSViewRepresentable {
         }
 
         @available(*, unavailable)
-        required init?(coder: NSCoder) {
+        required init?(coder _: NSCoder) {
             nil
         }
 
@@ -192,9 +192,9 @@ struct AiChatInputTextView: NSViewRepresentable {
 
         @MainActor
         func textView(
-            _ textView: NSTextView,
+            _: NSTextView,
             readSelectionFrom pasteboard: NSPasteboard,
-            type _: NSPasteboard.PasteboardType
+            type _: NSPasteboard.PasteboardType,
         ) -> Bool {
             let urls = Self.fileURLs(from: pasteboard)
             guard !urls.isEmpty else { return false }
@@ -210,7 +210,7 @@ struct AiChatInputTextView: NSViewRepresentable {
 
         func textView(
             _ textView: NSTextView,
-            doCommandBy commandSelector: Selector
+            doCommandBy commandSelector: Selector,
         ) -> Bool {
             guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
                 return false
@@ -231,7 +231,7 @@ struct AiChatInputTextView: NSViewRepresentable {
 
             if let objectURLs = pasteboard.readObjects(
                 forClasses: [NSURL.self],
-                options: [.urlReadingFileURLsOnly: true]
+                options: [.urlReadingFileURLsOnly: true],
             ) as? [URL] {
                 urls.append(contentsOf: objectURLs)
             }

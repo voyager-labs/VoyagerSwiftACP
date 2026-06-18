@@ -2,7 +2,7 @@ import ComposableArchitecture
 import CoreGraphics
 import VoyagerFeaturesAiChat
 
-enum FileManagerInspectorMode: Equatable, Sendable {
+enum FileManagerInspectorMode: Equatable {
     case chat
 }
 

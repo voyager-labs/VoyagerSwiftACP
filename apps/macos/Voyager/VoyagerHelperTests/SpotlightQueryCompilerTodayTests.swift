@@ -80,7 +80,10 @@ final class SpotlightQueryCompilerTodayTests: XCTestCase {
     }
 
     func testTodayOffsetLiteralParsesIntoSignedOffset() {
-        XCTAssertEqual(SearchDateUtils.todayOffset(for: SearchDateUtils.recentsTodayLiteral), SearchDateUtils.recentsTodayOffset)
+        XCTAssertEqual(
+            SearchDateUtils.todayOffset(for: SearchDateUtils.recentsTodayLiteral),
+            SearchDateUtils.recentsTodayOffset,
+        )
         XCTAssertNotNil(SearchDateUtils.parseDateLiteral(SearchDateUtils.recentsTodayLiteral))
     }
 }

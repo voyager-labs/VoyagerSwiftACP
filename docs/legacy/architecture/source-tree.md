@@ -29,7 +29,7 @@ voyager-app/
 ├─ scripts/                     # 빌드/CI 스크립트
 ├─ .agents/rules/               # 에이전트/자동화 규칙
 ├─ .agents/skills/              # AI 에이전트 스킬 정의(실체)
-└─ .claude/skills -> ../.agents/skills  # 호환용 심볼릭 링크
+└─ # .claude/skills -> ../.agents/skills  # 삭제됨 (PR #264)
 ```
 
 ---
@@ -388,7 +388,7 @@ scripts/
 ## .agents/skills/ - AI 에이전트 스킬
 
 OpenCode/Claude 에이전트를 위한 스킬 정의입니다.
-`.claude/skills`는 이 디렉터리를 가리키는 호환용 심볼릭 링크입니다.
+`.claude/skills`는 삭제되었습니다 (PR #264, common submodule로 통합).
 
 ```
 .agents/skills/
@@ -419,7 +419,7 @@ OpenCode/Claude 에이전트를 위한 스킬 정의입니다.
 - `scripts/`: 자동화 스크립트
 - `.agents/rules/`: IDE/에이전트 규칙
 - `.agents/skills/`: AI 스킬(실체)
-- `.claude/skills`: `.agents/skills/`를 가리키는 호환용 심볼릭 링크
+- ~~`.claude/skills`: `.agents/skills/`를 가리키는 호환용 심볼릭 링크~~ (삭제됨)
 
 ### 2. 백엔드 레이어 분리
 

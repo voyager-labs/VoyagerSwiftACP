@@ -12,8 +12,7 @@ public enum SettingsAction: CasePathable, Sendable {
 
     case general(GeneralSettingsAction)
     case appearance(AppearanceSettingsAction)
-    case ai(AiSettingsAction) // swiftlint:disable:this identifier_name
-
+    case ai(AiSettingsAction)
     @CasePathable
     public enum Delegate: CasePathable, Sendable {
         case aiConnectionsFileUpdated(AIConnectionsFile)

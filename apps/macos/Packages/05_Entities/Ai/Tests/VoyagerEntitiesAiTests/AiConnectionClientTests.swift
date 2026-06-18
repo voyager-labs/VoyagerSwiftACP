@@ -92,7 +92,7 @@ final class AIConnectionStatusTests: XCTestCase {
     func testAIConnectionStatus_invalidCredential_differentReasons_notEqual() {
         XCTAssertNotEqual(
             AIConnectionStatus.invalidCredential(.expired),
-            .invalidCredential(.invalidAPIKey)
+            .invalidCredential(.invalidAPIKey),
         )
     }
 
@@ -118,8 +118,11 @@ final class AIConnectionStatusTests: XCTestCase {
 
         for i in 0 ..< cases.count {
             for j in (i + 1) ..< cases.count {
-                XCTAssertNotEqual(cases[i], cases[j],
-                                  "AIConnectionStatus cases must be pairwise distinct: \(cases[i]) vs \(cases[j])")
+                XCTAssertNotEqual(
+                    cases[i],
+                    cases[j],
+                    "AIConnectionStatus cases must be pairwise distinct: \(cases[i]) vs \(cases[j])",
+                )
             }
         }
     }
@@ -137,7 +140,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_withConnectedCredential_valid_returnsReady() async {
         let sut = makeClient(
             storedFile: storedFileWithCredential(status: .connected),
-            verifyResult: .valid
+            verifyResult: .valid,
         )
         let status = await sut.checkStatus(.openai)
         XCTAssertEqual(status, .ready)
@@ -146,7 +149,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_withFailedCredential_returnsInvalidCredential() async {
         let sut = makeClient(
             storedFile: storedFileWithCredential(status: .connectionFailed, errorCode: .expired),
-            verifyResult: .valid
+            verifyResult: .valid,
         )
         let status = await sut.checkStatus(.openai)
         XCTAssertEqual(status, .invalidCredential(.expired))
@@ -155,7 +158,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_withConnectedCredential_invalid_returnsInvalidCredential() async {
         let sut = makeClient(
             storedFile: storedFileWithCredential(status: .connected),
-            verifyResult: .invalid(.invalidAPIKey)
+            verifyResult: .invalid(.invalidAPIKey),
         )
         let status = await sut.checkStatus(.openai)
         XCTAssertEqual(status, .invalidCredential(.invalidAPIKey))
@@ -164,7 +167,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_withConnectedCredential_networkError_returnsNetworkUnavailable() async {
         let sut = makeClient(
             storedFile: storedFileWithCredential(status: .connected),
-            verifyResult: .networkError
+            verifyResult: .networkError,
         )
         let status = await sut.checkStatus(.openai)
         XCTAssertEqual(status, .networkUnavailable)
@@ -173,7 +176,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_withConnectedCredential_unsupportedProvider_returnsVerificationFailed() async {
         let sut = makeClient(
             storedFile: storedFileWithCredential(status: .connected),
-            verifyResult: .unsupportedProvider
+            verifyResult: .unsupportedProvider,
         )
         let status = await sut.checkStatus(.openai)
         XCTAssertEqual(status, .verificationFailed)
@@ -182,14 +185,15 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_withNotVerifiedCredential_returnsNotConfigured() async {
         let sut = makeClient(
             storedFile: storedFileWithCredential(status: .notVerified),
-            verifyResult: .valid
+            verifyResult: .valid,
         )
         let status = await sut.checkStatus(.openai)
         XCTAssertEqual(status, .notConfigured)
     }
 
     func testDependencyKey_registered_and_returnsTestValue() async {
-        @Dependency(\.aiConnectionStatusClient) var client
+        @Dependency(\.aiConnectionStatusClient)
+        var client
         let status = await client.checkStatus(.openai)
         XCTAssertEqual(status, .ready)
     }
@@ -199,7 +203,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_codexOAuth_connectedWithValidCredential_returnsReady() async {
         let sut = makeClient(
             storedFile: codexStoredFileWithCredential(status: .connected),
-            verifyResult: .valid
+            verifyResult: .valid,
         )
         let status = await sut.checkStatus(.chatgptCodex)
         XCTAssertEqual(status, .ready)
@@ -208,7 +212,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_codexOAuth_connectedWithInvalidCredential_returnsInvalidCredential() async {
         let sut = makeClient(
             storedFile: codexStoredFileWithCredential(status: .connected),
-            verifyResult: .invalid(.expired)
+            verifyResult: .invalid(.expired),
         )
         let status = await sut.checkStatus(.chatgptCodex)
         XCTAssertEqual(status, .invalidCredential(.expired))
@@ -217,7 +221,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_codexOAuth_notConfigured_returnsNotConfigured() async {
         let sut = makeClient(
             storedFile: .empty(),
-            verifyResult: .valid
+            verifyResult: .valid,
         )
         let status = await sut.checkStatus(.chatgptCodex)
         XCTAssertEqual(status, .notConfigured)
@@ -226,7 +230,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_codexOAuth_connectedNetworkError_returnsNetworkUnavailable() async {
         let sut = makeClient(
             storedFile: codexStoredFileWithCredential(status: .connected),
-            verifyResult: .networkError
+            verifyResult: .networkError,
         )
         let status = await sut.checkStatus(.chatgptCodex)
         XCTAssertEqual(status, .networkUnavailable)
@@ -235,7 +239,7 @@ final class AiConnectionStatusClientTests: XCTestCase {
     func testStatus_codexOAuth_connectedUnsupportedProvider_returnsVerificationFailed() async {
         let sut = makeClient(
             storedFile: codexStoredFileWithCredential(status: .connected),
-            verifyResult: .unsupportedProvider
+            verifyResult: .unsupportedProvider,
         )
         let status = await sut.checkStatus(.chatgptCodex)
         XCTAssertEqual(status, .verificationFailed)
@@ -245,9 +249,9 @@ final class AiConnectionStatusClientTests: XCTestCase {
         let sut = makeClient(
             storedFile: codexStoredFileWithCredential(
                 status: .connectionFailed,
-                errorCode: .oauthRejected
+                errorCode: .oauthRejected,
             ),
-            verifyResult: .valid
+            verifyResult: .valid,
         )
         let status = await sut.checkStatus(.chatgptCodex)
         XCTAssertEqual(status, .invalidCredential(.oauthRejected))
@@ -255,11 +259,11 @@ final class AiConnectionStatusClientTests: XCTestCase {
 
     private func makeClient(
         storedFile: AIConnectionsFile,
-        verifyResult: AiProviderVerificationResult = .valid
+        verifyResult: AiProviderVerificationResult = .valid,
     ) -> AiConnectionStatusClient {
         let runtimeClient = AiConnectionRuntimeClient(
             verifyProvider: { _, _ in verifyResult },
-            resolveAdapter: { _, _ in nil }
+            resolveAdapter: { _, _ in nil },
         )
         return AiConnectionStatusClient(
             checkStatus: { provider in
@@ -280,18 +284,17 @@ final class AiConnectionStatusClientTests: XCTestCase {
                     }
                 }
                 switch record.snapshot.lastKnownStatus {
-                case .connected: return .ready
                 case .connectionFailed: return .invalidCredential(record.snapshot.lastErrorCode)
                 case .notVerified: return .notConfigured
                 default: return .notConfigured
                 }
-            }
+            },
         )
     }
 
     private func storedFileWithCredential(
         status: ProviderConnectionState = .connected,
-        errorCode: ProviderStatusReason = .none
+        errorCode: ProviderStatusReason = .none,
     ) -> AIConnectionsFile {
         AIConnectionsFile(
             updatedAtMs: 1_760_000_000_000,
@@ -303,16 +306,16 @@ final class AiConnectionStatusClientTests: XCTestCase {
                     snapshot: ProviderSnapshotFile(
                         lastKnownStatus: status,
                         lastVerifiedAtMs: 1_760_000_000_000,
-                        lastErrorCode: errorCode
-                    )
+                        lastErrorCode: errorCode,
+                    ),
                 ),
-            ]
+            ],
         )
     }
 
     private func codexStoredFileWithCredential(
         status: ProviderConnectionState = .connected,
-        errorCode: ProviderStatusReason = .none
+        errorCode: ProviderStatusReason = .none,
     ) -> AIConnectionsFile {
         AIConnectionsFile(
             updatedAtMs: 1_760_000_000_000,
@@ -324,10 +327,10 @@ final class AiConnectionStatusClientTests: XCTestCase {
                     snapshot: ProviderSnapshotFile(
                         lastKnownStatus: status,
                         lastVerifiedAtMs: 1_760_000_000_000,
-                        lastErrorCode: errorCode
-                    )
+                        lastErrorCode: errorCode,
+                    ),
                 ),
-            ]
+            ],
         )
     }
 }
@@ -336,18 +339,20 @@ final class AiConnectionStatusClientTests: XCTestCase {
 
 final class AIProviderVerificationClientTests: XCTestCase {
     func testDependencyKey_returnsTestValue() async {
-        @Dependency(\.aiProviderVerificationClient) var client
+        @Dependency(\.aiProviderVerificationClient)
+        var client
         let result = await client.verify(.openai, nil)
         XCTAssertEqual(result, .valid)
     }
 
     func testVerifyProvider_nilCredential_returnsMissingCredential() {
         let client = AiConnectionRuntimeClient(
+            // swiftlint:disable:next unused_closure_parameter
             verifyProvider: { _, credential in
                 guard let credential else { return .invalid(.missingCredential) }
                 return .valid
             },
-            resolveAdapter: { _, _ in nil }
+            resolveAdapter: { _, _ in nil },
         )
         let result = awaitTest { await client.verifyProvider(.openai, nil) }
         XCTAssertEqual(result, .invalid(.missingCredential))
@@ -364,7 +369,7 @@ final class AIProviderVerificationClientTests: XCTestCase {
                 guard !secret.isEmpty else { return .invalid(.invalidAPIKey) }
                 return .valid
             },
-            resolveAdapter: { _, _ in nil }
+            resolveAdapter: { _, _ in nil },
         )
         let credential = StoredCredentialPayload.apiKey(APIKeyCredentialFile(secret: ""))
         let result = awaitTest { await client.verifyProvider(.openai, credential) }
@@ -376,7 +381,8 @@ final class AIProviderVerificationClientTests: XCTestCase {
 
 final class AIConnectionsFileClientTests: XCTestCase {
     func testDependencyKey_returnsTestValue() async throws {
-        @Dependency(\.aiConnectionsFileClient) var client
+        @Dependency(\.aiConnectionsFileClient)
+        var client
         let file = try await client.load()
         XCTAssertEqual(file, AIConnectionsFile.empty())
     }
@@ -397,14 +403,16 @@ final class AIConnectionsFileClientTests: XCTestCase {
 
 final class AIProviderConnectionClientTests: XCTestCase {
     func testDependencyKey_testValue_connectAPIKey() async {
-        @Dependency(\.aiProviderConnectionClient) var client
+        @Dependency(\.aiProviderConnectionClient)
+        var client
         let result = await client.connectAPIKey(.openai, "sk-test", .connected)
         XCTAssertEqual(result.provider, .openai)
         XCTAssertEqual(result.state, .connected)
     }
 
     func testDependencyKey_testValue_disconnect() async {
-        @Dependency(\.aiProviderConnectionClient) var client
+        @Dependency(\.aiProviderConnectionClient)
+        var client
         let result = await client.disconnect(.openai)
         XCTAssertEqual(result.provider, .openai)
         XCTAssertEqual(result.state, .notVerified)
@@ -415,13 +423,13 @@ final class AIProviderConnectionClientTests: XCTestCase {
             provider: .openai,
             state: .connected,
             reason: .none,
-            updatedFile: .empty()
+            updatedFile: .empty(),
         )
         let b = AiProviderConnectionResult(
             provider: .openai,
             state: .connected,
             reason: .none,
-            updatedFile: .empty()
+            updatedFile: .empty(),
         )
         XCTAssertEqual(a, b)
     }
@@ -446,7 +454,7 @@ final class CodexNativeAuthErrorTests: XCTestCase {
     func testDifferentNetworkMessages_notEqual() {
         XCTAssertNotEqual(
             CodexNativeAuthError.networkError("a"),
-            .networkError("b")
+            .networkError("b"),
         )
     }
 }
@@ -455,7 +463,7 @@ final class CodexNativeAuthErrorTests: XCTestCase {
 
 private func awaitTest<T: Sendable>(
     timeout: TimeInterval = 2.0,
-    _ operation: @escaping @Sendable () async -> T
+    _ operation: @escaping @Sendable () async -> T,
 ) -> T {
     let expectation = XCTestExpectation()
     nonisolated(unsafe) var result: T?
@@ -464,5 +472,9 @@ private func awaitTest<T: Sendable>(
         expectation.fulfill()
     }
     _ = XCTWaiter.wait(for: [expectation], timeout: timeout)
-    return result!
+    guard let unwrapped = result else {
+        XCTFail("awaitTest timed out or returned nil")
+        fatalError("awaitTest: result was nil after wait")
+    }
+    return unwrapped
 }

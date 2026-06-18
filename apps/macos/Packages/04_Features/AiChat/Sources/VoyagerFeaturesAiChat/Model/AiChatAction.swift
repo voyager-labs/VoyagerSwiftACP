@@ -86,6 +86,8 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case persistenceFailed(AiChatRequestLock, AiChatExecutionFailure)
     case persistenceRecoverySucceeded(AiChatRequestLock)
     case persistenceRecoveryRetryFailed(AiChatRequestLock, AiChatExecutionFailure)
+    case transcriptScrollOffsetsLoaded([AiChatSessionID: CGFloat])
+    case transcriptScrollOffsetChanged(AiChatSessionID, CGFloat)
 
     @CasePathable
     public enum Delegate: CasePathable, Equatable, Sendable {

@@ -23,18 +23,18 @@ final class CodexImportNormalizationTests: XCTestCase {
             refreshToken: "rt_fixture_full",
             tokenType: "Bearer",
             scopes: ["profile", "email", "openid"],
-            expiresAtMs: 1_760_003_600_000
+            expiresAtMs: 1_760_003_600_000,
         )
 
         let record = ProviderRecordFile(
             providerId: .chatgptCodex,
             authMethod: .codexCLI,
             credential: .oauth(oauthCred),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
 
         let normalized = AIConnectionsNormalizer.normalize(file)
@@ -42,7 +42,7 @@ final class CodexImportNormalizationTests: XCTestCase {
         XCTAssertNotNil(codex)
         XCTAssertEqual(codex?.authMethod, .codexCLI)
         XCTAssertEqual(codex?.snapshot.lastKnownStatus, .connected)
-        XCTAssertEqual(codex!.snapshot.lastErrorCode, .none)
+        XCTAssertEqual(codex?.snapshot.lastErrorCode, .none)
     }
 
     // MARK: - Normalizer: credential kind mismatch
@@ -54,11 +54,11 @@ final class CodexImportNormalizationTests: XCTestCase {
             providerId: .chatgptCodex,
             authMethod: .apiKey,
             credential: .oauth(oauthCred),
-            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected)
+            snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
         )
         let file = AIConnectionsFile(
             updatedAtMs: 1000,
-            providers: ["chatgptCodex": record]
+            providers: ["chatgptCodex": record],
         )
 
         let normalized = AIConnectionsNormalizer.normalize(file)
@@ -92,7 +92,7 @@ final class CodexImportNormalizationTests: XCTestCase {
             }
         }
         """
-        let data = legacyJSON.data(using: .utf8)!
+        let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
         let decoded = try decoder.decode(AIConnectionsFile.self, from: data)
 
         let codexBefore = try XCTUnwrap(decoded.providers["chatgptCodex"])
@@ -136,7 +136,7 @@ final class CodexImportNormalizationTests: XCTestCase {
             }
         }
         """
-        let data = canonicalJSON.data(using: .utf8)!
+        let data = try XCTUnwrap(canonicalJSON.data(using: .utf8))
         let decoded = try decoder.decode(AIConnectionsFile.self, from: data)
         let normalized = AIConnectionsNormalizer.normalize(decoded)
         let codex = try XCTUnwrap(normalized.providers["chatgptCodex"])
@@ -164,7 +164,7 @@ final class CodexImportNormalizationTests: XCTestCase {
             }
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let decoded = try decoder.decode(ProviderRecordFile.self, from: data)
 
         XCTAssertEqual(decoded.providerId, .chatgptCodex)

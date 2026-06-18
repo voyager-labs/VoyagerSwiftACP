@@ -32,18 +32,5 @@ public struct FileManagerFeature {
         FileManagerWindowPreferencesReducer()
         FileManagerWindowRoutingReducer()
         FileManagerWindowCommandRoutingReducer()
-
-        Reduce { _, action in
-            switch action {
-            case let .content(.delegate(.openPathInNewWindow(path))):
-                .send(.delegate(.openPathInNewWindow(path)))
-
-            case let .content(.delegate(.openPathInNewTab(path))):
-                .send(.delegate(.openPathInNewTab(path)))
-
-            default:
-                .none
-            }
-        }
     }
 }
