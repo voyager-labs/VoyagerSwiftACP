@@ -712,4 +712,478 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
         XCTAssertEqual(rowView.selectionHighlightStyle, .regular)
     }
+
+    // MARK: - EVM-002-set_entries_view_as_icon_grid
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection item 기본값은 빈 목록으로 시작함
+    /// EntryViewLayout의 collection presentation state가 기본 상태에서 일반 entries와 분리되어 있는지 검증한다.
+    /// - 검증 내용: `collectionItems` 기본값 확인
+    /// - 사전 조건: 기본 `EntryViewLayoutState`
+    /// - 기대 결과: collection items가 비어 있음
+    func testCollectionItemsDefaultEmpty() {
+        let state = EntryViewLayoutState()
+        XCTAssertTrue(state.collectionItems.isEmpty)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection mode 기본값은 비활성임
+    /// EntryViewLayout이 일반 page presentation을 기본 표시 소스로 사용하는지 검증한다.
+    /// - 검증 내용: `isCollectionMode` 기본값 확인
+    /// - 사전 조건: 기본 `EntryViewLayoutState`
+    /// - 기대 결과: collection mode가 false임
+    func testIsCollectionModeDefaultFalse() {
+        let state = EntryViewLayoutState()
+        XCTAssertFalse(state.isCollectionMode)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection mode가 아니면 일반 entry operations items를 표시함
+    /// collection presentation이 꺼진 상태에서 기존 entry operations 결과가 display source로 유지되는지 검증한다.
+    /// - 검증 내용: 일반 items가 `displayItems`에 반영되는지 확인
+    /// - 사전 조건: collection mode가 false이고 entry operations items가 존재함
+    /// - 기대 결과: display items가 일반 items를 반환함
+    func testDisplayItemsReturnsEntryOperationsItemsWhenNotCollectionMode() {
+        var state = EntryViewLayoutState()
+        let item = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
+        state.entryOperations.items = [item]
+
+        XCTAssertFalse(state.isCollectionMode)
+        XCTAssertEqual(state.displayItems.count, 1)
+        XCTAssertEqual(state.displayItems.first?.id, item.id)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection mode에서는 collection items를 표시함
+    /// collection presentation이 켜진 상태에서 일반 items 대신 collection items가 display source가 되는지 검증한다.
+    /// - 검증 내용: collection mode의 `displayItems` source 확인
+    /// - 사전 조건: 일반 items와 collection items가 모두 있고 collection mode가 true임
+    /// - 기대 결과: display items가 collection items만 반환함
+    func testDisplayItemsReturnsCollectionItemsWhenCollectionMode() {
+        var state = EntryViewLayoutState()
+        let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
+        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+
+        state.entryOperations.items = [regularItem]
+        state.collectionItems = [collectionItem]
+        state.isCollectionMode = true
+
+        XCTAssertEqual(state.displayItems.count, 1)
+        XCTAssertEqual(state.displayItems.first?.id, collectionItem.id)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection mode에서는 일반 items를 표시하지 않음
+    /// collection presentation이 켜진 상태에서 collection item이 없으면 regular item이 누수되지 않는지 검증한다.
+    /// - 검증 내용: collection mode의 empty display source 확인
+    /// - 사전 조건: 일반 items만 있고 collection mode가 true임
+    /// - 기대 결과: display items가 비어 있음
+    func testDisplayItemsIgnoresRegularItemsInCollectionMode() {
+        var state = EntryViewLayoutState()
+        let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
+        state.entryOperations.items = [regularItem]
+        state.isCollectionMode = true
+
+        XCTAssertTrue(state.displayItems.isEmpty)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: display order items는 현재 display source 배열을 반환함
+    /// EntryViewLayout의 정렬 입력이 일반 display source와 동일한 순서를 쓰는지 검증한다.
+    /// - 검증 내용: `displayOrderItems`가 일반 items 순서를 보존하는지 확인
+    /// - 사전 조건: 일반 items가 두 개 존재하고 collection mode가 false임
+    /// - 기대 결과: display order items가 일반 items 순서를 반환함
+    func testDisplayOrderItemsReturnsArrayOfDisplayItems() {
+        var state = EntryViewLayoutState()
+        let item1 = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
+        let item2 = EntryModel.temporaryFolder(id: "/tmp/b.txt", name: "b.txt")
+        state.entryOperations.items = [item1, item2]
+
+        XCTAssertEqual(state.displayOrderItems.count, 2)
+        XCTAssertEqual(state.displayOrderItems[0].id, item1.id)
+        XCTAssertEqual(state.displayOrderItems[1].id, item2.id)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection mode의 display order items는 collection items 순서를 반환함
+    /// collection presentation 정렬 입력이 collection item source를 기준으로 만들어지는지 검증한다.
+    /// - 검증 내용: collection mode의 `displayOrderItems` source 확인
+    /// - 사전 조건: collection items가 두 개 있고 collection mode가 true임
+    /// - 기대 결과: display order items가 collection items 순서를 반환함
+    func testDisplayOrderItemsWithCollectionMode() {
+        var state = EntryViewLayoutState()
+        let colItem1 = EntryModel.temporaryFolder(id: "/tmp/col1.txt", name: "col1.txt")
+        let colItem2 = EntryModel.temporaryFolder(id: "/tmp/col2.txt", name: "col2.txt")
+        state.collectionItems = [colItem1, colItem2]
+        state.isCollectionMode = true
+
+        XCTAssertEqual(state.displayOrderItems.count, 2)
+        XCTAssertEqual(state.displayOrderItems[0].id, colItem1.id)
+        XCTAssertEqual(state.displayOrderItems[1].id, colItem2.id)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: display order items 기본값은 빈 목록임
+    /// EntryViewLayout이 항목 없는 초기 상태에서 정렬 입력을 만들지 않는지 검증한다.
+    /// - 검증 내용: 기본 `displayOrderItems` 확인
+    /// - 사전 조건: 기본 `EntryViewLayoutState`
+    /// - 기대 결과: display order items가 비어 있음
+    func testDisplayOrderItemsEmptyByDefault() {
+        let state = EntryViewLayoutState()
+        XCTAssertTrue(state.displayOrderItems.isEmpty)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection items를 상태에 저장할 수 있음
+    /// collection presentation source가 reducer와 view state에서 유지되는지 검증한다.
+    /// - 검증 내용: `collectionItems` 저장 결과 확인
+    /// - 사전 조건: collection item 한 개를 상태에 설정함
+    /// - 기대 결과: collection items에 동일한 id가 보존됨
+    func testSettingCollectionItems() {
+        var state = EntryViewLayoutState()
+        let item = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+        state.collectionItems = [item]
+
+        XCTAssertEqual(state.collectionItems.count, 1)
+        XCTAssertEqual(state.collectionItems.first?.id, item.id)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection mode toggle은 display source를 전환함
+    /// 일반 탐색과 collection presentation 간 표시 source가 mode에 맞게 전환되는지 검증한다.
+    /// - 검증 내용: toggle 전후 `displayItems` source 확인
+    /// - 사전 조건: 일반 item과 collection item이 모두 존재함
+    /// - 기대 결과: mode false에서는 일반 item, true에서는 collection item, 다시 false에서는 일반 item을 반환함
+    func testTogglingCollectionModeSwitchesDisplaySource() {
+        var state = EntryViewLayoutState()
+        let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
+        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+
+        state.entryOperations.items = [regularItem]
+        state.collectionItems = [collectionItem]
+
+        XCTAssertEqual(state.displayItems.first?.id, regularItem.id)
+
+        state.isCollectionMode = true
+        XCTAssertEqual(state.displayItems.first?.id, collectionItem.id)
+
+        state.isCollectionMode = false
+        XCTAssertEqual(state.displayItems.first?.id, regularItem.id)
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection mode 전환은 현재 source를 재적용함
+    /// reducer가 collection presentation mode 변경 후 arrangement reapply sequence를 실행하는지 검증한다.
+    /// - 검증 내용: 일반 items load 후 collection mode 전환과 collection items 설정 sequence 확인
+    /// - 사전 조건: 일반 item과 collection item이 순차적으로 주어짐
+    /// - 기대 결과: mode에 맞는 apply/reapply delegate sequence와 entries가 반영됨
+    func testSetCollectionModeUpdatesStateAndReapplies() async {
+        let store = makeCollectionPresentationTestStore()
+
+        let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
+        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+
+        await store.send(.entryOperations(.loading(.itemsLoaded([regularItem])))) {
+            $0.entryOperations.items = [regularItem]
+            $0.entries = [regularItem]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [regularItem],
+            isCollectionMode: false,
+            resultingEntries: [regularItem],
+        )
+
+        await store.send(.internal(.setCollectionMode(true))) {
+            $0.isCollectionMode = true
+            $0.entries = []
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
+
+        await store.send(.internal(.setCollectionItems([collectionItem]))) {
+            $0.collectionItems = [collectionItem]
+            $0.entries = [collectionItem]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [collectionItem],
+            isCollectionMode: true,
+            resultingEntries: [collectionItem],
+        )
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection items 갱신은 reapply sequence를 실행함
+    /// collection item source 변경이 current presentation mode 기준으로 arrangement apply를 재요청하는지 검증한다.
+    /// - 검증 내용: collection items 설정 후 reapply sequence 확인
+    /// - 사전 조건: collection mode가 false인 상태에서 collection items를 설정함
+    /// - 기대 결과: 일반 mode 기준 empty source가 reapply됨
+    func testSetCollectionItemsUpdatesStateAndReapplies() async {
+        let store = makeCollectionPresentationTestStore()
+
+        let item1 = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
+        let item2 = EntryModel.temporaryFolder(id: "/tmp/b.txt", name: "b.txt")
+
+        await store.send(.internal(.setCollectionItems([item1, item2]))) {
+            $0.collectionItems = [item1, item2]
+            $0.entries = []
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: false,
+        )
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection mode 중 collection items 갱신은 entries를 collection source로 맞춤
+    /// collection mode가 켜진 상태의 collection items 설정이 entries와 arrangement source를 동기화하는지 검증한다.
+    /// - 검증 내용: collection mode 상태의 items 설정과 reapply sequence 확인
+    /// - 사전 조건: collection mode를 먼저 켠 뒤 collection item을 설정함
+    /// - 기대 결과: collection item이 entries와 arrangement apply source로 반영됨
+    func testSetCollectionItemsWithCollectionModeOn() async {
+        let store = makeCollectionPresentationTestStore()
+
+        let item = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+
+        await store.send(.internal(.setCollectionMode(true))) {
+            $0.isCollectionMode = true
+            $0.entries = []
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
+
+        await store.send(.internal(.setCollectionItems([item]))) {
+            $0.collectionItems = [item]
+            $0.entries = [item]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [item],
+            isCollectionMode: true,
+            resultingEntries: [item],
+        )
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection presentation clear는 일반 source로 복귀함
+    /// collection mode에서 빠져나올 때 collection items를 비우고 일반 items를 다시 표시하는지 검증한다.
+    /// - 검증 내용: clearCollectionPresentation 후 mode, collectionItems, entries, reapply sequence 확인
+    /// - 사전 조건: 일반 item load 후 collection mode와 collection item이 설정됨
+    /// - 기대 결과: 일반 mode로 복귀하고 entries가 일반 item source로 복원됨
+    func testClearCollectionPresentationFallsBackToRegularSource() async {
+        let store = makeCollectionPresentationTestStore()
+
+        let regularItem = EntryModel.temporaryFolder(id: "/tmp/regular.txt", name: "regular.txt")
+        let collectionItem = EntryModel.temporaryFolder(id: "/tmp/col.txt", name: "col.txt")
+
+        await store.send(.entryOperations(.loading(.itemsLoaded([regularItem])))) {
+            $0.entryOperations.items = [regularItem]
+            $0.entries = [regularItem]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [regularItem],
+            isCollectionMode: false,
+            resultingEntries: [regularItem],
+        )
+
+        await store.send(.internal(.setCollectionMode(true))) {
+            $0.isCollectionMode = true
+            $0.entries = []
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
+
+        await store.send(.internal(.setCollectionItems([collectionItem]))) {
+            $0.collectionItems = [collectionItem]
+            $0.entries = [collectionItem]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [collectionItem],
+            isCollectionMode: true,
+            resultingEntries: [collectionItem],
+        )
+
+        await store.send(.internal(.clearCollectionPresentation)) {
+            $0.isCollectionMode = false
+            $0.collectionItems = []
+            $0.entries = [regularItem]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [regularItem],
+            isCollectionMode: false,
+            resultingEntries: [regularItem],
+        )
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: reapply는 현재 display order snapshot을 사용함
+    /// collection presentation reapply가 현재 표시 source를 arrangement input으로 전달하는지 검증한다.
+    /// - 검증 내용: collection mode/items 설정 후 entries와 mode 확인
+    /// - 사전 조건: collection mode를 켜고 collection item을 설정함
+    /// - 기대 결과: entries가 collection item source로 유지됨
+    func testReapplyUsesDisplayOrderItemsSnapshot() async {
+        let store = makeCollectionPresentationTestStore()
+
+        let item = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
+
+        await store.send(.internal(.setCollectionMode(true))) {
+            $0.isCollectionMode = true
+            $0.entries = []
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
+
+        await store.send(.internal(.setCollectionItems([item]))) {
+            $0.collectionItems = [item]
+            $0.entries = [item]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [item],
+            isCollectionMode: true,
+            resultingEntries: [item],
+        )
+
+        let state = store.state
+        XCTAssertTrue(state.isCollectionMode)
+        XCTAssertEqual(state.entries.map(\.id), [item.id])
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: regular itemsLoaded도 동일한 reapply helper path를 사용함
+    /// collection presentation reducer가 일반 entry operations load와 collection presentation load를 동일한 arrangement 경로로 처리하는지 검증한다.
+    /// - 검증 내용: itemsLoaded 후 entries와 reapply sequence 확인
+    /// - 사전 조건: 일반 item load action 수신
+    /// - 기대 결과: 일반 mode 기준 entries와 arrangement apply가 반영됨
+    func testEntryOperationsItemsLoadedReusesSameHelperPath() async {
+        let store = makeCollectionPresentationTestStore()
+
+        let item = EntryModel.temporaryFolder(id: "/tmp/test.txt", name: "test.txt")
+
+        await store.send(.entryOperations(.loading(.itemsLoaded([item])))) {
+            $0.entryOperations.items = [item]
+            $0.entries = [item]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [item],
+            isCollectionMode: false,
+            resultingEntries: [item],
+        )
+
+        let state = store.state
+        XCTAssertFalse(state.isCollectionMode)
+        XCTAssertEqual(state.entries.map(\.id), [item.id])
+    }
+
+    /// EVM-002-set_entries_view_as_icon_grid: collection paths 제거는 items와 selection을 함께 정리함
+    /// collection presentation에서 제거된 path가 display source와 selection state에서 빠지는지 검증한다.
+    /// - 검증 내용: removeCollectionPaths 후 collectionItems, selectedIds, anchors, entries 확인
+    /// - 사전 조건: collection mode에서 두 collection item과 selection state가 설정됨
+    /// - 기대 결과: 제거 대상 item은 빠지고 남은 item 기준 selection과 entries가 유지됨
+    func testRemoveCollectionPathsPrunesItemsAndSelection() async {
+        let store = makeCollectionPresentationTestStore()
+
+        let removedItem = EntryModel.temporaryFolder(id: "/tmp/a.txt", name: "a.txt")
+        let keptItem = EntryModel.temporaryFolder(id: "/tmp/b.txt", name: "b.txt")
+
+        await store.send(.internal(.setCollectionMode(true))) {
+            $0.isCollectionMode = true
+            $0.entries = []
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [],
+            isCollectionMode: true,
+        )
+
+        await store.send(.internal(.setCollectionItems([removedItem, keptItem]))) {
+            $0.collectionItems = [removedItem, keptItem]
+            $0.entries = [removedItem, keptItem]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [removedItem, keptItem],
+            isCollectionMode: true,
+            resultingEntries: [removedItem, keptItem],
+        )
+
+        await store.send(.internal(.setSelectionState(
+            ids: [removedItem.id, keptItem.id],
+            lastSelectedId: removedItem.id,
+            rangeAnchorId: removedItem.id,
+            shouldScrollToSelection: true,
+        ))) {
+            $0.selectedIds = [removedItem.id, keptItem.id]
+            $0.lastSelectedId = removedItem.id
+            $0.rangeAnchorId = removedItem.id
+            $0.shouldScrollToSelection = true
+        }
+        await store.receive(\.delegate.selectionChanged)
+
+        await store.send(.internal(.removeCollectionPaths(["/tmp/a.txt"]))) {
+            $0.collectionItems = [keptItem]
+            $0.selectedIds = [keptItem.id]
+            $0.lastSelectedId = keptItem.id
+            $0.rangeAnchorId = keptItem.id
+            $0.shouldScrollToSelection = false
+            $0.entries = [keptItem]
+        }
+        await receiveCollectionPresentationReapplySequence(
+            from: store,
+            applyItems: [keptItem],
+            isCollectionMode: true,
+            resultingEntries: [keptItem],
+        )
+    }
+
+    private func makeCollectionPresentationTestStore() -> TestStore<EntryViewLayoutState, EntryViewLayoutAction> {
+        let store = TestStore(initialState: EntryViewLayoutState()) {
+            EntryViewLayoutFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // collection presentation 테스트는 reapply routing과 display source 동기화만 검증하며,
+        // EntryArrangements 내부 grouping 파생 상태는 해당 패키지 owner suite에서 별도로 검증한다.
+        store.exhaustivity = .off
+        return store
+    }
+
+    private func receiveCollectionPresentationReapplySequence(
+        from store: TestStore<EntryViewLayoutState, EntryViewLayoutAction>,
+        applyItems: [EntryModel],
+        isCollectionMode: Bool,
+        resultingEntries: [EntryModel]? = nil,
+    ) async {
+        await store.receive { action in
+            guard case .entryArrangements(.reapply) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .entryArrangements(.delegate(.requestApply)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .entryArrangements(.apply(items, mode)) = action else { return false }
+            return items == applyItems && mode == isCollectionMode
+        }
+        if let resultingEntries {
+            await store.receive(
+                { action in
+                    guard case let .entryArrangements(.delegate(.applied(sortedItems, mode))) = action else { return false }
+                    return sortedItems == applyItems && mode == isCollectionMode
+                },
+                assert: { state in
+                    state.entries = resultingEntries
+                },
+            )
+        } else {
+            await store.receive { action in
+                guard case let .entryArrangements(.delegate(.applied(sortedItems, mode))) = action else { return false }
+                return sortedItems == applyItems && mode == isCollectionMode
+            }
+        }
+    }
+
 }
