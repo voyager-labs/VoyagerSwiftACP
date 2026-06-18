@@ -81,6 +81,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case applyPreferences(EntryViewLayoutPreferences)
         case setShowHiddenFiles(Bool)
         case setCollectionMode(Bool)
+        case setCollectionContentLoading(Bool)
         case setCollectionItems([EntryModel])
         case applyCollectionSearchPaths(paths: [String], showHidden: Bool)
         case addCollectionPaths([String])

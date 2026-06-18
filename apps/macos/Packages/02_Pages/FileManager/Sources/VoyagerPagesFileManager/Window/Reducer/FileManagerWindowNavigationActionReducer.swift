@@ -280,6 +280,7 @@ private func handleOpenCollectionFile(
     .cancellable(id: "openCollectionFile", cancelInFlight: true)
 
     return .concatenate(
+        .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(true))))),
         clearExistingCollectionEffect,
         .send(.content(.collection(.openRequested(
             url,
@@ -443,6 +444,7 @@ private func handleCollectionFileLoadedFailure(
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
     var effects: [Effect<FileManagerWindowAction>] = [
+        .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
     ]
     if state.sidebar.pendingSidebarSelectionRestore != nil {
@@ -467,6 +469,7 @@ private func handleEmptyCollectionFile(
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
     .concatenate(
+        .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
         .send(.content(.collection(.sessionResetRequested))),
         .send(.content(.internal(.exitCollectionMode))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
