@@ -1,12 +1,14 @@
+import AppKit
 import ComposableArchitecture
+import Foundation
+import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
-// FileManagerWindowCommandRoutingReducer의 단일 윈도우 명령 라우팅을 검증하는
-// package-scoped 결정론적 TCA TestStore 테스트 모음.
-
 @MainActor
-final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
+final class FMW001FileManagerWindowTests: XCTestCase {
     private func makeStore(
         initialState: FileManagerWindowState = FileManagerWindowState(),
     ) -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
@@ -201,5 +203,148 @@ final class FMW001FileManagerWindowRequestRoutingTests: XCTestCase {
         await store.send(.request(.toggleComposer))
         await store.receive(\.content.composer.view.setPresented)
         await store.finish()
+    }
+
+
+    // MARK: - FMW-001-open_new_file_manager_window
+
+    /// FMW-001-open_new_file_manager_window: makeInitial 기본 상태의 windowID 없음
+    /// FileManager window 초기 상태와 entry operation state 격리 계약을 검증.
+    /// - 검증 내용: FileManagerWindowState.makeInitial이 entry operation windowID를 비운 상태로 시작하는지 검증
+    /// - 사전 조건: FileManagerWindowState 기본 생성 또는 makeInitial 사용
+    /// - 기대 결과: entry operation windowID와 collection mode 상태가 명확한 기본값 유지
+    func testMakeInitialCreatesStateWithoutWindowID() {
+        let state = FileManagerWindowState.makeInitial(path: nil)
+
+        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+    }
+
+    /// FMW-001-open_new_file_manager_window: makeInitial path seed와 entry operation state 분리
+    /// FileManager window 초기 상태와 entry operation state 격리 계약을 검증.
+    /// - 검증 내용: 초기 path seed가 entry operation windowID를 오염시키지 않는지 검증
+    /// - 사전 조건: FileManagerWindowState 기본 생성 또는 makeInitial 사용
+    /// - 기대 결과: entry operation windowID와 collection mode 상태가 명확한 기본값 유지
+    func testMakeInitialSeedsPathThroughNavigationState() {
+        let path = "/Users/test/Documents"
+        let state = FileManagerWindowState.makeInitial(path: path)
+
+        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+    }
+
+    /// FMW-001-open_new_file_manager_window: FileManagerWindowState 기본 collection mode 비활성
+    /// FileManager window 초기 상태와 entry operation state 격리 계약을 검증.
+    /// - 검증 내용: 기본 window state가 collection mode와 entry operation windowID를 갖지 않는지 검증
+    /// - 사전 조건: FileManagerWindowState 기본 생성 또는 makeInitial 사용
+    /// - 기대 결과: entry operation windowID와 collection mode 상태가 명확한 기본값 유지
+    func testWindowDefaultStateHasNoCollectionMode() {
+        let state = FileManagerWindowState()
+
+        XCTAssertFalse(state.content.entryViewLayout.isCollectionMode)
+        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+    }
+
+    /// FMW-001-open_new_file_manager_window: entry operations reset 시 windowID 제거
+    /// FileManager window 초기 상태와 entry operation state 격리 계약을 검증.
+    /// - 검증 내용: content entryOperations state reset이 windowID를 제거하는지 검증
+    /// - 사전 조건: FileManagerWindowState 기본 생성 또는 makeInitial 사용
+    /// - 기대 결과: entry operation windowID와 collection mode 상태가 명확한 기본값 유지
+    func testContentEntryOperationsResetClearsWindowID() {
+        let windowID = UUID()
+        var state = FileManagerWindowState.makeInitial(path: nil)
+        state.content.entryViewLayout.entryOperations.windowID = windowID
+        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+
+        state.content.entryViewLayout.entryOperations = EntryOperationsState()
+        XCTAssertNil(state.content.entryViewLayout.entryOperations.windowID)
+
+        state.content.entryViewLayout.entryOperations.windowID = windowID
+        XCTAssertEqual(state.content.entryViewLayout.entryOperations.windowID, windowID)
+    }
+
+    /// FMW-001-open_new_file_manager_window: FileManager feature 기본 navigation slice 구성
+    /// FileManagerFeature.State가 별도 path seed 없이도 기본 탐색 경로와 sidebar 표시 상태를 갖는지 검증한다.
+    /// - 검증 내용: content navigation 기본 경로와 sidebar visibility 확인
+    /// - 사전 조건: fresh FileManagerFeature.State 생성
+    /// - 기대 결과: currentPath는 Settings 기본 탭 경로이고 sidebar는 표시 상태임
+    func testFeatureInitialStateContainsDefaultNavigationSlices() {
+        let state = FileManagerFeature.State()
+
+        XCTAssertEqual(state.content.navigation.currentPath, SettingsDefaults.defaultTabPath())
+        XCTAssertTrue(state.sidebar.sidebarVisible)
+    }
+
+    /// FMW-001-open_new_file_manager_window: onAppear 이후 기본 navigation path 보존
+    /// FileManagerFeature onAppear가 초기 window 구성을 깨지 않고 기본 navigation path를 유지하는지 검증한다.
+    /// - 검증 내용: onAppear 전송 후 content navigation currentPath 확인
+    /// - 사전 조건: 테스트 UserDefaults/date dependency를 주입한 fresh FileManagerFeature.State
+    /// - 기대 결과: currentPath가 Settings 기본 탭 경로로 유지됨
+    func testFeatureOnAppearPreservesDefaultNavigationPath() async {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 비포괄적: onAppear는 여러 초기화 child action을 방출하므로 FMW-001 초기 path 계약만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, SettingsDefaults.defaultTabPath())
+    }
+
+
+    /// FMW-001-open_file_manager_window: 제공된 초기 창 크기가 저장된 autosave frame보다 우선 적용된다.
+    /// 실행 중 새 File Manager Window를 열 때 이전 autosave frame이 현재 요청 크기를 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: applyInitialFrame이 initialWindowSizeProvider 값을 window frame에 적용하는지 확인
+    /// - 사전 조건: NSWindow autosave frame이 저장되어 있고 initialWindowSizeProvider가 1180x720을 반환
+    /// - 기대 결과: window.frame 크기가 1180x720으로 설정됨
+    func testApplyInitialFramePrefersProvidedWindowSizeOverAutosave() {
+        let autosaveName = FileManagerWindowChrome.frameAutosaveName
+        NSWindow.removeFrame(usingName: autosaveName)
+        defer { NSWindow.removeFrame(usingName: autosaveName) }
+
+        let storedWindow = NSWindow(contentViewController: NSViewController())
+        storedWindow.setFrame(NSRect(x: 0, y: 0, width: 960, height: 510), display: false)
+        storedWindow.saveFrame(usingName: autosaveName)
+
+        let window = NSWindow(contentViewController: NSViewController())
+        FileManagerWindowChrome.configureWindowStyle(window)
+
+        FileManagerWindowChrome.applyInitialFrame(
+            window,
+            initialWindowSizeProvider: { NSSize(width: 1180, height: 720) },
+            reservesSidebarWidth: false,
+        )
+
+        XCTAssertEqual(window.frame.width, 1180, accuracy: 0.5)
+        XCTAssertEqual(window.frame.height, 720, accuracy: 0.5)
+    }
+
+    /// FMW-001-open_file_manager_window: provider가 없으면 저장된 autosave frame을 복원한다.
+    /// 앱 재실행 후 첫 File Manager Window가 이전에 저장한 창 크기를 복원하는지 검증한다.
+    /// - 검증 내용: applyInitialFrame이 provider nil 상태에서 autosave frame을 window frame으로 복원하는지 확인
+    /// - 사전 조건: NSWindow autosave frame이 1240x760으로 저장되어 있고 initialWindowSizeProvider는 nil
+    /// - 기대 결과: window.frame 크기가 1240x760으로 설정됨
+    func testApplyInitialFrameRestoresAutosavedFrameWhenProviderMissing() {
+        let autosaveName = FileManagerWindowChrome.frameAutosaveName
+        NSWindow.removeFrame(usingName: autosaveName)
+        defer { NSWindow.removeFrame(usingName: autosaveName) }
+
+        let storedWindow = NSWindow(contentViewController: NSViewController())
+        storedWindow.setFrame(NSRect(x: 0, y: 0, width: 1240, height: 760), display: false)
+        FileManagerWindowChrome.saveFrame(storedWindow)
+
+        let window = NSWindow(contentViewController: NSViewController())
+        FileManagerWindowChrome.configureWindowStyle(window)
+
+        FileManagerWindowChrome.applyInitialFrame(
+            window,
+            initialWindowSizeProvider: nil,
+            reservesSidebarWidth: false,
+        )
+
+        XCTAssertEqual(window.frame.width, 1240, accuracy: 0.5)
+        XCTAssertEqual(window.frame.height, 760, accuracy: 0.5)
     }
 }

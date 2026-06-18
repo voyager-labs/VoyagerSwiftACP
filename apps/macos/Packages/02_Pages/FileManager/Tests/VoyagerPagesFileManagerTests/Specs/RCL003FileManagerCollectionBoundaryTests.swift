@@ -5,6 +5,7 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
@@ -225,6 +226,51 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         await store.receive(\.collection.refreshRequested)
         await store.receive(\.composer.view.applyFilters)
         await store.finish()
+    }
+
+
+    // MARK: - RCL-003-retrieve_entries_with_filters
+
+    /// RCL-003-retrieve_entries_with_filters: FileManager content state는 layout collection mode를 collection mode로 노출함
+    /// FileManager page state가 EntryViewLayout의 collection mode를 collection 저장 가능성 판단에 연결하는지 검증한다.
+    /// - 검증 내용: `entryViewLayout.isCollectionMode`의 기본값과 활성 상태 확인
+    /// - 사전 조건: 기본 `FileManagerContentState`
+    /// - 기대 결과: 기본값은 false이고 layout state를 true로 설정하면 collection mode로 인식됨
+    func testContentStateReflectsEntryViewLayoutCollectionMode() {
+        var state = FileManagerContentState()
+
+        XCTAssertFalse(state.entryViewLayout.isCollectionMode)
+
+        state.entryViewLayout.isCollectionMode = true
+        XCTAssertTrue(state.entryViewLayout.isCollectionMode)
+    }
+
+    /// RCL-003-retrieve_entries_with_filters: 저장 가능 상태는 collection context와 collection mode를 모두 요구함
+    /// FileManager page가 collection 저장 자격을 query context와 presentation mode의 조합으로 계산하는지 검증한다.
+    /// - 검증 내용: context만 있는 상태와 collection mode 활성 상태의 `canSaveCollection` 비교
+    /// - 사전 조건: collection context가 존재하지만 collection mode는 비활성인 content state
+    /// - 기대 결과: collection mode가 켜진 뒤에만 저장 가능 상태가 true가 됨
+    func testCanSaveCollectionRequiresCollectionContextAndMode() {
+        var state = FileManagerContentState()
+        state.collection.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
+
+        XCTAssertFalse(state.canSaveCollection)
+
+        state.entryViewLayout.isCollectionMode = true
+        XCTAssertTrue(state.canSaveCollection)
+    }
+
+    /// RCL-003-retrieve_entries_with_filters: collection context만으로는 저장 가능 상태가 되지 않음
+    /// FileManager page가 collection mode가 아닌 일반 탐색 상태를 collection 저장 대상으로 오판하지 않는지 검증한다.
+    /// - 검증 내용: collection context가 있어도 `entryViewLayout.isCollectionMode == false`이면 `canSaveCollection == false`인지 확인
+    /// - 사전 조건: collection context만 설정된 content state
+    /// - 기대 결과: collection mode가 아니므로 저장 가능 상태가 false로 유지됨
+    func testCanSaveCollectionFalseWhenCollectionModeDisabled() {
+        var state = FileManagerContentState()
+        state.collection.collectionContext = CollectionContext(query: "", scopes: [], conditions: [])
+
+        XCTAssertFalse(state.entryViewLayout.isCollectionMode)
+        XCTAssertFalse(state.canSaveCollection)
     }
 
     private func makeReadyContentState() -> FileManagerContentState {
