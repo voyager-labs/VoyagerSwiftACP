@@ -220,9 +220,9 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         case .mock:
             (
                 accountSessionClient: AccountSessionClient(
-                    read: { sessionHolder.session },
+                    read: { self.sessionHolder.session },
                     persist: { _ in },
-                    delete: { sessionHolder.setSession(nil) },
+                    delete: { self.sessionHolder.setSession(nil) },
                 ),
                 authNetworkClient: AuthNetworkClient(
                     exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -235,18 +235,18 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         case .live:
             (
                 accountSessionClient: AccountSessionClient(
-                    read: { sessionHolder.session },
+                    read: { self.sessionHolder.session },
                     persist: { _ in },
-                    delete: { sessionHolder.setSession(nil) },
+                    delete: { self.sessionHolder.setSession(nil) },
                 ),
                 authNetworkClient: AuthNetworkClient(
                     exchangeHandoff: { ticket, state, context in
                         let session = try await AuthNetworkClient.liveValue.exchangeHandoff(ticket, state, context)
-                        sessionHolder.setSession(session)
+                        self.sessionHolder.setSession(session)
                         return session
                     },
                     fetchAccessStatus: {
-                        AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                        try await AuthNetworkClient.liveValue.fetchAccessStatus()
                     },
                     refreshToken: { throw AccessError.notConfigured },
                 ),

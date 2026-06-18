@@ -426,16 +426,33 @@ private extension AccountAccessFeature {
         .concatenate(with: fetchAccessStatusEffect(generation: generation))
     }
 
+    /// 캐시된 snapshot의 최대 허용 보관 기간.
+    /// 네트워크 장애 시 이 기간을 초과한 snapshot은 만료되지 않았더라도 신뢰하지 않는다 (entitlement bypass 방지).
+    private static let cachedSnapshotMaxAge: TimeInterval = 7 * 24 * 60 * 60 // 7일
+
     private func handleCachedSnapshotRestored(_ state: inout State, snapshot: AccessStatusSnapshot?) -> Effect<Action> {
-        if let snapshot {
-            state.status = snapshot.status
-            state.snapshot = snapshot
-            state.isComplete = snapshot.isActive
-            state.errorMessage = "일시적인 네트워크 오류"
-        } else {
+        guard let snapshot else {
             state.status = AccessStatus.none
             state.errorMessage = "Access denied."
+            return .none
         }
+
+        let now = date.now
+        // 만료(explicit expiresAt) 또는 과도하게 오래된 snapshot(nil expiresAt 방어)은
+        // entitlement bypass로 이어질 수 있으므로 거부한다.
+        let isStale = snapshot.isExpired(now: now)
+            || now.timeIntervalSince(snapshot.fetchedAt) > Self.cachedSnapshotMaxAge
+        if isStale {
+            state.status = AccessStatus.none
+            state.isComplete = false
+            state.errorMessage = "네트워크 오류로 인증을 확인할 수 없습니다."
+            return .none
+        }
+
+        state.status = snapshot.status
+        state.snapshot = snapshot
+        state.isComplete = snapshot.isActive
+        state.errorMessage = "일시적인 네트워크 오류"
         return .none
     }
 

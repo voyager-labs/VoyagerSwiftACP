@@ -282,6 +282,39 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         }
     }
 
+    /// ACC-002: 만료된 snapshot은 복원 시 거부된다 (entitlement bypass 방지).
+    /// networkFailure 3회 + 캐시된 snapshot의 expiresAt이 과거 → isComplete=false, status=none.
+    func testExpiredSnapshotRejectedOnRestore() async {
+        let expiredSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            expiresAt: referenceDate.addingTimeInterval(-3600),
+            entitlements: [.coreLicense],
+            fetchedAt: referenceDate,
+        )
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.fetchRetryCount = 3
+        let store = makeTestStore(
+            snapshotClient: AccessStatusSnapshotClient(
+                load: { expiredSnapshot },
+                save: { _ in },
+                remove: {},
+            ),
+            initialState: state,
+        )
+
+        await store.send(.accessStatusResponse(generation: 1, result: .failure(.networkFailure))) { state in
+            state.isComplete = false
+            state.errorMessage = "Network error. Please check your connection and try again."
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\._cachedSnapshotRestored) { state in
+            state.status = AccessStatus.none
+            state.isComplete = false
+            state.errorMessage = "네트워크 오류로 인증을 확인할 수 없습니다."
+        }
+    }
+
     /// ACC-002: 성공적인 fetch 후 fetchRetryCount가 0으로 리셋된다.
     /// 연속 실패 후 성공하면 retry count를 초기화하여 다음 실패 사이클을 올바르게 시작한다.
     /// - 검증 내용: success 응답 → fetchRetryCount=0
