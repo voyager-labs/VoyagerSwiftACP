@@ -224,7 +224,10 @@ struct FileManagerNavigationActionReducer {
             return .none
         case .discard:
             state.content.resetComposerOnNextDirectoryNavigation = true
-            return .send(.navigation(.internal(.performNavigation(pending))))
+            return .concatenate(
+                .send(.content(.view(.discardCollectionChanges))),
+                .send(.navigation(.internal(.performNavigation(pending)))),
+            )
         case .save:
             state.content.resetComposerOnNextDirectoryNavigation = true
             return .concatenate(

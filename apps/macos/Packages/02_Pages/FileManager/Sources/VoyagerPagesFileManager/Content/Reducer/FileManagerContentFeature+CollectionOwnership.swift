@@ -48,6 +48,7 @@ extension FileManagerContentFeature {
             .concatenate(
                 .send(.composer(.applyCollectionDraftRestore(payload))),
                 syncComposerCollectionStateEffect(state),
+                restoredCollectionSearchEffect(payload: payload),
             )
 
         case let .collection(.delegate(.writeBackNavigationPrepared(payload))):
@@ -132,6 +133,18 @@ extension FileManagerContentFeature {
             compatibility: state.collection.collectionSession.document?.compatibility,
             isCollectionMode: state.isCollectionMode,
         )))
+    }
+
+
+    private func restoredCollectionSearchEffect(payload: CollectionDraftRestorePayload) -> Effect<Action> {
+        let query = payload.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return .send(.composer(.view(.applyFilters)))
+        }
+        return .concatenate(
+            .send(.composer(.view(.setText(query)))),
+            .send(.composer(.view(.submit))),
+        )
     }
 
     private func handleCollectionDelegateAction(
