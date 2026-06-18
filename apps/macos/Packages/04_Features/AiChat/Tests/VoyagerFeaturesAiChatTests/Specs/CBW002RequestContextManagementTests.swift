@@ -914,7 +914,6 @@ final class CBW002RequestContextManagementTests: XCTestCase {
     /// - 검증 내용: request context display, attachment 처리, locked snapshot 표시 결과를 확인합니다.
     /// - 사전 조건: current context, added attachment, processing snapshot fixture를 구성합니다.
     /// - 기대 결과: 사용자가 보는 context chip과 attachment 상태가 CBW-002 기대 동작과 일치합니다.
-    @MainActor
     func testAttachmentDroppingTextViewConsumesFileURLDrops() {
         let fileURL = URL(fileURLWithPath: "/tmp/Dropped.txt")
         let pasteboard = NSPasteboard(name: .init("AiChatInputTextViewDropTests-\(UUID().uuidString)"))
