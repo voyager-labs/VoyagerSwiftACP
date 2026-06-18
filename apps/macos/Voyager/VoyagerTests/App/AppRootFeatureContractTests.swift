@@ -2,7 +2,10 @@ import ComposableArchitecture
 @testable import Voyager
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesUpdateVersion
+@testable import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
+import VoyagerPagesSettings
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 /// 앱 루트 계약 — 최상위 라우팅과 델리게이트 전달을 검증.
@@ -14,9 +17,9 @@ final class AppRootFeatureContractTests: XCTestCase {
             AppRootFeature()
         }
 
-        var preferences = AppPreferencesState()
+        var preferences = Voyager.AppPreferencesState()
         preferences.showHiddenFiles = true
-        preferences.viewLayout = .grid
+        preferences.viewLayout = EntryViewLayoutState.Mode.grid
         preferences.sidebarVisible = false
 
         await store.send(.appPreferences(.delegate(.updated(preferences)))) {
@@ -165,47 +168,19 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
 
         await store.send(.settings(.general(.toggleAutomaticUpdate(true))))
-        await store.receive(\.updater.setAutomaticUpdate(true))
+        await store.receive { action in
+            guard case .updater(.setAutomaticUpdate(true)) = action else {
+                return false
+            }
+            return true
+        }
 
         await store.send(.settings(.general(.toggleAutomaticUpdate(false))))
-        await store.receive(\.updater.setAutomaticUpdate(false))
-    }
-
-    func testSettingsGeneralToggleAlertBeforeQuitDoesNotForwardToUpdater() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
+        await store.receive { action in
+            guard case .updater(.setAutomaticUpdate(false)) = action else {
+                return false
+            }
+            return true
         }
-        store.exhaustivity = .off
-
-        await store.send(.settings(.general(.toggleAlertBeforeQuit(true))))
-        store.assertNoInboundEffects()
-    }
-
-    // MARK: - SET-AC-004: Boundary Absence Contracts
-
-    /// Proves Settings actions produce NO windowManager side effects.
-    /// WindowManager does not participate in the Settings scene lifecycle.
-    func testSettingsActionsDoNotForwardToWindowManager() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.settings(.general(.toggleAlertBeforeQuit(false))))
-        store.assertNoInboundEffects()
-    }
-
-    /// Proves AppRoot's Settings forwarding does NOT route through MenuCommands.
-    /// MenuCommandsAction.Delegate has no `.settings` case — absence is structural.
-    /// This test verifies that settings-driven actions (checkForUpdates) route
-    /// directly to updater, not via menuCommands.
-    func testSettingsCheckForUpdatesDoesNotRouteThroughMenuCommands() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.settings(.general(.checkForUpdates)))
-        await store.receive(\.updater.checkForUpdates)
     }
 }

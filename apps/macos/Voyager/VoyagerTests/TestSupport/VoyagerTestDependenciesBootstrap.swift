@@ -16,4 +16,4 @@ private let kObserverRegistration: Void = {
     XCTestObservationCenter.shared.addTestObserver(VoyagerTestDependencyObserver())
 }()
 
-private let kObserverBootstrap = kObserverRegistration
+private let kObserverBootstrap: Void = kObserverRegistration

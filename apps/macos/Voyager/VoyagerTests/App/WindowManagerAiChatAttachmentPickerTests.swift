@@ -3,6 +3,7 @@ import Foundation
 @testable import Voyager
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiChat
+@testable import VoyagerPagesFileManager
 import XCTest
 
 @MainActor

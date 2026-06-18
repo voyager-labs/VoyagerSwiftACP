@@ -73,7 +73,6 @@ final class HelperSupervisionPolicyTests: XCTestCase {
         _ = policy.recordRestartAttempt(at: now)
         XCTAssertTrue(policy.isInGraceWindow)
 
-        let afterGrace = now.addingTimeInterval(6)
         XCTAssertFalse(policy.isInGraceWindow)
     }
 
