@@ -1642,4 +1642,95 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertEqual(migratedStepState.aiProviderSetupChoice, .setUpLater)
         XCTAssertEqual(migratedStepState.aiProviderSetupStatus, .skipped)
     }
+
+    // MARK: - ONB-001-run_onboarding_window
+
+    /// ONB-001-run_onboarding_window: presentation pending 상태에서 showIfNeeded가 중복 window 표시를 예약하지 않는다.
+    /// 온보딩 window client가 표시 대기 중 중복 표시 요청을 멱등하게 처리하는지 검증합니다.
+    /// - 검증 내용: 연속 `showIfNeeded` 호출이 하나의 `showWindow` 실행으로 수렴합니다.
+    /// - 사전 조건: progress client는 빈 진행 상태를 반환하고 main window open 요청은 성공합니다.
+    /// - 기대 결과: 두 번 호출해도 `showWindow` 호출 횟수는 1회입니다.
+    func testShowIfNeededIsIdempotentWhilePresentationIsPending() async {
+        let counter = AsyncCounter()
+        let showExpectation = expectation(description: "showWindow called once")
+        showExpectation.expectedFulfillmentCount = 1
+
+        let client = OnboardingWindowClient.makeClient(
+            progressClient: OnboardingProgressClient(
+                load: { .empty },
+                save: { _ in .success },
+                reset: {},
+            ),
+            openMainWindow: { _ in true },
+            showWindow: {
+                await counter.increment()
+                showExpectation.fulfill()
+            },
+            closeWindow: {},
+        )
+
+        XCTAssertTrue(client.showIfNeeded())
+        XCTAssertTrue(client.showIfNeeded())
+
+        await fulfillment(of: [showExpectation], timeout: 1.0)
+
+        let showCount = await counter.value()
+        XCTAssertEqual(showCount, 1)
+    }
+
+    /// ONB-001-run_onboarding_window: closeWindow 이후 presentation gate가 reset되어 다시 window 표시를 허용한다.
+    /// 온보딩 window client가 닫힘 이후 다음 표시 요청을 새 표시 cycle로 처리하는지 검증합니다.
+    /// - 검증 내용: `closeWindow` 이후 `showIfNeeded`가 `showWindow`를 다시 실행합니다.
+    /// - 사전 조건: 첫 `showIfNeeded`로 온보딩 window 표시가 완료된 뒤 `closeWindow`를 호출합니다.
+    /// - 기대 결과: 최초 표시와 재표시를 합쳐 `showWindow`가 총 2회 호출됩니다.
+    func testCloseWindowResetsPresentationGateAllowingReopen() async {
+        let counter = AsyncCounter()
+        let firstShowExpectation = expectation(description: "first showWindow")
+        let secondShowExpectation = expectation(description: "second showWindow after close")
+
+        let client = OnboardingWindowClient.makeClient(
+            progressClient: OnboardingProgressClient(
+                load: { .empty },
+                save: { _ in .success },
+                reset: {},
+            ),
+            openMainWindow: { _ in true },
+            showWindow: {
+                let showCallIndex = await counter.increment()
+                if showCallIndex == 1 {
+                    firstShowExpectation.fulfill()
+                } else {
+                    secondShowExpectation.fulfill()
+                }
+            },
+            closeWindow: {},
+        )
+
+        XCTAssertTrue(client.showIfNeeded())
+        await fulfillment(of: [firstShowExpectation], timeout: 1.0)
+
+        await client.closeWindow()
+
+        XCTAssertTrue(client.showIfNeeded())
+        await fulfillment(of: [secondShowExpectation], timeout: 1.0)
+
+        let showCount = await counter.value()
+        XCTAssertEqual(showCount, 2, "closeWindow 후 showIfNeeded가 다시 showWindow를 호출해야 한다")
+    }
+
+}
+
+
+private actor AsyncCounter {
+    private var count = 0
+
+    @discardableResult
+    func increment() -> Int {
+        count += 1
+        return count
+    }
+
+    func value() -> Int {
+        count
+    }
 }
