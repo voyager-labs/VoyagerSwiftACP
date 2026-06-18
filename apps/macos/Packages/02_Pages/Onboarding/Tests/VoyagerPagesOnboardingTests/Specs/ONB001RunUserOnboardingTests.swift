@@ -1717,9 +1717,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         let showCount = await counter.value()
         XCTAssertEqual(showCount, 2, "closeWindow 후 showIfNeeded가 다시 showWindow를 호출해야 한다")
     }
-
 }
-
 
 private actor AsyncCounter {
     private var count = 0

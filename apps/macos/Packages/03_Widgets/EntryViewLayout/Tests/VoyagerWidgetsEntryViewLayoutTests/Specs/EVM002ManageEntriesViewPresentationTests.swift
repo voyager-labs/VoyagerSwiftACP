@@ -1052,7 +1052,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: regular itemsLoaded도 동일한 reapply helper path를 사용함
-    /// collection presentation reducer가 일반 entry operations load와 collection presentation load를 동일한 arrangement 경로로 처리하는지 검증한다.
+    /// collection presentation reducer가 일반 entry operations load와 collection presentation load를 동일한 arrangement 경로로
+    /// 처리하는지 검증한다.
     /// - 검증 내용: itemsLoaded 후 entries와 reapply sequence 확인
     /// - 사전 조건: 일반 item load action 수신
     /// - 기대 결과: 일반 mode 기준 entries와 arrangement apply가 반영됨
@@ -1171,7 +1172,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         if let resultingEntries {
             await store.receive(
                 { action in
-                    guard case let .entryArrangements(.delegate(.applied(sortedItems, mode))) = action else { return false }
+                    guard case let .entryArrangements(.delegate(.applied(sortedItems, mode))) = action
+                    else { return false }
                     return sortedItems == applyItems && mode == isCollectionMode
                 },
                 assert: { state in
@@ -1185,5 +1187,4 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             }
         }
     }
-
 }

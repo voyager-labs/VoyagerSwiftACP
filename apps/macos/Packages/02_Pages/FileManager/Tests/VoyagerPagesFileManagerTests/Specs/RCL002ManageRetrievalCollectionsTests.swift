@@ -1,5 +1,4 @@
 @_spi(Internals) import ComposableArchitecture
-import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
@@ -451,7 +450,6 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             savedContext: savedContext,
         )
     }
-
 
     // MARK: - RCL-002-show_restored_collection_snapshot
 

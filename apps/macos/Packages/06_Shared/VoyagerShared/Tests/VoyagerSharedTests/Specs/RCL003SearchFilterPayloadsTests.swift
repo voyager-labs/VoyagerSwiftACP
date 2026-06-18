@@ -124,7 +124,6 @@ final class RCL003SearchFilterPayloadsTests: XCTestCase {
         XCTAssertEqual(decoded, payload)
     }
 
-
     /// RCL-003-retrieve_entries_with_filters: recent search request payload는 scope와 sort 필드를 round-trip 보존함
     /// helper recent search 요청 payload의 공유 직렬화 계약을 검증한다.
     /// - 검증 내용: `RecentSearchRequestPayload` encode/decode 후 scopeMode, resultCap, includeHidden, sort 보존
@@ -204,5 +203,4 @@ final class RCL003SearchFilterPayloadsTests: XCTestCase {
         XCTAssertEqual(roundTripped.tags?.first?.name, "Work")
         XCTAssertEqual(roundTripped.creatorApplication, "Preview")
     }
-
 }

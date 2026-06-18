@@ -616,7 +616,6 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         await inspectorStore.finish()
     }
 
-
     /// FMW-002-show_sidebar: 시작 폴더가 location과 정확히 일치하면 source 로드 후 Sidebar 선택을 동기화한다.
     /// File Manager Window가 초기 폴더 경로를 가진 상태에서 Sidebar location 로드 결과를 선택 상태에 반영하는지 검증한다.
     /// - 검증 내용: locationsLoaded가 locations 배열과 selectedSidebarItem을 exact match location으로 갱신하는지 확인

@@ -205,7 +205,6 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.finish()
     }
 
-
     // MARK: - FMW-001-open_new_file_manager_window
 
     /// FMW-001-open_new_file_manager_window: makeInitial 기본 상태의 windowID 없음
@@ -292,7 +291,6 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         XCTAssertEqual(store.state.content.navigation.currentPath, SettingsDefaults.defaultTabPath())
     }
-
 
     /// FMW-001-open_file_manager_window: 제공된 초기 창 크기가 저장된 autosave frame보다 우선 적용된다.
     /// 실행 중 새 File Manager Window를 열 때 이전 autosave frame이 현재 요청 크기를 덮어쓰지 않는지 검증한다.

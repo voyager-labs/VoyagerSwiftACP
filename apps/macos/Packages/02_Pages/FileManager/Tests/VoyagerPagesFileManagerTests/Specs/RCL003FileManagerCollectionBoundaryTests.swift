@@ -228,7 +228,6 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         await store.finish()
     }
 
-
     // MARK: - RCL-003-retrieve_entries_with_filters
 
     /// RCL-003-retrieve_entries_with_filters: FileManager content state는 layout collection mode를 collection mode로 노출함

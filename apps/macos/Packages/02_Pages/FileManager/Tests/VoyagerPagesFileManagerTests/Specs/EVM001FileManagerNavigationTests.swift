@@ -174,10 +174,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         throw FixturePathError.repoRootNotFound(searchFrom: cwd)
     }
 
-
     // MARK: - EVM-001-reload_directory_page_on_external_change
-    private let reducer = FileManagerContentFeature()
 
+    private let reducer = FileManagerContentFeature()
 
     struct LifecycleBridgeHarness: @MainActor Reducer {
         // swiftlint:disable:next nesting
@@ -206,7 +205,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
         }
     }
-
 
     private func makeInitialState() -> LifecycleBridgeHarness.State {
         LifecycleBridgeHarness.State(content: FileManagerContentState())
@@ -411,7 +409,8 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.finish()
     }
 
-    /// EVM-001-reload_directory_page_on_external_change: collection route move-to-trash undo 시 collection presentation restore
+    /// EVM-001-reload_directory_page_on_external_change: collection route move-to-trash undo 시 collection presentation
+    /// restore
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: collection route에서 moveToTrash undo 후 collection presentation 복구 액션이 생성되는지 검증
     /// - 사전 조건: FileManagerContentState와 EntryOperations lifecycle bridge harness 구성
@@ -493,7 +492,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.finish()
     }
 }
-
 
 private enum FixturePathError: Error, CustomStringConvertible {
     case repoRootNotFound(searchFrom: String)
