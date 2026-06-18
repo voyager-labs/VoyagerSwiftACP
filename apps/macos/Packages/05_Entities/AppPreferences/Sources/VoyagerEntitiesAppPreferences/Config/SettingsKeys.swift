@@ -17,4 +17,5 @@ public enum SettingsKeys {
     public static let viewLayout = "viewLayout"
     public static let helperFolderAccessSnapshot = "helperFolderAccessSnapshot"
     public static let collectionSearchAISettings = "collectionSearchAISettings"
+    public static let accessStatusSnapshot = "accessStatusSnapshot"
 }

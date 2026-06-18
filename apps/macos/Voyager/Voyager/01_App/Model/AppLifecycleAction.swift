@@ -1,21 +1,31 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccountAccess
 
 @CasePathable
-enum AppLifecycleAction: CasePathable {
+enum AppLifecycleAction: CasePathable, Equatable {
     case launch(Launch)
     case termination(Termination)
+    case accountAccessGate(AccountAccessGate)
     case delegate(Delegate)
 
     @CasePathable
-    enum Launch: CasePathable {
+    enum Launch: CasePathable, Equatable {
         case willFinishLaunching
         case didFinishLaunching
         case appReopen(hasVisibleWindows: Bool)
     }
 
     @CasePathable
-    enum Termination: CasePathable {
+    enum AccountAccessGate: CasePathable, Equatable {
+        case checkAccessStatus
+        case accessStatusResponse(Result<AccessStatusResponse, AccessError>)
+        case showUnlockSurface
+        case accountAccessGranted(snapshot: AccessStatusSnapshot)
+    }
+
+    @CasePathable
+    enum Termination: CasePathable, Equatable {
         case requestTermination
         case quitConfirmationResponse(attemptID: UUID, result: QuitConfirmationResult)
         case startTerminationCleanup(attemptID: UUID)
@@ -23,8 +33,10 @@ enum AppLifecycleAction: CasePathable {
         case willTerminate
     }
 
-    enum Delegate {
+    @CasePathable
+    enum Delegate: CasePathable, Equatable {
         case openInitialWindowIfNeeded
         case reopenWindowIfNeeded(hasVisibleWindows: Bool)
+        case startHelperIfNeeded
     }
 }

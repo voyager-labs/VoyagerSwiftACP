@@ -13,6 +13,7 @@ final class AiProviderLiveSmokeTests: XCTestCase {
         line: UInt = #line,
     ) throws -> String {
         try XCTSkipIf(
+            // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
             ProcessInfo.processInfo.environment[envVar]?.isEmpty ?? true,
             "Environment variable \(envVar) not set — skipping live smoke test",
             file: file,

@@ -1,38 +1,61 @@
-import VoyagerFeaturesBetaAccess
+import Dependencies
+import Foundation
+import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesOnboarding
 
 // MARK: - 상태 변이 헬퍼
 
 /// 테스트에서 반복 사용하는 상태 변이 패턴을 네임스페이스로 제공합니다.
 enum StateMutation {
-    /// betaAccess 상태를 active/none/true로 설정합니다.
-    /// verificationResponse(.active) 수신 후의 상태 변이와 동일합니다.
-    static func applyActiveBetaAccess(state: inout OnboardingFeature.State) {
-        state.betaAccess.status = .active
-        state.betaAccess.reason = .none
-        state.betaAccess.isComplete = true
+    static let activeAccessResponse = AccessStatusResponse(
+        status: .coreLicenseActive,
+        entitlements: [.coreLicense],
+    )
+
+    static let activeAccessSnapshot = AccessStatusSnapshot(
+        status: .coreLicenseActive,
+        entitlements: [.coreLicense],
+        fetchedAt: Date(timeIntervalSince1970: 0),
+    )
+
+    static let activeAccountSessionClient = AccountSessionClient(
+        read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
+        persist: { _ in },
+        delete: {},
+    )
+
+    static let activeAuthNetworkClient = AuthNetworkClient(
+        exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+        fetchAccessStatus: { activeAccessResponse },
+        refreshToken: { throw AccessError.notConfigured },
+    )
+
+    static func installActiveAccessRefresh(_ dependencies: inout DependencyValues) {
+        dependencies.accountSessionClient = activeAccountSessionClient
+        dependencies.authNetworkClient = activeAuthNetworkClient
+        dependencies.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+            load: { activeAccessSnapshot },
+            save: { _ in },
+            remove: {},
+        )
+        dependencies.date = .constant(activeAccessSnapshot.fetchedAt)
     }
 
-    /// applyStepState(snapshot restore) 경로를 시뮬레이션합니다.
-    /// needsReverification = true로 설정하여 onAppear에서 re-verify가 트리거되도록 합니다.
+    /// access 상태를 server-canonical active access 결과와 동일하게 설정합니다.
+    static func applyActiveAccess(state: inout OnboardingFeature.State) {
+        state.betaAccess.status = .coreLicenseActive
+        state.betaAccess.snapshot = activeAccessSnapshot
+        state.betaAccess.isComplete = true
+        state.betaAccess.isSubmitting = false
+    }
+
+    static func applyPersistedCompletedAccessStep(state: inout OnboardingFeature.State) {
+        applyActiveAccess(state: &state)
+    }
+
+    /// applyStepState + accessSnapshot 복원 경로를 시뮬레이션합니다.
+    /// snapshot이 있으면 UnlockAccessFeature.onAppear에서 server-canonical refresh가 트리거됩니다.
     static func applyRestoredBetaAccess(state: inout OnboardingFeature.State) {
-        state.betaAccess.status = .active
-        state.betaAccess.reason = .none
-        state.betaAccess.isComplete = true
-        state.betaAccess.needsReverification = true
-    }
-
-    /// applyStepState(snapshot restore) 경로에서 email/token도 복원합니다.
-    static func applyActiveBetaAccess(
-        state: inout OnboardingFeature.State,
-        email: String,
-        token: String,
-    ) {
-        state.betaAccess.email = email
-        state.betaAccess.token = token
-        state.betaAccess.status = .active
-        state.betaAccess.reason = .none
-        state.betaAccess.isComplete = true
-        state.betaAccess.needsReverification = true
+        applyPersistedCompletedAccessStep(state: &state)
     }
 }

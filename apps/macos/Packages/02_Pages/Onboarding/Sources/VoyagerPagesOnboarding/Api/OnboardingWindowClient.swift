@@ -1,7 +1,17 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerFeaturesAccountAccess
 
 @MainActor private var onboardingWindowController: OnboardingWindowController?
+
+/// 온보딩 창이 열려 있으면 auth callback을 온보딩의 betaAccess(AccountAccessFeature)로 라우팅.
+/// 창이 없으면 false 반환.
+@MainActor
+public func routeAuthCallbackToOnboardingIfPresent(_ url: URL) -> Bool {
+    guard let controller = onboardingWindowController else { return false }
+    controller.store.send(.betaAccess(.loginCallbackReceived(url)))
+    return true
+}
 
 public enum OnboardingOpenMainWindowRequest: Equatable, Sendable {
     case defaultTabPath
@@ -58,16 +68,28 @@ extension OnboardingWindowClient: DependencyKey {
 
     nonisolated public static func makeLive(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
+        accountSessionClient: AccountSessionClient? = nil,
+        authNetworkClient: AuthNetworkClient? = nil,
+        signInHandoffClient: SignInHandoffClient? = nil,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
     ) -> OnboardingWindowClient {
         makeClient(
             progressClient: OnboardingProgressClient.liveValue,
             openMainWindow: openMainWindow,
+            accountSessionClient: accountSessionClient,
+            authNetworkClient: authNetworkClient,
+            signInHandoffClient: signInHandoffClient,
+            permissionDebugScenario: permissionDebugScenario,
         )
     }
 
     nonisolated static func makeClient(
         progressClient: OnboardingProgressClient,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
+        accountSessionClient: AccountSessionClient? = nil,
+        authNetworkClient: AuthNetworkClient? = nil,
+        signInHandoffClient: SignInHandoffClient? = nil,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
         showWindow customShowWindow: (@Sendable () async -> Void)? = nil,
         closeWindow customCloseWindow: (@Sendable () async -> Void)? = nil,
     ) -> OnboardingWindowClient {
@@ -75,7 +97,13 @@ extension OnboardingWindowClient: DependencyKey {
         let showWindow: @Sendable () async -> Void = customShowWindow ?? {
             await MainActor.run {
                 if onboardingWindowController == nil {
-                    onboardingWindowController = OnboardingWindowController(openMainWindow: openMainWindow)
+                    onboardingWindowController = OnboardingWindowController(
+                        openMainWindow: openMainWindow,
+                        accountSessionClient: accountSessionClient,
+                        authNetworkClient: authNetworkClient,
+                        signInHandoffClient: signInHandoffClient,
+                        permissionDebugScenario: permissionDebugScenario,
+                    )
                 }
 
                 onboardingWindowController?.showWindow(nil)

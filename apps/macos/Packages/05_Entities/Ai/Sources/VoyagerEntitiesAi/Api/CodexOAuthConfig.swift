@@ -16,6 +16,7 @@ public struct CodexOAuthConfig: Sendable, Equatable {
 
     /// Production defaults. Reads overrides from environment variables when set.
     public static let `default` = CodexOAuthConfig(
+        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
         clientId: ProcessInfo.processInfo.environment["OPENAI_CODEX_OAUTH_CLIENT_ID"]
             ?? "app_EMoamEEZ73f0CkXaXp7hrann",
         issuer: {

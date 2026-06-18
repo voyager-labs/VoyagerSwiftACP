@@ -2,14 +2,23 @@ import AppKit
 import ComposableArchitecture
 import QuartzCore
 import SwiftUI
+import VoyagerEntitiesAppPreferences
+import VoyagerFeaturesAccountAccess
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let store: StoreOf<OnboardingFeature>
     private var shouldTerminateOnClose = true
 
-    init(openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
-        false
-    }) {
+    // swiftlint:disable:next function_body_length
+    init(
+        openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool = { _ in
+            false
+        },
+        accountSessionClient: AccountSessionClient? = nil,
+        authNetworkClient: AuthNetworkClient? = nil,
+        signInHandoffClient: SignInHandoffClient? = nil,
+        permissionDebugScenario: (@Sendable () -> OnboardingPermissionDebugScenario?)? = nil,
+    ) {
         store = Store(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
@@ -22,6 +31,42 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                 openMainWindow: openMainWindow,
                 resetStoredProgress: base.resetStoredProgress,
             )
+            if let accountSessionClient {
+                $0.accountSessionClient = accountSessionClient
+            }
+            if let authNetworkClient {
+                $0.authNetworkClient = authNetworkClient
+            }
+            if let signInHandoffClient {
+                $0.signInHandoffClient = signInHandoffClient
+            }
+            if let permissionDebugScenario {
+                $0.fullDiskAccessClient = FullDiskAccessClient(
+                    status: {
+                        permissionDebugScenario()?.fullDiskAccessStatus ?? FullDiskAccessClient.liveValue.status()
+                    },
+                )
+                $0.helperFolderAccessClient = HelperFolderAccessClient(
+                    checkAccess: {
+                        if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
+                            return helperFolderAccess
+                        }
+                        return await HelperFolderAccessClient.liveValue.checkAccess()
+                    },
+                    requestAccess: {
+                        if let helperFolderAccess = permissionDebugScenario()?.helperFolderAccess {
+                            return helperFolderAccess
+                        }
+                        return await HelperFolderAccessClient.liveValue.requestAccess()
+                    },
+                )
+                $0.launchAtLoginClient = LaunchAtLoginClient(
+                    isEnabled: {
+                        permissionDebugScenario()?.launchAtLoginEnabled ?? LaunchAtLoginClient.liveValue.isEnabled()
+                    },
+                    setEnabled: { _ in },
+                )
+            }
         }
 
         let rootView = OnboardingView(store: store)

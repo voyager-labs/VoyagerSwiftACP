@@ -428,9 +428,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
 
         await store.send(.onAppear) { state in
             state.betaAccess.isComplete = true
-            state.betaAccess.status = .active
-            state.betaAccess.reason = .none
-            state.betaAccess.needsReverification = true
+            state.betaAccess.status = .coreLicenseActive
             state.permissions.isComplete = true
             state.aiProviderSetup.choice = .setUpLater
             state.aiProviderSetup.status = .skipped
@@ -509,8 +507,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .complete
         initialState.welcome.isComplete = true
-        initialState.betaAccess.isComplete = true
-        initialState.betaAccess.status = .active
+        StateMutation.applyPersistedCompletedAccessStep(state: &initialState)
         initialState.permissions.isComplete = true
         initialState.aiProviderSetup.choice = .providerConnected
         initialState.aiProviderSetup.status = .complete

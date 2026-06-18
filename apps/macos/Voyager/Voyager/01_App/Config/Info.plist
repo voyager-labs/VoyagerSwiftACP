@@ -63,7 +63,18 @@
 	<integer>21600</integer>
 	<key>SUFeedURL</key>
     <string>https://downloads.voyager.fm/releases/appcast.xml</string>
-    <key>SUPublicEDKey</key>
+	<key>SUPublicEDKey</key>
     <string>NomZB47jirICFt7N3J9K+ONptIwZig9UdpEnAiC1JJI=</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>fm.voyager.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>voyager</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

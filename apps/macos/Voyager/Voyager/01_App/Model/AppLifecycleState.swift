@@ -1,8 +1,12 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccountAccess
 
 @ObservableState
 struct AppLifecycleState: Equatable {
     var didStartHelper = false
     var terminationAttemptID: UUID?
+    var isCheckingAccountAccess = false
+    var lastAccessStatus: AccessStatus?
+    var accountAccessGateResolved = false
 }

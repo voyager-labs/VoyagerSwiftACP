@@ -34,6 +34,12 @@ Block implementation choices that violate clean architecture or FSD dependency d
 7. Layer vocabulary gate
     - Prefer standard Voyager/FSD segments (`Ui`, `Api`, `Model`, `Reducer`, `Lib`, `Config`).
     - Avoid introducing generic architecture buckets such as `Components`, `Types`, `Hooks`, or `Utils` as default segment names.
+8. Dependency client design gate
+    - Every registered `DependencyKey` has at least one `@Dependency(\.)` consumer in a `@Reducer`. No phantom dependencies.
+    - No `OtherClient.liveValue` reference inside another client's method closure (Premature Dependency Capture). Use a factory function or `@Dependency` resolved inside the closure.
+    - A single client must not mix multiple infrastructure seams (file I/O + network HTTP + system API). Split per seam.
+    - Do not introduce the `@DependencyClient` macro in a single package; the codebase uses manual `DependencyKey` conformance everywhere.
+    - See `.agents/rules/30-macos/11-dependency-client-design.md` for the full rule.
 
 ## Violation handling
 

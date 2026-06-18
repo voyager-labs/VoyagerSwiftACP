@@ -1,12 +1,12 @@
 import ComposableArchitecture
-import VoyagerFeaturesBetaAccess
+import VoyagerFeaturesAccountAccess
 
 @ObservableState
 struct OnboardingState: Equatable {
     var currentStep: OnboardingStep = .welcome
 
     var welcome: WelcomeFeature.State = .init()
-    var betaAccess: BetaAccessFeature.State = .init()
+    var betaAccess: AccountAccessFeature.State = .init()
     var permissions: PermissionsFeature.State = .init()
     var aiProviderSetup: AiProviderSetupFeature.State = .init()
     var complete: CompleteFeature.State = .init()
@@ -43,9 +43,8 @@ struct OnboardingState: Equatable {
                 aiProviderSetupChoice: aiProviderSetup.choice,
                 aiProviderSetupStatus: aiProviderSetup.status,
                 completeComplete: complete.isComplete,
-                betaAccessEmail: betaAccess.isComplete ? betaAccess.email : nil,
-                betaAccessToken: betaAccess.isComplete ? betaAccess.token : nil,
             ),
+            accessSnapshot: betaAccess.snapshot,
         )
     }
 
@@ -66,21 +65,11 @@ struct OnboardingState: Equatable {
 
     mutating func applyStepState(_ stepState: OnboardingStepState) {
         welcome.isComplete = stepState.welcomeComplete
-        betaAccess.isComplete = stepState.betaAccessComplete
-        betaAccess.isVerifying = false
-        if betaAccess.isComplete {
-            betaAccess.status = .active
-            betaAccess.reason = .none
-            betaAccess.needsReverification = true
-            if let email = stepState.betaAccessEmail, !email.isEmpty {
-                betaAccess.email = email
-            }
-            if let token = stepState.betaAccessToken, !token.isEmpty {
-                betaAccess.token = token
-            }
+        if stepState.betaAccessComplete {
+            betaAccess.isComplete = true
+            betaAccess.isSubmitting = false
         } else {
-            betaAccess.status = .notActive
-            betaAccess.reason = .missingInput
+            betaAccess = AccountAccessFeature.State()
         }
         permissions.isComplete = stepState.permissionsComplete
         aiProviderSetup.choice = stepState.aiProviderSetupChoice

@@ -16,7 +16,7 @@ enum OnboardingStep: String, CaseIterable, Codable {
         case .welcome:
             "Welcome"
         case .betaAccess:
-            "Beta Access"
+            "Unlock Voyager"
         case .permissions:
             "Permissions"
         case .aiProviderSetup:
@@ -31,7 +31,7 @@ enum OnboardingStep: String, CaseIterable, Codable {
         case .welcome:
             "A quick setup before you dive in."
         case .betaAccess:
-            "Confirm your invite to continue."
+            "Activate your Voyager license to continue."
         case .permissions:
             "Just a couple of permissions to get you going."
         case .aiProviderSetup:

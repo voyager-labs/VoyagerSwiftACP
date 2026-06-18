@@ -76,12 +76,33 @@ xcrun swift test --package-path <package-path> --filter <SpecID><PascalCaseSpecT
 
 Use `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
 
+## Specs/ directory contents
+
+`Specs/` contains ONLY spec-owner suite files matching `<SpecID><PascalCaseSpecTitle>Tests.swift`. No other test files are permitted in `Specs/`.
+
+### Forbidden in Specs/
+
+- Component or infrastructure unit test files (e.g. `AccountTokenFileStoreTests.swift`, `SomeClientTests.swift`, `TokenMapperTests.swift`).
+- Implementation-named suites that are not traceable to a spec AC.
+- Any file whose class name does not match `<SpecID><PascalCaseSpecTitle>Tests`.
+
+### Component behavior coverage workflow
+
+When a new component, client, or infrastructure type needs test coverage (atomic write, quarantine, permissions, serialization, mapping):
+
+1. **Identify the owning spec.** Determine which spec AC depends on this component's behavior.
+2. **If no AC exists, update the spec document first.** Add the missing AC to the spec's interaction document so the behavior is formally specified.
+3. **Add test methods to the owning spec-owner suite.** Place them under the appropriate `// MARK: - <SPEC-ID>-<interaction_id>` section. Use `///` traceability doc comments like any other AC test.
+4. **Never create a standalone component test file.** All product behavior verification — including infrastructure-level guarantees like file permissions, atomic writes, or quarantine — belongs as test methods inside the spec-owner suite that exercises the product behavior depending on that component.
+
+Example: `AccountTokenFileStore` atomic write and quarantine behavior is product-relevant (token persistence safety). The correct owner is the spec that requires token persistence — e.g. `ACC001RestoreAccountSessionTests` or `ACC001SignOutAccountTests`. Add test methods there under the relevant `// MARK:` section. Do not create `AccountTokenFileStoreTests.swift`.
+
 ## Ownership rules
 
 - Product behavior belongs in the spec-owner suite.
 - Cross-feature flows may assert this spec's routed consequence, but must not re-own another spec's domain behavior.
 - Existing `PolicyTests`, `ContractTests`, `LifecycleTests`, or `AdapterTests` files should not receive new product AC coverage once a spec owner exists.
-- Keep pure technical contracts outside spec suites only when no product AC owns them, such as parser conformance, serialization compatibility, or platform adapter invariants.
+- Keep pure technical contracts outside spec suites only when no product AC owns them, such as parser conformance, serialization compatibility, or platform adapter invariants. When a product AC does own the behavior, absorb the test into the spec-owner suite per the component behavior coverage workflow above.
 
 ## Split-target spec ownership
 
@@ -110,6 +131,38 @@ Tests/<PackageTestTarget>/
 ```
 
 Both suites share the same spec ID prefix and the same interaction IDs in `// MARK:` sections and traceability comments, but each suite only asserts behavior within its own ownership scope.
+
+## Forbidden implementation-named suites
+
+A suite whose filename includes reducer, client, status, contract, or feature implementation terms after the spec ID prefix must not contain product AC coverage. Only `<SpecID><PascalCaseSpecTitle>Tests` owns product ACs.
+
+### Examples of forbidden suite names
+
+These real patterns from AccountAccess package tests (previously LicenseAuth) violate the ownership rule because they embed implementation detail in the suite name:
+
+| Forbidden suite name               | Why it is forbidden                                           |
+| ---------------------------------- | ------------------------------------------------------------- |
+| `AccountAccessReducerTests`        | Reducer implementation detail, not a spec-owner suite         |
+| `AccountAccessClientContractTests` | Client implementation detail, not a spec-owner suite          |
+| `AccessStatusActivityTests`        | Status activity implementation detail, not a spec-owner suite |
+| `AccessStatusCodingContractTests`  | Coding contract detail, not a spec-owner suite                |
+| `AccountAccessFeatureTests`        | Forbidden `FeatureTests` suffix                               |
+
+### Correct owner
+
+The correct spec-owner suite for ONB-002 is `ONB002PresentAccessUnlockStepTests`, derived from the feature inventory:
+
+- `feature_id` = `ONB-002`
+- `feature_title` = `Present Access Unlock Step`
+- Compact prefix: `ONB002`
+- PascalCase title: `PresentAccessUnlockStep`
+- Expected suite: `ONB002PresentAccessUnlockStepTests.swift`
+
+Each target that owns ONB-002 behavior should contain a file named `ONB002PresentAccessUnlockStepTests.swift`, not any of the forbidden names above.
+
+### Rule
+
+If a suite name matches the spec-like pattern `[A-Z]{2,4}[0-9]{3}.*Tests\.swift` but does not match the TSV-computed owner suite name `<CompactPrefix><PascalCaseTitle>Tests.swift`, it must not contain product interaction `// MARK:` sections. Such files may exist as technical-only contract or adapter tests, but they must not own product AC coverage.
 
 ## Support rules
 

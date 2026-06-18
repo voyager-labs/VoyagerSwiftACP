@@ -139,6 +139,7 @@ identifier_name:
   max_length:
     warning: 40 # 긴 변수/파라미터 이름 경고 기준입니다.
     error: 60 # 과도하게 긴 identifier의 hard limit입니다.
+  allowed_symbols: ["_"] # TCA `_` prefix 내부 액션 컨벤션 및 snake_case 허용
   excluded: # 도메인에서 흔한 짧은 약어는 허용합니다.
     - id
     - url

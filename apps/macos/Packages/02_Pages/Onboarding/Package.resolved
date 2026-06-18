@@ -1,5 +1,5 @@
 {
-  "originHash" : "169e7c7349ec7ee873a5937c958ce1a9118f40494006bf633e6b9d23fcaa7958",
+  "originHash" : "3218cb3285463f3f46dbd2fc2cdcf8df7a3efafc4533d9a1d6d6d56ac91c3d29",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -71,15 +71,6 @@
       "state" : {
         "revision" : "a10f9feeb214bc72b5337b6ef6d5a029360db4cc",
         "version" : "1.10.0"
-      }
-    },
-    {
-      "identity" : "swift-dotenv",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/thebarndog/swift-dotenv",
-      "state" : {
-        "revision" : "d13062940a3cdb2b13efa22ecc83b07b21c2e8dc",
-        "version" : "2.1.0"
       }
     },
     {

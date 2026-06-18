@@ -133,17 +133,36 @@ struct OnboardingView: View {
         case .betaAccess:
             if viewStore.betaAccess.isComplete {
                 nextButton(viewStore: viewStore)
-            } else {
-                let isRetry = viewStore.betaAccess.showsRetry
+            } else if viewStore.betaAccess.canStartLogin {
                 Button {
-                    viewStore.send(isRetry ? .betaAccess(.retryTapped) : .betaAccess(.checkTapped))
+                    viewStore.send(.betaAccess(.loginTapped))
                 } label: {
-                    topBarLabel(isRetry ? "Retry (Enter)" : "Check (Enter)")
+                    topBarLabel("Sign In (Enter)")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(accentColor)
                 .keyboardShortcut(.return, modifiers: [])
-                .disabled(!viewStore.betaAccess.canSubmit || viewStore.betaAccess.isVerifying)
+                .disabled(viewStore.betaAccess.isSignInInProgress)
+            } else if viewStore.betaAccess.canRefreshAccess, viewStore.betaAccess.showsRetry {
+                Button {
+                    viewStore.send(.betaAccess(.retryTapped))
+                } label: {
+                    topBarLabel("Retry (Enter)")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(accentColor)
+                .keyboardShortcut(.return, modifiers: [])
+                .disabled(!viewStore.betaAccess.canRetry || viewStore.betaAccess.isSubmitting)
+            } else if viewStore.betaAccess.canRefreshAccess {
+                Button {
+                    viewStore.send(.betaAccess(.refreshAccessTapped))
+                } label: {
+                    topBarLabel("Refresh (Enter)")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(accentColor)
+                .keyboardShortcut(.return, modifiers: [])
+                .disabled(viewStore.betaAccess.isSubmitting || viewStore.betaAccess.isSignInInProgress)
             }
         case .complete:
             Button {
@@ -226,7 +245,7 @@ struct OnboardingView: View {
         case .welcome:
             WelcomeStepView(store: store.scope(state: \.welcome, action: \.welcome))
         case .betaAccess:
-            BetaAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
+            UnlockAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
         case .aiProviderSetup:
