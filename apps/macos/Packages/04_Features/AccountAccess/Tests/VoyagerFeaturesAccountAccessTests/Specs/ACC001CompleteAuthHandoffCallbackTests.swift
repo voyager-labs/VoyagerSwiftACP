@@ -232,6 +232,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
+            state.ttlTimerActive = true
             state.fetchGeneration = 1
         }
 
@@ -247,6 +248,8 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         }
         await store.receive(\.delegate.unlocked)
         XCTAssertTrue(store.state.hasAccountSession)
+        // TTL 타이머가 in-flight 상태이므로 finish 전에 exhaustivity를 끈다.
+        store.exhaustivity = .off
         await store.finish()
     }
 
@@ -286,6 +289,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
+            state.ttlTimerActive = true
             state.fetchGeneration = 1
         }
 

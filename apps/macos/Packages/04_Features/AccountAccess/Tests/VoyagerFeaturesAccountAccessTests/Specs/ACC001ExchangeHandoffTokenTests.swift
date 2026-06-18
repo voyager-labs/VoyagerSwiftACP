@@ -106,6 +106,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
+            state.ttlTimerActive = true
             state.fetchGeneration = 1
         }
 

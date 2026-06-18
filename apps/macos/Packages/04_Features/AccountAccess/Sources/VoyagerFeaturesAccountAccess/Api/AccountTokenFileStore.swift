@@ -1,61 +1,84 @@
-import Foundation
+@preconcurrency import Darwin
+@preconcurrency import Foundation
 import VoyagerEntitiesAi
 
 // REFACTOR: 향후 VoyagerShared/CredentialStore로 AIConnectionFileStore와 통합 예정
 actor AccountTokenFileStore {
     private let fileManager = FileManager.default
     private let payloadURL: URL
+    private let lockURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init(payloadURL: URL) {
+    init(payloadURL: URL, lockURL: URL) {
         self.payloadURL = payloadURL
+        self.lockURL = lockURL
         encoder.outputFormatting = [.sortedKeys]
     }
 
     static func withDefaultHome(
         homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
     ) -> AccountTokenFileStore {
-        let payloadURL = AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeDirectoryURL)
-        return AccountTokenFileStore(payloadURL: payloadURL)
+        AccountTokenFileStore(
+            payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeDirectoryURL),
+            lockURL: AccountTokenFSLocation.lockFileURL(homeDirectoryURL: homeDirectoryURL),
+        )
     }
 
     static func withCustomHome(homeURL: URL) -> AccountTokenFileStore {
-        let payloadURL = AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeURL)
-        return AccountTokenFileStore(payloadURL: payloadURL)
+        AccountTokenFileStore(
+            payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeURL),
+            lockURL: AccountTokenFSLocation.lockFileURL(homeDirectoryURL: homeURL),
+        )
     }
 
     func read() throws -> AccountTokensFile? {
+        try withExclusiveLock {
+            try readUnlocked()
+        }
+    }
+
+    func write(_ file: AccountTokensFile) throws {
+        try withExclusiveLock {
+            let data = try encoder.encode(file)
+            try replacePayload(with: data)
+        }
+    }
+
+    func delete() throws {
+        try withExclusiveLock {
+            if fileManager.fileExists(atPath: payloadURL.path) {
+                try fileManager.removeItem(at: payloadURL)
+            }
+        }
+    }
+
+    func quarantineAndRemove() throws {
+        try withExclusiveLock {
+            try quarantineAndRemoveUnlocked()
+        }
+    }
+
+    private func readUnlocked() throws -> AccountTokensFile? {
         guard fileManager.fileExists(atPath: payloadURL.path) else {
             return nil
         }
 
         let data = try Data(contentsOf: payloadURL)
         guard !data.isEmpty else {
-            try quarantineAndRemove()
+            try quarantineAndRemoveUnlocked()
             return nil
         }
 
         do {
             return try decoder.decode(AccountTokensFile.self, from: data)
         } catch {
-            try quarantineAndRemove()
+            try quarantineAndRemoveUnlocked()
             return nil
         }
     }
 
-    func write(_ file: AccountTokensFile) throws {
-        let data = try encoder.encode(file)
-        try replacePayload(with: data)
-    }
-
-    func delete() throws {
-        if fileManager.fileExists(atPath: payloadURL.path) {
-            try fileManager.removeItem(at: payloadURL)
-        }
-    }
-
-    func quarantineAndRemove() throws {
+    private func quarantineAndRemoveUnlocked() throws {
         let quarantineURL = AccountTokenFSLocation.quarantineFileURL(
             directoryURL: payloadURL.deletingLastPathComponent(),
         )
@@ -115,4 +138,21 @@ actor AccountTokenFileStore {
         )
         guard didCreateFile else { throw CocoaError(.fileWriteUnknown) }
     }
+
+    /// 프로세스 간 동시 접근을 막기 위해 lock 파일에 flock(LOCK_EX)을 획득한다.
+    /// .agents/rules/30-macos/06-file-backed-storage-invariants.md 준수.
+    private func withExclusiveLock<T>(_ operation: () throws -> T) throws -> T {
+        try ensureParentDirectoryExists()
+        let descriptor = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw POSIXLockError.openFailed(errno) }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX) == 0 else { throw POSIXLockError.lockFailed(errno) }
+        defer { flock(descriptor, LOCK_UN) }
+        return try operation()
+    }
+}
+
+enum POSIXLockError: Error, Equatable {
+    case openFailed(Int32)
+    case lockFailed(Int32)
 }

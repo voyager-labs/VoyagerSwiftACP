@@ -16,7 +16,7 @@ public struct UnlockSurfaceWindowClient: Sendable {
     public var openMainWindow: @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool
     public var onUnlocked: @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void
 
-    public nonisolated init(
+    nonisolated public init(
         showWindow: @escaping @Sendable () async -> Void,
         closeWindow: @escaping @Sendable () async -> Void,
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
@@ -30,7 +30,13 @@ public struct UnlockSurfaceWindowClient: Sendable {
 }
 
 extension UnlockSurfaceWindowClient: DependencyKey {
-    public nonisolated static var liveValue: UnlockSurfaceWindowClient {
+    nonisolated public static var liveValue: UnlockSurfaceWindowClient {
+        makeLive(openMainWindow: { _ in
+            fatalError("unlockSurfaceWindowClient.openMainWindow live dependency is not configured")
+        })
+    }
+
+    nonisolated public static var testValue: UnlockSurfaceWindowClient {
         UnlockSurfaceWindowClient(
             showWindow: { fatalError("not configured") },
             closeWindow: { fatalError("not configured") },
@@ -38,17 +44,11 @@ extension UnlockSurfaceWindowClient: DependencyKey {
         )
     }
 
-    public nonisolated static var testValue: UnlockSurfaceWindowClient {
-        UnlockSurfaceWindowClient(
-            showWindow: { fatalError("not configured") },
-            closeWindow: { fatalError("not configured") },
-            openMainWindow: { _ in fatalError("not configured") },
-        )
+    nonisolated public static var previewValue: UnlockSurfaceWindowClient {
+        testValue
     }
 
-    public nonisolated static var previewValue: UnlockSurfaceWindowClient { testValue }
-
-    public nonisolated static func makeLive(
+    nonisolated public static func makeLive(
         openMainWindow: @escaping @Sendable (_ request: OnboardingOpenMainWindowRequest) async -> Bool,
         onUnlocked: @escaping @Sendable (_ snapshot: AccessStatusSnapshot) async -> Void = { _ in },
     ) -> UnlockSurfaceWindowClient {

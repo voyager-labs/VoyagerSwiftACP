@@ -248,13 +248,20 @@ public struct AccountAccessFeature {
         result: Result<AccountSession, AppHandoffExchangeError>,
     ) -> Effect<Action> {
         switch result {
-        case .success:
+        case let .success(session):
             state.isSignInInProgress = false
             state.hasAccountSession = true
             state.didSignInFail = false
             state.isSessionExpired = false
+            // handoff 성공 시 sessionExpiresAt/ttlTimerActive를 설정하고 TTL 타이머를 시작한다.
+            // handleOnAppearSessionRestored와 동일한 ownership path를 따른다.
+            state.sessionExpiresAt = session.expiresAt
+            state.ttlTimerActive = true
             state.fetchGeneration += 1
-            return fetchAccessStatusEffect(generation: state.fetchGeneration)
+            return .merge(
+                fetchAccessStatusEffect(generation: state.fetchGeneration),
+                startTtlTimer(),
+            )
 
         case .failure:
             state.isSignInInProgress = false

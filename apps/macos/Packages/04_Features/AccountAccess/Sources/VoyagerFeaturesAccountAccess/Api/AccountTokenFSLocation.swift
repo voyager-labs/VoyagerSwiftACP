@@ -6,6 +6,7 @@ enum AccountTokenFSLocation {
     static let directoryName = ".voyager"
     static let payloadFileName = "account_tokens.json"
     static let quarantinePrefix = "account_tokens.corrupted"
+    static let lockFileName = "account_tokens.lock"
 
     static func directoryURL(homeDirectoryURL: URL) -> URL {
         homeDirectoryURL
@@ -17,6 +18,13 @@ enum AccountTokenFSLocation {
     ) -> URL {
         directoryURL(homeDirectoryURL: homeDirectoryURL)
             .appendingPathComponent(payloadFileName)
+    }
+
+    static func lockFileURL(
+        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
+    ) -> URL {
+        directoryURL(homeDirectoryURL: homeDirectoryURL)
+            .appendingPathComponent(lockFileName)
     }
 
     static func quarantineFileURL(

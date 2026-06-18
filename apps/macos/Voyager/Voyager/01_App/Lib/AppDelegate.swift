@@ -60,6 +60,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func routeAuthCallback(_ url: URL) {
         MainActor.assumeIsolated {
+            if VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url) {
+                return
+            }
             VoyagerPagesOnboarding.routeAuthCallbackToUnlockSurface(url)
         }
     }
