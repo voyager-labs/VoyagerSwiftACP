@@ -183,4 +183,52 @@ final class AppRootFeatureContractTests: XCTestCase {
             return true
         }
     }
+
+    // MARK: - FMW-003: Cold Start URL Buffering
+
+    /// Cold state(창 없음)에서 receiveExternalURL 수신 시 pendingExternalURL에 저장됨을 검증
+    func testReceiveExternalURLBuffersWhenNoWindows() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test"))
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.receiveExternalURL(url)) {
+            $0.pendingExternalURL = url
+        }
+    }
+
+    /// Hot state(창 있음)에서 receiveExternalURL 수신 시 pendingExternalURL이 nil로 유지됨을 검증
+    /// authCallback URL을 사용하여 OpenRouter의 pathProbe 효과 없이 전달 여부만 검증
+    func testReceiveExternalURLForwardsWhenWindowsExist() async throws {
+        let windowID = UUID()
+        let url = try XCTUnwrap(URL(string: "voyager://auth/callback?code=test"))
+        var state = AppRootFeature.State()
+        state.windowManager.windows = [
+            WindowSessionState(id: windowID, window: .makeInitial(path: "/tmp")),
+        ]
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        }
+        // store.exhaustivity = .off: Hot state에서 URL 수신 시 OpenRouter로 effect가 전달되므로 핵심 state만 검증
+        store.exhaustivity = .off
+
+        await store.send(.receiveExternalURL(url))
+        XCTAssertNil(store.state.pendingExternalURL)
+    }
+
+    /// Proves AppRoot's Settings forwarding does NOT route through MenuCommands.
+    /// MenuCommandsAction.Delegate has no `.settings` case — absence is structural.
+    /// This test verifies that settings-driven actions (checkForUpdates) route
+    /// directly to updater, not via menuCommands.
+    func testSettingsCheckForUpdatesDoesNotRouteThroughMenuCommands() async {
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.settings(.general(.checkForUpdates)))
+        await store.receive(\.updater.checkForUpdates)
+    }
 }

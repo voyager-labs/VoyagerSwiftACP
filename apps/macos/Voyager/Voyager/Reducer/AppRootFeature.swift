@@ -62,6 +62,9 @@ struct AppRootFeature {
         Scope(state: \.menuCommands, action: \.menuCommands) {
             MenuCommandsFeature()
         }
+        Scope(state: \.openRouter, action: \.openRouter) {
+            OpenRouterFeature()
+        }
 
         Reduce { state, action in
             reduceAppLifecycle(into: &state, action: action)
@@ -71,6 +74,9 @@ struct AppRootFeature {
         }
         Reduce { state, action in
             reducePreferencesAndCommands(into: &state, action: action)
+        }
+        Reduce { state, action in
+            reduceExternalURL(into: &state, action: action)
         }
         Reduce { state, action in
             reduceWindowPostAction(into: &state, action: action)
@@ -300,9 +306,51 @@ struct AppRootFeature {
         case let .settings(.general(.toggleAutomaticUpdate(enabled))):
             return .send(.updater(.setAutomaticUpdate(enabled)))
 
+            // MARK: - Open Router Delegate
+
+        case let .openRouter(.delegate(.openFolder(path))):
+            // OpenRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
+            return .send(.windowManager(.file(.newWindow(path: path))))
+
+        case let .openRouter(.delegate(.openParentFolder(path))):
+            // OpenRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
+            return .send(.windowManager(.file(.newWindow(path: path))))
+
+        case .openRouter(.delegate(.routeToAuthCallback)):
+            // ACC-001 소유의 OAuth callback — FMW-003가 가로채지 않음
+            // TODO: ACC 핸드오프 seam 확인 후 실제 전달 로직 추가
+            return .none
+
         default:
             return .none
         }
+    }
+
+    private func reduceExternalURL(
+        into state: inout State,
+        action: Action,
+    ) -> Effect<Action> {
+        switch action {
+        case let .receiveExternalURL(url):
+            // 창이 없으면 버퍼링, 창이 열리면 OpenRouter로 URL 전달
+            guard !state.windowManager.windows.isEmpty else {
+                state.pendingExternalURL = url
+                return .none
+            }
+            // 창이 열려 있는 상태에서 OpenRouter로 URL 전달
+            return .send(.openRouter(.receive(url)))
+
+        default:
+            return .none
+        }
+    }
+
+    /// didOpenFirstWindow 분기에서 버퍼링된 외부 URL을 소비하고 nil로 리셋
+    private func flushPendingExternalURL(state: inout State) -> Effect<Action> {
+        guard let url = state.pendingExternalURL else { return .none }
+        state.pendingExternalURL = nil
+        // 버퍼링된 URL을 OpenRouter로 전달
+        return .send(.openRouter(.receive(url)))
     }
 
     private func reduceWindowPostAction(
@@ -319,6 +367,7 @@ struct AppRootFeature {
             didOpenFirstWindow ? .send(.startHelperExternalFileBridge) : .none,
             didOpenFirstWindow ? .send(.flushPendingReplay) : .none,
             (didOpenFirstWindow && state.lastHelperReady) ? .send(.registerHelperWatchRootsIfNeeded) : .none,
+            didOpenFirstWindow ? flushPendingExternalURL(state: &state) : .none,
         )
     }
 }

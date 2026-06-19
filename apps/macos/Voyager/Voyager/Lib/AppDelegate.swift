@@ -35,6 +35,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func application(_: NSApplication, open urls: [URL]) {
+        withAppRootStore {
+            // voyager:// URL만 필터링하여 스토어로 전달 (라우팅은 Reducer가 담당)
+            for url in urls where url.scheme == "voyager" {
+                $0.send(.receiveExternalURL(url))
+            }
+        }
+    }
+
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         withAppRootStore {
             $0.send(.lifecycle(.launch(.appReopen(hasVisibleWindows: flag))))
