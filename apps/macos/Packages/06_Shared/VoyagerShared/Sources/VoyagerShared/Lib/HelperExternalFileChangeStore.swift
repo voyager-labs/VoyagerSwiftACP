@@ -1,13 +1,13 @@
 import Darwin
 import Foundation
 
-nonisolated enum HelperExternalFSLocation {
-    static let directoryName = "Voyager"
-    static let payloadFileName = "helper_external_file_changes.json"
-    static let lockFileName = "helper_external_file_changes.lock"
-    static let quarantinePrefix = "helper_external_file_changes.corrupted"
+nonisolated public enum HelperExternalFSLocation {
+    public static let directoryName = "Voyager"
+    public static let payloadFileName = "helper_external_file_changes.json"
+    public static let lockFileName = "helper_external_file_changes.lock"
+    public static let quarantinePrefix = "helper_external_file_changes.corrupted"
 
-    static func applicationSupportRootURL(homeDirectoryURL: URL = FileManager.default
+    public static func applicationSupportRootURL(homeDirectoryURL: URL = FileManager.default
         .homeDirectoryForCurrentUser) -> URL
     {
         homeDirectoryURL
@@ -15,34 +15,34 @@ nonisolated enum HelperExternalFSLocation {
             .appendingPathComponent("Application Support", isDirectory: true)
     }
 
-    static func directoryURL(homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    public static func directoryURL(homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         applicationSupportRootURL(homeDirectoryURL: homeDirectoryURL)
             .appendingPathComponent(directoryName, isDirectory: true)
     }
 
-    static func payloadFileURL(homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    public static func payloadFileURL(homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         directoryURL(homeDirectoryURL: homeDirectoryURL).appendingPathComponent(payloadFileName)
     }
 
-    static func lockFileURL(homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    public static func lockFileURL(homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         directoryURL(homeDirectoryURL: homeDirectoryURL).appendingPathComponent(lockFileName)
     }
 
-    static func quarantineFileURL(directoryURL: URL, generatedAt: Date = Date()) -> URL {
+    public static func quarantineFileURL(directoryURL: URL, generatedAt: Date = Date()) -> URL {
         let formatter = ISO8601DateFormatter()
         let timestamp = formatter.string(from: generatedAt).replacingOccurrences(of: ":", with: "-")
         return directoryURL.appendingPathComponent("\(quarantinePrefix)-\(timestamp).json")
     }
 }
 
-actor HelperExternalFileChangeStore {
+public actor HelperExternalFileChangeStore {
     private let fileManager: FileManager
     private let payloadURL: URL
     private let lockURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init(
+    public init(
         fileManager: FileManager = .default,
         payloadURL: URL? = nil,
         lockURL: URL? = nil,
@@ -55,11 +55,11 @@ actor HelperExternalFileChangeStore {
         decoder.dateDecodingStrategy = .millisecondsSince1970
     }
 
-    func replace(with payload: HelperExternalFileChangePayload) throws {
+    public func replace(with payload: HelperExternalFileChangePayload) throws {
         try withExclusiveLock { try write(payload) }
     }
 
-    func coalesce(_ newPaths: [String], generatedAt: Date = Date()) throws -> HelperExternalFileChangePayload? {
+    public func coalesce(_ newPaths: [String], generatedAt: Date = Date()) throws -> HelperExternalFileChangePayload? {
         try withExclusiveLock {
             let canonicalNewPaths = HelperExternalFileChangePayload.canonicalPaths(newPaths)
             guard !canonicalNewPaths.isEmpty else { return try readLocked() }
@@ -73,11 +73,13 @@ actor HelperExternalFileChangeStore {
         }
     }
 
-    func load() throws -> HelperExternalFileChangePayload? {
+    public func load() throws -> HelperExternalFileChangePayload? {
         try withExclusiveLock { try readLocked() }
     }
 
-    func payloadForReplay(_ request: HelperExternalFileChangeReplayRequest) throws -> HelperExternalFileChangePayload? {
+    public func payloadForReplay(_ request: HelperExternalFileChangeReplayRequest) throws
+        -> HelperExternalFileChangePayload?
+    {
         try withExclusiveLock {
             let payload = try readLocked()
             guard request.consume, payload != nil else { return payload }
@@ -86,11 +88,11 @@ actor HelperExternalFileChangeStore {
         }
     }
 
-    func clear() throws {
+    public func clear() throws {
         try withExclusiveLock { try clearLocked() }
     }
 
-    func remove(_ paths: [String]) throws -> HelperExternalFileChangePayload? {
+    public func remove(_ paths: [String]) throws -> HelperExternalFileChangePayload? {
         try withExclusiveLock {
             guard let existing = try readLocked() else { return nil }
 
@@ -161,7 +163,7 @@ actor HelperExternalFileChangeStore {
     }
 }
 
-enum POSIXLockError: Error, Equatable {
+public enum POSIXLockError: Error, Equatable {
     case openFailed(Int32)
     case lockFailed(Int32)
 }

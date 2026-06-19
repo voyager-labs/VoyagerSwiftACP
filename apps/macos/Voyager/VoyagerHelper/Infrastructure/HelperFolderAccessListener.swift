@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerShared
 
 @MainActor
 final class HelperFolderAccessListener {
