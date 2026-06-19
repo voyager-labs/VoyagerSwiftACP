@@ -1,10 +1,10 @@
 import Foundation
 import SwiftDotenv
 
-struct EnvironmentLoader {
+public struct EnvironmentLoader {
     private init() {}
 
-    enum LoadError: Error, Equatable {
+    public enum LoadError: Error, Equatable {
         case projectRootNotFound
         case resourceURLNotFound
         case fileNotFound(path: String)
@@ -12,7 +12,7 @@ struct EnvironmentLoader {
 
     nonisolated private static let projectRootKey = "VOYAGER_PROJECT_ROOT"
 
-    enum AppEnv: String {
+    public enum AppEnv: String {
         case dev
         case prod
 
@@ -26,7 +26,7 @@ struct EnvironmentLoader {
         }
     }
 
-    nonisolated static func detectAppEnv(bundle: Bundle = .main) -> AppEnv {
+    nonisolated public static func detectAppEnv(bundle: Bundle = .main) -> AppEnv {
         var appEnv: AppEnv = .dev
         if let infoEnv = bundle.infoDictionary?["APP_ENV"] as? String,
            let envType = AppEnv(rawValue: infoEnv)
@@ -38,7 +38,7 @@ struct EnvironmentLoader {
         return appEnv
     }
 
-    nonisolated static func loadEnvFilesWithProjectRootInference(
+    nonisolated public static func loadEnvFilesWithProjectRootInference(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundle: Bundle = .main,
     ) throws {
@@ -53,7 +53,7 @@ struct EnvironmentLoader {
         try loadEnvFiles(environment: resolvedEnvironment, bundle: bundle)
     }
 
-    nonisolated static func loadEnvFiles(
+    nonisolated public static func loadEnvFiles(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundle: Bundle = .main,
     ) throws {
@@ -115,7 +115,7 @@ struct EnvironmentLoader {
     }
 }
 
-extension Dotenv {
+public extension Dotenv {
     static var appEnv: EnvironmentLoader.AppEnv? {
         guard let value = self["APP_ENV"]?.stringValue else {
             return nil
