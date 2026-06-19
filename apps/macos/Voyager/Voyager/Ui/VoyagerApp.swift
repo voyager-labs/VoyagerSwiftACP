@@ -10,6 +10,7 @@ import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
+import VoyagerShared
 
 @main
 struct VoyagerApp: App {
@@ -96,8 +97,8 @@ struct VoyagerApp: App {
                 }
             },
             logDAUEntryAction: { actionKind, entryKind in
-                let sentryActionKind = DAUEntryActionKind(rawValue: actionKind.rawValue)
-                let sentryEntryKind = DAUEntryKind(rawValue: entryKind.rawValue)
+                let sentryActionKind = VoyagerShared.DAUEntryActionKind(rawValue: actionKind.rawValue)
+                let sentryEntryKind = VoyagerShared.DAUEntryKind(rawValue: entryKind.rawValue)
                 Task { @MainActor in
                     guard let sentryActionKind, let sentryEntryKind else { return }
                     VoyagerSentryMetricLogger.logDAUEntryAction(
