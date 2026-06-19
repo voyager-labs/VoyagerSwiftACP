@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 
 nonisolated struct SearchConditionBuilder {
     let registry: PropertyConditionRegistry
