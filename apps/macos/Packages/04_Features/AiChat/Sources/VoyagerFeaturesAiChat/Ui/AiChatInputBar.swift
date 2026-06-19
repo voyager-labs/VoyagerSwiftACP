@@ -406,19 +406,6 @@ private struct AiChatRemovableRequestContextChip: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
 
-            if let statusLabel, !statusLabel.isEmpty {
-                Text(statusLabel)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.primary.opacity(0.05)),
-                    )
-            }
-
             if let trailingAccessorySystemName {
                 Image(systemName: trailingAccessorySystemName)
                     .font(.system(size: 10, weight: .semibold))
