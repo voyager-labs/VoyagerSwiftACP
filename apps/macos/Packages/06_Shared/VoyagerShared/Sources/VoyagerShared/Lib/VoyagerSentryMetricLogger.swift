@@ -1,7 +1,7 @@
 import Foundation
 import Sentry
 
-enum MetricLogLevel {
+public enum MetricLogLevel {
     case trace
     case debug
     case info
@@ -10,19 +10,19 @@ enum MetricLogLevel {
     case fatal
 }
 
-enum DAUNavigationKind: String {
+public enum DAUNavigationKind: String {
     case folder
     case collection
 }
 
-enum DAUEntryKind: String {
+public enum DAUEntryKind: String {
     case file
     case directory
     case collection
     case mixed
 }
 
-enum DAUEntryActionKind: String {
+public enum DAUEntryActionKind: String {
     case openDefault = "open_default"
     case openWithApp = "open_with_app"
     case quickLook = "quick_look"
@@ -47,14 +47,14 @@ enum DAUEntryActionKind: String {
     case setTags = "set_tags"
 }
 
-enum VoyagerSentryMetricLogger {
+public enum VoyagerSentryMetricLogger {
     nonisolated private static let userIdStore = UserIdStore()
 
-    nonisolated static func setUserId(_ userId: String?) {
+    nonisolated public static func setUserId(_ userId: String?) {
         userIdStore.set(userId)
     }
 
-    nonisolated static func logMetric(
+    nonisolated public static func logMetric(
         _ name: String,
         value: Double,
         tags: [String: String]? = nil,
@@ -88,14 +88,14 @@ enum VoyagerSentryMetricLogger {
         }
     }
 
-    nonisolated static func logDAUNavigation(kind: DAUNavigationKind) {
+    nonisolated public static func logDAUNavigation(kind: DAUNavigationKind) {
         captureDAUEvent(
             name: "dau.navigation",
             tags: ["nav.kind": kind.rawValue],
         )
     }
 
-    nonisolated static func logDAUEntryAction(
+    nonisolated public static func logDAUEntryAction(
         actionKind: DAUEntryActionKind,
         entryKind: DAUEntryKind,
     ) {

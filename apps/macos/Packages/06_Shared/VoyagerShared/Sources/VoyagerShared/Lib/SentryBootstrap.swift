@@ -2,8 +2,8 @@ import Foundation
 import Sentry
 import SwiftDotenv
 
-enum SentryBootstrap {
-    static func startIfNeeded(
+public enum SentryBootstrap {
+    public static func startIfNeeded(
         appVersion: String?,
         userId: String?,
         component: String,

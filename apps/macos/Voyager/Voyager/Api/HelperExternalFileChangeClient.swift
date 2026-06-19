@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 struct HelperExternalFileChangeEvent: Equatable {
     enum Source: Equatable {

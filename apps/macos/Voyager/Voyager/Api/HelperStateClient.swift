@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import Logging
+import VoyagerShared
 
 public struct HelperState: Sendable, Equatable {
     public let helperReady: Bool

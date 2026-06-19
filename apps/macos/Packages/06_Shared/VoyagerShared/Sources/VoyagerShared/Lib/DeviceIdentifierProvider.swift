@@ -1,8 +1,8 @@
 import Foundation
 import IOKit
 
-enum DeviceIdentifierProvider {
-    static func current() -> String? {
+public enum DeviceIdentifierProvider {
+    public static func current() -> String? {
         let matching = IOServiceMatching("IOPlatformExpertDevice")
         let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
         guard service != 0 else { return nil }

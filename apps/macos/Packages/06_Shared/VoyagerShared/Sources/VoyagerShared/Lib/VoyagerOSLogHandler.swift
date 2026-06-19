@@ -2,25 +2,25 @@ import Foundation
 import Logging
 import os
 
-struct VoyagerOSLogHandler: LogHandler {
-    var logLevel: Logging.Logger.Level = .info
-    var metadata: Logging.Logger.Metadata = [:]
+public struct VoyagerOSLogHandler: LogHandler {
+    public var logLevel: Logging.Logger.Level = .info
+    public var metadata: Logging.Logger.Metadata = [:]
 
-    let label: String
+    public let label: String
     private let osLogger: os.Logger
 
-    init(label: String, subsystem: String = Bundle.main.bundleIdentifier ?? "Voyager") {
+    public init(label: String, subsystem: String = Bundle.main.bundleIdentifier ?? "Voyager") {
         self.label = label
         osLogger = os.Logger(subsystem: subsystem, category: label)
     }
 
-    subscript(metadataKey metadataKey: String) -> Logging.Logger.Metadata.Value? {
+    public subscript(metadataKey metadataKey: String) -> Logging.Logger.Metadata.Value? {
         get { metadata[metadataKey] }
         set { metadata[metadataKey] = newValue }
     }
 
     // swiftlint:disable:next function_parameter_count
-    func log(
+    public func log(
         level: Logging.Logger.Level,
         message: Logging.Logger.Message,
         metadata: Logging.Logger.Metadata?,

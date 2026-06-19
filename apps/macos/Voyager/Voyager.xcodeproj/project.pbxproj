@@ -40,6 +40,8 @@
 		F20000000000000000000036 /* VoyagerFeaturesEntryOperations in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000014 /* VoyagerFeaturesEntryOperations */; };
 		F20000000000000000000037 /* VoyagerEntitiesTag in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000016 /* VoyagerEntitiesTag */; };
 		F20000000000000000000038 /* VoyagerEntitiesCollection in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000017 /* VoyagerEntitiesCollection */; };
+		F20000000000000000000057 /* VoyagerEntitiesCollection in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000017 /* VoyagerEntitiesCollection */; };
+		F20000000000000000000058 /* VoyagerEntitiesCollection in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000017 /* VoyagerEntitiesCollection */; };
 		F20000000000000000000039 /* VoyagerEntitiesEntry in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001A /* VoyagerEntitiesEntry */; };
 		F2000000000000000000003A /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = F21000000000000000000014 /* Dependencies */; };
 		F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001A /* VoyagerEntitiesEntry */; };
@@ -161,11 +163,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		24DD04D6008045F2B081D402 /* Shared */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Shared;
-			sourceTree = "<group>";
-		};
 		7E14EDCE2E86622C005AC834 /* Voyager */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Voyager;
@@ -285,6 +282,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F20000000000000000000028 /* VoyagerShared in Frameworks */,
+				F20000000000000000000057 /* VoyagerEntitiesCollection in Frameworks */,
 				F20000000000000000000048 /* VoyagerEntitiesAi in Frameworks */,
 				6C727A2F2F0DF4AA0012D44A /* Logging in Frameworks */,
 				6C8A20C933C9C3F600B2B9B1 /* Sentry in Frameworks */,
@@ -310,6 +308,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F2000000000000000000002A /* VoyagerShared in Frameworks */,
+				F20000000000000000000058 /* VoyagerEntitiesCollection in Frameworks */,
 				F2000000000000000000004A /* VoyagerEntitiesAi in Frameworks */,
 				F10000000000000000000030 /* Logging in Frameworks */,
 				F10000000000000000000031 /* SwiftDotenv in Frameworks */,
@@ -336,7 +335,6 @@
 				60F570BDE5ECDE55DC1C7E60 /* property_condition_registry.json */,
 				D1E2F3A4B5C6D7E8F9012345 /* compose_filter_system.md */,
 				7E14EDCE2E86622C005AC834 /* Voyager */,
-				24DD04D6008045F2B081D402 /* Shared */,
 				F10000000000000000000040 /* FilterSearchXPC */,
 				7E14EDDE2E86622E005AC834 /* VoyagerTests */,
 				7E14EDE82E86622E005AC834 /* VoyagerUITests */,
@@ -382,7 +380,6 @@
 				F1000000000000000000000B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				24DD04D6008045F2B081D402 /* Shared */,
 				7E14EDCE2E86622C005AC834 /* Voyager */,
 			);
 			name = Voyager;
@@ -501,12 +498,12 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				24DD04D6008045F2B081D402 /* Shared */,
 				7E14EE242E866E82005AC834 /* VoyagerHelper */,
 			);
 			name = VoyagerHelper;
 			packageProductDependencies = (
 				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000017 /* VoyagerEntitiesCollection */,
 				F20000000000000000000047 /* VoyagerEntitiesAi */,
 				7E17C1202F24CB7500F6BD2B /* Sentry */,
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
@@ -537,6 +534,7 @@
 			name = VoyagerHelperTests;
 			packageProductDependencies = (
 				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000017 /* VoyagerEntitiesCollection */,
 				F20000000000000000000047 /* VoyagerEntitiesAi */,
 				6C727A2C2F0DF4A10012D44A /* Logging */,
 				319E52B31FBB4D8FA03D33B9 /* StructuredQueries */,
@@ -559,13 +557,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				24DD04D6008045F2B081D402 /* Shared */,
 				F10000000000000000000040 /* FilterSearchXPC */,
 				F10000000000000000000041 /* VoyagerHelper/Search */,
 			);
 			name = FilterSearchXPC;
 			packageProductDependencies = (
 				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000017 /* VoyagerEntitiesCollection */,
 				F20000000000000000000047 /* VoyagerEntitiesAi */,
 				6C727A2C2F0DF4A10012D44A /* Logging */,
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
@@ -1061,7 +1059,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Voyager/01_App/Config/Info.plist;
+				INFOPLIST_FILE = Voyager/Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Voyager (Debug)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -1118,7 +1116,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Voyager/01_App/Config/Info.plist;
+				INFOPLIST_FILE = Voyager/Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Voyager;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

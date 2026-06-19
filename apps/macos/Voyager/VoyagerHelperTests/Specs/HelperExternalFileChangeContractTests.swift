@@ -1,5 +1,6 @@
 import Foundation
 @testable import VoyagerHelper
+import VoyagerShared
 import XCTest
 
 final class HelperExternalFileChangeContractTests: XCTestCase {

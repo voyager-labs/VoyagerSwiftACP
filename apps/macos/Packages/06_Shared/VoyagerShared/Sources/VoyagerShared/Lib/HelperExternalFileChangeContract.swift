@@ -1,6 +1,6 @@
 import Foundation
 
-extension Notification.Name {
+public extension Notification.Name {
     nonisolated static let voyagerHelperFSChanged = Notification.Name("voyagerHelperFSChanged")
     nonisolated static let voyagerHelperFSReplayRequest = Notification.Name("voyagerHelperFSReplayRequest")
     nonisolated static let voyagerHelperFSReplay = Notification.Name("voyagerHelperFSReplay")
@@ -8,30 +8,30 @@ extension Notification.Name {
     nonisolated static let voyagerHelperFSWatchRootsChanged = Notification.Name("voyagerHelperFSWatchRootsChanged")
 }
 
-nonisolated enum HelperExternalFileChangeUserInfoKey {
-    static let schemaVersion = "schema_version"
-    static let generatedAt = "generated_at"
-    static let paths = "paths"
-    static let consume = "consume"
+nonisolated public enum HelperExternalFileChangeUserInfoKey {
+    public static let schemaVersion = "schema_version"
+    public static let generatedAt = "generated_at"
+    public static let paths = "paths"
+    public static let consume = "consume"
 }
 
-nonisolated struct HelperExternalFileChangeReplayRequest: Codable, Equatable {
-    let schemaVersion: Int
-    let consume: Bool
+nonisolated public struct HelperExternalFileChangeReplayRequest: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let consume: Bool
 
-    nonisolated init(schemaVersion: Int = 1, consume: Bool = true) {
+    nonisolated public init(schemaVersion: Int = 1, consume: Bool = true) {
         self.schemaVersion = schemaVersion
         self.consume = consume
     }
 
-    nonisolated func asUserInfo() -> [String: Any] {
+    nonisolated public func asUserInfo() -> [String: Any] {
         [
             HelperExternalFileChangeUserInfoKey.schemaVersion: schemaVersion,
             HelperExternalFileChangeUserInfoKey.consume: consume,
         ]
     }
 
-    nonisolated static func from(userInfo: [AnyHashable: Any]?) -> Self? {
+    nonisolated public static func from(userInfo: [AnyHashable: Any]?) -> Self? {
         guard let userInfo else { return nil }
         guard let schemaVersion = parseInt(userInfo[HelperExternalFileChangeUserInfoKey.schemaVersion]),
               schemaVersion == 1
@@ -60,10 +60,10 @@ nonisolated struct HelperExternalFileChangeReplayRequest: Codable, Equatable {
     }
 }
 
-nonisolated struct HelperExternalFileChangePayload: Codable, Equatable {
-    let schemaVersion: Int
-    let generatedAt: Date
-    let paths: [String]
+nonisolated public struct HelperExternalFileChangePayload: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let generatedAt: Date
+    public let paths: [String]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -71,7 +71,7 @@ nonisolated struct HelperExternalFileChangePayload: Codable, Equatable {
         case paths
     }
 
-    nonisolated init(
+    nonisolated public init(
         paths: [String],
         schemaVersion: Int = 1,
         generatedAt: Date = Date(),
@@ -81,7 +81,7 @@ nonisolated struct HelperExternalFileChangePayload: Codable, Equatable {
         self.paths = Self.canonicalPaths(paths)
     }
 
-    nonisolated func merging(paths newPaths: [String], generatedAt: Date = Date()) -> Self {
+    nonisolated public func merging(paths newPaths: [String], generatedAt: Date = Date()) -> Self {
         Self(
             paths: paths + newPaths,
             schemaVersion: schemaVersion,
@@ -89,7 +89,7 @@ nonisolated struct HelperExternalFileChangePayload: Codable, Equatable {
         )
     }
 
-    nonisolated func asUserInfo() -> [String: Any] {
+    nonisolated public func asUserInfo() -> [String: Any] {
         [
             HelperExternalFileChangeUserInfoKey.schemaVersion: schemaVersion,
             HelperExternalFileChangeUserInfoKey.generatedAt: generatedAt.timeIntervalSince1970,
@@ -97,7 +97,7 @@ nonisolated struct HelperExternalFileChangePayload: Codable, Equatable {
         ]
     }
 
-    nonisolated static func from(userInfo: [AnyHashable: Any]?, allowEmptyPaths: Bool = false) -> Self? {
+    nonisolated public static func from(userInfo: [AnyHashable: Any]?, allowEmptyPaths: Bool = false) -> Self? {
         guard let userInfo else { return nil }
         guard let schemaVersion = parseInt(userInfo[HelperExternalFileChangeUserInfoKey.schemaVersion]),
               schemaVersion == 1
@@ -120,7 +120,7 @@ nonisolated struct HelperExternalFileChangePayload: Codable, Equatable {
         return Self(paths: paths, schemaVersion: schemaVersion, generatedAt: generatedAt)
     }
 
-    nonisolated static func canonicalPaths(_ paths: [String]) -> [String] {
+    nonisolated public static func canonicalPaths(_ paths: [String]) -> [String] {
         Array(Set(paths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })).sorted()
     }
 

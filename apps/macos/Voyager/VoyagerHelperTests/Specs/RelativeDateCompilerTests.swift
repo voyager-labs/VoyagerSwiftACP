@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 @testable import VoyagerHelper
 import VoyagerShared
 import XCTest
