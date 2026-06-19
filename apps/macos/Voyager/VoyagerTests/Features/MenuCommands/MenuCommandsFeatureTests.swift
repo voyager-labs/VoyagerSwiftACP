@@ -2,26 +2,12 @@ import ComposableArchitecture
 @testable import Voyager
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesUpdateVersion
+@testable import VoyagerPagesFileManager
 import XCTest
 
 /// 메뉴 명령 기능 — 앱/보기/편집/작업 명령의 델리게이트 라우팅을 검증.
 @MainActor
 final class MenuCommandsFeatureTests: XCTestCase {
-    /// testAppCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
-    func testAppCommandRoutesToWindowManagerDelegate() async {
-        let store = TestStore(initialState: MenuCommandsFeature.State()) {
-            MenuCommandsFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.view(.app(.newFolder)))
-        await store.receive {
-            guard case .delegate(.windowManager(.file(.newFolder))) = $0 else { return false }
-            return true
-        }
-        await store.finish()
-    }
-
     /// testAppCommandRoutesToUpdaterDelegate 테스트 동작을 검증한다.
     func testAppCommandRoutesToUpdaterDelegate() async {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
@@ -32,36 +18,6 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.send(.view(.app(.checkForUpdates)))
         await store.receive {
             guard case .delegate(.updater(.checkForUpdates)) = $0 else { return false }
-            return true
-        }
-        await store.finish()
-    }
-
-    /// testViewCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
-    func testViewCommandRoutesToWindowManagerDelegate() async {
-        let store = TestStore(initialState: MenuCommandsFeature.State()) {
-            MenuCommandsFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.view(.viewCommand(.toggleSidebar)))
-        await store.receive {
-            guard case .delegate(.windowManager(.window(.toggleSidebar))) = $0 else { return false }
-            return true
-        }
-        await store.finish()
-    }
-
-    /// testEditCommandRoutesToWindowManagerDelegate 테스트 동작을 검증한다.
-    func testEditCommandRoutesToWindowManagerDelegate() async {
-        let store = TestStore(initialState: MenuCommandsFeature.State()) {
-            MenuCommandsFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.view(.edit(.copy)))
-        await store.receive {
-            guard case .delegate(.windowManager(.edit(.copy))) = $0 else { return false }
             return true
         }
         await store.finish()

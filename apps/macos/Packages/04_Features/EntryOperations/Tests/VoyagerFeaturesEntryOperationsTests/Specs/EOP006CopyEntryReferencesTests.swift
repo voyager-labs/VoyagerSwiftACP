@@ -8,6 +8,7 @@ import XCTest
 @MainActor
 final class EOP006CopyEntryReferencesTests: XCTestCase {
     /// EOP-006-copy_absolute_paths_of_entries: 절대 경로 복사
+    /// - 검증 내용: 절대 경로 복사 action이 선택 항목 경로를 pasteboard 문자열로 기록하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사
     /// - 기대 결과: 절대 경로 문자열이 정확히 pasteboard에 기록됨
     func testCopyAbsolutePathsOfEntries_success() async throws {
@@ -39,6 +40,7 @@ final class EOP006CopyEntryReferencesTests: XCTestCase {
     }
 
     /// EOP-006-copy_urls_of_entries: 파일 URL 복사
+    /// - 검증 내용: URL 복사 action이 선택 항목 URL 문자열을 pasteboard에 기록하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사
     /// - 기대 결과: file:// URL 문자열이 정확히 pasteboard에 기록됨
     func testCopyURLsOfEntries_success() async throws {

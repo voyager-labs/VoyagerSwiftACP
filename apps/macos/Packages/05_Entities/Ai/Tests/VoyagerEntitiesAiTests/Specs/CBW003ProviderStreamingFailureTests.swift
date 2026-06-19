@@ -2,7 +2,7 @@
 @testable import VoyagerEntitiesAi
 import XCTest
 
-// MARK: - CBW-003 Codex / Registry / OpenAI
+// MARK: - CBW-003-stream_contextual_chat_response
 
 final class CBW003ProviderStreamingFailureTests: XCTestCase {
     override func tearDown() {
@@ -247,7 +247,7 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
     }
 }
 
-// MARK: - CBW-003 Anthropic
+// MARK: - CBW-003-stream_contextual_chat_response
 
 final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
     override func tearDown() {
