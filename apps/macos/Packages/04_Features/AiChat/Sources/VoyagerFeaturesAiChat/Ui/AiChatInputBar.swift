@@ -308,7 +308,6 @@ private struct AiChatRequestContextRow: View {
             remove: {
                 store.send(.removeAddedAttachment(chip.attachmentID))
             },
-            statusLabel: chip.statusLabel,
             trailingAccessorySystemName: chip
                 .folderStructureMode == .includeSubfolders ? "square.stack.3d.down.right" : nil,
             folderStructureMode: chip.folderStructureMode,
@@ -337,7 +336,6 @@ private struct AiChatRequestContextRow: View {
         icon: ChipIcon,
         isRemovable: Bool,
         remove: @escaping () -> Void,
-        statusLabel: String? = nil,
         trailingAccessorySystemName: String? = nil,
         folderStructureMode: AiChatFolderStructureMode? = nil,
         isFolderStructureMenuEnabled: Bool = false,
@@ -349,7 +347,6 @@ private struct AiChatRequestContextRow: View {
             iconSystemName: icon.systemName,
             iconAssetName: icon.assetName,
             iconFilePath: icon.filePath,
-            statusLabel: statusLabel,
             trailingAccessorySystemName: trailingAccessorySystemName,
             folderStructureMode: folderStructureMode,
             isFolderStructureMenuEnabled: isFolderStructureMenuEnabled,
@@ -383,7 +380,6 @@ private struct AiChatRemovableRequestContextChip: View {
     let iconSystemName: String?
     let iconAssetName: String?
     let iconFilePath: String?
-    let statusLabel: String?
     let trailingAccessorySystemName: String?
     let folderStructureMode: AiChatFolderStructureMode?
     let isFolderStructureMenuEnabled: Bool
