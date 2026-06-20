@@ -57,7 +57,7 @@ enum FileManagerContentComposerCoordinator {
         case .view(.cancelSearch):
             return .concatenate(
                 .send(.composer(.clearPendingSearchQuery)),
-                .send(.collection(.openSearchPresentationCancelled)),
+                collectionOpenSearchCancellationEffect(state: state),
             )
 
         case .view(.clearAll):
@@ -89,6 +89,15 @@ enum FileManagerContentComposerCoordinator {
         }
     }
 
+    private static func collectionOpenSearchCancellationEffect(
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard state.collection.collectionSession.document?.url == nil else {
+            return .none
+        }
+        return .send(.collection(.openSearchPresentationCancelled))
+    }
+
     private static func handleSetPresented(
         _ isPresented: Bool,
         state: inout FileManagerContentState,
@@ -108,7 +117,7 @@ enum FileManagerContentComposerCoordinator {
             }
 
             state.composer.pendingSearchQuery = nil
-            return .send(.collection(.openSearchPresentationCancelled))
+            return collectionOpenSearchCancellationEffect(state: state)
         }
 
         dependencies.metricsClient.logMetric(

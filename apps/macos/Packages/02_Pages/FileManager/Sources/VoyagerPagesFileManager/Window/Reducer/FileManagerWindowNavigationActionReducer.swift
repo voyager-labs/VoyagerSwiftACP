@@ -306,7 +306,6 @@ private func handleCollectionFileLoaded(
         if let url = state.content.collection.collectionSession.document?.url {
             let canonicalPath = url.standardizedFileURL.path
             isStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
-            _ = collectionStalenessClient.consumeInvalidation(canonicalPath)
             collectionStalenessClient.registerCollection(
                 canonicalPath,
                 file.scopes,
@@ -421,11 +420,15 @@ private func handleCollectionFileLoadedSuccess(
         return .concatenate(dismissComposerEffect, .concatenate(effects))
     }
 
-    let effects = makeCollectionOpenFollowupEffects(
+    var effects = makeCollectionOpenFollowupEffects(
         payload: openPayload,
         collectionAlertClient: environment.collectionAlertClient,
         state: state,
     )
+
+    if openPayload.queryTrigger == nil {
+        effects.append(.send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))))
+    }
 
     if effects.isEmpty {
         return dismissComposerEffect

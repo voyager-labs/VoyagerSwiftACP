@@ -55,6 +55,10 @@ public struct FileManagerContentFeature {
             case .view(.openContextualAiChatTapped):
                 return .send(.delegate(.openContextualAiChat))
 
+            case let .internal(.setAutomaticRefreshFeedbackSuppressed(isSuppressed)):
+                state.suppressAutomaticRefreshFeedback = isSuppressed
+                return .none
+
             case .internal(.clearCollectionMode), .internal(.exitCollectionMode):
                 return handleCollectionModeAction(
                     action,
