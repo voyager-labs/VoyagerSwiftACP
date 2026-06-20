@@ -48,6 +48,41 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertFalse(store.state.isFilteringInFlight)
     }
 
+    /// RCL-003-execute_filtered_collection_retrieval: condition 없는 scope-only filter는 검색 실행을 시작하지 않음
+    /// VOY-342의 조건 없는 재검색 차단 계약을 Composer package 내부에서 직접 검증한다.
+    /// - 검증 내용: SearchClient 미호출, loading/inflight/request 상태 초기화 확인
+    /// - 사전 조건: collection mode이고 scope만 준비됐으며 condition은 비어 있음
+    /// - 기대 결과: applyFilters는 no-op/cancel 경로로 종료되고 filtersResponse가 발생하지 않음
+    func testExecuteFilteredCollectionRetrieval_withScopeOnlyFilters_doesNotCallSearchClient() async {
+        let recorder = ApplyFiltersRecorder()
+        var initialState = ComposerState()
+        initialState.scopes = ["/VoyagerFixtures/Documents"]
+        initialState.conditions = []
+        initialState.isCollectionMode = true
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.registryClient = makeRegistryClient()
+            $0.searchClient.applyFilters = { request in
+                recorder.record(request)
+                return SearchResponsePayload(itemCount: 1)
+            }
+        }
+        // applyFilters는 Date를 기록하므로 no-op 이후 최종 계약을 직접 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.applyFilters)
+
+        XCTAssertEqual(recorder.count, 0)
+        XCTAssertFalse(store.state.isLoadingFilters)
+        XCTAssertFalse(store.state.isFilteringInFlight)
+        XCTAssertNil(store.state.activeFiltersRequestID)
+        XCTAssertNil(store.state.activeFiltersMetricSource)
+        XCTAssertNil(store.state.pendingSearchQuery)
+        XCTAssertNil(store.state.lastFiltersResponse)
+    }
+
     private func makeKindCondition() -> Condition {
         Condition(
             propertyKey: "kind",
@@ -93,6 +128,10 @@ private final class ApplyFiltersRecorder: @unchecked Sendable {
 
     func record(_ request: FiltersOnlyRequestPayload) {
         requests.append(request)
+    }
+
+    var count: Int {
+        requests.count
     }
 
     func last() -> FiltersOnlyRequestPayload? {
