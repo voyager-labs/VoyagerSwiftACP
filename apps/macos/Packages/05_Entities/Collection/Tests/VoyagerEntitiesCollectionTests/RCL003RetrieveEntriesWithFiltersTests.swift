@@ -1,6 +1,7 @@
 @_spi(Internals) import ComposableArchitecture
 import Foundation
 @testable import VoyagerEntitiesCollection
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -46,6 +47,41 @@ final class RCL003RetrieveEntriesWithFiltersTests: XCTestCase {
             store.state.refreshBlockingReason(isCollectionMode: true, isDirty: false, isSearching: false),
             .notStale,
         )
+    }
+
+    /// RCL-003-mark_collection_results_as_stale: register는 기존 invalidation timestamp를 보존함
+    /// 저장된 collection을 다시 열며 relevance root를 재등록해도 이미 감지한 stale 상태가 사라지지 않는지 검증한다.
+    /// - 검증 내용: registerCollection 이후 lastInvalidatedAt 유지와 consumeInvalidation true 확인
+    /// - 사전 조건: 같은 collection path에 invalidated record가 이미 저장됨
+    /// - 기대 결과: reopen/register 후에도 refresh 대상 상태가 유지됨
+    func testRegisterCollection_withExistingInvalidation_preservesStaleTimestamp() {
+        let client = CollectionStalenessClient.live(userDefaultsClient: UserDefaultsClient.testValue)
+        let collectionPath = "/VoyagerFixtures/Collections/report.voycoll"
+        let invalidatedAt = Date(timeIntervalSince1970: 1_700_000_100)
+
+        client.upsertRecord(
+            collectionPath,
+            CollectionStalenessRecord(
+                definitionFingerprint: "before-reopen",
+                relevanceRoots: ["/VoyagerFixtures/Documents"],
+                excludedScopes: [],
+                includeSubfolders: true,
+                lastInvalidatedAt: invalidatedAt,
+            ),
+        )
+        client.registerCollection(
+            collectionPath,
+            ["/VoyagerFixtures/Documents", "/VoyagerFixtures/Documents/../Documents"],
+            ["/VoyagerFixtures/Documents/Archive"],
+            true,
+        )
+
+        let record = client.record(collectionPath)
+        XCTAssertEqual(record?.lastInvalidatedAt, invalidatedAt)
+        XCTAssertEqual(record?.relevanceRoots, ["/VoyagerFixtures/Documents"])
+        XCTAssertEqual(record?.excludedScopes, ["/VoyagerFixtures/Documents/Archive"])
+        XCTAssertTrue(client.consumeInvalidation(collectionPath))
+        XCTAssertFalse(client.consumeInvalidation(collectionPath))
     }
 
     // MARK: - RCL-003-apply_deterministic_filters
