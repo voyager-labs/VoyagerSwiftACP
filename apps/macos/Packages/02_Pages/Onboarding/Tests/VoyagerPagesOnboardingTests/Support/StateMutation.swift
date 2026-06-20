@@ -43,10 +43,10 @@ enum StateMutation {
 
     /// access 상태를 server-canonical active access 결과와 동일하게 설정합니다.
     static func applyActiveAccess(state: inout OnboardingFeature.State) {
-        state.betaAccess.status = .coreLicenseActive
-        state.betaAccess.snapshot = activeAccessSnapshot
-        state.betaAccess.isComplete = true
-        state.betaAccess.isSubmitting = false
+        state.accessUnlock.status = .coreLicenseActive
+        state.accessUnlock.snapshot = activeAccessSnapshot
+        state.accessUnlock.isComplete = true
+        state.accessUnlock.isSubmitting = false
     }
 
     static func applyPersistedCompletedAccessStep(state: inout OnboardingFeature.State) {

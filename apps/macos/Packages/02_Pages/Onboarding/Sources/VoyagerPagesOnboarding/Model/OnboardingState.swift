@@ -6,7 +6,7 @@ struct OnboardingState: Equatable {
     var currentStep: OnboardingStep = .welcome
 
     var welcome: WelcomeFeature.State = .init()
-    var betaAccess: AccountAccessFeature.State = .init()
+    var accessUnlock: AccountAccessFeature.State = .init()
     var permissions: PermissionsFeature.State = .init()
     var aiProviderSetup: AiProviderSetupFeature.State = .init()
     var complete: CompleteFeature.State = .init()
@@ -36,7 +36,7 @@ struct OnboardingState: Equatable {
             currentStep: currentStep,
             stepState: OnboardingStepState(
                 welcomeComplete: welcome.isComplete,
-                betaAccessComplete: betaAccess.isComplete,
+                accessUnlockComplete: accessUnlock.isComplete,
                 permissionsComplete: permissions.isComplete,
                 aiProviderSetupComplete: aiProviderSetup.isComplete,
                 aiProviderSetupSkipped: aiProviderSetup.status == .skipped,
@@ -44,7 +44,7 @@ struct OnboardingState: Equatable {
                 aiProviderSetupStatus: aiProviderSetup.status,
                 completeComplete: complete.isComplete,
             ),
-            accessSnapshot: betaAccess.snapshot,
+            accessSnapshot: accessUnlock.snapshot,
         )
     }
 
@@ -52,8 +52,8 @@ struct OnboardingState: Equatable {
         switch step {
         case .welcome:
             welcome.isComplete
-        case .betaAccess:
-            betaAccess.isComplete
+        case .accessUnlock:
+            accessUnlock.isComplete
         case .permissions:
             permissions.isComplete
         case .aiProviderSetup:
@@ -65,11 +65,11 @@ struct OnboardingState: Equatable {
 
     mutating func applyStepState(_ stepState: OnboardingStepState) {
         welcome.isComplete = stepState.welcomeComplete
-        if stepState.betaAccessComplete {
-            betaAccess.isComplete = true
-            betaAccess.isSubmitting = false
+        if stepState.accessUnlockComplete {
+            accessUnlock.isComplete = true
+            accessUnlock.isSubmitting = false
         } else {
-            betaAccess = AccountAccessFeature.State()
+            accessUnlock = AccountAccessFeature.State()
         }
         permissions.isComplete = stepState.permissionsComplete
         aiProviderSetup.choice = stepState.aiProviderSetupChoice
@@ -101,10 +101,10 @@ struct OnboardingState: Equatable {
 
     /// Returns `true` when **all** prior required steps for the given step are complete.
     /// - `.welcome` has no prior requirements (always `true`).
-    /// - `.betaAccess` requires `.welcome` complete.
-    /// - `.permissions` requires `.welcome` + `.betaAccess` complete.
-    /// - `.aiProviderSetup` requires `.welcome` + `.betaAccess` + `.permissions` complete.
-    /// - `.complete` requires `.welcome` + `.betaAccess` + `.permissions` + `.aiProviderSetup` complete.
+    /// - `.accessUnlock` requires `.welcome` complete.
+    /// - `.permissions` requires `.welcome` + `.accessUnlock` complete.
+    /// - `.aiProviderSetup` requires `.welcome` + `.accessUnlock` + `.permissions` complete.
+    /// - `.complete` requires `.welcome` + `.accessUnlock` + `.permissions` + `.aiProviderSetup` complete.
     private func isPriorRequiredStepComplete(_ step: OnboardingStep) -> Bool {
         // Walk the entire chain from .welcome up to (but not including) `step`.
         for priorStep in OnboardingStep.allCases {

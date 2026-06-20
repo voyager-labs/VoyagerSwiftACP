@@ -130,39 +130,39 @@ struct OnboardingView: View {
         viewStore: ViewStore<OnboardingFeature.State, OnboardingFeature.Action>,
     ) -> some View {
         switch viewStore.currentStep {
-        case .betaAccess:
-            if viewStore.betaAccess.isComplete {
+        case .accessUnlock:
+            if viewStore.accessUnlock.isComplete {
                 nextButton(viewStore: viewStore)
-            } else if viewStore.betaAccess.canStartLogin {
+            } else if viewStore.accessUnlock.canStartLogin {
                 Button {
-                    viewStore.send(.betaAccess(.loginTapped))
+                    viewStore.send(.accessUnlock(.loginTapped))
                 } label: {
                     topBarLabel("Sign In (Enter)")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(accentColor)
                 .keyboardShortcut(.return, modifiers: [])
-                .disabled(viewStore.betaAccess.isSignInInProgress)
-            } else if viewStore.betaAccess.canRefreshAccess, viewStore.betaAccess.showsRetry {
+                .disabled(viewStore.accessUnlock.isSignInInProgress)
+            } else if viewStore.accessUnlock.canRefreshAccess, viewStore.accessUnlock.showsRetry {
                 Button {
-                    viewStore.send(.betaAccess(.retryTapped))
+                    viewStore.send(.accessUnlock(.retryTapped))
                 } label: {
                     topBarLabel("Retry (Enter)")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(accentColor)
                 .keyboardShortcut(.return, modifiers: [])
-                .disabled(!viewStore.betaAccess.canRetry || viewStore.betaAccess.isSubmitting)
-            } else if viewStore.betaAccess.canRefreshAccess {
+                .disabled(!viewStore.accessUnlock.canRetry || viewStore.accessUnlock.isSubmitting)
+            } else if viewStore.accessUnlock.canRefreshAccess {
                 Button {
-                    viewStore.send(.betaAccess(.refreshAccessTapped))
+                    viewStore.send(.accessUnlock(.refreshAccessTapped))
                 } label: {
                     topBarLabel("Refresh (Enter)")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(accentColor)
                 .keyboardShortcut(.return, modifiers: [])
-                .disabled(viewStore.betaAccess.isSubmitting || viewStore.betaAccess.isSignInInProgress)
+                .disabled(viewStore.accessUnlock.isSubmitting || viewStore.accessUnlock.isSignInInProgress)
             }
         case .complete:
             Button {
@@ -244,8 +244,8 @@ struct OnboardingView: View {
         switch step {
         case .welcome:
             WelcomeStepView(store: store.scope(state: \.welcome, action: \.welcome))
-        case .betaAccess:
-            UnlockAccessStepView(store: store.scope(state: \.betaAccess, action: \.betaAccess))
+        case .accessUnlock:
+            UnlockAccessStepView(store: store.scope(state: \.accessUnlock, action: \.accessUnlock))
         case .permissions:
             PermissionsStepView(store: store.scope(state: \.permissions, action: \.permissions))
         case .aiProviderSetup:

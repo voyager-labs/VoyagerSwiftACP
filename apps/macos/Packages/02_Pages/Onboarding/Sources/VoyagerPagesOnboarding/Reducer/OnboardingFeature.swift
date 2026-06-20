@@ -17,7 +17,7 @@ struct OnboardingFeature {
         Scope(state: \.welcome, action: \.welcome) {
             WelcomeFeature()
         }
-        Scope(state: \.betaAccess, action: \.betaAccess) {
+        Scope(state: \.accessUnlock, action: \.accessUnlock) {
             AccountAccessFeature()
         }
         Scope(state: \.permissions, action: \.permissions) {
@@ -58,29 +58,29 @@ struct OnboardingFeature {
 
             case let .success(snapshot):
                 state.applyStepState(snapshot.stepState)
-                if snapshot.stepState.betaAccessComplete, snapshot.accessSnapshot == nil {
-                    state.betaAccess = AccountAccessFeature.State()
-                    state.currentStep = .betaAccess
+                if snapshot.stepState.accessUnlockComplete, snapshot.accessSnapshot == nil {
+                    state.accessUnlock = AccountAccessFeature.State()
+                    state.currentStep = .accessUnlock
                     let updatedSnapshot = state.progressSnapshot
                     return .run { _ in
                         _ = progressClient.save(updatedSnapshot)
                     }
                 }
                 if let accessSnapshot = snapshot.accessSnapshot {
-                    state.betaAccess.snapshot = accessSnapshot
-                    state.betaAccess.status = accessSnapshot.status
+                    state.accessUnlock.snapshot = accessSnapshot
+                    state.accessUnlock.status = accessSnapshot.status
                 }
                 state.currentStep = state.lastValidStep(from: snapshot.currentStep)
                 let updatedSnapshot = state.progressSnapshot
                 let saveEffect: Effect<Action> = .run { _ in
                     _ = progressClient.save(updatedSnapshot)
                 }
-                guard snapshot.accessSnapshot != nil, state.betaAccess.isComplete else {
+                guard snapshot.accessSnapshot != nil, state.accessUnlock.isComplete else {
                     return saveEffect
                 }
                 return .concatenate(
                     saveEffect,
-                    .send(.betaAccess(.onAppear)),
+                    .send(.accessUnlock(.onAppear)),
                 )
             }
 
@@ -132,14 +132,14 @@ struct OnboardingFeature {
             }
             return .none
 
-        case let .betaAccess(.accessStatusResponse(generation: _, result: .success(response))):
+        case let .accessUnlock(.accessStatusResponse(generation: _, result: .success(response))):
             if !response.status.isActive {
-                state.currentStep = .betaAccess
+                state.currentStep = .accessUnlock
             }
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
 
-        case .welcome, .betaAccess, .permissions, .aiProviderSetup, .complete:
+        case .welcome, .accessUnlock, .permissions, .aiProviderSetup, .complete:
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
         }

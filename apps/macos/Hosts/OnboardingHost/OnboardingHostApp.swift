@@ -108,7 +108,7 @@ private enum SmokeMode {
 
         let stepState: [String: Bool] = [
             "welcomeComplete": true,
-            "betaAccessComplete": true,
+            "accessUnlockComplete": true,
             "permissionsComplete": true,
             "completeComplete": true,
         ]

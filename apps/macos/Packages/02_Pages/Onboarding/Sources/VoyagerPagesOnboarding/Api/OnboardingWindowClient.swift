@@ -4,12 +4,12 @@ import VoyagerFeaturesAccountAccess
 
 @MainActor private var onboardingWindowController: OnboardingWindowController?
 
-/// 온보딩 창이 열려 있으면 auth callback을 온보딩의 betaAccess(AccountAccessFeature)로 라우팅.
+/// 온보딩 창이 열려 있으면 auth callback을 온보딩의 accessUnlock(AccountAccessFeature)로 라우팅.
 /// 창이 없으면 false 반환.
 @MainActor
 public func routeAuthCallbackToOnboardingIfPresent(_ url: URL) -> Bool {
     guard let controller = onboardingWindowController else { return false }
-    controller.store.send(.betaAccess(.loginCallbackReceived(url)))
+    controller.store.send(.accessUnlock(.loginCallbackReceived(url)))
     return true
 }
 

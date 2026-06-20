@@ -8,7 +8,7 @@ enum OnboardingAction: CasePathable {
     case nextTapped
 
     case welcome(WelcomeFeature.Action)
-    case betaAccess(AccountAccessFeature.Action)
+    case accessUnlock(AccountAccessFeature.Action)
     case permissions(PermissionsFeature.Action)
     case aiProviderSetup(AiProviderSetupFeature.Action)
     case complete(CompleteFeature.Action)
