@@ -25,11 +25,9 @@ struct FileManagerContentNavigationBridgeReducer {
         Reduce { state, action in
             switch action {
             case let .internal(.applyNavigationState(navigationState)):
-                if !navigationState.isCollection {
-                    state.entryViewLayout.currentPath = state.navigation.currentPath
-                    state.entryViewLayout.savedScrollOffset = state.navigation
-                        .scrollPositions[state.navigation.currentPath]
-                }
+                let scrollPositionKey = scrollPositionKey(for: navigationState)
+                state.entryViewLayout.currentPath = scrollPositionKey
+                state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[scrollPositionKey]
                 return applyNavigationStateEffect(navigationState, state: state)
 
             case .view(.selectAllEntries):
@@ -54,7 +52,7 @@ struct FileManagerContentNavigationBridgeReducer {
 
             case let .internal(.saveScrollOffset(offset, forPath: path)):
                 state.navigation.scrollPositions[path] = offset
-                if path == state.navigation.currentPath {
+                if path == scrollPositionKey(for: state.navigation.navigationState) {
                     state.entryViewLayout.savedScrollOffset = offset
                 }
                 return .none
@@ -83,6 +81,30 @@ struct FileManagerContentNavigationBridgeReducer {
             default:
                 return .none
             }
+        }
+    }
+
+    private func scrollPositionKey(for navigationState: ContentPageNavigationRoute) -> String {
+        switch navigationState {
+        case let .collection(collectionNavigation):
+            switch collectionNavigation.kind {
+            case .temporary:
+                "collection:temporary"
+            case let .file(url, _):
+                "collection:\(url.standardizedFileURL.path)"
+            }
+
+        case let .folder(path):
+            path
+
+        case .recents:
+            "Recents"
+
+        case let .tags(tagName):
+            tagName
+
+        case .computer:
+            ""
         }
     }
 
