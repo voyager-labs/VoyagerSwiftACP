@@ -25,10 +25,12 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case _sessionExpiredDetected
     case _fetchRetryScheduled(Int)
     case _cachedSnapshotRestored(AccessStatusSnapshot?)
+    case signOut
     case delegate(Delegate)
 
     @CasePathable
     public enum Delegate: CasePathable, Sendable {
         case unlocked(AccessStatusSnapshot)
+        case signedOut
     }
 }

@@ -115,6 +115,9 @@ public struct AccountAccessFeature {
             case let ._fetchRetryScheduled(retryStep):
                 return handleFetchRetryScheduled(&state, retryStep: retryStep)
 
+            case .signOut:
+                return handleSignOut(&state)
+
             case .delegate:
                 return .none
             }
@@ -597,6 +600,26 @@ private extension AccountAccessFeature {
 
             return .none
         }
+    }
+
+    /// 사용자 로그아웃 처리. session 삭제, snapshot 제거, 상태 초기화, TTL 타이머 중단, delegate 전송.
+    /// ACC-001: 서버 오류는 사용자에게 미표시 (best-effort delete).
+    private func handleSignOut(_ state: inout State) -> Effect<Action> {
+        guard state.hasAccountSession else { return .none }
+        state.hasAccountSession = false
+        state.didSignInFail = false
+        state.status = nil
+        state.snapshot = nil
+        state.ttlTimerActive = false
+        state.sessionExpiresAt = nil
+        return .merge(
+            .run { [sessionClient, snapshotClient] send in
+                try? await sessionClient.delete()
+                await snapshotClient.remove()
+                await send(.delegate(.signedOut))
+            },
+            .cancel(id: CancelID.ttlTimer),
+        )
     }
 
     /// 세션 만료 처리. dedup guard: 이미 만료 상태면 무시.
