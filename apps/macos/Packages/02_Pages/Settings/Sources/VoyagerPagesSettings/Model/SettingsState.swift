@@ -6,6 +6,7 @@ public struct SettingsState: Equatable {
     var generalSettings = GeneralSettingsState()
     var appearanceSettings = AppearanceSettingsState()
     var aiSettings = AiSettingsState()
+    var accountSettings = AccountSettingsState()
 
     public init() {}
 }

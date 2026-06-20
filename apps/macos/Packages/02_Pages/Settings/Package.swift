@@ -11,6 +11,7 @@ let kPackage = Package(
     ],
     dependencies: [
         .package(path: "../../04_Features/AiProviderConnection"),
+        .package(path: "../../04_Features/AccountAccess"),
         .package(path: "../../05_Entities/Ai"),
         .package(path: "../../05_Entities/AppPreferences"),
         .package(path: "../../06_Shared/VoyagerShared"),
@@ -23,6 +24,7 @@ let kPackage = Package(
             name: "VoyagerPagesSettings",
             dependencies: [
                 .product(name: "VoyagerFeaturesAiProviderConnection", package: "AiProviderConnection"),
+                .product(name: "VoyagerFeaturesAccountAccess", package: "AccountAccess"),
                 .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),
@@ -37,6 +39,7 @@ let kPackage = Package(
             dependencies: [
                 "VoyagerPagesSettings",
                 .product(name: "VoyagerFeaturesAiProviderConnection", package: "AiProviderConnection"),
+                .product(name: "VoyagerFeaturesAccountAccess", package: "AccountAccess"),
                 .product(name: "VoyagerEntitiesAi", package: "Ai"),
                 .product(name: "VoyagerEntitiesAppPreferences", package: "AppPreferences"),
                 .product(name: "VoyagerShared", package: "VoyagerShared"),

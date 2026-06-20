@@ -19,6 +19,9 @@ public struct SettingsFeature {
         Scope(state: \.aiSettings, action: \.ai) {
             AiSettingsFeature()
         }
+        Scope(state: \.accountSettings, action: \.account) {
+            AccountSettingsFeature()
+        }
 
         Reduce { state, action in
             if case .onAppear = action {
@@ -26,6 +29,7 @@ public struct SettingsFeature {
                     .send(.general(.loadSettings)),
                     .send(.appearance(.loadSettings)),
                     .send(.ai(.onAppear)),
+                    .send(.account(.access(.onAppear))),
                 )
             }
 

@@ -45,6 +45,8 @@ public struct SettingsView: View {
             AppearanceSettingsView(store: store.scope(state: \.appearanceSettings, action: \.appearance))
         case .ai:
             AiSettingsView(store: store.scope(state: \.aiSettings, action: \.ai))
+        case .account:
+            AccountSettingsView(store: store.scope(state: \.accountSettings, action: \.account))
         }
     }
 }
