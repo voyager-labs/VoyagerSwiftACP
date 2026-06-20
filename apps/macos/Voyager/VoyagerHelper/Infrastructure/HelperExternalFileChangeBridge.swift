@@ -61,6 +61,12 @@ final class HelperExternalFileChangeBridge {
         }
     }
 
+    func flushPendingBeforeShutdown() async {
+        periodicFlushTask?.cancel()
+        periodicFlushTask = nil
+        await flushPendingChanges()
+    }
+
     func publishChangedPaths(_ paths: [String], generatedAt: Date = Date()) async {
         let payload = HelperExternalFileChangePayload(paths: paths, generatedAt: generatedAt)
         guard !payload.paths.isEmpty else { return }
