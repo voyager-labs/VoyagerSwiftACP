@@ -9,13 +9,12 @@ public struct FileManagerWindowState: Equatable {
     public var sidebar: FileManagerSidebarFeature.State = .init()
     public var inspector: FileManagerInspectorFeature.State = .init()
 
-    public static func makeInitial(path: String?) -> Self {
+    public static func makeInitial(path: String?, selectEntryID: String? = nil) -> Self {
         var state = Self()
-
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
         }
-
+        state.content.pendingSelectEntryID = selectEntryID
         return state
     }
 }
