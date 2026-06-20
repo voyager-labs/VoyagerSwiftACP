@@ -187,6 +187,26 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         }
     }
 
+    /// ACC-005-refresh_token: refreshToken이 unauthorized를 throw한다.
+    /// mock refreshToken closure가 unauthorized를 throw할 때 전파되는지 검증한다.
+    /// - 검증 내용: AccessError.unauthorized 전파
+    /// - 사전 조건: mock refreshToken이 AccessError.unauthorized throw
+    /// - 기대 결과: 동일한 unauthorized 에러가 throw됨
+    func testRefreshTokenUnauthorizedThrows() async {
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.notConfigured },
+            refreshToken: { throw AccessError.unauthorized },
+        )
+
+        do {
+            _ = try await client.refreshToken()
+            XCTFail("unauthorized 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .unauthorized)
+        }
+    }
+
     // MARK: - ACC-005-fetch_access_status
 
     /// ACC-005-fetch_access_status: fetchAccessStatus 성공 시 AccessStatusResponse를 반환한다.
@@ -274,6 +294,26 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
             XCTFail("notConfigured 에러가 throw되어야 함")
         } catch {
             XCTAssertEqual(error as? AccessError, .notConfigured)
+        }
+    }
+
+    /// ACC-005-fetch_access_status: fetchAccessStatus가 unauthorized를 throw한다.
+    /// mock fetchAccessStatus closure가 unauthorized를 throw할 때 전파되는지 검증한다.
+    /// - 검증 내용: AccessError.unauthorized 전파
+    /// - 사전 조건: mock fetchAccessStatus가 AccessError.unauthorized throw
+    /// - 기대 결과: 동일한 unauthorized 에러가 throw됨
+    func testFetchAccessStatusUnauthorizedThrows() async {
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.unauthorized },
+            refreshToken: { throw AccessError.notConfigured },
+        )
+
+        do {
+            _ = try await client.fetchAccessStatus()
+            XCTFail("unauthorized 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .unauthorized)
         }
     }
 

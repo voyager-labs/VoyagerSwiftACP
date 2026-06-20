@@ -126,6 +126,9 @@ public extension AuthNetworkClient {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AccessError.networkFailure
         }
+        if httpResponse.statusCode == 401 {
+            throw AccessError.unauthorized
+        }
         guard httpResponse.statusCode == 200 else {
             throw AccessError.networkFailure
         }
@@ -159,6 +162,9 @@ public extension AuthNetworkClient {
         }
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AccessError.networkFailure
+        }
+        if httpResponse.statusCode == 401 {
+            throw AccessError.unauthorized
         }
         guard httpResponse.statusCode == 200 else {
             throw AccessError.networkFailure

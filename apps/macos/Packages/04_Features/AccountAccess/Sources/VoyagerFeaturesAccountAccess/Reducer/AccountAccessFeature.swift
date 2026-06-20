@@ -390,6 +390,11 @@ private extension AccountAccessFeature {
             state.isComplete = false
             state.errorMessage = errorMessage(for: error)
 
+            if error == .unauthorized {
+                // 401 → 즉시 session_expired 전환 (canonical: entitlement_check.md error table)
+                return .send(._sessionExpiredDetected)
+            }
+
             // Permanent errors — no retry, use normal failure path
             if error == .notConfigured || error == .decodingFailure {
                 return .none
@@ -461,6 +466,7 @@ private extension AccountAccessFeature {
         case .networkFailure: "Network error. Please check your connection and try again."
         case .notConfigured: "Access service is not configured."
         case .decodingFailure: "Failed to process the response."
+        case .unauthorized: "Session expired. Please sign in again."
         case .unknownGatewayCode: "An unexpected error occurred."
         }
     }
@@ -531,6 +537,7 @@ private extension AccountAccessFeature {
         case let .failure(error):
             let isPermanent = error == .decodingFailure
                 || error == .notConfigured
+                || error == .unauthorized
 
             if isPermanent {
                 return .send(._sessionExpiredDetected)

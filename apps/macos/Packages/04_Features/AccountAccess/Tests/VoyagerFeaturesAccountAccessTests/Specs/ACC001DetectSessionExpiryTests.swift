@@ -157,6 +157,33 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         XCTAssertTrue(store.state.didSignInFail, "didSignInFail 유지")
     }
 
+    /// ACC-001-detect_session_expiry: fetchAccessStatus unauthorized → 즉시 _sessionExpiredDetected 전환, retry 없음.
+    /// fetchAccessStatus가 .unauthorized를 반환하면 retry 없이 즉시 세션 만료 처리되는지 검증한다.
+    /// - 검증 내용: .unauthorized → _sessionExpiredDetected 수신, fetchRetryCount==0 유지
+    /// - 사전 조건: fetchGeneration=1
+    /// - 기대 결과: _sessionExpiredDetected 수신, isSessionExpired=true, hasAccountSession=false, fetchRetryCount=0
+    func testUnauthorizedOnFetchTriggersSessionExpiryImmediately() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        let store = makeTestStore(
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.unauthorized },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: state,
+        )
+        // store.exhaustivity = .off: _sessionExpiredDetected가 다수 상태를 동시 갱신하나 검증 대상은 최종 상태만 해당
+        store.exhaustivity = .off
+
+        await store.send(.accessStatusResponse(generation: 1, result: .failure(.unauthorized)))
+        await store.receive(\._sessionExpiredDetected)
+
+        XCTAssertTrue(store.state.isSessionExpired, "unauthorized → isSessionExpired=true")
+        XCTAssertFalse(store.state.hasAccountSession, "unauthorized → hasAccountSession=false")
+        XCTAssertEqual(store.state.fetchRetryCount, 0, "unauthorized → retry 미증가")
+    }
+
     /// ACC-001-detect_session_expiry: 네트워크 오류 시 세션 만료가 트리거되지 않는다.
     /// networkFailure 발생 시 _sessionExpiredDetected가 전송되지 않고 세션이 유지되는지 검증한다.
     /// - 검증 내용: networkFailure → consecutiveRefreshFailures 증가, _sessionExpiredDetected 미전송, 세션 상태 유지.
