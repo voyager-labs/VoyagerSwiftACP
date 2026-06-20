@@ -51,10 +51,10 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         await store.finish()
     }
 
-    /// mode=reveal 폴더 → 폴더 열기 (select focus 없음, R2 TODO)
+    /// mode=reveal 폴더 → 폴더 열기 (select focus 불필요)
     ///
-    /// R2에서 entrySelected(select focus)가 구현될 때까지 mode=reveal 폴더도 mode=open과 동일하게 폴더를 연다.
-    func test_modeRevealFolder_opensFolderWithoutSelect() async throws {
+    /// 폴더는 mode와 관계없이 windowRouted + openFolder로 동일하게 처리된다.
+    func test_modeRevealFolder_opensFolder() async throws {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest&mode=reveal"))
         let fileURL = try XCTUnwrap(URL(string: "file:///Users/test"))
 
@@ -91,10 +91,10 @@ extension FMW003HandleExternalFileOpenRequestsTests {
 // MARK: - Happy Path: 파일
 
 extension FMW003HandleExternalFileOpenRequestsTests {
-    /// mode=open 파일 → 부모 폴더 열기 (select focus 없음, R2 TODO)
+    /// mode=open 파일 → 부모 폴더 열기 (selectEntryPath: nil)
     ///
     /// AC: mode=open 파라미터가 포함된 Deep Link가 파일 경로인 상황에서,
-    /// 부모 폴더가 열려야 한다. R2까지 select focus는 구현하지 않는다.
+    /// 부모 폴더가 열려야 한다. selectEntryPath는 nil로 전달된다.
     func test_modeOpenFile_opensParentFolder() async throws {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest%2Fdocument.txt"))
         let fileURL = try XCTUnwrap(URL(string: "file:///Users/test/document.txt"))
@@ -124,14 +124,17 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentRequest?.isDirectory = false
         }
 
+        // delegate.openParentFolder(path: "/Users/test", selectEntryPath: nil) 수신 확인
         await store.receive(\.delegate.openParentFolder)
+
         await store.finish()
     }
 
-    /// mode=reveal 파일 → 부모 폴더 열기 (select focus 없음, R2 TODO)
+    /// mode=reveal 파일 → 부모 폴더 열기 + 파일 선택 focus + entrySelected
     ///
-    /// R2에서 entrySelected(select focus)가 구현될 때까지 mode=reveal 파일도 mode=open과 동일하게 부모 폴더를 연다.
-    func test_modeRevealFile_opensParentFolderWithoutSelect() async throws {
+    /// mode=reveal 시 parentFolderOpened로 부모 폴더를 열고 selectEntryPath로 파일 선택 focus를 위임한 후,
+    /// entrySelected 상태로 전환한다.
+    func test_modeRevealFile_opensParentFolderAndSelectsEntry() async throws {
         let deepLink =
             try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest%2Fdoc.txt&mode=reveal"))
         let fileURL = try XCTUnwrap(URL(string: "file:///Users/test/doc.txt"))
@@ -161,7 +164,13 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentRequest?.isDirectory = false
         }
 
+        // delegate.openParentFolder(path: "/Users/test", selectEntryPath: "/Users/test/doc.txt") 수신 확인
         await store.receive(\.delegate.openParentFolder)
+
+        await store.receive(\.routeCompleted) {
+            $0.currentStatus = .entrySelected
+        }
+
         await store.finish()
     }
 }
@@ -259,17 +268,142 @@ extension FMW003HandleExternalFileOpenRequestsTests {
     }
 }
 
-// MARK: - 미구현 분기 (TODO)
+// MARK: - 권한 오류
 
 extension FMW003HandleExternalFileOpenRequestsTests {
-    /// permissionDeniedError — PathProbeClient가 권한 미지원 → TODO 주석만 존재
+    /// permissionDenied 경로 → permissionDeniedError
     ///
-    /// PathProbeClient에 권한 확인 기능이 아직 구현되지 않았으므로,
-    /// permissionDeniedError 분기는 reducer에 TODO 주석으로만 작성되어 있다.
-    /// PathProbeClient가 권한을 지원하면 이 테스트를 구현해야 한다.
-    func test_permissionDeniedError_isNotYetImplemented() {
-        // TODO: PathProbeClient가 권한을 지원하면 permissionDeniedError 분기 구현
-        // 현재 PathProbeClient.probeExistence는 exists/isDirectory만 반환
-        // permissionDeniedError는 PathProbeClient 확장 시 활성화 예정
+    /// PathProbeClient가 permissionDenied=true를 반환하면,
+    /// permissionDeniedError 상태로 전환되어야 한다.
+    func test_permissionDeniedPath_permissionDeniedError() async throws {
+        let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Frestricted%2Ffile.txt"))
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/restricted/file.txt"))
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false, permissionDenied: true)
+            }
+        }
+
+        await store.send(.receive(deepLink)) {
+            $0.currentStatus = .pathReceived
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: fileURL,
+                resolvedPath: nil,
+                isDirectory: nil,
+                source: .deepLink,
+                mode: .open,
+            )
+        }
+
+        await store.receive(\.failed) {
+            $0.currentStatus = .permissionDeniedError
+        }
+        await store.finish()
+    }
+}
+
+// MARK: - receiveFileURL
+
+extension FMW003HandleExternalFileOpenRequestsTests {
+    /// systemOpenEvent 폴더 → pathReceived → pathNormalized → windowRouted + delegate openFolder
+    ///
+    /// receiveFileURL로 systemOpenEvent 출처의 폴더 경로를 수신하면,
+    /// ExternalFileURLParser 없이 정상 라우팅되어 폴더가 열려야 한다.
+    func test_systemOpenEventFolder_routesToWindowRouted() async throws {
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/test"))
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: true, isDirectory: true)
+            }
+        }
+
+        await store.send(.receiveFileURL(fileURL, source: .systemOpenEvent, mode: .open)) {
+            $0.currentStatus = .pathReceived
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: fileURL,
+                resolvedPath: nil,
+                isDirectory: nil,
+                source: .systemOpenEvent,
+                mode: .open,
+            )
+        }
+
+        await store.receive(\.normalizeCompleted) {
+            $0.currentStatus = .windowRouted
+            $0.currentRequest?.resolvedPath = "/Users/test"
+            $0.currentRequest?.isDirectory = true
+        }
+
+        await store.receive(\.delegate.openFolder)
+        await store.finish()
+    }
+
+    /// nsservices 파일 + mode=reveal → pathReceived → pathNormalized → parentFolderOpened + selectEntryPath →
+    /// entrySelected
+    ///
+    /// receiveFileURL로 NSServices 출처의 파일 경로를 mode=reveal로 수신하면,
+    /// 부모 폴더 열기 + select focus 위임 후 entrySelected 상태로 전환되어야 한다.
+    func test_nsservicesFileReveal_routesToEntrySelected() async throws {
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/test/doc.txt"))
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: true, isDirectory: false)
+            }
+        }
+
+        await store.send(.receiveFileURL(fileURL, source: .nsservices, mode: .reveal)) {
+            $0.currentStatus = .pathReceived
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: fileURL,
+                resolvedPath: nil,
+                isDirectory: nil,
+                source: .nsservices,
+                mode: .reveal,
+            )
+        }
+
+        await store.receive(\.normalizeCompleted) {
+            $0.currentStatus = .parentFolderOpened
+            $0.currentRequest?.resolvedPath = "/Users/test/doc.txt"
+            $0.currentRequest?.isDirectory = false
+        }
+
+        // delegate.openParentFolder(path: "/Users/test", selectEntryPath: "/Users/test/doc.txt") 수신 확인
+        await store.receive(\.delegate.openParentFolder)
+
+        await store.receive(\.routeCompleted) {
+            $0.currentStatus = .entrySelected
+        }
+
+        await store.finish()
+    }
+
+    /// receiveFileURL에 file 외 scheme → urlValidationError
+    ///
+    /// file:// 이외의 scheme으로 receiveFileURL이 호출되면,
+    /// urlValidationError 상태로 전환되어야 한다.
+    func test_receiveFileURLWithNonFileScheme_urlValidationError() async throws {
+        let httpsURL = try XCTUnwrap(URL(string: "https://example.com/file.txt"))
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        }
+
+        // guard clause가 scheme 검증 후 바로 실패 처리 → state 변경 없음
+        await store.send(.receiveFileURL(httpsURL, source: .systemOpenEvent, mode: .open))
+
+        await store.receive(\.failed) {
+            $0.currentStatus = .urlValidationError
+        }
+        await store.finish()
     }
 }

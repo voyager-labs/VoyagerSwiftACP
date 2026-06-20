@@ -6,13 +6,13 @@ import Foundation
 /// external_file_router_contract.toml의 상태 기계를 구현하는 TCA Reducer.
 ///
 /// 전환 흐름: path_received → path_normalized → {window_routed | parent_folder_opened | invalid_path_error |
-/// url_validation_error}
+/// url_validation_error | permission_denied_error}
 ///
 /// - 중요한 설계 결정:
 ///   - window open side-effect는 직접 호출하지 않고 delegate action으로 windowManager에 위임
 ///   - PathProbeClient mock을 통해 filesystem 접근 없이 테스트 가능
-///   - mode=reveal의 select focus(entrySelected)는 R2 TODO
-///   - permissionDeniedError는 PathProbeClient가 권한을 지원하면 활성화 (현재 TODO)
+///   - mode=reveal 시 entrySelected 상태로 전환하여 파일 선택 focus를 위임
+///   - PathProbeClient가 stat() 기반으로 EACCES 권한 오류를 감지
 @Reducer
 public struct ExternalFileRouterFeature {
     public typealias State = ExternalFileRouterState
@@ -28,6 +28,9 @@ public struct ExternalFileRouterFeature {
             switch action {
             case let .receive(url):
                 return handleReceive(url: url, state: &state)
+
+            case let .receiveFileURL(url, source, mode):
+                return handleReceiveFileURL(url: url, source: source, mode: mode, state: &state)
 
             case let .normalizeCompleted(path, isDirectory):
                 return handleNormalizeCompleted(path: path, isDirectory: isDirectory, state: &state)
@@ -82,7 +85,9 @@ private extension ExternalFileRouterFeature {
             return .run { [pathProbeClient, fileURL] send in
                 let normalizedPath = FilePathNormalizer.normalize(fileURL.path)
                 let result = pathProbeClient.probeExistence(normalizedPath)
-                if result.exists {
+                if result.permissionDenied {
+                    await send(.failed(.permissionDenied(normalizedPath)))
+                } else if result.exists {
                     await send(.normalizeCompleted(path: normalizedPath, isDirectory: result.isDirectory))
                 } else {
                     await send(.failed(.invalidPath(normalizedPath)))
@@ -91,34 +96,76 @@ private extension ExternalFileRouterFeature {
         }
     }
 
+    /// 외부 file:// URL을 직접 수신하여 처리한다.
+    ///
+    /// ExternalFileURLParser를 거치지 않고 바로 pathReceived 상태로 전환한다:
+    /// 1. file scheme 검증 (아니면 urlValidationError)
+    /// 2. pathReceived 상태로 전환
+    /// 3. path 정규화 + 존재 확인 effect 발행 (`handleReceive`와 동일한 probe 로직)
+    func handleReceiveFileURL(url: URL, source: RouteSource, mode: DeepLinkMode, state: inout State) -> Effect<Action> {
+        guard url.scheme == "file" else {
+            return .send(.failed(.urlValidationError(url)))
+        }
+
+        state.currentStatus = .pathReceived
+        state.currentRequest = ExternalFileRouterRequest(
+            originalURL: url,
+            resolvedPath: nil,
+            isDirectory: nil,
+            source: source,
+            mode: mode,
+        )
+
+        // file URL의 path를 정규화하고 파일시스템 존재 확인
+        return .run { [pathProbeClient, url] send in
+            let normalizedPath = FilePathNormalizer.normalize(url.path)
+            let result = pathProbeClient.probeExistence(normalizedPath)
+            if result.permissionDenied {
+                await send(.failed(.permissionDenied(normalizedPath)))
+            } else if result.exists {
+                await send(.normalizeCompleted(path: normalizedPath, isDirectory: result.isDirectory))
+            } else {
+                await send(.failed(.invalidPath(normalizedPath)))
+            }
+        }
+    }
+
     /// path 정규화 완료 후 라우팅을 결정한다.
     ///
     /// path_normalized 상태로 전환 후:
     /// - isDirectory == true (폴더) → windowRouted + delegate .openFolder
-    /// - isDirectory == false (파일) → parentFolderOpened + delegate .openParentFolder
-    ///
-    /// R2 TODO: mode=reveal 시 entrySelected(select focus) 구현
+    /// - isDirectory == false (파일, mode=reveal) → parentFolderOpened + delegate .openParentFolder(
+    ///   selectEntryPath:) → entrySelected + delegate .selectEntryCompleted
+    /// - isDirectory == false (파일, mode=open) → parentFolderOpened + delegate .openParentFolder(
+    ///   selectEntryPath: nil)
     func handleNormalizeCompleted(path: String, isDirectory: Bool, state: inout State) -> Effect<Action> {
         state.currentStatus = .pathNormalized
         state.currentRequest?.resolvedPath = path
         state.currentRequest?.isDirectory = isDirectory
 
         if isDirectory {
-            // mode=open/mode=reveal 모두 동일하게 폴더 열기 (R2까지 select focus 미구현)
             state.currentStatus = .windowRouted
             return .send(.delegate(.openFolder(path: path)))
         } else {
-            // 파일 — 부모 폴더 열기 (R2까지 select focus 미구현)
-            state.currentStatus = .parentFolderOpened
             let parentPath = (path as NSString).deletingLastPathComponent
-            return .send(.delegate(.openParentFolder(path: parentPath)))
+            let mode = state.currentRequest?.mode ?? .open
+            if mode == .reveal {
+                state.currentStatus = .parentFolderOpened
+                return .concatenate(
+                    .send(.delegate(.openParentFolder(path: parentPath, selectEntryPath: path))),
+                    .send(.routeCompleted(.entrySelected)),
+                )
+            } else {
+                state.currentStatus = .parentFolderOpened
+                return .send(.delegate(.openParentFolder(path: parentPath, selectEntryPath: nil)))
+            }
         }
     }
 
     /// 오류를 상태로 매핑한다.
     ///
     /// - invalidPath → invalidPathError terminal
-    /// - permissionDenied → permissionDeniedError terminal (TODO: PathProbeClient 권한 지원 시 활성화)
+    /// - permissionDenied → permissionDeniedError terminal (PathProbeClient stat() EACCES 감지)
     /// - urlValidationError → urlValidationError terminal
     /// - unknown → invalidPathError fallback
     func handleFailed(error: ExternalFileRouterError, state: inout State) -> Effect<Action> {
@@ -126,8 +173,6 @@ private extension ExternalFileRouterFeature {
         case .invalidPath:
             state.currentStatus = .invalidPathError
         case .permissionDenied:
-            // TODO: PathProbeClient가 권한을 지원하면 permissionDeniedError 분기 구현
-            // 현재 PathProbeClient.probeExistence는 exists/isDirectory만 반환
             state.currentStatus = .permissionDeniedError
         case .urlValidationError:
             state.currentStatus = .urlValidationError

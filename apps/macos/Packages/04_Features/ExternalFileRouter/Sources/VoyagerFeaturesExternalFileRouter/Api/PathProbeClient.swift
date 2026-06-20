@@ -3,14 +3,16 @@ import Foundation
 
 // MARK: - PathProbeResult
 
-/// 파일 존재 여부와 디렉토리 여부를 포함하는 조회 결과
+/// 파일 존재 여부, 디렉토리 여부, 권한 오류 여부를 포함하는 조회 결과
 public struct PathProbeResult: Equatable, Sendable {
     public let exists: Bool
     public let isDirectory: Bool
+    public let permissionDenied: Bool
 
-    public init(exists: Bool, isDirectory: Bool) {
+    public init(exists: Bool, isDirectory: Bool, permissionDenied: Bool = false) {
         self.exists = exists
         self.isDirectory = isDirectory
+        self.permissionDenied = permissionDenied
     }
 }
 
@@ -30,9 +32,22 @@ public struct PathProbeClient: Sendable {
 extension PathProbeClient: DependencyKey {
     nonisolated public static var liveValue: PathProbeClient {
         PathProbeClient(probeExistence: { path in
-            var isDirectory: ObjCBool = false
-            let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-            return PathProbeResult(exists: exists, isDirectory: isDirectory.boolValue)
+            var statBuffer = stat()
+            let statResult = stat(path, &statBuffer)
+            if statResult == 0 {
+                return PathProbeResult(
+                    exists: true,
+                    isDirectory: (statBuffer.st_mode & S_IFMT) == S_IFDIR,
+                    permissionDenied: false,
+                )
+            } else {
+                let isPermissionDenied = errno == EACCES
+                return PathProbeResult(
+                    exists: false,
+                    isDirectory: false,
+                    permissionDenied: isPermissionDenied,
+                )
+            }
         })
     }
 
@@ -44,9 +59,22 @@ extension PathProbeClient: DependencyKey {
 
     nonisolated public static var previewValue: PathProbeClient {
         PathProbeClient(probeExistence: { path in
-            var isDirectory: ObjCBool = false
-            let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-            return PathProbeResult(exists: exists, isDirectory: isDirectory.boolValue)
+            var statBuffer = stat()
+            let statResult = stat(path, &statBuffer)
+            if statResult == 0 {
+                return PathProbeResult(
+                    exists: true,
+                    isDirectory: (statBuffer.st_mode & S_IFMT) == S_IFDIR,
+                    permissionDenied: false,
+                )
+            } else {
+                let isPermissionDenied = errno == EACCES
+                return PathProbeResult(
+                    exists: false,
+                    isDirectory: false,
+                    permissionDenied: isPermissionDenied,
+                )
+            }
         })
     }
 }

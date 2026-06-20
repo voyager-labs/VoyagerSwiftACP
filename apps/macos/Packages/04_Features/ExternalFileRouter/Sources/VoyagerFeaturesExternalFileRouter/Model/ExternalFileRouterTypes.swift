@@ -26,11 +26,13 @@ public enum ExternalFileRouterStatus: Equatable {
 // MARK: - Route Source
 
 /// 경로 수신 출처
-public enum RouteSource: Equatable {
+public enum RouteSource: Equatable, Sendable {
     /// 외부 Deep Link URL (`voyager://open`), FMW-003-handle_deep_link
     case deepLink
-    // TODO: 후속 이슈 — systemOpenEvent (FMW-003-open_external_path, R2)
-    // TODO: 후속 이슈 — nsservices (FMW-003-open_external_path, R2)
+    /// 시스템 Open Event (`application(_:open:))`
+    case systemOpenEvent
+    /// NSServices (`NSApplication.shared.servicesProvider`)
+    case nsservices
 }
 
 // MARK: - ExternalFileRouter Request
@@ -83,6 +85,9 @@ public enum ExternalFileRouterError: Error, Equatable {
 public enum ExternalFileRouterAction: CasePathable {
     /// 외부에서 경로 수신 (deep link URL, system open event, nsservices)
     case receive(URL)
+    /// 외부 file:// URL 직접 수신 (system open event, NSServices).
+    /// ExternalFileURLParser를 거치지 않고 직접 요청을 생성한다.
+    case receiveFileURL(URL, source: RouteSource, mode: DeepLinkMode)
     /// URL 정규화 완료 (pathReceived → pathNormalized)
     case normalizeCompleted(path: String, isDirectory: Bool)
     /// 라우팅 완료 (windowRouted / parentFolderOpened / entrySelected)
@@ -97,10 +102,12 @@ public enum ExternalFileRouterAction: CasePathable {
         /// windowManager로 폴더 열기 위임 (windowRouted)
         case openFolder(path: String)
         /// 파일의 부모 폴더 열기 위임 (parentFolderOpened)
-        case openParentFolder(path: String)
+        /// selectEntryPath가 nil이 아니면 해당 파일을 선택 focus 한다.
+        case openParentFolder(path: String, selectEntryPath: String?)
         /// ACC로 auth/callback 전달 (auth callback 우회)
         case routeToAuthCallback(URL)
-        // TODO: R2 — selectFocus (entrySelected, reveal mode)
+        /// mode=reveal에서 파일 선택 focus 완료 (entrySelected)
+        case selectEntryCompleted(path: String)
     }
 }
 
