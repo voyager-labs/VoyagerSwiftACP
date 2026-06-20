@@ -1,8 +1,8 @@
 import Foundation
-import VoyagerShared
+@testable import VoyagerFeaturesExternalFileRouter
 import XCTest
 
-final class FilePathNormalizerTests: XCTestCase {
+final class FMW003FilePathNormalizerTests: XCTestCase {
     // MARK: - file URL → filesystem path
 
     /// file URL이 filesystem path로 올바르게 변환되는지 검증

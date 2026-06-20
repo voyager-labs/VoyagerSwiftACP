@@ -27,9 +27,5 @@ let kPackage = Package(
                 .product(name: "SwiftDotenv", package: "swift-dotenv"),
             ],
         ),
-        .testTarget(
-            name: "VoyagerSharedTests",
-            dependencies: ["VoyagerShared"],
-        ),
     ],
 )

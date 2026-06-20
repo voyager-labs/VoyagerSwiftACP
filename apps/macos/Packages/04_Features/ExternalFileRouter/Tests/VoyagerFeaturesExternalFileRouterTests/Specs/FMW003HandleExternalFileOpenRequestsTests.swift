@@ -1,31 +1,29 @@
 import ComposableArchitecture
-@testable import Voyager
-import VoyagerEntitiesEntry
-import VoyagerShared
+@testable import VoyagerFeaturesExternalFileRouter
 import XCTest
 
-// MARK: - OpenRouterFeature 계약 테스트
+// MARK: - ExternalFileRouterFeature 계약 테스트
 
-/// Open Router 상태 기계(open_router_contract.toml)를 1:1로 검증하는 TestStore 기반 테스트.
+/// ExternalFileRouter 상태 기계(open_router_contract.toml)를 1:1로 검증하는 TestStore 기반 테스트.
 ///
 /// 전환 흐름: path_received → path_normalized → {window_routed | parent_folder_opened | invalid_path_error |
 /// url_validation_error}
 @MainActor
-final class OpenRouterFeatureTests: XCTestCase {}
+final class FMW003HandleExternalFileOpenRequestsTests: XCTestCase {}
 
 // MARK: - Happy Path: 폴더
 
-extension OpenRouterFeatureTests {
+extension FMW003HandleExternalFileOpenRequestsTests {
     /// 유효한 폴더 Deep Link 수신 → pathReceived → pathNormalized → windowRouted + delegate .openFolder
     ///
     /// AC: 유효한 폴더 `voyager://open?url=file%3A%2F%2F%2FUsers%2F...`가 수신된 상황에서,
-    /// URL이 디코딩·검증되고 Open Router로 전달되어 폴더가 열려야 한다.
+    /// URL이 디코딩·검증되고 ExternalFileRouter로 전달되어 폴더가 열려야 한다.
     func test_validFolderURL_routesToWindowRoutedAndOpenFolder() async throws {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest"))
         let fileURL = try XCTUnwrap(URL(string: "file:///Users/test"))
 
-        let store = TestStore(initialState: OpenRouterState()) {
-            OpenRouterFeature()
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
         } withDependencies: {
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: true, isDirectory: true)
@@ -34,7 +32,7 @@ extension OpenRouterFeatureTests {
 
         await store.send(.receive(deepLink)) {
             $0.currentStatus = .pathReceived
-            $0.currentRequest = OpenRouterRequest(
+            $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
                 resolvedPath: nil,
                 isDirectory: nil,
@@ -60,8 +58,8 @@ extension OpenRouterFeatureTests {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest&mode=reveal"))
         let fileURL = try XCTUnwrap(URL(string: "file:///Users/test"))
 
-        let store = TestStore(initialState: OpenRouterState()) {
-            OpenRouterFeature()
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
         } withDependencies: {
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: true, isDirectory: true)
@@ -70,7 +68,7 @@ extension OpenRouterFeatureTests {
 
         await store.send(.receive(deepLink)) {
             $0.currentStatus = .pathReceived
-            $0.currentRequest = OpenRouterRequest(
+            $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
                 resolvedPath: nil,
                 isDirectory: nil,
@@ -92,7 +90,7 @@ extension OpenRouterFeatureTests {
 
 // MARK: - Happy Path: 파일
 
-extension OpenRouterFeatureTests {
+extension FMW003HandleExternalFileOpenRequestsTests {
     /// mode=open 파일 → 부모 폴더 열기 (select focus 없음, R2 TODO)
     ///
     /// AC: mode=open 파라미터가 포함된 Deep Link가 파일 경로인 상황에서,
@@ -101,8 +99,8 @@ extension OpenRouterFeatureTests {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest%2Fdocument.txt"))
         let fileURL = try XCTUnwrap(URL(string: "file:///Users/test/document.txt"))
 
-        let store = TestStore(initialState: OpenRouterState()) {
-            OpenRouterFeature()
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
         } withDependencies: {
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: true, isDirectory: false)
@@ -111,7 +109,7 @@ extension OpenRouterFeatureTests {
 
         await store.send(.receive(deepLink)) {
             $0.currentStatus = .pathReceived
-            $0.currentRequest = OpenRouterRequest(
+            $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
                 resolvedPath: nil,
                 isDirectory: nil,
@@ -138,8 +136,8 @@ extension OpenRouterFeatureTests {
             try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Ftest%2Fdoc.txt&mode=reveal"))
         let fileURL = try XCTUnwrap(URL(string: "file:///Users/test/doc.txt"))
 
-        let store = TestStore(initialState: OpenRouterState()) {
-            OpenRouterFeature()
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
         } withDependencies: {
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: true, isDirectory: false)
@@ -148,7 +146,7 @@ extension OpenRouterFeatureTests {
 
         await store.send(.receive(deepLink)) {
             $0.currentStatus = .pathReceived
-            $0.currentRequest = OpenRouterRequest(
+            $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
                 resolvedPath: nil,
                 isDirectory: nil,
@@ -170,15 +168,15 @@ extension OpenRouterFeatureTests {
 
 // MARK: - URL 검증 오류
 
-extension OpenRouterFeatureTests {
+extension FMW003HandleExternalFileOpenRequestsTests {
     /// `url` 파라미터가 누락된 Deep Link → urlValidationError
     ///
     /// AC: `url` 파라미터가 누락된 상황에서, URL 형식 오류가 표시되어야 한다.
     func test_missingURLParameter_urlValidationError() async throws {
         let missingURL = try XCTUnwrap(URL(string: "voyager://open"))
 
-        let store = TestStore(initialState: OpenRouterState()) {
-            OpenRouterFeature()
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
         }
 
         await store.send(.receive(missingURL))
@@ -194,8 +192,8 @@ extension OpenRouterFeatureTests {
     func test_nonFileURL_urlValidationError() async throws {
         let nonFileURL = try XCTUnwrap(URL(string: "voyager://open?url=https%3A%2F%2Fexample.com"))
 
-        let store = TestStore(initialState: OpenRouterState()) {
-            OpenRouterFeature()
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
         }
 
         await store.send(.receive(nonFileURL))
@@ -208,15 +206,15 @@ extension OpenRouterFeatureTests {
 
 // MARK: - Auth Callback 우회
 
-extension OpenRouterFeatureTests {
+extension FMW003HandleExternalFileOpenRequestsTests {
     /// auth/callback → delegate .routeToAuthCallback (FMW-003 비간섭)
     ///
     /// AC: `voyager://auth/callback`이 수신된 상황에서, FMW-003가 가로채지 않고 ACC-001로 라우팅되어야 한다.
     func test_authCallback_routesToAuthCallback() async throws {
         let authURL = try XCTUnwrap(URL(string: "voyager://auth/callback?code=test123"))
 
-        let store = TestStore(initialState: OpenRouterState()) {
-            OpenRouterFeature()
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
         }
 
         await store.send(.receive(authURL))
@@ -227,7 +225,7 @@ extension OpenRouterFeatureTests {
 
 // MARK: - 존재하지 않는 경로
 
-extension OpenRouterFeatureTests {
+extension FMW003HandleExternalFileOpenRequestsTests {
     /// 존재하지 않는 경로 → invalidPathError
     ///
     /// AC: 존재하지 않는 경로의 Deep Link가 수신된 상황에서, "선택한 위치를 열 수 없습니다" 오류가 표시되어야 한다.
@@ -235,8 +233,8 @@ extension OpenRouterFeatureTests {
         let deepLink = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2FUsers%2Fnope"))
         let fileURL = try XCTUnwrap(URL(string: "file:///Users/nope"))
 
-        let store = TestStore(initialState: OpenRouterState()) {
-            OpenRouterFeature()
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
         } withDependencies: {
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: false, isDirectory: false)
@@ -245,7 +243,7 @@ extension OpenRouterFeatureTests {
 
         await store.send(.receive(deepLink)) {
             $0.currentStatus = .pathReceived
-            $0.currentRequest = OpenRouterRequest(
+            $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
                 resolvedPath: nil,
                 isDirectory: nil,
@@ -263,7 +261,7 @@ extension OpenRouterFeatureTests {
 
 // MARK: - 미구현 분기 (TODO)
 
-extension OpenRouterFeatureTests {
+extension FMW003HandleExternalFileOpenRequestsTests {
     /// permissionDeniedError — PathProbeClient가 권한 미지원 → TODO 주석만 존재
     ///
     /// PathProbeClient에 권한 확인 기능이 아직 구현되지 않았으므로,

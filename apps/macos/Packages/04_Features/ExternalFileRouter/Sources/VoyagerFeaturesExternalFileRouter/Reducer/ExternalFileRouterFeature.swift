@@ -1,11 +1,9 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesEntry
-import VoyagerShared
 
-// MARK: - OpenRouterFeature
+// MARK: - ExternalFileRouterFeature
 
-/// open_router_contract.toml의 상태 기계를 구현하는 TCA Reducer.
+/// external_file_router_contract.toml의 상태 기계를 구현하는 TCA Reducer.
 ///
 /// 전환 흐름: path_received → path_normalized → {window_routed | parent_folder_opened | invalid_path_error |
 /// url_validation_error}
@@ -16,14 +14,16 @@ import VoyagerShared
 ///   - mode=reveal의 select focus(entrySelected)는 R2 TODO
 ///   - permissionDeniedError는 PathProbeClient가 권한을 지원하면 활성화 (현재 TODO)
 @Reducer
-struct OpenRouterFeature {
-    typealias State = OpenRouterState
-    typealias Action = OpenRouterAction
+public struct ExternalFileRouterFeature {
+    public typealias State = ExternalFileRouterState
+    public typealias Action = ExternalFileRouterAction
+
+    public init() {}
 
     @Dependency(\.pathProbeClient)
     private var pathProbeClient
 
-    var body: some Reducer<State, Action> {
+    public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case let .receive(url):
@@ -48,7 +48,7 @@ struct OpenRouterFeature {
 
 // MARK: - Action Handlers
 
-private extension OpenRouterFeature {
+private extension ExternalFileRouterFeature {
     /// 외부 URL을 수신하여 파싱하고 상태를 전환한다.
     ///
     /// 1. ExternalFileURLParser로 voyager:// URL 파싱
@@ -69,7 +69,7 @@ private extension OpenRouterFeature {
 
         case let .request(request):
             state.currentStatus = .pathReceived
-            state.currentRequest = OpenRouterRequest(
+            state.currentRequest = ExternalFileRouterRequest(
                 originalURL: request.url,
                 resolvedPath: nil,
                 isDirectory: nil,
@@ -121,7 +121,7 @@ private extension OpenRouterFeature {
     /// - permissionDenied → permissionDeniedError terminal (TODO: PathProbeClient 권한 지원 시 활성화)
     /// - urlValidationError → urlValidationError terminal
     /// - unknown → invalidPathError fallback
-    func handleFailed(error: OpenRouterError, state: inout State) -> Effect<Action> {
+    func handleFailed(error: ExternalFileRouterError, state: inout State) -> Effect<Action> {
         switch error {
         case .invalidPath:
             state.currentStatus = .invalidPathError

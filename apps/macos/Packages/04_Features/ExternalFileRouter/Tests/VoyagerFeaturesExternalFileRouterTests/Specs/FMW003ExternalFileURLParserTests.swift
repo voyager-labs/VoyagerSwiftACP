@@ -1,7 +1,7 @@
-import VoyagerShared
+@testable import VoyagerFeaturesExternalFileRouter
 import XCTest
 
-final class ExternalFileURLParserTests: XCTestCase {
+final class FMW003ExternalFileURLParserTests: XCTestCase {
     // MARK: - Happy path
 
     /// 유효한 폴더 URL + open mode (기본값)이 정상 파싱되는지 검증

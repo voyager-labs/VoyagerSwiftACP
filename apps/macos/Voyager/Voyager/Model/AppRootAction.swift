@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesSettings
 import VoyagerShared
@@ -16,13 +17,13 @@ enum AppRootAction: CasePathable {
     case registerHelperWatchRootsIfNeeded
     case registerHelperWatchRoots([String])
     case openAISettings
-    /// 외부 Deep Link URL 수신 (FMW-003-handle_deep_link). 창 없으면 버퍼링, 있으면 T10에서 OpenRouter로 전달
+    /// 외부 Deep Link URL 수신 (FMW-003-handle_deep_link). 창 없으면 버퍼링, 있으면 T10에서 ExternalFileRouter로 전달
     case receiveExternalURL(URL)
     case appPreferences(AppPreferencesFeature.Action)
     case windowManager(WindowManagerFeature.Action)
     case updater(UpdaterFeature.Action)
     case settings(SettingsFeature.Action)
     case menuCommands(MenuCommandsFeature.Action)
-    /// Open Router: 외부 URL/경로 처리
-    case openRouter(OpenRouterAction)
+    /// ExternalFileRouter: 외부 URL/경로 처리
+    case externalFileRouter(ExternalFileRouterAction)
 }

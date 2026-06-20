@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
+import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
@@ -62,8 +63,8 @@ struct AppRootFeature {
         Scope(state: \.menuCommands, action: \.menuCommands) {
             MenuCommandsFeature()
         }
-        Scope(state: \.openRouter, action: \.openRouter) {
-            OpenRouterFeature()
+        Scope(state: \.externalFileRouter, action: \.externalFileRouter) {
+            ExternalFileRouterFeature()
         }
 
         Reduce { state, action in
@@ -306,17 +307,17 @@ struct AppRootFeature {
         case let .settings(.general(.toggleAutomaticUpdate(enabled))):
             return .send(.updater(.setAutomaticUpdate(enabled)))
 
-            // MARK: - Open Router Delegate
+            // MARK: - ExternalFileRouter Delegate
 
-        case let .openRouter(.delegate(.openFolder(path))):
-            // OpenRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
+        case let .externalFileRouter(.delegate(.openFolder(path))):
+            // ExternalFileRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
             return .send(.windowManager(.file(.newWindow(path: path))))
 
-        case let .openRouter(.delegate(.openParentFolder(path))):
-            // OpenRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
+        case let .externalFileRouter(.delegate(.openParentFolder(path))):
+            // ExternalFileRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
             return .send(.windowManager(.file(.newWindow(path: path))))
 
-        case .openRouter(.delegate(.routeToAuthCallback)):
+        case .externalFileRouter(.delegate(.routeToAuthCallback)):
             // ACC-001 소유의 OAuth callback — FMW-003가 가로채지 않음
             // TODO: ACC 핸드오프 seam 확인 후 실제 전달 로직 추가
             return .none
@@ -332,13 +333,13 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case let .receiveExternalURL(url):
-            // 창이 없으면 버퍼링, 창이 열리면 OpenRouter로 URL 전달
+            // 창이 없으면 버퍼링, 창이 열리면 ExternalFileRouter로 URL 전달
             guard !state.windowManager.windows.isEmpty else {
                 state.pendingExternalURL = url
                 return .none
             }
-            // 창이 열려 있는 상태에서 OpenRouter로 URL 전달
-            return .send(.openRouter(.receive(url)))
+            // 창이 열려 있는 상태에서 ExternalFileRouter로 URL 전달
+            return .send(.externalFileRouter(.receive(url)))
 
         default:
             return .none
@@ -349,8 +350,8 @@ struct AppRootFeature {
     private func flushPendingExternalURL(state: inout State) -> Effect<Action> {
         guard let url = state.pendingExternalURL else { return .none }
         state.pendingExternalURL = nil
-        // 버퍼링된 URL을 OpenRouter로 전달
-        return .send(.openRouter(.receive(url)))
+        // 버퍼링된 URL을 ExternalFileRouter로 전달
+        return .send(.externalFileRouter(.receive(url)))
     }
 
     private func reduceWindowPostAction(

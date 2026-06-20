@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesSettings
 
@@ -11,8 +12,8 @@ struct AppRootState: Equatable {
     var updater: UpdaterFeature.State = .init()
     var settings: SettingsFeature.State = .init()
     var menuCommands: MenuCommandsFeature.State = .init()
-    /// Open Router: 외부 URL/경로를 받아 File Manager Window로 라우팅
-    var openRouter: OpenRouterState = .init()
+    /// ExternalFileRouter: 외부 URL/경로를 받아 File Manager Window로 라우팅
+    var externalFileRouter: ExternalFileRouterState = .init()
     var isHelperExternalFileBridgeStarted = false
     var lastHelperReady = false
     var windowPresenceBeforeWindowManagerAction: Bool?
