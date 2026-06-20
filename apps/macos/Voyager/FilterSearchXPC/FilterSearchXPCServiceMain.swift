@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import VoyagerShared
 
 @main
 struct FilterSearchXPCServiceMain {

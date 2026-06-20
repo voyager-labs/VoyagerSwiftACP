@@ -6,6 +6,7 @@ struct AiChatConversationSurface: View {
     let skeleton: AiChatSkeletonDisplayModel
     let onOpenSettings: () -> Void
     let onErrorRecovery: () -> Void
+    let onRegenerate: () -> Void
     let onRebindContext: () -> Void
     let onStartNewChatFromRebind: () -> Void
 
@@ -39,14 +40,18 @@ struct AiChatConversationSurface: View {
                 AiChatTranscriptSection(
                     messages: state.transcriptHistory,
                     isProcessing: false,
+                    canRegenerate: state.canRegenerate,
                     statusText: state.streamingAssistantDisplayModel == nil ? state.requestStatusText : nil,
                     streamingAssistant: state.streamingAssistantDisplayModel,
+                    onRegenerate: onRegenerate,
                 )
             case .processing:
                 AiChatTranscriptSection(
                     messages: state.transcriptHistory,
                     isProcessing: true,
+                    canRegenerate: false,
                     streamingAssistant: state.streamingAssistantDisplayModel,
+                    onRegenerate: onRegenerate,
                 )
             }
         }
@@ -180,13 +185,19 @@ private struct AiChatStatusBanner: View {
 private struct AiChatTranscriptSection: View {
     let messages: [AiChatMessage]
     let isProcessing: Bool
+    let canRegenerate: Bool
     var statusText: String?
     var streamingAssistant: AiChatStreamingAssistantDisplayModel?
+    let onRegenerate: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
-                AiChatMessageRow(message: message)
+            ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
+                AiChatMessageRow(
+                    message: message,
+                    showsRegenerateAction: canRegenerate && index == latestAssistantMessageIndex,
+                    onRegenerate: onRegenerate,
+                )
             }
 
             if let streamingAssistant {
@@ -204,6 +215,10 @@ private struct AiChatTranscriptSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var latestAssistantMessageIndex: Int? {
+        messages.indices.last { messages[$0].role == .assistant }
+    }
+
     private func requestStatusRow(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 12, weight: .medium))
@@ -215,6 +230,10 @@ private struct AiChatTranscriptSection: View {
 
 private struct AiChatMessageRow: View {
     let message: AiChatMessage
+    let showsRegenerateAction: Bool
+    let onRegenerate: () -> Void
+
+    @State private var isRegenerateActionHovered = false
 
     var body: some View {
         switch message.role {
@@ -250,8 +269,49 @@ private struct AiChatMessageRow: View {
     }
 
     private var assistantMessage: some View {
-        AiChatAssistantMarkdownText(content: message.content)
-            .padding(.vertical, 4)
+        VStack(alignment: .leading, spacing: 8) {
+            AiChatAssistantMarkdownText(content: message.content)
+
+            if showsRegenerateAction {
+                HStack(spacing: 6) {
+                    Button(action: onRegenerate) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.primary.opacity(isRegenerateActionHovered ? 0.08 : 0))
+                            Circle()
+                                .strokeBorder(Color.primary.opacity(isRegenerateActionHovered ? 0.10 : 0), lineWidth: 1)
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 28, height: 28)
+                        .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Regenerate response")
+                    .accessibilityLabel("Regenerate response")
+
+                    if isRegenerateActionHovered {
+                        Text("Regenerate response")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .frame(height: 24)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color(nsColor: .controlBackgroundColor)),
+                            )
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
+                            )
+                    }
+                }
+                .onHover { isRegenerateActionHovered = $0 }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

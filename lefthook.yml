@@ -2,10 +2,11 @@
 # Install: lefthook install
 
 post-checkout:
+  parallel: false
   commands:
     mise-trust:
       run: |
-        mise trust -q -y 2>/dev/null || true
+        mise trust -q 2>/dev/null || true
     lefthook-install:
       run: test -f "$(git rev-parse --git-path hooks/post-checkout)" || lefthook install
     submodules:

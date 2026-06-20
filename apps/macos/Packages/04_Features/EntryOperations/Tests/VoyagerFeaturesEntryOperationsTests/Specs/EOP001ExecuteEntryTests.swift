@@ -6,13 +6,14 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
-// MARK: - EOP-001 Execute Entry
+// MARK: - EOP-001-execute_entry
 
 @MainActor
 final class EOP001ExecuteEntryTests: XCTestCase {
     // MARK: - EOP-001-open_entry_with_default_app
 
     /// EOP-001-open_entry_with_default_app: 기본 앱으로 엔트리 열기
+    /// - 검증 내용: 기본 앱 열기 action이 선택된 파일 URL과 대상 앱으로 workspace open 호출을 수행하는지 확인합니다.
     /// - 사전 조건: WorkspaceClient mock으로 교체, 호출 기록 준비
     /// - 기대 결과: 리듀서가 올바른 URL로 workspaceClient.openURLsWithApplication을 호출
     func testOpenEntryWithDefaultApp_success() async throws {
@@ -47,6 +48,7 @@ final class EOP001ExecuteEntryTests: XCTestCase {
     }
 
     /// EOP-001-open_entry_with_default_app: 빈 경로 목록 전달 시 아무 동작도 수행하지 않음
+    /// - 검증 내용: 빈 경로 입력에서 기본 앱 열기 의존성이 호출되지 않는지 확인합니다.
     /// - 사전 조건: 초기 상태, 의존성 mock 설정
     /// - 기대 결과: workspaceClient 호출 없음
     func testOpenEntryWithDefaultApp_emptyPaths_noOp() async {
@@ -66,6 +68,7 @@ final class EOP001ExecuteEntryTests: XCTestCase {
     // MARK: - EOP-001-open_entry_with_selected_app
 
     /// EOP-001-open_entry_with_selected_app: 선택한 앱으로 엔트리 열기
+    /// - 검증 내용: 선택 앱 열기 action이 파일 URL과 bundle ID를 EntryOpenClient에 전달하는지 확인합니다.
     /// - 사전 조건: EntryOpenClient.open mock으로 교체, 호출 기록 준비
     /// - 기대 결과: 리듀서가 올바른 URL과 bundleID로 EntryOpenClient.open을 호출
     func testOpenEntryWithSelectedApp_success() async throws {
@@ -103,6 +106,7 @@ final class EOP001ExecuteEntryTests: XCTestCase {
     }
 
     /// EOP-001-open_entry_with_selected_app: 휴지통 파일은 열지 않고 경고 표시
+    /// - 검증 내용: 휴지통 파일을 선택 앱으로 열려 할 때 open 호출이 차단되는지 확인합니다.
     /// - 사전 조건: trashDirectoryPath가 휴지통 경로 반환
     /// - 기대 결과: EntryOpenClient.open이 호출되지 않음
     func testOpenEntryWithSelectedApp_trashFile_noOp() async throws {
@@ -133,6 +137,7 @@ final class EOP001ExecuteEntryTests: XCTestCase {
     // MARK: - EOP-001-set_default_app_for_entry
 
     /// EOP-001-set_default_app_for_entry: 파일 확장자의 기본 앱 설정
+    /// - 검증 내용: 기본 앱 설정 action이 대상 파일 URL과 앱 URL을 workspace client에 전달하는지 확인합니다.
     /// - 사전 조건: 파일 엔트리와 EntryOpenClient.setDefaultApp mock 준비
     /// - 기대 결과: 리듀서가 올바른 UTType과 bundleID로 EntryOpenClient.setDefaultApp을 호출
     func testSetDefaultAppForEntry_success() async throws {
@@ -169,6 +174,7 @@ final class EOP001ExecuteEntryTests: XCTestCase {
     }
 
     /// EOP-001-set_default_app_for_entry: 폴더에 기본 앱 설정 시 차단
+    /// - 검증 내용: 폴더에 기본 앱 설정을 시도하면 지원하지 않는 타입 오류로 상태가 갱신되는지 확인합니다.
     /// - 사전 조건: isFolder = true인 엔트리
     /// - 기대 결과: EntryOpenClient.setDefaultApp이 호출되지 않고 unsupportedType이 기록됨
     func testSetDefaultAppForEntry_folder_setsUnsupportedTypeError() async throws {
@@ -202,6 +208,7 @@ final class EOP001ExecuteEntryTests: XCTestCase {
     // MARK: - EOP-001-quick_look_entry
 
     /// EOP-001-quick_look_entry: Quick Look으로 엔트리 미리보기
+    /// - 검증 내용: Quick Look action이 선택한 파일 URL을 preview 의존성에 전달하는지 확인합니다.
     /// - 사전 조건: EntryQuickLookClient mock으로 교체, 호출 기록 준비
     /// - 기대 결과: 리듀서가 올바른 URL로 EntryQuickLookClient.quickLook을 호출
     func testQuickLookEntry_success() async throws {
@@ -265,6 +272,7 @@ final class EOP001ExecuteEntryTests: XCTestCase {
     }
 
     /// EOP-001-quick_look_entry: 빈 경로 목록 전달 시 아무 동작도 수행하지 않음
+    /// - 검증 내용: 빈 경로 입력에서 Quick Look 의존성이 호출되지 않는지 확인합니다.
     /// - 사전 조건: 초기 상태, 의존성 mock 설정
     /// - 기대 결과: EntryQuickLookClient.quickLook이 호출되지 않음
     func testQuickLookEntry_emptyPaths_noOp() async {

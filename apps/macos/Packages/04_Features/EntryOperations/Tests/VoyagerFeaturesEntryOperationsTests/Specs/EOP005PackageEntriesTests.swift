@@ -7,6 +7,7 @@ import XCTest
 @MainActor
 final class EOP005PackageEntriesTests: XCTestCase {
     /// EOP-005-compress_entries: 엔트리 압축 생성
+    /// - 검증 내용: 선택 항목 압축 action이 archive 생성 의존성을 호출하고 작업 상태를 완료하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사
     /// - 기대 결과: 아카이브가 생성되고, 압축 목록이 원본 Entry를 포함하며, FileOpsRecorder에 기록됨
     func testCompressEntries_success() async throws {
@@ -57,6 +58,7 @@ final class EOP005PackageEntriesTests: XCTestCase {
     }
 
     /// EOP-005-extract_compressed_files: 압축 파일 해제
+    /// - 검증 내용: 압축 해제 action이 archive 추출 의존성을 호출하고 작업 상태를 완료하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/archives/COMPRESS-264.zip`를 FixtureSandbox로 복사
     /// - 기대 결과: `test.txt`가 추출되고 내용이 `data`와 일치함
     func testExtractCompressedFiles_success() async throws {

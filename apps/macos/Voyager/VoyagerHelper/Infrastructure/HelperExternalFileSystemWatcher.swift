@@ -1,5 +1,6 @@
 import CoreServices
 import Foundation
+import VoyagerShared
 
 final class HelperExternalFileSystemWatcher {
     final class CallbackBox: @unchecked Sendable {

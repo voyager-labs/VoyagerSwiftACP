@@ -21,10 +21,10 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
     /// 리듀서가 onAppear를 받으면 세 개의 이펙트(FDA 상태, 헬퍼 폴더 접근 상태, 로그인 항목 상태)를
     /// 동시에 시작하고, 각 결과 액션을 순차적으로 수신하여 State를 갱신합니다.
     ///
+    /// - 검증 내용: `onAppear` 이후 FDA, helper folder, launch-at-login 상태 응답이 state에 반영되는 흐름입니다.
     /// - 사전 조건: FDA는 `.granted`(허용됨), 헬퍼 폴더 접근은 `kGrantedHelperAccess`
     ///   (Desktop·Documents·Downloads 모두 허용), 로그인 시 실행은 비활성화(`false`).
     ///   로그인 항목은 비게이팅 권한이므로 FDA와 헬퍼 접근만으로 완료 판정이 납니다.
-    /// - 검증 액션: `onAppear` → FDA 응답 → 헬퍼 응답 → 로그인 항목 응답 순으로 수신.
     /// - 기대 결과: `fullDiskAccessStatusResponse(.granted)` 수신 후 `isComplete`는 여전히 `false`
     ///   (헬퍼 접근 결과 미수신). `helperFolderAccessStatusLoaded` 수신 후 `helperFolderAccessError`는
     ///   `nil`이 되고 `isComplete == true`. `launchAtLoginStateLoaded`는 추가로 수신되지만
@@ -58,10 +58,9 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
     /// 시스템 설정에서 권한을 부여하지 않은 초기 상태로, 리듀서는 이를 사실상 거부와 동일하게
     /// 취급하여 Next 버튼을 비활성화합니다.
     ///
+    /// - 검증 내용: FDA `.unknown` 상태에서 권한 step이 완료되지 않고 Next 차단 사유를 노출하는 흐름입니다.
     /// - 사전 조건: FDA는 `.unknown`(미확인), 헬퍼 폴더 접근은 `kGrantedHelperAccess`(모두 허용),
     ///   로그인 시 실행은 비활성화. 헬퍼 접근만으로는 완료 판정이 나지 않습니다.
-    /// - 검증 액션: `onAppear` → 세 응답 순차 수신. FDA 응답은 상태 변경 없이
-    ///   `fullDiskAccessStatus`가 `.unknown`으로 유지됩니다.
     /// - 기대 결과: `nextDisabledMessage`가 non-nil이 되어 Next 버튼이 비활성화.
     ///   `fullDiskAccessStatus == .unknown` 유지. `isComplete`는 헬퍼 접근이 허용되었더라도
     ///   FDA 미확정으로 인해 최종 완료가 아닙니다.

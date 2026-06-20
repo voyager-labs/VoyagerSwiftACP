@@ -266,7 +266,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
-    // MARK: - EOP-003-undo_entry_action stack
+    // MARK: - EOP-003-undo_entry_action
 
     /// EOP-003-undo_entry_action: 새 action 완료 시 undo stack에 push되고 redo stack이 clear된다
     /// `entryActionCompleted`가 isUndoable 작업으로 들어오면 undoRecords에 append하고 redoRecords를 비운다.
@@ -447,7 +447,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(store.state.redoRecords.isEmpty)
     }
 
-    // MARK: - EOP-003-redo_entry_action UndoManager edge cases
+    // MARK: - EOP-003-redo_entry_action
 
     // AC: EOP-003-redo_entry_action Edge Case #8
     /// EOP-003-redo_entry_action: 대상 record의 path가 busy 상태면 redo를 건너뛴다
