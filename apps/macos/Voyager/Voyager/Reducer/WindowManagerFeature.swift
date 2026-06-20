@@ -215,13 +215,13 @@ struct WindowManagerFeature {
 
     private func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
-        case let .file(.newWindow(path)):
-            return openWindowSession(path: path, state: &state) { id in
+        case let .file(.newWindow(path, selectEntryID)):
+            return openWindowSession(path: path, selectEntryID: selectEntryID, state: &state) { id in
                 await fileManagerWindowClient.open(id)
             }
 
         case let .file(.newTab(path)):
-            return openWindowSession(path: path, state: &state) { id in
+            return openWindowSession(path: path, selectEntryID: nil, state: &state) { id in
                 await fileManagerWindowClient.openTab(id)
             }
 
@@ -245,13 +245,14 @@ struct WindowManagerFeature {
 
     private func openWindowSession(
         path: String?,
+        selectEntryID: String?,
         state: inout State,
         open: @escaping @Sendable (UUID) async -> Void,
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() {
             return .none
         }
-        let windowSession = makeWindowSession(path: path)
+        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
 
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
@@ -290,9 +291,9 @@ struct WindowManagerFeature {
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 
-    private func makeWindowSession(path: String?) -> WindowSessionState {
+    private func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
         let id = uuid()
-        let windowState = FileManagerWindowFeature.State.makeInitial(path: path)
+        let windowState = FileManagerWindowFeature.State.makeInitial(path: path, selectEntryID: selectEntryID)
         return .init(id: id, window: windowState)
     }
 }

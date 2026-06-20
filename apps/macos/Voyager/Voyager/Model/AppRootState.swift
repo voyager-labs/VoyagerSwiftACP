@@ -19,4 +19,8 @@ struct AppRootState: Equatable {
     var windowPresenceBeforeWindowManagerAction: Bool?
     /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 URL (Deep Link)
     var pendingExternalURL: URL?
+    /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 file:// URL
+    var pendingExternalFileURL: URL?
+    var pendingFileURLSource: RouteSource?
+    var pendingFileURLMode: DeepLinkMode?
 }

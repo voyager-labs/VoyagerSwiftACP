@@ -80,6 +80,9 @@ struct AppRootFeature {
             reduceExternalURL(into: &state, action: action)
         }
         Reduce { state, action in
+            reduceExternalFileURL(into: &state, action: action)
+        }
+        Reduce { state, action in
             reduceWindowPostAction(into: &state, action: action)
         }
         Reduce { state, _ in
@@ -313,9 +316,9 @@ struct AppRootFeature {
             // ExternalFileRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
             return .send(.windowManager(.file(.newWindow(path: path))))
 
-        case let .externalFileRouter(.delegate(.openParentFolder(path))):
+        case let .externalFileRouter(.delegate(.openParentFolder(path, selectEntryPath))):
             // ExternalFileRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
-            return .send(.windowManager(.file(.newWindow(path: path))))
+            return .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
 
         case .externalFileRouter(.delegate(.routeToAuthCallback)):
             // ACC-001 소유의 OAuth callback — FMW-003가 가로채지 않음
@@ -346,12 +349,43 @@ struct AppRootFeature {
         }
     }
 
+    private func reduceExternalFileURL(
+        into state: inout State,
+        action: Action,
+    ) -> Effect<Action> {
+        switch action {
+        case let .receiveExternalFileURL(url, source, mode):
+            guard !state.windowManager.windows.isEmpty else {
+                state.pendingExternalFileURL = url
+                state.pendingFileURLSource = source
+                state.pendingFileURLMode = mode
+                return .none
+            }
+            return .send(.externalFileRouter(.receiveFileURL(url, source: source, mode: mode)))
+
+        default:
+            return .none
+        }
+    }
+
     /// didOpenFirstWindow 분기에서 버퍼링된 외부 URL을 소비하고 nil로 리셋
     private func flushPendingExternalURL(state: inout State) -> Effect<Action> {
         guard let url = state.pendingExternalURL else { return .none }
         state.pendingExternalURL = nil
         // 버퍼링된 URL을 ExternalFileRouter로 전달
         return .send(.externalFileRouter(.receive(url)))
+    }
+
+    /// Cold state에서 버퍼링된 file:// URL을 flush
+    private func flushPendingExternalFileURL(state: inout State) -> Effect<Action> {
+        guard let url = state.pendingExternalFileURL,
+              let source = state.pendingFileURLSource,
+              let mode = state.pendingFileURLMode
+        else { return .none }
+        state.pendingExternalFileURL = nil
+        state.pendingFileURLSource = nil
+        state.pendingFileURLMode = nil
+        return .send(.externalFileRouter(.receiveFileURL(url, source: source, mode: mode)))
     }
 
     private func reduceWindowPostAction(
@@ -369,6 +403,7 @@ struct AppRootFeature {
             didOpenFirstWindow ? .send(.flushPendingReplay) : .none,
             (didOpenFirstWindow && state.lastHelperReady) ? .send(.registerHelperWatchRootsIfNeeded) : .none,
             didOpenFirstWindow ? flushPendingExternalURL(state: &state) : .none,
+            didOpenFirstWindow ? flushPendingExternalFileURL(state: &state) : .none,
         )
     }
 }

@@ -30,6 +30,18 @@
 				<string>fm.voyager.collection</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -39,6 +51,25 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>voyager</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Voyager로 열기</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>openInVoyagerService:user_data:error:</string>
+			<key>NSPortName</key>
+			<string>Voyager</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.folder</string>
+				<string>public.item</string>
 			</array>
 		</dict>
 	</array>

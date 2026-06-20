@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 
 @MainActor
@@ -30,6 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_: Notification) {
+        NSApp.servicesProvider = self
         withAppRootStore {
             $0.send(.lifecycle(.launch(.didFinishLaunching)))
         }
@@ -37,9 +39,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_: NSApplication, open urls: [URL]) {
         withAppRootStore {
-            // voyager:// URL만 필터링하여 스토어로 전달 (라우팅은 Reducer가 담당)
-            for url in urls where url.scheme == "voyager" {
-                $0.send(.receiveExternalURL(url))
+            for url in urls {
+                switch url.scheme {
+                case "voyager":
+                    $0.send(.receiveExternalURL(url))
+                case "file":
+                    // System Open Event — 항상 폴더, mode=open
+                    $0.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open))
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    /// NSServices "Voyager로 열기" 핸들러
+    @objc
+    func openInVoyagerService(
+        _ pboard: NSPasteboard,
+        userData _: String,
+        error _: NSErrorPointer,
+    ) {
+        guard let urls = pboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] else { return }
+        withAppRootStore {
+            for url in urls {
+                let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                let mode: DeepLinkMode = isDirectory ? .open : .reveal
+                $0.send(.receiveExternalFileURL(url, source: .nsservices, mode: mode))
             }
         }
     }

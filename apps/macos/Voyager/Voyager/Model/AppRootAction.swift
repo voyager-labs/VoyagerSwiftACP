@@ -19,6 +19,8 @@ enum AppRootAction: CasePathable {
     case openAISettings
     /// 외부 Deep Link URL 수신 (FMW-003-handle_deep_link). 창 없으면 버퍼링, 있으면 T10에서 ExternalFileRouter로 전달
     case receiveExternalURL(URL)
+    /// 외부 file:// URL 수신 (System Open Event, NSServices)
+    case receiveExternalFileURL(URL, source: RouteSource, mode: DeepLinkMode)
     case appPreferences(AppPreferencesFeature.Action)
     case windowManager(WindowManagerFeature.Action)
     case updater(UpdaterFeature.Action)
