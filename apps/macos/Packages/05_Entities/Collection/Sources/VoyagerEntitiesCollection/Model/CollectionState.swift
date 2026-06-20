@@ -31,7 +31,7 @@ public extension CollectionState {
         guard let baseline = collectionSession.metadata.baseline,
               let context = collectionContext
         else { return false }
-        return baseline.context != context
+        return !baseline.context.isSemanticallyEqual(to: context)
     }
 
     func canSave(isCollectionMode: Bool) -> Bool {
@@ -201,7 +201,8 @@ public extension CollectionState {
             includeSubfolders: file.includeSubfolders,
             includeDirectories: file.includeDirectories,
         )
-        let kind: CollectionSessionPhase.OpenKind = file.snapshotMeta == nil ? .definition : .hydratedSnapshot
+        let hydratedOpenPayload = makeHydratedOpenPayload(file: file, restoredContext: restoredContext)
+        let kind: CollectionSessionPhase.OpenKind = hydratedOpenPayload == nil ? .definition : .hydratedSnapshot
 
         collectionSession.metadata.baseline = CollectionBaseline(context: restoredContext)
         refreshOpenedDocumentForRestoration(fileName: file.name, compatibility: compatibility)
@@ -218,11 +219,11 @@ public extension CollectionState {
             shouldRestoreStaleNavigation: isStale,
             queryTrigger: makeOpenQueryTrigger(
                 trimmedQuery: trimmedQuery,
-                hasConditions: !resolved.conditions.isEmpty,
+                hasConditions: resolved.conditions.contains(where: \.isSearchReady),
                 kind: kind,
                 isStale: isStale,
             ),
-            hydratedOpenPayload: makeHydratedOpenPayload(file: file, restoredContext: restoredContext),
+            hydratedOpenPayload: hydratedOpenPayload,
             isEmptyDefinition: trimmedQuery.isEmpty
                 && resolved.scopes.isEmpty
                 && resolved.conditions.isEmpty,
