@@ -97,6 +97,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 checkoutURL: { throw AccessError.notConfigured },
                 pricingURL: { throw AccessError.notConfigured },
                 supportURL: { throw AccessError.notConfigured },
+                accountURL: { throw AccessError.notConfigured },
             ),
             initialState: state,
         )

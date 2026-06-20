@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import Foundation
 import Logging
@@ -37,11 +38,16 @@ struct AppLifecycleFeature {
     var date
     @Dependency(\.continuousClock)
     var clock
+    @Dependency(\.notificationCenterClient)
+    var notificationCenterClient
+    @Dependency(\.sessionLapseGuardWindowClient)
+    var sessionLapseGuardWindowClient
 
     private enum CancelID {
         static let helperMonitor = "helperMonitor"
         static let accessCheck = "accessCheck"
         static let terminationCleanupTimeout = "terminationCleanupTimeout"
+        static let sessionExpirationObserver = "sessionExpirationObserver"
     }
 
     var body: some Reducer<State, Action> {
@@ -53,8 +59,10 @@ struct AppLifecycleFeature {
                 let theme = appearanceSettingsClient.loadTheme()
                 appearanceSettingsClient.applyThemeSync(theme)
 
+                let notificationCenterClient = notificationCenterClient
+
                 if isRunningXCTest() {
-                    return .none
+                    return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
                 }
 
                 try? EnvironmentLoader.loadEnvFiles()
@@ -66,7 +74,7 @@ struct AppLifecycleFeature {
                     component: "app",
                 )
                 VoyagerSentryMetricLogger.setUserId(userId)
-                return .none
+                return observeSessionExpirationEffect(notificationCenterClient: notificationCenterClient)
 
             case .launch(.didFinishLaunching):
                 if onboardingWindowClient.showIfNeeded() {
@@ -253,13 +261,46 @@ struct AppLifecycleFeature {
                     },
                 )
 
+            case .sessionExpiredDetected:
+                guard state.sessionLapseGuard == nil else { return .none }
+                // ACC-003: 온보딩 윈도우가 활성 상태이면 세션 만료 보호를 스킵한다
+                guard !onboardingWindowClient.isRequired() else { return .none }
+                state.sessionLapseGuard = AccountAccessFeature.State()
+                return .merge(
+                    .send(.sessionLapseGuard(.onAppear)),
+                    .run { [sessionLapseGuardWindowClient] _ in
+                        await sessionLapseGuardWindowClient.showWindow()
+                    },
+                )
+
             case .termination(.willTerminate):
-                return .cancel(id: CancelID.helperMonitor)
+                return .merge(
+                    .cancel(id: CancelID.helperMonitor),
+                    .cancel(id: CancelID.sessionExpirationObserver),
+                )
 
             case .delegate(.startHelperIfNeeded):
                 return .none
 
             case .delegate:
+                return .none
+
+            default:
+                return .none
+            }
+        }
+        .ifLet(\.sessionLapseGuard, action: \.sessionLapseGuard) {
+            AccountAccessFeature()
+        }
+
+        Reduce { state, action in
+            switch action {
+            case .sessionLapseGuard(.delegate(.unlocked)):
+                state.sessionLapseGuard = nil
+                return .run { [sessionLapseGuardWindowClient] _ in
+                    await sessionLapseGuardWindowClient.closeWindow()
+                }
+            default:
                 return .none
             }
         }
@@ -337,6 +378,20 @@ private func waitAndRetryIfNeeded(
 private func isRunningXCTest() -> Bool {
     // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+
+private func observeSessionExpirationEffect(
+    notificationCenterClient: NotificationCenterClient,
+) -> Effect<AppLifecycleAction> {
+    .run { send in
+        for await _ in notificationCenterClient.notifications(
+            .accountSessionDidEnd,
+            nil,
+        ) {
+            await send(.sessionExpiredDetected)
+        }
+    }
+    .cancellable(id: "sessionExpirationObserver", cancelInFlight: true)
 }
 
 actor VoyagerTerminationCoordinator {

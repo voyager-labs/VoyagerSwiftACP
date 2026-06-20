@@ -41,7 +41,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.accountTokensFileURL.path))
 
-        var state = AccountAccessFeature.State()
+        let state = AccountAccessFeature.State()
         XCTAssertEqual(state.accountAccessAuthAxis, .signedOut)
         XCTAssertFalse(state.hasAccountSession)
     }

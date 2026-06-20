@@ -45,6 +45,7 @@ extension AccountSessionClient {
             },
             delete: {
                 try await store.delete()
+                NotificationCenter.default.post(name: .accountSessionDidEnd, object: nil)
             },
         )
     }
@@ -68,6 +69,12 @@ extension AccountSessionClient: DependencyKey {
     nonisolated public static var previewValue: AccountSessionClient {
         testValue
     }
+}
+
+// MARK: - Notification
+
+public extension Notification.Name {
+    static let accountSessionDidEnd = Notification.Name("accountSessionDidEnd")
 }
 
 // MARK: - Dependency Values

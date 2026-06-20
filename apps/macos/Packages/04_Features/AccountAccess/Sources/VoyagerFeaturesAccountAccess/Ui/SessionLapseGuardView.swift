@@ -41,19 +41,16 @@ private struct SessionLapseGuardObservedState: Equatable {
 /// - `!hasAccountSession && !isSignInInProgress` (logged_out): "로그인이 필요합니다" + 로그인 CTA
 ///
 /// ## Integration (AppLifecycleFeature)
-/// ```swift
-/// // AppReducer.swift
-/// SessionLapseGuardView(store: store.scope(
-///     state: \.accountAccess,
-///     action: \.accountAccess
-/// ))
-/// ```
+/// - 단일 borderless NSPanel (SessionLapseGuardWindowClient)로 표시
+/// - AppLifecycleFeature의 `ifLet(\.sessionLapseGuard)` child scope와 연결
+/// - `accountSessionDidEnd` notification 수신 → sessionLapseGuard 표시
+/// - ONB window 활성 시 AppLifecycleFeature에서 skip (ACC-003 skip_onboarding_window)
 ///
 /// ## Contract
 /// - blur_opacity = semiopaque
 /// - dismissible = false (interactiveDismissDisabled)
-/// - skip_onboarding_window = true (별도 처리, 이 view와 무관)
-/// - covers_all_windows = true (호출 측에서 각 window에 추가)
+/// - skip_onboarding_window = true (AppLifecycleFeature에서 처리, 이 view와 무관)
+/// - covers_all_windows = true (SessionLapseGuardWindowClient가 관리)
 public struct SessionLapseGuardView: View {
     private let store: StoreOf<AccountAccessFeature>
 
