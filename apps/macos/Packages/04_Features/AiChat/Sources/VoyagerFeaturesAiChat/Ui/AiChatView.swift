@@ -50,6 +50,7 @@ public struct AiChatView: View {
                                         skeleton: skeleton,
                                         onOpenSettings: { store.send(.openSettingsTapped) },
                                         onErrorRecovery: { store.send(.errorRecoveryTapped) },
+                                        onRegenerate: { store.send(.regenerateTapped) },
                                         onRebindContext: { store.send(.rebindContextTapped) },
                                         onStartNewChatFromRebind: { store.send(.startNewChatFromRebindTapped) },
                                     )
