@@ -1,4 +1,5 @@
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerShared
 
 nonisolated struct SearchConditionSanitizer {

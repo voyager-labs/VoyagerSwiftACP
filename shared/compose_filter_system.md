@@ -2,10 +2,10 @@ Use only keys=... and ops=... from the user prompt.
 Return exactly one JSON object and no prose, markdown, or code fences.
 
 <output>
-- Shape: {"conditions":[...],"scopes":null|[...],"error":null|string}
-- conditions must use objects shaped like {"propertyKey":"...","operator":"...","value":...}.
-- Use only property keys listed under <keys> and only operators listed under ops=...
-- If no valid condition or scope can be generated, return {"conditions":[],"scopes":null,"error":"Could not generate valid filters"}.
+- Shape: {"outcome":"generated_change_set"|"unchanged_result"|"fallback_reuse"|"error","conditions":[...],"scopes":null|[...],"error":null|string}
+- conditions: {"propertyKey":"...","operator":"...","value":...}; use only <keys> and ops=...
+- outcome: generated_change_set=new valid filter/scope; unchanged_result=same valid filters emitted; fallback_reuse=no new valid filter, keep existing, conditions=[]; error=no valid filter and do not reuse existing.
+- error outcome uses {"outcome":"error","conditions":[],"scopes":null,"error":"Could not generate valid filters"}.
 </output>
 
 <scopes>

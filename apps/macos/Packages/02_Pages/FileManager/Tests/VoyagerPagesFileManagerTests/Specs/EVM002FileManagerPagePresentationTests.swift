@@ -106,14 +106,13 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         await store.receive(\.composer.internal.syncCollectionState)
     }
 
-    // MARK: - EVM-002-show_hide_hidden_entry (Page-level reload + navigation stability)
+    // MARK: - EVM-002-show_hide_hidden_entry
 
     /// store.exhaustivity = .off: loadItems 이후 itemsLoaded→arrangements 체인은 검증 대상이 아님
     /// EVM-002-show_hide_hidden_entry: 숨김 파일 토글 + 리로드 시 네비게이션/히스토리 불변 검증
-    /// FileManagerContentFeature 전체 리듀서에서 toggleShowHiddenFilesAndReload가
-    /// entryViewLayout.toggleShowHiddenFiles + reload 체인을 트리거하며
-    /// 네비게이션 라우트와 히스토리가 변경되지 않음을 증명한다.
-    ///
+    /// FileManagerContentFeature 전체 리듀서에서 toggleShowHiddenFilesAndReload가 entryViewLayout.toggleShowHiddenFiles +
+    /// reload 체인을 트리거하며 네비게이션 라우트와 히스토리가 변경되지 않음을 증명한다.
+    /// - 검증 내용: showHiddenFiles 토글, 현재 폴더 reload 액션 수신, navigationState/backHistory/forwardHistory 불변 확인
     /// - 사전 조건: navigationState == .folder("/seed"), showHiddenFiles == false
     /// - 기대 결과:
     ///   1) .entryViewLayout(.view(.toggleShowHiddenFiles)) 수신, showHiddenFiles == true
@@ -146,12 +145,11 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         XCTAssertEqual(store.state.navigation.forwardHistory, preForwardHistory)
     }
 
-    // MARK: - EVM-002-set_entries_view_as_list_table (seeded .grid → .list)
+    // MARK: - EVM-002-set_entries_view_as_list_table
 
     /// EVM-002-set_entries_view_as_list_table: .grid → .list 전환 시 모드/영속성/composer 동기화 검증
-    /// 초기 모드가 .grid인 상태에서 .list로 전환할 때 모드 변경, UserDefaults 영속화,
-    /// composer 동기화가 모두 정상 동작함을 증명한다.
-    ///
+    /// 초기 모드가 .grid인 상태에서 .list로 전환할 때 모드 변경, UserDefaults 영속화, composer 동기화가 모두 정상 동작함을 증명한다.
+    /// - 검증 내용: changeLayout(.list)가 mode, SettingsKeys.viewLayout 저장값, composer.syncCollectionState를 함께 갱신하는지 확인
     /// - 사전 조건: entryViewLayout.mode == .grid
     /// - 기대 결과:
     ///   1) mode == .list
@@ -180,20 +178,12 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         XCTAssertEqual(store.state.entryViewLayout.mode, .list)
     }
 
-    // MARK: - EVM-002-view_entry_counts_in_current_page / EVM-002-show_selected_entry_counts
+    // MARK: - EVM-002-view_entry_counts_in_current_page
 
-    /// EVM-002-view_entry_counts_in_current_page / EVM-002-show_selected_entry_counts:
-    /// ContentPaneBreadcrumbBarView.statusText의 소스 데이터 검증
-    ///
-    /// statusText는 `displayItems.count`와 `selectedIds.count`로 계산된다:
-    ///   - selected == 0 → "\(total) items"
-    ///   - selected > 0 → "\(selected) of \(total) selected"
-    ///
-    /// 이 테스트는 entryViewLayout.displayItems와 selectedIds가
-    /// statusText 계산에 사용되는 정확한 소스 값임을 reducer 레벨에서 증명한다.
-    /// displayItems는 entryOperations.loadingContext.items를 반환하므로
-    /// 상태 시딩 시 loadingContext.items를 직접 채운다.
-    ///
+    /// EVM-002-view_entry_counts_in_current_page: 선택 항목이 있는 상태 표시 소스 데이터 검증
+    /// statusText가 `displayItems.count`와 `selectedIds.count`에서 계산될 수 있도록 reducer 상태의 소스 값을 증명한다.
+    /// - 검증 내용: entryOperations.loadingContext.items 기반 displayItems와 selectedIds 개수가 breadcrumb statusText 입력으로 유지되는지
+    /// 확인
     /// - 사전 조건: displayItems에 3개 항목, selectedIds에 2개 선택
     /// - 기대 결과: displayItems.count == 3, selectedIds.count == 2
     func testStatusTextSourceMatchesDisplayItemsAndSelectedIds() {
@@ -218,7 +208,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
     }
 
     /// EVM-002-view_entry_counts_in_current_page: 선택 없음 시 statusText 소스 검증
-    ///
+    /// 선택 항목이 없을 때 statusText가 전체 항목 수만 표시할 수 있도록 reducer 상태의 소스 값을 증명한다.
+    /// - 검증 내용: selectedIds가 비어 있는 경우 displayItems.count와 selectedIds.count가 statusText 입력으로 유지되는지 확인
     /// - 사전 조건: displayItems에 2개 항목, selectedIds가 비어 있음
     /// - 기대 결과: displayItems.count == 2, selectedIds.count == 0
     func testStatusTextSourceWithNoSelection() {

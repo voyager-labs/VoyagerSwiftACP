@@ -363,7 +363,7 @@ func applyFiltersIfNeeded(
     state.activeFiltersRequestID = requestID
     state.activeFiltersMetricSource = metricSource
     let filters = buildFilters(from: state)
-    guard !filters.scopes.isEmpty || !filters.conditions.isEmpty else {
+    guard !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil

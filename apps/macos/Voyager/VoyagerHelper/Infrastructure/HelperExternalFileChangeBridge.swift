@@ -1,16 +1,24 @@
 import Foundation
+import VoyagerShared
 
 @MainActor
 final class HelperExternalFileChangeBridge {
     nonisolated(unsafe) private var replayObserver: NSObjectProtocol?
     nonisolated(unsafe) private var replayAckObserver: NSObjectProtocol?
     private let store: HelperExternalFileChangeStore
+    private let flushInterval: Duration
+    private var periodicFlushTask: Task<Void, Never>?
 
-    init(store: HelperExternalFileChangeStore = HelperExternalFileChangeStore()) {
+    init(
+        store: HelperExternalFileChangeStore = HelperExternalFileChangeStore(),
+        flushInterval: Duration = .seconds(5),
+    ) {
         self.store = store
+        self.flushInterval = flushInterval
     }
 
     deinit {
+        periodicFlushTask?.cancel()
         guard let replayObserver else { return }
         DistributedNotificationCenter.default().removeObserver(replayObserver)
         if let replayAckObserver {
@@ -19,6 +27,7 @@ final class HelperExternalFileChangeBridge {
     }
 
     func startObservingReplayRequests() {
+        startPeriodicFlush()
         guard replayObserver == nil else { return }
         replayObserver = DistributedNotificationCenter.default().addObserver(
             forName: .voyagerHelperFSReplayRequest,
@@ -52,10 +61,16 @@ final class HelperExternalFileChangeBridge {
         }
     }
 
+    func flushPendingBeforeShutdown() async {
+        periodicFlushTask?.cancel()
+        periodicFlushTask = nil
+        await flushPendingChanges()
+    }
+
     func publishChangedPaths(_ paths: [String], generatedAt: Date = Date()) async {
         let payload = HelperExternalFileChangePayload(paths: paths, generatedAt: generatedAt)
         guard !payload.paths.isEmpty else { return }
-        _ = try? await store.coalesce(payload.paths, generatedAt: generatedAt)
+        _ = await store.coalesceInMemory(payload.paths, generatedAt: generatedAt)
 
         DistributedNotificationCenter.default().post(
             name: .voyagerHelperFSChanged,
@@ -71,5 +86,20 @@ final class HelperExternalFileChangeBridge {
             object: nil,
             userInfo: payload.asUserInfo(),
         )
+    }
+
+    private func startPeriodicFlush() {
+        guard periodicFlushTask == nil else { return }
+        periodicFlushTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                try? await Task.sleep(for: flushInterval)
+                await flushPendingChanges()
+            }
+        }
+    }
+
+    private func flushPendingChanges() async {
+        _ = try? await store.flushPending()
     }
 }

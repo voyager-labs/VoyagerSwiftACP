@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import VoyagerEntitiesCollection
 import VoyagerShared
 
 struct QueryConversionInterpreter {
@@ -75,14 +76,16 @@ struct QueryConversionInterpreter {
 
         let output = try decodeQueryConversionOutput(from: content)
 
-        if let outputError = output.error,
-           outputError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        {
-            logger.error("[QueryConversionInterpreter] \(outputError)")
+        let outputError = output.error?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if output.outcome == .error || outputError?.isEmpty == false {
+            let error = outputError?.isEmpty == false
+                ? outputError ?? "Could not generate valid filters."
+                : "Could not generate valid filters."
+            logger.error("[QueryConversionInterpreter] \(error)")
             return QueryConversionResult(
                 conditions: [],
                 scopes: nil,
-                error: outputError,
+                error: error,
                 outcome: .conversionFailure,
             )
         }
@@ -107,14 +110,21 @@ struct QueryConversionInterpreter {
             )
         }
 
-        let finalConditions = normalizedConditions.isEmpty ? fallbackConditions : normalizedConditions
-        let outcome: QueryConversionResultOutcome = if normalizedConditions.isEmpty {
+        let inferredOutcome: QueryConversionResultOutcome = if normalizedConditions.isEmpty {
             cleanedOutputScopes == cleanedExistingScopes ? .fallbackReuse : .generatedChangeSet
         } else if normalizedConditions == fallbackConditions, cleanedOutputScopes == cleanedExistingScopes {
             .unchangedResult
         } else {
             .generatedChangeSet
         }
+        let outcome = resolveOutcome(
+            outputOutcome: output.outcome,
+            inferredOutcome: inferredOutcome,
+            hasNormalizedConditions: normalizedConditions.isEmpty == false,
+        )
+        let finalConditions = outcome == .fallbackReuse
+            ? fallbackConditions
+            : (normalizedConditions.isEmpty ? fallbackConditions : normalizedConditions)
 
         return QueryConversionResult(
             conditions: finalConditions,
@@ -144,5 +154,26 @@ struct QueryConversionInterpreter {
         scopes
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.isEmpty == false }
+    }
+
+    private func resolveOutcome(
+        outputOutcome: QueryConversionOutputOutcome?,
+        inferredOutcome: QueryConversionResultOutcome,
+        hasNormalizedConditions: Bool,
+    ) -> QueryConversionResultOutcome {
+        guard let outputOutcome else {
+            return inferredOutcome
+        }
+
+        switch outputOutcome {
+        case .generatedChangeSet:
+            return .generatedChangeSet
+        case .unchangedResult:
+            return hasNormalizedConditions ? .unchangedResult : .fallbackReuse
+        case .fallbackReuse:
+            return .fallbackReuse
+        case .error:
+            return .conversionFailure
+        }
     }
 }

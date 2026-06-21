@@ -169,7 +169,8 @@ struct ToolbarView: View {
                         refreshBlockingReason: state.collection.refreshBlockingReason(
                             isCollectionMode: state.isCollectionMode,
                             isDirty: state.isOpenedCollectionDirty,
-                            isSearching: state.composer.isCollectionSearching,
+                            isSearching: state.composer.isCollectionSearching
+                                || state.entryViewLayout.isCollectionContentLoading,
                         ),
                     ),
                 )
