@@ -43,6 +43,7 @@ class VoyagerHelperApp {
         helperExternalFileSystemWatcher.start()
         installTerminationSignalHandler(
             bridge: helperExternalFileChangeBridge,
+            watcher: helperExternalFileSystemWatcher,
             logger: logger,
         )
 
@@ -56,6 +57,7 @@ class VoyagerHelperApp {
 
     private static func installTerminationSignalHandler(
         bridge: HelperExternalFileChangeBridge,
+        watcher: HelperExternalFileSystemWatcher,
         logger: Logger,
     ) {
         guard terminationSignalSource == nil else { return }
@@ -63,7 +65,8 @@ class VoyagerHelperApp {
         let signalSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         signalSource.setEventHandler {
             Task { @MainActor in
-                logger.info("Received SIGTERM; flushing pending file changes before exit")
+                logger.info("Received SIGTERM; stopping watcher and flushing pending file changes before exit")
+                watcher.stop()
                 await bridge.flushPendingBeforeShutdown()
                 Darwin.exit(0)
             }
