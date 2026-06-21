@@ -83,6 +83,41 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertNil(store.state.lastFiltersResponse)
     }
 
+    /// RCL-003-execute_filtered_collection_retrieval: 일반 Composer에서도 scope-only filter는 검색 실행을 시작하지 않음
+    /// condition chip 제거 후 scope만 남은 상태가 SearchClient 호출로 이어지지 않는지 검증한다.
+    /// - 검증 내용: non-collection 상태에서도 SearchClient 미호출, loading/inflight/request 상태 초기화 확인
+    /// - 사전 조건: collection mode가 아니고 scope만 준비됐으며 condition은 비어 있음
+    /// - 기대 결과: applyFilters는 no-op/cancel 경로로 종료되고 filtersResponse가 발생하지 않음
+    func testExecuteFilteredCollectionRetrieval_withNonCollectionScopeOnlyFilters_doesNotCallSearchClient() async {
+        let recorder = ApplyFiltersRecorder()
+        var initialState = ComposerState()
+        initialState.scopes = ["/VoyagerFixtures/Documents"]
+        initialState.conditions = []
+        initialState.isCollectionMode = false
+
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.registryClient = makeRegistryClient()
+            $0.searchClient.applyFilters = { request in
+                recorder.record(request)
+                return SearchResponsePayload(itemCount: 1)
+            }
+        }
+        // applyFilters는 Date를 기록하므로 no-op 이후 최종 계약을 직접 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.applyFilters)
+
+        XCTAssertEqual(recorder.count, 0)
+        XCTAssertFalse(store.state.isLoadingFilters)
+        XCTAssertFalse(store.state.isFilteringInFlight)
+        XCTAssertNil(store.state.activeFiltersRequestID)
+        XCTAssertNil(store.state.activeFiltersMetricSource)
+        XCTAssertNil(store.state.pendingSearchQuery)
+        XCTAssertNil(store.state.lastFiltersResponse)
+    }
+
     private func makeKindCondition() -> Condition {
         Condition(
             propertyKey: "kind",
