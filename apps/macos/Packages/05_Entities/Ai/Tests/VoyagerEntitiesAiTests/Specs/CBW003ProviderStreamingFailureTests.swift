@@ -2,7 +2,7 @@
 @testable import VoyagerEntitiesAi
 import XCTest
 
-// MARK: - CBW-003 Codex / Registry / OpenAI
+// MARK: - CBW-003-stream_contextual_chat_response
 
 final class CBW003ProviderStreamingFailureTests: XCTestCase {
     override func tearDown() {
@@ -78,6 +78,84 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
         let events = await consumerTask.value
         XCTAssertEqual(events, [.started(context: request.context)])
         XCTAssertFalse(events.providerExecutionContainsTerminalEvent)
+    }
+
+    /// CBW-003-stream_contextual_chat_response: Codex CLI network output은 auth 단어가 섞여도 network failure로 분류된다.
+    /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
+    /// - 검증 내용: 오프라인/네트워크 차단 출력이 authentication보다 network reason으로 우선 분류되는지 확인합니다.
+    /// - 사전 조건: Codex CLI가 로그인 확인 중 네트워크 오류를 출력하는 fixture를 사용합니다.
+    /// - 기대 결과: network failure가 반환됩니다.
+    func testExecute_chatgptCodexNetworkOutputWithAuthText_mapsToNetworkFailure() {
+        let reason = AiChatProviderExecutionClient.codexFailureReason(
+            forCLIErrorOutput: "Auth check failed: network is offline and cannot connect to api.openai.com",
+        )
+
+        XCTAssertEqual(reason, .network)
+    }
+
+    /// CBW-003-stream_contextual_chat_response: Codex CLI 인증 확인 실패 문구는 명시적 credential 실패가 없으면 network failure로 분류된다.
+    /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
+    /// - 검증 내용: 네트워크 차단 중 인증 확인 단계가 실패한 문구를 authentication으로 오분류하지 않는지 확인합니다.
+    /// - 사전 조건: Codex CLI가 auth check 단계 실패만 출력하는 fixture를 사용합니다.
+    /// - 기대 결과: network failure가 반환됩니다.
+    func testExecute_chatgptCodexAuthCheckFailure_mapsToNetworkFailure() {
+        let reason = AiChatProviderExecutionClient.codexFailureReason(
+            forCLIErrorOutput: "Auth check failed while contacting Codex provider",
+        )
+
+        XCTAssertEqual(reason, .network)
+    }
+
+    /// CBW-003-stream_contextual_chat_response: Codex CLI URL 전송 실패 출력은 network failure로 분류된다.
+    /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
+    /// - 검증 내용: 실제 Codex stderr의 URL request 실패 문구를 network reason으로 분류하는지 확인합니다.
+    /// - 사전 조건: Codex CLI가 `error sending request for url` 출력 fixture를 사용합니다.
+    /// - 기대 결과: network failure가 반환됩니다.
+    func testExecute_chatgptCodexRequestURLFailure_mapsToNetworkFailure() {
+        let reason = AiChatProviderExecutionClient.codexFailureReason(
+            forCLIErrorOutput: "error sending request for url (https://chatgpt.com/backend-api/codex/models?client_version=0.125.0)",
+        )
+
+        XCTAssertEqual(reason, .network)
+    }
+
+    /// CBW-003-stream_contextual_chat_response: Codex CLI websocket/DNS 실패 출력은 network failure로 분류된다.
+    /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
+    /// - 검증 내용: 실제 Codex stderr의 websocket 연결 실패와 DNS lookup 실패를 network reason으로 분류하는지 확인합니다.
+    /// - 사전 조건: Codex CLI가 `failed to connect to websocket`와 `failed to lookup address information` 출력 fixture를 사용합니다.
+    /// - 기대 결과: network failure가 반환됩니다.
+    func testExecute_chatgptCodexWebsocketDNSFailure_mapsToNetworkFailure() {
+        let reason = AiChatProviderExecutionClient.codexFailureReason(
+            forCLIErrorOutput: "failed to connect to websocket: IO error: failed to lookup address information: nodename nor servname provided",
+        )
+
+        XCTAssertEqual(reason, .network)
+    }
+
+    /// CBW-003-stream_contextual_chat_response: Codex CLI skill load 잡음만 있는 출력은 network/auth로 오분류하지 않는다.
+    /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
+    /// - 검증 내용: skill YAML 로딩 오류만 있는 stderr가 network 또는 authentication으로 잘못 분류되지 않는지 확인합니다.
+    /// - 사전 조건: Codex CLI가 skill YAML 오류만 출력하는 fixture를 사용합니다.
+    /// - 기대 결과: invalidRequest failure가 반환됩니다.
+    func testExecute_chatgptCodexSkillLoadNoiseOnly_mapsToInvalidRequest() {
+        let reason = AiChatProviderExecutionClient.codexFailureReason(
+            forCLIErrorOutput: "failed to load skill /tmp/SKILL.md: invalid YAML: mapping values are not allowed in this context",
+        )
+
+        XCTAssertEqual(reason, .invalidRequest)
+    }
+
+    /// CBW-003-stream_contextual_chat_response: Codex CLI 인증 출력은 authentication failure로 분류된다.
+    /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
+    /// - 검증 내용: 순수 인증 실패 출력은 기존 authentication reason을 유지하는지 확인합니다.
+    /// - 사전 조건: Codex CLI unauthorized fixture를 사용합니다.
+    /// - 기대 결과: authentication failure가 반환됩니다.
+    func testExecute_chatgptCodexAuthOutput_mapsToAuthenticationFailure() {
+        let reason = AiChatProviderExecutionClient.codexFailureReason(
+            forCLIErrorOutput: "Unauthorized: login required for Codex provider",
+        )
+
+        XCTAssertEqual(reason, .authentication)
     }
 
     /// CBW-003-stream_contextual_chat_response: OpenAI streaming SSE는 started, delta, final 순서로 방출된다.
@@ -247,7 +325,7 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
     }
 }
 
-// MARK: - CBW-003 Anthropic
+// MARK: - CBW-003-stream_contextual_chat_response
 
 final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
     override func tearDown() {

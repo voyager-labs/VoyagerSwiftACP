@@ -97,7 +97,8 @@ git diff --check       # whitespace/conflict markers
 
 ## PR review rules
 
-Codex and other agents read `AGENTS.md`, but PR review policy must stay centralized in Greptile rules.
+PR review policy is centralized in `.pr-review/config.yaml` (structured YAML config with path-scoped instructions, skip conditions, and tool registry).
 
-- For AI-powered PR reviews, read and follow `.greptile/rules.md`.
+- For AI-powered PR reviews, read and follow `.pr-review/config.yaml`.
+- Path-scoped review rules for macOS Swift live in `.pr-review/rules/macos-swift.md`.
 - Do not duplicate PR review language, severity, noise, architecture, or reuse rules in this file.

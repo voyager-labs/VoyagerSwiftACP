@@ -8,6 +8,7 @@ import XCTest
 @MainActor
 final class EOP004EditEntryMetadataTests: XCTestCase {
     /// EOP-004-rename_entry: 엔트리 이름 변경
+    /// - 검증 내용: rename action이 파일 작업 클라이언트에 기존 경로와 새 경로를 전달하고 작업 상태를 종료하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사
     /// - 기대 결과: 파일명이 변경되고, FileOpsRecorder에 기록되며, 새 경로에 파일 존재
     func testRenameEntry_success() async throws {
@@ -64,6 +65,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
     }
 
     /// EOP-004-get_entry_info: 엔트리 상세 정보 확인
+    /// - 검증 내용: Finder 정보 action이 파일 resource values를 조회하고 작업 상태를 완료하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/archives/COMPRESS-264.zip`를 FixtureSandbox로 복사
     /// - 기대 결과: Get Info 경로가 실행되고, 파일 속성(name/size/type)이 정확히 읽힘
     func testGetEntryInfo_success() async throws {
@@ -114,7 +116,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
-    // MARK: - EOP-004-rename_entry itemsLoaded 취소
+    // MARK: - EOP-004-rename_entry
 
     /// EOP-004-rename_entry: itemsLoaded에 의한 rename 자동 취소
     /// 이름 변경이 진행 중일 때 directory listing이 갱신되어 대상 Entry가 더 이상 목록에 없으면 rename 상태가 자동 정리된다.
@@ -202,7 +204,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
         XCTAssertEqual(store.state.renamingItem?.id, entry.id)
     }
 
-    // MARK: - EOP-004-rename_entry extension_change_alert
+    // MARK: - EOP-004-rename_entry
 
     /// EOP-004-rename_entry: 확장자 변경 시 alert 표시 후 사용자가 Continue 선택하면 rename이 진행된다
     /// 파일 확장자가 변경되면 확인 alert이 표시되고, 사용자가 Continue를 선택하면 새 이름으로 rename이 실행된다.

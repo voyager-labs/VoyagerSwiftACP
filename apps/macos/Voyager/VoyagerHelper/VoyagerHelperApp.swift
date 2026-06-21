@@ -1,6 +1,7 @@
 import Foundation
 import Logging
 import SwiftDotenv
+import VoyagerShared
 
 @main
 class VoyagerHelperApp {
