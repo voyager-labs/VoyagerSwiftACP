@@ -130,6 +130,67 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive(\.externalFileSystemChanged, [changedPath])
     }
 
+    /// EVM-001-navigate_pages: collection navigation도 scroll position key를 저장/복원
+    /// Collection route 진입 시 saved collection URL 기반 key로 currentPath와 savedScrollOffset을 주입하는지 검증.
+    /// - 검증 내용: applyNavigationState(.collection(.file)) 전송 시 entryViewLayout.currentPath와 savedScrollOffset 동기화
+    /// - 사전 조건: scrollPositions에 saved collection URL 기반 key가 저장됨
+    /// - 기대 결과: collection 진입 후 list/grid coordinator가 같은 key로 scroll offset을 복원할 수 있음
+    func testCollectionNavigationRestoresSavedScrollOffset() async {
+        let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/saved.voycoll")
+        let scrollKey = "collection:\(collectionURL.standardizedFileURL.path)"
+        let savedOffset = CGPoint(x: 0, y: 240)
+        let navigationState = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: collectionURL, name: "saved"),
+            context: CollectionContext(query: "", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var state = FileManagerContentState()
+        state.navigation.navigationState = navigationState
+        state.navigation.scrollPositions[scrollKey] = savedOffset
+
+        let store = TestStore(initialState: state) {
+            FileManagerContentNavigationBridgeReducer()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(navigationState))) {
+            $0.entryViewLayout.currentPath = scrollKey
+            $0.entryViewLayout.savedScrollOffset = savedOffset
+        }
+    }
+
+    /// EVM-001-navigate_pages: collection scroll offset 저장은 현재 collection key에 즉시 반영
+    /// EntryViewLayout delegate가 저장한 collection scroll offset이 현재 route의 savedScrollOffset과 scrollPositions에 동기화되는지 검증.
+    /// - 검증 내용: saveScrollOffset(offset, forPath: collectionKey) 전송 시 scrollPositions와 savedScrollOffset 갱신
+    /// - 사전 조건: navigationState == .collection(.file), entryViewLayout.currentPath == collection URL 기반 key
+    /// - 기대 결과: collection에서 다른 route로 이동 후 돌아왔을 때 같은 offset을 복원할 수 있음
+    func testCollectionNavigationSavesScrollOffsetForCurrentCollectionKey() async {
+        let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/saved.voycoll")
+        let scrollKey = "collection:\(collectionURL.standardizedFileURL.path)"
+        let savedOffset = CGPoint(x: 0, y: 480)
+        let navigationState = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: collectionURL, name: "saved"),
+            context: CollectionContext(query: "", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var state = FileManagerContentState()
+        state.navigation.navigationState = navigationState
+        state.entryViewLayout.currentPath = scrollKey
+
+        let store = TestStore(initialState: state) {
+            FileManagerContentNavigationBridgeReducer()
+        }
+
+        await store.send(.internal(.saveScrollOffset(savedOffset, forPath: scrollKey))) {
+            $0.navigation.scrollPositions[scrollKey] = savedOffset
+            $0.entryViewLayout.savedScrollOffset = savedOffset
+        }
+    }
+
     private func makeStore(initialState: FileManagerContentState)
         -> TestStore<FileManagerContentState, FileManagerContentAction>
     {

@@ -2,6 +2,8 @@ import CoreServices
 import Foundation
 import VoyagerShared
 
+nonisolated let helperFSEventLatency: CFTimeInterval = 1.0
+
 final class HelperExternalFileSystemWatcher {
     final class CallbackBox: @unchecked Sendable {
         let emit: @Sendable ([String]) -> Void
@@ -103,14 +105,14 @@ final class HelperExternalFileSystemWatcher {
                 guard let info else { return }
                 let callbackBox = Unmanaged<CallbackBox>.fromOpaque(info).takeUnretainedValue()
                 guard let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] else { return }
-                let canonicalPaths = helperFSFilterNoise(from: HelperExternalFileChangePayload.canonicalPaths(paths))
-                guard !canonicalPaths.isEmpty else { return }
-                callbackBox.emit(canonicalPaths)
+                let emittedPaths = helperFSEmittedEventPaths(from: paths)
+                guard !emittedPaths.isEmpty else { return }
+                callbackBox.emit(emittedPaths)
             },
             &context,
             paths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.3,
+            helperFSEventLatency,
             UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes),
         ) else {
             return
@@ -138,12 +140,17 @@ final class HelperExternalFileSystemWatcher {
         Array(
             Set(
                 roots
-                    .map(\.standardizedFileURL)
-                    .filter { !$0.path.isEmpty },
+                    .map { ($0.path as NSString).standardizingPath }
+                    .filter { !$0.isEmpty }
+                    .map { URL(fileURLWithPath: $0) },
             ),
         )
         .sorted(by: { $0.path < $1.path })
     }
+}
+
+nonisolated func helperFSEmittedEventPaths(from paths: [String]) -> [String] {
+    helperFSFilterNoise(from: HelperExternalFileChangePayload.canonicalPaths(paths))
 }
 
 nonisolated private func helperFSFilterNoise(from paths: [String]) -> [String] {

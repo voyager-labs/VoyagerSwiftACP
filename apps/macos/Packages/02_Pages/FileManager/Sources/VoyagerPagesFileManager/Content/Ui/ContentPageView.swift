@@ -30,7 +30,7 @@ struct ContentPageView: View {
     }
 
     @ViewBuilder private var entryView: some View {
-        if store.composer.isCollectionSearching {
+        if store.composer.isCollectionSearching || store.entryViewLayout.isCollectionContentLoading {
             loadingView
         } else {
             let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)

@@ -23,6 +23,53 @@ final class HelperExternalFileChangeContractTests: XCTestCase {
         )
     }
 
+    func testCanonicalPathsStandardizesUnicodeAndWhitespaceWithoutFileResolution() {
+        let paths = HelperExternalFileChangePayload.canonicalPaths([
+            "/tmp/프로젝트/../프로젝트/파일 이름.txt",
+            "/tmp/프로젝트/파일 이름.txt",
+            "/tmp//프로젝트/./서브/../다른 파일.txt",
+            "",
+        ])
+
+        XCTAssertEqual(paths, [
+            "/tmp/프로젝트/다른 파일.txt",
+            "/tmp/프로젝트/파일 이름.txt",
+        ])
+    }
+
+    func testStoreRemoveKeepsCompatibilityWithCanonicalEquivalentPaths() async throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let store = makeStore(in: temporaryDirectory)
+        _ = try await store.coalesce([
+            "/tmp/프로젝트/파일.txt",
+            "/tmp/프로젝트/다른 파일.txt",
+        ])
+
+        let remaining = try await store.remove([
+            "/tmp/프로젝트/../프로젝트/파일.txt",
+        ])
+
+        XCTAssertEqual(remaining?.paths, ["/tmp/프로젝트/다른 파일.txt"])
+    }
+
+    func testFSEventLatencyUsesOneSecondMinimum() {
+        XCTAssertGreaterThanOrEqual(helperFSEventLatency, 1.0)
+    }
+
+    func testFSEmittedEventPathsCanonicalizesAndFiltersIgnoredFiles() {
+        let paths = helperFSEmittedEventPaths(from: [
+            "/tmp/프로젝트/../프로젝트/file.txt",
+            "/tmp/프로젝트/file.txt",
+            "/tmp/프로젝트/helper_external_file_changes.json",
+            "/tmp/프로젝트/.DS_Store",
+            "",
+        ])
+
+        XCTAssertEqual(paths, ["/tmp/프로젝트/file.txt"])
+    }
+
     func testReplayRequestRoundTripsThroughUserInfo() {
         let request = HelperExternalFileChangeReplayRequest(consume: true)
 
@@ -129,6 +176,58 @@ final class HelperExternalFileChangeContractTests: XCTestCase {
 
         XCTAssertNil(result)
         XCTAssertNil(loaded)
+    }
+
+    func testInMemoryCoalesceDefersDiskWriteUntilFlush() async throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let store = makeStore(in: temporaryDirectory)
+        let pending = await store.coalesceInMemory([
+            "/tmp/프로젝트/../프로젝트/file.txt",
+            "/tmp/프로젝트/file.txt",
+        ])
+        let beforeFlush = try await store.load()
+
+        XCTAssertEqual(pending?.paths, ["/tmp/프로젝트/file.txt"])
+        XCTAssertNil(beforeFlush)
+
+        let flushed = try await store.flushPending(generatedAt: Date(timeIntervalSince1970: 123))
+        let afterFlush = try await store.load()
+
+        XCTAssertEqual(flushed, afterFlush)
+        XCTAssertEqual(afterFlush?.paths, ["/tmp/프로젝트/file.txt"])
+    }
+
+    func testReplayFlushesPendingPathsBeforeReadingPayload() async throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let store = makeStore(in: temporaryDirectory)
+        _ = await store.coalesceInMemory(["/tmp/demo/a"])
+
+        let replay = try await store.payloadForReplay(.init(consume: false))
+        let loaded = try await store.load()
+
+        XCTAssertEqual(replay, loaded)
+        XCTAssertEqual(replay?.paths, ["/tmp/demo/a"])
+    }
+
+    func testRemoveClearsPendingPathBeforeFlush() async throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let store = makeStore(in: temporaryDirectory)
+        _ = await store.coalesceInMemory([
+            "/tmp/demo/a",
+            "/tmp/demo/b",
+        ])
+
+        let remaining = try await store.remove(["/tmp/demo/../demo/a"])
+        let flushed = try await store.flushPending()
+
+        XCTAssertEqual(remaining?.paths, ["/tmp/demo/b"])
+        XCTAssertEqual(flushed?.paths, ["/tmp/demo/b"])
     }
 
     func testConcurrentStoresDoNotDropUpdatesAcrossConsumeAndCoalesce() async throws {

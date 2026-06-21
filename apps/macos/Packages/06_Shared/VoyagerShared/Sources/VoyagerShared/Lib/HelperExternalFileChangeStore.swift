@@ -41,6 +41,8 @@ public actor HelperExternalFileChangeStore {
     private let lockURL: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var pendingPaths = Set<String>()
+    private var pendingGeneratedAt: Date?
 
     public init(
         fileManager: FileManager = .default,
@@ -56,6 +58,8 @@ public actor HelperExternalFileChangeStore {
     }
 
     public func replace(with payload: HelperExternalFileChangePayload) throws {
+        pendingPaths.removeAll()
+        pendingGeneratedAt = nil
         try withExclusiveLock { try write(payload) }
     }
 
@@ -73,6 +77,32 @@ public actor HelperExternalFileChangeStore {
         }
     }
 
+    public func coalesceInMemory(_ newPaths: [String], generatedAt: Date = Date()) -> HelperExternalFileChangePayload? {
+        let canonicalNewPaths = HelperExternalFileChangePayload.canonicalPaths(newPaths)
+        guard !canonicalNewPaths.isEmpty else { return pendingPayload() }
+        pendingPaths.formUnion(canonicalNewPaths)
+        pendingGeneratedAt = generatedAt
+        return pendingPayload()
+    }
+
+    public func flushPending(generatedAt: Date? = nil) throws -> HelperExternalFileChangePayload? {
+        guard !pendingPaths.isEmpty else { return try load() }
+        let paths = Array(pendingPaths).sorted()
+        let flushDate = generatedAt ?? pendingGeneratedAt ?? Date()
+        pendingPaths.removeAll()
+        pendingGeneratedAt = nil
+
+        return try withExclusiveLock {
+            let nextPayload: HelperExternalFileChangePayload = if let existing = try readLocked() {
+                existing.merging(paths: paths, generatedAt: flushDate)
+            } else {
+                HelperExternalFileChangePayload(paths: paths, generatedAt: flushDate)
+            }
+            try write(nextPayload)
+            return nextPayload
+        }
+    }
+
     public func load() throws -> HelperExternalFileChangePayload? {
         try withExclusiveLock { try readLocked() }
     }
@@ -80,7 +110,8 @@ public actor HelperExternalFileChangeStore {
     public func payloadForReplay(_ request: HelperExternalFileChangeReplayRequest) throws
         -> HelperExternalFileChangePayload?
     {
-        try withExclusiveLock {
+        _ = try flushPending()
+        return try withExclusiveLock {
             let payload = try readLocked()
             guard request.consume, payload != nil else { return payload }
             try clearLocked()
@@ -89,20 +120,28 @@ public actor HelperExternalFileChangeStore {
     }
 
     public func clear() throws {
+        pendingPaths.removeAll()
+        pendingGeneratedAt = nil
         try withExclusiveLock { try clearLocked() }
     }
 
     public func remove(_ paths: [String]) throws -> HelperExternalFileChangePayload? {
-        try withExclusiveLock {
-            guard let existing = try readLocked() else { return nil }
+        let removedPaths = Set(HelperExternalFileChangePayload.canonicalPaths(paths))
+        guard !removedPaths.isEmpty else { return try combinedPayload() }
 
-            let removedPaths = Set(HelperExternalFileChangePayload.canonicalPaths(paths))
-            guard !removedPaths.isEmpty else { return existing }
+        pendingPaths.subtract(removedPaths)
+        if pendingPaths.isEmpty {
+            pendingGeneratedAt = nil
+        }
+        let pendingPayload = pendingPayload()
+
+        return try withExclusiveLock {
+            guard let existing = try readLocked() else { return pendingPayload }
 
             let remainingPaths = existing.paths.filter { !removedPaths.contains($0) }
             guard !remainingPaths.isEmpty else {
                 try clearLocked()
-                return nil
+                return pendingPayload
             }
 
             let nextPayload = HelperExternalFileChangePayload(
@@ -111,8 +150,32 @@ public actor HelperExternalFileChangeStore {
                 generatedAt: existing.generatedAt,
             )
             try write(nextPayload)
-            return nextPayload
+            return mergePayload(nextPayload, with: pendingPayload)
         }
+    }
+
+    private func combinedPayload() throws -> HelperExternalFileChangePayload? {
+        let pendingPayload = pendingPayload()
+        return try withExclusiveLock {
+            guard let existing = try readLocked() else { return pendingPayload }
+            return mergePayload(existing, with: pendingPayload)
+        }
+    }
+
+    private func pendingPayload() -> HelperExternalFileChangePayload? {
+        guard !pendingPaths.isEmpty else { return nil }
+        return HelperExternalFileChangePayload(
+            paths: Array(pendingPaths).sorted(),
+            generatedAt: pendingGeneratedAt ?? Date(),
+        )
+    }
+
+    private func mergePayload(
+        _ payload: HelperExternalFileChangePayload,
+        with pendingPayload: HelperExternalFileChangePayload?,
+    ) -> HelperExternalFileChangePayload {
+        guard let pendingPayload else { return payload }
+        return payload.merging(paths: pendingPayload.paths, generatedAt: pendingPayload.generatedAt)
     }
 
     private func readLocked() throws -> HelperExternalFileChangePayload? {

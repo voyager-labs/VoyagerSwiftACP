@@ -48,6 +48,9 @@ public struct EntryViewLayoutState: Equatable {
     /// Items sourced from collection search results.
     public var collectionItems: IdentifiedArrayOf<EntryModel> = []
 
+    /// Indicates a collection file is being opened before snapshot/search results are applied.
+    public var isCollectionContentLoading = false
+
     /// When true, `displayItems` returns `collectionItems`; otherwise `entryOperations.items`.
     public var isCollectionMode: Bool = false
 

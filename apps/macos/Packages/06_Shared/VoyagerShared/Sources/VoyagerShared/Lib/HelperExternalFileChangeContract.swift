@@ -121,7 +121,15 @@ nonisolated public struct HelperExternalFileChangePayload: Codable, Equatable, S
     }
 
     nonisolated public static func canonicalPaths(_ paths: [String]) -> [String] {
-        Array(Set(paths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })).sorted()
+        Array(
+            Set(
+                paths
+                    .filter { !$0.isEmpty }
+                    .map { ($0 as NSString).standardizingPath }
+                    .filter { !$0.isEmpty },
+            ),
+        )
+        .sorted()
     }
 
     nonisolated private static func parseInt(_ value: Any?) -> Int? {

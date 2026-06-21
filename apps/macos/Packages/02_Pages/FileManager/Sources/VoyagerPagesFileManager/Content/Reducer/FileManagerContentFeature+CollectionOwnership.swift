@@ -42,12 +42,13 @@ extension FileManagerContentFeature {
     ) -> Effect<Action>? {
         switch action {
         case .view(.discardCollectionChanges):
-            handleDiscardCollectionChanges(state: state)
+            handleDiscardCollectionChanges(state: &state)
 
         case let .collection(.delegate(.draftRestorePrepared(payload))):
             .concatenate(
                 .send(.composer(.applyCollectionDraftRestore(payload))),
                 syncComposerCollectionStateEffect(state),
+                restoredCollectionSearchEffect(payload: payload),
             )
 
         case let .collection(.delegate(.writeBackNavigationPrepared(payload))):
@@ -61,6 +62,18 @@ extension FileManagerContentFeature {
 
         case .collection(.navigationStateApplied):
             .none
+
+        case .collection(.refreshFailed):
+            handleCollectionRefreshFailed(state: &state)
+
+        case .collection(.writeBackFailed):
+            handleCollectionWriteBackFailed(state: &state)
+
+        case let .collection(.refreshResponseReceived(_, wasDirtyBeforeApplyingResponse)):
+            handleCollectionRefreshResponse(
+                wasDirtyBeforeApplyingResponse: wasDirtyBeforeApplyingResponse,
+                state: &state,
+            )
 
         case .collection(.openSearchPresentationCancelled),
              .collection(.temporaryContextResetRequested):
@@ -109,13 +122,18 @@ extension FileManagerContentFeature {
         }
     }
 
-    private func handleDiscardCollectionChanges(state: State) -> Effect<Action> {
+    private func handleDiscardCollectionChanges(state: inout State) -> Effect<Action> {
         guard state.isCollectionMode,
               state.isOpenedCollectionDirty
         else {
             return .none
         }
+
+        state.suppressAutomaticRefreshFeedback = true
+        state.composer.transientFeedback = nil
+
         return .concatenate(
+            .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
             .send(.collection(.draftDiscardRequested)),
             .send(.delegate(.collectionChangesDiscarded)),
         )
@@ -132,6 +150,123 @@ extension FileManagerContentFeature {
             compatibility: state.collection.collectionSession.document?.compatibility,
             isCollectionMode: state.isCollectionMode,
         )))
+    }
+
+    private func restoredCollectionSearchEffect(payload: CollectionDraftRestorePayload) -> Effect<Action> {
+        let query = payload.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return .send(.composer(.view(.applyFilters)))
+        }
+        return .concatenate(
+            .send(.composer(.view(.setText(query)))),
+            .send(.composer(.view(.submit))),
+        )
+    }
+
+    private func handleCollectionRefreshFailed(state: inout State) -> Effect<Action> {
+        if state.suppressAutomaticRefreshFeedback {
+            state.suppressAutomaticRefreshFeedback = false
+            return .none
+        }
+        guard state.composer.transientFeedback == nil else {
+            return .none
+        }
+        return presentCollectionRefreshFeedback(
+            kind: .error,
+            message: "Refresh failed. Try again.",
+            recoveryHint: "The collection is still stale until refresh succeeds.",
+            stage: .queryExecution,
+            category: .executionFailure,
+            state: &state,
+        )
+    }
+
+    private func handleCollectionWriteBackFailed(state: inout State) -> Effect<Action> {
+        if state.suppressAutomaticRefreshFeedback {
+            state.suppressAutomaticRefreshFeedback = false
+            return .none
+        }
+        return presentCollectionRefreshFeedback(
+            kind: .error,
+            message: "Could not save refreshed collection snapshot.",
+            recoveryHint: "The latest results may be visible, but this collection will stay stale until saving succeeds.",
+            stage: .save,
+            category: .saveFailed,
+            state: &state,
+        )
+    }
+
+    private func handleCollectionRefreshResponse(
+        wasDirtyBeforeApplyingResponse: Bool,
+        state: inout State,
+    ) -> Effect<Action> {
+        let shouldSuppressFeedback = state.suppressAutomaticRefreshFeedback
+        let writeBackAllowed = state.collection.collectionSession.document?.compatibility?.writeBackAllowed != false
+        let shouldWaitForWriteBack = shouldSuppressFeedback && !wasDirtyBeforeApplyingResponse && writeBackAllowed
+        if shouldWaitForWriteBack {
+            return .none
+        }
+
+        state.suppressAutomaticRefreshFeedback = false
+        guard !shouldSuppressFeedback,
+              !wasDirtyBeforeApplyingResponse,
+              !writeBackAllowed
+        else {
+            return .none
+        }
+        return presentCollectionRefreshFeedback(
+            kind: .info,
+            message: compatibilityBlockedRefreshMessage(
+                reason: state.collection.collectionSession.document?.compatibility?.writeBackReason,
+            ),
+            recoveryHint: "Save as a new collection to keep refreshed results.",
+            stage: .save,
+            category: .saveBlocked,
+            state: &state,
+        )
+    }
+
+    private func presentCollectionRefreshFeedback(
+        kind: ComposerTransientFeedbackKind,
+        message: String,
+        recoveryHint: String,
+        stage: ComposerTransientFeedbackStage,
+        category: ComposerTransientFeedbackCategory,
+        state: inout State,
+    ) -> Effect<Action> {
+        let feedback = ComposerTransientFeedback(
+            id: UUID(),
+            kind: kind,
+            message: message,
+            stage: stage,
+            category: category,
+            recoveryHint: recoveryHint,
+        )
+        state.composer.isPresented = true
+        state.composer.transientFeedback = feedback
+        return .concatenate(
+            .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
+            .run { [feedbackID = feedback.id] send in
+                try await Task.sleep(for: .seconds(4))
+                await send(.composer(.dismissTransientFeedback(id: feedbackID)))
+            }
+            .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true),
+        )
+    }
+
+    private func compatibilityBlockedRefreshMessage(
+        reason: CollectionWriteBackEligibility?,
+    ) -> String {
+        switch reason {
+        case .blockedLegacyVersionUpgrade:
+            "Results were refreshed, but this older collection format cannot be updated."
+        case .blockedDefinitionFallback:
+            "Results were refreshed, but this collection was opened from a fallback definition and cannot be updated."
+        case .blockedFutureMinorVersion, .blockedUnsupportedFutureVersion:
+            "Results were refreshed, but this collection was created by a newer app version and cannot be updated."
+        case .allowed, .none:
+            "Results were refreshed, but the saved collection snapshot could not be updated."
+        }
     }
 
     private func handleCollectionDelegateAction(
@@ -215,6 +350,7 @@ extension FileManagerContentFeature {
         payload: CollectionWriteBackNavigationPayload,
         state: inout State,
     ) -> Effect<Action> {
+        state.suppressAutomaticRefreshFeedback = false
         let previousSnapshot = state.navigation.makeContentPageNavigationHistorySnapshot()
         let nextNavigationState = ContentPageNavigationRoute.collection(
             ContentPageCollectionNavigationFactory.makeCollectionNavigation(

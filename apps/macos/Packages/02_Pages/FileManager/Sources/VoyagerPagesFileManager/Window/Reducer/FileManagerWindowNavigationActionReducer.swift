@@ -224,7 +224,10 @@ struct FileManagerNavigationActionReducer {
             return .none
         case .discard:
             state.content.resetComposerOnNextDirectoryNavigation = true
-            return .send(.navigation(.internal(.performNavigation(pending))))
+            return .concatenate(
+                .send(.content(.view(.discardCollectionChanges))),
+                .send(.navigation(.internal(.performNavigation(pending)))),
+            )
         case .save:
             state.content.resetComposerOnNextDirectoryNavigation = true
             return .concatenate(
@@ -277,6 +280,7 @@ private func handleOpenCollectionFile(
     .cancellable(id: "openCollectionFile", cancelInFlight: true)
 
     return .concatenate(
+        .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(true))))),
         clearExistingCollectionEffect,
         .send(.content(.collection(.openRequested(
             url,
@@ -302,7 +306,6 @@ private func handleCollectionFileLoaded(
         if let url = state.content.collection.collectionSession.document?.url {
             let canonicalPath = url.standardizedFileURL.path
             isStale = collectionStalenessClient.record(canonicalPath)?.lastInvalidatedAt != nil
-            _ = collectionStalenessClient.consumeInvalidation(canonicalPath)
             collectionStalenessClient.registerCollection(
                 canonicalPath,
                 file.scopes,
@@ -417,11 +420,15 @@ private func handleCollectionFileLoadedSuccess(
         return .concatenate(dismissComposerEffect, .concatenate(effects))
     }
 
-    let effects = makeCollectionOpenFollowupEffects(
+    var effects = makeCollectionOpenFollowupEffects(
         payload: openPayload,
         collectionAlertClient: environment.collectionAlertClient,
         state: state,
     )
+
+    if openPayload.queryTrigger == nil {
+        effects.append(.send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))))
+    }
 
     if effects.isEmpty {
         return dismissComposerEffect
@@ -440,6 +447,7 @@ private func handleCollectionFileLoadedFailure(
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
     var effects: [Effect<FileManagerWindowAction>] = [
+        .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
     ]
     if state.sidebar.pendingSidebarSelectionRestore != nil {
@@ -464,6 +472,7 @@ private func handleEmptyCollectionFile(
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
     .concatenate(
+        .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
         .send(.content(.collection(.sessionResetRequested))),
         .send(.content(.internal(.exitCollectionMode))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),

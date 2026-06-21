@@ -238,7 +238,7 @@ public extension CollectionStalenessClient {
                 relevanceRoots: normalizedRoots(relevanceRoots),
                 excludedScopes: normalizedRoots(excludedScopes),
                 includeSubfolders: includeSubfolders,
-                lastInvalidatedAt: nil,
+                lastInvalidatedAt: existing?.lastInvalidatedAt,
             )
             saveStorage(storage, userDefaultsClient: userDefaultsClient)
         }

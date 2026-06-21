@@ -60,18 +60,31 @@ struct FileManagerContentComposerReducer {
         guard state.collection.refreshBlockingReason(
             isCollectionMode: state.isCollectionMode,
             isDirty: state.collection.isDirty,
-            isSearching: state.composer.isCollectionSearching,
+            isSearching: state.composer.isCollectionSearching
+                || state.entryViewLayout.isCollectionContentLoading,
         ) == nil else {
             return .none
         }
-        let trimmedQuery = state.collection.collectionContext?
+        guard let collectionContext = state.collection.collectionContext else {
+            return .none
+        }
+        state.suppressAutomaticRefreshFeedback = false
+        let trimmedQuery = collectionContext
             .query
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmedQuery.isEmpty {
+            let hasSearchReadyCondition = collectionContext.conditions.contains(where: \.isSearchReady)
+            if hasSearchReadyCondition {
+                state.composer.applyCollectionDraftRestorePayload(.init(
+                    context: collectionContext,
+                    openedURL: state.collection.collectionSession.document?.url,
+                ))
+            }
             return .concatenate(
                 .send(.collection(.refreshRequested)),
                 .send(.composer(.applyFilters)),
+                hasSearchReadyCondition ? .none : .send(.collection(.refreshFailed)),
             )
         }
 
