@@ -44,6 +44,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case exitCollectionMode
         case resetComposer
         case resetComposerAfterDirectoryNavigation
+        case setAutomaticRefreshFeedbackSuppressed(Bool)
     }
 
     @CasePathable

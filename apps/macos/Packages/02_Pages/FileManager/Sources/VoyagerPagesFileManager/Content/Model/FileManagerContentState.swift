@@ -15,6 +15,7 @@ public struct FileManagerContentState: Equatable {
 
     /// 컴포저 관련
     var resetComposerOnNextDirectoryNavigation: Bool = false
+    var suppressAutomaticRefreshFeedback: Bool = false
 
     var isCollectionMode: Bool {
         entryViewLayout.isCollectionMode

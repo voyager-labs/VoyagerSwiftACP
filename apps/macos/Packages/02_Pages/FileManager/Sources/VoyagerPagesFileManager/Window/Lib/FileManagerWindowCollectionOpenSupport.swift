@@ -127,6 +127,7 @@ func makeCollectionOpenFollowupEffects(
         case .submit:
             .send(.content(.composer(.submit)))
         }
+        effects.append(.send(.content(.internal(.setAutomaticRefreshFeedbackSuppressed(true)))))
         effects.append(queryEffect)
     }
 

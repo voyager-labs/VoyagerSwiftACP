@@ -125,7 +125,7 @@ struct ComposerSearchLifecycleReducer {
                         ),
                     )
                     state.searchStartedAt = nil
-                    if shouldSkipApplyFilters, state.openedCollectionURL == nil {
+                    if shouldSkipApplyFilters {
                         kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
                         state.isLoadingFilters = false
                         state.isFilteringInFlight = false

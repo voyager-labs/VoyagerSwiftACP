@@ -203,10 +203,18 @@ public struct EntryViewLayoutFeature {
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode
+                if !isCollectionMode {
+                    state.isCollectionContentLoading = false
+                }
                 return Self.updateEntriesAndReapply(&state)
+
+            case let .internal(.setCollectionContentLoading(isLoading)):
+                state.isCollectionContentLoading = isLoading
+                return .none
 
             case let .internal(.setCollectionItems(items)):
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: items)
+                state.isCollectionContentLoading = false
                 return Self.updateEntriesAndReapply(&state)
 
             case let .internal(.applyCollectionSearchPaths(paths, showHidden)):
@@ -217,6 +225,7 @@ public struct EntryViewLayoutFeature {
                     workspaceClient: workspaceClient,
                 )
                 state.collectionItems = IdentifiedArrayOf(uniqueElements: converted)
+                state.isCollectionContentLoading = false
                 return Self.updateEntriesAndReapply(&state)
 
             case let .internal(.addCollectionPaths(paths)):
@@ -254,6 +263,7 @@ public struct EntryViewLayoutFeature {
             case .internal(.clearCollectionPresentation):
                 state.isCollectionMode = false
                 state.collectionItems = []
+                state.isCollectionContentLoading = false
                 return Self.updateEntriesAndReapply(&state)
 
             case .delegate:

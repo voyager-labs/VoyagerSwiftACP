@@ -69,7 +69,7 @@ public enum ComposerQueryFeedbackPolicy {
         if let outcome = response.queryConversion?.outcome {
             switch outcome {
             case .generatedChangeSet:
-                return false
+                return normalizedFilters(appliedFilters: response.appliedFilters, fallback: baseline).conditions.isEmpty
             case .unchangedResult:
                 return true
             case .fallbackReuse:
