@@ -85,6 +85,35 @@ final class HelperExternalFileChangeBridgeTests: XCTestCase {
         XCTAssertEqual(remaining?.paths, ["/tmp/demo/b"])
     }
 
+    func testShutdownFlushPersistsPendingPathsForReplay() async throws {
+        let tempDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let store = HelperExternalFileChangeStore(
+            payloadURL: tempDirectory.appendingPathComponent("payload.json"),
+            lockURL: tempDirectory.appendingPathComponent("payload.lock"),
+        )
+        let bridge = HelperExternalFileChangeBridge(
+            store: store,
+            flushInterval: .seconds(60),
+        )
+
+        await bridge.publishChangedPaths([
+            "/tmp/demo/a",
+            "/tmp/demo/../demo/b",
+        ])
+        let beforeShutdown = try await store.load()
+
+        await bridge.flushPendingBeforeShutdown()
+        let replay = try await store.payloadForReplay(.init(consume: false))
+
+        XCTAssertNil(beforeShutdown)
+        XCTAssertEqual(replay?.paths, [
+            "/tmp/demo/a",
+            "/tmp/demo/b",
+        ])
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

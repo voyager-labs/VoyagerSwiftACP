@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Logging
 import SwiftDotenv
@@ -8,6 +9,7 @@ class VoyagerHelperApp {
     private static var helperFolderAccessListener: HelperFolderAccessListener?
     private static var helperExternalFileChangeBridge: HelperExternalFileChangeBridge?
     private static var helperExternalFileSystemWatcher: HelperExternalFileSystemWatcher?
+    private static var terminationSignalSource: DispatchSourceSignal?
 
     @MainActor
     static func main() {
@@ -39,6 +41,11 @@ class VoyagerHelperApp {
         helperFolderAccessListener.startObservingRequests()
         helperExternalFileChangeBridge.startObservingReplayRequests()
         helperExternalFileSystemWatcher.start()
+        installTerminationSignalHandler(
+            bridge: helperExternalFileChangeBridge,
+            watcher: helperExternalFileSystemWatcher,
+            logger: logger,
+        )
 
         Task {
             await runStartupTask(
@@ -46,6 +53,26 @@ class VoyagerHelperApp {
             )
         }
         RunLoop.current.run()
+    }
+
+    private static func installTerminationSignalHandler(
+        bridge: HelperExternalFileChangeBridge,
+        watcher: HelperExternalFileSystemWatcher,
+        logger: Logger,
+    ) {
+        guard terminationSignalSource == nil else { return }
+        signal(SIGTERM, SIG_IGN)
+        let signalSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        signalSource.setEventHandler {
+            Task { @MainActor in
+                logger.info("Received SIGTERM; stopping watcher and flushing pending file changes before exit")
+                watcher.stop()
+                await bridge.flushPendingBeforeShutdown()
+                Darwin.exit(0)
+            }
+        }
+        terminationSignalSource = signalSource
+        signalSource.resume()
     }
 
     private static func runStartupTask(
