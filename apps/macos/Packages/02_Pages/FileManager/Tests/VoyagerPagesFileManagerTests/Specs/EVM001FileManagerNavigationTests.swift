@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import CoreServices
 import Foundation
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
@@ -128,6 +129,145 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive(\.entryViewLayout.internal.clearCollectionPresentation)
         await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
         await store.receive(\.externalFileSystemChanged, [changedPath])
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: collection 이동 시 scope watcher 시작 및 외부 변경 전달
+    /// Collection route 진입 시 `.voycoll` 위치가 아닌 collection scope 절대경로만 감시하고 변경을 전달하는지 검증.
+    /// - 검증 내용: applyNavigationState(.collection) 전송 시 startWatchingDirectories 호출, externalFileSystemChanged 수신
+    /// - 사전 조건: collectionContext.scopes에 중복/상대 경로가 섞여 있음
+    /// - 기대 결과: canonical absolute scope만 감시하고 changedPath를 전달
+    func testCollectionScopeRootsChangedSinceSnapshotDetectsNewerRoot() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voyager-scope-root-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 200)],
+            ofItemAtPath: root.path,
+        )
+        let file = VoyagerCollectionFile(
+            id: UUID().uuidString,
+            name: "demo",
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 100),
+            query: "",
+            scopes: [root.path],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: CollectionSnapshotMeta(
+                definitionFingerprint: "fingerprint",
+                capturedAt: Date(timeIntervalSince1970: 100),
+                itemCount: 0,
+                relevanceRoots: [root.path],
+            ),
+            appVersion: nil,
+        )
+
+        XCTAssertTrue(collectionScopeRootsChangedSinceSnapshot(file))
+    }
+
+    func testCollectionScopeRootsChangedSinceSnapshotIgnoresMissingSnapshot() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voyager-scope-root-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = VoyagerCollectionFile(
+            id: UUID().uuidString,
+            name: "demo",
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 100),
+            query: "",
+            scopes: [root.path],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+
+        XCTAssertFalse(collectionScopeRootsChangedSinceSnapshot(file))
+    }
+
+    func testCollectionNavigationStartsScopeWatcherAndForwardsExternalChanges() async {
+        let firstScope = "/tmp/voyager/scope-a"
+        let secondScope = "/tmp/voyager/scope-b/../scope-b"
+        let changedPath = "/tmp/voyager/scope-a/changed.txt"
+        let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/demo.voycoll")
+        let context = CollectionContext(
+            query: "",
+            scopes: [firstScope, "relative", secondScope, firstScope],
+            conditions: [],
+        )
+        let navigationState = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: collectionURL, name: "demo"),
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var state = FileManagerContentState()
+        state.navigation.navigationState = navigationState
+        state.collection.collectionContext = context
+        let store = TestStore(initialState: state) {
+            FileManagerContentNavigationBridgeReducer()
+        } withDependencies: {
+            $0.entryWatchingClient.startWatchingDirectoryChanges = { urls in
+                XCTAssertEqual(
+                    urls.map(\.path),
+                    ["/tmp/voyager/scope-a", "/tmp/voyager/scope-b"],
+                )
+                return AsyncStream { continuation in
+                    continuation.yield([
+                        EntryFileSystemChange(
+                            path: changedPath,
+                            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated),
+                        ),
+                    ])
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(navigationState))) {
+            $0.entryViewLayout.currentPath = "collection:\(collectionURL.standardizedFileURL.path)"
+        }
+        await store.receive(\.externalFileSystemChanged, [changedPath])
+    }
+
+    func testCollectionNavigationIgnoresMetadataOnlyScopeEvents() async {
+        let scope = "/tmp/voyager/scope-a"
+        let changedPath = "/tmp/voyager/scope-a/opened.txt"
+        let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/demo.voycoll")
+        let context = CollectionContext(query: "", scopes: [scope], conditions: [])
+        let navigationState = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: collectionURL, name: "demo"),
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var state = FileManagerContentState()
+        state.navigation.navigationState = navigationState
+        state.collection.collectionContext = context
+        let store = TestStore(initialState: state) {
+            FileManagerContentNavigationBridgeReducer()
+        } withDependencies: {
+            $0.entryWatchingClient.startWatchingDirectoryChanges = { urls in
+                XCTAssertEqual(urls.map(\.path), [scope])
+                return AsyncStream { continuation in
+                    continuation.yield([
+                        EntryFileSystemChange(
+                            path: changedPath,
+                            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemXattrMod),
+                        ),
+                    ])
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(navigationState))) {
+            $0.entryViewLayout.currentPath = "collection:\(collectionURL.standardizedFileURL.path)"
+        }
     }
 
     /// EVM-001-navigate_pages: collection navigation도 scroll position key를 저장/복원
