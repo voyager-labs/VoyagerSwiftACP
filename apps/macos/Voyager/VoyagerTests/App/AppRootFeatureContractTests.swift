@@ -5,6 +5,7 @@ import VoyagerFeaturesUpdateVersion
 @testable import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
+import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -52,80 +53,20 @@ final class AppRootFeatureContractTests: XCTestCase {
 
     /// testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow 테스트 동작을 검증한다.
     func testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
+        var initialState = AppRootFeature.State()
+        initialState.windowManager.windows = [
+            WindowSessionState(
+                id: UUID(),
+                window: .makeInitial(path: "/tmp"),
+            ),
+        ]
+
+        let store = TestStore(initialState: initialState) {
             AppRootFeature()
-        } withDependencies: {
-            $0.onboardingWindowClient.showIfNeeded = { false }
-            $0.fileManagerWindowClient.open = { _ in }
-            $0.uuid = .incrementing
         }
-        store.exhaustivity = .off
 
         await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
-    }
-
-    /// testHelperExternalFileChangeForwardsToWindowManager 테스트 동작을 검증한다.
-    func testHelperExternalFileChangeForwardsToWindowManager() async {
-        let windowID = UUID()
-        let paths = ["/tmp/demo"]
-        var initialState = AppRootFeature.State()
-        initialState.windowManager.windows = [
-            WindowSessionState(id: windowID, window: .makeInitial(path: "/tmp")),
-        ]
-
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
-        }
-        store.exhaustivity = .off
-
-        await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == windowID && receivedPaths == paths
-        }
-    }
-
-    /// testHelperExternalFileChangeFansOutToAllOpenWindows 테스트 동작을 검증한다.
-    func testHelperExternalFileChangeFansOutToAllOpenWindows() async {
-        let firstID = UUID()
-        let secondID = UUID()
-        let paths = ["/tmp/demo"]
-
-        var initialState = AppRootFeature.State()
-        initialState.windowManager.windows = [
-            WindowSessionState(id: firstID, window: .makeInitial(path: "/tmp/one")),
-            WindowSessionState(id: secondID, window: .makeInitial(path: "/tmp/two")),
-        ]
-
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
-        }
-
-        await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == firstID && receivedPaths == paths
-        }
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == secondID && receivedPaths == paths
-        }
     }
 
     /// testMenuCommandsStateIsRecomputedAfterWindowManagerChanges 테스트 동작을 검증한다.
@@ -165,7 +106,12 @@ final class AppRootFeatureContractTests: XCTestCase {
     func testSettingsGeneralToggleAutomaticUpdateForwardsToUpdater() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
+        } withDependencies: {
+            $0.userDefaultsClient.setBool = { _, _ in }
+            $0.updaterClient.setAutomaticUpdate = { _ in }
         }
+
+        store.exhaustivity = .off
 
         await store.send(.settings(.general(.toggleAutomaticUpdate(true))))
         await store.receive { action in

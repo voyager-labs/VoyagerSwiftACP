@@ -1,39 +1,20 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesAppPreferences
-import VoyagerEntitiesCollection
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
-import VoyagerPagesOnboarding
 import VoyagerPagesSettings
 import VoyagerShared
-
-private typealias HelperFolderAccessResult = VoyagerEntitiesAppPreferences.FolderAccessResult
 
 @Reducer
 struct AppRootFeature {
     typealias State = AppRootState
     typealias Action = AppRootAction
 
-    @Dependency(\.helperExternalFileChangeClient)
-    private var helperExternalFileChangeClient
-    @Dependency(\.helperFolderAccessClient)
-    private var helperFolderAccessClient: VoyagerEntitiesAppPreferences.HelperFolderAccessClient
-    @Dependency(\.helperStateClient)
-    private var helperStateClient
-    @Dependency(\.collectionStalenessClient)
-    private var collectionStalenessClient
-    @Dependency(\.onboardingWindowClient)
-    private var onboardingWindowClient
-    @Dependency(\.userDefaultsClient)
-    private var userDefaultsClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
 
     private enum CancelID {
-        static let helperExternalFileBridge = "helperExternalFileBridge"
-        static let helperStateObserver = "helperStateObserver"
         static let appDidBecomeActiveObserver = "appDidBecomeActiveObserver"
     }
 
@@ -43,12 +24,6 @@ struct AppRootFeature {
         }
         Scope(state: \.appPreferences, action: \.appPreferences) {
             AppPreferencesFeature()
-        }
-        Reduce { state, action in
-            if case .windowManager = action {
-                state.windowPresenceBeforeWindowManagerAction = !state.windowManager.windows.isEmpty
-            }
-            return .none
         }
         Scope(state: \.windowManager, action: \.windowManager) {
             WindowManagerFeature()
@@ -67,13 +42,7 @@ struct AppRootFeature {
             reduceAppLifecycle(into: &state, action: action)
         }
         Reduce { state, action in
-            reduceHelperFileBridge(into: &state, action: action)
-        }
-        Reduce { state, action in
             reducePreferencesAndCommands(into: &state, action: action)
-        }
-        Reduce { state, action in
-            reduceWindowPostAction(into: &state, action: action)
         }
         Reduce { state, _ in
             state.menuCommands = MenuCommandsState(state: state)
@@ -82,52 +51,36 @@ struct AppRootFeature {
     }
 
     private func reduceAppLifecycle(
-        into state: inout State,
+        into _: inout State,
         action: Action,
     ) -> Effect<Action> {
         switch action {
         case .lifecycle(.launch(.willFinishLaunching)):
-            return startLaunchObservers()
+            startLaunchObservers()
 
         case let .lifecycle(.delegate(delegateAction)):
             switch delegateAction {
             case .openInitialWindowIfNeeded:
-                return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+                .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
             case let .reopenWindowIfNeeded(hasVisibleWindows):
-                return .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
+                .send(.windowManager(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: hasVisibleWindows))))
             }
 
         case .lifecycle(.termination(.willTerminate)):
-            state.isHelperExternalFileBridgeStarted = false
-            state.lastHelperReady = false
-            state.windowPresenceBeforeWindowManagerAction = nil
-            return .merge(
-                .cancel(id: CancelID.helperExternalFileBridge),
-                .cancel(id: CancelID.helperStateObserver),
-                .cancel(id: CancelID.appDidBecomeActiveObserver),
-            )
+            .cancel(id: CancelID.appDidBecomeActiveObserver)
 
         case .appDidBecomeActive:
-            return state.lastHelperReady && !state.windowManager.windows.isEmpty
-                ? .send(.registerHelperWatchRootsIfNeeded)
-                : .none
+            .none
 
         default:
-            return .none
+            .none
         }
     }
 
     private func startLaunchObservers() -> Effect<Action> {
-        let helperStateClient = helperStateClient
-        return .merge(
+        .merge(
             .send(.appPreferences(.load)),
-            .run { send in
-                for await helperState in helperStateClient.observe() {
-                    await send(.helperStateUpdated(helperState))
-                }
-            }
-            .cancellable(id: CancelID.helperStateObserver, cancelInFlight: true),
             .run { [notificationCenterClient] send in
                 for await _ in notificationCenterClient.notifications(
                     NSApplication.didBecomeActiveNotification,
@@ -138,129 +91,6 @@ struct AppRootFeature {
             }
             .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true),
         )
-    }
-
-    private func reduceHelperFileBridge(
-        into state: inout State,
-        action: Action,
-    ) -> Effect<Action> {
-        switch action {
-        case .startHelperExternalFileBridge:
-            return startHelperExternalFileBridgeIfNeeded(state: &state)
-
-        case let .helperStateUpdated(helperState):
-            let shouldRegister = helperState.helperReady && !state.windowManager.windows.isEmpty
-            state.lastHelperReady = helperState.helperReady
-            return shouldRegister ? .send(.registerHelperWatchRootsIfNeeded) : .none
-
-        case let .helperExternalFileChanged(event):
-            return handleHelperExternalFileChanged(event, state: state)
-
-        case .flushPendingReplay:
-            guard !state.windowManager.windows.isEmpty else { return .none }
-            return .run { send in
-                let paths = await PendingReplayPathsStore.shared.takeAll()
-                await send(.pendingReplayLoaded(paths))
-            }
-
-        case let .pendingReplayLoaded(paths):
-            return handlePendingReplayLoaded(paths, state: state)
-
-        case .registerHelperWatchRootsIfNeeded:
-            return registerHelperWatchRootsIfNeeded()
-
-        default:
-            return .none
-        }
-    }
-
-    private func startHelperExternalFileBridgeIfNeeded(state: inout State) -> Effect<Action> {
-        guard !state.isHelperExternalFileBridgeStarted else { return .none }
-        state.isHelperExternalFileBridgeStarted = true
-        let helperExternalFileChangeClient = helperExternalFileChangeClient
-        return .run { send in
-            for await event in helperExternalFileChangeClient.observeChangedPaths() {
-                await send(.helperExternalFileChanged(event))
-            }
-        }
-        .cancellable(id: CancelID.helperExternalFileBridge, cancelInFlight: true)
-    }
-
-    private func handleHelperExternalFileChanged(
-        _ event: HelperExternalFileChangeEvent,
-        state: State,
-    ) -> Effect<Action> {
-        let helperExternalFileChangeClient = helperExternalFileChangeClient
-        collectionStalenessClient.invalidateRecords(event.paths)
-
-        if event.source == .replay, state.windowManager.windows.isEmpty {
-            return .run { _ in
-                await PendingReplayPathsStore.shared.append(event.paths)
-            }
-        }
-
-        guard !state.windowManager.windows.isEmpty else { return .none }
-        return .merge(
-            forwardExternalFileChanges(event.paths, windowIDs: state.windowManager.windows.ids),
-            .run { _ in
-                await helperExternalFileChangeClient.acknowledgeDeliveredPaths(event.paths)
-            },
-        )
-    }
-
-    private func handlePendingReplayLoaded(
-        _ paths: [String],
-        state: State,
-    ) -> Effect<Action> {
-        guard !paths.isEmpty else { return .none }
-        let helperExternalFileChangeClient = helperExternalFileChangeClient
-        return .merge(
-            forwardExternalFileChanges(paths, windowIDs: state.windowManager.windows.ids),
-            .run { _ in
-                await helperExternalFileChangeClient.acknowledgeDeliveredPaths(paths)
-            },
-        )
-    }
-
-    private func registerHelperWatchRootsIfNeeded() -> Effect<Action> {
-        let helperExternalFileChangeClient = helperExternalFileChangeClient
-        let helperStateClient = helperStateClient
-        let onboardingWindowClient = onboardingWindowClient
-        let helperFolderAccess = helperFolderAccessClient
-        let userDefaultsClient = userDefaultsClient
-        return .run { send in
-            guard let helperState = await helperStateClient.resolve(), helperState.helperReady else {
-                return
-            }
-            let access = await resolveHelperFolderAccess(
-                onboardingWindowClient: onboardingWindowClient,
-                helperFolderAccess: helperFolderAccess,
-                userDefaultsClient: userDefaultsClient,
-            )
-            let watchRoots = helperGrantedWatchRoots(from: access)
-            await helperExternalFileChangeClient.updateWatchRoots(watchRoots)
-            await send(.registerHelperWatchRoots(watchRoots))
-        }
-    }
-
-    private func resolveHelperFolderAccess(
-        onboardingWindowClient: OnboardingWindowClient,
-        helperFolderAccess: VoyagerEntitiesAppPreferences.HelperFolderAccessClient,
-        userDefaultsClient: UserDefaultsClient,
-    ) async -> HelperFolderAccessResult {
-        let access: HelperFolderAccessResult = if onboardingWindowClient.isRequired() == false,
-                                                  let persisted =
-                                                  persistedHelperFolderAccess(userDefaultsClient: userDefaultsClient),
-                                                  persisted.status == .granted
-        {
-            await helperFolderAccess.checkAccess()
-        } else {
-            await helperFolderAccess.requestAccess()
-        }
-
-        let data = try? JSONEncoder().encode(access)
-        userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
-        return access
     }
 
     private func reducePreferencesAndCommands(
@@ -303,23 +133,6 @@ struct AppRootFeature {
         default:
             return .none
         }
-    }
-
-    private func reduceWindowPostAction(
-        into state: inout State,
-        action: Action,
-    ) -> Effect<Action> {
-        guard case .windowManager = action else { return .none }
-
-        let hadWindowsBeforeAction = state.windowPresenceBeforeWindowManagerAction ?? false
-        let hasWindowsAfterAction = !state.windowManager.windows.isEmpty
-        let didOpenFirstWindow = !hadWindowsBeforeAction && hasWindowsAfterAction
-        state.windowPresenceBeforeWindowManagerAction = nil
-        return .merge(
-            didOpenFirstWindow ? .send(.startHelperExternalFileBridge) : .none,
-            didOpenFirstWindow ? .send(.flushPendingReplay) : .none,
-            (didOpenFirstWindow && state.lastHelperReady) ? .send(.registerHelperWatchRootsIfNeeded) : .none,
-        )
     }
 }
 
@@ -390,81 +203,4 @@ private func isSettingsMenuItem(_ item: NSMenuItem) -> Bool {
         || normalizedTitle == "preferences"
         || item.action == Selector(("showSettingsWindow:"))
         || item.action == Selector(("showPreferencesWindow:"))
-}
-
-private func forwardExternalFileChanges(
-    _ paths: [String],
-    windowIDs: IdentifiedArrayOf<WindowSessionFeature.State>.IDs,
-) -> Effect<AppRootAction> {
-    guard !paths.isEmpty else { return .none }
-
-    return .merge(
-        windowIDs.map { id in
-            .send(.windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(paths))),
-            ))))
-        },
-    )
-}
-
-actor PendingReplayPathsStore {
-    static let shared = PendingReplayPathsStore()
-
-    private var paths: Set<String> = []
-
-    func append(_ newPaths: [String]) {
-        paths.formUnion(newPaths)
-    }
-
-    func takeAll() -> [String] {
-        let snapshot = Array(paths).sorted()
-        paths.removeAll()
-        return snapshot
-    }
-}
-
-nonisolated private func helperGrantedWatchRoots(from access: HelperFolderAccessResult) -> [String] {
-    guard access.status == .granted else { return [] }
-
-    let fileManager = FileManager.default
-    var roots: [String] = []
-
-    let homePath = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
-    roots.append(homePath)
-
-    let iCloudDrive = URL(fileURLWithPath: NSHomeDirectory())
-        .appendingPathComponent(FileManagerSpecialRootRelativePathConfig.iCloudDrive)
-        .standardizedFileURL
-    if fileManager.fileExists(atPath: iCloudDrive.path) {
-        roots.append(iCloudDrive.path)
-    }
-
-    let cloudStorageRoot = URL(fileURLWithPath: NSHomeDirectory())
-        .appendingPathComponent(FileManagerSpecialRootRelativePathConfig.cloudStorage)
-        .standardizedFileURL
-    if let contents = try? fileManager.contentsOfDirectory(
-        at: cloudStorageRoot,
-        includingPropertiesForKeys: [.isDirectoryKey],
-        options: [.skipsHiddenFiles],
-    ) {
-        for itemURL in contents {
-            if let isDirectory = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory,
-               isDirectory == true
-            {
-                roots.append(itemURL.standardizedFileURL.path)
-            }
-        }
-    }
-
-    return Array(Set(roots)).sorted()
-}
-
-nonisolated private func persistedHelperFolderAccess(userDefaultsClient: UserDefaultsClient)
-    -> HelperFolderAccessResult?
-{
-    guard let data = userDefaultsClient.object(SettingsKeys.helperFolderAccessSnapshot) as? Data else {
-        return nil
-    }
-    return try? JSONDecoder().decode(HelperFolderAccessResult.self, from: data)
 }
