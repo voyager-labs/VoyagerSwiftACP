@@ -19,6 +19,24 @@ public struct FileManagerWindowState: Equatable {
 
         return state
     }
+
+    public static func makeInitial(
+        path: String?,
+        contentTabs: ContentTabState?,
+    ) -> Self {
+        var state = Self()
+        state.contentTabs = contentTabs.map { ContentTabState.bootstrapping(
+            restoredTabs: $0.tabs,
+            activeTabID: $0.activeTabID,
+        )
+        } ?? .withHomeTab()
+
+        if let path {
+            state.content.navigation.seedInitialFolderPath(path)
+        }
+
+        return state
+    }
 }
 
 public extension FileManagerWindowState {
