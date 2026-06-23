@@ -529,4 +529,87 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
         XCTAssertNotEqual(newActiveID, previousActiveID, "active tab ID must change")
     }
+
+    // MARK: - CTM-001-open_new_content_tab_invariants
+
+    /// CTM-001-open_new_content_tab_invariants: ContentTabProjection.sidebarItems에 새 Home tab이 반영됨
+    /// VOY-447 Sidebar projection refresh 정책을 검증한다.
+    /// - 검증 내용: .request(.openNewContentTab) 후 ContentTabProjection.sidebarItems(from:) count +1 및 마지막 항목 pageType ==
+    /// .home
+    /// - 사전 조건: 기본 Home tab 하나가 있는 FileManagerFeature.State
+    /// - 기대 결과: projection output에 새 tab이 마지막 항목으로 포함됨
+    func testOpenNewContentTab_projection_sidebarItemsIncludesNewHomeTab() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 projection 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let beforeCount = ContentTabProjection.sidebarItems(from: store.state.contentTabs).count
+
+        await store.send(.request(.openNewContentTab))
+        await store.receive(\.contentTabs)
+
+        let sidebarItems = ContentTabProjection.sidebarItems(from: store.state.contentTabs)
+        XCTAssertEqual(sidebarItems.count, beforeCount + 1, "projection must reflect new tab count")
+        let lastItem = try XCTUnwrap(sidebarItems.last)
+        XCTAssertEqual(lastItem.pageType, .home, "last projection item pageType must be home")
+    }
+
+    /// CTM-001-open_new_content_tab_invariants: maxTabs 상태에서 openNewContentTab은 no-op으로 기존 상태를 보존함
+    /// VOY-447 AC4 failure 정책을 검증한다.
+    /// - 검증 내용: maxTabs 도달 후 .request(.openNewContentTab) 전송 시 tabs.count와 activeTabID 불변
+    /// - 사전 조건: ContentTabConstants.maxTabs만큼 채워진 tab list
+    /// - 기대 결과: tabs.count와 activeTabID가 변경되지 않음
+    func testOpenNewContentTab_maxTabsNoOp_preservesState() async {
+        var tabs = IdentifiedArrayOf<ContentTabItem>()
+        for _ in 0 ..< ContentTabConstants.maxTabs {
+            tabs.append(ContentTabItem(
+                id: ContentTabID(),
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            ))
+        }
+        let firstID = tabs[0].id
+        var state = FileManagerFeature.State()
+        state.contentTabs.tabs = tabs
+        state.contentTabs.activeTabID = firstID
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        // 비포괄적: maxTabs guard로 인해 contentTabs action이 상태를 변경하지 않으므로 불변 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.request(.openNewContentTab))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, firstID)
+    }
+
+    /// CTM-001-open_new_content_tab_invariants: 연속 openNewContentTab은 중복되지 않는 ID를 생성함
+    /// VOY-447 repeated rapid creation 방지 정책을 검증한다.
+    /// - 검증 내용: .request(.openNewContentTab) 2회 연속 후 모든 tab ID가 유일함
+    /// - 사전 조건: 기본 Home tab 하나가 있는 FileManagerFeature.State
+    /// - 기대 결과: 모든 tab의 id가 유일함 (Set count == count)
+    func testOpenNewContentTab_repeatedCreation_usesUniqueIDs() async {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 ID uniqueness 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.request(.openNewContentTab))
+        await store.receive(\.contentTabs)
+
+        await store.send(.request(.openNewContentTab))
+        await store.receive(\.contentTabs)
+
+        let allIDs = store.state.contentTabs.tabs.map(\.id)
+        let uniqueIDs = Set(allIDs)
+        XCTAssertEqual(uniqueIDs.count, allIDs.count, "all tab IDs must be unique")
+    }
 }
