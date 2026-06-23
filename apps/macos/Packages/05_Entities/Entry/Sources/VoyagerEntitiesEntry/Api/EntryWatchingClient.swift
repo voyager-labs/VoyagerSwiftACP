@@ -3,18 +3,46 @@ import CoreServices
 import Foundation
 import VoyagerShared
 
+public struct EntryFileSystemChange: Equatable, Sendable {
+    public var path: String
+    public var flags: FSEventStreamEventFlags
+
+    nonisolated public init(path: String, flags: FSEventStreamEventFlags) {
+        self.path = path
+        self.flags = flags
+    }
+}
+
+public extension EntryFileSystemChange {
+    nonisolated var isStaleWorthyPathChange: Bool {
+        flags.entryWatchingContainsAnyFlag([
+            kFSEventStreamEventFlagMustScanSubDirs,
+            kFSEventStreamEventFlagItemCreated,
+            kFSEventStreamEventFlagItemRemoved,
+            kFSEventStreamEventFlagItemRenamed,
+            kFSEventStreamEventFlagItemModified,
+        ])
+    }
+}
+
 public struct EntryWatchingClient: Sendable {
     public var observeFileSystemChanged: @Sendable () -> AsyncStream<[String]>
     public var startWatchingDirectory: @Sendable (URL) -> AsyncStream<[String]>
+    public var startWatchingDirectories: @Sendable ([URL]) -> AsyncStream<[String]>
+    public var startWatchingDirectoryChanges: @Sendable ([URL]) -> AsyncStream<[EntryFileSystemChange]>
     public var stopWatchingDirectory: @Sendable () -> Void
 
     nonisolated public init(
         observeFileSystemChanged: @escaping @Sendable () -> AsyncStream<[String]>,
         startWatchingDirectory: @escaping @Sendable (URL) -> AsyncStream<[String]>,
+        startWatchingDirectories: @escaping @Sendable ([URL]) -> AsyncStream<[String]>,
+        startWatchingDirectoryChanges: @escaping @Sendable ([URL]) -> AsyncStream<[EntryFileSystemChange]>,
         stopWatchingDirectory: @escaping @Sendable () -> Void,
     ) {
         self.observeFileSystemChanged = observeFileSystemChanged
         self.startWatchingDirectory = startWatchingDirectory
+        self.startWatchingDirectories = startWatchingDirectories
+        self.startWatchingDirectoryChanges = startWatchingDirectoryChanges
         self.stopWatchingDirectory = stopWatchingDirectory
     }
 }
@@ -24,6 +52,8 @@ extension EntryWatchingClient: DependencyKey {
         EntryWatchingClient(
             observeFileSystemChanged: EntryWatchingLive.observeFileSystemChanged,
             startWatchingDirectory: EntryWatchingLive.startWatchingDirectory,
+            startWatchingDirectories: EntryWatchingLive.startWatchingDirectories,
+            startWatchingDirectoryChanges: EntryWatchingLive.startWatchingDirectoryChanges,
             stopWatchingDirectory: EntryWatchingLive.stopWatchingDirectory,
         )
     }
@@ -32,6 +62,8 @@ extension EntryWatchingClient: DependencyKey {
         EntryWatchingClient(
             observeFileSystemChanged: { AsyncStream { _ in } },
             startWatchingDirectory: { _ in AsyncStream { _ in } },
+            startWatchingDirectories: { _ in AsyncStream { _ in } },
+            startWatchingDirectoryChanges: { _ in AsyncStream { _ in } },
             stopWatchingDirectory: {},
         )
     }
@@ -90,9 +122,9 @@ public enum EntryWatchingLive {
     }
 
     private final class FSEventsContinuationBox: @unchecked Sendable {
-        let continuation: AsyncStream<[String]>.Continuation
+        let continuation: AsyncStream<[EntryFileSystemChange]>.Continuation
 
-        nonisolated init(_ continuation: AsyncStream<[String]>.Continuation) {
+        nonisolated init(_ continuation: AsyncStream<[EntryFileSystemChange]>.Continuation) {
             self.continuation = continuation
         }
     }
@@ -132,18 +164,48 @@ public enum EntryWatchingLive {
 
     nonisolated static var startWatchingDirectory: @Sendable (URL) -> AsyncStream<[String]> {
         { url in
+            EntryWatchingLive.startWatchingDirectories([url])
+        }
+    }
+
+    nonisolated static var startWatchingDirectories: @Sendable ([URL]) -> AsyncStream<[String]> {
+        { urls in
             AsyncStream { continuation in
+                let changes = EntryWatchingLive.startWatchingDirectoryChanges(urls)
+                let task = Task {
+                    for await batch in changes {
+                        continuation.yield(batch.map(\.path))
+                    }
+                    continuation.finish()
+                }
+                continuation.onTermination = { @Sendable _ in
+                    task.cancel()
+                }
+            }
+        }
+    }
+
+    nonisolated static var startWatchingDirectoryChanges: @Sendable ([URL]) -> AsyncStream<[EntryFileSystemChange]> {
+        { urls in
+            AsyncStream { continuation in
+                let watchPaths = entryWatchingCanonicalWatchPaths(from: urls)
+                guard !watchPaths.isEmpty else {
+                    continuation.finish()
+                    return
+                }
+
                 let watcher = FSEventsWatcher()
                 let box = FSEventsContinuationBox(continuation)
                 let callback = makeFSEventsCallback()
                 var context = makeStreamContext(box: box)
 
-                guard let stream = createStream(url: url, callback: callback, context: &context) else {
+                guard let stream = createStream(paths: watchPaths, callback: callback, context: &context) else {
                     continuation.finish()
                     return
                 }
 
-                FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+                let queue = DispatchQueue(label: "Voyager.EntryWatchingClient.FSEvents")
+                FSEventStreamSetDispatchQueue(stream, queue)
 
                 guard FSEventStreamStart(stream) else {
                     stopStream(stream)
@@ -167,8 +229,19 @@ public enum EntryWatchingLive {
         {  }
     }
 
+    nonisolated static func entryWatchingCanonicalWatchPaths(from urls: [URL]) -> [String] {
+        Array(
+            Set(
+                urls
+                    .map(\.standardizedFileURL.path)
+                    .filter { !$0.isEmpty && $0.hasPrefix("/") },
+            ),
+        )
+        .sorted()
+    }
+
     nonisolated private static func makeFSEventsCallback() -> FSEventStreamCallback {
-        { _, info, _, eventPaths, _, _ in
+        { _, info, eventCount, eventPaths, eventFlags, _ in
             guard let info else { return }
 
             let box = Unmanaged<FSEventsContinuationBox>
@@ -178,7 +251,14 @@ public enum EntryWatchingLive {
             guard let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] else {
                 return
             }
-            box.continuation.yield(paths)
+
+            let changes = paths.enumerated().map { index, path in
+                EntryFileSystemChange(
+                    path: path,
+                    flags: index < eventCount ? eventFlags[index] : 0,
+                )
+            }
+            box.continuation.yield(changes)
         }
     }
 
@@ -198,7 +278,7 @@ public enum EntryWatchingLive {
     }
 
     nonisolated private static func createStream(
-        url: URL,
+        paths: [String],
         callback: FSEventStreamCallback,
         context: inout FSEventStreamContext,
     ) -> FSEventStreamRef? {
@@ -206,7 +286,7 @@ public enum EntryWatchingLive {
             nil,
             callback,
             &context,
-            [url.path] as CFArray,
+            paths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             0.3,
             UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes),
@@ -217,5 +297,13 @@ public enum EntryWatchingLive {
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
+    }
+}
+
+private extension FSEventStreamEventFlags {
+    nonisolated func entryWatchingContainsAnyFlag(_ flags: [Int]) -> Bool {
+        flags.contains { flag in
+            self & FSEventStreamEventFlags(flag) != 0
+        }
     }
 }
