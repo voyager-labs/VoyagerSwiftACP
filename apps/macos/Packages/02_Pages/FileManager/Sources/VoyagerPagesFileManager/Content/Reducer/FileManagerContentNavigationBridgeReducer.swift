@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -16,6 +17,8 @@ struct FileManagerContentNavigationBridgeReducer {
         static let systemNotifications = "FileManagerContent.systemNotifications"
     }
 
+    @Dependency(\.collectionStalenessClient)
+    private var collectionStalenessClient
     @Dependency(\.entryWatchingClient)
     private var entryWatchingClient
     @Dependency(\.notificationCenterClient)
@@ -150,7 +153,10 @@ struct FileManagerContentNavigationBridgeReducer {
             )
 
         case .collection:
-            .cancel(id: CancelID.folderWatcher)
+            observeCollectionScopeChangesEffect(
+                context: state.collection.collectionContext,
+                openedURL: state.collection.collectionSession.document?.url,
+            )
         }
     }
 
@@ -164,7 +170,66 @@ struct FileManagerContentNavigationBridgeReducer {
         .cancellable(id: CancelID.folderWatcher, cancelInFlight: true)
     }
 
+    private func observeCollectionScopeChangesEffect(
+        context: CollectionContext?,
+        openedURL: URL?,
+    ) -> Effect<Action> {
+        let urls = collectionScopeWatchURLs(from: context)
+        guard !urls.isEmpty else {
+            return .cancel(id: CancelID.folderWatcher)
+        }
+
+        let collectionStalenessClient = collectionStalenessClient
+        return .run { [entryWatchingClient] send in
+            for await changes in entryWatchingClient.startWatchingDirectoryChanges(urls) {
+                let changedPaths = collectionStaleWorthyChangedPaths(changes, openedURL: openedURL)
+                guard !changedPaths.isEmpty else { continue }
+
+                collectionStalenessClient.invalidateRecords(changedPaths)
+                await send(.externalFileSystemChanged(changedPaths))
+            }
+        }
+        .cancellable(id: CancelID.folderWatcher, cancelInFlight: true)
+    }
+
     private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
         .send(.entryViewLayout(.entryOperations(action)))
+    }
+}
+
+nonisolated func collectionScopeWatchURLs(from context: CollectionContext?) -> [URL] {
+    guard let context else { return [] }
+    return Array(
+        Set(
+            context.scopes
+                .filter { !$0.isEmpty && $0.hasPrefix("/") }
+                .map { URL(fileURLWithPath: $0).standardizedFileURL },
+        ),
+    )
+    .sorted { $0.path < $1.path }
+}
+
+nonisolated func collectionStaleWorthyChangedPaths(
+    _ changes: [EntryFileSystemChange],
+    openedURL: URL?,
+) -> [String] {
+    collectionRelevantChangedPaths(
+        changes
+            .filter(\.isStaleWorthyPathChange)
+            .map(\.path),
+        openedURL: openedURL,
+    )
+}
+
+nonisolated func collectionRelevantChangedPaths(_ paths: [String], openedURL: URL?) -> [String] {
+    guard let openedURL else { return paths }
+    let normalizedOpenedPath = openedURL.standardizedFileURL.path
+    return paths.filter { path in
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if normalizedPath == normalizedOpenedPath {
+            return false
+        }
+        let packagePrefix = normalizedOpenedPath == "/" ? "/" : normalizedOpenedPath + "/"
+        return !normalizedPath.hasPrefix(packagePrefix)
     }
 }
