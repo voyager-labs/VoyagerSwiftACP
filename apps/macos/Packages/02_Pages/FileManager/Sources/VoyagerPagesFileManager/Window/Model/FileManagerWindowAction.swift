@@ -16,6 +16,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case sidebar(FileManagerSidebarFeature.Action)
     case inspector(FileManagerInspectorFeature.Action)
     case navigation(ContentPageNavigationFeature.Action)
+    case contentTabs(ContentTabAction)
     case applyAppPreferences(AppPreferencesState)
     case aiConnectionsFileUpdated(AIConnectionsFile)
 

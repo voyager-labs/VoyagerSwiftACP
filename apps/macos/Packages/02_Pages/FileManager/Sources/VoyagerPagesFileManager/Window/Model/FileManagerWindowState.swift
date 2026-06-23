@@ -8,6 +8,7 @@ public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State = .init()
     public var sidebar: FileManagerSidebarFeature.State = .init()
     public var inspector: FileManagerInspectorFeature.State = .init()
+    public var contentTabs: ContentTabState = .withHomeTab()
 
     public static func makeInitial(path: String?) -> Self {
         var state = Self()
@@ -17,6 +18,24 @@ public struct FileManagerWindowState: Equatable {
         }
 
         return state
+    }
+}
+
+public extension ContentTabState {
+    static func withHomeTab() -> ContentTabState {
+        let id = ContentTabID()
+        return ContentTabState(
+            tabs: [ContentTabItem(
+                id: id,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: id,
+            recentlyClosed: nil,
+        )
     }
 }
 
