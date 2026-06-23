@@ -53,6 +53,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case selectAll
         case copyAbsolutePaths
         case copyURLs
+        case openNewContentTab
     }
 
     @CasePathable

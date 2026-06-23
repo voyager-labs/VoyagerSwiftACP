@@ -65,6 +65,9 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func handleRequestedCommand(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
         switch command {
+        case .openNewContentTab:
+            .send(.contentTabs(.open(.homeDefault)))
+
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
