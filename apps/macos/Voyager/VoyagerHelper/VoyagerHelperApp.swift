@@ -7,8 +7,6 @@ import VoyagerShared
 @main
 class VoyagerHelperApp {
     private static var helperFolderAccessListener: HelperFolderAccessListener?
-    private static var helperExternalFileChangeBridge: HelperExternalFileChangeBridge?
-    private static var helperExternalFileSystemWatcher: HelperExternalFileSystemWatcher?
     private static var terminationSignalSource: DispatchSourceSignal?
 
     @MainActor
@@ -20,32 +18,20 @@ class VoyagerHelperApp {
             appVersion: helperAppVersion(),
             userId: nil,
             component: "helper",
+            enableAppHangTracking: false,
         )
         let stateBroadcaster = HelperStateBroadcaster()
         let helperFolderAccessListener = HelperFolderAccessListener()
-        let helperExternalFileChangeBridge = HelperExternalFileChangeBridge()
-        let helperExternalFileSystemWatcher = HelperExternalFileSystemWatcher { paths in
-            await helperExternalFileChangeBridge.publishChangedPaths(paths)
-        }
-
         logger.info(
             "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"))",
         )
         VoyagerHelperApp.helperFolderAccessListener = helperFolderAccessListener
-        VoyagerHelperApp.helperExternalFileChangeBridge = helperExternalFileChangeBridge
-        VoyagerHelperApp.helperExternalFileSystemWatcher = helperExternalFileSystemWatcher
 
         // 마이그레이션 등 DB 초기화가 오래 걸려도 메인 앱 타임아웃 전에 상태를 한 번 보내서 재시작되지 않도록 한다.
         stateBroadcaster.startObservingRequests()
         stateBroadcaster.postCurrentState()
         helperFolderAccessListener.startObservingRequests()
-        helperExternalFileChangeBridge.startObservingReplayRequests()
-        helperExternalFileSystemWatcher.start()
-        installTerminationSignalHandler(
-            bridge: helperExternalFileChangeBridge,
-            watcher: helperExternalFileSystemWatcher,
-            logger: logger,
-        )
+        installTerminationSignalHandler(logger: logger)
 
         Task {
             await runStartupTask(
@@ -55,19 +41,13 @@ class VoyagerHelperApp {
         RunLoop.current.run()
     }
 
-    private static func installTerminationSignalHandler(
-        bridge: HelperExternalFileChangeBridge,
-        watcher: HelperExternalFileSystemWatcher,
-        logger: Logger,
-    ) {
+    private static func installTerminationSignalHandler(logger: Logger) {
         guard terminationSignalSource == nil else { return }
         signal(SIGTERM, SIG_IGN)
         let signalSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         signalSource.setEventHandler {
             Task { @MainActor in
-                logger.info("Received SIGTERM; stopping watcher and flushing pending file changes before exit")
-                watcher.stop()
-                await bridge.flushPendingBeforeShutdown()
+                logger.info("Received SIGTERM; exiting helper")
                 Darwin.exit(0)
             }
         }
