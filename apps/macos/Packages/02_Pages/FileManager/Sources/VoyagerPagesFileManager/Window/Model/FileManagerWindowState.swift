@@ -8,6 +8,7 @@ public struct FileManagerWindowState: Equatable {
     public var content: FileManagerContentFeature.State = .init()
     public var sidebar: FileManagerSidebarFeature.State = .init()
     public var inspector: FileManagerInspectorFeature.State = .init()
+    public var contentTabs: ContentTabState = .withHomeTab()
 
     public static func makeInitial(path: String?) -> Self {
         var state = Self()
