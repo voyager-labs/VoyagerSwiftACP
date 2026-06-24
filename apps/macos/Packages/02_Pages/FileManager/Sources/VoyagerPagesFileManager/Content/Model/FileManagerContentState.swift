@@ -13,6 +13,8 @@ public struct FileManagerContentState: Equatable {
     public var composer: ComposerFeature.State = .init()
     public var collection: CollectionFeature.State = .init()
 
+    var homeDirectoryItemCounts: [FileManagerHomeDirectory: Int] = [:]
+
     /// 컴포저 관련
     var resetComposerOnNextDirectoryNavigation: Bool = false
     var suppressAutomaticRefreshFeedback: Bool = false
