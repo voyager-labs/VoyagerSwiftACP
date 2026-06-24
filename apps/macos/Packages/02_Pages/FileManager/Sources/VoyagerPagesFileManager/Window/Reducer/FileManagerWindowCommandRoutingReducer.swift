@@ -25,40 +25,46 @@ struct FileManagerWindowCommandRoutingReducer {
         Reduce { state, action in
             switch action {
             case let .request(command):
-                handleRequestedCommand(command, state: &state)
+                return handleRequestedCommand(command, state: &state)
 
             case let .content(.delegate(.openPathInNewWindow(path))):
-                .send(.delegate(.openPathInNewWindow(path)))
+                return .send(.delegate(.openPathInNewWindow(path)))
 
             case let .content(.delegate(.openPathInNewTab(path))):
-                .send(.delegate(.openPathInNewTab(path)))
+                return .send(.delegate(.openPathInNewTab(path)))
 
             case let .content(.delegate(.currentContextChanged(snapshot))):
-                .send(.inspector(.aiChat(.currentContextChanged(snapshot))))
+                return .send(.inspector(.aiChat(.currentContextChanged(snapshot))))
+
+            case let .content(.delegate(.homePageAnchorSelected(anchor))):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
+                else { return .none }
+                return .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
 
             case .content(.delegate(.openContextualAiChat)):
-                .send(.request(.openContextualAiChat))
+                return .send(.request(.openContextualAiChat))
 
             case .inspector(.closeChat):
-                .cancel(id: CancelID.contextualAiChatOpen)
+                return .cancel(id: CancelID.contextualAiChatOpen)
 
             case .inspector(.delegate(.openAISettings)):
-                .send(.delegate(.openAISettings))
+                return .send(.delegate(.openAISettings))
 
             case .inspector(.delegate(.requestAttachmentPicker)):
-                .send(.delegate(.requestAttachmentPicker))
+                return .send(.delegate(.requestAttachmentPicker))
 
             case .inspector(.delegate(.clearCurrentContextSelection)):
-                .send(.content(.entryViewLayout(.internal(.applyClearSelection))))
+                return .send(.content(.entryViewLayout(.internal(.applyClearSelection))))
 
             case let .aiConnectionsFileUpdated(file):
-                .merge(
+                return .merge(
                     forwardProviderConnectionsToOpenAiChat(file: file, state: state),
                     warmUpAIModelCatalogEffect(),
                 )
 
             default:
-                .none
+                return .none
             }
         }
     }

@@ -46,6 +46,8 @@ public struct FileManagerContentFeature {
 
         FileManagerContentSyncReducer()
 
+        FileManagerHomeSelectionReducer()
+
         Reduce { state, action in
             if let effect = handleCollectionOwnerAction(action, state: &state) {
                 return effect
