@@ -64,4 +64,23 @@ public extension ContentTabState {
             recentlyClosed: nil,
         )
     }
+
+    static func bootstrapping(
+        restoredTabs: IdentifiedArrayOf<ContentTabItem> = [],
+        activeTabID: ContentTabID? = nil,
+    ) -> ContentTabState {
+        guard let first = restoredTabs.first else { return .withHomeTab() }
+
+        let active: ContentTabID = if let activeTabID, restoredTabs[id: activeTabID] != nil {
+            activeTabID
+        } else {
+            first.id
+        }
+
+        return ContentTabState(
+            tabs: restoredTabs,
+            activeTabID: active,
+            recentlyClosed: nil,
+        )
+    }
 }
