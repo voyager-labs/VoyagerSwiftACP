@@ -8,28 +8,33 @@ struct FileManagerContentPaneView: View {
     let store: StoreOf<FileManagerContentFeature>
     let chromeProps: FileManagerContentChromeProps
     let overlayProps: FileManagerContentOverlayProps
+    let activePageAnchor: ContentTabPageAnchor
     let onNavigationAction: (ContentPageNavigationAction.View) -> Void
     let onNavigate: (String) -> Void
 
     var body: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
-                ToolbarView(
-                    store: store,
-                    chromeProps: chromeProps,
-                    onNavigationAction: onNavigationAction,
-                )
-                ContentPageView(
-                    store: store,
-                )
-                Rectangle()
-                    .fill(Color.primary.opacity(0.12))
-                    .frame(height: 1)
-                ContentPaneBreadcrumbBarView(
-                    store: store,
-                    chromeProps: chromeProps,
-                    onNavigate: onNavigate,
-                )
+                if activePageAnchor == .homeDefault {
+                    FileManagerHomePageView(store: store)
+                } else {
+                    ToolbarView(
+                        store: store,
+                        chromeProps: chromeProps,
+                        onNavigationAction: onNavigationAction,
+                    )
+                    ContentPageView(
+                        store: store,
+                    )
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.12))
+                        .frame(height: 1)
+                    ContentPaneBreadcrumbBarView(
+                        store: store,
+                        chromeProps: chromeProps,
+                        onNavigate: onNavigate,
+                    )
+                }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: VoyagerDS.Radius.contentPane, style: .continuous)
@@ -83,6 +88,7 @@ struct FileManagerContentChromeProps: Equatable {
     let pathDisplayNames: [String: String]
     let specialDirectoryIconNames: [String: String]
     let isContextualAiChatPresented: Bool
+    let activePageAnchor: ContentTabPageAnchor
 }
 
 struct FileManagerContentOverlayProps: Equatable {
