@@ -79,20 +79,7 @@ extension ContentTabFeature {
         state.tabs.remove(id: id)
 
         if wasActive {
-            if state.tabs.isEmpty {
-                let homeTab = ContentTabItem(
-                    id: ContentTabID(),
-                    page: .home,
-                    anchor: .homeDefault,
-                    isPinned: false,
-                    title: nil,
-                    iconName: nil,
-                )
-                state.tabs.append(homeTab)
-                state.activeTabID = homeTab.id
-            } else {
-                state.activeTabID = state.tabs.last?.id
-            }
+            state.activeTabID = state.tabs.last?.id
         }
 
         return .none
@@ -100,6 +87,7 @@ extension ContentTabFeature {
 
     private func restore(state: inout ContentTabState) -> Effect<ContentTabAction> {
         guard let snapshot = state.recentlyClosed else { return .none }
+        guard state.tabs.count < ContentTabConstants.maxTabs else { return .none }
 
         let item = ContentTabItem(
             id: ContentTabID(),

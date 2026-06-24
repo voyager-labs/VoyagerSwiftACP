@@ -48,12 +48,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     // MARK: - CTM-001-close_content_tab
 
-    /// CTM-001-close_content_tab: 일반 close는 restore snapshot을 남기고 마지막 탭 close는 Home fallback을 유지함
-    /// 기능스펙의 surface close 정책과 window당 active tab invariant를 함께 검증한다.
-    /// - 검증 내용: unpinned close snapshot 저장, active fallback, 마지막 active close의 Home fallback 생성
+    /// CTM-001-close_content_tab: 일반 close는 restore snapshot을 남기고 마지막 탭 close는 Window handoff 상태로 비워둠
+    /// 기능스펙의 surface close 정책과 window lifecycle handoff 경계를 함께 검증한다.
+    /// - 검증 내용: unpinned close snapshot 저장, active fallback, 마지막 active close의 빈 tab list 전이
     /// - 사전 조건: Home+Directory 두 탭 상태와 Directory 단일 active 상태
-    /// - 기대 결과: 닫힌 탭은 snapshot으로 보존되고 active tab은 항상 존재함
-    func testCloseContentTab_savesRestoreSnapshotAndKeepsActiveTabInvariant() throws {
+    /// - 기대 결과: 닫힌 탭은 snapshot으로 보존되고 마지막 탭 close는 replacement Home을 만들지 않음
+    func testCloseContentTab_savesRestoreSnapshotAndLeavesLastCloseForWindowHandoff() throws {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
         let directoryAnchor = ContentTabPageAnchor.directory(path: "/test1")
@@ -109,12 +109,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         _ = reducer.reduce(into: &lastTabState, action: .close(lastID))
 
-        let fallbackTab = try XCTUnwrap(lastTabState.tabs.first)
-        XCTAssertEqual(lastTabState.tabs.count, 1)
-        XCTAssertNotEqual(fallbackTab.id, lastID)
-        XCTAssertEqual(lastTabState.activeTabID, fallbackTab.id)
-        XCTAssertEqual(fallbackTab.page, .home)
-        XCTAssertEqual(fallbackTab.anchor, .homeDefault)
+        XCTAssertTrue(lastTabState.tabs.isEmpty)
+        XCTAssertNil(lastTabState.activeTabID)
         XCTAssertEqual(lastTabState.recentlyClosed?.page, .directory)
         XCTAssertEqual(lastTabState.recentlyClosed?.anchor, directoryAnchor)
     }
@@ -204,7 +200,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     /// CTM-001-handle_content_tab_invariants: invalid id와 max tab limit은 상태 invariant를 깨지 않는 no-op임
     /// 기능스펙의 invalid tab id 보존 요구와 Phase 1 max tab guardrail을 검증한다.
-    /// - 검증 내용: unknown id actions no-op, maxTabs 도달 후 open no-op
+    /// - 검증 내용: unknown id actions no-op, maxTabs 도달 후 open/restore no-op
     /// - 사전 조건: active Home tab 하나, 또는 maxTabs만큼 채워진 tab list
     /// - 기대 결과: activeTabID와 tabs list가 기존 invariant를 유지함
     func testHandleContentTabInvariants_invalidIDAndMaxLimitAreNoOps() async {
@@ -256,6 +252,24 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(maxLimitStore.state.tabs.count, ContentTabConstants.maxTabs)
         XCTAssertEqual(maxLimitStore.state.activeTabID, firstID)
         await maxLimitStore.finish()
+
+        let restoreSnapshot = ClosedContentTabSnapshot(
+            page: .directory,
+            anchor: .directory(path: "/restore"),
+            wasPinned: false,
+            closedAt: Date(),
+        )
+        let restoreMaxLimitStore = TestStore(
+            initialState: ContentTabState(tabs: tabs, activeTabID: firstID, recentlyClosed: restoreSnapshot),
+        ) {
+            ContentTabFeature()
+        }
+
+        await restoreMaxLimitStore.send(.restore)
+        XCTAssertEqual(restoreMaxLimitStore.state.tabs.count, ContentTabConstants.maxTabs)
+        XCTAssertEqual(restoreMaxLimitStore.state.activeTabID, firstID)
+        XCTAssertEqual(restoreMaxLimitStore.state.recentlyClosed, restoreSnapshot)
+        await restoreMaxLimitStore.finish()
     }
 
     // MARK: - CTM-001-content_tab_scope_integrity
