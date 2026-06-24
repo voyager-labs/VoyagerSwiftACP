@@ -21,24 +21,6 @@ public struct FileManagerWindowState: Equatable {
     }
 }
 
-public extension ContentTabState {
-    static func withHomeTab() -> ContentTabState {
-        let id = ContentTabID()
-        return ContentTabState(
-            tabs: [ContentTabItem(
-                id: id,
-                page: .home,
-                anchor: .homeDefault,
-                isPinned: false,
-                title: "Home",
-                iconName: "house",
-            )],
-            activeTabID: id,
-            recentlyClosed: nil,
-        )
-    }
-}
-
 public extension FileManagerWindowState {
     func appPreferencesPreservingSidebarState(from preferences: AppPreferencesState) -> AppPreferencesState {
         var result = preferences

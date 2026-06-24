@@ -47,3 +47,21 @@ public struct ContentTabState: Equatable {
     public var activeTabID: ContentTabID?
     public var recentlyClosed: ClosedContentTabSnapshot?
 }
+
+public extension ContentTabState {
+    static func withHomeTab() -> ContentTabState {
+        let id = ContentTabID()
+        return ContentTabState(
+            tabs: [ContentTabItem(
+                id: id,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: id,
+            recentlyClosed: nil,
+        )
+    }
+}
