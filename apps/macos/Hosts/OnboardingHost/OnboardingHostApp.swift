@@ -119,14 +119,29 @@ private enum SmokeMode {
     }
 }
 
-private enum OnboardingHostAuthMode: String {
+private enum OnboardingHostAuthMode: String, CaseIterable {
     case mock
     case live
 
-    static var current: OnboardingHostAuthMode {
-        let rawValue = ProcessInfo.processInfo.environment["ONBOARDING_HOST_AUTH_MODE"]?.lowercased()
-        return rawValue.flatMap(OnboardingHostAuthMode.init(rawValue:)) ?? .live
+    var title: String {
+        switch self {
+        case .mock: "Mock Account"
+        case .live: "Live Account"
+        }
     }
+
+    var summary: String {
+        switch self {
+        case .mock: "Hardcoded active access, no network calls."
+        case .live: "Real Gateway + Web auth flow."
+        }
+    }
+}
+
+private struct OnboardingHostAuthClients {
+    let accountSessionClient: AccountSessionClient
+    let authNetworkClient: AuthNetworkClient
+    let signInHandoffClient: SignInHandoffClient
 }
 
 @main
@@ -170,13 +185,14 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     private let debugStore = OnboardingHostDebugStore(initialScenario: .allGranted)
     private var debugPanel: NSPanel?
 
-    private lazy var onboardingWindowClient = makeOnboardingWindowClient()
+    private var onboardingWindowClient: OnboardingWindowClient!
 
     func applicationDidFinishLaunching(_: Notification) {
-        debugStore.onScenarioChanged = { [weak self] in
+        debugStore.onSettingsChanged = { [weak self] in
             self?.reloadOnboardingWindow()
         }
         resetOnboardingProgress()
+        onboardingWindowClient = makeOnboardingWindowClient()
         _ = onboardingWindowClient.showIfNeeded()
         showDebugPanel()
     }
@@ -190,6 +206,11 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // 온보딩 창이 켜져 있으면 온보딩 흐름(AccountAccessFeature)으로 라우팅,
+        // 아니면 unlock surface로 폴백 (메인 Voyager.app AppDelegate와 동일 패턴)
+        if VoyagerPagesOnboarding.routeAuthCallbackToOnboardingIfPresent(url) {
+            return
+        }
         VoyagerPagesOnboarding.routeAuthCallbackToUnlockSurface(url)
     }
 
@@ -212,13 +233,10 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func makeAuthClients()
-        -> (accountSessionClient: AccountSessionClient, authNetworkClient: AuthNetworkClient,
-            signInHandoffClient: SignInHandoffClient)
-    {
-        switch OnboardingHostAuthMode.current {
+    private func makeAuthClients() -> OnboardingHostAuthClients {
+        switch debugStore.currentAuthMode {
         case .mock:
-            (
+            OnboardingHostAuthClients(
                 accountSessionClient: AccountSessionClient(
                     read: { self.sessionHolder.session },
                     persist: { _ in },
@@ -226,30 +244,22 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 ),
                 authNetworkClient: AuthNetworkClient(
                     exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                    fetchAccessStatus: { AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    fetchAccessStatus: { AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                     },
                     refreshToken: { throw AccessError.notConfigured },
                 ),
                 signInHandoffClient: makeMockSignInHandoffClient(),
             )
         case .live:
-            (
-                accountSessionClient: AccountSessionClient(
-                    read: { self.sessionHolder.session },
-                    persist: { _ in },
-                    delete: { self.sessionHolder.setSession(nil) },
-                ),
-                authNetworkClient: AuthNetworkClient(
-                    exchangeHandoff: { ticket, state, context in
-                        let session = try await AuthNetworkClient.liveValue.exchangeHandoff(ticket, state, context)
-                        self.sessionHolder.setSession(session)
-                        return session
-                    },
-                    fetchAccessStatus: {
-                        try await AuthNetworkClient.liveValue.fetchAccessStatus()
-                    },
-                    refreshToken: { throw AccessError.notConfigured },
-                ),
+            OnboardingHostAuthClients(
+                accountSessionClient: .liveValue,
+                authNetworkClient: .liveValue,
                 signInHandoffClient: .liveValue,
             )
         }
@@ -283,7 +293,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         panel.styleMask = [.titled, .closable, .utilityWindow]
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
-        panel.setContentSize(NSSize(width: 360, height: 360))
+        panel.setContentSize(NSSize(width: 360, height: 560))
         panel.center()
         panel.makeKeyAndOrderFront(nil)
         debugPanel = panel
@@ -303,6 +313,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             await onboardingWindowClient.closeWindow()
             resetOnboardingProgress()
+            onboardingWindowClient = makeOnboardingWindowClient()
             _ = onboardingWindowClient.showIfNeeded()
         }
     }
@@ -310,21 +321,34 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
 
 private final class OnboardingHostDebugStore: ObservableObject, @unchecked Sendable {
     @Published private(set) var scenario: OnboardingPermissionDebugScenario
+    @Published private(set) var authMode: OnboardingHostAuthMode
 
-    var onScenarioChanged: (@MainActor () -> Void)?
+    var onSettingsChanged: (@MainActor () -> Void)?
 
     private let lock = NSLock()
     nonisolated(unsafe) private var lockedScenario: OnboardingPermissionDebugScenario
+    nonisolated(unsafe) private var lockedAuthMode: OnboardingHostAuthMode
 
-    init(initialScenario: OnboardingPermissionDebugScenario) {
+    init(
+        initialScenario: OnboardingPermissionDebugScenario,
+        initialAuthMode: OnboardingHostAuthMode = .live,
+    ) {
         scenario = initialScenario
+        authMode = initialAuthMode
         lockedScenario = initialScenario
+        lockedAuthMode = initialAuthMode
     }
 
     nonisolated var currentScenario: OnboardingPermissionDebugScenario {
         lock.lock()
         defer { lock.unlock() }
         return lockedScenario
+    }
+
+    nonisolated var currentAuthMode: OnboardingHostAuthMode {
+        lock.lock()
+        defer { lock.unlock() }
+        return lockedAuthMode
     }
 
     @MainActor
@@ -334,7 +358,17 @@ private final class OnboardingHostDebugStore: ObservableObject, @unchecked Senda
         lock.unlock()
 
         self.scenario = scenario
-        onScenarioChanged?()
+        onSettingsChanged?()
+    }
+
+    @MainActor
+    func setAuthMode(_ mode: OnboardingHostAuthMode) {
+        lock.lock()
+        lockedAuthMode = mode
+        lock.unlock()
+
+        authMode = mode
+        onSettingsChanged?()
     }
 }
 
@@ -359,6 +393,7 @@ private struct OnboardingHostDebugPanel: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Image(systemName: store.scenario == scenario ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(store.scenario == scenario ? .orange : .secondary)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(scenario.title)
                                     .font(.system(.body, weight: .semibold))
@@ -380,7 +415,46 @@ private struct OnboardingHostDebugPanel: View {
                 }
             }
 
-            Text("Changing a scenario reloads the onboarding window and replays the normal reducer path.")
+            Divider()
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Account Auth Mode")
+                    .font(.headline)
+                Text("Live calls the real Gateway/Web. Mock returns hardcoded active access without network.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(OnboardingHostAuthMode.allCases, id: \.self) { mode in
+                    Button {
+                        store.setAuthMode(mode)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: store.authMode == mode ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(store.authMode == mode ? .orange : .secondary)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(mode.title)
+                                    .font(.system(.body, weight: .semibold))
+                                Text(mode.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(store.authMode == mode ? Color.orange.opacity(0.16) : Color.secondary.opacity(0.08)),
+                    )
+                }
+            }
+
+            Text("Changing a scenario or auth mode reloads the onboarding window and replays the normal reducer path.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
