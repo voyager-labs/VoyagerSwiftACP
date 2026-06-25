@@ -18,11 +18,38 @@ private enum SmokeMode {
         ProcessInfo.processInfo.environment["SETTINGS_HOST_RESET_PROGRESS"] != "0"
     }
 
+    /// `SETTINGS_HOST_SCENARIO` 환경변수를 `SettingsHostPreset`으로 파싱.
+    /// nil 또는 알 수 없는 값은 `.defaultSandbox`로 폴백하며, 폴백 시 stderr에 deterministic 경고 출력.
+    static func resolvePreset() -> SettingsHostPreset {
+        guard let rawValue = ProcessInfo.processInfo.environment["SETTINGS_HOST_SCENARIO"] else {
+            return .defaultSandbox
+        }
+        guard let preset = SettingsHostPreset(rawValue: rawValue) else {
+            FileHandle.standardError.write(
+                Data(
+                    "⚠️ Unknown SETTINGS_HOST_SCENARIO='\(rawValue)', falling back to defaultSandbox\n"
+                        .utf8,
+                ),
+            )
+            return .defaultSandbox
+        }
+        return preset
+    }
+
     /// Run smoke checks and exit. Validates contract and exits nonzero on mismatch.
     static func run() -> Never {
         let resetMode = resetProgress
+        let preset = resolvePreset()
+        let scenario = preset.scenario
+
         print("smokeMode=true")
         print("resetMode=\(resetMode)")
+
+        // 시나리오 컨트랙트 키 — T1 `preset.scenario` computed properties에서 파생 (하드코딩 금지).
+        print("scenario=\(preset.id)")
+        print("accountLoaded=\(scenario.accountLoaded)")
+        print("sessionLapse=\(scenario.sessionLapse)")
+        print("debugMenuWired=\(scenario.debugMenuWired)")
 
         let feature = SettingsFeature()
         var state = SettingsState()
