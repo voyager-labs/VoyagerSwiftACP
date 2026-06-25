@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import Foundation
 import SwiftUI
@@ -150,6 +151,61 @@ struct SettingsHostApp: App {
         WindowGroup("Settings") {
             SettingsHostRootView(store: store)
         }
+        .commands {
+            // 호스트 전용 debug surface — OnboardingHost 패리티 스캐폴드.
+            // 선택은 호스트-private store를 갱신하며, T5가 sandbox 연결을 완성한다.
+            CommandMenu("Settings Debug") {
+                Button("Show Scenario Panel") {
+                    appDelegate.showDebugPanel()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Default Sandbox") {
+                    appDelegate.selectPreset(.defaultSandbox)
+                }
+
+                Menu("Account/Auth") {
+                    ForEach(SettingsHostDebugMenu.accountAuth, id: \.self) { preset in
+                        Button(preset.title) {
+                            appDelegate.selectPreset(preset)
+                        }
+                    }
+                }
+
+                Menu("AI Connection") {
+                    ForEach(SettingsHostDebugMenu.aiConnection, id: \.self) { preset in
+                        Button(preset.title) {
+                            appDelegate.selectPreset(preset)
+                        }
+                    }
+                }
+
+                Menu("Permissions") {
+                    ForEach(SettingsHostDebugMenu.permissions, id: \.self) { preset in
+                        Button(preset.title) {
+                            appDelegate.selectPreset(preset)
+                        }
+                    }
+                }
+
+                // Persistence 축은 독립 프리셋이 없음 (다른 프리셋 내부에 묶여 있음).
+                Menu("Failure/Latency") {
+                    ForEach(SettingsHostDebugMenu.failureLatency, id: \.self) { preset in
+                        Button(preset.title) {
+                            appDelegate.selectPreset(preset)
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button("Reset to Default Sandbox") {
+                    appDelegate.selectPreset(.defaultSandbox)
+                }
+            }
+        }
     }
 
     private static func suiteBackedUserDefaultsClient(suiteName: String) -> UserDefaultsClient {
@@ -184,9 +240,164 @@ struct SettingsHostApp: App {
 
 @MainActor
 private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_: Notification) {}
+    private let debugStore = SettingsHostDebugStore(initialPreset: .defaultSandbox)
+    private var debugPanel: NSPanel?
+
+    func applicationDidFinishLaunching(_: Notification) {
+        // T5가 onPresetChanged를 sandbox 재구성으로 연결한다.
+        debugStore.onPresetChanged = { [weak self] _ in
+            self?.refreshDebugPanel()
+        }
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         true
+    }
+
+    func showDebugPanel() {
+        if let debugPanel {
+            debugPanel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let rootView = SettingsHostDebugPanel(store: debugStore)
+        let hostingController = NSHostingController(rootView: rootView)
+        let panel = NSPanel(contentViewController: hostingController)
+        panel.title = "Settings Debug"
+        panel.styleMask = [.titled, .closable, .utilityWindow]
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.setContentSize(NSSize(width: 360, height: 420))
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+        debugPanel = panel
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func selectPreset(_ preset: SettingsHostPreset) {
+        debugStore.select(preset)
+        showDebugPanel()
+    }
+
+    private func refreshDebugPanel() {
+        // 패널 콘텐츠는 @ObservedObject 바인딩으로 자동 갱신됨 — 필요시에만 보정.
+        guard debugPanel != nil else { return }
+        debugPanel?.contentViewController?.view.needsLayout = true
+    }
+}
+
+// MARK: - Debug menu grouping (host-only)
+
+private enum SettingsHostDebugMenu {
+    static let accountAuth: [SettingsHostPreset] = [
+        .signedOut,
+        .signedIn,
+        .authExpired,
+        .accountLoading,
+        .accountError,
+    ]
+
+    static let aiConnection: [SettingsHostPreset] = [
+        .aiNotConfigured,
+        .aiConnected,
+        .aiConnectionError,
+    ]
+
+    static let permissions: [SettingsHostPreset] = [
+        .permissionsAllGranted,
+        .permissionsDenied,
+    ]
+
+    static let failureLatency: [SettingsHostPreset] = [
+        .errorStates,
+    ]
+}
+
+// MARK: - Debug store (host-only, OnboardingHost-parity)
+
+private final class SettingsHostDebugStore: ObservableObject, @unchecked Sendable {
+    @Published private(set) var preset: SettingsHostPreset
+
+    var onPresetChanged: (@MainActor (SettingsHostPreset) -> Void)?
+
+    private let lock = NSLock()
+    nonisolated(unsafe) private var lockedPreset: SettingsHostPreset
+
+    init(initialPreset: SettingsHostPreset) {
+        preset = initialPreset
+        lockedPreset = initialPreset
+    }
+
+    nonisolated var currentPreset: SettingsHostPreset {
+        lock.lock()
+        defer { lock.unlock() }
+        return lockedPreset
+    }
+
+    @MainActor
+    func select(_ preset: SettingsHostPreset) {
+        lock.lock()
+        lockedPreset = preset
+        lock.unlock()
+
+        self.preset = preset
+        onPresetChanged?(preset)
+    }
+}
+
+// MARK: - Debug panel (host-only, OnboardingHost-parity)
+
+private struct SettingsHostDebugPanel: View {
+    @ObservedObject var store: SettingsHostDebugStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Scenario Presets")
+                    .font(.headline)
+                Text("SettingsHost는 샌드박스된 의존성으로 SettingsView를 마운트한다. 프리셋 선택은 활성 시나리오를 갱신한다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(SettingsHostPreset.allCases, id: \.self) { preset in
+                        Button {
+                            store.select(preset)
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Image(systemName: store.preset == preset ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(store.preset == preset ? .blue : .secondary)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(preset.title)
+                                        .font(.system(.body, weight: .semibold))
+                                    Text(preset.summary)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(store.preset == preset ? Color.blue.opacity(0.16) : Color.secondary
+                                    .opacity(0.08)),
+                        )
+                    }
+                }
+            }
+
+            Text("T5가 프리셋 선택 → sandbox 재구성 런타임 연결을 완성한다.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(18)
+        .frame(width: 360)
     }
 }
