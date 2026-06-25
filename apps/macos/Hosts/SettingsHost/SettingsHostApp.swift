@@ -2,7 +2,9 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import VoyagerEntitiesAppPreferences
 import VoyagerPagesSettings
+import VoyagerShared
 
 // MARK: - Deterministic smoke mode (env-toggle, host-only)
 
@@ -92,16 +94,72 @@ private enum SmokeMode {
 
 @main
 struct SettingsHostApp: App {
+    @NSApplicationDelegateAdaptor(SettingsHostAppDelegate.self)
+    private var appDelegate
+
+    private let store: StoreOf<SettingsHostFeature>
+
     init() {
         // Smoke gate runs BEFORE SwiftUI body is evaluated
         if SmokeMode.isEnabled {
             SmokeMode.run()
         }
+
+        let hostUserDefaultsClient = Self.suiteBackedUserDefaultsClient(
+            suiteName: "group.com.voyager.app.settingshost",
+        )
+
+        store = Store(initialState: SettingsHostState()) {
+            SettingsHostFeature()
+        } withDependencies: { dependencies in
+            dependencies.userDefaultsClient = hostUserDefaultsClient
+            dependencies.collectionSearchAISettingsClient = .live(userDefaultsClient: hostUserDefaultsClient)
+            dependencies.launchAtLoginClient = .testValue
+            dependencies.appearanceSettingsClient = .liveValue
+        }
     }
 
     var body: some Scene {
-        Settings {
-            EmptyView()
+        WindowGroup("Settings") {
+            SettingsHostRootView(store: store)
         }
+    }
+
+    private static func suiteBackedUserDefaultsClient(suiteName: String) -> UserDefaultsClient {
+        UserDefaultsClient(
+            bool: { key in
+                UserDefaults(suiteName: suiteName)?.bool(forKey: key) ?? false
+            },
+            setBool: { value, key in
+                UserDefaults(suiteName: suiteName)?.set(value, forKey: key)
+            },
+            string: { key in
+                UserDefaults(suiteName: suiteName)?.string(forKey: key)
+            },
+            setString: { value, key in
+                UserDefaults(suiteName: suiteName)?.set(value, forKey: key)
+            },
+            double: { key in
+                UserDefaults(suiteName: suiteName)?.double(forKey: key) ?? 0.0
+            },
+            setDouble: { value, key in
+                UserDefaults(suiteName: suiteName)?.set(value, forKey: key)
+            },
+            object: { key in
+                UserDefaults(suiteName: suiteName)?.object(forKey: key)
+            },
+            setObject: { value, key in
+                UserDefaults(suiteName: suiteName)?.set(value, forKey: key)
+            },
+        )
+    }
+}
+
+@MainActor
+private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_: Notification) {}
+
+    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
+        true
     }
 }

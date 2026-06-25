@@ -1,13 +1,13 @@
 import ComposableArchitecture
 import VoyagerFeaturesAccountAccess
 
-/// SET-008 auth status 표시용 상태 (5 states)
+/// SET-008 auth status 표시용 상태 (4 states)
+/// sign-out은 동기적으로 처리하여 별도 진행 상태 없이 즉시 signed_out으로 전환한다.
 public enum SetAuthState: Equatable, Sendable {
     case signedOut
     case signInInProgress
     case signedIn
     case signInFailed
-    case signOutInProgress
 }
 
 /// SET-008 entitlement status 표시용 상태 (3 states)

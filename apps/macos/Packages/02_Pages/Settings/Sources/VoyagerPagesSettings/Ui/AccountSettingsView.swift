@@ -95,14 +95,6 @@ struct AccountSettingsView: View {
                     store.send(.access(.loginTapped))
                 }
             }
-
-        case .signOutInProgress:
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Signing out…")
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 
