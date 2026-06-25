@@ -2,25 +2,24 @@ import Foundation
 
 public struct AccessStatusSnapshot: Equatable, Sendable, Codable {
     public var status: AccessStatus
-    public var expiresAt: Date?
-    public var entitlements: [AccessEntitlement]
+    public var currentPeriodEnd: Date?
     public var fetchedAt: Date
     public init(
         status: AccessStatus,
-        expiresAt: Date? = nil,
-        entitlements: [AccessEntitlement] = [],
+        currentPeriodEnd: Date? = nil,
         fetchedAt: Date = Date(),
     ) {
         self.status = status
-        self.expiresAt = expiresAt
-        self.entitlements = entitlements
+        self.currentPeriodEnd = currentPeriodEnd
         self.fetchedAt = fetchedAt
     }
 
-    public var isActive: Bool { status.isActive }
+    public var isActive: Bool {
+        status.isActive
+    }
 
     public func isExpired(now: Date = Date()) -> Bool {
-        guard let expiresAt else { return false }
-        return now >= expiresAt
+        guard let currentPeriodEnd else { return false }
+        return now >= currentPeriodEnd
     }
 }

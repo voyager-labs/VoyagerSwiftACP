@@ -20,15 +20,15 @@ final class ACC002EvaluateAccessLevelTests: XCTestCase {
         XCTAssertTrue(state.status?.isActive == true)
     }
 
-    /// ACC-002-evaluate_access_level: signedIn + betaTrialActive → .complete
-    /// signedIn 상태에서 beta_trial_active 권한일 때 access_level이 complete로 평가되는지 검증한다.
-    /// - 검증 내용: hasAccountSession=true, status=.betaTrialActive → stepState==.complete
-    /// - 사전 조건: hasAccountSession==true, status==.betaTrialActive
+    /// ACC-002-evaluate_access_level: signedIn + trialActive → .complete
+    /// signedIn 상태에서 trial_active 권한일 때 access_level이 complete로 평가되는지 검증한다.
+    /// - 검증 내용: hasAccountSession=true, status=.trialActive → stepState==.complete
+    /// - 사전 조건: hasAccountSession==true, status==.trialActive
     /// - 기대 결과: accountAccessStepState==.complete, accountAccessAuthAxis==.signedIn, status.isActive==true
-    func testSignedInWithBetaTrialActiveReturnsComplete() {
+    func testSignedInWithTrialActiveReturnsComplete() {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
-        state.status = .betaTrialActive
+        state.status = .trialActive
 
         XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
         XCTAssertEqual(state.accountAccessStepState, .complete)
@@ -183,13 +183,13 @@ final class ACC002EvaluateAccessLevelTests: XCTestCase {
     }
 
     /// ACC-002-evaluate_access_level: AccessStatus.isActive는 active 상태에서 true를 반환한다.
-    /// active 권한 상태(coreLicenseActive, betaTrialActive, internalTestActive)에서
+    /// active 권한 상태(coreLicenseActive, trialActive, internalTestActive)에서
     /// isActive가 올바르게 true를 반환하는지 검증한다.
     /// - 검증 내용: 각 active status의 isActive 프로퍼티 값 확인
     /// - 사전 조건: status가 active 상태
     /// - 기대 결과: isActive==true
     func testAccessStatusIsActiveReturnsTrueForActiveStatuses() {
-        let activeStatuses: [AccessStatus] = [.coreLicenseActive, .betaTrialActive, .internalTestActive]
+        let activeStatuses: [AccessStatus] = [.coreLicenseActive, .trialActive, .internalTestActive]
 
         for status in activeStatuses {
             XCTAssertTrue(status.isActive, "\(status) should be active")
