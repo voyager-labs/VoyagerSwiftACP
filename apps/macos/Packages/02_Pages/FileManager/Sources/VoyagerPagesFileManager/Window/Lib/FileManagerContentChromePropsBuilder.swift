@@ -11,6 +11,7 @@ import VoyagerShared
 enum FileManagerContentChromePropsBuilder {
     static func makeContentChromeProps(
         from state: FileManagerWindowState,
+        contentTabState: ContentTabState,
         fileManagerClient: FileManagerClient,
     ) -> FileManagerContentChromeProps {
         let computerName = fileManagerClient.displayName("/")
@@ -20,6 +21,7 @@ enum FileManagerContentChromePropsBuilder {
             trashPath: trashPath,
         )
         let specialDirectoryIconNames = makeSpecialDirectoryIconNames(fileManagerClient: fileManagerClient)
+        let activePageAnchor = ContentTabProjection.activePageAnchor(from: contentTabState) ?? .homeDefault
 
         return FileManagerContentChromeProps(
             computerName: computerName,
@@ -33,6 +35,7 @@ enum FileManagerContentChromePropsBuilder {
             specialDirectoryIconNames: specialDirectoryIconNames,
             isContextualAiChatPresented: state.inspector.inspectorVisible
                 && state.inspector.activeMode == .chat,
+            activePageAnchor: activePageAnchor,
         )
     }
 

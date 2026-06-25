@@ -490,12 +490,13 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: 새 tab anchor는 .homeDefault이며 기존 anchor를 복사하지 않음
     func testOpenNewContentTab_commandRouting_doesNotCloneExistingAnchor() async throws {
         var initialState = FileManagerFeature.State()
-        // 기존 Home tab을 Directory tab으로 변경하여 active tab이 Home이 아닌 상태를 만듦
         initialState.contentTabs.tabs[0].anchor = .directory(path: "/test")
         initialState.contentTabs.tabs[0].page = .directory
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // anchor 복제 방지 검증에 집중한다.
         store.exhaustivity = .off
 
         await store.send(.request(.openNewContentTab))
@@ -515,6 +516,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
         }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // tab active 전환 검증에 집중한다.
         store.exhaustivity = .off
 
         let previousActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
@@ -611,5 +614,282 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let allIDs = store.state.contentTabs.tabs.map(\.id)
         let uniqueIDs = Set(allIDs)
         XCTAssertEqual(uniqueIDs.count, allIDs.count, "all tab IDs must be unique")
+    }
+
+    // MARK: - CTM-001-home_selection_page_conversion
+
+    /// CTM-001-home_selection_page_conversion: 고정 Desktop 선택이 active Home tab을 Directory anchor로 변환함
+    /// VOY-438 AC1의 고정 디렉터리 → ContentTabPageAnchor.directory(path:) 변환을 검증한다.
+    /// - 검증 내용: tabs.count 불변, activeTabID 불변, tab.anchor가 Desktop 경로를 포함, tab.page == .directory
+    /// - 사전 조건: FileManagerFeature.State 기본 Home tab 하나, fileManagerClient.urlsForDirectory → live FileManager
+    /// - 기대 결과: Home tab의 anchor가 Desktop 파일시스템 경로로 변경되고 page가 directory로 전환됨
+    func testHomeSelection_fixedDesktop_convertsToDirectoryAnchor() async throws {
+        let desktopPath = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first?.path ?? "/"
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 anchor 변환 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let beforeCount = store.state.contentTabs.tabs.count
+        let beforeActiveID = store.state.contentTabs.activeTabID
+
+        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
+        await store.receive(\.contentTabs)
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, beforeActiveID)
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .directory(path: desktopPath))
+        XCTAssertEqual(tab.page, .directory)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 고정 Documents 선택이 active Home tab을 Directory anchor로 변환함
+    /// VOY-438 AC1의 Documents 고정 디렉터리 → ContentTabPageAnchor.directory(path:) 변환을 검증한다.
+    /// - 검증 내용: tabs.count 불변, tab.anchor가 Documents 경로를 포함, tab.page == .directory
+    /// - 사전 조건: FileManagerFeature.State 기본 Home tab 하나, fileManagerClient.urlsForDirectory → live FileManager
+    /// - 기대 결과: Home tab의 anchor가 Documents 파일시스템 경로로 변경되고 page가 directory로 전환됨
+    func testHomeSelection_fixedDocuments_convertsToDirectoryAnchor() async throws {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // Documents anchor 변환 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.documents)))))
+        await store.receive(\.contentTabs)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .directory(path: documentsPath))
+        XCTAssertEqual(tab.page, .directory)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 디렉터리 피커 성공 시 active tab anchor가 변환됨
+    /// VOY-438 AC2a의 openDirectory 피커 성공 → ContentTabPageAnchor.directory(path:) 변환을 검증한다.
+    /// - 검증 내용: homePickerClient.pickDirectory mock이 .selected("/tmp/test") 반환 후 tab.anchor == .directory(path:
+    /// "/tmp/test"),
+    ///   tab.page == .directory
+    /// - 사전 조건: homePickerClient.pickDirectory → .selected("/tmp/test")
+    /// - 기대 결과: active tab의 anchor가 피커에서 선택한 경로로 변경되고 page가 directory로 전환됨
+    func testHomeSelection_openDirectoryPickerSuccess_convertsAnchor() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homePickerClient.pickDirectory = { .selected("/tmp/test") }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
+        // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
+        await store.receive(\.contentTabs)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .directory(path: "/tmp/test"))
+        XCTAssertEqual(tab.page, .directory)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 디렉터리 피커 취소 시 Home anchor가 유지됨
+    /// VOY-438 AC2b의 openDirectory 피커 취소 → no-op을 검증한다.
+    /// - 검증 내용: homePickerClient.pickDirectory → .cancelled 반환 후 tab.anchor == .homeDefault
+    /// - 사전 조건: homePickerClient.pickDirectory → .cancelled
+    /// - 기대 결과: 피커 취소 시 active tab의 anchor와 page가 변경되지 않고 Home 상태를 유지함
+    func testHomeSelection_openDirectoryPickerCancel_preservesHome() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homePickerClient.pickDirectory = { .cancelled }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // 피커 취소 no-op 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
+        await store.receive(\.content.internal.homeDirectoryPickerFinished)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 디렉터리 피커 실패 시 Home anchor가 유지됨
+    /// VOY-438 AC2b의 openDirectory 피커 실패 → no-op을 검증한다.
+    /// - 검증 내용: homePickerClient.pickDirectory → .failed("error") 반환 후 tab.anchor == .homeDefault
+    /// - 사전 조건: homePickerClient.pickDirectory → .failed("error")
+    /// - 기대 결과: 피커 실패 시 active tab의 anchor와 page가 변경되지 않고 Home 상태를 유지함
+    func testHomeSelection_openDirectoryPickerFailure_preservesHome() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homePickerClient.pickDirectory = { .failed("error") }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // 피커 실패 no-op 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
+        await store.receive(\.content.internal.homeDirectoryPickerFinished)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 컬렉션 피커 성공 시 anchor가 .collectionFile로 변환됨
+    /// VOY-438 AC3a의 openCollection 피커 성공 → ContentTabPageAnchor.collectionFile(url:) 변환을 검증한다.
+    /// - 검증 내용: homePickerClient.pickCollectionFile → .selected(URL) 반환 후 tab.anchor == .collectionFile(url:)
+    /// - 사전 조건: homePickerClient.pickCollectionFile → .selected(URL(fileURLWithPath: "/tmp/test.voycoll"))
+    /// - 기대 결과: active tab의 anchor가 컬렉션 파일 URL로 변경되고 page가 collection으로 전환됨
+    func testHomeSelection_openCollectionPickerSuccess_convertsAnchor() async throws {
+        let collectionURL = URL(fileURLWithPath: "/tmp/test.voycoll")
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homePickerClient.pickCollectionFile = { .selected(collectionURL) }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
+        // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
+        await store.receive(\.contentTabs)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .collectionFile(url: collectionURL))
+        XCTAssertEqual(tab.page, .collection)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 컬렉션 피커 취소 시 Home anchor가 유지됨
+    /// VOY-438 AC3b의 openCollection 피커 취소 → no-op을 검증한다.
+    /// - 검증 내용: homePickerClient.pickCollectionFile → .cancelled 반환 후 tab.anchor == .homeDefault
+    /// - 사전 조건: homePickerClient.pickCollectionFile → .cancelled
+    /// - 기대 결과: 피커 취소 시 active tab의 anchor와 page가 변경되지 않고 Home 상태를 유지함
+    func testHomeSelection_openCollectionPickerCancel_preservesHome() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homePickerClient.pickCollectionFile = { .cancelled }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // 컬렉션 피커 취소 no-op 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
+        await store.receive(\.content.internal.homeCollectionPickerFinished)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: AI Chat 세션 생성 성공 시 anchor가 .aiChat으로 변환됨
+    /// VOY-438 AC4a의 startAiChat 성공 → ContentTabPageAnchor.aiChat(sessionID:) 변환을 검증한다.
+    /// - 검증 내용: homeAiChatClient.createSession → .selected("session-123") 반환 후 tab.anchor == .aiChat(sessionID:
+    /// "session-123"),
+    ///   tab.page == .aiChat
+    /// - 사전 조건: homeAiChatClient.createSession → .selected("session-123")
+    /// - 기대 결과: active tab의 anchor가 AI Chat 세션 ID로 변경되고 page가 aiChat으로 전환됨
+    func testHomeSelection_startAiChatSuccess_convertsAnchor() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homeAiChatClient.createSession = { .selected("session-123") }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
+        // HomeSelectionReducer의 session 생성 effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
+        await store.receive(\.contentTabs)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .aiChat(sessionID: "session-123"))
+        XCTAssertEqual(tab.page, .aiChat)
+    }
+
+    /// CTM-001-home_selection_page_conversion: AI Chat 세션 생성 실패 시 Home anchor가 유지됨
+    /// VOY-438 AC4b의 startAiChat 실패 → no-op을 검증한다.
+    /// - 검증 내용: homeAiChatClient.createSession → .failed("error") 반환 후 tab.anchor == .homeDefault
+    /// - 사전 조건: homeAiChatClient.createSession → .failed("error")
+    /// - 기대 결과: 세션 생성 실패 시 active tab의 anchor와 page가 변경되지 않고 Home 상태를 유지함
+    func testHomeSelection_startAiChatFailure_preservesHome() async throws {
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homeAiChatClient.createSession = { .failed("error") }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // 세션 생성 실패 no-op 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
+        await store.receive(\.content.internal.homeAiChatSessionCreated)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: non-Home active tab에서 Home 선택은 no-op
+    /// 사용자가 Directory tab에서 Home 선택 항목을 보낼 수 없지만(non-Home은 HomePageView 미표시),
+    /// 안전장치로 anchor 변경이 발생하지 않음을 검증한다.
+    /// - 검증 내용: active tab이 Directory("/tmp")인 상태에서 Desktop 선택 후 anchor, page 불변
+    /// - 사전 조건: active tab anchor == .directory(path: "/tmp"), page == .directory
+    /// - 기대 결과: routing guard가 active tab이 .homeDefault가 아님을 감지하여 no-op 처리
+    func testHomeSelection_whenActiveTabIsNotHome_isNoOp() async throws {
+        var state = FileManagerFeature.State()
+        state.contentTabs.tabs[0].anchor = .directory(path: "/tmp")
+        state.contentTabs.tabs[0].page = .directory
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // routing guard no-op 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let beforeCount = store.state.contentTabs.tabs.count
+        let beforeActiveID = store.state.contentTabs.activeTabID
+
+        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, beforeActiveID)
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .directory(path: "/tmp"))
+        XCTAssertEqual(tab.page, .directory)
+    }
+
+    /// CTM-001-home_selection_page_conversion: activeTabID가 nil이면 Home 선택이 no-op임
+    /// VOY-438 AC5의 edge case를 검증한다. activeTabID가 없으면 FileManagerWindowCommandRoutingReducer가
+    /// delegate action을 무시하고 .none을 반환함.
+    /// - 검증 내용: activeTabID == nil인 상태에서 Desktop 선택 후 tabs, anchor 불변
+    /// - 사전 조건: contentTabs.activeTabID == nil, anchor == .homeDefault
+    /// - 기대 결과: state가 전혀 변경되지 않음
+    func testHomeSelection_whenNoActiveTabID_isNoOp() async throws {
+        var state = FileManagerFeature.State()
+        state.contentTabs.activeTabID = nil
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
+        // activeTabID nil no-op 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let beforeCount = store.state.contentTabs.tabs.count
+
+        await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount)
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
     }
 }

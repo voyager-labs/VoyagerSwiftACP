@@ -29,6 +29,8 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case refreshStaleCollection
         case toggleShowHiddenFilesAndReload
         case discardCollectionChanges
+        case homeSelectionTapped(FileManagerHomeSelection)
+        case homeAppeared
     }
 
     @CasePathable
@@ -45,6 +47,10 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case resetComposer
         case resetComposerAfterDirectoryNavigation
         case setAutomaticRefreshFeedbackSuppressed(Bool)
+        case homeDirectoryPickerFinished(FileManagerHomePickerResult<String>)
+        case homeCollectionPickerFinished(FileManagerHomePickerResult<URL>)
+        case homeAiChatSessionCreated(FileManagerHomePickerResult<String>)
+        case homeDirectoryItemCountsLoaded([FileManagerHomeDirectory: Int])
     }
 
     @CasePathable
@@ -59,5 +65,6 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case closeWindow
         case openContextualAiChat
         case currentContextChanged(AiChatCurrentContextSnapshot)
+        case homePageAnchorSelected(ContentTabPageAnchor)
     }
 }
