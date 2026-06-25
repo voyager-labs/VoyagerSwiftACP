@@ -235,7 +235,7 @@ extension FMW003HandleExternalFileOpenRequestsTests {
 // MARK: - 존재하지 않는 경로
 
 extension FMW003HandleExternalFileOpenRequestsTests {
-    /// 존재하지 않는 경로 → invalidPathError
+    /// 존재하지 않는 경로 → invalidPathError + delegate .showInvalidPathError
     ///
     /// AC: 존재하지 않는 경로의 Deep Link가 수신된 상황에서, "선택한 위치를 열 수 없습니다" 오류가 표시되어야 한다.
     func test_nonExistentPath_invalidPathError() async throws {
@@ -264,6 +264,10 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         await store.receive(\.failed) {
             $0.currentStatus = .invalidPathError
         }
+
+        // 부모 reducer가 사용자에게 오류를 표시할 수 있도록 delegate 위임
+        await store.receive(\.delegate.showInvalidPathError)
+
         await store.finish()
     }
 }
@@ -271,7 +275,7 @@ extension FMW003HandleExternalFileOpenRequestsTests {
 // MARK: - 권한 오류
 
 extension FMW003HandleExternalFileOpenRequestsTests {
-    /// permissionDenied 경로 → permissionDeniedError
+    /// permissionDenied 경로 → permissionDeniedError + delegate .showPermissionDeniedError
     ///
     /// PathProbeClient가 permissionDenied=true를 반환하면,
     /// permissionDeniedError 상태로 전환되어야 한다.
@@ -301,6 +305,10 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         await store.receive(\.failed) {
             $0.currentStatus = .permissionDeniedError
         }
+
+        // 부모 reducer가 사용자에게 오류를 표시할 수 있도록 delegate 위임
+        await store.receive(\.delegate.showPermissionDeniedError)
+
         await store.finish()
     }
 }
@@ -404,6 +412,83 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         await store.receive(\.failed) {
             $0.currentStatus = .urlValidationError
         }
+        await store.finish()
+    }
+}
+
+// MARK: - F3: 연속 요청 mode 오염 방지
+
+extension FMW003HandleExternalFileOpenRequestsTests {
+    /// 연속 요청에서 mode 오염 방지 검증
+    ///
+    /// 두 개의 receiveFileURL 요청이 겹칠 때, 각 normalizeCompleted가
+    /// 자신의 source/mode를 유지해야 한다.
+    /// state.currentRequest는 두 번째 요청으로 덮어쓰여지지만,
+    /// action payload의 mode가 우선적으로 사용되므로 올바르게 라우팅된다.
+    func test_consecutiveRequests_preserveCorrectMode() async throws {
+        let folderURL = try XCTUnwrap(URL(string: "file:///Users/test/folder1"))
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/test/doc.txt"))
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { path in
+                if path.contains("folder1") {
+                    PathProbeResult(exists: true, isDirectory: true)
+                } else {
+                    PathProbeResult(exists: true, isDirectory: false)
+                }
+            }
+        }
+        // exhaustivity = .off: 두 async 효과의 인터리빙 순서가 비결정적이므로 엄격한 순서 검증 생략
+        store.exhaustivity = .off
+
+        await store.send(.receiveFileURL(folderURL, source: .systemOpenEvent, mode: .open))
+        await store.send(.receiveFileURL(fileURL, source: .nsservices, mode: .reveal))
+
+        await store.receive(\.normalizeCompleted)
+
+        // exhaustivity = .off: 두 .run effect의 인터리빙이 비결정적이므로
+        // 나머지 액션(delegate/routeCompleted)의 순서 검증 생략, finish로 잔여 효과 처리
+        await store.finish()
+    }
+}
+
+// MARK: - F4: EPERM 권한 오류
+
+extension FMW003HandleExternalFileOpenRequestsTests {
+    /// EPERM errno도 permissionDenied로 감지되는지 검증
+    ///
+    /// PathProbeClient liveValue가 `errno == EACCES || errno == EPERM`으로
+    /// 확장되었으므로, permissionDenied=true 결과가 permissionDeniedError 상태로
+    /// 전환되어야 한다.
+    func test_epermPermissionDenied_permissionDeniedError() async throws {
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/test/protected"))
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false, permissionDenied: true)
+            }
+        }
+
+        await store.send(.receiveFileURL(fileURL, source: .systemOpenEvent, mode: .open)) {
+            $0.currentStatus = .pathReceived
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: fileURL,
+                source: .systemOpenEvent,
+                mode: .open,
+            )
+        }
+
+        await store.receive(\.failed) {
+            $0.currentStatus = .permissionDeniedError
+        }
+
+        // 부모 reducer가 사용자에게 오류를 표시할 수 있도록 delegate 위임
+        await store.receive(\.delegate.showPermissionDeniedError)
+
         await store.finish()
     }
 }

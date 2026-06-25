@@ -325,6 +325,14 @@ struct AppRootFeature {
             // TODO: ACC 핸드오프 seam 확인 후 실제 전달 로직 추가
             return .none
 
+        case let .externalFileRouter(.delegate(.showInvalidPathError)):
+            // TODO: 실제 앱 notification/alert 패턴에 맞게 사용자 오류 표시 연결
+            return .none
+
+        case let .externalFileRouter(.delegate(.showPermissionDeniedError)):
+            // TODO: TCC 권한 요청 flow 또는 안내 alert 연결
+            return .none
+
         default:
             return .none
         }
@@ -356,9 +364,7 @@ struct AppRootFeature {
         switch action {
         case let .receiveExternalFileURL(url, source, mode):
             guard !state.windowManager.windows.isEmpty else {
-                state.pendingExternalFileURL = url
-                state.pendingFileURLSource = source
-                state.pendingFileURLMode = mode
+                state.pendingExternalFileRoutes.append(.init(url: url, source: source, mode: mode))
                 return .none
             }
             return .send(.externalFileRouter(.receiveFileURL(url, source: source, mode: mode)))
@@ -376,16 +382,14 @@ struct AppRootFeature {
         return .send(.externalFileRouter(.receive(url)))
     }
 
-    /// Cold state에서 버퍼링된 file:// URL을 flush
-    private func flushPendingExternalFileURL(state: inout State) -> Effect<Action> {
-        guard let url = state.pendingExternalFileURL,
-              let source = state.pendingFileURLSource,
-              let mode = state.pendingFileURLMode
-        else { return .none }
-        state.pendingExternalFileURL = nil
-        state.pendingFileURLSource = nil
-        state.pendingFileURLMode = nil
-        return .send(.externalFileRouter(.receiveFileURL(url, source: source, mode: mode)))
+    /// Cold state에서 버퍼링된 file:// URL 큐를 flush
+    private func flushPendingExternalFileRoutes(state: inout State) -> Effect<Action> {
+        let routes = state.pendingExternalFileRoutes
+        guard !routes.isEmpty else { return .none }
+        state.pendingExternalFileRoutes = []
+        return .merge(routes.map { route in
+            .send(.externalFileRouter(.receiveFileURL(route.url, source: route.source, mode: route.mode)))
+        })
     }
 
     private func reduceWindowPostAction(
@@ -403,7 +407,7 @@ struct AppRootFeature {
             didOpenFirstWindow ? .send(.flushPendingReplay) : .none,
             (didOpenFirstWindow && state.lastHelperReady) ? .send(.registerHelperWatchRootsIfNeeded) : .none,
             didOpenFirstWindow ? flushPendingExternalURL(state: &state) : .none,
-            didOpenFirstWindow ? flushPendingExternalFileURL(state: &state) : .none,
+            didOpenFirstWindow ? flushPendingExternalFileRoutes(state: &state) : .none,
         )
     }
 }

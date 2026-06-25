@@ -41,7 +41,7 @@ extension PathProbeClient: DependencyKey {
                     permissionDenied: false,
                 )
             } else {
-                let isPermissionDenied = errno == EACCES
+                let isPermissionDenied = errno == EACCES || errno == EPERM
                 return PathProbeResult(
                     exists: false,
                     isDirectory: false,
@@ -68,7 +68,7 @@ extension PathProbeClient: DependencyKey {
                     permissionDenied: false,
                 )
             } else {
-                let isPermissionDenied = errno == EACCES
+                let isPermissionDenied = errno == EACCES || errno == EPERM
                 return PathProbeResult(
                     exists: false,
                     isDirectory: false,

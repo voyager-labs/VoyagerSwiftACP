@@ -89,7 +89,8 @@ public enum ExternalFileRouterAction: CasePathable {
     /// ExternalFileURLParser를 거치지 않고 직접 요청을 생성한다.
     case receiveFileURL(URL, source: RouteSource, mode: DeepLinkMode)
     /// URL 정규화 완료 (pathReceived → pathNormalized)
-    case normalizeCompleted(path: String, isDirectory: Bool)
+    /// 동시 요청 겹침 시 state pollution 방지를 위해 source/mode를 payload로 전달
+    case normalizeCompleted(path: String, isDirectory: Bool, source: RouteSource, mode: DeepLinkMode)
     /// 라우팅 완료 (windowRouted / parentFolderOpened / entrySelected)
     case routeCompleted(ExternalFileRouterStatus)
     /// 오류 발생
@@ -108,6 +109,11 @@ public enum ExternalFileRouterAction: CasePathable {
         case routeToAuthCallback(URL)
         /// mode=reveal에서 파일 선택 focus 완료 (entrySelected)
         case selectEntryCompleted(path: String)
+        /// P1 fix: 오류 표시 delegate — 부모 reducer가 사용자에게 오류 알림을 띄울 수 있도록 위임
+        /// 유효하지 않은 경로 오류를 부모 reducer에 위임 (invalidPathError)
+        case showInvalidPathError(path: String)
+        /// 접근 권한 거부 오류를 부모 reducer에 위임 (permissionDeniedError)
+        case showPermissionDeniedError(path: String)
     }
 }
 

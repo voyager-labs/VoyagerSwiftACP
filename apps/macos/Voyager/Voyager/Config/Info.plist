@@ -63,9 +63,11 @@
 				<string>Voyager로 열기</string>
 			</dict>
 			<key>NSMessage</key>
-			<string>openInVoyagerService:user_data:error:</string>
+			<string>openInVoyagerService</string>
 			<key>NSPortName</key>
 			<string>Voyager</string>
+			<key>NSRequiredContext</key>
+			<dict/>
 			<key>NSSendFileTypes</key>
 			<array>
 				<string>public.folder</string>
