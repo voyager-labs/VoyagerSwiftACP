@@ -82,6 +82,8 @@ func syncSidebarSelection(
     computerName: String?,
 ) {
     switch state.content.navigation.navigationState {
+    case .home:
+        state.sidebar.selectedSidebarItem = nil
     case .collection:
         if let url = state.content.collection.collectionSession.document?.url {
             state.sidebar.selectedSidebarItem = state.sidebar.favorites

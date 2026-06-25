@@ -30,9 +30,6 @@ struct FileManagerWindowCommandRoutingReducer {
             case let .content(.delegate(.openPathInNewWindow(path))):
                 return .send(.delegate(.openPathInNewWindow(path)))
 
-            case let .content(.delegate(.openPathInNewTab(path))):
-                return .send(.delegate(.openPathInNewTab(path)))
-
             case let .content(.delegate(.currentContextChanged(snapshot))):
                 return .send(.inspector(.aiChat(.currentContextChanged(snapshot))))
 
@@ -40,7 +37,7 @@ struct FileManagerWindowCommandRoutingReducer {
                 guard let activeTabID = state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
                 else { return .none }
-                return .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+                return handleHomePageAnchorSelected(anchor, activeTabID: activeTabID)
 
             case .content(.delegate(.openContextualAiChat)):
                 return .send(.request(.openContextualAiChat))
@@ -66,6 +63,32 @@ struct FileManagerWindowCommandRoutingReducer {
             default:
                 return .none
             }
+        }
+    }
+
+    private func handleHomePageAnchorSelected(
+        _ anchor: ContentTabPageAnchor,
+        activeTabID: ContentTabID,
+    ) -> Effect<Action> {
+        let tabUpdateEffect = Effect<Action>.send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+
+        switch anchor {
+        case let .directory(path):
+            return .concatenate(
+                tabUpdateEffect,
+                .send(.navigation(.view(.navigateToPath(path)))),
+            )
+
+        case let .collectionFile(url):
+            return .concatenate(
+                tabUpdateEffect,
+                .send(.navigation(.view(.openCollectionFile(url)))),
+            )
+
+        case .homeDefault,
+             .virtualCollection,
+             .aiChat:
+            return tabUpdateEffect
         }
     }
 

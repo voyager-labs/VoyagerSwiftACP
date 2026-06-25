@@ -94,7 +94,7 @@ func makePathDisplayNames(
             paths.insert(path)
         case .computer:
             paths.insert("/")
-        case .recents, .tags, .collection:
+        case .home, .recents, .tags, .collection:
             break
         }
     }
