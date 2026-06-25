@@ -8,6 +8,12 @@ public struct SettingsHostState: Equatable {
     public var notice: String?
 
     public init() {}
+
+    /// 호스트 런타임이 시나리오 변경 직후 notice banner를 주입하기 위한 initializer.
+    /// 프로덕션 SettingsFeature는 이 initializer를 사용하지 않는다 (host-only lifecycle).
+    public init(notice: String?) {
+        self.notice = notice
+    }
 }
 
 @CasePathable

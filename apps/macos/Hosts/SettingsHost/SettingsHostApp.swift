@@ -235,19 +235,21 @@ private final class SettingsHostStoreContainer: ObservableObject {
     /// 현재 preset의 시나리오를 호출 시점에 읽어 Store를 (재)생성한다.
     /// `.mock` → T2 SettingsHostSandbox가 5축 fake 의존성 주입.
     /// `.live` → 프로덕션 `.liveValue` 의존성 (명시적 opt-in). `date`는 양쪽 모두 real.
+    /// `initialNotice`는 시나리오 변경 직후 notice banner에 표시할 호스트 전용 메시지.
     private static func makeStore(
         preset: SettingsHostPreset,
         authMode: SettingsHostAuthMode,
+        initialNotice: String? = nil,
     ) -> StoreOf<SettingsHostFeature> {
         switch authMode {
         case .mock:
-            Store(initialState: SettingsHostState()) {
+            Store(initialState: SettingsHostState(notice: initialNotice)) {
                 SettingsHostFeature()
             } withDependencies: { dependencies in
                 SettingsHostSandbox.configure(&dependencies, for: preset.scenario)
             }
         case .live:
-            Store(initialState: SettingsHostState()) {
+            Store(initialState: SettingsHostState(notice: initialNotice)) {
                 SettingsHostFeature()
             }
         }
@@ -255,10 +257,13 @@ private final class SettingsHostStoreContainer: ObservableObject {
 
     /// 디버그 메뉴/패널에서 preset 선택 시 호출. debugStore를 갱신(패널 자동 refresh)하고
     /// Store를 새 시나리오 의존성으로 재생성 → @Published가 window content remount 유발.
+    /// 이전 Store는 deallocation으로 in-flight effect가 취소된다 (TCA lifecycle).
+    /// 새 Store의 initial state에 시나리오 변경 notice를 주입하여 banner로 가시성 제공.
     func select(_ preset: SettingsHostPreset) {
         debugStore.select(preset)
         scenarioID = preset.id
-        store = Self.makeStore(preset: preset, authMode: authMode)
+        let notice = "Switched to \(preset.title) scenario."
+        store = Self.makeStore(preset: preset, authMode: authMode, initialNotice: notice)
     }
 }
 
