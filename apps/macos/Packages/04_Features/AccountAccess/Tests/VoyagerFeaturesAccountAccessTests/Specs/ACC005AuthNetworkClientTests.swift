@@ -211,16 +211,18 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
 
     /// ACC-005-fetch_access_status: fetchAccessStatus 성공 시 AccessStatusResponse를 반환한다.
     /// mock fetchAccessStatus closure가 정상 응답을 반환할 때 호출자에게 응답이 전달되는지 검증한다.
-    /// - 검증 내용: 반환된 AccessStatusResponse의 status/expiresAt/entitlements 일치
+    /// - 검증 내용: 반환된 AccessStatusResponse의 hasAccess/status/currentPeriodEnd 일치
     /// - 사전 조건: AuthNetworkClient.fetchAccessStatus mock이 유효한 AccessStatusResponse 반환
     /// - 기대 결과: 반환된 응답이 mock이 설정한 값과 일치
     func testFetchAccessStatusSuccess() async throws {
+        let expectedDate = Date(timeIntervalSince1970: 1_800_000_000)
         let expectedResponse = AccessStatusResponse(
-            status: .coreLicenseActive,
-            expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
-            entitlements: [],
-            message: "welcome",
-            reasonCode: nil,
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            currentPeriodEnd: expectedDate,
+            source: "polar",
         )
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -230,11 +232,12 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
 
         let response = try await client.fetchAccessStatus()
 
-        XCTAssertEqual(response.status, .coreLicenseActive)
-        XCTAssertEqual(response.expiresAt?.timeIntervalSince1970, 1_800_000_000)
-        XCTAssertEqual(response.entitlements, [])
-        XCTAssertEqual(response.message, "welcome")
-        XCTAssertNil(response.reasonCode)
+        XCTAssertTrue(response.hasAccess)
+        XCTAssertEqual(response.status, "active")
+        XCTAssertEqual(response.reason, "active_entitlement")
+        XCTAssertEqual(response.productKey, "core")
+        XCTAssertEqual(response.currentPeriodEnd?.timeIntervalSince1970, 1_800_000_000)
+        XCTAssertEqual(response.source, "polar")
     }
 
     /// ACC-005-fetch_access_status: fetchAccessStatus가 networkFailure를 throw한다.

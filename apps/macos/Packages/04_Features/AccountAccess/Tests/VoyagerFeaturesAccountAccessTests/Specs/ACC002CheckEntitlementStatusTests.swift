@@ -58,7 +58,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -84,7 +90,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         let store = makeTestStore(initialState: state)
         store.exhaustivity = .off
 
-        let response = AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
         await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
 
         XCTAssertEqual(store.state.status, .coreLicenseActive)
@@ -104,13 +116,18 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         state.fetchGeneration = 1
         let store = makeTestStore(initialState: state)
 
-        let response = AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
         await store.send(.accessStatusResponse(generation: 1, result: .success(response))) { state in
             state.status = .coreLicenseActive
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
-                expiresAt: nil,
-                entitlements: [.coreLicense],
+                currentPeriodEnd: nil,
                 fetchedAt: self.referenceDate,
             )
             state.isComplete = true
@@ -167,7 +184,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         let store = makeTestStore(initialState: state)
 
         await store.send(.accessStatusResponse(generation: 1, result: .success(
-            AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense]),
+            AccessStatusResponse(
+                hasAccess: true,
+                status: "active",
+                reason: "active_entitlement",
+                productKey: "core",
+                source: "polar",
+            ),
         )))
 
         XCTAssertNil(store.state.status)
@@ -188,7 +211,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -212,7 +241,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         let store = makeTestStore(initialState: state)
         store.exhaustivity = .off
 
-        let response = AccessStatusResponse(status: .trialExpired, entitlements: [])
+        let response = AccessStatusResponse(
+            hasAccess: false,
+            status: "expired",
+            reason: "expired_entitlement",
+            productKey: "trial",
+            source: "polar",
+        )
         await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
 
         XCTAssertFalse(store.state.isComplete)
@@ -231,8 +266,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     func testCachedSnapshotRestoredAfterThreeFailures() async {
         let cachedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            expiresAt: nil,
-            entitlements: [.coreLicense],
+            currentPeriodEnd: nil,
             fetchedAt: referenceDate,
         )
         var state = AccountAccessFeature.State()
@@ -287,8 +321,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     func testExpiredSnapshotRejectedOnRestore() async {
         let expiredSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            expiresAt: referenceDate.addingTimeInterval(-3600),
-            entitlements: [.coreLicense],
+            currentPeriodEnd: referenceDate.addingTimeInterval(-3600),
             fetchedAt: referenceDate,
         )
         var state = AccountAccessFeature.State()
@@ -327,7 +360,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         let store = makeTestStore(initialState: state)
         store.exhaustivity = .off
 
-        let response = AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
         await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
 
         XCTAssertEqual(store.state.fetchRetryCount, 0)
@@ -398,7 +437,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -416,8 +461,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         // Step 2: fetchAccessStatus 성공 응답
         let expectedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            expiresAt: nil,
-            entitlements: [.coreLicense],
+            currentPeriodEnd: nil,
             fetchedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in
@@ -443,8 +487,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
     func testIntegrationFetchFailureRetryChainToCachedFallback() async {
         let cachedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            expiresAt: nil,
-            entitlements: [.coreLicense],
+            currentPeriodEnd: nil,
             fetchedAt: referenceDate,
         )
         let store = makeTestStore(
@@ -501,7 +544,13 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -513,8 +562,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
 
         let expectedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            expiresAt: nil,
-            entitlements: [.coreLicense],
+            currentPeriodEnd: nil,
             fetchedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in

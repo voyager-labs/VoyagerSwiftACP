@@ -57,15 +57,15 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         XCTAssertEqual(state.accountAccessStepState, .complete)
     }
 
-    /// ACC-002-handle_entitlement_change: beta trial 만료 시 accountAccessStepState가 .blocked로 전환된다.
-    /// status가 .betaTrialActive에서 .trialExpired로 변경될 때 step state가 올바르게 계산되는지 검증한다.
+    /// ACC-002-handle_entitlement_change: trial 만료 시 accountAccessStepState가 .blocked로 전환된다.
+    /// status가 .trialActive에서 .trialExpired로 변경될 때 step state가 올바르게 계산되는지 검증한다.
     /// - 검증 내용: .trialExpired → accountAccessStepState == .blocked
-    /// - 사전 조건: hasAccountSession=true, status=.betaTrialActive
+    /// - 사전 조건: hasAccountSession=true, status=.trialActive
     /// - 기대 결과: status 변경 후 accountAccessStepState == .blocked
     func testExpirationStepState() {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
-        state.status = .betaTrialActive
+        state.status = .trialActive
 
         // 초기 상태: active → complete
         XCTAssertEqual(state.accountAccessStepState, .complete)
@@ -116,7 +116,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         XCTAssertTrue(state.showsRetry)
 
         // 다시 active → showsRetry=false
-        state.status = .betaTrialActive
+        state.status = .trialActive
         XCTAssertFalse(state.showsRetry)
     }
 
@@ -137,7 +137,13 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -168,7 +174,13 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -197,7 +209,13 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -220,8 +238,8 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
     /// ACC-002-handle_entitlement_change: appDidBecomeActive 후 fetch 성공 시 status가 갱신된다.
     /// foreground 복귀 후 fetchAccessStatus 응답이 올바르게 state에 반영되는지 검증한다.
     /// - 검증 내용: accessStatusResponse → state.status 업데이트
-    /// - 사전 조건: hasAccountSession=true, fetchAccessStatus가 .betaTrialActive 반환
-    /// - 기대 결과: status == .betaTrialActive, isComplete == true
+    /// - 사전 조건: hasAccountSession=true, fetchAccessStatus가 .trialActive 반환
+    /// - 기대 결과: status == .trialActive, isComplete == true
     func testFetchSucceedsAfterAppDidBecomeActiveUpdatesStatus() async {
         var initialState = AccountAccessFeature.State()
         initialState.hasAccountSession = true
@@ -230,7 +248,13 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .betaTrialActive, entitlements: [.betaTrial])
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "trial",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -242,14 +266,13 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         }
 
         let expectedSnapshot = AccessStatusSnapshot(
-            status: .betaTrialActive,
-            expiresAt: nil,
-            entitlements: [.betaTrial],
+            status: .trialActive,
+            currentPeriodEnd: nil,
             fetchedAt: referenceDate,
         )
 
         await store.receive(\.accessStatusResponse) { state in
-            state.status = .betaTrialActive
+            state.status = .trialActive
             state.snapshot = expectedSnapshot
             state.isComplete = true
             state.errorMessage = nil
@@ -277,7 +300,13 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCallCount += 1
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -292,8 +321,7 @@ final class ACC002HandleEntitlementChangeTests: XCTestCase {
         // Step 2: fetchAccessStatus 성공 응답 → status/snapshot 갱신
         let expectedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            expiresAt: nil,
-            entitlements: [.coreLicense],
+            currentPeriodEnd: nil,
             fetchedAt: referenceDate,
         )
         await store.receive(\.accessStatusResponse) { state in
