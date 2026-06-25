@@ -42,9 +42,11 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
         }
 
         await store.send(.setCurrent(collectionID)) {
+            $0.previousActiveTabID = homeID
             $0.activeTabID = collectionID
         }
         await store.send(.setCurrent(directoryID)) {
+            $0.previousActiveTabID = collectionID
             $0.activeTabID = directoryID
         }
         await store.finish()

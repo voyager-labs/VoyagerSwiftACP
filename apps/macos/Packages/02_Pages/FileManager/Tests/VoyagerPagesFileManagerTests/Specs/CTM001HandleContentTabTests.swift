@@ -5,6 +5,30 @@ import XCTest
 
 @MainActor
 final class CTM001HandleContentTabTests: XCTestCase {
+    private func receiveDirectoryNavigation(
+        _ store: TestStoreOf<FileManagerFeature>,
+        path: String,
+    ) async {
+        await store.receive { action in
+            guard case let .navigation(.view(.navigateToPath(receivedPath))) = action else { return false }
+            return receivedPath == path
+        }
+        await store.receive { action in
+            guard case let .navigation(.internal(.performNavigateToPath(receivedPath))) = action else { return false }
+            return receivedPath == path
+        }
+        await store.receive { action in
+            guard case let .navigation(.delegate(.navigateToState(.folder(receivedPath)))) = action
+            else { return false }
+            return receivedPath == path
+        }
+        await store.receive { action in
+            guard case let .content(.internal(.applyNavigationState(.folder(receivedPath)))) = action
+            else { return false }
+            return receivedPath == path
+        }
+    }
+
     // MARK: - CTM-001-open_new_content_tab
 
     /// CTM-001-open_new_content_tab: 빈 상태와 FileManager window 초기 상태는 Home Content Tab을 활성화함
@@ -265,10 +289,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         _ = reducer.reduce(into: &lastTabState, action: .close(lastID))
 
-        XCTAssertTrue(lastTabState.tabs.isEmpty)
-        XCTAssertNil(lastTabState.activeTabID)
-        XCTAssertEqual(lastTabState.recentlyClosed?.page, .directory)
-        XCTAssertEqual(lastTabState.recentlyClosed?.anchor, directoryAnchor)
+        // 마지막 tab은 제거되지 않고 Home tab으로 reset됨
+        XCTAssertEqual(lastTabState.tabs.count, 1)
+        XCTAssertEqual(lastTabState.tabs[0].page, .home)
+        XCTAssertEqual(lastTabState.tabs[0].anchor, .homeDefault)
+        XCTAssertEqual(lastTabState.tabs[0].title, "Home")
+        XCTAssertEqual(lastTabState.tabs[0].iconName, "house")
+        XCTAssertEqual(lastTabState.activeTabID, lastID)
+        XCTAssertNil(lastTabState.recentlyClosed)
     }
 
     // MARK: - CTM-001-restore_last_closed_tab
@@ -430,26 +458,27 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     // MARK: - CTM-001-content_tab_scope_integrity
 
-    /// CTM-001-content_tab_scope_integrity: CTM action이 기존 FileManager scope를 침범하지 않는 wiring 검증
-    /// VOY-446 wiring이 FileManager page-owned CTM slice로만 라우팅되는지 검증한다.
-    /// - 검증 내용: contentTabs.open 전후 기존 content navigation, sidebar visibility, inspector visibility 불변
+    /// CTM-001-content_tab_scope_integrity: 새 Content Tab은 별도 FileManager content session을 만들고 기존 session을 보존함
+    /// CTM action이 sidebar/inspector shell state를 침범하지 않으면서 active content만 tab session으로 swap하는지 검증한다.
+    /// - 검증 내용: contentTabs.open(.directory) 후 active content는 새 path로 전환되고 기존 content는 tabContentStates에 보존됨
     /// - 사전 조건: `FileManagerWindowState.makeInitial(path:)` 기반 FileManagerFeature TestStore
-    /// - 기대 결과: CTM action은 contentTabs state만 변경하고 기존 scope state를 유지함
-    func testFileManagerContentTabScope_doesNotMutateExistingContentSidebarInspectorState() async {
+    /// - 기대 결과: 새 Directory tab이 active가 되고 sidebar visibility, inspector visibility는 유지됨
+    func testFileManagerContentTabScope_swapsContentSessionAndPreservesShellState() async throws {
         let initialState = FileManagerWindowState.makeInitial(path: "/seed")
+        let initialActiveID = try XCTUnwrap(initialState.contentTabs.activeTabID)
         let initialNavigationPath = initialState.content.navigation.currentPath
         let initialSidebarVisible = initialState.sidebar.sidebarVisible
         let initialInspectorVisible = initialState.inspector.inspectorVisible
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         }
-        // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로
-        // scope 독립성에 집중한다.
+        // 새 tab id는 reducer 내부에서 생성되므로 최종 invariant만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.open(.directory(path: "/different"))))
 
-        XCTAssertEqual(store.state.content.navigation.currentPath, initialNavigationPath)
+        XCTAssertEqual(store.state.content.navigation.currentPath, "/different")
+        XCTAssertEqual(store.state.tabContentStates[initialActiveID]?.navigation.currentPath, initialNavigationPath)
         XCTAssertEqual(store.state.sidebar.sidebarVisible, initialSidebarVisible)
         XCTAssertEqual(store.state.inspector.inspectorVisible, initialInspectorVisible)
     }
@@ -629,6 +658,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 anchor 변환 검증에 집중한다.
         store.exhaustivity = .off
@@ -638,7 +668,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
         await store.receive(\.contentTabs)
+        await receiveDirectoryNavigation(store, path: desktopPath)
 
+        XCTAssertEqual(store.state.content.navigation.currentPath, desktopPath)
+        XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home])
+        XCTAssertEqual(store.state.content.entryViewLayout.currentPath, desktopPath)
         XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount)
         XCTAssertEqual(store.state.contentTabs.activeTabID, beforeActiveID)
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
@@ -657,6 +691,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // Documents anchor 변환 검증에 집중한다.
@@ -664,7 +699,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.documents)))))
         await store.receive(\.contentTabs)
+        await receiveDirectoryNavigation(store, path: documentsPath)
 
+        XCTAssertEqual(store.state.content.navigation.currentPath, documentsPath)
+        XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home])
+        XCTAssertEqual(store.state.content.entryViewLayout.currentPath, documentsPath)
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .directory(path: documentsPath))
         XCTAssertEqual(tab.page, .directory)
@@ -682,6 +721,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.homePickerClient.pickDirectory = { .selected("/tmp/test") }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
         // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
@@ -689,7 +729,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
         await store.receive(\.contentTabs)
+        await receiveDirectoryNavigation(store, path: "/tmp/test")
 
+        XCTAssertEqual(store.state.content.navigation.currentPath, "/tmp/test")
+        XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home])
+        XCTAssertEqual(store.state.content.entryViewLayout.currentPath, "/tmp/test")
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .directory(path: "/tmp/test"))
         XCTAssertEqual(tab.page, .directory)
@@ -752,6 +796,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.homePickerClient.pickCollectionFile = { .selected(collectionURL) }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
         // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
@@ -850,6 +895,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // routing guard no-op 검증에 집중한다.
