@@ -65,7 +65,13 @@ final class AppLifecycleFeatureTests: XCTestCase {
         } withDependencies: {
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                fetchAccessStatus: { AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense]) },
+                fetchAccessStatus: { AccessStatusResponse(
+                    hasAccess: true,
+                    status: "active",
+                    reason: "active_entitlement",
+                    productKey: "core",
+                    source: "polar",
+                ) },
                 refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
@@ -109,7 +115,13 @@ final class AppLifecycleFeatureTests: XCTestCase {
         }
 
         await store.receive(.accountAccessGate(.accessStatusResponse(.success(
-            AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense]),
+            AccessStatusResponse(
+                hasAccess: true,
+                status: "active",
+                reason: "active_entitlement",
+                productKey: "core",
+                source: "polar",
+            ),
         )))) {
             $0.isCheckingAccountAccess = false
             $0.lastAccessStatus = .coreLicenseActive
@@ -118,7 +130,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
 
         await store.receive(.accountAccessGate(.accountAccessGranted(snapshot: AccessStatusSnapshot(
             status: .coreLicenseActive,
-            entitlements: [.coreLicense],
             fetchedAt: testDate,
         )))) {
             $0.didStartHelper = true
@@ -144,7 +155,12 @@ final class AppLifecycleFeatureTests: XCTestCase {
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .revoked, entitlements: [])
+                    AccessStatusResponse(
+                        hasAccess: false,
+                        status: "revoked",
+                        reason: "revoked_entitlement",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             )
@@ -178,7 +194,7 @@ final class AppLifecycleFeatureTests: XCTestCase {
         }
 
         await store.receive(.accountAccessGate(.accessStatusResponse(.success(
-            AccessStatusResponse(status: .revoked, entitlements: []),
+            AccessStatusResponse(hasAccess: false, status: "revoked", reason: "revoked_entitlement", source: "polar"),
         )))) {
             $0.isCheckingAccountAccess = false
             $0.lastAccessStatus = .revoked
@@ -203,7 +219,13 @@ final class AppLifecycleFeatureTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     accessCheckCalled = true
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             )
@@ -240,7 +262,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
         let cachedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            entitlements: [.coreLicense],
             fetchedAt: testDate.addingTimeInterval(-3600),
         )
         nonisolated(unsafe) var savedSnapshots: [AccessStatusSnapshot] = []
@@ -321,7 +342,6 @@ final class AppLifecycleFeatureTests: XCTestCase {
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
         let cachedSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            entitlements: [.coreLicense],
             fetchedAt: testDate.addingTimeInterval(-3600),
         )
         nonisolated(unsafe) var savedSnapshots: [AccessStatusSnapshot] = []
@@ -454,9 +474,8 @@ final class AppLifecycleFeatureTests: XCTestCase {
         nonisolated(unsafe) var didShowUnlock = false
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
         let expiredSnapshot = AccessStatusSnapshot(
-            status: .betaTrialActive,
-            expiresAt: testDate.addingTimeInterval(-1),
-            entitlements: [.betaTrial],
+            status: .trialActive,
+            currentPeriodEnd: testDate.addingTimeInterval(-1),
             fetchedAt: testDate.addingTimeInterval(-3600),
         )
 
