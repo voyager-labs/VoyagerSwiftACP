@@ -1,6 +1,7 @@
 import ComposableArchitecture
 @testable import Voyager
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 @testable import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
@@ -216,6 +217,113 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         await store.send(.receiveExternalURL(url))
         XCTAssertNil(store.state.pendingExternalURL)
+    }
+
+    // MARK: - FMW-003: receiveExternalFileURL Hot/Cold/Flush
+
+    /// Hot path: 창이 존재할 때 receiveExternalFileURL 수신 → 즉시 ExternalFileRouter로 receiveFileURL 전달을 검증.
+    /// pathProbeClient stub은 invalidPath를 반환하여 flush 이후 후속 effect를 최소화한다.
+    func testReceiveExternalFileURLForwardsWhenWindowsExist() async {
+        let url = URL(fileURLWithPath: "/tmp/voyager-hot.txt")
+        let windowID = UUID()
+        var state = AppRootFeature.State()
+        state.windowManager.windows = [
+            WindowSessionState(id: windowID, window: .makeInitial(path: "/tmp")),
+        ]
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        } withDependencies: {
+            // ExternalFileRouter가 receiveFileURL 수신 후 pathProbe를 호출하므로 stub 필요
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+        // store.exhaustivity = .off: receiveFileURL 이후 pathProbe 후속 effect(failed → delegate)가 비결정적이므로
+        // 핵심 전달 여부(receiveExternalFileURL → externalFileRouter.receiveFileURL)만 검증
+        store.exhaustivity = .off
+
+        await store.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open))
+        await store.receive { action in
+            guard case let .externalFileRouter(.receiveFileURL(receivedURL, source, mode)) = action else {
+                return false
+            }
+            return receivedURL == url && source == .systemOpenEvent && mode == .open
+        }
+    }
+
+    /// Cold path: 창이 없을 때 receiveExternalFileURL 수신 → pendingExternalFileRoutes에 적재되고 effect는 없음을 검증.
+    func testReceiveExternalFileURLBuffersWhenNoWindows() async {
+        let url = URL(fileURLWithPath: "/tmp/voyager-cold.txt")
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        }
+
+        await store.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open)) {
+            $0.pendingExternalFileRoutes = [
+                .init(url: url, source: .systemOpenEvent, mode: .open),
+            ]
+        }
+    }
+
+    /// Cold → flush: 창 없는 상태에서 2개 URL을 적재한 뒤 첫 창을 열면 두 URL이 모두 receiveFileURL로
+    /// flush되고(적재 순서 보존) pending 큐는 비어야 함을 검증.
+    func testReceiveExternalFileURLFlushesAllOnFirstWindow() async {
+        let url1 = URL(fileURLWithPath: "/tmp/voyager-flush-1.txt")
+        let url2 = URL(fileURLWithPath: "/tmp/voyager-flush-2.txt")
+        let windowID = UUID()
+
+        var initialState = AppRootFeature.State()
+        // helper bridge .run(observeChangedPaths)이 호출되지 않도록 사전에 started 상태로 설정
+        initialState.isHelperExternalFileBridgeStarted = true
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .constant(windowID)
+            // flush된 receiveFileURL 각각이 pathProbe를 호출하므로 stub 필요
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+        // store.exhaustivity = .off: 첫 창 오픈 시 helper bridge/replay/ExternalFileRouter 후속 effect가 다수 발생하므로
+        // flush 대상 receiveFileURL 2건과 pending 큐 소진 여부만 검증
+        store.exhaustivity = .off
+
+        // Cold state에서 2개 URL 적재
+        await store.send(.receiveExternalFileURL(url1, source: .systemOpenEvent, mode: .open))
+        await store.send(.receiveExternalFileURL(url2, source: .nsservices, mode: .reveal))
+        XCTAssertEqual(store.state.pendingExternalFileRoutes.count, 2)
+
+        // 첫 창 오픈 → didOpenFirstWindow → flush
+        await store.send(.windowManager(.file(.newWindow(path: nil))))
+
+        // reduceWindowPostAction이 동기적으로 발행하는 effect들을 발행 순서대로 수신
+        await store.receive { action in
+            if case .startHelperExternalFileBridge = action { return true }
+            return false
+        }
+        await store.receive { action in
+            if case .flushPendingReplay = action { return true }
+            return false
+        }
+        // flush된 receiveFileURL 2건 (적재 순서 보존)
+        await store.receive { action in
+            guard case let .externalFileRouter(.receiveFileURL(url, source, mode)) = action else {
+                return false
+            }
+            return url == url1 && source == .systemOpenEvent && mode == .open
+        }
+        await store.receive { action in
+            guard case let .externalFileRouter(.receiveFileURL(url, source, mode)) = action else {
+                return false
+            }
+            return url == url2 && source == .nsservices && mode == .reveal
+        }
+
+        XCTAssertTrue(store.state.pendingExternalFileRoutes.isEmpty, "flush 후 pending 큐는 비어야 한다")
     }
 
     /// Proves AppRoot's Settings forwarding does NOT route through MenuCommands.
