@@ -7,8 +7,7 @@ import VoyagerEntitiesAppPreferences
 public struct ContentPageNavigationState: Equatable {
     public init() {}
 
-    public var navigationState: ContentPageNavigationRoute =
-        .folder(SettingsDefaults.defaultTabPath())
+    public var navigationState: ContentPageNavigationRoute = .home
     public var titlePath: String = SettingsDefaults.defaultTabPath()
     public var scrollPositions: [String: CGPoint] = [:]
 
@@ -18,6 +17,8 @@ public struct ContentPageNavigationState: Equatable {
 
     public var currentPath: String {
         switch navigationState {
+        case .home:
+            "Home"
         case let .folder(path):
             path
         case .recents:
@@ -60,7 +61,7 @@ public struct ContentPageNavigationState: Equatable {
             guard case let .file(url, _) = navigation.kind else { return nil }
             return url.deletingLastPathComponent().path
 
-        case .recents, .tags, .computer:
+        case .home, .recents, .tags, .computer:
             return nil
         }
     }

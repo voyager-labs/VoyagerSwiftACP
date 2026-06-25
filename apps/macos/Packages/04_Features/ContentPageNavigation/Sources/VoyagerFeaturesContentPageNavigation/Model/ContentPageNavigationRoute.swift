@@ -3,6 +3,7 @@ import VoyagerEntitiesCollection
 import VoyagerShared
 
 public enum ContentPageNavigationRoute: Equatable, Sendable {
+    case home
     case folder(String)
     case recents
     case tags(String)
