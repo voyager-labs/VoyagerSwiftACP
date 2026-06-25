@@ -354,4 +354,59 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(state.recentlyClosed?.wasPinned))
         XCTAssertNotNil(state.recentlyClosed?.closedAt)
     }
+
+    /// CTM-003-switch_active_content_tab: active tab close 시 previousActiveTabID로 fallback되고 anchor가 보존됨
+    /// active tab을 닫을 때 previousActiveTabID로 지정된 tab으로 focus가 이동하며
+    /// 해당 tab의 anchor가 유지되는지 검증한다.
+    /// - 검증 내용: close 후 activeTabID == previousActiveTabID(A), A anchor == .homeDefault,
+    ///   recentlyClosed anchor == closed tab(B) anchor
+    /// - 사전 조건: 세 tab [A(home), B(directory, active), C(collection)]이 있고 previousActiveTabID == A
+    /// - 기대 결과: activeTabID가 A로 fallback되고, A의 anchor는 변하지 않으며,
+    ///   recentlyClosed에 B의 snapshot이 저장됨
+    func testActiveCloseFallbackAnchorPreserved() {
+        let tabA = ContentTabID()
+        let tabB = ContentTabID()
+        let tabC = ContentTabID()
+        let directoryAnchor = ContentTabPageAnchor.directory(path: "/test1")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabA,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: tabB,
+                    page: .directory,
+                    anchor: directoryAnchor,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: tabC,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/test.voycoll")),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabB,
+            previousActiveTabID: tabA,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .close(tabB))
+
+        XCTAssertEqual(state.activeTabID, tabA)
+        XCTAssertEqual(state.tabs[id: tabA]?.anchor, .homeDefault)
+        XCTAssertEqual(state.recentlyClosed?.page, .directory)
+        XCTAssertEqual(state.recentlyClosed?.anchor, directoryAnchor)
+        XCTAssertNotNil(state.recentlyClosed?.closedAt)
+    }
 }

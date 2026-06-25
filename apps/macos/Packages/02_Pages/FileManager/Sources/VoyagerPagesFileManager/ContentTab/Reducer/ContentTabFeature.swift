@@ -85,7 +85,6 @@ extension ContentTabFeature {
             return .none
         }
 
-        // 마지막 tab close 시 Home tab으로 reset (blank pane 방지)
         if state.tabs.count == 1 {
             state.previousActiveTabID = id
             state.tabs[id: id]?.page = .home
@@ -105,11 +104,32 @@ extension ContentTabFeature {
         state.recentlyClosed = snapshot
 
         let wasActive = state.activeTabID == id
+        let fallbackTabID: ContentTabID? = {
+            guard let closingIndex = state.tabs.firstIndex(where: { $0.id == id }) else { return nil }
+
+            if let previousID = state.previousActiveTabID,
+               previousID != id,
+               state.tabs[id: previousID] != nil
+            {
+                return previousID
+            }
+
+            if closingIndex + 1 < state.tabs.endIndex {
+                return state.tabs[closingIndex + 1].id
+            }
+
+            if closingIndex > state.tabs.startIndex {
+                return state.tabs[state.tabs.index(before: closingIndex)].id
+            }
+
+            return state.tabs.first?.id
+        }()
+
         state.tabs.remove(id: id)
 
         if wasActive {
             state.previousActiveTabID = id
-            state.activeTabID = state.tabs.last?.id
+            state.activeTabID = fallbackTabID
         } else {
             state.previousActiveTabID = nil
         }

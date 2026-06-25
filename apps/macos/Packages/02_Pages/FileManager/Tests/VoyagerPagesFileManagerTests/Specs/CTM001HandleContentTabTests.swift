@@ -380,6 +380,200 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - CTM-001-close_restore_lifecycle
+
+    /// CTM-001-close_restore_lifecycle: active close가 previousActiveTabID를 valid fallback으로 사용함
+    /// close 시 previousActiveTabID가 closing tab이 아니고 tabs에 존재하면 해당 id가 active로 설정되는 정책을 검증한다.
+    /// - 검증 내용: previousActiveTabID가 closing tab이 아니고 tabs에 존재하면 해당 id가 activeTabID로 설정됨
+    /// - 사전 조건: [A(active), B, C] 상태, previousActiveTabID = C
+    /// - 기대 결과: close(A) 후 activeTabID == C (C가 previous로서 우선)
+    func testCloseContentTab_activeCloseWithPreviousActiveFallback() {
+        let tabA = ContentTabID()
+        let tabB = ContentTabID()
+        let tabC = ContentTabID()
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(id: tabA, page: .home, anchor: .homeDefault, isPinned: false, title: nil, iconName: nil),
+                ContentTabItem(
+                    id: tabB,
+                    page: .directory,
+                    anchor: .directory(path: "/b"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: tabC,
+                    page: .directory,
+                    anchor: .directory(path: "/c"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabA,
+            previousActiveTabID: tabC,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .close(tabA))
+
+        XCTAssertEqual(state.tabs.count, 2)
+        XCTAssertEqual(state.activeTabID, tabC)
+    }
+
+    /// CTM-001-close_restore_lifecycle: active close의 previous가 closing tab이면 nearest right이 fallback됨
+    /// close 시 previousActiveTabID가 nil 또는 closing id일 때 nearest right tab이 active로 설정되는 정책을 검증한다.
+    /// - 검증 내용: previousActiveTabID == closing id일 때 nearest right tab이 activeTabID로 설정됨
+    /// - 사전 조건: [A(active), B, C] 상태, previousActiveTabID = A
+    /// - 기대 결과: close(A) 후 activeTabID == B (nearest right)
+    func testCloseContentTab_activeCloseNearestRight() {
+        let tabA = ContentTabID()
+        let tabB = ContentTabID()
+        let tabC = ContentTabID()
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(id: tabA, page: .home, anchor: .homeDefault, isPinned: false, title: nil, iconName: nil),
+                ContentTabItem(
+                    id: tabB,
+                    page: .directory,
+                    anchor: .directory(path: "/b"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: tabC,
+                    page: .directory,
+                    anchor: .directory(path: "/c"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabA,
+            previousActiveTabID: tabA,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .close(tabA))
+
+        XCTAssertEqual(state.tabs.count, 2)
+        XCTAssertEqual(state.activeTabID, tabB)
+    }
+
+    /// CTM-001-close_restore_lifecycle: active close의 previous가 closing tab이고 right이 out of bounds이면 left가 fallback됨
+    /// close 시 previousActiveTabID가 nullish이고 right neighbor가 없으면 left neighbor가 active로 설정되는 정책을 검증한다.
+    /// - 검증 내용: previousActiveTabID == closing id이고 right이 없으면 left neighbor tab이 activeTabID로 설정됨
+    /// - 사전 조건: [A, B, C(active)] 상태, previousActiveTabID = C
+    /// - 기대 결과: close(C) 후 activeTabID == B (left neighbor)
+    func testCloseContentTab_activeCloseNearestLeft() {
+        let tabA = ContentTabID()
+        let tabB = ContentTabID()
+        let tabC = ContentTabID()
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(id: tabA, page: .home, anchor: .homeDefault, isPinned: false, title: nil, iconName: nil),
+                ContentTabItem(
+                    id: tabB,
+                    page: .directory,
+                    anchor: .directory(path: "/b"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: tabC,
+                    page: .directory,
+                    anchor: .directory(path: "/c"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabC,
+            previousActiveTabID: tabC,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .close(tabC))
+
+        XCTAssertEqual(state.tabs.count, 2)
+        XCTAssertEqual(state.activeTabID, tabB)
+    }
+
+    /// CTM-001-close_restore_lifecycle: inactive close는 activeTabID를 변경하지 않고 previousActiveTabID를 nil로 초기화함
+    /// inactive tab close 시 active tab이 보존되고 previousActiveTabID가 초기화되는 정책을 검증한다.
+    /// - 검증 내용: inactive tab close 후 activeTabID가 변경되지 않고 previousActiveTabID == nil
+    /// - 사전 조건: [A(active), B] 상태
+    /// - 기대 결과: close(B) 후 activeTabID == A (불변), previousActiveTabID == nil
+    func testCloseContentTab_inactiveClosePreservesActive() {
+        let tabA = ContentTabID()
+        let tabB = ContentTabID()
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(id: tabA, page: .home, anchor: .homeDefault, isPinned: false, title: nil, iconName: nil),
+                ContentTabItem(
+                    id: tabB,
+                    page: .directory,
+                    anchor: .directory(path: "/b"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabA,
+            previousActiveTabID: tabA,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .close(tabB))
+
+        XCTAssertEqual(state.tabs.count, 1)
+        XCTAssertEqual(state.activeTabID, tabA)
+        XCTAssertNil(state.previousActiveTabID)
+    }
+
+    /// CTM-001-close_restore_lifecycle: 연속 close는 recentlyClosed를 마지막 close snapshot으로 overwrite함
+    /// close 후보가 overwrite되는 single candidate 정책을 검증한다.
+    /// - 검증 내용: close(B) 후 close(C)를 연속 수행하면 recentlyClosed가 C의 snapshot을 가리킴
+    /// - 사전 조건: [A(active), B, C] 상태
+    /// - 기대 결과: close(B) → close(C) 후 recentlyClosed의 anchor와 page가 C에 해당함
+    func testCloseContentTab_singleCandidateOverwrite() {
+        let tabA = ContentTabID()
+        let tabB = ContentTabID()
+        let tabC = ContentTabID()
+        let anchorC = ContentTabPageAnchor.directory(path: "/c")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(id: tabA, page: .home, anchor: .homeDefault, isPinned: false, title: nil, iconName: nil),
+                ContentTabItem(
+                    id: tabB,
+                    page: .directory,
+                    anchor: .directory(path: "/b"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(id: tabC, page: .directory, anchor: anchorC, isPinned: false, title: nil, iconName: nil),
+            ],
+            activeTabID: tabA,
+            previousActiveTabID: nil,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .close(tabB))
+        _ = reducer.reduce(into: &state, action: .close(tabC))
+
+        XCTAssertEqual(state.recentlyClosed?.anchor, anchorC)
+        XCTAssertEqual(state.recentlyClosed?.page, .directory)
+    }
+
     // MARK: - CTM-001-handle_content_tab_invariants
 
     /// CTM-001-handle_content_tab_invariants: invalid id와 max tab limit은 상태 invariant를 깨지 않는 no-op임
