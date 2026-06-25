@@ -71,7 +71,8 @@ final class AppLifecycleFeatureTests: XCTestCase {
                     reason: "active_entitlement",
                     productKey: "core",
                     source: "polar",
-                ) },
+                )
+                },
                 refreshToken: { throw AccessError.notConfigured },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
