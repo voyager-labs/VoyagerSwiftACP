@@ -230,6 +230,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Macintosh HD", "Trash"])
         XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.iconName), ["internaldrive", "trash"])
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.targetURL), [rootURL, trashURL])
         XCTAssertTrue(state.sidebar.contentTabSidebarItems.allSatisfy { $0.tagColorCode == nil })
     }
 
