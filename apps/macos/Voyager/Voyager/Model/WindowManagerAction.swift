@@ -32,6 +32,7 @@ enum WindowManagerAction: CasePathable {
     enum FileCommand: CasePathable {
         case newWindow(path: String? = nil)
         case newTab
+        case closeTab
         case newFolder
         case open
         case quickLook

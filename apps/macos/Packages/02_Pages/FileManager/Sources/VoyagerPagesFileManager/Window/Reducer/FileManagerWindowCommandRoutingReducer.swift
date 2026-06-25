@@ -97,6 +97,11 @@ struct FileManagerWindowCommandRoutingReducer {
         case .openNewContentTab:
             .send(.contentTabs(.open(.homeDefault)))
 
+        case .closeActiveContentTab:
+            state.contentTabs.activeTabID
+                .map { .send(.contentTabs(.close($0))) }
+                ?? .none
+
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
