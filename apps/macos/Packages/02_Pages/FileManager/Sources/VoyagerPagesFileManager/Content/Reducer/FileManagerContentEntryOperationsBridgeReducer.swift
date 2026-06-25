@@ -67,7 +67,6 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .openPathInNewWindow(path):
             return .send(.delegate(.openPathInNewWindow(path)))
 
-
         case let .startRename(item, text):
             let entryOperationsAction = EntryOperationsAction.edit(.startRename(item: item, text: text))
             return sendEntryOperations(entryOperationsAction)
