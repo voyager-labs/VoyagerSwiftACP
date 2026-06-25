@@ -42,6 +42,7 @@ private enum SmokeMode {
         let resetMode = resetProgress
         let preset = resolvePreset()
         let scenario = preset.scenario
+        let liveDependencies = SettingsHostAuthMode.current == .live
 
         print("smokeMode=true")
         print("resetMode=\(resetMode)")
@@ -51,6 +52,9 @@ private enum SmokeMode {
         print("accountLoaded=\(scenario.accountLoaded)")
         print("sessionLapse=\(scenario.sessionLapse)")
         print("debugMenuWired=\(scenario.debugMenuWired)")
+        // T5 라이브 opt-in 플래그 — 기본 `.mock`(sandbox). `.live`는 명시적 env opt-in 필요.
+        // smoke는 Store/의존성 생성 이전에 exit하므로 사이드 이펙트 없이 플래그만 보고한다.
+        print("liveDependencies=\(liveDependencies)")
 
         let feature = SettingsFeature()
         var state = SettingsState()
@@ -120,40 +124,38 @@ private enum SmokeMode {
     }
 }
 
+// MARK: - Live/mock auth mode (host-only, opt-in live)
+
+private enum SettingsHostAuthMode: String {
+    case mock
+    case live
+
+    /// 기본은 `.mock`(sandbox 의존성). `.live`는 `SETTINGS_HOST_AUTH_MODE=live` 명시적 opt-in 필요.
+    static var current: SettingsHostAuthMode {
+        let rawValue = ProcessInfo.processInfo.environment["SETTINGS_HOST_AUTH_MODE"]?.lowercased()
+        return rawValue.flatMap(SettingsHostAuthMode.init(rawValue:)) ?? .mock
+    }
+}
+
 @main
 struct SettingsHostApp: App {
     @NSApplicationDelegateAdaptor(SettingsHostAppDelegate.self)
     private var appDelegate
-
-    private let store: StoreOf<SettingsHostFeature>
 
     init() {
         // Smoke gate runs BEFORE SwiftUI body is evaluated
         if SmokeMode.isEnabled {
             SmokeMode.run()
         }
-
-        let hostUserDefaultsClient = Self.suiteBackedUserDefaultsClient(
-            suiteName: "group.com.voyager.app.settingshost",
-        )
-
-        store = Store(initialState: SettingsHostState()) {
-            SettingsHostFeature()
-        } withDependencies: { dependencies in
-            dependencies.userDefaultsClient = hostUserDefaultsClient
-            dependencies.collectionSearchAISettingsClient = .live(userDefaultsClient: hostUserDefaultsClient)
-            dependencies.launchAtLoginClient = .testValue
-            dependencies.appearanceSettingsClient = .liveValue
-        }
     }
 
     var body: some Scene {
         WindowGroup("Settings") {
-            SettingsHostRootView(store: store)
+            SettingsHostWindowContent(container: appDelegate.storeContainer)
         }
         .commands {
-            // 호스트 전용 debug surface — OnboardingHost 패리티 스캐폴드.
-            // 선택은 호스트-private store를 갱신하며, T5가 sandbox 연결을 완성한다.
+            // 호스트 전용 debug surface — OnboardingHost 패리티.
+            // 선택은 SettingsHostStoreContainer.select를 통해 Store를 새 시나리오 의존성으로 재생성한다.
             CommandMenu("Settings Debug") {
                 Button("Show Scenario Panel") {
                     appDelegate.showDebugPanel()
@@ -207,47 +209,87 @@ struct SettingsHostApp: App {
             }
         }
     }
+}
 
-    private static func suiteBackedUserDefaultsClient(suiteName: String) -> UserDefaultsClient {
-        UserDefaultsClient(
-            bool: { key in
-                UserDefaults(suiteName: suiteName)?.bool(forKey: key) ?? false
-            },
-            setBool: { value, key in
-                UserDefaults(suiteName: suiteName)?.set(value, forKey: key)
-            },
-            string: { key in
-                UserDefaults(suiteName: suiteName)?.string(forKey: key)
-            },
-            setString: { value, key in
-                UserDefaults(suiteName: suiteName)?.set(value, forKey: key)
-            },
-            double: { key in
-                UserDefaults(suiteName: suiteName)?.double(forKey: key) ?? 0.0
-            },
-            setDouble: { value, key in
-                UserDefaults(suiteName: suiteName)?.set(value, forKey: key)
-            },
-            object: { key in
-                UserDefaults(suiteName: suiteName)?.object(forKey: key)
-            },
-            setObject: { value, key in
-                UserDefaults(suiteName: suiteName)?.set(value, forKey: key)
-            },
-        )
+// MARK: - Runtime store container (host-only)
+
+// TCA Store를 시나리오 변경 시 재생성 가능하게 보관하는 ObservableObject.
+// OnboardingHost는 WindowClient 클로저로 call-time 시나리오를 읽지만, SettingsHost는
+// TCA Store를 쓰므로 "select 시 Store 재생성(Option A)"으로 동일한 call-time 의존성 갱신을 달성한다.
+
+@MainActor
+private final class SettingsHostStoreContainer: ObservableObject {
+    @Published private(set) var store: StoreOf<SettingsHostFeature>
+    @Published private(set) var scenarioID: String
+
+    let debugStore: SettingsHostDebugStore
+    let authMode: SettingsHostAuthMode
+
+    init(preset: SettingsHostPreset, authMode: SettingsHostAuthMode) {
+        debugStore = SettingsHostDebugStore(initialPreset: preset)
+        self.authMode = authMode
+        scenarioID = preset.id
+        store = Self.makeStore(preset: preset, authMode: authMode)
+    }
+
+    /// 현재 preset의 시나리오를 호출 시점에 읽어 Store를 (재)생성한다.
+    /// `.mock` → T2 SettingsHostSandbox가 5축 fake 의존성 주입.
+    /// `.live` → 프로덕션 `.liveValue` 의존성 (명시적 opt-in). `date`는 양쪽 모두 real.
+    private static func makeStore(
+        preset: SettingsHostPreset,
+        authMode: SettingsHostAuthMode,
+    ) -> StoreOf<SettingsHostFeature> {
+        switch authMode {
+        case .mock:
+            Store(initialState: SettingsHostState()) {
+                SettingsHostFeature()
+            } withDependencies: { dependencies in
+                SettingsHostSandbox.configure(&dependencies, for: preset.scenario)
+            }
+        case .live:
+            Store(initialState: SettingsHostState()) {
+                SettingsHostFeature()
+            }
+        }
+    }
+
+    /// 디버그 메뉴/패널에서 preset 선택 시 호출. debugStore를 갱신(패널 자동 refresh)하고
+    /// Store를 새 시나리오 의존성으로 재생성 → @Published가 window content remount 유발.
+    func select(_ preset: SettingsHostPreset) {
+        debugStore.select(preset)
+        scenarioID = preset.id
+        store = Self.makeStore(preset: preset, authMode: authMode)
+    }
+}
+
+// MARK: - Window content (host-only)
+
+// 컨테이너의 @Published 변경을 관찰 → 시나리오 변경 시 store 교체 + `.id(scenarioID)`로 clean remount.
+
+private struct SettingsHostWindowContent: View {
+    @ObservedObject var container: SettingsHostStoreContainer
+
+    var body: some View {
+        SettingsHostRootView(store: container.store)
+            .id(container.scenarioID)
     }
 }
 
 @MainActor
 private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
-    private let debugStore = SettingsHostDebugStore(initialPreset: .defaultSandbox)
+    let storeContainer: SettingsHostStoreContainer
     private var debugPanel: NSPanel?
 
+    override init() {
+        let preset = SmokeMode.resolvePreset()
+        let authMode = SettingsHostAuthMode.current
+        storeContainer = SettingsHostStoreContainer(preset: preset, authMode: authMode)
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_: Notification) {
-        // T5가 onPresetChanged를 sandbox 재구성으로 연결한다.
-        debugStore.onPresetChanged = { [weak self] _ in
-            self?.refreshDebugPanel()
-        }
+        // 시나리오 변경 시 Store 재생성은 SettingsHostStoreContainer.select가 담당.
+        // 패널 콘텐츠는 debugStore의 @Published로 자동 갱신됨.
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
@@ -261,7 +303,7 @@ private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let rootView = SettingsHostDebugPanel(store: debugStore)
+        let rootView = SettingsHostDebugPanel(store: storeContainer.debugStore)
         let hostingController = NSHostingController(rootView: rootView)
         let panel = NSPanel(contentViewController: hostingController)
         panel.title = "Settings Debug"
@@ -276,14 +318,8 @@ private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func selectPreset(_ preset: SettingsHostPreset) {
-        debugStore.select(preset)
+        storeContainer.select(preset)
         showDebugPanel()
-    }
-
-    private func refreshDebugPanel() {
-        // 패널 콘텐츠는 @ObservedObject 바인딩으로 자동 갱신됨 — 필요시에만 보정.
-        guard debugPanel != nil else { return }
-        debugPanel?.contentViewController?.view.needsLayout = true
     }
 }
 
@@ -393,7 +429,7 @@ private struct SettingsHostDebugPanel: View {
                 }
             }
 
-            Text("T5가 프리셋 선택 → sandbox 재구성 런타임 연결을 완성한다.")
+            Text("프리셋 선택 시 SettingsHostFeature Store를 해당 시나리오 의존성으로 재생성하여 window를 remount한다.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
