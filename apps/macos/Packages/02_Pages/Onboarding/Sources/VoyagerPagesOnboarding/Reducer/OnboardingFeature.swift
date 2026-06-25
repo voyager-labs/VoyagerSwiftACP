@@ -85,10 +85,7 @@ struct OnboardingFeature {
             }
 
         case .backTapped:
-            guard let previous = state.currentStep.previous else { return .none }
-            state.currentStep = previous
-            let snapshot = state.progressSnapshot
-            return Self.saveEffect(snapshot, progressClient: progressClient)
+            return handleBackTapped(state: &state, progressClient: progressClient)
 
         case .nextTapped:
             guard state.canGoNext, let next = state.currentStep.next else { return .none }
@@ -133,7 +130,7 @@ struct OnboardingFeature {
             return .none
 
         case let .accessUnlock(.accessStatusResponse(generation: _, result: .success(response))):
-            if !response.status.isActive {
+            if !response.toAccessStatus().isActive {
                 state.currentStep = .accessUnlock
             }
             let snapshot = state.progressSnapshot
@@ -143,6 +140,21 @@ struct OnboardingFeature {
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
         }
+    }
+
+    private func handleBackTapped(
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        guard let previous = state.currentStep.previous else { return .none }
+        let shouldCancelSignIn = state.currentStep == .accessUnlock
+            && (state.accessUnlock.isSignInInProgress || state.accessUnlock.handoffPendingState != nil)
+        state.currentStep = previous
+        guard shouldCancelSignIn else {
+            let snapshot = state.progressSnapshot
+            return Self.saveEffect(snapshot, progressClient: progressClient)
+        }
+        return .send(.accessUnlock(.cancelSignIn))
     }
 
     private static func saveEffect(
