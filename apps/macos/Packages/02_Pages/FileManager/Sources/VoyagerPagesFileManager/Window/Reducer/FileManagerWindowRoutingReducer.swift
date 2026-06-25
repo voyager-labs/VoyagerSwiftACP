@@ -25,13 +25,19 @@ struct FileManagerWindowRoutingReducer {
             case let .sidebar(.delegate(.selectContentTab(tabID))):
                 return .send(.contentTabs(.setCurrent(tabID)))
 
+            case let .sidebar(.delegate(.closeContentTab(tabID))):
+                return .send(.contentTabs(.close(tabID)))
+
+            case .sidebar(.delegate(.openContentTab)):
+                return .send(.contentTabs(.open(.homeDefault)))
+
             case .content(.delegate(.closeWindow)):
                 return .send(.closeWindow)
 
             case .closeWindow:
                 return .run { _ in
                     await MainActor.run {
-                        NSApp.keyWindow?.close()
+                        NSApplication.shared.keyWindow?.close()
                     }
                 }
 
@@ -56,6 +62,7 @@ struct FileManagerWindowRoutingReducer {
                 return .none
 
             case let .contentTabs(.close(tabID)):
+                var shouldCloseWindow = false
                 if state.contentTabs.tabs[id: tabID] == nil {
                     state.removeContentState(for: tabID)
                     if state.contentTabs.previousActiveTabID == tabID {
@@ -66,10 +73,11 @@ struct FileManagerWindowRoutingReducer {
                 {
                     state.content = contentState(for: state.contentTabs.tabs[id: tabID]?.anchor)
                     state.syncActiveTabContentState()
+                    shouldCloseWindow = true
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return .none
+                return shouldCloseWindow ? .send(.closeWindow) : .none
 
             case .contentTabs(.restore):
                 if state.contentTabs.previousActiveTabID != nil || state.activeTabContentStateMissing {

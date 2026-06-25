@@ -30,6 +30,7 @@ struct SidebarLocationsSectionView: View {
                         isFavorite: false,
                         iconColor: nil,
                         targetURL: location.isComputer ? nil : location.url,
+                        isHovered: false,
                         action: {
                             if location.isComputer {
                                 store.send(.delegate(.showComputer))
