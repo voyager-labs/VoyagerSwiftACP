@@ -10,6 +10,8 @@ public struct FileManagerSidebarState: Equatable {
     var favorites: [SidebarItems.FavoriteItem] = []
     var locations: [SidebarItems.LocationItem] = []
     var tags: [Tag] = []
+    var contentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] = ContentTabProjection
+        .sidebarItems(from: .withHomeTab())
     var isFavoritesCollapsed: Bool = false
     var isLocationsCollapsed: Bool = false
     var isTagsCollapsed: Bool = false

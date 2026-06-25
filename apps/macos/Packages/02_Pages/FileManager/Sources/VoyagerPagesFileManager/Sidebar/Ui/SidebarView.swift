@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 struct SidebarView: View {
     let store: StoreOf<FileManagerSidebarFeature>
@@ -12,6 +13,40 @@ struct SidebarView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    if !store.contentTabSidebarItems.isEmpty {
+                        SidebarSectionHeader(
+                            title: "Tabs",
+                            isCollapsed: false,
+                            onToggle: {},
+                        )
+
+                        ForEach(Array(store.contentTabSidebarItems.enumerated()), id: \.element.id) { index, item in
+                            SidebarItemView(
+                                iconName: item.iconName ?? "doc",
+                                title: item.title ?? "Untitled",
+                                isSelected: item.isActive,
+                                isContextMenuTarget: false,
+                                contextMenuTargetWasSelected: false,
+                                isFavorite: false,
+                                iconColor: item.isPinned ? VoyagerDS.BrandSecondaryColor.c600 : nil,
+                                targetURL: nil,
+                                action: {
+                                    store.send(.delegate(.selectContentTab(item.id)))
+                                },
+                                onDrop: nil,
+                                onContextMenuOpen: nil,
+                            )
+
+                            if index < store.contentTabSidebarItems.count - 1 {
+                                Spacer()
+                                    .frame(height: 4)
+                            }
+                        }
+
+                        Spacer()
+                            .frame(height: 8)
+                    }
+
                     SidebarItemView(
                         iconName: "clock",
                         title: "Recents",
