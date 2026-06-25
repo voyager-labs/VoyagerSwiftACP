@@ -46,7 +46,6 @@ struct FileManagerContentNavigationBridgeReducer {
                 )
 
             case .delegate(.openPathInNewWindow),
-                 .delegate(.openPathInNewTab),
                  .delegate(.closeWindow):
                 return .none
 
@@ -86,6 +85,9 @@ struct FileManagerContentNavigationBridgeReducer {
 
     private func scrollPositionKey(for navigationState: ContentPageNavigationRoute) -> String {
         switch navigationState {
+        case .home:
+            "Home"
+
         case let .collection(collectionNavigation):
             switch collectionNavigation.kind {
             case .temporary:
@@ -113,6 +115,12 @@ struct FileManagerContentNavigationBridgeReducer {
         state: State,
     ) -> Effect<Action> {
         switch navigationState {
+        case .home:
+            .concatenate(
+                .cancel(id: CancelID.folderWatcher),
+                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+            )
+
         case let .folder(path):
             .concatenate(
                 .send(.entryViewLayout(.internal(.clearCollectionPresentation))),

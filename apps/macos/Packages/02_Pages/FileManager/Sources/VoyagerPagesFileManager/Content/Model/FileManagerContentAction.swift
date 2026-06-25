@@ -61,7 +61,6 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
         case dropItemsToTag(providers: [NSItemProvider], tagName: String)
         case openPathInNewWindow(String)
-        case openPathInNewTab(String)
         case closeWindow
         case openContextualAiChat
         case currentContextChanged(AiChatCurrentContextSnapshot)
