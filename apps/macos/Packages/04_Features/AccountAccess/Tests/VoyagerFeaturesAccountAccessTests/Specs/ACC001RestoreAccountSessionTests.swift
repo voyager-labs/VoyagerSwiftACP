@@ -54,7 +54,13 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -103,7 +109,13 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -146,7 +158,13 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     fetchCalled = true
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),

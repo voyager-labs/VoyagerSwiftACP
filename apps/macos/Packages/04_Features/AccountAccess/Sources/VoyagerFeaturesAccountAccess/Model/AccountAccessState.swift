@@ -63,7 +63,7 @@ public struct AccountAccessState: Equatable {
             return .pending
         }
         switch status {
-        case .coreLicenseActive, .betaTrialActive, .internalTestActive:
+        case .coreLicenseActive, .trialActive, .internalTestActive:
             return .complete
         case .networkFailure:
             return .error

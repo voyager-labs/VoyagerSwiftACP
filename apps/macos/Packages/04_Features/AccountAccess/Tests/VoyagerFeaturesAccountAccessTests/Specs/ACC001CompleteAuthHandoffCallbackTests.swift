@@ -217,7 +217,13 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "exchanged-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -242,7 +248,6 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             state.isComplete = true
             state.snapshot = AccessStatusSnapshot(
                 status: .coreLicenseActive,
-                entitlements: [.coreLicense],
                 fetchedAt: self.referenceDate,
             )
         }
@@ -272,7 +277,13 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "valid-flow-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -321,7 +332,13 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "should-not-reach", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),

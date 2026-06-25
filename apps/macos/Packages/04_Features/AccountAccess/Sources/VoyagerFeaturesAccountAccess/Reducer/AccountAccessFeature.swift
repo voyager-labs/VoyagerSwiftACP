@@ -31,6 +31,7 @@ public struct AccountAccessFeature {
     private enum CancelID {
         static let fetchStatus = "accountAccessFetchStatus"
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
+        static let signInHandoff = "accountAccessSignInHandoff"
         static let ttlTimer = "accountAccessTtlTimer"
     }
 
@@ -48,6 +49,9 @@ public struct AccountAccessFeature {
 
             case .loginTapped:
                 return handleLoginTapped(&state)
+
+            case .cancelSignIn:
+                return handleCancelSignIn(&state)
 
             case let .signInHandoffCompleted(result):
                 return handleSignInHandoffCompleted(&state, result: result)
@@ -172,6 +176,24 @@ public struct AccountAccessFeature {
             let result = await signInHandoffClient.performHandoff()
             await send(.signInHandoffCompleted(result))
         }
+        .cancellable(id: CancelID.signInHandoff, cancelInFlight: true)
+    }
+
+    private func handleCancelSignIn(_ state: inout State) -> Effect<Action> {
+        guard state.isSignInInProgress || state.handoffPendingState != nil else {
+            return .none
+        }
+
+        state.isSignInInProgress = false
+        state.didSignInFail = false
+        state.handoffPendingState = nil
+
+        return .merge(
+            .cancel(id: CancelID.signInHandoff),
+            .run { _ in
+                await AppHandoffStateStore.shared.clear()
+            },
+        )
     }
 
     private func handleSignInHandoffCompleted(
@@ -359,19 +381,19 @@ private extension AccountAccessFeature {
 
         switch result {
         case let .success(response):
-            state.status = response.status
-            state.trialExpiresAt = response.expiresAt
+            let accessStatus = response.toAccessStatus()
+            state.status = accessStatus
+            state.trialExpiresAt = response.currentPeriodEnd
             state.fetchRetryCount = 0
 
             let snapshot = AccessStatusSnapshot(
-                status: response.status,
-                expiresAt: response.expiresAt,
-                entitlements: response.entitlements,
+                status: accessStatus,
+                currentPeriodEnd: response.currentPeriodEnd,
                 fetchedAt: date(),
             )
             state.snapshot = snapshot
 
-            if response.status.isActive {
+            if accessStatus.isActive {
                 state.isComplete = true
                 state.errorMessage = nil
                 return .run { [snapshotClient] send in
@@ -380,7 +402,7 @@ private extension AccountAccessFeature {
                 }
             } else {
                 state.isComplete = false
-                state.errorMessage = errorMessageForStatus(response.status)
+                state.errorMessage = errorMessageForStatus(accessStatus)
                 return .run { [snapshotClient] _ in
                     await snapshotClient.save(snapshot)
                 }
@@ -525,9 +547,10 @@ private extension AccountAccessFeature {
     }
 
     /// refresh token 결과 처리.
-    private func handleRefreshTokenResult(_ state: inout State,
-                                          result: Result<AccountSession, AccessError>) -> Effect<Action>
-    {
+    private func handleRefreshTokenResult(
+        _ state: inout State,
+        result: Result<AccountSession, AccessError>,
+    ) -> Effect<Action> {
         switch result {
         case let .success(session):
             state.consecutiveRefreshFailures = 0

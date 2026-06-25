@@ -6,6 +6,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case onAppear
     case retryTapped
     case loginTapped
+    case cancelSignIn
     case signInHandoffCompleted(SignInHandoffResult)
     case loginCallbackReceived(URL)
     case _handoffExchangeCompleted(Result<AccountSession, AppHandoffExchangeError>)

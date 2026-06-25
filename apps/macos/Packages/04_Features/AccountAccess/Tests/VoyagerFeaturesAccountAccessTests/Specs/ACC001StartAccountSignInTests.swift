@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -169,6 +167,20 @@ final class ACC001StartAccountSignInTests: XCTestCase {
         XCTAssertEqual(handoffCallCount, 0, "현재 구현: signInInProgress 중 handoff 재시작 없음 (spec gap)")
         await store.finish()
     }
-}
 
-// swiftlint:enable force_unwrapping
+    func testCancelSignInClearsPendingHandoffState() async {
+        var initialState = AccountAccessFeature.State()
+        initialState.isSignInInProgress = true
+        initialState.handoffPendingState = "pending-state-abc"
+
+        let store = makeTestStore(initialState: initialState)
+
+        await store.send(.cancelSignIn) { state in
+            state.isSignInInProgress = false
+            state.didSignInFail = false
+            state.handoffPendingState = nil
+        }
+
+        await store.finish()
+    }
+}

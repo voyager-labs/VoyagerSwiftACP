@@ -91,7 +91,13 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
                     )
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
