@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesTag
 @testable import VoyagerPagesFileManager
 import XCTest
 
@@ -188,6 +189,74 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(item.iconName, "house")
         XCTAssertEqual(item.pageType, .home)
         XCTAssertTrue(item.isActive)
+    }
+
+    /// CTM-004-sidebar_projection_content_tabs: Directory tab은 기존 Locations 항목의 name/iconName을 재사용함
+    /// Tabs row가 `/`, `.Trash` 같은 raw path 이름으로 표시되는 회귀를 방지한다.
+    func testContentTabSidebarItems_reuseLocationDisplayNameAndIconForMatchingDirectory() {
+        let rootID = ContentTabID()
+        let trashID = ContentTabID()
+        let rootURL = URL(fileURLWithPath: "/")
+        let trashURL = URL(fileURLWithPath: "/Users/test/.Trash")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: rootID,
+                    page: .directory,
+                    anchor: .directory(path: rootURL.path),
+                    isPinned: false,
+                    title: "/",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: trashID,
+                    page: .directory,
+                    anchor: .directory(path: trashURL.path),
+                    isPinned: false,
+                    title: ".Trash",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: rootID,
+            recentlyClosed: nil,
+        )
+        state.sidebar.locations = [
+            SidebarItems.LocationItem(name: "Macintosh HD", url: rootURL, iconName: "internaldrive"),
+            SidebarItems.LocationItem(name: "Trash", url: trashURL, iconName: "trash"),
+        ]
+
+        state.syncContentTabSidebarItems()
+
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Macintosh HD", "Trash"])
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.iconName), ["internaldrive", "trash"])
+        XCTAssertTrue(state.sidebar.contentTabSidebarItems.allSatisfy { $0.tagColorCode == nil })
+    }
+
+    /// CTM-004-sidebar_projection_content_tabs: Tag tab은 기존 Tags 섹션과 같은 tagColor를 재사용함
+    /// Tags row가 SF Symbol tag 아이콘으로 표시되는 회귀를 방지한다.
+    func testContentTabSidebarItems_reuseTagColorForMatchingTagVirtualCollection() throws {
+        let tagID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tagID,
+                page: .collection,
+                anchor: .virtualCollection(id: "Work"),
+                isPinned: false,
+                title: "Work",
+                iconName: "folder",
+            )],
+            activeTabID: tagID,
+            recentlyClosed: nil,
+        )
+        state.sidebar.tags = [Tag(name: "Work", colorCode: TagColor.red.colorCode)]
+
+        state.syncContentTabSidebarItems()
+
+        let item = try XCTUnwrap(state.sidebar.contentTabSidebarItems.first)
+        XCTAssertEqual(item.title, "Work")
+        XCTAssertEqual(item.tagColorCode, TagColor.red.colorCode)
     }
 
     // MARK: - CTM-004-sidebar_row_click_routing

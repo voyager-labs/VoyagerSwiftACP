@@ -171,6 +171,34 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-003-home_anchor_conversion_metadata: Recents virtual collection은 Sidebar Recents와 같은 clock 아이콘을 사용함
+    /// Recents tab이 일반 folder 아이콘으로 보이는 회귀를 방지한다.
+    func testUpdateActivePageAnchorFromHome_usesRecentsIcon() async {
+        let homeID = ContentTabID()
+        let recentsAnchor = ContentTabPageAnchor.virtualCollection(id: "Recents")
+        let store = TestStore(
+            initialState: ContentTabState(tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )], activeTabID: homeID, recentlyClosed: nil),
+        ) {
+            ContentTabFeature()
+        }
+
+        await store.send(.updateActivePageAnchor(homeID, recentsAnchor)) {
+            $0.tabs[id: homeID]?.page = .collection
+            $0.tabs[id: homeID]?.anchor = recentsAnchor
+            $0.tabs[id: homeID]?.title = "Recents"
+            $0.tabs[id: homeID]?.iconName = "clock"
+        }
+        XCTAssertEqual(ContentTabProjection.sidebarItems(from: store.state).first?.iconName, "clock")
+        await store.finish()
+    }
+
     /// CTM-003-home_anchor_conversion_metadata: 특수 폴더 anchor는 Sidebar와 같은 폴더별 아이콘을 사용함
     /// Desktop/Downloads/Documents 등 특수 폴더가 일반 folder 아이콘으로 퇴행하는 회귀를 방지한다.
     /// - 검증 내용: .updateActivePageAnchor(.directory(path:)) 후 fileManagerIconClient가 반환한 iconName이 tab metadata에 반영됨

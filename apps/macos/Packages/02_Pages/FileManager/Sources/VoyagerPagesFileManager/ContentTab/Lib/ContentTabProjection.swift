@@ -7,6 +7,7 @@ public extension ContentTabProjection {
         public let id: ContentTabID
         public let title: String?
         public let iconName: String?
+        public let tagColorCode: Int?
         public let pageType: ContentTabPage
         public let isActive: Bool
         public let isPinned: Bool
@@ -20,6 +21,7 @@ public extension ContentTabProjection {
                 id: tab.id,
                 title: tab.title,
                 iconName: tab.iconName,
+                tagColorCode: nil,
                 pageType: tab.page,
                 isActive: state.activeTabID == tab.id,
                 isPinned: tab.isPinned,

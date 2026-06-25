@@ -30,6 +30,7 @@ private struct FileManagerNavigationBridgeReducer {
                  .sidebar(.internal(.tagsLoaded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                 syncSidebarSelection(state: &state, computerName: computerName)
+                state.syncContentTabSidebarItems()
                 return .none
 
             case let .sidebar(.delegate(.openFavorite(favorite))):

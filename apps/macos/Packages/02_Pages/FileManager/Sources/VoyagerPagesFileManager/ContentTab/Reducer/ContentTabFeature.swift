@@ -193,8 +193,8 @@ extension ContentTabFeature {
             fileManagerIconClient.iconNameForURL(URL(fileURLWithPath: path), true, entryLoadingClient)
         case .collectionFile:
             "rectangle.stack"
-        case .virtualCollection:
-            "folder"
+        case let .virtualCollection(id):
+            id == "Recents" ? "clock" : "folder"
         case .aiChat:
             "sparkles"
         }
