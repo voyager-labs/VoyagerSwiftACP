@@ -20,7 +20,6 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         let completedSnapshots = LockIsolated<[AccessStatusSnapshot]>([])
         let snapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
-            entitlements: [.coreLicense],
             fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
         )
 
@@ -247,7 +246,12 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// - 기대 결과: fetchGeneration이 1 증가하고 accessStatusResponse 수신.
     func testRefreshAccessCTADispatchesRefreshAccessTappedThroughOnboardingScope() async {
         let testDate = Date(timeIntervalSince1970: 1_700_000_000)
-        let revokedResponse = AccessStatusResponse(status: .revoked, entitlements: [])
+        let revokedResponse = AccessStatusResponse(
+            hasAccess: false,
+            status: "revoked",
+            reason: "revoked_entitlement",
+            source: "polar",
+        )
 
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .accessUnlock
@@ -276,7 +280,6 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
 
         let expectedSnapshot = AccessStatusSnapshot(
             status: .revoked,
-            entitlements: [],
             fetchedAt: testDate,
         )
 

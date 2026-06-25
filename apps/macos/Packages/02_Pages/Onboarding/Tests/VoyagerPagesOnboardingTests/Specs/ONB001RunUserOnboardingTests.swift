@@ -1074,10 +1074,14 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             ),
             accessSnapshot: StateMutation.activeAccessSnapshot,
         )
-        let revokedResponse = AccessStatusResponse(status: .revoked, entitlements: [])
+        let revokedResponse = AccessStatusResponse(
+            hasAccess: false,
+            status: "revoked",
+            reason: "revoked_entitlement",
+            source: "polar",
+        )
         let revokedSnapshot = AccessStatusSnapshot(
             status: .revoked,
-            entitlements: [],
             fetchedAt: testDate,
         )
 

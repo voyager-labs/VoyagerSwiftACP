@@ -8,13 +8,15 @@ import VoyagerFeaturesAccountAccess
 /// 테스트에서 반복 사용하는 상태 변이 패턴을 네임스페이스로 제공합니다.
 enum StateMutation {
     static let activeAccessResponse = AccessStatusResponse(
-        status: .coreLicenseActive,
-        entitlements: [.coreLicense],
+        hasAccess: true,
+        status: "active",
+        reason: "active_entitlement",
+        productKey: "core",
+        source: "polar",
     )
 
     static let activeAccessSnapshot = AccessStatusSnapshot(
         status: .coreLicenseActive,
-        entitlements: [.coreLicense],
         fetchedAt: Date(timeIntervalSince1970: 0),
     )
 
