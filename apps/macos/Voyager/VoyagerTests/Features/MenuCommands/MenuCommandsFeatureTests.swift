@@ -26,6 +26,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
     /// testTask3EntryCommandsRouteToWindowManagerDelegate 테스트 동작을 검증한다.
     func testTask3EntryCommandsRouteToWindowManagerDelegate() async {
         let appCases: [(MenuCommandItem.AppCommand, WindowManagerAction)] = [
+            (.newTab, .file(.newTab)),
             (.open, .file(.open)),
             (.quickLook, .file(.quickLook)),
         ]
@@ -116,7 +117,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.receive {
             guard case let .delegate(.windowManager(action)) = $0 else { return false }
             switch (action, expected) {
-            case (.file(.open), .file(.open)),
+            case (.file(.newTab), .file(.newTab)),
+                 (.file(.open), .file(.open)),
                  (.file(.quickLook), .file(.quickLook)):
                 return true
             default:
