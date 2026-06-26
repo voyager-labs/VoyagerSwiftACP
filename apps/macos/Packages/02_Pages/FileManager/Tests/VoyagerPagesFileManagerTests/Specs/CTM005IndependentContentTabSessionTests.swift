@@ -1181,6 +1181,72 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-444-collection_dirty_close: inactive target 저장 중 tab switch는 target ownership을 오염시키지 않음
+    func testInactiveDirtyCollectionSaveInProgressIgnoresTabSwitchUntilCompletion() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let dirtyContent = makeDirtyCollectionContent()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: inactiveID,
+            recentlyClosed: nil,
+        )
+        state.contentTabs.previousActiveTabID = activeID
+        state.content = dirtyContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: inactiveID,
+            previousActiveTabID: activeID,
+            previousActiveContent: homeContent,
+            targetContent: dirtyContent,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .save)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, inactiveID)
+        XCTAssertTrue(store.state.content.isCollectionMode)
+
+        await store.send(.contentTabs(.setCurrent(activeID)))
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, inactiveID)
+        XCTAssertTrue(store.state.content.isCollectionMode)
+        XCTAssertEqual(store.state.tabContentStates[activeID]?.navigation.currentPath, homePath)
+
+        let completion = makeSaveCompletion()
+        await store.send(.content(.collection(.saveCompleted(.success(completion)))))
+        await store.receive(\.contentTabs)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
+        await store.finish()
+    }
+
     /// CTM-444-collection_dirty_close: active dirty collection Save가 시작 불가하면 pending을 해제하고 tab을 보존
     func testDirtyActiveCollectionSaveBlockedPreservesTabAndClearsPending() async {
         let tabID = ContentTabID()

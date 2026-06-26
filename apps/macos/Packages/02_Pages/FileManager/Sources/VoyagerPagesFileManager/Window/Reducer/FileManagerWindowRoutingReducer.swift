@@ -50,6 +50,9 @@ struct FileManagerWindowRoutingReducer {
                 }
 
             case .contentTabs(.setCurrent):
+                if keepPendingContentTabCloseFocused(state: &state) {
+                    return .none
+                }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
                 if shouldResyncContentNavigation {
@@ -62,6 +65,9 @@ struct FileManagerWindowRoutingReducer {
                 return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case .contentTabs(.open):
+                if keepPendingContentTabCloseFocusedAfterOpen(state: &state) {
+                    return .none
+                }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
                 if shouldResyncContentNavigation {
@@ -79,6 +85,9 @@ struct FileManagerWindowRoutingReducer {
                 return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case let .contentTabs(.close(tabID)):
+                if keepPendingContentTabCloseFocused(state: &state) {
+                    return .none
+                }
                 var shouldCloseWindow = false
                 let isRemovedTab = state.contentTabs.tabs[id: tabID] == nil
                 let shouldRestorePreviousActiveTab = isRemovedTab
@@ -111,6 +120,9 @@ struct FileManagerWindowRoutingReducer {
                 return shouldCloseWindow ? .merge(handoffEffect, .send(.closeWindow)) : handoffEffect
 
             case .contentTabs(.restore):
+                if keepPendingContentTabCloseFocused(state: &state) {
+                    return .none
+                }
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
                 if shouldResyncContentNavigation {
@@ -183,6 +195,37 @@ struct FileManagerWindowRoutingReducer {
 // MARK: - Close Content Tab Request
 
 private extension FileManagerWindowRoutingReducer {
+    func keepPendingContentTabCloseFocusedAfterOpen(state: inout State) -> Bool {
+        guard let pendingClose = state.pendingContentTabClose else {
+            return false
+        }
+        if let activeTabID = state.contentTabs.activeTabID, activeTabID != pendingClose.tabID {
+            state.contentTabs.tabs.remove(id: activeTabID)
+            state.removeContentState(for: activeTabID)
+        }
+        keepPendingContentTabCloseFocused(pendingClose, state: &state)
+        return true
+    }
+
+    func keepPendingContentTabCloseFocused(state: inout State) -> Bool {
+        guard let pendingClose = state.pendingContentTabClose else {
+            return false
+        }
+        keepPendingContentTabCloseFocused(pendingClose, state: &state)
+        return true
+    }
+
+    func keepPendingContentTabCloseFocused(
+        _ pendingClose: PendingContentTabClose,
+        state: inout State,
+    ) {
+        state.contentTabs.activeTabID = pendingClose.tabID
+        state.contentTabs.previousActiveTabID = pendingClose.previousActiveTabID
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        syncSidebarSelectionForActiveContentTab(state: &state)
+    }
+
     func handleCloseContentTabRequested(
         tabID: ContentTabID,
         state: inout State,
