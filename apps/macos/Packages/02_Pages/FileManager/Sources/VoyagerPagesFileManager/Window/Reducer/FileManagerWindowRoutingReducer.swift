@@ -157,8 +157,13 @@ struct FileManagerWindowRoutingReducer {
                 state.pendingContentTabClose?.didReceiveWriteBackNavigationState = true
                 return finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
 
-            case .content(.collection(.saveCompleted(.failure))),
-                 .content(.collection(.savePanelResponse(nil))),
+            case .content(.collection(.saveCompleted(.failure))):
+                guard state.pendingContentTabClose != nil else {
+                    return .none
+                }
+                return .none
+
+            case .content(.collection(.savePanelResponse(nil))),
                  .content(.collection(.writeBackFailed)),
                  .content(.collection(.delegate(.saveFeedback))):
                 guard let pendingClose = state.pendingContentTabClose else {
@@ -297,6 +302,9 @@ private extension FileManagerWindowRoutingReducer {
     ) {
         guard let previousActiveContent = pendingClose.previousActiveContent else {
             return
+        }
+        if pendingClose.targetContent != nil {
+            state.tabContentStates[pendingClose.tabID] = state.content
         }
         state.content = previousActiveContent
         if let previousActiveTabID = pendingClose.previousActiveTabID {

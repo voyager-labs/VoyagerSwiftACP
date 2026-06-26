@@ -861,8 +861,20 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let error = NSError(domain: "test", code: 0, userInfo: nil)
         await store.send(.content(.collection(.saveCompleted(.failure(error)))))
 
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+
+        let feedback = CollectionSaveFeedback(
+            stage: .saveFailed,
+            category: .saveFailed,
+            title: "Save Failed",
+            message: "Unable to save collection.",
+            isRetryable: true,
+        )
+        await store.send(.content(.collection(.delegate(.saveFeedback(feedback)))))
+
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        XCTAssertEqual(store.state.content.composer.transientFeedback?.category, .saveFailed)
         await store.finish()
     }
 
@@ -1388,7 +1400,12 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
         XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
         XCTAssertNotNil(store.state.contentTabs.tabs[id: inactiveID])
-        XCTAssertNotNil(store.state.tabContentStates[inactiveID])
+        guard let inactiveContent = store.state.tabContentStates[inactiveID] else {
+            XCTFail("inactive tab content should remain after save failure")
+            return
+        }
+        XCTAssertEqual(inactiveContent.composer.transientFeedback?.stage, .save)
+        XCTAssertNotNil(inactiveContent.composer.transientFeedback?.category)
         await store.finish()
     }
 
