@@ -137,6 +137,77 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    func testSwitchingTabsClearsInFlightComposerStateBeforeSavingPreviousSession() async {
+        let searchID = UUID()
+        let filtersID = UUID()
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let directoryPath = "/Users/test/Documents"
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.composer.isLoadingSearch = true
+        homeContent.composer.isLoadingFilters = true
+        homeContent.composer.isFilteringInFlight = true
+        homeContent.composer.activeSearchRequestID = searchID
+        homeContent.composer.activeFiltersRequestID = filtersID
+        homeContent.composer.pendingSearchQuery = "tag:important"
+        homeContent.composer.queryRenderPhase = .searching
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath(directoryPath)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: directoryPath),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [homeID: homeContent, directoryID: directoryContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(directoryID)))
+
+        guard let savedHomeComposer = store.state.tabContentStates[homeID]?.composer else {
+            XCTFail("Expected previous tab content session to be saved")
+            return
+        }
+        XCTAssertFalse(savedHomeComposer.isLoadingSearch)
+        XCTAssertFalse(savedHomeComposer.isLoadingFilters)
+        XCTAssertFalse(savedHomeComposer.isFilteringInFlight)
+        XCTAssertNil(savedHomeComposer.activeSearchRequestID)
+        XCTAssertNil(savedHomeComposer.activeFiltersRequestID)
+        XCTAssertNil(savedHomeComposer.pendingSearchQuery)
+        XCTAssertEqual(savedHomeComposer.queryRenderPhase, .idle)
+        await store.finish()
+    }
+
     func testSwitchingTagTabNamedRecentsPreservesTagRouteKind() async {
         let homeID = ContentTabID()
         let tagID = ContentTabID()

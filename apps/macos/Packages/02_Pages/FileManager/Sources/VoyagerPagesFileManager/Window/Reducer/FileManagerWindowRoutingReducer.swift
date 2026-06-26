@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 
 @Reducer
@@ -40,14 +41,19 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
                 if shouldResyncContentNavigation {
+                    clearInFlightComposerStateOnTabSwitch(state: &state.content.composer)
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return shouldResyncContentNavigation
-                    ? resyncContentNavigationEffect(state: state)
-                    : .none
+                guard shouldResyncContentNavigation else {
+                    return .none
+                }
+                return .merge(
+                    cancelInFlightContentEffectsOnTabSwitch(),
+                    resyncContentNavigationEffect(state: state),
+                )
 
             case .contentTabs(.open):
                 state.saveCurrentContentStateForPreviousActiveTab()
@@ -94,6 +100,31 @@ struct FileManagerWindowRoutingReducer {
             }
         }
     }
+}
+
+private func clearInFlightComposerStateOnTabSwitch(state: inout ComposerFeature.State) {
+    guard state.isLoadingSearch
+        || state.isLoadingFilters
+        || state.isFilteringInFlight
+        || state.activeSearchRequestID != nil
+        || state.activeFiltersRequestID != nil
+    else { return }
+
+    state.isLoadingSearch = false
+    state.isLoadingFilters = false
+    state.isFilteringInFlight = false
+    state.activeSearchRequestID = nil
+    state.activeFiltersRequestID = nil
+    state.pendingSearchQuery = nil
+    state.queryRenderPhase = .idle
+}
+
+private func cancelInFlightContentEffectsOnTabSwitch() -> Effect<FileManagerWindowAction> {
+    .merge(
+        .cancel(id: "openCollectionFile"),
+        .cancel(id: ComposerFeature.CancelID.search),
+        .cancel(id: ComposerFeature.CancelID.filters),
+    )
 }
 
 private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
