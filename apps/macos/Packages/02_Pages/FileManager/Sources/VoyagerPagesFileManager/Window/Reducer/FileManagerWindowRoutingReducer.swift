@@ -120,14 +120,15 @@ private func resyncNavigationStateForActiveContentTab(
             return .collection(navigation)
         }
         return nil
-    case let .virtualCollection(id):
-        if id == "Recents" {
-            return .recents
+    case .virtualCollection:
+        switch state.content.navigation.navigationState {
+        case .recents,
+             .tags,
+             .computer:
+            return state.content.navigation.navigationState
+        default:
+            return nil
         }
-        if state.sidebar.locations.first(where: { $0.isComputer })?.name == id {
-            return .computer
-        }
-        return .tags(id)
     }
 }
 

@@ -137,6 +137,53 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    func testSwitchingTagTabNamedRecentsPreservesTagRouteKind() async {
+        let homeID = ContentTabID()
+        let tagID = ContentTabID()
+        let tagName = "Recents"
+        var tagContent = FileManagerContentFeature.State()
+        tagContent.navigation.navigationState = .tags(tagName)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: tagID,
+                    page: .collection,
+                    anchor: .virtualCollection(id: tagName),
+                    isPinned: false,
+                    title: tagName,
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.tabContentStates = [tagID: tagContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(tagID)))
+        await store.receive(\.content.internal.applyNavigationState)
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, .tags(tagName))
+        XCTAssertNotEqual(store.state.content.navigation.navigationState, .recents)
+        await store.finish()
+    }
+
     func testOpeningNewContentTabSavesPreviousSessionAndCreatesFreshHomeSession() async {
         let homeID = ContentTabID()
         let existingPath = "/Users/test/Existing"
