@@ -688,4 +688,23 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
 
         await store.finish()
     }
+
+    /// FMW-002-show_sidebar: 시작 폴더 path는 Home tab이 아니라 directory tab anchor로 보존한다.
+    /// - 검증 내용: makeInitial(path:)가 content navigation과 active Content Tab anchor를 함께 directory로 동기화하는지 확인
+    /// - 사전 조건: initialFolderPath == /Users/test/Documents
+    /// - 기대 결과: active tab anchor == .directory(path:), page == .directory
+    func test_initialFolderPathSeedsActiveContentTabDirectoryAnchor() {
+        let path = "/Users/test/Documents"
+        let state = FileManagerWindowState.makeInitial(path: path)
+
+        guard let activeTabID = state.contentTabs.activeTabID else {
+            XCTFail("initial window should have an active tab")
+            return
+        }
+
+        XCTAssertEqual(state.content.navigation.navigationState, .folder(path))
+        XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.anchor, .directory(path: path))
+        XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.page, .directory)
+        XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.navigationState, .folder(path))
+    }
 }

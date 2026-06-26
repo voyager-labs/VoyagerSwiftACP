@@ -1,5 +1,7 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import XCTest
 
@@ -225,6 +227,74 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.content.navigation.currentPath, restoredPath)
         XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, currentPath)
         XCTAssertEqual(store.state.tabContentStates[activeTabID]?.navigation.currentPath, restoredPath)
+        await store.finish()
+    }
+
+    func testHomeRouteNewFolderCommandDoesNotRunPathDependentOperation() async {
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .home
+        state.contentTabs.tabs[id: state.contentTabs.activeTabID ?? ContentTabID()]?.anchor = .homeDefault
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.newFolder))
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, .home)
+        if case .folder = store.state.content.navigation.navigationState {
+            XCTFail("Home route should not expose a filesystem directory for path-dependent commands")
+        }
+        await store.finish()
+    }
+
+    func testInternalApplyCollectionNavigationSyncsActiveContentTabAnchor() async {
+        let tabID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/spec.voycoll")
+        let navigationState = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: collectionURL, name: "spec"),
+            context: CollectionContext(query: "", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Documents"),
+                isPinned: false,
+                title: "Documents",
+                iconName: "folder",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.navigation(.internal(.setNavigationState(navigationState)))) {
+            $0.content.navigation.navigationState = navigationState
+        }
+        await store.send(.content(.internal(.applyNavigationState(navigationState))))
+        await store.receive(\.contentTabs) {
+            $0.contentTabs.tabs[id: tabID]?.anchor = .collectionFile(url: collectionURL)
+            $0.contentTabs.tabs[id: tabID]?.page = .collection
+            $0.contentTabs.tabs[id: tabID]?.title = "spec"
+            $0.contentTabs.tabs[id: tabID]?.iconName = "rectangle.stack"
+            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
+        }
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, navigationState)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.anchor, .collectionFile(url: collectionURL))
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.page, .collection)
         await store.finish()
     }
 }

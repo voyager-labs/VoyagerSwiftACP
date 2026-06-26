@@ -28,6 +28,7 @@ public struct FileManagerWindowState: Equatable {
 
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
+            state.syncActiveTabAnchorForInitialPath(path)
         }
 
         state.syncActiveTabContentState()
@@ -48,6 +49,7 @@ public struct FileManagerWindowState: Equatable {
 
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
+            state.syncActiveTabAnchorForInitialPath(path)
         }
 
         state.syncActiveTabContentState()
@@ -69,6 +71,15 @@ extension FileManagerWindowState {
     var activeTabContentStateMissing: Bool {
         guard let activeTabID = contentTabs.activeTabID else { return false }
         return tabContentStates[activeTabID] == nil
+    }
+
+    mutating func syncActiveTabAnchorForInitialPath(_ path: String) {
+        guard let activeTabID = contentTabs.activeTabID else { return }
+        contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: path)
+        contentTabs.tabs[id: activeTabID]?.page = .directory
+        let title = URL(fileURLWithPath: path).lastPathComponent
+        contentTabs.tabs[id: activeTabID]?.title = title.isEmpty ? path : title
+        contentTabs.tabs[id: activeTabID]?.iconName = "folder"
     }
 
     mutating func syncActiveTabContentState() {

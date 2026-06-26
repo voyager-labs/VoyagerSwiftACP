@@ -137,9 +137,7 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func handleEntryRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
-        let currentPath = state.content.navigation.currentPath
-
-        if let effect = handleEntryRequestPathDependent(command, currentPath: currentPath, state: state) {
+        if let effect = handleEntryRequestPathDependent(command, state: state) {
             return effect
         }
 
@@ -164,12 +162,13 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func handleEntryRequestPathDependent(
         _ command: Action.WindowCommand,
-        currentPath: String,
         state: State,
     ) -> Effect<Action>? {
+        guard case let .folder(currentPath) = state.content.navigation.navigationState else { return nil }
+
         switch command {
         case .newFolder:
-            .send(.content(.entryViewLayout(.entryOperations(
+            return .send(.content(.entryViewLayout(.entryOperations(
                 .edit(.createNewFolder(
                     parentPath: currentPath,
                     siblingNames: state.content.entryViewLayout.entries.map(\.name),
@@ -177,12 +176,12 @@ struct FileManagerWindowCommandRoutingReducer {
             ))))
 
         case .paste:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
                 .pasteItems(destinationPath: currentPath),
             ))))))
 
         default:
-            nil
+            return nil
         }
     }
 
