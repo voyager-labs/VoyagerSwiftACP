@@ -60,6 +60,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // exhaustivity = .off로 전환 검증에 집중한다.
@@ -473,6 +475,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let initialInspectorVisible = initialState.inspector.inspectorVisible
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 새 tab id는 reducer 내부에서 생성되므로 최종 invariant만 검증한다.
         store.exhaustivity = .off
@@ -494,6 +498,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_commandRouting_createsHomeTabAppendedActive() async throws {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로
         // routing layer의 최종 상태 검증에 집중한다.
@@ -525,6 +531,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         initialState.contentTabs.tabs[0].page = .directory
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // anchor 복제 방지 검증에 집중한다.
@@ -546,6 +554,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_commandRouting_existingTabTransitionsInactive() async throws {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // tab active 전환 검증에 집중한다.
@@ -575,6 +585,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_projection_sidebarItemsIncludesNewHomeTab() async throws {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 projection 검증에 집중한다.
         store.exhaustivity = .off
@@ -614,6 +626,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: maxTabs guard로 인해 contentTabs action이 상태를 변경하지 않으므로 불변 검증에 집중한다.
         store.exhaustivity = .off
@@ -632,6 +646,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_repeatedCreation_usesUniqueIDs() async {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 ID uniqueness 검증에 집중한다.
         store.exhaustivity = .off

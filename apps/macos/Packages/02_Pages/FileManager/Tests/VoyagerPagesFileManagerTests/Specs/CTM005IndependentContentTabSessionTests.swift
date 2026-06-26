@@ -255,6 +255,46 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    func testOpeningNewContentTabClearsEntryLoadingStateBeforeSavingPreviousSession() async {
+        let homeID = ContentTabID()
+        let existingPath = "/Users/test/Loading"
+        var existingContent = FileManagerContentFeature.State()
+        existingContent.navigation.seedInitialFolderPath(existingPath)
+        existingContent.entryViewLayout.entryOperations.isLoading = true
+        existingContent.entryViewLayout.entryOperations.isReloading = true
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .directory,
+                anchor: .directory(path: existingPath),
+                isPinned: false,
+                title: "Loading",
+                iconName: "folder",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = existingContent
+        state.tabContentStates = [homeID: existingContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        let savedEntryOperations = store.state.tabContentStates[homeID]?.entryViewLayout.entryOperations
+        XCTAssertFalse(savedEntryOperations?.isLoading ?? true)
+        XCTAssertFalse(savedEntryOperations?.isReloading ?? true)
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, homeID)
+        await store.finish()
+    }
+
     func testOpeningNewContentTabSavesPreviousSessionAndCreatesFreshHomeSession() async {
         let homeID = ContentTabID()
         let existingPath = "/Users/test/Existing"
@@ -279,6 +319,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 새 ContentTabID는 reducer 내부에서 생성되므로 결과 invariant를 직접 검증한다.
         store.exhaustivity = .off
@@ -321,6 +363,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // restore는 reducer 내부에서 새 ContentTabID를 생성하므로 결과 invariant를 검증한다.
         store.exhaustivity = .off

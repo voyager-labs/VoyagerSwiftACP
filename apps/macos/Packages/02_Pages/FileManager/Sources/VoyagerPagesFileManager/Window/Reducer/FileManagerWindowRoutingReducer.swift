@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 
 @Reducer
 struct FileManagerWindowRoutingReducer {
@@ -41,21 +42,16 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
                     || state.activeTabContentStateMissing
                 if shouldResyncContentNavigation {
-                    clearInFlightComposerStateOnTabSwitch(state: &state.content.composer)
+                    prepareContentForActiveTabHandoff(state: &state.content)
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                guard shouldResyncContentNavigation else {
-                    return .none
-                }
-                return .merge(
-                    cancelInFlightContentEffectsOnTabSwitch(),
-                    resyncContentNavigationEffect(state: state),
-                )
+                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case .contentTabs(.open):
+                prepareContentForActiveTabHandoff(state: &state.content)
                 state.saveCurrentContentStateForPreviousActiveTab()
                 if state.activeTabContentStateMissing {
                     let activeAnchor = state.contentTabs.activeTabID.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
@@ -64,32 +60,42 @@ struct FileManagerWindowRoutingReducer {
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return .none
+                return activeTabHandoffEffect(true, state: state)
 
             case let .contentTabs(.close(tabID)):
-                if state.contentTabs.tabs[id: tabID] == nil {
+                let isRemovedTab = state.contentTabs.tabs[id: tabID] == nil
+                let shouldRestorePreviousActiveTab = isRemovedTab
+                    && state.contentTabs.previousActiveTabID == tabID
+                let shouldResetLastTabContent = state.contentTabs.previousActiveTabID == tabID
+                    && state.contentTabs.activeTabID == tabID
+                let shouldResyncContentNavigation = shouldRestorePreviousActiveTab || shouldResetLastTabContent
+                if shouldResyncContentNavigation {
+                    prepareContentForActiveTabHandoff(state: &state.content)
+                }
+                if isRemovedTab {
                     state.removeContentState(for: tabID)
-                    if state.contentTabs.previousActiveTabID == tabID {
+                    if shouldRestorePreviousActiveTab {
                         state.restoreContentStateForActiveTab()
                     }
-                } else if state.contentTabs.previousActiveTabID == tabID,
-                          state.contentTabs.activeTabID == tabID
-                {
+                } else if shouldResetLastTabContent {
                     state.content = contentState(for: state.contentTabs.tabs[id: tabID]?.anchor)
                     state.syncActiveTabContentState()
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return .none
+                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case .contentTabs(.restore):
-                if state.contentTabs.previousActiveTabID != nil || state.activeTabContentStateMissing {
+                let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
+                    || state.activeTabContentStateMissing
+                if shouldResyncContentNavigation {
+                    prepareContentForActiveTabHandoff(state: &state.content)
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return .none
+                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case .contentTabs:
                 state.syncContentTabSidebarItems()
@@ -100,6 +106,12 @@ struct FileManagerWindowRoutingReducer {
             }
         }
     }
+}
+
+private func prepareContentForActiveTabHandoff(state: inout FileManagerContentFeature.State) {
+    clearInFlightComposerStateOnTabSwitch(state: &state.composer)
+    state.entryViewLayout.entryOperations.isLoading = false
+    state.entryViewLayout.entryOperations.isReloading = false
 }
 
 private func clearInFlightComposerStateOnTabSwitch(state: inout ComposerFeature.State) {
@@ -119,11 +131,25 @@ private func clearInFlightComposerStateOnTabSwitch(state: inout ComposerFeature.
     state.queryRenderPhase = .idle
 }
 
+private func activeTabHandoffEffect(
+    _ shouldResyncContentNavigation: Bool,
+    state: FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    guard shouldResyncContentNavigation else {
+        return .none
+    }
+    return .merge(
+        cancelInFlightContentEffectsOnTabSwitch(),
+        resyncContentNavigationEffect(state: state),
+    )
+}
+
 private func cancelInFlightContentEffectsOnTabSwitch() -> Effect<FileManagerWindowAction> {
     .merge(
         .cancel(id: "openCollectionFile"),
         .cancel(id: ComposerFeature.CancelID.search),
         .cancel(id: ComposerFeature.CancelID.filters),
+        .cancel(id: EntryOperationsLoadingCancelID.loadItems),
     )
 }
 
