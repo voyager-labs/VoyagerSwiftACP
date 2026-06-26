@@ -34,7 +34,7 @@ func handleNavigationDelegate(
     }
 }
 
-private func syncActiveContentTabEffect(
+func syncActiveContentTabEffect(
     _ navigationState: ContentPageNavigationRoute,
     state: FileManagerWindowState,
     computerName: String,

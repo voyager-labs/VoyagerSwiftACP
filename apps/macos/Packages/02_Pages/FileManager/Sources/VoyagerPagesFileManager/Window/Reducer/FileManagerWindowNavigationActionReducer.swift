@@ -242,6 +242,10 @@ struct FileManagerNavigationActionReducer {
     }
 }
 
+struct OpenCollectionFileCancelID: Hashable {
+    let windowID: UUID?
+}
+
 private func handleOpenCollectionFile(
     _ url: URL,
     state: inout FileManagerWindowState,
@@ -277,7 +281,10 @@ private func handleOpenCollectionFile(
             )
         }
     }
-    .cancellable(id: "openCollectionFile", cancelInFlight: true)
+    .cancellable(
+        id: OpenCollectionFileCancelID(windowID: state.content.entryViewLayout.entryOperations.windowID),
+        cancelInFlight: true,
+    )
 
     return .concatenate(
         .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(true))))),

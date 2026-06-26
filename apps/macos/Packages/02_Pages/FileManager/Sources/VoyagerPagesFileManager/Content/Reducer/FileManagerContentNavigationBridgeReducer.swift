@@ -119,6 +119,8 @@ struct FileManagerContentNavigationBridgeReducer {
             .concatenate(
                 .cancel(id: CancelID.folderWatcher),
                 .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+                .send(.entryViewLayout(.internal(.applyClearSelection))),
+                sendEntryOperations(.loading(.itemsLoaded([]))),
             )
 
         case let .folder(path):

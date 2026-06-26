@@ -1,5 +1,7 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import XCTest
 
@@ -7,11 +9,12 @@ import XCTest
 final class CTM005IndependentContentTabSessionTests: XCTestCase {
     // MARK: - CTM-005-independent_content_tab_session
 
-    func testSwitchingTabsSwapsStoredFileManagerContentSessionWithoutNavigationEffects() async {
+    func testSwitchingTabsRestoresContentSessionAndRestartsFolderWatcher() async {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
         let homePath = "/Users/test/HomeSession"
         let directoryPath = "/Users/test/Desktop"
+        let changedPath = "\(directoryPath)/Changed.txt"
         var homeContent = FileManagerContentFeature.State()
         homeContent.navigation.seedInitialFolderPath(homePath)
         var directoryContent = FileManagerContentFeature.State()
@@ -45,29 +48,23 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { url in
+                XCTAssertEqual(url.path, directoryPath)
+                return AsyncStream { continuation in
+                    continuation.yield([changedPath])
+                    continuation.finish()
+                }
+            }
         }
+        store.exhaustivity = .off
 
-        await store.send(.contentTabs(.setCurrent(directoryID))) {
-            $0.contentTabs.previousActiveTabID = homeID
-            $0.contentTabs.activeTabID = directoryID
-            $0.tabContentStates[homeID] = homeContent
-            $0.content = directoryContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-        }
+        await store.send(.contentTabs(.setCurrent(directoryID)))
 
         XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
         XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, homePath)
-
-        await store.send(.contentTabs(.setCurrent(homeID))) {
-            $0.contentTabs.previousActiveTabID = directoryID
-            $0.contentTabs.activeTabID = homeID
-            $0.tabContentStates[directoryID] = directoryContent
-            $0.content = homeContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-        }
-
-        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
-        XCTAssertEqual(store.state.tabContentStates[directoryID]?.navigation.currentPath, directoryPath)
+        await store.receive(\.content.externalFileSystemChanged, [changedPath])
         await store.finish()
     }
 
@@ -121,26 +118,226 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
         }
+        store.exhaustivity = .off
 
-        await store.send(.contentTabs(.setCurrent(downloadsID))) {
-            $0.contentTabs.previousActiveTabID = projectsID
-            $0.contentTabs.activeTabID = downloadsID
-            $0.tabContentStates[projectsID] = projectsContent
-            $0.content = downloadsContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-            $0.sidebar.selectedSidebarItem = "Downloads"
+        await store.send(.contentTabs(.setCurrent(downloadsID)))
+        XCTAssertEqual(store.state.sidebar.selectedSidebarItem, "Downloads")
+
+        await store.send(.contentTabs(.setCurrent(projectsID)))
+        XCTAssertEqual(store.state.sidebar.selectedSidebarItem, "Projects")
+
+        await store.finish()
+    }
+
+    func testSwitchingTabsClearsInFlightComposerStateBeforeSavingPreviousSession() async {
+        let searchID = UUID()
+        let filtersID = UUID()
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let directoryPath = "/Users/test/Documents"
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.composer.isLoadingSearch = true
+        homeContent.composer.isLoadingFilters = true
+        homeContent.composer.isFilteringInFlight = true
+        homeContent.composer.activeSearchRequestID = searchID
+        homeContent.composer.activeFiltersRequestID = filtersID
+        homeContent.composer.pendingSearchQuery = "tag:important"
+        homeContent.composer.queryRenderPhase = .searching
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath(directoryPath)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: directoryPath),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [homeID: homeContent, directoryID: directoryContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
         }
+        store.exhaustivity = .off
 
-        await store.send(.contentTabs(.setCurrent(projectsID))) {
-            $0.contentTabs.previousActiveTabID = downloadsID
-            $0.contentTabs.activeTabID = projectsID
-            $0.tabContentStates[downloadsID] = downloadsContent
-            $0.content = projectsContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-            $0.sidebar.selectedSidebarItem = "Projects"
+        await store.send(.contentTabs(.setCurrent(directoryID)))
+
+        guard let savedHomeComposer = store.state.tabContentStates[homeID]?.composer else {
+            XCTFail("Expected previous tab content session to be saved")
+            return
         }
+        XCTAssertFalse(savedHomeComposer.isLoadingSearch)
+        XCTAssertFalse(savedHomeComposer.isLoadingFilters)
+        XCTAssertFalse(savedHomeComposer.isFilteringInFlight)
+        XCTAssertNil(savedHomeComposer.activeSearchRequestID)
+        XCTAssertNil(savedHomeComposer.activeFiltersRequestID)
+        XCTAssertNil(savedHomeComposer.pendingSearchQuery)
+        XCTAssertEqual(savedHomeComposer.queryRenderPhase, .idle)
+        await store.finish()
+    }
 
+    func testSwitchingTagTabNamedRecentsPreservesTagRouteKind() async {
+        let homeID = ContentTabID()
+        let tagID = ContentTabID()
+        let tagName = "Recents"
+        var tagContent = FileManagerContentFeature.State()
+        tagContent.navigation.navigationState = .tags(tagName)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: tagID,
+                    page: .collection,
+                    anchor: .virtualCollection(id: tagName),
+                    isPinned: false,
+                    title: tagName,
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.tabContentStates = [tagID: tagContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(tagID)))
+        await store.receive(\.content.internal.applyNavigationState)
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, .tags(tagName))
+        XCTAssertNotEqual(store.state.content.navigation.navigationState, .recents)
+        await store.finish()
+    }
+
+    func testOpeningNewContentTabClearsEntryLoadingStateBeforeSavingPreviousSession() async {
+        let homeID = ContentTabID()
+        let existingPath = "/Users/test/Loading"
+        var existingContent = FileManagerContentFeature.State()
+        existingContent.navigation.seedInitialFolderPath(existingPath)
+        existingContent.entryViewLayout.entryOperations.isLoading = true
+        existingContent.entryViewLayout.entryOperations.isReloading = true
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .directory,
+                anchor: .directory(path: existingPath),
+                isPinned: false,
+                title: "Loading",
+                iconName: "folder",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = existingContent
+        state.tabContentStates = [homeID: existingContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        let savedEntryOperations = store.state.tabContentStates[homeID]?.entryViewLayout.entryOperations
+        XCTAssertFalse(savedEntryOperations?.isLoading ?? true)
+        XCTAssertFalse(savedEntryOperations?.isReloading ?? true)
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, homeID)
+        await store.finish()
+    }
+
+    func testOpeningNewContentTabAppliesWindowContextToFreshContent() async {
+        let homeID = ContentTabID()
+        let windowID = UUID()
+        var existingContent = FileManagerContentFeature.State()
+        existingContent.entryViewLayout.mode = .grid
+        existingContent.entryViewLayout.showHiddenFiles = true
+        existingContent.entryViewLayout.listIconSize = 18
+        existingContent.entryViewLayout.gridIconSize = 96
+        existingContent.entryViewLayout.entryOperations.windowID = windowID
+        existingContent.composer.cancellationOwnerID = windowID
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = existingContent
+        state.tabContentStates = [homeID: existingContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.windowID, windowID)
+        XCTAssertEqual(store.state.content.composer.cancellationOwnerID, windowID)
+        XCTAssertEqual(store.state.content.entryViewLayout.mode, .grid)
+        XCTAssertTrue(store.state.content.entryViewLayout.showHiddenFiles)
+        XCTAssertEqual(store.state.content.entryViewLayout.listIconSize, 18)
+        XCTAssertEqual(store.state.content.entryViewLayout.gridIconSize, 96)
         await store.finish()
     }
 
@@ -168,6 +365,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 새 ContentTabID는 reducer 내부에서 생성되므로 결과 invariant를 직접 검증한다.
         store.exhaustivity = .off
@@ -210,6 +409,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // restore는 reducer 내부에서 새 ContentTabID를 생성하므로 결과 invariant를 검증한다.
         store.exhaustivity = .off
@@ -228,11 +429,6 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
-    /// CTM-005-independent_content_tab_session: active tab close 시 fallback tab의 저장된 session으로 복원됨
-    /// active tab 닫힘으로 인해 fallback tab의 FileManagerContent session이 올바르게 복원되는지 검증한다.
-    /// - 검증 내용: close 후 activeTabID == fallback, content.navigation == fallback tab의 session 경로
-    /// - 사전 조건: 두 content tab이 서로 다른 경로를 가진 session을 보유, active tab이 B(directory)
-    /// - 기대 결과: activeTabID == A, content.currentPath == A session 경로, closed tab session(tabContentStates[B]) == nil
     func testActiveCloseRestoresFallbackTabSession() async {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
@@ -272,6 +468,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // KCF: FileManagerFeature의 routing reducer가 non-exhaustive side effect를 수행함
         store.exhaustivity = .off
@@ -328,6 +526,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // KCF: FileManagerFeature의 routing reducer가 non-exhaustive side effect를 수행함
         store.exhaustivity = .off
@@ -365,12 +565,159 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // KCF: closeWindow action 이후 NSApp close side effect는 여기서 검증하지 않음
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.close(directoryID)))
         await store.receive(\.closeWindow)
+        await store.finish()
+    }
+
+    func testRestoringCollectionTabReappliesClosedNavigationRoute() async {
+        let homeID = ContentTabID()
+        let collectionID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/restored.voycoll")
+        let collectionContext = CollectionContext(query: "kind:document", scopes: [], conditions: [])
+        let collectionRoute = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: collectionURL, name: "restored"),
+            context: collectionContext,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var collectionContent = FileManagerContentFeature.State()
+        collectionContent.navigation.navigationState = collectionRoute
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.navigationState = .home
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: collectionID,
+                    page: .collection,
+                    anchor: .collectionFile(url: collectionURL),
+                    isPinned: false,
+                    title: "restored",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: collectionID,
+            recentlyClosed: nil,
+        )
+        state.content = collectionContent
+        state.tabContentStates = [
+            homeID: homeContent,
+            collectionID: collectionContent,
+        ]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(collectionID)))
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(store.state.content.navigation.navigationState, .home)
+
+        await store.send(.contentTabs(.restore))
+        await store.receive(\.content.internal.applyNavigationState)
+        await store.receive(\.navigation.internal.navigateToCollection)
+        await store.receive(\.content.collection.navigationStateApplied)
+
+        guard let restoredID = store.state.contentTabs.activeTabID else {
+            XCTFail("restore should activate the restored collection tab")
+            return
+        }
+        XCTAssertNotEqual(restoredID, homeID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: restoredID]?.anchor, .collectionFile(url: collectionURL))
+        XCTAssertEqual(store.state.content.navigation.navigationState, collectionRoute)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, collectionURL)
+        XCTAssertEqual(store.state.content.collection.collectionContext, collectionContext)
+        XCTAssertEqual(store.state.tabContentStates[restoredID]?.navigation.navigationState, collectionRoute)
+        XCTAssertNil(store.state.recentlyClosedNavigationRoute)
+        await store.finish()
+    }
+
+    func testHomeRouteNewFolderCommandDoesNotRunPathDependentOperation() async {
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .home
+        state.contentTabs.tabs[id: state.contentTabs.activeTabID ?? ContentTabID()]?.anchor = .homeDefault
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.request(.newFolder))
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, .home)
+        if case .folder = store.state.content.navigation.navigationState {
+            XCTFail("Home route should not expose a filesystem directory for path-dependent commands")
+        }
+        await store.finish()
+    }
+
+    func testInternalApplyCollectionNavigationSyncsActiveContentTabAnchor() async {
+        let tabID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/spec.voycoll")
+        let navigationState = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: collectionURL, name: "spec"),
+            context: CollectionContext(query: "", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Documents"),
+                isPinned: false,
+                title: "Documents",
+                iconName: "folder",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.navigation(.internal(.setNavigationState(navigationState)))) {
+            $0.content.navigation.navigationState = navigationState
+        }
+        await store.send(.content(.internal(.applyNavigationState(navigationState))))
+        await store.receive(\.contentTabs) {
+            $0.contentTabs.tabs[id: tabID]?.anchor = .collectionFile(url: collectionURL)
+            $0.contentTabs.tabs[id: tabID]?.page = .collection
+            $0.contentTabs.tabs[id: tabID]?.title = "spec"
+            $0.contentTabs.tabs[id: tabID]?.iconName = "rectangle.stack"
+            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
+        }
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, navigationState)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.anchor, .collectionFile(url: collectionURL))
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.page, .collection)
         await store.finish()
     }
 }

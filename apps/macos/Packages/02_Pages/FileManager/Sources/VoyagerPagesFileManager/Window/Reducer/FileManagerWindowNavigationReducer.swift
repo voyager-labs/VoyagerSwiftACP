@@ -56,11 +56,30 @@ private struct FileManagerNavigationBridgeReducer {
             case let .content(.internal(.requestNavigation(navigationAction))):
                 return .send(.navigation(navigationAction))
 
+            case let .content(.internal(.applyNavigationState(navigationState))):
+                let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
+                    ?? state.content.navigation.currentPath
+                syncSidebarSelection(state: &state, computerName: computerName)
+                return syncActiveContentTabEffect(
+                    navigationState,
+                    state: state,
+                    computerName: computerName,
+                )
+
             case let .content(.internal(.performPendingNavigation(pending))):
                 return .send(.navigation(.internal(.performNavigation(pending))))
 
-            case .content(.delegate(.composerCollectionSearchSucceeded)),
-                 .content(.delegate(.collectionChangesDiscarded)):
+            case .content(.delegate(.composerCollectionSearchSucceeded)):
+                let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
+                    ?? state.content.navigation.currentPath
+                syncSidebarSelection(state: &state, computerName: computerName)
+                return syncActiveContentTabEffect(
+                    state.content.navigation.navigationState,
+                    state: state,
+                    computerName: computerName,
+                )
+
+            case .content(.delegate(.collectionChangesDiscarded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none

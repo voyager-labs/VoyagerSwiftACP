@@ -1,7 +1,9 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @ObservableState
 public struct FileManagerWindowState: Equatable {
@@ -10,6 +12,7 @@ public struct FileManagerWindowState: Equatable {
     public var sidebar: FileManagerSidebarFeature.State
     public var inspector: FileManagerInspectorFeature.State
     public var contentTabs: ContentTabState
+    public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
 
     public init() {
         content = .init()
@@ -17,6 +20,7 @@ public struct FileManagerWindowState: Equatable {
         inspector = .init()
         contentTabs = .withHomeTab()
         tabContentStates = [:]
+        recentlyClosedNavigationRoute = nil
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
         }
@@ -28,6 +32,14 @@ public struct FileManagerWindowState: Equatable {
 
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
+            state.syncActiveTabAnchorForInitialPath(path)
+        } else {
+            let activeAnchor = state.contentTabs.activeTabID
+                .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+            state.content = FileManagerContentFeature.State.initialContent(
+                for: activeAnchor,
+                inheritingWindowContextFrom: state.content,
+            )
         }
 
         state.syncActiveTabContentState()
@@ -48,6 +60,14 @@ public struct FileManagerWindowState: Equatable {
 
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
+            state.syncActiveTabAnchorForInitialPath(path)
+        } else {
+            let activeAnchor = state.contentTabs.activeTabID
+                .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+            state.content = FileManagerContentFeature.State.initialContent(
+                for: activeAnchor,
+                inheritingWindowContextFrom: state.content,
+            )
         }
 
         state.syncActiveTabContentState()
@@ -71,6 +91,15 @@ extension FileManagerWindowState {
         return tabContentStates[activeTabID] == nil
     }
 
+    mutating func syncActiveTabAnchorForInitialPath(_ path: String) {
+        guard let activeTabID = contentTabs.activeTabID else { return }
+        contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: path)
+        contentTabs.tabs[id: activeTabID]?.page = .directory
+        let title = URL(fileURLWithPath: path).lastPathComponent
+        contentTabs.tabs[id: activeTabID]?.title = title.isEmpty ? path : title
+        contentTabs.tabs[id: activeTabID]?.iconName = "folder"
+    }
+
     mutating func syncActiveTabContentState() {
         guard let activeTabID = contentTabs.activeTabID else { return }
         tabContentStates[activeTabID] = content
@@ -87,7 +116,10 @@ extension FileManagerWindowState {
             content = savedContent
         } else {
             let activeAnchor = contentTabs.tabs[id: activeTabID]?.anchor
-            content = FileManagerContentFeature.State.initialContent(for: activeAnchor)
+            content = FileManagerContentFeature.State.initialContent(
+                for: activeAnchor,
+                inheritingWindowContextFrom: content,
+            )
             tabContentStates[activeTabID] = content
         }
     }
@@ -165,21 +197,52 @@ private extension ContentTabProjection.ContentTabSidebarItem {
     }
 }
 
-private extension FileManagerContentFeature.State {
-    static func initialContent(for anchor: ContentTabPageAnchor?) -> Self {
+extension FileManagerContentFeature.State {
+    static func initialContent(
+        for anchor: ContentTabPageAnchor?,
+        inheritingWindowContextFrom source: Self? = nil,
+    ) -> Self {
         var content = Self()
+
+        if let source {
+            content.applyWindowContext(from: source)
+        }
 
         switch anchor {
         case let .directory(path):
             content.navigation.seedInitialFolderPath(path)
+        case let .collectionFile(url):
+            content.navigation.navigationState = .collection(.init(
+                kind: .file(url: url, name: url.deletingPathExtension().lastPathComponent),
+                context: CollectionContext(query: "", scopes: [], conditions: []),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            ))
+        case let .virtualCollection(id):
+            content.navigation.navigationState = .tags(id)
         case .homeDefault,
-             .collectionFile,
-             .virtualCollection,
              .aiChat,
              .none:
             break
         }
 
         return content
+    }
+
+    mutating func applyWindowContext(from source: Self) {
+        entryViewLayout.mode = source.entryViewLayout.mode
+        entryViewLayout.listIconSize = source.entryViewLayout.listIconSize
+        entryViewLayout.gridIconSize = source.entryViewLayout.gridIconSize
+        entryViewLayout.listTextSize = source.entryViewLayout.listTextSize
+        entryViewLayout.gridTextSize = source.entryViewLayout.gridTextSize
+        entryViewLayout.showHiddenFiles = source.entryViewLayout.showHiddenFiles
+        entryViewLayout.entryArrangements.sortKey = source.entryViewLayout.entryArrangements.sortKey
+        entryViewLayout.entryArrangements.sortOrder = source.entryViewLayout.entryArrangements.sortOrder
+        entryViewLayout.entryArrangements.hasUserSetSortOrder = source.entryViewLayout.entryArrangements
+            .hasUserSetSortOrder
+        entryViewLayout.entryArrangements.groupKey = source.entryViewLayout.entryArrangements.groupKey
+        entryViewLayout.entryOperations.windowID = source.entryViewLayout.entryOperations.windowID
+        composer.cancellationOwnerID = source.composer.cancellationOwnerID
     }
 }
