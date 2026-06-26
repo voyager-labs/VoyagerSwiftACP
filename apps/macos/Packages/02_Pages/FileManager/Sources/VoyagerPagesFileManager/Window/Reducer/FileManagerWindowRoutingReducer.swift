@@ -143,13 +143,19 @@ struct FileManagerWindowRoutingReducer {
                 }
                 return .none
 
-            case .content(.collection(.delegate(.writeBackNavigationPrepared))):
-                guard let pendingClose = state.pendingContentTabClose else {
+            case .content(.composer(.internal(.syncCollectionState))):
+                guard state.pendingContentTabClose != nil else {
                     return .none
                 }
-                restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
-                state.pendingContentTabClose = nil
-                return .send(.contentTabs(.close(pendingClose.tabID)))
+                state.pendingContentTabClose?.didReceiveWriteBackComposerSync = true
+                return finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
+
+            case .navigation(.internal(.setNavigationState)):
+                guard state.pendingContentTabClose != nil else {
+                    return .none
+                }
+                state.pendingContentTabClose?.didReceiveWriteBackNavigationState = true
+                return finalizePendingContentTabCloseIfWriteBackEffectsCompleted(state: &state)
 
             case .content(.collection(.saveCompleted(.failure))),
                  .content(.collection(.savePanelResponse(nil))),
@@ -247,6 +253,20 @@ private extension FileManagerWindowRoutingReducer {
             }
             return .send(.content(.composer(.saveCollection)))
         }
+    }
+
+    func finalizePendingContentTabCloseIfWriteBackEffectsCompleted(
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let pendingClose = state.pendingContentTabClose,
+              pendingClose.didReceiveWriteBackNavigationState,
+              pendingClose.didReceiveWriteBackComposerSync
+        else {
+            return .none
+        }
+        restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
+        state.pendingContentTabClose = nil
+        return .send(.contentTabs(.close(pendingClose.tabID)))
     }
 
     func canStartPendingContentSave(_ content: FileManagerContentFeature.State) -> Bool {
