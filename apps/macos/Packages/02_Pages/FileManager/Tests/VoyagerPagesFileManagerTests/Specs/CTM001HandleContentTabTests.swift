@@ -623,6 +623,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.contentTabs.tabs = tabs
         state.contentTabs.activeTabID = firstID
+        state.content.entryViewLayout.entryOperations.isLoading = true
+        state.content.entryViewLayout.entryOperations.isReloading = true
+        state.content.composer.isLoadingSearch = true
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
@@ -636,6 +639,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
         XCTAssertEqual(store.state.contentTabs.activeTabID, firstID)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isLoading)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isReloading)
+        XCTAssertTrue(store.state.content.composer.isLoadingSearch)
     }
 
     /// CTM-001-open_new_content_tab_invariants: 연속 openNewContentTab은 중복되지 않는 ID를 생성함

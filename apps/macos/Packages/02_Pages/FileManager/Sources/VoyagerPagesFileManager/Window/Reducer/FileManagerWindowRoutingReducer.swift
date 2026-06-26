@@ -51,16 +51,21 @@ struct FileManagerWindowRoutingReducer {
                 return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case .contentTabs(.open):
-                prepareContentForActiveTabHandoff(state: &state.content)
-                state.saveCurrentContentStateForPreviousActiveTab()
-                if state.activeTabContentStateMissing {
-                    let activeAnchor = state.contentTabs.activeTabID.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
-                    state.content = contentState(for: activeAnchor, inheritingWindowContextFrom: state.content)
-                    state.syncActiveTabContentState()
+                let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
+                    || state.activeTabContentStateMissing
+                if shouldResyncContentNavigation {
+                    prepareContentForActiveTabHandoff(state: &state.content)
+                    state.saveCurrentContentStateForPreviousActiveTab()
+                    if state.activeTabContentStateMissing {
+                        let activeAnchor = state.contentTabs.activeTabID
+                            .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+                        state.content = contentState(for: activeAnchor, inheritingWindowContextFrom: state.content)
+                        state.syncActiveTabContentState()
+                    }
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return activeTabHandoffEffect(true, state: state)
+                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case let .contentTabs(.close(tabID)):
                 let isRemovedTab = state.contentTabs.tabs[id: tabID] == nil
@@ -142,17 +147,19 @@ private func activeTabHandoffEffect(
         return .none
     }
     return .merge(
-        cancelInFlightContentEffectsOnTabSwitch(),
+        cancelInFlightContentEffectsOnTabSwitch(state: state),
         resyncContentNavigationEffect(state: state),
     )
 }
 
-private func cancelInFlightContentEffectsOnTabSwitch() -> Effect<FileManagerWindowAction> {
+private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
     .merge(
         .cancel(id: "openCollectionFile"),
         .cancel(id: ComposerFeature.CancelID.search),
         .cancel(id: ComposerFeature.CancelID.filters),
-        .cancel(id: EntryOperationsLoadingCancelID.loadItems),
+        .cancel(id: EntryOperationsLoadingCancelID.loadItems(
+            windowID: state.content.entryViewLayout.entryOperations.windowID,
+        )),
     )
 }
 
