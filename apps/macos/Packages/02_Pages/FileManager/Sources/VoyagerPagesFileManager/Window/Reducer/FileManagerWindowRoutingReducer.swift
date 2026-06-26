@@ -55,7 +55,7 @@ struct FileManagerWindowRoutingReducer {
                 state.saveCurrentContentStateForPreviousActiveTab()
                 if state.activeTabContentStateMissing {
                     let activeAnchor = state.contentTabs.activeTabID.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
-                    state.content = contentState(for: activeAnchor)
+                    state.content = contentState(for: activeAnchor, inheritingWindowContextFrom: state.content)
                     state.syncActiveTabContentState()
                 }
                 state.syncContentTabSidebarItems()
@@ -78,7 +78,10 @@ struct FileManagerWindowRoutingReducer {
                         state.restoreContentStateForActiveTab()
                     }
                 } else if shouldResetLastTabContent {
-                    state.content = contentState(for: state.contentTabs.tabs[id: tabID]?.anchor)
+                    state.content = contentState(
+                        for: state.contentTabs.tabs[id: tabID]?.anchor,
+                        inheritingWindowContextFrom: state.content,
+                    )
                     state.syncActiveTabContentState()
                 }
                 state.syncContentTabSidebarItems()
@@ -206,8 +209,12 @@ private func syncSidebarSelectionForActiveContentTab(state: inout FileManagerWin
     }
 }
 
-private func contentState(for anchor: ContentTabPageAnchor?) -> FileManagerContentFeature.State {
+private func contentState(
+    for anchor: ContentTabPageAnchor?,
+    inheritingWindowContextFrom source: FileManagerContentFeature.State,
+) -> FileManagerContentFeature.State {
     var content = FileManagerContentFeature.State()
+    content.applyWindowContext(from: source)
 
     switch anchor {
     case let .directory(path):

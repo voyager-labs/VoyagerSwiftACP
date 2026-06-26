@@ -295,6 +295,50 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    func testOpeningNewContentTabAppliesWindowContextToFreshContent() async {
+        let homeID = ContentTabID()
+        let windowID = UUID()
+        var existingContent = FileManagerContentFeature.State()
+        existingContent.entryViewLayout.mode = .grid
+        existingContent.entryViewLayout.showHiddenFiles = true
+        existingContent.entryViewLayout.listIconSize = 18
+        existingContent.entryViewLayout.gridIconSize = 96
+        existingContent.entryViewLayout.entryOperations.windowID = windowID
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = existingContent
+        state.tabContentStates = [homeID: existingContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.windowID, windowID)
+        XCTAssertEqual(store.state.content.entryViewLayout.mode, .grid)
+        XCTAssertTrue(store.state.content.entryViewLayout.showHiddenFiles)
+        XCTAssertEqual(store.state.content.entryViewLayout.listIconSize, 18)
+        XCTAssertEqual(store.state.content.entryViewLayout.gridIconSize, 96)
+        await store.finish()
+    }
+
     func testOpeningNewContentTabSavesPreviousSessionAndCreatesFreshHomeSession() async {
         let homeID = ContentTabID()
         let existingPath = "/Users/test/Existing"

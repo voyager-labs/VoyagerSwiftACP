@@ -98,7 +98,10 @@ extension FileManagerWindowState {
             content = savedContent
         } else {
             let activeAnchor = contentTabs.tabs[id: activeTabID]?.anchor
-            content = FileManagerContentFeature.State.initialContent(for: activeAnchor)
+            content = FileManagerContentFeature.State.initialContent(
+                for: activeAnchor,
+                inheritingWindowContextFrom: content,
+            )
             tabContentStates[activeTabID] = content
         }
     }
@@ -174,9 +177,16 @@ private extension ContentTabProjection.ContentTabSidebarItem {
     }
 }
 
-private extension FileManagerContentFeature.State {
-    static func initialContent(for anchor: ContentTabPageAnchor?) -> Self {
+extension FileManagerContentFeature.State {
+    static func initialContent(
+        for anchor: ContentTabPageAnchor?,
+        inheritingWindowContextFrom source: Self? = nil,
+    ) -> Self {
         var content = Self()
+
+        if let source {
+            content.applyWindowContext(from: source)
+        }
 
         switch anchor {
         case let .directory(path):
@@ -190,5 +200,20 @@ private extension FileManagerContentFeature.State {
         }
 
         return content
+    }
+
+    mutating func applyWindowContext(from source: Self) {
+        entryViewLayout.mode = source.entryViewLayout.mode
+        entryViewLayout.listIconSize = source.entryViewLayout.listIconSize
+        entryViewLayout.gridIconSize = source.entryViewLayout.gridIconSize
+        entryViewLayout.listTextSize = source.entryViewLayout.listTextSize
+        entryViewLayout.gridTextSize = source.entryViewLayout.gridTextSize
+        entryViewLayout.showHiddenFiles = source.entryViewLayout.showHiddenFiles
+        entryViewLayout.entryArrangements.sortKey = source.entryViewLayout.entryArrangements.sortKey
+        entryViewLayout.entryArrangements.sortOrder = source.entryViewLayout.entryArrangements.sortOrder
+        entryViewLayout.entryArrangements.hasUserSetSortOrder = source.entryViewLayout.entryArrangements
+            .hasUserSetSortOrder
+        entryViewLayout.entryArrangements.groupKey = source.entryViewLayout.entryArrangements.groupKey
+        entryViewLayout.entryOperations.windowID = source.entryViewLayout.entryOperations.windowID
     }
 }
