@@ -1,9 +1,11 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @Reducer
 struct FileManagerWindowRoutingReducer {
@@ -74,6 +76,9 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResetLastTabContent = state.contentTabs.previousActiveTabID == tabID
                     && state.contentTabs.activeTabID == tabID
                 let shouldResyncContentNavigation = shouldRestorePreviousActiveTab || shouldResetLastTabContent
+                if isRemovedTab {
+                    state.recentlyClosedNavigationRoute = navigationRouteForClosingTab(tabID, state: state)
+                }
                 if shouldResyncContentNavigation {
                     prepareContentForActiveTabHandoff(state: &state.content)
                 }
@@ -100,6 +105,11 @@ struct FileManagerWindowRoutingReducer {
                     prepareContentForActiveTabHandoff(state: &state.content)
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
+                    if let restoredRoute = state.recentlyClosedNavigationRoute {
+                        state.content.navigation.navigationState = restoredRoute
+                        state.syncActiveTabContentState()
+                        state.recentlyClosedNavigationRoute = nil
+                    }
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
@@ -114,6 +124,16 @@ struct FileManagerWindowRoutingReducer {
             }
         }
     }
+}
+
+private func navigationRouteForClosingTab(
+    _ tabID: ContentTabID,
+    state: FileManagerWindowState,
+) -> ContentPageNavigationRoute? {
+    if state.contentTabs.previousActiveTabID == tabID {
+        return state.content.navigation.navigationState
+    }
+    return state.tabContentStates[tabID]?.navigation.navigationState
 }
 
 private func prepareContentForActiveTabHandoff(state: inout FileManagerContentFeature.State) {
@@ -228,9 +248,17 @@ private func contentState(
     switch anchor {
     case let .directory(path):
         content.navigation.seedInitialFolderPath(path)
+    case let .collectionFile(url):
+        content.navigation.navigationState = .collection(.init(
+            kind: .file(url: url, name: url.deletingPathExtension().lastPathComponent),
+            context: CollectionContext(query: "", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+    case let .virtualCollection(id):
+        content.navigation.navigationState = .tags(id)
     case .homeDefault,
-         .collectionFile,
-         .virtualCollection,
          .aiChat,
          .none:
         break

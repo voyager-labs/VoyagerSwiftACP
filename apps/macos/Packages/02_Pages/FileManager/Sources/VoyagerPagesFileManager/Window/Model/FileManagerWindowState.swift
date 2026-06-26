@@ -1,7 +1,9 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 @ObservableState
 public struct FileManagerWindowState: Equatable {
@@ -10,6 +12,7 @@ public struct FileManagerWindowState: Equatable {
     public var sidebar: FileManagerSidebarFeature.State
     public var inspector: FileManagerInspectorFeature.State
     public var contentTabs: ContentTabState
+    public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
 
     public init() {
         content = .init()
@@ -17,6 +20,7 @@ public struct FileManagerWindowState: Equatable {
         inspector = .init()
         contentTabs = .withHomeTab()
         tabContentStates = [:]
+        recentlyClosedNavigationRoute = nil
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
         }
@@ -191,9 +195,17 @@ extension FileManagerContentFeature.State {
         switch anchor {
         case let .directory(path):
             content.navigation.seedInitialFolderPath(path)
+        case let .collectionFile(url):
+            content.navigation.navigationState = .collection(.init(
+                kind: .file(url: url, name: url.deletingPathExtension().lastPathComponent),
+                context: CollectionContext(query: "", scopes: [], conditions: []),
+                sortKey: .name,
+                sortOrder: .ascending,
+                viewLayout: .list,
+            ))
+        case let .virtualCollection(id):
+            content.navigation.navigationState = .tags(id)
         case .homeDefault,
-             .collectionFile,
-             .virtualCollection,
              .aiChat,
              .none:
             break

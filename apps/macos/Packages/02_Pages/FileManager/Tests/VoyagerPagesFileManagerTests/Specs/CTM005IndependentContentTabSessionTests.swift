@@ -429,6 +429,77 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    func testRestoringCollectionTabReappliesClosedNavigationRoute() async {
+        let homeID = ContentTabID()
+        let collectionID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/restored.voycoll")
+        let collectionRoute = ContentPageNavigationRoute.collection(.init(
+            kind: .file(url: collectionURL, name: "restored"),
+            context: CollectionContext(query: "kind:document", scopes: [], conditions: []),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        var collectionContent = FileManagerContentFeature.State()
+        collectionContent.navigation.navigationState = collectionRoute
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.navigationState = .home
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: collectionID,
+                    page: .collection,
+                    anchor: .collectionFile(url: collectionURL),
+                    isPinned: false,
+                    title: "restored",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: collectionID,
+            recentlyClosed: nil,
+        )
+        state.content = collectionContent
+        state.tabContentStates = [
+            homeID: homeContent,
+            collectionID: collectionContent,
+        ]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(collectionID)))
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(store.state.content.navigation.navigationState, .home)
+
+        await store.send(.contentTabs(.restore))
+
+        guard let restoredID = store.state.contentTabs.activeTabID else {
+            XCTFail("restore should activate the restored collection tab")
+            return
+        }
+        XCTAssertNotEqual(restoredID, homeID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: restoredID]?.anchor, .collectionFile(url: collectionURL))
+        XCTAssertEqual(store.state.content.navigation.navigationState, collectionRoute)
+        XCTAssertEqual(store.state.tabContentStates[restoredID]?.navigation.navigationState, collectionRoute)
+        XCTAssertNil(store.state.recentlyClosedNavigationRoute)
+        await store.finish()
+    }
+
     func testHomeRouteNewFolderCommandDoesNotRunPathDependentOperation() async {
         var state = FileManagerFeature.State()
         state.content.navigation.navigationState = .home
