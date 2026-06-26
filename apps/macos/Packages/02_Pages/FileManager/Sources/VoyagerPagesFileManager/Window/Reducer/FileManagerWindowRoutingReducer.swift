@@ -154,9 +154,9 @@ private func activeTabHandoffEffect(
 
 private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
     .merge(
-        .cancel(id: "openCollectionFile"),
-        .cancel(id: ComposerFeature.CancelID.search),
-        .cancel(id: ComposerFeature.CancelID.filters),
+        .cancel(id: OpenCollectionFileCancelID(
+            windowID: state.content.entryViewLayout.entryOperations.windowID,
+        )),
         .cancel(id: EntryOperationsLoadingCancelID.loadItems(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
         )),
