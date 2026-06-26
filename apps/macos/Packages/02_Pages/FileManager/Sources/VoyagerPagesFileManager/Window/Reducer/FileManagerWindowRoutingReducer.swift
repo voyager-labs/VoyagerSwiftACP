@@ -189,6 +189,12 @@ private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Eff
     guard let navigationState = resyncNavigationStateForActiveContentTab(state: state) else {
         return .none
     }
+    if case let .collection(navigation) = navigationState {
+        return .concatenate(
+            .send(.content(.internal(.applyNavigationState(.collection(navigation))))),
+            .send(.navigation(.internal(.navigateToCollection(navigation)))),
+        )
+    }
     return .send(.content(.internal(.applyNavigationState(navigationState))))
 }
 

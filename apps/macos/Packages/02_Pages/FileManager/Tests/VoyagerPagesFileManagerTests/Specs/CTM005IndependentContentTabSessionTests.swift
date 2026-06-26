@@ -433,9 +433,10 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         let homeID = ContentTabID()
         let collectionID = ContentTabID()
         let collectionURL = URL(fileURLWithPath: "/tmp/voyager/collections/restored.voycoll")
+        let collectionContext = CollectionContext(query: "kind:document", scopes: [], conditions: [])
         let collectionRoute = ContentPageNavigationRoute.collection(.init(
             kind: .file(url: collectionURL, name: "restored"),
-            context: CollectionContext(query: "kind:document", scopes: [], conditions: []),
+            context: collectionContext,
             sortKey: .name,
             sortOrder: .ascending,
             viewLayout: .list,
@@ -487,6 +488,9 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.content.navigation.navigationState, .home)
 
         await store.send(.contentTabs(.restore))
+        await store.receive(\.content.internal.applyNavigationState)
+        await store.receive(\.navigation.internal.navigateToCollection)
+        await store.receive(\.content.collection.navigationStateApplied)
 
         guard let restoredID = store.state.contentTabs.activeTabID else {
             XCTFail("restore should activate the restored collection tab")
@@ -495,6 +499,8 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertNotEqual(restoredID, homeID)
         XCTAssertEqual(store.state.contentTabs.tabs[id: restoredID]?.anchor, .collectionFile(url: collectionURL))
         XCTAssertEqual(store.state.content.navigation.navigationState, collectionRoute)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, collectionURL)
+        XCTAssertEqual(store.state.content.collection.collectionContext, collectionContext)
         XCTAssertEqual(store.state.tabContentStates[restoredID]?.navigation.navigationState, collectionRoute)
         XCTAssertNil(store.state.recentlyClosedNavigationRoute)
         await store.finish()
