@@ -406,15 +406,6 @@ private func handleCollectionFileLoadedSuccess(
         )
     }
 
-    let collectionTabUpdateEffect: Effect<FileManagerWindowAction> = if let activeTabID = state.contentTabs.activeTabID,
-                                                                        let url = state.content.collection
-                                                                        .collectionSession.document?.url
-    {
-        .send(.contentTabs(.updateActivePageAnchor(activeTabID, .collectionFile(url: url))))
-    } else {
-        .none
-    }
-
     prepareLoadedCollectionOpenState(
         restorationPayload: openPayload,
         registryClient: environment.registryClient,
@@ -426,7 +417,7 @@ private func handleCollectionFileLoadedSuccess(
         collectionAlertClient: environment.collectionAlertClient,
         state: &state,
     ) {
-        return .concatenate(dismissComposerEffect, collectionTabUpdateEffect, .concatenate(effects))
+        return .concatenate(dismissComposerEffect, .concatenate(effects))
     }
 
     var effects = makeCollectionOpenFollowupEffects(
@@ -440,9 +431,9 @@ private func handleCollectionFileLoadedSuccess(
     }
 
     if effects.isEmpty {
-        return .concatenate(dismissComposerEffect, collectionTabUpdateEffect)
+        return dismissComposerEffect
     }
-    return .concatenate([dismissComposerEffect, collectionTabUpdateEffect] + effects)
+    return .concatenate([dismissComposerEffect] + effects)
 }
 
 private struct CollectionOpenEnvironment {
