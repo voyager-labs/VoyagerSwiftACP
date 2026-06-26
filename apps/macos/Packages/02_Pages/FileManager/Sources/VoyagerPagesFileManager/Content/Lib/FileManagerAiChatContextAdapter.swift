@@ -72,6 +72,9 @@ enum FileManagerAiChatContextAdapter {
 
     private static func currentViewTitle(for navigationState: ContentPageNavigationRoute) -> String {
         switch navigationState {
+        case .home:
+            return "Home"
+
         case let .folder(path):
             if path == "/" {
                 return "Computer"
@@ -100,6 +103,8 @@ enum FileManagerAiChatContextAdapter {
 
     private static func currentViewIdentifier(for navigationState: ContentPageNavigationRoute) -> String {
         switch navigationState {
+        case .home:
+            "Home"
         case let .folder(path):
             path
         case .recents:
@@ -120,6 +125,8 @@ enum FileManagerAiChatContextAdapter {
 
     private static func currentViewMetadata(for navigationState: ContentPageNavigationRoute) -> [String: String] {
         switch navigationState {
+        case .home:
+            ["route": "home"]
         case let .folder(path):
             ["route": "folder", "path": path]
         case .recents:

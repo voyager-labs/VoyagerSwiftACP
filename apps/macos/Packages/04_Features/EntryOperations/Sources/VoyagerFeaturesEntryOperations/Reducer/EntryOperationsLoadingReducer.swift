@@ -5,6 +5,14 @@ import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
 
+public struct EntryOperationsLoadingCancelID: Hashable, Sendable {
+    public let windowID: UUID?
+
+    public static func loadItems(windowID: UUID?) -> Self {
+        Self(windowID: windowID)
+    }
+}
+
 @Reducer
 public struct EntryOperationsLoadingReducer {
     public typealias State = EntryOperationsState
@@ -31,6 +39,10 @@ public struct EntryOperationsLoadingReducer {
                         await send(.loading(.itemsLoaded([])))
                     }
                 }
+                .cancellable(
+                    id: EntryOperationsLoadingCancelID.loadItems(windowID: state.windowID),
+                    cancelInFlight: true,
+                )
 
             case let .loading(.loadRecentItems(showHidden)):
                 state.isLoading = true
@@ -38,6 +50,10 @@ public struct EntryOperationsLoadingReducer {
                     let recentItems = await entryLoadingClient.loadRecentItems(showHidden, workspaceClient)
                     await send(.loading(.itemsLoaded(recentItems)))
                 }
+                .cancellable(
+                    id: EntryOperationsLoadingCancelID.loadItems(windowID: state.windowID),
+                    cancelInFlight: true,
+                )
 
             case let .loading(.loadTagItems(tagName, showHidden)):
                 state.isLoading = true
@@ -45,6 +61,10 @@ public struct EntryOperationsLoadingReducer {
                     let taggedItems = await entryLoadingClient.loadFilesWithTag(tagName, showHidden, workspaceClient)
                     await send(.loading(.itemsLoaded(taggedItems)))
                 }
+                .cancellable(
+                    id: EntryOperationsLoadingCancelID.loadItems(windowID: state.windowID),
+                    cancelInFlight: true,
+                )
 
             case .loading(.loadComputerItems):
                 state.isLoading = true
@@ -56,6 +76,10 @@ public struct EntryOperationsLoadingReducer {
                         await send(.loading(.itemsLoaded([])))
                     }
                 }
+                .cancellable(
+                    id: EntryOperationsLoadingCancelID.loadItems(windowID: state.windowID),
+                    cancelInFlight: true,
+                )
 
             case let .loading(.itemsLoaded(items)):
                 state.loadingContext.items = IdentifiedArray(uniqueElements: items)

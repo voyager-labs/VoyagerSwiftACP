@@ -30,6 +30,7 @@ private struct FileManagerNavigationBridgeReducer {
                  .sidebar(.internal(.tagsLoaded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                 syncSidebarSelection(state: &state, computerName: computerName)
+                state.syncContentTabSidebarItems()
                 return .none
 
             case let .sidebar(.delegate(.openFavorite(favorite))):
@@ -55,11 +56,30 @@ private struct FileManagerNavigationBridgeReducer {
             case let .content(.internal(.requestNavigation(navigationAction))):
                 return .send(.navigation(navigationAction))
 
+            case let .content(.internal(.applyNavigationState(navigationState))):
+                let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
+                    ?? state.content.navigation.currentPath
+                syncSidebarSelection(state: &state, computerName: computerName)
+                return syncActiveContentTabEffect(
+                    navigationState,
+                    state: state,
+                    computerName: computerName,
+                )
+
             case let .content(.internal(.performPendingNavigation(pending))):
                 return .send(.navigation(.internal(.performNavigation(pending))))
 
-            case .content(.delegate(.composerCollectionSearchSucceeded)),
-                 .content(.delegate(.collectionChangesDiscarded)):
+            case .content(.delegate(.composerCollectionSearchSucceeded)):
+                let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
+                    ?? state.content.navigation.currentPath
+                syncSidebarSelection(state: &state, computerName: computerName)
+                return syncActiveContentTabEffect(
+                    state.content.navigation.navigationState,
+                    state: state,
+                    computerName: computerName,
+                )
+
+            case .content(.delegate(.collectionChangesDiscarded)):
                 let computerName = state.sidebar.locations.first(where: { $0.isComputer })?.name
                 syncSidebarSelection(state: &state, computerName: computerName)
                 return .none
@@ -82,6 +102,8 @@ func syncSidebarSelection(
     computerName: String?,
 ) {
     switch state.content.navigation.navigationState {
+    case .home:
+        state.sidebar.selectedSidebarItem = nil
     case .collection:
         if let url = state.content.collection.collectionSession.document?.url {
             state.sidebar.selectedSidebarItem = state.sidebar.favorites

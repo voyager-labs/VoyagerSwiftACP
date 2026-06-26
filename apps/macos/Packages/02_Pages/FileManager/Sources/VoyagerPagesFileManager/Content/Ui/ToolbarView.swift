@@ -77,6 +77,8 @@ struct ToolbarView: View {
 
     private func currentNavigationTitle(for navigationState: ContentPageNavigationRoute) -> String {
         switch navigationState {
+        case .home:
+            "Home"
         case let .folder(path):
             displayName(for: path)
         case .recents:
@@ -116,6 +118,8 @@ struct ToolbarView: View {
         homePath: String,
     ) -> ToolbarHistoryItem {
         switch snapshot.navigationState {
+        case .home:
+            return ToolbarHistoryItem(iconSystemName: "house", title: "Home")
         case let .folder(path):
             return ToolbarHistoryItem(
                 iconSystemName: iconSystemName(forDirectoryPath: path, homePath: homePath),

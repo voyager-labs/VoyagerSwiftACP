@@ -17,7 +17,7 @@ enum FileManagerVirtualCollectionContextFactory {
             [makeTagConditionPayload(tagName: tagName)]
         case .recents:
             makeRecentsConditionPayloads()
-        case .folder, .computer, .collection:
+        case .home, .folder, .computer, .collection:
             []
         }
 

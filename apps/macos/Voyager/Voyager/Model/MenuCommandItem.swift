@@ -9,7 +9,7 @@ struct MenuCommandItem: Identifiable, Equatable {
 
     enum AppCommand: Equatable {
         case newWindow(path: String? = nil)
-        case newTab(path: String? = nil)
+        case newTab
 
         case newFolder
         case open

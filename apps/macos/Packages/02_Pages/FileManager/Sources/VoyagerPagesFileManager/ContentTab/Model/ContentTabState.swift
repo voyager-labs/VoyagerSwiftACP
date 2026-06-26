@@ -45,7 +45,20 @@ public struct ClosedContentTabSnapshot: Equatable, Sendable, Codable {
 public struct ContentTabState: Equatable {
     public var tabs: IdentifiedArrayOf<ContentTabItem> = []
     public var activeTabID: ContentTabID?
+    public var previousActiveTabID: ContentTabID?
     public var recentlyClosed: ClosedContentTabSnapshot?
+
+    public init(
+        tabs: IdentifiedArrayOf<ContentTabItem> = [],
+        activeTabID: ContentTabID? = nil,
+        previousActiveTabID: ContentTabID? = nil,
+        recentlyClosed: ClosedContentTabSnapshot? = nil,
+    ) {
+        self.tabs = tabs
+        self.activeTabID = activeTabID
+        self.previousActiveTabID = previousActiveTabID
+        self.recentlyClosed = recentlyClosed
+    }
 }
 
 public extension ContentTabState {
@@ -61,6 +74,7 @@ public extension ContentTabState {
                 iconName: "house",
             )],
             activeTabID: id,
+            previousActiveTabID: nil,
             recentlyClosed: nil,
         )
     }
@@ -80,6 +94,7 @@ public extension ContentTabState {
         return ContentTabState(
             tabs: restoredTabs,
             activeTabID: active,
+            previousActiveTabID: nil,
             recentlyClosed: nil,
         )
     }

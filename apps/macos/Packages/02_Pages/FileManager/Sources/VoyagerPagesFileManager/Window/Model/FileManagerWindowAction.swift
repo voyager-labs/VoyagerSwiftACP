@@ -59,7 +59,6 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     @CasePathable
     public enum Delegate: Sendable {
         case openPathInNewWindow(String)
-        case openPathInNewTab(String)
         case openAISettings
         case requestAttachmentPicker
     }

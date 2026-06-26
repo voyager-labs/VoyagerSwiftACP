@@ -25,6 +25,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case showTag(String)
         case showRecents
         case showComputer
+        case selectContentTab(ContentTabID)
         case dropItemsToSidebarFolder(providers: [NSItemProvider], targetURL: URL)
         case dropItemsToTag(providers: [NSItemProvider], tagName: String)
     }
@@ -45,5 +46,6 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case startObservingSystemNotifications
         case stopObservingSystemNotifications
         case systemMenuDidEndTracking
+        case syncContentTabSidebarItems([ContentTabProjection.ContentTabSidebarItem])
     }
 }

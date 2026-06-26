@@ -30,6 +30,12 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut("n", modifiers: .command)
 
+            Button("New Tab") {
+                send(.app(.newTab))
+            }
+            .keyboardShortcut("t", modifiers: .command)
+            .disabled(!viewStore.hasFocusedWindow)
+
             Button("New Folder") {
                 send(.app(.newFolder))
             }

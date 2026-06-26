@@ -1,10 +1,37 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
 final class CTM001HandleContentTabTests: XCTestCase {
+    private func receiveDirectoryNavigation(
+        _ store: TestStoreOf<FileManagerFeature>,
+        path: String,
+    ) async {
+        await store.receive { action in
+            guard case let .navigation(.view(.navigateToPath(receivedPath))) = action else { return false }
+            return receivedPath == path
+        }
+        await store.receive { action in
+            guard case let .navigation(.internal(.performNavigateToPath(receivedPath))) = action else { return false }
+            return receivedPath == path
+        }
+        await store.receive { action in
+            guard case let .navigation(.delegate(.navigateToState(.folder(receivedPath)))) = action
+            else { return false }
+            return receivedPath == path
+        }
+        await store.receive { action in
+            guard case let .content(.internal(.applyNavigationState(.folder(receivedPath)))) = action
+            else { return false }
+            return receivedPath == path
+        }
+    }
+
     // MARK: - CTM-001-open_new_content_tab
 
     /// CTM-001-open_new_content_tab: 빈 상태와 FileManager window 초기 상태는 Home Content Tab을 활성화함
@@ -34,6 +61,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // exhaustivity = .off로 전환 검증에 집중한다.
@@ -61,15 +90,15 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs.first?.page, .home)
     }
 
-    /// CTM-001-open_new_content_tab: path seed가 ContentTab anchor를 변경하지 않고 Home anchor를 유지함
-    /// AC3의 path seed가 anchor를 override하지 않는 정책을 검증한다.
-    /// - 검증 내용: path seed("/tmp")에서도 contentTabs.tabs.first?.anchor == .homeDefault, contentTabs.tabs.count == 1
+    /// CTM-001-open_new_content_tab: path seed가 initial tab을 directory anchor로 동기화함
+    /// path 기반 FileManager window 생성 시 chrome/source-of-truth anchor가 folder route와 일치하는지 검증한다.
+    /// - 검증 내용: path seed("/tmp")에서 contentTabs.tabs.first?.anchor == .directory(path: "/tmp"), count == 1
     /// - 사전 조건: FileManagerWindowState.makeInitial(path: "/tmp")
-    /// - 기대 결과: path seed와 무관하게 Home anchor와 단일 tab이 유지됨
-    func testOpenNewContentTab_pathSeed_keepsHomeAnchorNotDefaultTabPath() {
+    /// - 기대 결과: path seed window가 Home tab metadata로 남지 않고 directory tab으로 표시됨
+    func testOpenNewContentTab_pathSeed_syncsDirectoryAnchor() {
         let state = FileManagerWindowState.makeInitial(path: "/tmp")
 
-        XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .homeDefault)
+        XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .directory(path: "/tmp"))
         XCTAssertEqual(state.contentTabs.tabs.count, 1)
     }
 
@@ -77,7 +106,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// path 기반 FileManager window 생성이 기존 navigation seed 동작을 유지하는지 검증한다.
     /// - 검증 내용: makeInitial(path: "/tmp") 결과 content.navigation.currentPath가 존재함
     /// - 사전 조건: FileManagerWindowState.makeInitial(path: "/tmp")
-    /// - 기대 결과: ContentTab anchor는 Home 정책을 유지하면서 navigation seed가 적용됨
+    /// - 기대 결과: directory tab anchor와 navigation seed가 함께 적용됨
     func testOpenNewContentTab_pathSeed_appliesNavigationSeed() {
         let state = FileManagerWindowState.makeInitial(path: "/tmp")
 
@@ -110,6 +139,61 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs.count, 1)
         XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .directory(path: "/restored"))
         XCTAssertNotNil(state.contentTabs.activeTabID)
+        XCTAssertEqual(state.content.navigation.currentPath, "/restored")
+    }
+
+    func testOpenNewContentTab_makeInitialWithRestoredCollectionState_seedsActiveContentFromAnchor() {
+        let restoredID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/restored.voycoll")
+        let restoredState = ContentTabState(
+            tabs: [ContentTabItem(
+                id: restoredID,
+                page: .collection,
+                anchor: .collectionFile(url: collectionURL),
+                isPinned: false,
+                title: "restored",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: restoredID,
+            recentlyClosed: nil,
+        )
+
+        let state = FileManagerWindowState.makeInitial(path: nil, contentTabs: restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .collectionFile(url: collectionURL))
+        if case let .collection(navigation) = state.content.navigation.navigationState {
+            XCTAssertEqual(navigation.kind, .file(url: collectionURL, name: "restored"))
+            XCTAssertEqual(navigation.context, CollectionContext(query: "", scopes: [], conditions: []))
+        } else {
+            XCTFail("restored collection tab should seed collection navigation")
+        }
+        XCTAssertEqual(
+            state.tabContentStates[restoredID]?.navigation.navigationState,
+            state.content.navigation.navigationState,
+        )
+    }
+
+    func testOpenNewContentTab_makeInitialWithRestoredVirtualState_seedsActiveContentFromAnchor() {
+        let restoredID = ContentTabID()
+        let restoredState = ContentTabState(
+            tabs: [ContentTabItem(
+                id: restoredID,
+                page: .collection,
+                anchor: .virtualCollection(id: "Important"),
+                isPinned: false,
+                title: "Important",
+                iconName: "tag",
+            )],
+            activeTabID: restoredID,
+            recentlyClosed: nil,
+        )
+
+        let state = FileManagerWindowState.makeInitial(path: nil, contentTabs: restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .virtualCollection(id: "Important"))
+        let expectedRoute = ContentPageNavigationRoute.tags("Important")
+        XCTAssertEqual(state.content.navigation.navigationState, expectedRoute)
+        XCTAssertEqual(state.tabContentStates[restoredID]?.navigation.navigationState, expectedRoute)
     }
 
     /// CTM-001-open_new_content_tab: makeInitial empty restored state는 Home tab으로 fallback함
@@ -265,10 +349,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         _ = reducer.reduce(into: &lastTabState, action: .close(lastID))
 
-        XCTAssertTrue(lastTabState.tabs.isEmpty)
-        XCTAssertNil(lastTabState.activeTabID)
-        XCTAssertEqual(lastTabState.recentlyClosed?.page, .directory)
-        XCTAssertEqual(lastTabState.recentlyClosed?.anchor, directoryAnchor)
+        // 마지막 tab은 제거되지 않고 Home tab으로 reset됨
+        XCTAssertEqual(lastTabState.tabs.count, 1)
+        XCTAssertEqual(lastTabState.tabs[0].page, .home)
+        XCTAssertEqual(lastTabState.tabs[0].anchor, .homeDefault)
+        XCTAssertEqual(lastTabState.tabs[0].title, "Home")
+        XCTAssertEqual(lastTabState.tabs[0].iconName, "house")
+        XCTAssertEqual(lastTabState.activeTabID, lastID)
+        XCTAssertNil(lastTabState.recentlyClosed)
     }
 
     // MARK: - CTM-001-restore_last_closed_tab
@@ -430,26 +518,29 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     // MARK: - CTM-001-content_tab_scope_integrity
 
-    /// CTM-001-content_tab_scope_integrity: CTM action이 기존 FileManager scope를 침범하지 않는 wiring 검증
-    /// VOY-446 wiring이 FileManager page-owned CTM slice로만 라우팅되는지 검증한다.
-    /// - 검증 내용: contentTabs.open 전후 기존 content navigation, sidebar visibility, inspector visibility 불변
+    /// CTM-001-content_tab_scope_integrity: 새 Content Tab은 별도 FileManager content session을 만들고 기존 session을 보존함
+    /// CTM action이 sidebar/inspector shell state를 침범하지 않으면서 active content만 tab session으로 swap하는지 검증한다.
+    /// - 검증 내용: contentTabs.open(.directory) 후 active content는 새 path로 전환되고 기존 content는 tabContentStates에 보존됨
     /// - 사전 조건: `FileManagerWindowState.makeInitial(path:)` 기반 FileManagerFeature TestStore
-    /// - 기대 결과: CTM action은 contentTabs state만 변경하고 기존 scope state를 유지함
-    func testFileManagerContentTabScope_doesNotMutateExistingContentSidebarInspectorState() async {
+    /// - 기대 결과: 새 Directory tab이 active가 되고 sidebar visibility, inspector visibility는 유지됨
+    func testFileManagerContentTabScope_swapsContentSessionAndPreservesShellState() async throws {
         let initialState = FileManagerWindowState.makeInitial(path: "/seed")
+        let initialActiveID = try XCTUnwrap(initialState.contentTabs.activeTabID)
         let initialNavigationPath = initialState.content.navigation.currentPath
         let initialSidebarVisible = initialState.sidebar.sidebarVisible
         let initialInspectorVisible = initialState.inspector.inspectorVisible
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
-        // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로
-        // scope 독립성에 집중한다.
+        // 새 tab id는 reducer 내부에서 생성되므로 최종 invariant만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.open(.directory(path: "/different"))))
 
-        XCTAssertEqual(store.state.content.navigation.currentPath, initialNavigationPath)
+        XCTAssertEqual(store.state.content.navigation.currentPath, "/different")
+        XCTAssertEqual(store.state.tabContentStates[initialActiveID]?.navigation.currentPath, initialNavigationPath)
         XCTAssertEqual(store.state.sidebar.sidebarVisible, initialSidebarVisible)
         XCTAssertEqual(store.state.inspector.inspectorVisible, initialInspectorVisible)
     }
@@ -463,6 +554,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_commandRouting_createsHomeTabAppendedActive() async throws {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로
         // routing layer의 최종 상태 검증에 집중한다.
@@ -494,6 +587,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         initialState.contentTabs.tabs[0].page = .directory
         let store = TestStore(initialState: initialState) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // anchor 복제 방지 검증에 집중한다.
@@ -515,6 +610,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_commandRouting_existingTabTransitionsInactive() async throws {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // tab active 전환 검증에 집중한다.
@@ -544,6 +641,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_projection_sidebarItemsIncludesNewHomeTab() async throws {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 projection 검증에 집중한다.
         store.exhaustivity = .off
@@ -580,9 +679,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.contentTabs.tabs = tabs
         state.contentTabs.activeTabID = firstID
+        state.content.entryViewLayout.entryOperations.isLoading = true
+        state.content.entryViewLayout.entryOperations.isReloading = true
+        state.content.composer.isLoadingSearch = true
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: maxTabs guard로 인해 contentTabs action이 상태를 변경하지 않으므로 불변 검증에 집중한다.
         store.exhaustivity = .off
@@ -591,6 +695,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
         XCTAssertEqual(store.state.contentTabs.activeTabID, firstID)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isLoading)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isReloading)
+        XCTAssertTrue(store.state.content.composer.isLoadingSearch)
     }
 
     /// CTM-001-open_new_content_tab_invariants: 연속 openNewContentTab은 중복되지 않는 ID를 생성함
@@ -601,6 +708,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_repeatedCreation_usesUniqueIDs() async {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 ID uniqueness 검증에 집중한다.
         store.exhaustivity = .off
@@ -629,6 +738,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 anchor 변환 검증에 집중한다.
         store.exhaustivity = .off
@@ -638,7 +748,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.desktop)))))
         await store.receive(\.contentTabs)
+        await receiveDirectoryNavigation(store, path: desktopPath)
 
+        XCTAssertEqual(store.state.content.navigation.currentPath, desktopPath)
+        XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home])
+        XCTAssertEqual(store.state.content.entryViewLayout.currentPath, desktopPath)
         XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount)
         XCTAssertEqual(store.state.contentTabs.activeTabID, beforeActiveID)
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
@@ -657,6 +771,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // Documents anchor 변환 검증에 집중한다.
@@ -664,7 +779,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.content(.view(.homeSelectionTapped(.fixedDirectory(.documents)))))
         await store.receive(\.contentTabs)
+        await receiveDirectoryNavigation(store, path: documentsPath)
 
+        XCTAssertEqual(store.state.content.navigation.currentPath, documentsPath)
+        XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home])
+        XCTAssertEqual(store.state.content.entryViewLayout.currentPath, documentsPath)
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .directory(path: documentsPath))
         XCTAssertEqual(tab.page, .directory)
@@ -682,6 +801,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.homePickerClient.pickDirectory = { .selected("/tmp/test") }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
         // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
@@ -689,7 +809,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.content(.view(.homeSelectionTapped(.openDirectory))))
         await store.receive(\.contentTabs)
+        await receiveDirectoryNavigation(store, path: "/tmp/test")
 
+        XCTAssertEqual(store.state.content.navigation.currentPath, "/tmp/test")
+        XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home])
+        XCTAssertEqual(store.state.content.entryViewLayout.currentPath, "/tmp/test")
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .directory(path: "/tmp/test"))
         XCTAssertEqual(tab.page, .directory)
@@ -741,23 +865,71 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(tab.page, .home)
     }
 
-    /// CTM-001-home_selection_page_conversion: 컬렉션 피커 성공 시 anchor가 .collectionFile로 변환됨
-    /// VOY-438 AC3a의 openCollection 피커 성공 → ContentTabPageAnchor.collectionFile(url:) 변환을 검증한다.
-    /// - 검증 내용: homePickerClient.pickCollectionFile → .selected(URL) 반환 후 tab.anchor == .collectionFile(url:)
+    /// CTM-001-home_selection_page_conversion: hydrated 컬렉션 열기 성공 시 anchor가 .collectionFile로 변환됨
+    /// VOY-438 AC3a의 openCollection 피커 성공 → hydration 성공 후 ContentTabPageAnchor.collectionFile(url:) 변환을 검증한다.
+    /// - 검증 내용: homePickerClient.pickCollectionFile → .selected(URL) 반환 후 hydrated navigation 적용 뒤 tab.anchor ==
+    /// .collectionFile(url:)
     /// - 사전 조건: homePickerClient.pickCollectionFile → .selected(URL(fileURLWithPath: "/tmp/test.voycoll"))
     /// - 기대 결과: active tab의 anchor가 컬렉션 파일 URL로 변경되고 page가 collection으로 전환됨
     func testHomeSelection_openCollectionPickerSuccess_convertsAnchor() async throws {
         let collectionURL = URL(fileURLWithPath: "/tmp/test.voycoll")
+        let loadedFile = VoyagerCollectionFile(
+            id: "ctm-open-collection",
+            name: "test",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "kind:document",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: CollectionPersistedSnapshot(items: [
+                .string("/tmp/document.md"),
+            ]),
+            snapshotMeta: CollectionSnapshotMeta(
+                definitionFingerprint: CollectionSnapshotHydration.definitionFingerprint(file: VoyagerCollectionFile(
+                    id: "ctm-open-collection",
+                    name: "test",
+                    createdAt: .distantPast,
+                    updatedAt: .distantFuture,
+                    query: "kind:document",
+                    scopes: ["/tmp"],
+                    conditions: [],
+                    snapshot: CollectionPersistedSnapshot(items: [
+                        .string("/tmp/document.md"),
+                    ]),
+                    snapshotMeta: nil,
+                    appVersion: nil,
+                )),
+                capturedAt: Date(timeIntervalSince1970: 1_234_567_890),
+                itemCount: 1,
+                relevanceRoots: ["/tmp"],
+            ),
+            appVersion: nil,
+        )
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
         } withDependencies: {
             $0.homePickerClient.pickCollectionFile = { .selected(collectionURL) }
+            $0.collectionFileClient.load = { _ in
+                VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
+                    file: loadedFile,
+                    containerFormat: .package,
+                    sourceSchemaVersion: CollectionFileSchemaVersion.current,
+                    warning: nil,
+                    usedDefinitionFallback: false,
+                )
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.continuousClock = ImmediateClock()
         }
-        // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
-        // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
+        // 비포괄적: picker/load/open flow가 여러 child action을 방출하므로
+        // 최종 anchor 확정 검증에 집중한다.
         store.exhaustivity = .off
 
         await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
+        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.receive(\.navigation.view.openCollectionFile)
+        await store.receive(\.navigation.internal.collectionFileLoaded)
+        await store.receive(\.content.internal.applyNavigationState)
         await store.receive(\.contentTabs)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
@@ -782,6 +954,92 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
         await store.receive(\.content.internal.homeCollectionPickerFinished)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 컬렉션 파일 load 실패 시 Home anchor가 유지됨
+    /// 컬렉션 anchor는 파일 open 성공 후 확정되어야 하며, load 실패만으로 tab metadata를 collection으로 바꾸지 않는다.
+    /// - 검증 내용: picker는 URL을 반환하지만 collectionFileClient.load 실패 후 tab.anchor == .homeDefault
+    /// - 사전 조건: homePickerClient.pickCollectionFile → .selected(URL), collectionFileClient.load throws
+    /// - 기대 결과: open 실패 시 active tab의 anchor와 page가 변경되지 않고 Home 상태를 유지함
+    func testHomeSelection_openCollectionLoadFailure_preservesHome() async throws {
+        enum TestError: Error {
+            case loadFailed
+        }
+        let collectionURL = URL(fileURLWithPath: "/tmp/missing.voycoll")
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homePickerClient.pickCollectionFile = { .selected(collectionURL) }
+            $0.collectionFileClient.load = { _ in throw TestError.loadFailed }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 비포괄적: 실패 경로의 alert/rollback child action보다 tab anchor 보존을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
+        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.receive(\.navigation.view.openCollectionFile)
+        await store.receive(\.navigation.internal.collectionFileLoaded)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 컬렉션 검색 실패 시 Home anchor가 유지됨
+    /// 컬렉션 anchor는 파일 load 성공만으로 확정하지 않고 검색 성공 후 확정되어야 한다.
+    /// - 검증 내용: collection load는 성공하지만 searchClient.search 실패 후 tab.anchor == .homeDefault
+    /// - 사전 조건: homePickerClient.pickCollectionFile → .selected(URL), collectionFileClient.load success,
+    /// searchClient.search throws
+    /// - 기대 결과: 검색 실패 시 active tab의 anchor와 page가 변경되지 않고 Home 상태를 유지함
+    func testHomeSelection_openCollectionSearchFailure_preservesHome() async throws {
+        enum TestError: Error {
+            case searchFailed
+        }
+        let collectionURL = URL(fileURLWithPath: "/tmp/search-fail.voycoll")
+        let loadedFile = VoyagerCollectionFile(
+            id: "ctm-open-collection-search-fail",
+            name: "search-fail",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "kind:document",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homePickerClient.pickCollectionFile = { .selected(collectionURL) }
+            $0.collectionFileClient.load = { _ in
+                VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
+                    file: loadedFile,
+                    containerFormat: .package,
+                    sourceSchemaVersion: CollectionFileSchemaVersion.current,
+                    warning: nil,
+                    usedDefinitionFallback: false,
+                )
+            }
+            $0.searchClient.search = { _ in throw TestError.searchFailed }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.continuousClock = ImmediateClock()
+        }
+        // 비포괄적: 검색 실패 alert/rollback 세부 action보다 tab anchor 보존을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
+        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.receive(\.navigation.view.openCollectionFile)
+        await store.receive(\.navigation.internal.collectionFileLoaded)
+        await store.receive(\.content.delegate.composerCollectionSearchFailed)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
@@ -850,6 +1108,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerClient.urlsForDirectory = { FileManager.default.urls(for: $0, in: $1) }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action을 방출하므로
         // routing guard no-op 검증에 집중한다.

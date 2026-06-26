@@ -220,6 +220,39 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertEqual(closeAllCallCount.value, 1, "fileManagerWindowClient.closeAll은 정확히 한 번 호출되어야 한다")
     }
 
+    /// CTM-001-open_new_content_tab: focused FileManager window로 새 Content Tab command 라우팅.
+    /// File menu의 New Content Tab 입력은 native NSWindow tab이 아니라 focused FMW의 openNewContentTab request로 전달되어야 한다.
+    func test_newTabCommand_routesToFocusedFileManagerWindow() async {
+        let focusedID = UUID()
+        let otherID = UUID()
+
+        let store = makeStore(initialState: makeState(
+            focusedID: focusedID,
+            windows: [(focusedID, Spec.focusedPath), (otherID, Spec.backgroundPath)],
+        ))
+        store.exhaustivity = .off
+
+        await store.send(.file(.newTab))
+        await store.receive { action in
+            guard case let .windows(.element(id: id, action: .window(.request(.openNewContentTab)))) = action else {
+                return false
+            }
+            return id == focusedID
+        }
+    }
+
+    /// CTM-001-open_new_content_tab: focused window가 없으면 새 Content Tab 입력은 no-op.
+    func test_newTabCommand_noOpWhenNoFocusedWindow() async {
+        let otherID = UUID()
+
+        let store = makeStore(initialState: makeState(
+            focusedID: nil,
+            windows: [(otherID, Spec.backgroundPath)],
+        ))
+
+        await store.send(.file(.newTab))
+    }
+
     // MARK: - FMW-001-request_undo
 
     /// FMW-001-request_undo: focused 윈도우로 명령 라우팅

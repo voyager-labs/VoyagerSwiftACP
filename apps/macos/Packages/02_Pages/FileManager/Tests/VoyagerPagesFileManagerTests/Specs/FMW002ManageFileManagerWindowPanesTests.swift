@@ -519,6 +519,69 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         XCTAssertEqual(projected.sidebarWidth, SidebarWidth.inRange)
     }
 
+    /// FMW-002-show_sidebar: preference fan-out 시 비활성 Content Tab session도 함께 갱신한다.
+    /// 탭 전환 시 오래된 snapshot이 전역 view preference를 되돌리지 않도록 검증한다.
+    func testApplyAppPreferencesUpdatesInactiveContentTabSessions() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        var activeContent = FileManagerContentFeature.State()
+        activeContent.entryViewLayout.showHiddenFiles = false
+        activeContent.entryViewLayout.listIconSize = 16
+        var inactiveContent = FileManagerContentFeature.State()
+        inactiveContent.entryViewLayout.showHiddenFiles = false
+        inactiveContent.entryViewLayout.listIconSize = 16
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Documents"),
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = activeContent
+        state.tabContentStates = [
+            activeID: activeContent,
+            inactiveID: inactiveContent,
+        ]
+
+        var preferences = AppPreferencesState()
+        preferences.showHiddenFiles = true
+        preferences.listIconSize = 22
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.applyAppPreferences(preferences))
+
+        XCTAssertTrue(store.state.content.entryViewLayout.showHiddenFiles)
+        XCTAssertEqual(store.state.content.entryViewLayout.listIconSize, 22)
+        XCTAssertTrue(store.state.tabContentStates[activeID]?.entryViewLayout.showHiddenFiles == true)
+        XCTAssertEqual(store.state.tabContentStates[activeID]?.entryViewLayout.listIconSize, 22)
+        XCTAssertTrue(store.state.tabContentStates[inactiveID]?.entryViewLayout.showHiddenFiles == true)
+        XCTAssertEqual(store.state.tabContentStates[inactiveID]?.entryViewLayout.listIconSize, 22)
+        await store.finish()
+    }
+
     // MARK: - FMW-002-show_inspector_pane
 
     /// FMW-002-show_inspector_pane: toggleInspector가 inspectorVisible을 true로 설정
@@ -687,5 +750,24 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         }
 
         await store.finish()
+    }
+
+    /// FMW-002-show_sidebar: 시작 폴더 path는 Home tab이 아니라 directory tab anchor로 보존한다.
+    /// - 검증 내용: makeInitial(path:)가 content navigation과 active Content Tab anchor를 함께 directory로 동기화하는지 확인
+    /// - 사전 조건: initialFolderPath == /Users/test/Documents
+    /// - 기대 결과: active tab anchor == .directory(path:), page == .directory
+    func test_initialFolderPathSeedsActiveContentTabDirectoryAnchor() {
+        let path = "/Users/test/Documents"
+        let state = FileManagerWindowState.makeInitial(path: path)
+
+        guard let activeTabID = state.contentTabs.activeTabID else {
+            XCTFail("initial window should have an active tab")
+            return
+        }
+
+        XCTAssertEqual(state.content.navigation.navigationState, .folder(path))
+        XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.anchor, .directory(path: path))
+        XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.page, .directory)
+        XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.navigationState, .folder(path))
     }
 }

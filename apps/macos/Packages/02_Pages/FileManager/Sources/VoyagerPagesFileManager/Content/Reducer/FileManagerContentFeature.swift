@@ -18,10 +18,18 @@ public struct FileManagerContentFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
-            guard case let .collection(.saveCompleted(result)) = action else {
+            switch action {
+            case let .collection(.saveCompleted(result)):
+                return handleCollectionSaveCompleted(result: result, state: &state)
+            case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):
+                state.composer.cancellationOwnerID = windowID
+                return .none
+            case let .entryViewLayout(.entryOperations(.lifecycle(.resetForDuplicate(windowID)))):
+                state.composer.cancellationOwnerID = windowID
+                return .none
+            default:
                 return .none
             }
-            return handleCollectionSaveCompleted(result: result, state: &state)
         }
 
         Scope(state: \.composer, action: \.composer) {

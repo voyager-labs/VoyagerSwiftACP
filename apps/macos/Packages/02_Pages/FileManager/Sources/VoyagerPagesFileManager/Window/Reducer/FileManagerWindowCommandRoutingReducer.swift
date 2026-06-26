@@ -30,9 +30,6 @@ struct FileManagerWindowCommandRoutingReducer {
             case let .content(.delegate(.openPathInNewWindow(path))):
                 return .send(.delegate(.openPathInNewWindow(path)))
 
-            case let .content(.delegate(.openPathInNewTab(path))):
-                return .send(.delegate(.openPathInNewTab(path)))
-
             case let .content(.delegate(.currentContextChanged(snapshot))):
                 return .send(.inspector(.aiChat(.currentContextChanged(snapshot))))
 
@@ -40,7 +37,7 @@ struct FileManagerWindowCommandRoutingReducer {
                 guard let activeTabID = state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: activeTabID]?.anchor == .homeDefault
                 else { return .none }
-                return .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+                return handleHomePageAnchorSelected(anchor, activeTabID: activeTabID)
 
             case .content(.delegate(.openContextualAiChat)):
                 return .send(.request(.openContextualAiChat))
@@ -66,6 +63,27 @@ struct FileManagerWindowCommandRoutingReducer {
             default:
                 return .none
             }
+        }
+    }
+
+    private func handleHomePageAnchorSelected(
+        _ anchor: ContentTabPageAnchor,
+        activeTabID: ContentTabID,
+    ) -> Effect<Action> {
+        switch anchor {
+        case let .directory(path):
+            .concatenate(
+                .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                .send(.navigation(.view(.navigateToPath(path)))),
+            )
+
+        case let .collectionFile(url):
+            .send(.navigation(.view(.openCollectionFile(url))))
+
+        case .homeDefault,
+             .virtualCollection,
+             .aiChat:
+            .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
         }
     }
 
@@ -114,9 +132,7 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func handleEntryRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
-        let currentPath = state.content.navigation.currentPath
-
-        if let effect = handleEntryRequestPathDependent(command, currentPath: currentPath, state: state) {
+        if let effect = handleEntryRequestPathDependent(command, state: state) {
             return effect
         }
 
@@ -141,12 +157,13 @@ struct FileManagerWindowCommandRoutingReducer {
 
     private func handleEntryRequestPathDependent(
         _ command: Action.WindowCommand,
-        currentPath: String,
         state: State,
     ) -> Effect<Action>? {
+        guard case let .folder(currentPath) = state.content.navigation.navigationState else { return nil }
+
         switch command {
         case .newFolder:
-            .send(.content(.entryViewLayout(.entryOperations(
+            return .send(.content(.entryViewLayout(.entryOperations(
                 .edit(.createNewFolder(
                     parentPath: currentPath,
                     siblingNames: state.content.entryViewLayout.entries.map(\.name),
@@ -154,12 +171,12 @@ struct FileManagerWindowCommandRoutingReducer {
             ))))
 
         case .paste:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand(.clipboard(
                 .pasteItems(destinationPath: currentPath),
             ))))))
 
         default:
-            nil
+            return nil
         }
     }
 

@@ -191,9 +191,6 @@ struct WindowManagerFeature {
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
                 return .send(.file(.newWindow(path: path)))
 
-            case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewTab(path))))):
-                return .send(.file(.newTab(path: path)))
-
             case let .windows(.element(id: _, action: .window(.inspector(.setInspectorWidth(width))))):
                 state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
                 return .none
@@ -220,10 +217,8 @@ struct WindowManagerFeature {
                 await fileManagerWindowClient.open(id)
             }
 
-        case let .file(.newTab(path)):
-            return openWindowSession(path: path, state: &state) { id in
-                await fileManagerWindowClient.openTab(id)
-            }
+        case .file(.newTab):
+            return sendCommandToFocusedWindow(state, .openNewContentTab)
 
         case .window(.closeFocusedWindow):
             guard let id = state.focusedWindowID else { return .none }
