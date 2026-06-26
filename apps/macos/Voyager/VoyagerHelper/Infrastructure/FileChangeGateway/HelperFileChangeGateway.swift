@@ -20,9 +20,19 @@ final class HelperFileChangeGateway {
     private var interestRemovedObserver: (any NSObjectProtocol)?
     private var stream: FSEventStreamRef?
     private var activeWatchRoots: [String] = []
+    private var pendingEventsByPath: [String: FileChangeGatewayEvent] = [:]
+    private var pendingEventFlushTask: Task<Void, Never>?
+    private let eventBatchInterval: Duration
+    private let maxEventsPerBatch: Int
 
-    init(logger: Logger) {
+    init(
+        logger: Logger,
+        eventBatchInterval: Duration = .milliseconds(750),
+        maxEventsPerBatch: Int = FileChangeGatewayLimits.maxEventsPerBatch,
+    ) {
         self.logger = logger
+        self.eventBatchInterval = eventBatchInterval
+        self.maxEventsPerBatch = maxEventsPerBatch
     }
 
     func start() {
@@ -39,6 +49,9 @@ final class HelperFileChangeGateway {
             DistributedNotificationCenter.default().removeObserver(interestRemovedObserver)
             self.interestRemovedObserver = nil
         }
+        flushPendingEvents()
+        pendingEventFlushTask?.cancel()
+        pendingEventFlushTask = nil
         interests.removeAll()
         activeWatchRoots = []
         stopStream()
@@ -89,8 +102,19 @@ final class HelperFileChangeGateway {
     }
 
     private func restartStreamIfNeeded() {
-        let nextRoots = helperFileChangeGatewayWatchRoots(from: Array(interests.values))
+        let allRoots = helperFileChangeGatewayAllowedWatchRoots(from: Array(interests.values))
+        let nextRoots = helperFileChangeGatewayCappedWatchRoots(allRoots)
         guard nextRoots != activeWatchRoots else { return }
+
+        if allRoots.count > nextRoots.count {
+            logger.warning(
+                "FileChangeGateway root cap reached",
+                metadata: [
+                    "allowedRoots": "\(allRoots.count)",
+                    "activeRoots": "\(nextRoots.count)",
+                ],
+            )
+        }
 
         stopStream()
         activeWatchRoots = nextRoots
@@ -127,12 +151,58 @@ final class HelperFileChangeGateway {
             events,
             interests: Array(interests.values),
         )
-        guard !filteredEvents.isEmpty else { return }
+        enqueue(filteredEvents)
+    }
+
+    private func enqueue(_ events: [FileChangeGatewayEvent]) {
+        guard !events.isEmpty else { return }
+
+        for event in events {
+            let path = FileChangeScopePolicy.normalizedPath(event.path)
+            if let existingEvent = pendingEventsByPath[path] {
+                pendingEventsByPath[path] = FileChangeGatewayEvent(
+                    path: path,
+                    flags: existingEvent.flags | event.flags,
+                    emittedAt: max(existingEvent.emittedAt, event.emittedAt),
+                )
+            } else {
+                pendingEventsByPath[path] = event
+            }
+        }
+
+        guard pendingEventFlushTask == nil else { return }
+        let interval = eventBatchInterval
+        pendingEventFlushTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                return
+            }
+            await MainActor.run {
+                self?.flushPendingEvents()
+            }
+        }
+    }
+
+    private func flushPendingEvents() {
+        pendingEventFlushTask?.cancel()
+        pendingEventFlushTask = nil
+
+        let pendingEvents = Array(pendingEventsByPath.values)
+        pendingEventsByPath.removeAll()
+        guard !pendingEvents.isEmpty else { return }
+
+        let events = helperFileChangeGatewayCompactedEvents(
+            pendingEvents,
+            interests: Array(interests.values),
+            maxEvents: maxEventsPerBatch,
+        )
+        guard !events.isEmpty else { return }
 
         DistributedNotificationCenter.default().post(
             name: .voyagerFileChangeGatewayEvents,
             object: nil,
-            userInfo: FileChangeGatewayPayload.userInfo(forEvents: filteredEvents),
+            userInfo: FileChangeGatewayPayload.userInfo(forEvents: events),
         )
     }
 
@@ -192,8 +262,20 @@ final class HelperFileChangeGateway {
     }
 }
 
-nonisolated func helperFileChangeGatewayWatchRoots(from interests: [FileChangeWatchInterest]) -> [String] {
+nonisolated func helperFileChangeGatewayAllowedWatchRoots(from interests: [FileChangeWatchInterest]) -> [String] {
     FileChangeScopePolicy.allowedWatchRoots(from: interests.flatMap(\.roots))
+}
+
+nonisolated func helperFileChangeGatewayCappedWatchRoots(
+    _ roots: [String],
+    maxRootCount: Int = FileChangeGatewayLimits.maxActiveWatchRoots,
+) -> [String] {
+    guard maxRootCount > 0 else { return [] }
+    return Array(roots.prefix(maxRootCount))
+}
+
+nonisolated func helperFileChangeGatewayWatchRoots(from interests: [FileChangeWatchInterest]) -> [String] {
+    helperFileChangeGatewayCappedWatchRoots(helperFileChangeGatewayAllowedWatchRoots(from: interests))
 }
 
 nonisolated func helperFileChangeGatewayRelevantEvents(
@@ -205,4 +287,65 @@ nonisolated func helperFileChangeGatewayRelevantEvents(
     })
     guard !relevantPaths.isEmpty else { return [] }
     return events.filter { relevantPaths.contains(FileChangeScopePolicy.normalizedPath($0.path)) }
+}
+
+nonisolated func helperFileChangeGatewayCompactedEvents(
+    _ events: [FileChangeGatewayEvent],
+    interests: [FileChangeWatchInterest],
+    maxEvents: Int = FileChangeGatewayLimits.maxEventsPerBatch,
+) -> [FileChangeGatewayEvent] {
+    let coalescedEvents = helperFileChangeGatewayCoalescedEvents(events)
+    guard maxEvents > 0, coalescedEvents.count > maxEvents else {
+        return coalescedEvents
+    }
+
+    let affectedRoots = helperFileChangeGatewayAffectedRoots(
+        by: coalescedEvents,
+        interests: interests,
+    )
+    guard !affectedRoots.isEmpty else {
+        return Array(coalescedEvents.prefix(maxEvents))
+    }
+
+    let coarseFlags = UInt32(kFSEventStreamEventFlagMustScanSubDirs)
+    return affectedRoots.map { root in
+        FileChangeGatewayEvent(path: root, flags: coarseFlags)
+    }
+}
+
+nonisolated func helperFileChangeGatewayCoalescedEvents(_ events: [FileChangeGatewayEvent])
+    -> [FileChangeGatewayEvent]
+{
+    let eventsByPath = events.reduce(into: [String: FileChangeGatewayEvent]()) { result, event in
+        let path = FileChangeScopePolicy.normalizedPath(event.path)
+        if let existingEvent = result[path] {
+            result[path] = FileChangeGatewayEvent(
+                path: path,
+                flags: existingEvent.flags | event.flags,
+                emittedAt: max(existingEvent.emittedAt, event.emittedAt),
+            )
+        } else {
+            result[path] = event
+        }
+    }
+    return eventsByPath.values.sorted { $0.path < $1.path }
+}
+
+nonisolated func helperFileChangeGatewayAffectedRoots(
+    by events: [FileChangeGatewayEvent],
+    interests: [FileChangeWatchInterest],
+) -> [String] {
+    let roots = Set(interests.flatMap { interest in
+        let affectedPaths = Set(FileChangeScopePolicy.interestAffectedPaths(events: events, interest: interest))
+        return FileChangeScopePolicy.normalizedAbsolutePaths(interest.roots).filter { root in
+            affectedPaths.contains { path in
+                FileChangeScopePolicy.affects(
+                    root: root,
+                    path: path,
+                    includeSubfolders: interest.includeSubfolders,
+                )
+            }
+        }
+    })
+    return roots.sorted()
 }

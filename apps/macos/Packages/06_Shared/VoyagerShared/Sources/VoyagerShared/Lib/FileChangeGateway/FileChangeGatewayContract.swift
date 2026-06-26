@@ -56,6 +56,11 @@ public struct FileChangeGatewayEvent: Sendable, Codable, Equatable {
     }
 }
 
+public enum FileChangeGatewayLimits {
+    public static let maxActiveWatchRoots = 64
+    public static let maxEventsPerBatch = 256
+}
+
 public enum FileChangeGatewayPayload {
     private static let interestsKey = "interests"
     private static let idsKey = "ids"
