@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
@@ -138,6 +139,61 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs.count, 1)
         XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .directory(path: "/restored"))
         XCTAssertNotNil(state.contentTabs.activeTabID)
+        XCTAssertEqual(state.content.navigation.currentPath, "/restored")
+    }
+
+    func testOpenNewContentTab_makeInitialWithRestoredCollectionState_seedsActiveContentFromAnchor() {
+        let restoredID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/restored.voycoll")
+        let restoredState = ContentTabState(
+            tabs: [ContentTabItem(
+                id: restoredID,
+                page: .collection,
+                anchor: .collectionFile(url: collectionURL),
+                isPinned: false,
+                title: "restored",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: restoredID,
+            recentlyClosed: nil,
+        )
+
+        let state = FileManagerWindowState.makeInitial(path: nil, contentTabs: restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .collectionFile(url: collectionURL))
+        if case let .collection(navigation) = state.content.navigation.navigationState {
+            XCTAssertEqual(navigation.kind, .file(url: collectionURL, name: "restored"))
+            XCTAssertEqual(navigation.context, CollectionContext(query: "", scopes: [], conditions: []))
+        } else {
+            XCTFail("restored collection tab should seed collection navigation")
+        }
+        XCTAssertEqual(
+            state.tabContentStates[restoredID]?.navigation.navigationState,
+            state.content.navigation.navigationState,
+        )
+    }
+
+    func testOpenNewContentTab_makeInitialWithRestoredVirtualState_seedsActiveContentFromAnchor() {
+        let restoredID = ContentTabID()
+        let restoredState = ContentTabState(
+            tabs: [ContentTabItem(
+                id: restoredID,
+                page: .collection,
+                anchor: .virtualCollection(id: "Important"),
+                isPinned: false,
+                title: "Important",
+                iconName: "tag",
+            )],
+            activeTabID: restoredID,
+            recentlyClosed: nil,
+        )
+
+        let state = FileManagerWindowState.makeInitial(path: nil, contentTabs: restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .virtualCollection(id: "Important"))
+        let expectedRoute = ContentPageNavigationRoute.tags("Important")
+        XCTAssertEqual(state.content.navigation.navigationState, expectedRoute)
+        XCTAssertEqual(state.tabContentStates[restoredID]?.navigation.navigationState, expectedRoute)
     }
 
     /// CTM-001-open_new_content_tab: makeInitial empty restored state는 Home tab으로 fallback함

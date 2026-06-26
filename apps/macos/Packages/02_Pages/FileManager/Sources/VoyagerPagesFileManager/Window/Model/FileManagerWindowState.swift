@@ -33,6 +33,13 @@ public struct FileManagerWindowState: Equatable {
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
             state.syncActiveTabAnchorForInitialPath(path)
+        } else {
+            let activeAnchor = state.contentTabs.activeTabID
+                .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+            state.content = FileManagerContentFeature.State.initialContent(
+                for: activeAnchor,
+                inheritingWindowContextFrom: state.content,
+            )
         }
 
         state.syncActiveTabContentState()
@@ -54,6 +61,13 @@ public struct FileManagerWindowState: Equatable {
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
             state.syncActiveTabAnchorForInitialPath(path)
+        } else {
+            let activeAnchor = state.contentTabs.activeTabID
+                .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+            state.content = FileManagerContentFeature.State.initialContent(
+                for: activeAnchor,
+                inheritingWindowContextFrom: state.content,
+            )
         }
 
         state.syncActiveTabContentState()
