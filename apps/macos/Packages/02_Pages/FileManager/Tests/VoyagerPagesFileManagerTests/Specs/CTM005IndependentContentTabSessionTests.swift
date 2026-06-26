@@ -429,6 +429,153 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    func testActiveCloseRestoresFallbackTabSession() async {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let homePath = "/Users/test/HomeSession"
+        let directoryPath = "/Users/test/Desktop"
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath(directoryPath)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: directoryPath),
+                    isPinned: false,
+                    title: "Desktop",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: directoryID,
+            previousActiveTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = directoryContent
+        state.tabContentStates = [homeID: homeContent, directoryID: directoryContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // KCF: FileManagerFeature의 routing reducer가 non-exhaustive side effect를 수행함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(directoryID)))
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNil(store.state.tabContentStates[directoryID])
+        XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, homePath)
+        await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session: inactive tab close 시 active tab session에 영향 없음
+    /// inactive tab을 닫을 때 active tab의 content session이 보존되는지 검증한다.
+    /// - 검증 내용: activeTabID 불변, content 불변, tabContentStates에서 closed tab session만 제거됨
+    /// - 사전 조건: 두 content tab이 있고 active tab이 A(home)
+    /// - 기대 결과: activeTabID == A, content.currentPath == A session 경로, tabContentStates[B] == nil
+    func testInactiveCloseRemovesOnlyClosedTabSession() async {
+        let homeID = ContentTabID()
+        let directoryID = ContentTabID()
+        let homePath = "/Users/test/HomeSession"
+        let directoryPath = "/Users/test/Desktop"
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+        var directoryContent = FileManagerContentFeature.State()
+        directoryContent.navigation.seedInitialFolderPath(directoryPath)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: directoryPath),
+                    isPinned: false,
+                    title: "Desktop",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [homeID: homeContent, directoryID: directoryContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // KCF: FileManagerFeature의 routing reducer가 non-exhaustive side effect를 수행함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(directoryID)))
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNil(store.state.tabContentStates[directoryID])
+        XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, homePath)
+        await store.finish()
+    }
+
+    /// CTM-005-independent_content_tab_session: 마지막 content tab close 시 window close 요청을 발생시킴
+    /// 단일 active tab을 닫으면 tab reducer는 Home reset을 유지하고, window routing은 실제 window close를 요청한다.
+    /// - 검증 내용: close 후 `.closeWindow` action 수신
+    /// - 사전 조건: 단일 Directory tab이 active 상태
+    /// - 기대 결과: window close effect가 발생함
+    func testLastTabCloseRequestsWindowClose() async {
+        let directoryID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: directoryID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Desktop"),
+                isPinned: false,
+                title: "Desktop",
+                iconName: "folder",
+            )],
+            activeTabID: directoryID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // KCF: closeWindow action 이후 NSApp close side effect는 여기서 검증하지 않음
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(directoryID)))
+        await store.receive(\.closeWindow)
+        await store.finish()
+    }
+
     func testRestoringCollectionTabReappliesClosedNavigationRoute() async {
         let homeID = ContentTabID()
         let collectionID = ContentTabID()

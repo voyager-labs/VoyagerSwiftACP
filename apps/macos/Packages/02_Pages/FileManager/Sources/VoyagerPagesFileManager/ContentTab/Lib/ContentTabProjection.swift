@@ -7,6 +7,7 @@ public extension ContentTabProjection {
         public let id: ContentTabID
         public let title: String?
         public let iconName: String?
+        public let targetURL: URL?
         public let tagColorCode: Int?
         public let pageType: ContentTabPage
         public let isActive: Bool
@@ -21,6 +22,7 @@ public extension ContentTabProjection {
                 id: tab.id,
                 title: tab.title,
                 iconName: tab.iconName,
+                targetURL: nil,
                 tagColorCode: nil,
                 pageType: tab.page,
                 isActive: state.activeTabID == tab.id,

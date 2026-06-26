@@ -698,6 +698,7 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         await store.send(.sidebar(.internal(.locationsLoaded([location])))) { state in
             state.sidebar.locations = [location]
             state.sidebar.selectedSidebarItem = "Documents"
+            state.syncContentTabSidebarItems()
         }
 
         await store.finish()

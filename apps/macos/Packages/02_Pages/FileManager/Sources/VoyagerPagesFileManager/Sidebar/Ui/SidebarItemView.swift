@@ -12,6 +12,7 @@ struct SidebarItemView: View {
     let isFavorite: Bool
     let iconColor: Color?
     let targetURL: URL?
+    let isHovered: Bool
     let action: () -> Void
     let onDrop: (([NSItemProvider], URL) -> Void)?
     let onContextMenuOpen: (() -> Void)?
@@ -40,6 +41,8 @@ struct SidebarItemView: View {
             Color.accentColor
         } else if isSelected {
             VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
+        } else if isHovered {
+            Color.primary.opacity(0.05)
         } else {
             Color.clear
         }

@@ -36,6 +36,7 @@ struct SidebarFavoritesSectionView: View {
                             ? VoyagerDS.BrandSecondaryColor.c600
                             : nil,
                         targetURL: favorite.url,
+                        isHovered: false,
                         action: {
                             store.send(.delegate(.openFavorite(favorite)))
                         },

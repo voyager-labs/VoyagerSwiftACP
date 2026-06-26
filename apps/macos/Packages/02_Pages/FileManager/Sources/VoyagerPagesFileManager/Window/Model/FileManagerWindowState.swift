@@ -142,11 +142,11 @@ extension FileManagerWindowState {
         switch anchor {
         case let .directory(path):
             guard let location = locationItem(forPath: path) else { return item }
-            return item.withTitle(location.name, iconName: location.iconName)
+            return item.withTitle(location.name, iconName: location.iconName, targetURL: location.url)
 
         case let .virtualCollection(id):
             if let location = sidebar.locations.first(where: { $0.name == id }) {
-                return item.withTitle(location.name, iconName: location.iconName)
+                return item.withTitle(location.name, iconName: location.iconName, targetURL: location.url)
             }
             if let tag = sidebar.tags.first(where: { $0.name == id }) {
                 return item.withTagColorCode(tag.colorCode)
@@ -170,11 +170,12 @@ extension FileManagerWindowState {
 }
 
 private extension ContentTabProjection.ContentTabSidebarItem {
-    func withTitle(_ title: String?, iconName: String?) -> Self {
+    func withTitle(_ title: String?, iconName: String?, targetURL: URL? = nil) -> Self {
         Self(
             id: id,
             title: title,
             iconName: iconName,
+            targetURL: targetURL,
             tagColorCode: tagColorCode,
             pageType: pageType,
             isActive: isActive,
@@ -187,6 +188,7 @@ private extension ContentTabProjection.ContentTabSidebarItem {
             id: id,
             title: title,
             iconName: iconName,
+            targetURL: targetURL,
             tagColorCode: tagColorCode,
             pageType: pageType,
             isActive: isActive,

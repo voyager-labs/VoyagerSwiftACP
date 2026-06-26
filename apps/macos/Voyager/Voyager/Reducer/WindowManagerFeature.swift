@@ -87,6 +87,9 @@ struct WindowManagerFeature {
                  .window(.closeAllWindows):
                 return handleWindowCommand(action, state: &state)
 
+            case .file(.closeTab):
+                return sendCommandToFocusedWindow(state, .closeActiveContentTab)
+
             case .file(.newFolder):
                 return sendCommandToFocusedWindow(state, .newFolder)
 
@@ -294,16 +297,8 @@ struct WindowManagerFeature {
 
 @Reducer
 struct WindowSessionFeature {
-    @ObservableState
-    struct State: Equatable, Identifiable {
-        var id: UUID
-        var window: FileManagerWindowFeature.State
-    }
-
-    @CasePathable
-    enum Action {
-        case window(FileManagerWindowFeature.Action)
-    }
+    typealias State = WindowSessionState
+    typealias Action = WindowSessionAction
 
     var body: some Reducer<State, Action> {
         Scope(state: \.window, action: \.window) {
@@ -318,8 +313,6 @@ struct WindowSessionFeature {
         }
     }
 }
-
-typealias WindowSessionState = WindowSessionFeature.State
 
 private extension WindowManagerFeature {
     func requestAttachmentPicker(for windowID: WindowManagerState.WindowID) -> Effect<Action> {
