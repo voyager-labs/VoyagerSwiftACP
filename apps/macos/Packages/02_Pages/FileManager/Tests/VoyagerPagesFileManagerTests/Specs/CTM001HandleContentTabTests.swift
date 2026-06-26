@@ -85,15 +85,15 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs.first?.page, .home)
     }
 
-    /// CTM-001-open_new_content_tab: path seed가 ContentTab anchor를 변경하지 않고 Home anchor를 유지함
-    /// AC3의 path seed가 anchor를 override하지 않는 정책을 검증한다.
-    /// - 검증 내용: path seed("/tmp")에서도 contentTabs.tabs.first?.anchor == .homeDefault, contentTabs.tabs.count == 1
+    /// CTM-001-open_new_content_tab: path seed가 initial tab을 directory anchor로 동기화함
+    /// path 기반 FileManager window 생성 시 chrome/source-of-truth anchor가 folder route와 일치하는지 검증한다.
+    /// - 검증 내용: path seed("/tmp")에서 contentTabs.tabs.first?.anchor == .directory(path: "/tmp"), count == 1
     /// - 사전 조건: FileManagerWindowState.makeInitial(path: "/tmp")
-    /// - 기대 결과: path seed와 무관하게 Home anchor와 단일 tab이 유지됨
-    func testOpenNewContentTab_pathSeed_keepsHomeAnchorNotDefaultTabPath() {
+    /// - 기대 결과: path seed window가 Home tab metadata로 남지 않고 directory tab으로 표시됨
+    func testOpenNewContentTab_pathSeed_syncsDirectoryAnchor() {
         let state = FileManagerWindowState.makeInitial(path: "/tmp")
 
-        XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .homeDefault)
+        XCTAssertEqual(state.contentTabs.tabs.first?.anchor, .directory(path: "/tmp"))
         XCTAssertEqual(state.contentTabs.tabs.count, 1)
     }
 
@@ -101,7 +101,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// path 기반 FileManager window 생성이 기존 navigation seed 동작을 유지하는지 검증한다.
     /// - 검증 내용: makeInitial(path: "/tmp") 결과 content.navigation.currentPath가 존재함
     /// - 사전 조건: FileManagerWindowState.makeInitial(path: "/tmp")
-    /// - 기대 결과: ContentTab anchor는 Home 정책을 유지하면서 navigation seed가 적용됨
+    /// - 기대 결과: directory tab anchor와 navigation seed가 함께 적용됨
     func testOpenNewContentTab_pathSeed_appliesNavigationSeed() {
         let state = FileManagerWindowState.makeInitial(path: "/tmp")
 

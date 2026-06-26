@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesContentPageNavigation
 
 @Reducer
 struct FileManagerWindowRoutingReducer {
@@ -36,13 +37,17 @@ struct FileManagerWindowRoutingReducer {
                 }
 
             case .contentTabs(.setCurrent):
-                if state.contentTabs.previousActiveTabID != nil || state.activeTabContentStateMissing {
+                let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
+                    || state.activeTabContentStateMissing
+                if shouldResyncContentNavigation {
                     state.saveCurrentContentStateForPreviousActiveTab()
                     state.restoreContentStateForActiveTab()
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return .none
+                return shouldResyncContentNavigation
+                    ? resyncContentNavigationEffect(state: state)
+                    : .none
 
             case .contentTabs(.open):
                 state.saveCurrentContentStateForPreviousActiveTab()
@@ -88,6 +93,41 @@ struct FileManagerWindowRoutingReducer {
                 return .none
             }
         }
+    }
+}
+
+private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
+    guard let navigationState = resyncNavigationStateForActiveContentTab(state: state) else {
+        return .none
+    }
+    return .send(.content(.internal(.applyNavigationState(navigationState))))
+}
+
+private func resyncNavigationStateForActiveContentTab(
+    state: FileManagerWindowState,
+) -> ContentPageNavigationRoute? {
+    guard let activeTabID = state.contentTabs.activeTabID,
+          let activeAnchor = state.contentTabs.tabs[id: activeTabID]?.anchor
+    else { return nil }
+
+    switch activeAnchor {
+    case .homeDefault, .aiChat:
+        return .home
+    case let .directory(path):
+        return .folder(path)
+    case .collectionFile:
+        if case let .collection(navigation) = state.content.navigation.navigationState {
+            return .collection(navigation)
+        }
+        return nil
+    case let .virtualCollection(id):
+        if id == "Recents" {
+            return .recents
+        }
+        if state.sidebar.locations.first(where: { $0.isComputer })?.name == id {
+            return .computer
+        }
+        return .tags(id)
     }
 }
 

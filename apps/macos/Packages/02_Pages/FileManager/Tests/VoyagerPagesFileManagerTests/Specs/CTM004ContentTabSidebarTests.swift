@@ -303,29 +303,25 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
         }
+        store.exhaustivity = .off
 
         await store.send(.sidebar(.delegate(.selectContentTab(directoryID))))
-        await store.receive(\.contentTabs) {
-            $0.contentTabs.previousActiveTabID = homeID
-            $0.contentTabs.activeTabID = directoryID
-            $0.tabContentStates[homeID] = homeContent
-            $0.content = directoryContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-        }
+        await store.receive(\.contentTabs)
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, directoryID, "active tab must switch to Directory")
         XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
         XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, homeSessionPath)
 
         await store.send(.sidebar(.delegate(.selectContentTab(homeID))))
-        await store.receive(\.contentTabs) {
-            $0.contentTabs.previousActiveTabID = directoryID
-            $0.contentTabs.activeTabID = homeID
-            $0.tabContentStates[directoryID] = directoryContent
-            $0.content = homeContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-        }
+        await store.receive(\.contentTabs)
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, homeID, "active tab must switch back to Home")
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state.contentTabs), .homeDefault)

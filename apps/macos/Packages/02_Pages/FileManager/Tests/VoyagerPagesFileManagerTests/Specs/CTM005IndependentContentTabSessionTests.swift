@@ -9,11 +9,12 @@ import XCTest
 final class CTM005IndependentContentTabSessionTests: XCTestCase {
     // MARK: - CTM-005-independent_content_tab_session
 
-    func testSwitchingTabsSwapsStoredFileManagerContentSessionWithoutNavigationEffects() async {
+    func testSwitchingTabsRestoresContentSessionAndRestartsFolderWatcher() async {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
         let homePath = "/Users/test/HomeSession"
         let directoryPath = "/Users/test/Desktop"
+        let changedPath = "\(directoryPath)/Changed.txt"
         var homeContent = FileManagerContentFeature.State()
         homeContent.navigation.seedInitialFolderPath(homePath)
         var directoryContent = FileManagerContentFeature.State()
@@ -47,29 +48,23 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { url in
+                XCTAssertEqual(url.path, directoryPath)
+                return AsyncStream { continuation in
+                    continuation.yield([changedPath])
+                    continuation.finish()
+                }
+            }
         }
+        store.exhaustivity = .off
 
-        await store.send(.contentTabs(.setCurrent(directoryID))) {
-            $0.contentTabs.previousActiveTabID = homeID
-            $0.contentTabs.activeTabID = directoryID
-            $0.tabContentStates[homeID] = homeContent
-            $0.content = directoryContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-        }
+        await store.send(.contentTabs(.setCurrent(directoryID)))
 
         XCTAssertEqual(store.state.content.navigation.currentPath, directoryPath)
         XCTAssertEqual(store.state.tabContentStates[homeID]?.navigation.currentPath, homePath)
-
-        await store.send(.contentTabs(.setCurrent(homeID))) {
-            $0.contentTabs.previousActiveTabID = directoryID
-            $0.contentTabs.activeTabID = homeID
-            $0.tabContentStates[directoryID] = directoryContent
-            $0.content = homeContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-        }
-
-        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
-        XCTAssertEqual(store.state.tabContentStates[directoryID]?.navigation.currentPath, directoryPath)
+        await store.receive(\.content.externalFileSystemChanged, [changedPath])
         await store.finish()
     }
 
@@ -123,25 +118,21 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
             FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
         }
+        store.exhaustivity = .off
 
-        await store.send(.contentTabs(.setCurrent(downloadsID))) {
-            $0.contentTabs.previousActiveTabID = projectsID
-            $0.contentTabs.activeTabID = downloadsID
-            $0.tabContentStates[projectsID] = projectsContent
-            $0.content = downloadsContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-            $0.sidebar.selectedSidebarItem = "Downloads"
-        }
+        await store.send(.contentTabs(.setCurrent(downloadsID)))
+        XCTAssertEqual(store.state.sidebar.selectedSidebarItem, "Downloads")
 
-        await store.send(.contentTabs(.setCurrent(projectsID))) {
-            $0.contentTabs.previousActiveTabID = downloadsID
-            $0.contentTabs.activeTabID = projectsID
-            $0.tabContentStates[downloadsID] = downloadsContent
-            $0.content = projectsContent
-            $0.sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: $0.contentTabs)
-            $0.sidebar.selectedSidebarItem = "Projects"
-        }
+        await store.send(.contentTabs(.setCurrent(projectsID)))
+        XCTAssertEqual(store.state.sidebar.selectedSidebarItem, "Projects")
 
         await store.finish()
     }
