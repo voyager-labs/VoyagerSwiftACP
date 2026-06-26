@@ -304,6 +304,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         existingContent.entryViewLayout.listIconSize = 18
         existingContent.entryViewLayout.gridIconSize = 96
         existingContent.entryViewLayout.entryOperations.windowID = windowID
+        existingContent.composer.cancellationOwnerID = windowID
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [ContentTabItem(
@@ -332,6 +333,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         XCTAssertNotEqual(store.state.contentTabs.activeTabID, homeID)
         XCTAssertEqual(store.state.content.entryViewLayout.entryOperations.windowID, windowID)
+        XCTAssertEqual(store.state.content.composer.cancellationOwnerID, windowID)
         XCTAssertEqual(store.state.content.entryViewLayout.mode, .grid)
         XCTAssertTrue(store.state.content.entryViewLayout.showHiddenFiles)
         XCTAssertEqual(store.state.content.entryViewLayout.listIconSize, 18)

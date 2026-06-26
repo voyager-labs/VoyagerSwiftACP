@@ -14,11 +14,11 @@ extension FileManagerContentFeature {
     ) -> Effect<Action> {
         switch action {
         case .internal(.clearCollectionMode):
-            return clearCollectionModeEffect()
+            return clearCollectionModeEffect(state: state)
 
         case .internal(.exitCollectionMode):
             let wasCollection = if case .collection = state.navigation.navigationState { true } else { false }
-            let clearEffect = clearCollectionModeEffect()
+            let clearEffect = clearCollectionModeEffect(state: state)
             guard wasCollection else {
                 return clearEffect
             }
@@ -90,15 +90,15 @@ extension FileManagerContentFeature {
         }
     }
 
-    func clearCollectionModeEffect() -> Effect<Action> {
+    func clearCollectionModeEffect(state: State) -> Effect<Action> {
         .concatenate(
             .send(.composer(.clearPendingSearchQuery)),
             .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
             .send(.collection(.sessionResetRequested)),
             .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
-            .cancel(id: "openCollectionFile"),
-            .cancel(id: ComposerFeature.CancelID.search),
-            .cancel(id: ComposerFeature.CancelID.filters),
+            .cancel(id: OpenCollectionFileCancelID(windowID: state.entryViewLayout.entryOperations.windowID)),
+            .cancel(id: ComposerFeature.CancelID.search(ownerID: state.composer.cancellationOwnerID)),
+            .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.composer.cancellationOwnerID)),
         )
     }
 

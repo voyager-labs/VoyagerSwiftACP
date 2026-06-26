@@ -215,5 +215,6 @@ extension FileManagerContentFeature.State {
             .hasUserSetSortOrder
         entryViewLayout.entryArrangements.groupKey = source.entryViewLayout.entryArrangements.groupKey
         entryViewLayout.entryOperations.windowID = source.entryViewLayout.entryOperations.windowID
+        composer.cancellationOwnerID = source.composer.cancellationOwnerID
     }
 }

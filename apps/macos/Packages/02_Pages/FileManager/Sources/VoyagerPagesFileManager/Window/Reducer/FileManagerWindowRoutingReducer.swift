@@ -160,6 +160,8 @@ private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowSta
         .cancel(id: EntryOperationsLoadingCancelID.loadItems(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
         )),
+        .cancel(id: ComposerFeature.CancelID.search(ownerID: state.content.composer.cancellationOwnerID)),
+        .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.content.composer.cancellationOwnerID)),
     )
 }
 
