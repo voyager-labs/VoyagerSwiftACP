@@ -138,6 +138,12 @@ struct FileManagerWindowRoutingReducer {
                 return handleContentTabCloseAlertResponse(choice: choice, state: &state)
 
             case .content(.collection(.saveCompleted(.success))):
+                guard state.pendingContentTabClose != nil else {
+                    return .none
+                }
+                return .none
+
+            case .content(.collection(.delegate(.writeBackNavigationPrepared))):
                 guard let pendingClose = state.pendingContentTabClose else {
                     return .none
                 }
@@ -145,7 +151,9 @@ struct FileManagerWindowRoutingReducer {
                 state.pendingContentTabClose = nil
                 return .send(.contentTabs(.close(pendingClose.tabID)))
 
-            case .content(.collection(.saveCompleted(.failure))):
+            case .content(.collection(.saveCompleted(.failure))),
+                 .content(.collection(.writeBackFailed)),
+                 .content(.collection(.delegate(.saveFeedback))):
                 guard let pendingClose = state.pendingContentTabClose else {
                     return .none
                 }
@@ -185,7 +193,7 @@ private extension FileManagerWindowRoutingReducer {
             targetState = state.content
         } else {
             guard let inactiveState = state.tabContentStates[tabID] else {
-                return .none
+                return .send(.contentTabs(.close(tabID)))
             }
             targetState = inactiveState
         }
@@ -231,8 +239,19 @@ private extension FileManagerWindowRoutingReducer {
 
         case .save:
             stagePendingTargetContentIfNeeded(pendingClose, state: &state)
+            guard canStartPendingContentSave(state.content) else {
+                restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
+                state.pendingContentTabClose = nil
+                return .none
+            }
             return .send(.content(.composer(.saveCollection)))
         }
+    }
+
+    func canStartPendingContentSave(_ content: FileManagerContentFeature.State) -> Bool {
+        !content.collection.isSaving
+            && !content.composer.isLoadingSearch
+            && !content.composer.isLoadingFilters
     }
 
     func stagePendingTargetContentIfNeeded(
