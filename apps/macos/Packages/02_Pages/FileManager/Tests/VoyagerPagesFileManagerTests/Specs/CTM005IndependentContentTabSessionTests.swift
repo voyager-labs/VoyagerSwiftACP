@@ -1254,6 +1254,94 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-444-collection_dirty_close: active dirty collection Save panel 취소는 pending을 해제하고 tab을 보존
+    func testDirtyActiveCollectionSavePanelCancelClearsPendingAndPreservesTab() async {
+        let tabID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.content(.collection(.savePanelResponse(nil))))
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: inactive dirty collection Save panel 취소는 active content를 복구하고 대상 탭을 보존
+    func testInactiveDirtyCollectionSavePanelCancelRestoresActiveContentAndPreservesTargetTab() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let dirtyContent = makeDirtyCollectionContent()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = dirtyContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: inactiveID,
+            previousActiveTabID: activeID,
+            previousActiveContent: homeContent,
+            targetContent: dirtyContent,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.content(.collection(.savePanelResponse(nil))))
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: inactiveID])
+        XCTAssertNotNil(store.state.tabContentStates[inactiveID])
+        await store.finish()
+    }
+
     func testInactiveDirtyCollectionSaveFailurePreservesTargetTabAndRestoresActiveContent() async {
         let activeID = ContentTabID()
         let inactiveID = ContentTabID()

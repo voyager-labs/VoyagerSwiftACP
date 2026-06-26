@@ -152,6 +152,7 @@ struct FileManagerWindowRoutingReducer {
                 return .send(.contentTabs(.close(pendingClose.tabID)))
 
             case .content(.collection(.saveCompleted(.failure))),
+                 .content(.collection(.savePanelResponse(nil))),
                  .content(.collection(.writeBackFailed)),
                  .content(.collection(.delegate(.saveFeedback))):
                 guard let pendingClose = state.pendingContentTabClose else {
