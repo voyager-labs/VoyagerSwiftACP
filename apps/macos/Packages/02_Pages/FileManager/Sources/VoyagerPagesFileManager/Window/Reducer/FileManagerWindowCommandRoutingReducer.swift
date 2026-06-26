@@ -70,25 +70,20 @@ struct FileManagerWindowCommandRoutingReducer {
         _ anchor: ContentTabPageAnchor,
         activeTabID: ContentTabID,
     ) -> Effect<Action> {
-        let tabUpdateEffect = Effect<Action>.send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
-
         switch anchor {
         case let .directory(path):
-            return .concatenate(
-                tabUpdateEffect,
+            .concatenate(
+                .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
                 .send(.navigation(.view(.navigateToPath(path)))),
             )
 
         case let .collectionFile(url):
-            return .concatenate(
-                tabUpdateEffect,
-                .send(.navigation(.view(.openCollectionFile(url)))),
-            )
+            .send(.navigation(.view(.openCollectionFile(url))))
 
         case .homeDefault,
              .virtualCollection,
              .aiChat:
-            return tabUpdateEffect
+            .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
         }
     }
 

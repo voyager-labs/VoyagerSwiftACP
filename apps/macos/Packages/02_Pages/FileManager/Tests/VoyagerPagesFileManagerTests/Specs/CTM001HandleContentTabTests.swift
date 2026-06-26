@@ -1,6 +1,8 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -792,17 +794,41 @@ final class CTM001HandleContentTabTests: XCTestCase {
     /// - 기대 결과: active tab의 anchor가 컬렉션 파일 URL로 변경되고 page가 collection으로 전환됨
     func testHomeSelection_openCollectionPickerSuccess_convertsAnchor() async throws {
         let collectionURL = URL(fileURLWithPath: "/tmp/test.voycoll")
+        let loadedFile = VoyagerCollectionFile(
+            id: "ctm-open-collection",
+            name: "test",
+            createdAt: .distantPast,
+            updatedAt: .distantFuture,
+            query: "kind:document",
+            scopes: ["/tmp"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: nil,
+        )
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
         } withDependencies: {
             $0.homePickerClient.pickCollectionFile = { .selected(collectionURL) }
+            $0.collectionFileClient.load = { _ in
+                VoyagerCollectionFileCompatibilityOwner.makeLoadResult(
+                    file: loadedFile,
+                    containerFormat: .package,
+                    sourceSchemaVersion: CollectionFileSchemaVersion.current,
+                    warning: nil,
+                    usedDefinitionFallback: false,
+                )
+            }
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
-        // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
-        // HomeSelectionReducer의 picker effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
+        // 비포괄적: picker/load/open flow가 여러 child action을 방출하므로
+        // 최종 anchor 확정 검증에 집중한다.
         store.exhaustivity = .off
 
         await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
+        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.receive(\.navigation.view.openCollectionFile)
+        await store.receive(\.navigation.internal.collectionFileLoaded)
         await store.receive(\.contentTabs)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
@@ -827,6 +853,37 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
         await store.receive(\.content.internal.homeCollectionPickerFinished)
+
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .homeDefault)
+        XCTAssertEqual(tab.page, .home)
+    }
+
+    /// CTM-001-home_selection_page_conversion: 컬렉션 파일 load 실패 시 Home anchor가 유지됨
+    /// 컬렉션 anchor는 파일 open 성공 후 확정되어야 하며, load 실패만으로 tab metadata를 collection으로 바꾸지 않는다.
+    /// - 검증 내용: picker는 URL을 반환하지만 collectionFileClient.load 실패 후 tab.anchor == .homeDefault
+    /// - 사전 조건: homePickerClient.pickCollectionFile → .selected(URL), collectionFileClient.load throws
+    /// - 기대 결과: open 실패 시 active tab의 anchor와 page가 변경되지 않고 Home 상태를 유지함
+    func testHomeSelection_openCollectionLoadFailure_preservesHome() async throws {
+        enum TestError: Error {
+            case loadFailed
+        }
+        let collectionURL = URL(fileURLWithPath: "/tmp/missing.voycoll")
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homePickerClient.pickCollectionFile = { .selected(collectionURL) }
+            $0.collectionFileClient.load = { _ in throw TestError.loadFailed }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 비포괄적: 실패 경로의 alert/rollback child action보다 tab anchor 보존을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.homeSelectionTapped(.openCollection))))
+        await store.receive(\.content.internal.homeCollectionPickerFinished)
+        await store.receive(\.navigation.view.openCollectionFile)
+        await store.receive(\.navigation.internal.collectionFileLoaded)
 
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
