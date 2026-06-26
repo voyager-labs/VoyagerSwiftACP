@@ -284,8 +284,11 @@ private extension FileManagerWindowRoutingReducer {
         }
         if let previousActiveTabID = pendingClose.previousActiveTabID {
             state.tabContentStates[previousActiveTabID] = state.content
+            state.contentTabs.previousActiveTabID = previousActiveTabID
+            state.contentTabs.activeTabID = pendingClose.tabID
         }
         state.content = targetContent
+        state.syncActiveTabContentState()
     }
 
     func restorePreviousActiveContentIfNeeded(
@@ -297,6 +300,8 @@ private extension FileManagerWindowRoutingReducer {
         }
         state.content = previousActiveContent
         if let previousActiveTabID = pendingClose.previousActiveTabID {
+            state.contentTabs.previousActiveTabID = pendingClose.tabID
+            state.contentTabs.activeTabID = previousActiveTabID
             state.tabContentStates[previousActiveTabID] = previousActiveContent
         }
     }
