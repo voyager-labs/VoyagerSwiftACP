@@ -105,7 +105,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// folder navigation 시 directory watcher가 시작되고, 외부 변경 사항이 externalFileSystemChanged로 전달되는지 검증.
     /// - 검증 내용: applyNavigationState(.folder) 전송 시 watcher 시작, clearCollectionPresentation, loadItems,
     /// externalFileSystemChanged 수신
-    /// - 사전 조건: navigationState == .folder(fixtures/fixtures/texts/plain), custom entryWatchingClient
+    /// - 사전 조건: navigationState == .folder(fixtures/fixtures/texts/plain), custom fileChangeGatewayClient
     /// - 기대 결과: watcher가 changedPath를 yield하고 externalFileSystemChanged로 전달
     func testFolderNavigationStartsWatcherAndForwardsExternalChanges() async {
         let currentPath = Self.fixtureDir("texts/plain")
@@ -115,10 +115,18 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerContentNavigationBridgeReducer()
         } withDependencies: {
-            $0.entryWatchingClient.startWatchingDirectory = { url in
-                XCTAssertEqual(url.path, currentPath)
-                return AsyncStream { continuation in
-                    continuation.yield([changedPath])
+            $0.fileChangeGatewayClient.updateInterests = { interests in
+                XCTAssertEqual(interests.map(\.roots), [[currentPath]])
+                XCTAssertEqual(interests.map(\.purpose), [.visibleFolderReload])
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
+                    continuation.yield([
+                        FileChangeGatewayEvent(
+                            path: changedPath,
+                            flags: UInt32(kFSEventStreamEventFlagItemCreated),
+                        ),
+                    ])
                     continuation.finish()
                 }
             }
@@ -133,7 +141,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
     /// EVM-001-reload_directory_page_on_external_change: collection 이동 시 scope watcher 시작 및 외부 변경 전달
     /// Collection route 진입 시 `.voycoll` 위치가 아닌 collection scope 절대경로만 감시하고 변경을 전달하는지 검증.
-    /// - 검증 내용: applyNavigationState(.collection) 전송 시 startWatchingDirectories 호출, externalFileSystemChanged 수신
+    /// - 검증 내용: applyNavigationState(.collection) 전송 시 FileChangeGateway interest 등록, externalFileSystemChanged 수신
     /// - 사전 조건: collectionContext.scopes에 중복/상대 경로가 섞여 있음
     /// - 기대 결과: canonical absolute scope만 감시하고 changedPath를 전달
     func testCollectionScopeRootsChangedSinceSnapshotDetectsNewerRoot() throws {
@@ -208,16 +216,16 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerContentNavigationBridgeReducer()
         } withDependencies: {
-            $0.entryWatchingClient.startWatchingDirectoryChanges = { urls in
-                XCTAssertEqual(
-                    urls.map(\.path),
-                    ["/tmp/voyager/scope-a", "/tmp/voyager/scope-b"],
-                )
-                return AsyncStream { continuation in
+            $0.fileChangeGatewayClient.updateInterests = { interests in
+                XCTAssertEqual(interests.map(\.roots), [["/tmp/voyager/scope-a", "/tmp/voyager/scope-b"]])
+                XCTAssertEqual(interests.map(\.purpose), [.collectionStale])
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
                     continuation.yield([
-                        EntryFileSystemChange(
+                        FileChangeGatewayEvent(
                             path: changedPath,
-                            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated),
+                            flags: UInt32(kFSEventStreamEventFlagItemCreated),
                         ),
                     ])
                     continuation.finish()
@@ -250,13 +258,16 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let store = TestStore(initialState: state) {
             FileManagerContentNavigationBridgeReducer()
         } withDependencies: {
-            $0.entryWatchingClient.startWatchingDirectoryChanges = { urls in
-                XCTAssertEqual(urls.map(\.path), [scope])
-                return AsyncStream { continuation in
+            $0.fileChangeGatewayClient.updateInterests = { interests in
+                XCTAssertEqual(interests.map(\.roots), [[scope]])
+                XCTAssertEqual(interests.map(\.purpose), [.collectionStale])
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in
                     continuation.yield([
-                        EntryFileSystemChange(
+                        FileChangeGatewayEvent(
                             path: changedPath,
-                            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemXattrMod),
+                            flags: UInt32(kFSEventStreamEventFlagItemXattrMod),
                         ),
                     ])
                     continuation.finish()

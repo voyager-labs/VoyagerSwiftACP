@@ -19,8 +19,8 @@ struct FileManagerContentNavigationBridgeReducer {
 
     @Dependency(\.collectionStalenessClient)
     private var collectionStalenessClient
-    @Dependency(\.entryWatchingClient)
-    private var entryWatchingClient
+    @Dependency(\.fileChangeGatewayClient)
+    private var fileChangeGatewayClient
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
 
@@ -161,32 +161,59 @@ struct FileManagerContentNavigationBridgeReducer {
     }
 
     private func observeFolderChangesEffect(path: String) -> Effect<Action> {
-        let url = URL(fileURLWithPath: path)
-        return .run { [entryWatchingClient] send in
-            for await changedPaths in entryWatchingClient.startWatchingDirectory(url) {
-                await send(.externalFileSystemChanged(changedPaths))
-            }
-        }
-        .cancellable(id: CancelID.folderWatcher, cancelInFlight: true)
+        let interest = FileChangeWatchInterest(
+            id: "visible-folder:\(UUID().uuidString)",
+            owner: .fileManager,
+            purpose: .visibleFolderReload,
+            roots: [path],
+            includeSubfolders: true,
+        )
+        return observeGatewayChangesEffect(interest: interest)
     }
 
     private func observeCollectionScopeChangesEffect(
         context: CollectionContext?,
         openedURL: URL?,
     ) -> Effect<Action> {
-        let urls = collectionScopeWatchURLs(from: context)
-        guard !urls.isEmpty else {
+        guard let context else {
+            return .cancel(id: CancelID.folderWatcher)
+        }
+        let roots = collectionScopeWatchRoots(from: context)
+        guard !roots.isEmpty else {
             return .cancel(id: CancelID.folderWatcher)
         }
 
-        let collectionStalenessClient = collectionStalenessClient
-        return .run { [entryWatchingClient] send in
-            for await changes in entryWatchingClient.startWatchingDirectoryChanges(urls) {
-                let changedPaths = collectionStaleWorthyChangedPaths(changes, openedURL: openedURL)
-                guard !changedPaths.isEmpty else { continue }
+        let interest = FileChangeWatchInterest(
+            id: "collection-stale:\(UUID().uuidString)",
+            owner: .collection,
+            purpose: .collectionStale,
+            roots: roots,
+            includeSubfolders: context.includeSubfolders,
+            excludedRoots: context.excludedScopes,
+        )
+        return observeGatewayChangesEffect(interest: interest, openedURL: openedURL)
+    }
 
-                collectionStalenessClient.invalidateRecords(changedPaths)
-                await send(.externalFileSystemChanged(changedPaths))
+    private func observeGatewayChangesEffect(
+        interest: FileChangeWatchInterest,
+        openedURL: URL? = nil,
+    ) -> Effect<Action> {
+        let collectionStalenessClient = collectionStalenessClient
+        return .run { [fileChangeGatewayClient] send in
+            fileChangeGatewayClient.updateInterests([interest])
+            await withTaskCancellationHandler {
+                for await events in fileChangeGatewayClient.observeEvents() {
+                    let changedPaths = gatewayRelevantChangedPaths(events, interest: interest, openedURL: openedURL)
+                    guard !changedPaths.isEmpty else { continue }
+
+                    if interest.purpose == .collectionStale {
+                        collectionStalenessClient.invalidateRecords(changedPaths)
+                    }
+                    await send(.externalFileSystemChanged(changedPaths))
+                }
+                fileChangeGatewayClient.removeInterests([interest.id])
+            } onCancel: {
+                fileChangeGatewayClient.removeInterests([interest.id])
             }
         }
         .cancellable(id: CancelID.folderWatcher, cancelInFlight: true)
@@ -197,26 +224,18 @@ struct FileManagerContentNavigationBridgeReducer {
     }
 }
 
-nonisolated func collectionScopeWatchURLs(from context: CollectionContext?) -> [URL] {
+nonisolated func collectionScopeWatchRoots(from context: CollectionContext?) -> [String] {
     guard let context else { return [] }
-    return Array(
-        Set(
-            context.scopes
-                .filter { !$0.isEmpty && $0.hasPrefix("/") }
-                .map { URL(fileURLWithPath: $0).standardizedFileURL },
-        ),
-    )
-    .sorted { $0.path < $1.path }
+    return FileChangeScopePolicy.allowedWatchRoots(from: context.scopes)
 }
 
-nonisolated func collectionStaleWorthyChangedPaths(
-    _ changes: [EntryFileSystemChange],
+nonisolated func gatewayRelevantChangedPaths(
+    _ events: [FileChangeGatewayEvent],
+    interest: FileChangeWatchInterest,
     openedURL: URL?,
 ) -> [String] {
     collectionRelevantChangedPaths(
-        changes
-            .filter(\.isStaleWorthyPathChange)
-            .map(\.path),
+        FileChangeScopePolicy.interestAffectedPaths(events: events, interest: interest),
         openedURL: openedURL,
     )
 }
