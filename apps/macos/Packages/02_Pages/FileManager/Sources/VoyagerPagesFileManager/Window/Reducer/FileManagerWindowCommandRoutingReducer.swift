@@ -94,7 +94,7 @@ struct FileManagerWindowCommandRoutingReducer {
 
         case .closeActiveContentTab:
             state.contentTabs.activeTabID
-                .map { .send(.contentTabs(.close($0))) }
+                .map { .send(.closeContentTabRequested($0)) }
                 ?? .none
 
         case .newFolder,
