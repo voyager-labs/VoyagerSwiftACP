@@ -7,8 +7,6 @@ public struct FileManagerSidebarFeature {
 
     public var body: some Reducer<State, Action> {
         FileManagerSidebarPreferenceReducer()
-        FileManagerSidebarSourceLoadingReducer()
-        FileManagerSidebarInteractionReducer()
         FileManagerSidebarContentTabSyncReducer()
     }
 }
