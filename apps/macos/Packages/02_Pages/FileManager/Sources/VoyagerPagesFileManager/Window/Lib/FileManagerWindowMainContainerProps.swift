@@ -35,10 +35,13 @@ func makeContentChromeProps(
     )
 }
 
-func makeContentOverlayProps(from state: FileManagerWindowState) -> FileManagerContentOverlayProps {
+func makeContentOverlayProps(
+    from state: FileManagerWindowState,
+    fileManagerClient: FileManagerClient,
+) -> FileManagerContentOverlayProps {
     FileManagerContentOverlayProps(
         isComposerPresented: state.content.composer.isPresented,
-        favorites: [],
+        favorites: makeScopeFavorites(fileManagerClient: fileManagerClient),
         historyPaths: state.content.navigation.backHistory.compactMap { entry in
             if case let .folder(path) = entry.navigationState {
                 return path
@@ -51,6 +54,31 @@ func makeContentOverlayProps(from state: FileManagerWindowState) -> FileManagerC
         canSaveCollection: state.content.canSaveCollection,
         isTemporaryCollection: !state.content.openedCollectionURLExists,
     )
+}
+
+func makeScopeFavorites(fileManagerClient: FileManagerClient) -> [ScopeFavoriteItem] {
+    let favoriteMappings: [(
+        name: String,
+        directory: FileManager.SearchPathDirectory,
+        domain: FileManager.SearchPathDomainMask,
+        iconName: String,
+    )] = [
+        ("Applications", .applicationDirectory, .localDomainMask, "appstore"),
+        ("Desktop", .desktopDirectory, .userDomainMask, "menubar.dock.rectangle"),
+        ("Documents", .documentDirectory, .userDomainMask, "doc"),
+        ("Downloads", .downloadsDirectory, .userDomainMask, "arrow.down.circle"),
+    ]
+
+    return favoriteMappings.compactMap { mapping in
+        guard let url = fileManagerClient.urlsForDirectory(mapping.directory, mapping.domain).first else {
+            return nil
+        }
+        return ScopeFavoriteItem(
+            name: mapping.name,
+            url: url,
+            iconName: mapping.iconName,
+        )
+    }
 }
 
 func makeSpecialDirectoryIconNames(fileManagerClient: FileManagerClient) -> [String: String] {

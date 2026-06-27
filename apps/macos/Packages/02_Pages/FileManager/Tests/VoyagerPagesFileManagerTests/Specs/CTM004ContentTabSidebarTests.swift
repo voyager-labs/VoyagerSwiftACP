@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -336,5 +337,64 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state.contentTabs), .homeDefault)
         XCTAssertEqual(store.state.content.navigation.currentPath, homeSessionPath)
         XCTAssertEqual(store.state.tabContentStates[directoryID]?.navigation.currentPath, directoryPath)
+    }
+
+    /// CTM-004-sidebar_projection_content_tabs: Composer overlay는 Sidebar 섹션 제거 후에도 기본 scope favorites를 유지함
+    /// Favorites 섹션 state 삭제가 Composer scope picker의 Desktop/Documents/Downloads shortcut을 제거하지 않음을 검증한다.
+    func testContentOverlayProps_restoreDefaultComposerFavorites() {
+        let state = FileManagerFeature.State()
+        let client = FileManagerClient(
+            contentsOfDirectory: { _, _, _ in [] },
+            createDirectory: { _, _, _ in },
+            mountedVolumeURLs: { _, _ in nil },
+            urlsForDirectory: { directory, domain in
+                switch (directory, domain) {
+                case (.applicationDirectory, .localDomainMask):
+                    [URL(fileURLWithPath: "/Applications")]
+                case (.desktopDirectory, .userDomainMask):
+                    [URL(fileURLWithPath: "/Users/test/Desktop")]
+                case (.documentDirectory, .userDomainMask):
+                    [URL(fileURLWithPath: "/Users/test/Documents")]
+                case (.downloadsDirectory, .userDomainMask):
+                    [URL(fileURLWithPath: "/Users/test/Downloads")]
+                default:
+                    []
+                }
+            },
+            copyItem: { _, _ in },
+            moveItem: { _, _ in },
+            removeItem: { _ in },
+            trashItem: { _ in URL(fileURLWithPath: "/tmp/.Trash/test") },
+            fileExists: { _ in false },
+            fileExistsWithIsDirectory: { _, _ in false },
+            attributesOfItem: { _ in [:] },
+            displayName: { URL(fileURLWithPath: $0).lastPathComponent },
+            temporaryDirectory: { URL(fileURLWithPath: "/tmp") },
+            currentDirectoryPath: { "/" },
+        )
+
+        let overlayProps = FileManagerContentChromePropsBuilder.makeContentOverlayProps(
+            from: state,
+            fileManagerClient: client,
+        )
+
+        XCTAssertEqual(overlayProps.favorites.map(\.name), [
+            "Applications",
+            "Desktop",
+            "Documents",
+            "Downloads",
+        ])
+        XCTAssertEqual(overlayProps.favorites.map(\.url.path), [
+            "/Applications",
+            "/Users/test/Desktop",
+            "/Users/test/Documents",
+            "/Users/test/Downloads",
+        ])
+        XCTAssertEqual(overlayProps.favorites.map(\.iconName), [
+            "appstore",
+            "menubar.dock.rectangle",
+            "doc",
+            "arrow.down.circle",
+        ])
     }
 }

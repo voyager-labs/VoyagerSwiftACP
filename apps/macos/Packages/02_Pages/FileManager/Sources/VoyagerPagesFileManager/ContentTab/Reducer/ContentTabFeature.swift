@@ -64,8 +64,6 @@ public struct ContentTabFeature {
     }
 }
 
-private struct PinnedRecordPersistenceCancelID: Hashable {}
-
 extension ContentTabFeature {
     private func open(anchor: ContentTabPageAnchor, state: inout ContentTabState) -> Effect<ContentTabAction> {
         guard state.tabs.count < ContentTabConstants.maxTabs else {
@@ -211,7 +209,6 @@ extension ContentTabFeature {
                 await send(.pinnedRecordSaveFailed(tabID: id, previousIsPinned: false, previousPinnedRecord: nil))
             }
         }
-        .cancellable(id: PinnedRecordPersistenceCancelID(), cancelInFlight: true)
     }
 
     private func unpin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
@@ -239,7 +236,6 @@ extension ContentTabFeature {
                 ))
             }
         }
-        .cancellable(id: PinnedRecordPersistenceCancelID(), cancelInFlight: true)
     }
 
     private func derivePinnedRecordStore(from state: ContentTabState) -> ContentTabPinnedRecordStore {

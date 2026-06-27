@@ -57,6 +57,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         )
         let overlayProps = FileManagerContentChromePropsBuilder.makeContentOverlayProps(
             from: store.state,
+            fileManagerClient: fileManagerClient,
         )
         currentContentChromeProps = chromeProps
         currentContentOverlayProps = overlayProps
@@ -162,6 +163,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         )
         let overlayProps = FileManagerContentChromePropsBuilder.makeContentOverlayProps(
             from: state,
+            fileManagerClient: fileManagerClient,
         )
         guard chromeProps != currentContentChromeProps || overlayProps != currentContentOverlayProps else {
             return

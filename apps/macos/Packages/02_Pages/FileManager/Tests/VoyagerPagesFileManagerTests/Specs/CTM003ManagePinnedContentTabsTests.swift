@@ -4,6 +4,24 @@ import Foundation
 import VoyagerShared
 import XCTest
 
+private final class PinnedRecordStoreRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var savedStores: [ContentTabPinnedRecordStore] = []
+
+    func record(_ store: ContentTabPinnedRecordStore) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        savedStores.append(store)
+        return savedStores.count
+    }
+
+    func stores() -> [ContentTabPinnedRecordStore] {
+        lock.lock()
+        defer { lock.unlock() }
+        return savedStores
+    }
+}
+
 @MainActor
 final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     private static let pinnedAt = Date(timeIntervalSince1970: 443)
@@ -315,6 +333,91 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
         }
         await store.finish()
+    }
+
+    /// CTM-003-pin_content_tab_s: 첫 save가 in-flight인 동안 두 번째 save가 실패해도 앞선 record는 유실되지 않음
+    /// 단일 cancel-in-flight 저장으로 앞선 pin 저장 요청이 취소되는 회귀를 방지한다.
+    /// - 검증 내용: first pin save 대기 중 second pin save 실패 → first save success까지 수신
+    /// - 사전 조건: unpinned Directory tab 2개, 첫 번째 saveStore는 대기, 두 번째 saveStore는 throw
+    /// - 기대 결과: 첫 번째 tab은 pinned 상태와 persisted record를 유지하고 두 번째 tab만 rollback
+    func testPin_secondPersistenceFailureDoesNotLoseFirstPinnedRecord() async {
+        struct SaveError: Error {}
+
+        let firstID = ContentTabID()
+        let secondID = ContentTabID()
+        let firstAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
+        let secondAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Downloads")
+        let recorder = PinnedRecordStoreRecorder()
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: firstID,
+                        page: .directory,
+                        anchor: firstAnchor,
+                        isPinned: false,
+                        title: "Documents",
+                        iconName: "folder",
+                    ),
+                    ContentTabItem(
+                        id: secondID,
+                        page: .directory,
+                        anchor: secondAnchor,
+                        isPinned: false,
+                        title: "Downloads",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: firstID,
+                recentlyClosed: nil,
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.saveStore = { savedStore, _ in
+                switch recorder.record(savedStore) {
+                case 2:
+                    throw SaveError()
+                default:
+                    break
+                }
+            }
+        }
+
+        let firstRecord = Self.pinnedRecord(
+            id: firstID,
+            anchor: firstAnchor,
+            title: "Documents",
+            iconName: "folder",
+        )
+        let secondRecord = Self.pinnedRecord(
+            id: secondID,
+            anchor: secondAnchor,
+            title: "Downloads",
+            iconName: "folder",
+        )
+
+        await store.send(.pin(firstID)) {
+            $0.tabs[id: firstID]?.isPinned = true
+            $0.pinnedRecords[firstID] = firstRecord
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.send(.pin(secondID)) {
+            $0.tabs[id: secondID]?.isPinned = true
+            $0.pinnedRecords[secondID] = secondRecord
+        }
+        await store.receive(\.pinnedRecordSaveFailed) {
+            $0.tabs[id: secondID]?.isPinned = false
+            $0.pinnedRecords.removeValue(forKey: secondID)
+            $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
+        }
+        await store.finish()
+
+        XCTAssertEqual(recorder.stores(), [
+            ContentTabPinnedRecordStore(records: [firstRecord]),
+            ContentTabPinnedRecordStore(records: [firstRecord, secondRecord]),
+        ])
     }
 
     /// CTM-003-pin_content_tab_s: 메뉴/shortcut toggle command는 active unpinned tab을 pin함
