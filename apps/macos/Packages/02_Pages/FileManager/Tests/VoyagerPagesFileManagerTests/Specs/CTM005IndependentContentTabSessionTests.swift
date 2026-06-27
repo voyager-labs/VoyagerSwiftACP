@@ -1699,6 +1699,99 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-444-collection_dirty_close: pending close 중 Cmd+P pin toggle은 무시됨
+    /// 저장 완료 전 active closing target이 pinned로 바뀌어 close-as-unpin 정책과 충돌하지 않도록 검증한다.
+    func testPendingDirtyCollectionCloseIgnoresPinToggleCommandUntilCompletion() async {
+        let tabID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.request(.toggleActiveContentTabPin))
+
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        XCTAssertNil(store.state.contentTabs.pinnedRecords[tabID])
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: pending close 중 Sidebar pin/unpin delegate는 무시됨
+    /// Sidebar context menu 경로도 저장 중 closing target의 pin 상태를 변경하지 않는지 검증한다.
+    func testPendingDirtyCollectionCloseIgnoresSidebarPinActionsUntilCompletion() async {
+        let pinnedID = ContentTabID()
+        let unpinnedID = ContentTabID()
+        let pinnedAnchor: ContentTabPageAnchor = .collectionFile(url: URL(fileURLWithPath: "/tmp/pinned.voycoll"))
+        let unpinnedAnchor: ContentTabPageAnchor = .collectionFile(url: URL(fileURLWithPath: "/tmp/unpinned.voycoll"))
+        let pinnedRecord = ContentTabPinnedRecord(
+            id: pinnedID.rawValue,
+            page: .collection,
+            anchor: pinnedAnchor,
+            title: "Pinned",
+            iconName: "rectangle.stack",
+            pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+        )
+        let content = makeDirtyCollectionContent()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .collection,
+                    anchor: pinnedAnchor,
+                    isPinned: true,
+                    title: "Pinned",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: unpinnedID,
+                    page: .collection,
+                    anchor: unpinnedAnchor,
+                    isPinned: false,
+                    title: "Unpinned",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: pinnedID,
+            recentlyClosed: nil,
+            pinnedRecords: [pinnedID: pinnedRecord],
+        )
+        state.content = content
+        state.tabContentStates = [pinnedID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: pinnedID)
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.sidebar(.delegate(.unpinContentTab(pinnedID))))
+        await store.send(.sidebar(.delegate(.pinContentTab(unpinnedID))))
+
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, pinnedID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: pinnedID]?.isPinned, true)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: unpinnedID]?.isPinned, false)
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], pinnedRecord)
+        XCTAssertNil(store.state.contentTabs.pinnedRecords[unpinnedID])
+        await store.finish()
+    }
+
     /// CTM-444-collection_dirty_close: 단일 dirty collection tab close 시 Cancel/Discard 전환
     /// 마지막 tab이 dirty collection인 경우 Cancel/Discard 각각의 결과를 검증한다.
     /// Cancel: collection 유지. Discard: close.

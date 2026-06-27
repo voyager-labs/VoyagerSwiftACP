@@ -144,7 +144,8 @@ struct FileManagerWindowCommandRoutingReducer {
     }
 
     private func toggleActiveContentTabPin(state: State) -> Effect<Action> {
-        guard let activeTabID = state.contentTabs.activeTabID,
+        guard state.pendingContentTabClose == nil,
+              let activeTabID = state.contentTabs.activeTabID,
               let activeTab = state.contentTabs.tabs[id: activeTabID]
         else { return .none }
 
