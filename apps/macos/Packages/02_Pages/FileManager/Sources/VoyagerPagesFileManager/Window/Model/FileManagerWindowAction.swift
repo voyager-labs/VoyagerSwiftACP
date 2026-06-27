@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
@@ -19,6 +20,9 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case contentTabs(ContentTabAction)
     case applyAppPreferences(AppPreferencesState)
     case aiConnectionsFileUpdated(AIConnectionsFile)
+
+    case closeContentTabRequested(ContentTabID)
+    case contentTabCloseAlertResponse(CollectionNavigationChoice)
 
     case onAppear
     case onDisappear

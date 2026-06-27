@@ -13,6 +13,7 @@ public struct FileManagerWindowState: Equatable {
     public var inspector: FileManagerInspectorFeature.State
     public var contentTabs: ContentTabState
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
+    public var pendingContentTabClose: PendingContentTabClose?
 
     public init() {
         content = .init()
@@ -21,6 +22,7 @@ public struct FileManagerWindowState: Equatable {
         contentTabs = .withHomeTab()
         tabContentStates = [:]
         recentlyClosedNavigationRoute = nil
+        pendingContentTabClose = nil
         if let activeTabID = contentTabs.activeTabID {
             tabContentStates[activeTabID] = content
         }
@@ -73,6 +75,31 @@ public struct FileManagerWindowState: Equatable {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         return state
+    }
+}
+
+public struct PendingContentTabClose: Equatable {
+    public let tabID: ContentTabID
+    public let previousActiveTabID: ContentTabID?
+    public let previousActiveContent: FileManagerContentFeature.State?
+    public let targetContent: FileManagerContentFeature.State?
+    public var didReceiveWriteBackNavigationState: Bool
+    public var didReceiveWriteBackComposerSync: Bool
+
+    public init(
+        tabID: ContentTabID,
+        previousActiveTabID: ContentTabID? = nil,
+        previousActiveContent: FileManagerContentFeature.State? = nil,
+        targetContent: FileManagerContentFeature.State? = nil,
+        didReceiveWriteBackNavigationState: Bool = false,
+        didReceiveWriteBackComposerSync: Bool = false,
+    ) {
+        self.tabID = tabID
+        self.previousActiveTabID = previousActiveTabID
+        self.previousActiveContent = previousActiveContent
+        self.targetContent = targetContent
+        self.didReceiveWriteBackNavigationState = didReceiveWriteBackNavigationState
+        self.didReceiveWriteBackComposerSync = didReceiveWriteBackComposerSync
     }
 }
 

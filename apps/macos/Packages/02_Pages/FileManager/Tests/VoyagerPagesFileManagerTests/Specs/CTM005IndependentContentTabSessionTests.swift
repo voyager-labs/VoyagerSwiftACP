@@ -720,4 +720,1221 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.page, .collection)
         await store.finish()
     }
+
+    // MARK: - CTM-444-collection_dirty_close
+
+    /// CTM-444-collection_dirty_close: dirty active collection close가 unsaved alert를 표시하고 pendingContentTabClose를 설정
+    /// isCollectionMode와 canSaveCollection이 true인 active collection tab에서 close 요청 시 alert가 발생하고 pending 상태가 설정되는지
+    /// 검증한다.
+    /// - 검증 내용: pendingContentTabClose 설정, contentTabCloseAlertResponse 수신
+    /// - 사전 조건: active tab이 dirty collection mode
+    /// - 기대 결과: pendingContentTabClose가 tabID로 설정되고, cancel 응답 후 pending 해제
+    func testDirtyActiveCollectionCloseShowsAlert() async {
+        let tabID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .cancel)
+
+        await store.send(.closeContentTabRequested(tabID))
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        await store.receive(\.contentTabCloseAlertResponse)
+        XCTAssertNil(store.state.pendingContentTabClose)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: save 성공 후 dirty collection tab이 정상 닫힘
+    /// pending 상태에서 saveCompleted(.success) 수신 시 pending 해제와 함께 tab이 닫히는지 검증한다.
+    /// - 검증 내용: pendingContentTabClose 해제, tab tabContentStates에서 제거
+    /// - 사전 조건: pendingContentTabClose가 설정된 dirty collection tab (2 tabs, non-last)
+    /// - 기대 결과: pending이 nil, tab 제거, active tab이 otherID로 전환
+    func testDirtyActiveCollectionSaveSuccessClosesTab() async {
+        let tabID = ContentTabID()
+        let otherID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var otherContent = FileManagerContentFeature.State()
+        otherContent.navigation.seedInitialFolderPath("/Users/test/Other")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: otherID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content, otherID: otherContent]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        let completion = CollectionSaveCompletion(
+            url: URL(fileURLWithPath: "/tmp/test.voycoll"),
+            file: VoyagerCollectionFile(
+                id: "test-id",
+                name: "test",
+                createdAt: Date(timeIntervalSince1970: 1_234_567_890),
+                updatedAt: Date(timeIntervalSince1970: 1_234_567_890),
+                query: "",
+                scopes: [],
+                conditions: [],
+                snapshot: nil,
+                snapshotMeta: nil,
+                appVersion: nil,
+            ),
+            savedContext: nil,
+        )
+
+        await store.send(.content(.collection(.saveCompleted(.success(completion)))))
+        await store.receive(\.contentTabs)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.tabContentStates[tabID])
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: save 실패 시 tab이 유지됨
+    /// pending 상태에서 saveCompleted(.failure) 수신 시 pending만 해제되고 tab은 닫히지 않는지 검증한다.
+    /// - 검증 내용: pendingContentTabClose 해제, tab 유지
+    /// - 사전 조건: pendingContentTabClose가 설정된 dirty collection tab
+    /// - 기대 결과: pending이 nil이지만 tab은 contentTabs에 그대로 존재
+    func testDirtyActiveCollectionSaveFailurePreservesTab() async {
+        let tabID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        let error = NSError(domain: "test", code: 0, userInfo: nil)
+        await store.send(.content(.collection(.saveCompleted(.failure(error)))))
+
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+
+        let feedback = CollectionSaveFeedback(
+            stage: .saveFailed,
+            category: .saveFailed,
+            title: "Save Failed",
+            message: "Unable to save collection.",
+            isRetryable: true,
+        )
+        await store.send(.content(.collection(.delegate(.saveFeedback(feedback)))))
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        XCTAssertEqual(store.state.content.composer.transientFeedback?.category, .saveFailed)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: discard 선택 시 dirty collection tab이 닫힘
+    /// alert에서 discard 선택 시 tab이 정상 닫히는지 검증한다.
+    /// - 검증 내용: contentTabCloseAlertResponse(.discard) 수신 후 tab 제거
+    /// - 사전 조건: active tab이 dirty collection mode (2 tabs, non-last)
+    /// - 기대 결과: tab이 tabContentStates에서 제거됨
+    func testDirtyActiveCollectionDiscardClosesTab() async {
+        let tabID = ContentTabID()
+        let otherID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var otherContent = FileManagerContentFeature.State()
+        otherContent.navigation.seedInitialFolderPath("/Users/test/Other")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: otherID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content, otherID: otherContent]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .discard)
+
+        await store.send(.closeContentTabRequested(tabID))
+        await store.receive(\.contentTabCloseAlertResponse)
+
+        // discard handler: .content(.view(.discardCollectionChanges)) + .contentTabs(.close(tabID))
+        XCTAssertNil(store.state.pendingContentTabClose)
+        await store.receive(\.contentTabs)
+        XCTAssertNil(store.state.tabContentStates[tabID])
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: cancel 선택 시 tab이 유지됨
+    /// alert에서 cancel 선택 시 tab이 닫히지 않고 그대로 유지되는지 검증한다.
+    /// - 검증 내용: contentTabCloseAlertResponse(.cancel) 수신 후 tab 유지
+    /// - 사전 조건: active tab이 dirty collection mode
+    /// - 기대 결과: tab이 contentTabs에 그대로 존재, recentlyClosed nil
+    func testDirtyActiveCollectionCancelPreservesTab() async {
+        let tabID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .cancel)
+
+        await store.send(.closeContentTabRequested(tabID))
+        await store.receive(\.contentTabCloseAlertResponse)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        XCTAssertNil(store.state.contentTabs.recentlyClosed)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: clean collection tab은 alert 없이 바로 닫힘
+    /// isCollectionMode는 true지만 canSaveCollection이 false인 tab에서 close 요청 시 alert를 건너뛰고 바로 닫히는지 검증한다.
+    /// - 검증 내용: pendingContentTabClose가 설정되지 않고 tab이 바로 닫힘
+    /// - 사전 조건: collection mode이지만 clean 상태 (canSaveCollection == false), 2 tabs
+    /// - 기대 결과: pending 미설정, tab 제거
+    func testCleanCollectionBypassesAlert() async {
+        let tabID = ContentTabID()
+        let otherID = ContentTabID()
+
+        // collection mode지만 collectionContext == nil → canSaveCollection == false
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+
+        var otherContent = FileManagerContentFeature.State()
+        otherContent.navigation.seedInitialFolderPath("/Users/test/Other")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: otherID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content, otherID: otherContent]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.closeContentTabRequested(tabID))
+
+        // clean bypass → reducer가 .send(.contentTabs(.close(tabID))) 반환
+        XCTAssertNil(store.state.pendingContentTabClose)
+        await store.receive(\.contentTabs)
+        XCTAssertNil(store.state.tabContentStates[tabID])
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: non-collection tab은 alert 없이 바로 닫힘
+    /// isCollectionMode가 false인 일반 tab에서 close 요청 시 alert 없이 바로 닫히는지 검증한다.
+    /// - 검증 내용: pendingContentTabClose가 설정되지 않고 tab이 바로 닫힘
+    /// - 사전 조건: non-collection tab, 2 tabs
+    /// - 기대 결과: pending 미설정, tab 제거
+    func testNonCollectionBypassesAlert() async {
+        let tabID = ContentTabID()
+        let otherID = ContentTabID()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: otherID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Other"),
+                    isPinned: false,
+                    title: "Other",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.closeContentTabRequested(tabID))
+
+        // non-collection bypass → reducer가 .send(.contentTabs(.close(tabID))) 반환
+        XCTAssertNil(store.state.pendingContentTabClose)
+        await store.receive(\.contentTabs)
+        XCTAssertNil(store.state.tabContentStates[tabID])
+        XCTAssertNotEqual(store.state.contentTabs.activeTabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: inactive dirty collection tab close도 alert를 표시
+    /// active tab이 아닌 inactive tab이 dirty collection 상태일 때도 close 요청이 alert를 발생시키는지 검증한다.
+    /// - 검증 내용: pendingContentTabClose가 inactive tabID로 설정, active tab은 영향 없음
+    /// - 사전 조건: active tab(home) + inactive tab(dirty collection)
+    /// - 기대 결과: pending이 inactive tabID로 설정, active tab session 보존
+    func testInactiveDirtyCollectionCloseShowsAlert() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let dirtyContent = makeDirtyCollectionContent()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .cancel)
+
+        await store.send(.closeContentTabRequested(inactiveID))
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, inactiveID)
+
+        // active tab은 영향 없음
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.tabContentStates[activeID]?.navigation.currentPath, homePath)
+        await store.receive(\.contentTabCloseAlertResponse)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: inactive dirty collection Save 성공은 대상 탭을 저장한 뒤 닫음
+    /// inactive tab의 dirty state를 기준으로 alert를 띄운 뒤 Save continuation이 active content가 아니라 target tab content를 대상으로
+    /// 수행되는지 검증한다.
+    func testInactiveDirtyCollectionSaveSuccessClosesTargetTab() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let dirtyContent = makeDirtyCollectionContent()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = dirtyContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: inactiveID,
+            previousActiveTabID: activeID,
+            previousActiveContent: homeContent,
+            targetContent: dirtyContent,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .save)
+
+        let completion = makeSaveCompletion()
+        await store.send(.content(.collection(.saveCompleted(.success(completion)))))
+        await store.receive(\.contentTabs)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: inactive target 저장 중 tab switch는 target ownership을 오염시키지 않음
+    func testInactiveDirtyCollectionSaveInProgressIgnoresTabSwitchUntilCompletion() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let dirtyContent = makeDirtyCollectionContent()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: inactiveID,
+            recentlyClosed: nil,
+        )
+        state.contentTabs.previousActiveTabID = activeID
+        state.content = dirtyContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: inactiveID,
+            previousActiveTabID: activeID,
+            previousActiveContent: homeContent,
+            targetContent: dirtyContent,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .save)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, inactiveID)
+        XCTAssertTrue(store.state.content.isCollectionMode)
+
+        await store.send(.contentTabs(.setCurrent(activeID)))
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, inactiveID)
+        XCTAssertTrue(store.state.content.isCollectionMode)
+        XCTAssertEqual(store.state.tabContentStates[activeID]?.navigation.currentPath, homePath)
+
+        let completion = makeSaveCompletion()
+        await store.send(.content(.collection(.saveCompleted(.success(completion)))))
+        await store.receive(\.contentTabs)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: active dirty collection Save가 시작 불가하면 pending을 해제하고 tab을 보존
+    func testDirtyActiveCollectionSaveBlockedPreservesTabAndClearsPending() async {
+        let tabID = ContentTabID()
+        var content = makeDirtyCollectionContent()
+        content.collection.isSaving = true
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .save)
+
+        await store.send(.closeContentTabRequested(tabID))
+        await store.receive(\.contentTabCloseAlertResponse)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        XCTAssertTrue(store.state.content.collection.isSaving)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: inactive dirty collection Save가 시작 불가하면 active content를 복구하고 대상 tab을 보존
+    func testInactiveDirtyCollectionSaveBlockedPreservesTargetTabAndRestoresActiveContent() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        var dirtyContent = makeDirtyCollectionContent()
+        dirtyContent.composer.isLoadingSearch = true
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .save)
+
+        await store.send(.closeContentTabRequested(inactiveID))
+        await store.receive(\.contentTabCloseAlertResponse)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: inactiveID])
+        XCTAssertNotNil(store.state.tabContentStates[inactiveID])
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: active dirty collection Save panel 취소는 pending을 해제하고 tab을 보존
+    func testDirtyActiveCollectionSavePanelCancelClearsPendingAndPreservesTab() async {
+        let tabID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.content(.collection(.savePanelResponse(nil))))
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: inactive dirty collection Save panel 취소는 active content를 복구하고 대상 탭을 보존
+    func testInactiveDirtyCollectionSavePanelCancelRestoresActiveContentAndPreservesTargetTab() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let dirtyContent = makeDirtyCollectionContent()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = dirtyContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: inactiveID,
+            previousActiveTabID: activeID,
+            previousActiveContent: homeContent,
+            targetContent: dirtyContent,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.content(.collection(.savePanelResponse(nil))))
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: inactiveID])
+        XCTAssertNotNil(store.state.tabContentStates[inactiveID])
+        await store.finish()
+    }
+
+    func testInactiveDirtyCollectionSaveFailurePreservesTargetTabAndRestoresActiveContent() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let dirtyContent = makeDirtyCollectionContent()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .save)
+
+        await store.send(.closeContentTabRequested(inactiveID))
+        await store.receive(\.contentTabCloseAlertResponse)
+        await store.send(.content(.collection(.saveCompleted(.failure(NSError(domain: "test", code: 0))))))
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: inactiveID])
+        guard let inactiveContent = store.state.tabContentStates[inactiveID] else {
+            XCTFail("inactive tab content should remain after save failure")
+            return
+        }
+        XCTAssertEqual(inactiveContent.composer.transientFeedback?.stage, .save)
+        XCTAssertNotNil(inactiveContent.composer.transientFeedback?.category)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: inactive dirty collection Discard는 active content를 건드리지 않고 대상 탭만 닫음
+    func testInactiveDirtyCollectionDiscardClosesTargetTabWithoutMutatingActiveContent() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let dirtyContent = makeDirtyCollectionContent()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [activeID: homeContent, inactiveID: dirtyContent]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .discard)
+
+        await store.send(.closeContentTabRequested(inactiveID))
+        await store.receive(\.contentTabCloseAlertResponse)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, homePath)
+        await store.receive(\.contentTabs)
+        XCTAssertNil(store.state.tabContentStates[inactiveID])
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: 복원된 비활성 tab에 content snapshot이 없어도 clean close는 진행
+    func testRestoredInactiveTabWithoutContentStateCanClose() async {
+        let activeID = ContentTabID()
+        let inactiveID = ContentTabID()
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Restored"),
+                    isPinned: false,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: activeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.tabContentStates = [activeID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        await store.send(.closeContentTabRequested(inactiveID))
+        await store.receive(\.contentTabs)
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: inactiveID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, "/Users/test/Home")
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: 중복 close 요청은 무시됨
+    /// pendingContentTabClose가 설정된 상태에서 closeContentTabRequested가 duplicate guard에 의해 무시되는지 검증한다.
+    /// - 검증 내용: pending 상태에서 요청은 no-op, pending 유지
+    /// - 사전 조건: dirty collection tab, pendingContentTabClose 직접 설정 (alert effect 없음)
+    /// - 기대 결과: 요청 후에도 pending 유지, tab 그대로 존재
+    func testDuplicateCloseWhilePendingIsNoOp() async {
+        let tabID = ContentTabID()
+        let otherTabID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var otherContent = FileManagerContentFeature.State()
+        otherContent.navigation.seedInitialFolderPath("/Users/test/Other")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: otherTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content, otherTabID: otherContent]
+        // pending을 직접 설정 → alert 없이 duplicate guard만 검증
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state)
+
+        // 같은 tabID로 중복 요청 → guard가 .none 반환 (pending 유지)
+        await store.send(.closeContentTabRequested(tabID))
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+
+        // 다른 tabID로 요청해도 guard가 막음
+        await store.send(.closeContentTabRequested(otherTabID))
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+
+        // tab은 그대로 유지
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: pending close 중 직접 navigation 요청은 무시됨
+    /// 저장 완료 전 외부 coordinator/toolbar가 navigation view action을 보내도 target content를 변경하지 않는지 검증한다.
+    func testPendingDirtyCollectionCloseIgnoresDirectNavigationUntilCompletion() async {
+        let tabID = ContentTabID()
+        let closingPath = "/Users/test/Closing"
+        var content = makeDirtyCollectionContent()
+        content.navigation.seedInitialFolderPath(closingPath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.navigation(.view(.navigateToPath("/Users/test/Other"))))
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, closingPath)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: pending close 중 sidebar navigation은 무시됨
+    /// Sidebar location 선택이 저장 중인 closing target의 navigation state를 오염시키지 않는지 검증한다.
+    func testPendingDirtyCollectionCloseIgnoresSidebarNavigationUntilCompletion() async {
+        let tabID = ContentTabID()
+        let closingPath = "/Users/test/Closing"
+        let otherLocation = SidebarItems.LocationItem(
+            name: "Other",
+            url: URL(fileURLWithPath: "/Users/test/Other"),
+            iconName: "folder",
+        )
+        var content = makeDirtyCollectionContent()
+        content.navigation.seedInitialFolderPath(closingPath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.sidebar.locations = [otherLocation]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.sidebar(.delegate(.openLocation(otherLocation))))
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, closingPath)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: pending close 중 toolbar history command는 무시됨
+    /// Back/Forward 계열 command가 저장 중인 closing target에 pending navigation을 만들지 않는지 검증한다.
+    func testPendingDirtyCollectionCloseIgnoresToolbarNavigationCommandUntilCompletion() async {
+        let tabID = ContentTabID()
+        let closingPath = "/Users/test/Closing"
+        var content = makeDirtyCollectionContent()
+        content.navigation.seedInitialFolderPath(closingPath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.request(.goBack))
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, closingPath)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: 단일 dirty collection tab close 시 Cancel/Discard 전환
+    /// 마지막 tab이 dirty collection인 경우 Cancel/Discard 각각의 결과를 검증한다.
+    /// Cancel: collection 유지. Discard: close.
+    /// - 검증 내용: Cancel → tab 유지, Discard → close
+    /// - 사전 조건: 단일 dirty collection tab
+    /// - 기대 결과: Cancel은 tab 유지, Discard는 tab 제거 or home reset
+    func testLastDirtyCollectionTabPromptBeforeReset() async {
+        // Cancel flow: alert cancel → tab preserved
+        do {
+            let tabID = ContentTabID()
+            let content = makeDirtyCollectionContent()
+
+            var state = FileManagerFeature.State()
+            state.contentTabs = ContentTabState(
+                tabs: [ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                )],
+                activeTabID: tabID,
+                recentlyClosed: nil,
+            )
+            state.content = content
+            state.tabContentStates = [tabID: content]
+            state.syncContentTabSidebarItems()
+
+            let store = makeTestStore(state: state, alertChoice: .cancel)
+
+            await store.send(.closeContentTabRequested(tabID))
+            await store.receive(\.contentTabCloseAlertResponse)
+
+            XCTAssertNil(store.state.pendingContentTabClose)
+            XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+            await store.finish()
+        }
+
+        // Discard flow: alert discard → tab closed (last tab)
+        do {
+            let tabID = ContentTabID()
+            let content = makeDirtyCollectionContent()
+
+            var state = FileManagerFeature.State()
+            state.contentTabs = ContentTabState(
+                tabs: [ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                )],
+                activeTabID: tabID,
+                recentlyClosed: nil,
+            )
+            state.content = content
+            state.tabContentStates = [tabID: content]
+            state.syncContentTabSidebarItems()
+
+            let store = makeTestStore(state: state, alertChoice: .discard)
+
+            await store.send(.closeContentTabRequested(tabID))
+            await store.receive(\.contentTabCloseAlertResponse)
+
+            XCTAssertNil(store.state.pendingContentTabClose)
+            await store.finish()
+        }
+    }
+
+    /// CTM-444-collection_dirty_close: pinned dirty collection tab은 alert 없이 바로 close
+    /// isPinned == true인 dirty collection tab은 dirty check를 건너뛰고 바로 close action을 보내는지 검증한다.
+    /// - 검증 내용: pendingContentTabClose 미설정, alert 미발생
+    /// - 사전 조건: pinned + dirty collection tab (2 tabs, non-last)
+    /// - 기대 결과: pending이 nil, tab 제거
+    func testPinnedDirtyCollectionTabUnpinsWithoutAlert() async {
+        let tabID = ContentTabID()
+        let otherID = ContentTabID()
+        let content = makeDirtyCollectionContent()
+
+        var otherContent = FileManagerContentFeature.State()
+        otherContent.navigation.seedInitialFolderPath("/Users/test/Other")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                    isPinned: true,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: otherID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content, otherID: otherContent]
+        state.syncContentTabSidebarItems()
+
+        // alertChoice는 중요하지 않음 → pinned bypass이므로 alert client가 호출되지 않음
+        let store = makeTestStore(state: state, alertChoice: .save)
+
+        await store.send(.closeContentTabRequested(tabID))
+
+        // pinned bypass: alert 없이 바로 .send(.contentTabs(.close(tabID)))
+        // pinned tab의 close는 unpin 처리 → tab은 유지되지만 isPinned = false
+        XCTAssertNil(store.state.pendingContentTabClose)
+        await store.receive(\.contentTabs)
+        // tab은 유지 (unpin만 됨)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        await store.finish()
+    }
+}
+
+// MARK: - Helpers
+
+private extension CTM005IndependentContentTabSessionTests {
+    func makeDirtyCollectionContent() -> FileManagerContentFeature.State {
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+        content.collection.collectionContext = CollectionContext(
+            query: "current",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        content.collection.collectionSession.metadata.baseline = .init(
+            context: CollectionContext(
+                query: "baseline",
+                scopes: ["/tmp"],
+                conditions: [],
+            ),
+        )
+        return content
+    }
+
+    func makeSaveCompletion() -> CollectionSaveCompletion {
+        CollectionSaveCompletion(
+            url: URL(fileURLWithPath: "/tmp/test.voycoll"),
+            file: VoyagerCollectionFile(
+                id: "test-id",
+                name: "test",
+                createdAt: Date(timeIntervalSince1970: 1_234_567_890),
+                updatedAt: Date(timeIntervalSince1970: 1_234_567_890),
+                query: "",
+                scopes: [],
+                conditions: [],
+                snapshot: nil,
+                snapshotMeta: nil,
+                appVersion: nil,
+            ),
+            savedContext: nil,
+        )
+    }
+
+    func makeTestStore(
+        state: FileManagerFeature.State,
+        alertChoice: CollectionNavigationChoice? = nil,
+    ) -> TestStore<FileManagerFeature.State, FileManagerWindowAction> {
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { alertChoice ?? .save },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+        }
+        // 통합 window reducer 테스트는 close 요청이 content/sidebar child action을 함께 방출하므로
+        // 각 시나리오에서 검증하는 핵심 상태 변화만 명시적으로 확인한다.
+        store.exhaustivity = .off
+        return store
+    }
 }
