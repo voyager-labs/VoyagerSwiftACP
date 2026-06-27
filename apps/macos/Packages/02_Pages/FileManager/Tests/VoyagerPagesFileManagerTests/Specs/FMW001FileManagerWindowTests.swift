@@ -86,14 +86,13 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// FMW-001-go_back: 명령 라우팅 시 관련 없는 윈도우 상태 불변
     /// goBack 라우팅이 sidebar, inspector 등 관련 없는 상태를 변경하지 않고 불변을 유지하는지 검증.
-    /// - 검증 내용: goBack 전송 후 sidebarVisible, sidebarWidth, isFavoritesCollapsed 상태 보존
-    /// - 사전 조건: sidebarVisible=true, sidebarWidth=250, isFavoritesCollapsed=true
+    /// - 검증 내용: goBack 전송 후 sidebarVisible, sidebarWidth 상태 보존
+    /// - 사전 조건: sidebarVisible=true, sidebarWidth=250=true
     /// - 기대 결과: 관련 없는 상태 필드 변화 없이 goBack만 수신
     func test_commandRouting_doesNotMutateUnrelatedWindowState_navigation() async {
         var initialState = FileManagerWindowState()
         initialState.sidebar.sidebarVisible = true
         initialState.sidebar.sidebarWidth = 250
-        initialState.sidebar.isFavoritesCollapsed = true
 
         let store = makeStore(initialState: initialState)
 
@@ -264,11 +263,11 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// FileManagerFeature.State가 별도 path seed 없이도 기본 탐색 경로와 sidebar 표시 상태를 갖는지 검증한다.
     /// - 검증 내용: content navigation 기본 경로와 sidebar visibility 확인
     /// - 사전 조건: fresh FileManagerFeature.State 생성
-    /// - 기대 결과: currentPath는 Settings 기본 탭 경로이고 sidebar는 표시 상태임
+    /// - 기대 결과: currentPath는 Home 기본 경로이고 sidebar는 표시 상태임
     func testFeatureInitialStateContainsDefaultNavigationSlices() {
         let state = FileManagerFeature.State()
 
-        XCTAssertEqual(state.content.navigation.currentPath, SettingsDefaults.defaultTabPath())
+        XCTAssertEqual(state.content.navigation.currentPath, "Home")
         XCTAssertTrue(state.sidebar.sidebarVisible)
     }
 
@@ -276,7 +275,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
     /// FileManagerFeature onAppear가 초기 window 구성을 깨지 않고 기본 navigation path를 유지하는지 검증한다.
     /// - 검증 내용: onAppear 전송 후 content navigation currentPath 확인
     /// - 사전 조건: 테스트 UserDefaults/date dependency를 주입한 fresh FileManagerFeature.State
-    /// - 기대 결과: currentPath가 Settings 기본 탭 경로로 유지됨
+    /// - 기대 결과: currentPath가 Home 기본 경로로 유지됨
     func testFeatureOnAppearPreservesDefaultNavigationPath() async {
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerFeature()
@@ -289,7 +288,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.onAppear)
 
-        XCTAssertEqual(store.state.content.navigation.currentPath, SettingsDefaults.defaultTabPath())
+        XCTAssertEqual(store.state.content.navigation.currentPath, "Home")
     }
 
     /// FMW-001-open_file_manager_window: 제공된 초기 창 크기가 저장된 autosave frame보다 우선 적용된다.

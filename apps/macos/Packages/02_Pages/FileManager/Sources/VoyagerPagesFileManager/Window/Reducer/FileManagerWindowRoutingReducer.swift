@@ -18,23 +18,17 @@ struct FileManagerWindowRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .sidebar(.delegate(.dropItemsToSidebarFolder(providers, targetURL))):
-                return .send(.content(.delegate(.dropItemsToSidebarFolder(
-                    providers: providers,
-                    targetURL: targetURL,
-                ))))
-
-            case let .sidebar(.delegate(.dropItemsToTag(providers, tagName))):
-                return .send(.content(.delegate(.dropItemsToTag(
-                    providers: providers,
-                    tagName: tagName,
-                ))))
-
             case let .sidebar(.delegate(.selectContentTab(tabID))):
                 return .send(.contentTabs(.setCurrent(tabID)))
 
             case let .sidebar(.delegate(.closeContentTab(tabID))):
                 return .send(.closeContentTabRequested(tabID))
+
+            case let .sidebar(.delegate(.pinContentTab(tabID))):
+                return .send(.contentTabs(.pin(tabID)))
+
+            case let .sidebar(.delegate(.unpinContentTab(tabID))):
+                return .send(.contentTabs(.unpin(tabID)))
 
             case .sidebar(.delegate(.openContentTab)):
                 return .send(.contentTabs(.open(.homeDefault)))
@@ -459,22 +453,7 @@ private func resyncNavigationStateForActiveContentTab(
     }
 }
 
-private func syncSidebarSelectionForActiveContentTab(state: inout FileManagerWindowState) {
-    guard let activeTabID = state.contentTabs.activeTabID,
-          let activeAnchor = state.contentTabs.tabs[id: activeTabID]?.anchor
-    else {
-        state.sidebar.selectedSidebarItem = nil
-        return
-    }
-
-    switch activeAnchor {
-    case .homeDefault, .aiChat:
-        state.sidebar.selectedSidebarItem = nil
-    case .directory, .collectionFile, .virtualCollection:
-        let computerName = state.sidebar.locations.first(where: \.isComputer)?.name
-        syncSidebarSelection(state: &state, computerName: computerName)
-    }
-}
+private func syncSidebarSelectionForActiveContentTab(state _: inout FileManagerWindowState) {}
 
 private func contentState(
     for anchor: ContentTabPageAnchor?,

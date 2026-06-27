@@ -156,71 +156,7 @@ extension FileManagerWindowState {
     }
 
     mutating func syncContentTabSidebarItems() {
-        sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs).map { item in
-            enrichedContentTabSidebarItem(item)
-        }
-    }
-
-    private func enrichedContentTabSidebarItem(
-        _ item: ContentTabProjection.ContentTabSidebarItem,
-    ) -> ContentTabProjection.ContentTabSidebarItem {
-        guard let anchor = contentTabs.tabs[id: item.id]?.anchor else { return item }
-
-        switch anchor {
-        case let .directory(path):
-            guard let location = locationItem(forPath: path) else { return item }
-            return item.withTitle(location.name, iconName: location.iconName, targetURL: location.url)
-
-        case let .virtualCollection(id):
-            if let location = sidebar.locations.first(where: { $0.name == id }) {
-                return item.withTitle(location.name, iconName: location.iconName, targetURL: location.url)
-            }
-            if let tag = sidebar.tags.first(where: { $0.name == id }) {
-                return item.withTagColorCode(tag.colorCode)
-            }
-            return item
-
-        case .homeDefault,
-             .collectionFile,
-             .aiChat:
-            return item
-        }
-    }
-
-    private func locationItem(forPath path: String) -> SidebarItems.LocationItem? {
-        let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        return sidebar.locations.first { location in
-            guard location.url.isFileURL else { return false }
-            return location.url.standardizedFileURL.path == standardizedPath
-        }
-    }
-}
-
-private extension ContentTabProjection.ContentTabSidebarItem {
-    func withTitle(_ title: String?, iconName: String?, targetURL: URL? = nil) -> Self {
-        Self(
-            id: id,
-            title: title,
-            iconName: iconName,
-            targetURL: targetURL,
-            tagColorCode: tagColorCode,
-            pageType: pageType,
-            isActive: isActive,
-            isPinned: isPinned,
-        )
-    }
-
-    func withTagColorCode(_ tagColorCode: Int) -> Self {
-        Self(
-            id: id,
-            title: title,
-            iconName: iconName,
-            targetURL: targetURL,
-            tagColorCode: tagColorCode,
-            pageType: pageType,
-            isActive: isActive,
-            isPinned: isPinned,
-        )
+        sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
     }
 }
 

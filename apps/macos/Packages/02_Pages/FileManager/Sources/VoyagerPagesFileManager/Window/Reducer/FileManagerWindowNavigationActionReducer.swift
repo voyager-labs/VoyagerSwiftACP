@@ -38,7 +38,7 @@ struct FileManagerNavigationActionReducer {
         _ action: ContentPageNavigationAction,
         state: inout State,
     ) -> Effect<Action> {
-        guard state.pendingContentTabClose == nil || !action.isUserNavigationRequest else {
+        guard state.pendingContentTabClose == nil || !isUserNavigationRequest(action) else {
             return .none
         }
 
@@ -94,12 +94,12 @@ struct FileManagerNavigationActionReducer {
         switch action {
         case .collectionFileLoaded,
              .navigateToCollection:
-            return handleCollectionNavigationAction(action, state: &state)
+            handleCollectionNavigationAction(action, state: &state)
 
         case .showUnsavedNavigationAlert,
              .unsavedNavigationAlertResponse,
              .performNavigation:
-            return handleUnsavedNavigationAction(action, state: &state)
+            handleUnsavedNavigationAction(action, state: &state)
 
         case .performNavigateToPath,
              .performShowRecents,
@@ -111,8 +111,7 @@ struct FileManagerNavigationActionReducer {
              .clearForwardHistory,
              .setNavigationState,
              .setPendingNavigation:
-            syncSidebarSelection(state: &state, computerName: fileManagerClient.displayName("/"))
-            return .none
+            .none
         }
     }
 
@@ -454,16 +453,13 @@ private struct CollectionOpenEnvironment {
 
 private func handleCollectionFileLoadedFailure(
     _ error: ContentPageNavigationErrorFingerprint,
-    state: inout FileManagerWindowState,
+    state _: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
 ) -> Effect<FileManagerWindowAction> {
     var effects: [Effect<FileManagerWindowAction>] = [
         .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
         .send(.navigation(.internal(.rollbackBackHistoryOnce))),
     ]
-    if state.sidebar.pendingSidebarSelectionRestore != nil {
-        effects.append(.send(.sidebar(.internal(.restoreSidebarSelection))))
-    }
     effects.append(.send(.content(.collection(.sessionResetRequested))))
     effects.append(.send(.content(.internal(.exitCollectionMode))))
     effects.append(.send(.content(.composer(.resetComposerAndSync(
@@ -502,11 +498,9 @@ private func handleEmptyCollectionFile(
     )
 }
 
-private extension ContentPageNavigationAction {
-    var isUserNavigationRequest: Bool {
-        if case .view = self {
-            return true
-        }
-        return false
+private func isUserNavigationRequest(_ action: ContentPageNavigationAction) -> Bool {
+    if case .view = action {
+        return true
     }
+    return false
 }

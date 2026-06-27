@@ -44,13 +44,7 @@ enum FileManagerContentChromePropsBuilder {
     ) -> FileManagerContentOverlayProps {
         FileManagerContentOverlayProps(
             isComposerPresented: state.content.composer.isPresented,
-            favorites: state.sidebar.favorites.map { favorite in
-                ScopeFavoriteItem(
-                    name: favorite.name,
-                    url: favorite.url,
-                    iconName: favorite.iconName,
-                )
-            },
+            favorites: [],
             historyPaths: state.content.navigation.backHistory.compactMap { entry in
                 if case let .folder(path) = entry.navigationState {
                     return path

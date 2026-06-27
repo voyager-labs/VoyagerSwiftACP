@@ -11,7 +11,6 @@ func handleNavigationDelegate(
 ) -> Effect<FileManagerWindowAction> {
     switch delegateAction {
     case let .navigateToState(navigationState):
-        syncSidebarSelection(state: &state, computerName: computerName)
         return .concatenate(
             syncActiveContentTabEffect(navigationState, state: state, computerName: computerName),
             handleNavigateToState(navigationState, state: &state),

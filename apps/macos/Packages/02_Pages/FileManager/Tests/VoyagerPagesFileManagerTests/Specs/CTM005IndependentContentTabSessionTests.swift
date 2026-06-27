@@ -102,19 +102,6 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         )
         state.content = projectsContent
         state.tabContentStates = [projectsID: projectsContent, downloadsID: downloadsContent]
-        state.sidebar.favorites = [
-            SidebarItems.FavoriteItem(
-                name: "Projects",
-                url: URL(fileURLWithPath: projectsPath),
-                iconName: "folder",
-            ),
-            SidebarItems.FavoriteItem(
-                name: "Downloads",
-                url: URL(fileURLWithPath: downloadsPath),
-                iconName: "arrow.down.circle",
-            ),
-        ]
-        state.sidebar.selectedSidebarItem = "Projects"
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
             FileManagerFeature()
@@ -129,10 +116,15 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(downloadsID)))
-        XCTAssertEqual(store.state.sidebar.selectedSidebarItem, "Downloads")
+        XCTAssertEqual(store.state.contentTabs.activeTabID, downloadsID)
+        XCTAssertEqual(
+            store.state.sidebar.contentTabSidebarItems.first(where: { $0.id == downloadsID })?.isActive,
+            true,
+        )
 
         await store.send(.contentTabs(.setCurrent(projectsID)))
-        XCTAssertEqual(store.state.sidebar.selectedSidebarItem, "Projects")
+        XCTAssertEqual(store.state.contentTabs.activeTabID, projectsID)
+        XCTAssertEqual(store.state.sidebar.contentTabSidebarItems.first(where: { $0.id == projectsID })?.isActive, true)
 
         await store.finish()
     }
@@ -1662,51 +1654,6 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         }
 
         await store.send(.navigation(.view(.navigateToPath("/Users/test/Other"))))
-
-        XCTAssertEqual(store.state.content.navigation.currentPath, closingPath)
-        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
-        await store.finish()
-    }
-
-    /// CTM-444-collection_dirty_close: pending close 중 sidebar navigation은 무시됨
-    /// Sidebar location 선택이 저장 중인 closing target의 navigation state를 오염시키지 않는지 검증한다.
-    func testPendingDirtyCollectionCloseIgnoresSidebarNavigationUntilCompletion() async {
-        let tabID = ContentTabID()
-        let closingPath = "/Users/test/Closing"
-        let otherLocation = SidebarItems.LocationItem(
-            name: "Other",
-            url: URL(fileURLWithPath: "/Users/test/Other"),
-            iconName: "folder",
-        )
-        var content = makeDirtyCollectionContent()
-        content.navigation.seedInitialFolderPath(closingPath)
-
-        var state = FileManagerFeature.State()
-        state.contentTabs = ContentTabState(
-            tabs: [ContentTabItem(
-                id: tabID,
-                page: .collection,
-                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
-                isPinned: false,
-                title: "Collection",
-                iconName: "rectangle.stack",
-            )],
-            activeTabID: tabID,
-            recentlyClosed: nil,
-        )
-        state.content = content
-        state.tabContentStates = [tabID: content]
-        state.sidebar.locations = [otherLocation]
-        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
-        state.syncContentTabSidebarItems()
-
-        let store = TestStore(initialState: state) {
-            FileManagerFeature()
-        } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-        }
-
-        await store.send(.sidebar(.delegate(.openLocation(otherLocation))))
 
         XCTAssertEqual(store.state.content.navigation.currentPath, closingPath)
         XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
