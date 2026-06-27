@@ -71,10 +71,14 @@ extension EntryFileOpsLive {
     nonisolated static var postFileSystemChanged: @Sendable ([String]) -> Void {
         { paths in
             NotificationCenter.default.post(
-                name: EntryWatchingLive.fileSystemChangedNotificationName,
+                name: .voyagerEntryFileSystemChanged,
                 object: nil,
                 userInfo: ["paths": paths],
             )
         }
     }
+}
+
+private extension Notification.Name {
+    static let voyagerEntryFileSystemChanged = Notification.Name("VoyagerEntryFileSystemChanged")
 }
