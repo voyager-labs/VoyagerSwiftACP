@@ -9,6 +9,7 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
     public let canGoForward: Bool
     public let canGoToEnclosingDirectory: Bool
     public let canSaveCollection: Bool
+    public let isActiveContentTabPinned: Bool
     public let sidebarVisible: Bool
     public let showHiddenFiles: Bool
     public let viewLayout: EntryViewLayoutState.Mode
@@ -25,6 +26,7 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
 public extension FileManagerWindowState {
     var menuCommandProjection: FileManagerWindowMenuCommandProjection {
         let selectedIds = content.entryViewLayout.selectedIds
+        let activeContentTab = contentTabs.activeTabID.flatMap { contentTabs.tabs[id: $0] }
 
         return FileManagerWindowMenuCommandProjection(
             canOpen: !selectedIds.isEmpty,
@@ -33,6 +35,7 @@ public extension FileManagerWindowState {
             canGoForward: content.navigation.canGoForward,
             canGoToEnclosingDirectory: content.navigation.canGoToEnclosingDirectory,
             canSaveCollection: content.canSaveCollection,
+            isActiveContentTabPinned: activeContentTab?.isPinned == true,
             sidebarVisible: sidebar.sidebarVisible,
             showHiddenFiles: content.entryViewLayout.showHiddenFiles,
             viewLayout: content.entryViewLayout.mode,

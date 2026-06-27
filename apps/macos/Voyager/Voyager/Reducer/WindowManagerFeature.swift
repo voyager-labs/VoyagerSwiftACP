@@ -90,6 +90,9 @@ struct WindowManagerFeature {
             case .file(.closeTab):
                 return sendCommandToFocusedWindow(state, .closeActiveContentTab)
 
+            case .file(.togglePinTab):
+                return sendCommandToFocusedWindow(state, .toggleActiveContentTabPin)
+
             case .file(.newFolder):
                 return sendCommandToFocusedWindow(state, .newFolder)
 

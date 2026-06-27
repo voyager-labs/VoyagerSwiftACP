@@ -27,6 +27,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
     func testTask3EntryCommandsRouteToWindowManagerDelegate() async {
         let appCases: [(MenuCommandItem.AppCommand, WindowManagerAction)] = [
             (.newTab, .file(.newTab)),
+            (.togglePinTab, .file(.togglePinTab)),
             (.open, .file(.open)),
             (.quickLook, .file(.quickLook)),
         ]
@@ -96,6 +97,34 @@ final class MenuCommandsFeatureTests: XCTestCase {
         XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
     }
 
+    func testCloseTabTitleReflectsActivePinnedContentTab() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000043")
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        guard let activeTabID = focusedWindow.contentTabs.activeTabID else {
+            XCTFail("Expected active content tab")
+            return
+        }
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        let unpinnedMenuState = MenuCommandsState(state: appState)
+        XCTAssertEqual(unpinnedMenuState.closeTabTitle, "Close Tab")
+        XCTAssertTrue(unpinnedMenuState.showsCloseTabCommand)
+        XCTAssertEqual(unpinnedMenuState.pinTabTitle, "Pin Tab")
+
+        focusedWindow.contentTabs.tabs[id: activeTabID]?.isPinned = true
+        appState.windowManager.windows[id: focusedID]?.window = focusedWindow
+
+        let pinnedMenuState = MenuCommandsState(state: appState)
+        XCTAssertEqual(pinnedMenuState.closeTabTitle, "Close Tab")
+        XCTAssertFalse(pinnedMenuState.showsCloseTabCommand)
+        XCTAssertEqual(pinnedMenuState.pinTabTitle, "Unpin Tab")
+    }
+
     private func makeUUID(_ rawValue: String) -> UUID {
         guard let uuid = UUID(uuidString: rawValue) else {
             XCTFail("Invalid UUID fixture: \(rawValue)")
@@ -118,6 +147,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             guard case let .delegate(.windowManager(action)) = $0 else { return false }
             switch (action, expected) {
             case (.file(.newTab), .file(.newTab)),
+                 (.file(.togglePinTab), .file(.togglePinTab)),
                  (.file(.open), .file(.open)),
                  (.file(.quickLook), .file(.quickLook)):
                 return true

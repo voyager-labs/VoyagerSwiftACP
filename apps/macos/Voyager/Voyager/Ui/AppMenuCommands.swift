@@ -76,10 +76,18 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("w", modifiers: [.command, .shift])
             .disabled(!viewStore.hasFocusedWindow)
 
-            Button("Close Tab") {
-                send(.app(.closeTab))
+            if viewStore.showsCloseTabCommand {
+                Button(viewStore.closeTabTitle) {
+                    send(.app(.closeTab))
+                }
+                .keyboardShortcut("w", modifiers: .command)
+                .disabled(!viewStore.hasFocusedWindow)
             }
-            .keyboardShortcut("w", modifiers: .command)
+
+            Button(viewStore.pinTabTitle) {
+                send(.app(.togglePinTab))
+            }
+            .keyboardShortcut("p", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
 
             Button("Close All") {

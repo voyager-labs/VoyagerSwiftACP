@@ -11,6 +11,7 @@ struct MenuCommandItem: Identifiable, Equatable {
         case newWindow(path: String? = nil)
         case newTab
         case closeTab
+        case togglePinTab
 
         case newFolder
         case open
