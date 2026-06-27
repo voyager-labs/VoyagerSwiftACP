@@ -60,6 +60,43 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store, ContentTabPinnedRecordStore())
     }
 
+    func testPinnedRecordClient_updateStoreSerializesConcurrentMutations() async throws {
+        let defaults = UserDefaultsClient.testValue
+        let client = ContentTabPinnedRecordClient.liveValue
+        let firstID = ContentTabID()
+        let secondID = ContentTabID()
+        let firstRecord = Self.pinnedRecord(
+            id: firstID,
+            anchor: .directory(path: "/Users/test/Documents"),
+            title: "Documents",
+            iconName: "folder",
+        )
+        let secondRecord = Self.pinnedRecord(
+            id: secondID,
+            anchor: .directory(path: "/Users/test/Downloads"),
+            title: "Downloads",
+            iconName: "folder",
+        )
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for record in [firstRecord, secondRecord] {
+                group.addTask {
+                    try client.updateStore(defaults) { store in
+                        Thread.sleep(forTimeInterval: 0.01)
+                        var records = store.records
+                        records.append(record)
+                        return ContentTabPinnedRecordStore(records: records)
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+
+        let savedStore = try client.loadStore(defaults)
+        XCTAssertEqual(Set(savedStore.records.map(\.id)), Set([firstID.rawValue, secondID.rawValue]))
+        XCTAssertEqual(savedStore.records.count, 2)
+    }
+
     // MARK: - CTM-003-pin_content_tab_s
 
     /// CTM-003-pin_content_tab_s: unpinned tab pin 시 pinned 상태 전환과 persistence 기록
@@ -202,7 +239,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ContentTabFeature()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
-            $0.contentTabPinnedRecordClient.saveStore = { savedStore, _ in
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                let savedStore = try transform(ContentTabPinnedRecordStore())
                 XCTAssertEqual(savedStore.records.map(\.id), [pinnedID.rawValue, unpinnedID.rawValue])
                 XCTAssertEqual(savedStore.records.map(\.anchor), [sameAnchor, sameAnchor])
             }
@@ -266,7 +304,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ContentTabFeature()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
-            $0.contentTabPinnedRecordClient.saveStore = { savedStore, _ in
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                let savedStore = try transform(ContentTabPinnedRecordStore())
                 if savedStore.records.count == 2 {
                     XCTAssertEqual(savedStore.records, [firstSnapshot, secondSnapshot])
                 }
@@ -320,7 +359,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         } withDependencies: {
             struct SaveError: Error {}
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
-            $0.contentTabPinnedRecordClient.saveStore = { _, _ in throw SaveError() }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
         }
 
         await store.send(.pin(tabID)) {
@@ -375,7 +414,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ContentTabFeature()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
-            $0.contentTabPinnedRecordClient.saveStore = { savedStore, _ in
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                let savedStore = try transform(ContentTabPinnedRecordStore())
                 switch recorder.record(savedStore) {
                 case 2:
                     throw SaveError()
@@ -460,10 +500,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ContentTabFeature()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
-            $0.contentTabPinnedRecordClient.loadStore = { _ in
-                ContentTabPinnedRecordStore(records: [otherRecord])
-            }
-            $0.contentTabPinnedRecordClient.saveStore = { savedStore, _ in
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                let savedStore = try transform(ContentTabPinnedRecordStore(records: [otherRecord]))
                 _ = recorder.record(savedStore)
             }
         }
@@ -520,10 +558,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         ) {
             ContentTabFeature()
         } withDependencies: {
-            $0.contentTabPinnedRecordClient.loadStore = { _ in
-                ContentTabPinnedRecordStore(records: [otherRecord, currentRecord])
-            }
-            $0.contentTabPinnedRecordClient.saveStore = { savedStore, _ in
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                let savedStore = try transform(ContentTabPinnedRecordStore(records: [otherRecord, currentRecord]))
                 _ = recorder.record(savedStore)
             }
         }
@@ -756,7 +792,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             ContentTabFeature()
         } withDependencies: {
             struct SaveError: Error {}
-            $0.contentTabPinnedRecordClient.saveStore = { _, _ in throw SaveError() }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in throw SaveError() }
         }
 
         await store.send(.unpin(tabID)) {

@@ -204,13 +204,13 @@ extension ContentTabFeature {
         let defaults = userDefaultsClient
         return .run { send in
             do {
-                let existingStore = try client.loadStore(defaults)
-                let mergedStore = mergePinnedRecordStore(
-                    existingStore,
-                    currentWindowStore: store,
-                    currentWindowRecordIDs: currentWindowRecordIDs,
-                )
-                try client.saveStore(mergedStore, defaults)
+                try client.updateStore(defaults) { existingStore in
+                    mergePinnedRecordStore(
+                        existingStore,
+                        currentWindowStore: store,
+                        currentWindowRecordIDs: currentWindowRecordIDs,
+                    )
+                }
                 await send(.pinnedRecordSaveSucceeded)
             } catch {
                 await send(.pinnedRecordSaveFailed(tabID: id, previousIsPinned: false, previousPinnedRecord: nil))
@@ -234,13 +234,13 @@ extension ContentTabFeature {
         let defaults = userDefaultsClient
         return .run { send in
             do {
-                let existingStore = try client.loadStore(defaults)
-                let mergedStore = mergePinnedRecordStore(
-                    existingStore,
-                    currentWindowStore: store,
-                    currentWindowRecordIDs: currentWindowRecordIDs,
-                )
-                try client.saveStore(mergedStore, defaults)
+                try client.updateStore(defaults) { existingStore in
+                    mergePinnedRecordStore(
+                        existingStore,
+                        currentWindowStore: store,
+                        currentWindowRecordIDs: currentWindowRecordIDs,
+                    )
+                }
                 await send(.pinnedRecordSaveSucceeded)
             } catch {
                 await send(.pinnedRecordSaveFailed(
