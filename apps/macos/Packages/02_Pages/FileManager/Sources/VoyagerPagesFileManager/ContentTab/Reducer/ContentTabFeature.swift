@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 
 @Reducer
 public struct ContentTabFeature {
@@ -7,6 +8,12 @@ public struct ContentTabFeature {
     var entryLoadingClient
     @Dependency(\.fileManagerIconClient)
     var fileManagerIconClient
+    @Dependency(\.contentTabPinnedRecordClient)
+    var contentTabPinnedRecordClient
+    @Dependency(\.userDefaultsClient)
+    var userDefaultsClient
+    @Dependency(\.date)
+    var date
 
     public typealias State = ContentTabState
     public typealias Action = ContentTabAction
@@ -17,29 +24,47 @@ public struct ContentTabFeature {
         Reduce { state, action in
             switch action {
             case let .open(anchor):
-                open(anchor: anchor, state: &state)
+                return open(anchor: anchor, state: &state)
 
             case let .setCurrent(id):
-                setCurrent(id: id, state: &state)
+                return setCurrent(id: id, state: &state)
 
             case let .close(id):
-                close(id: id, state: &state)
+                return close(id: id, state: &state)
 
             case .restore:
-                restore(state: &state)
+                return restore(state: &state)
 
             case let .pin(id):
-                pin(id: id, state: &state)
+                return pin(id: id, state: &state)
 
             case let .unpin(id):
-                unpin(id: id, state: &state)
+                return unpin(id: id, state: &state)
 
             case let .updateActivePageAnchor(id, newAnchor):
-                updateActivePageAnchor(id: id, newAnchor: newAnchor, state: &state)
+                return updateActivePageAnchor(id: id, newAnchor: newAnchor, state: &state)
+
+            case .pinnedRecordSaveSucceeded:
+                state.previousActiveTabID = nil
+                state.pinnedRecordPersistenceError = nil
+                return .none
+
+            case let .pinnedRecordSaveFailed(tabID, previousIsPinned, previousPinnedRecord):
+                state.previousActiveTabID = nil
+                state.tabs[id: tabID]?.isPinned = previousIsPinned
+                if let record = previousPinnedRecord {
+                    state.pinnedRecords[tabID] = record
+                } else {
+                    state.pinnedRecords.removeValue(forKey: tabID)
+                }
+                state.pinnedRecordPersistenceError = "pinned_record_save_failed"
+                return .none
             }
         }
     }
 }
+
+private struct PinnedRecordPersistenceCancelID: Hashable {}
 
 extension ContentTabFeature {
     private func open(anchor: ContentTabPageAnchor, state: inout ContentTabState) -> Effect<ContentTabAction> {
@@ -80,9 +105,7 @@ extension ContentTabFeature {
         }
 
         if tab.isPinned {
-            state.previousActiveTabID = nil
-            state.tabs[id: id]?.isPinned = false
-            return .none
+            return unpin(id: id, state: &state)
         }
 
         if state.tabs.count == 1 {
@@ -165,15 +188,72 @@ extension ContentTabFeature {
     private func pin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
         state.previousActiveTabID = nil
         guard let tab = state.tabs[id: id], !tab.isPinned else { return .none }
+
         state.tabs[id: id]?.isPinned = true
-        return .none
+        state.pinnedRecords[id] = ContentTabPinnedRecord(
+            id: id.rawValue,
+            page: tab.page,
+            anchor: tab.anchor,
+            title: tab.title,
+            iconName: tab.iconName,
+            pinnedAt: date(),
+        )
+        state.pinnedRecordPersistenceError = nil
+
+        let store = derivePinnedRecordStore(from: state)
+        let client = contentTabPinnedRecordClient
+        let defaults = userDefaultsClient
+        return .run { send in
+            do {
+                try client.saveStore(store, defaults)
+                await send(.pinnedRecordSaveSucceeded)
+            } catch {
+                await send(.pinnedRecordSaveFailed(tabID: id, previousIsPinned: false, previousPinnedRecord: nil))
+            }
+        }
+        .cancellable(id: PinnedRecordPersistenceCancelID(), cancelInFlight: true)
     }
 
     private func unpin(id: ContentTabID, state: inout ContentTabState) -> Effect<ContentTabAction> {
         state.previousActiveTabID = nil
         guard let tab = state.tabs[id: id], tab.isPinned else { return .none }
+
+        let previousPinnedRecord = state.pinnedRecords[id]
+
         state.tabs[id: id]?.isPinned = false
-        return .none
+        state.pinnedRecords.removeValue(forKey: id)
+        state.pinnedRecordPersistenceError = nil
+
+        let store = derivePinnedRecordStore(from: state)
+        let client = contentTabPinnedRecordClient
+        let defaults = userDefaultsClient
+        return .run { send in
+            do {
+                try client.saveStore(store, defaults)
+                await send(.pinnedRecordSaveSucceeded)
+            } catch {
+                await send(.pinnedRecordSaveFailed(
+                    tabID: id,
+                    previousIsPinned: true,
+                    previousPinnedRecord: previousPinnedRecord,
+                ))
+            }
+        }
+        .cancellable(id: PinnedRecordPersistenceCancelID(), cancelInFlight: true)
+    }
+
+    private func derivePinnedRecordStore(from state: ContentTabState) -> ContentTabPinnedRecordStore {
+        let records = state.tabs.filter(\.isPinned).map { tab -> ContentTabPinnedRecord in
+            state.pinnedRecords[tab.id] ?? ContentTabPinnedRecord(
+                id: tab.id.rawValue,
+                page: tab.page,
+                anchor: tab.anchor,
+                title: tab.title,
+                iconName: tab.iconName,
+                pinnedAt: date(),
+            )
+        }
+        return ContentTabPinnedRecordStore(records: records)
     }
 
     private func updateActivePageAnchor(id: ContentTabID, newAnchor: ContentTabPageAnchor,
@@ -195,9 +275,10 @@ extension ContentTabFeature {
         case .homeDefault:
             "Home"
         case let .directory(path):
-            URL(fileURLWithPath: path).lastPathComponent.nonEmpty ?? path
+            entryLoadingClient.displayName(path).nonEmpty ?? URL(fileURLWithPath: path).lastPathComponent
+                .nonEmpty ?? path
         case let .collectionFile(url):
-            url.deletingPathExtension().lastPathComponent.nonEmpty ?? url.lastPathComponent
+            CollectionFileUtils.displayName(url, fallback: url.lastPathComponent)
         case let .virtualCollection(id):
             id
         case .aiChat:
