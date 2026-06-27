@@ -420,6 +420,126 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         ])
     }
 
+    /// CTM-003-pin_content_tab_s: 다른 window의 persisted pinned record를 보존하며 현재 window pin 저장
+    /// app-global pinned store 저장 시 현재 window tab 범위만 교체하고 다른 window record를 유지함을 검증한다.
+    /// - 검증 내용: 기존 store에 다른 window record가 있을 때 pin 저장 결과가 other + current record로 merge
+    /// - 사전 조건: 다른 window record 1개가 persisted store에 있고 현재 window에는 unpinned Directory tab 1개
+    /// - 기대 결과: saveStore가 다른 window record를 보존한 merged store를 저장
+    func testPin_preservesOtherWindowPinnedRecordsInGlobalStore() async {
+        let otherID = ContentTabID()
+        let currentID = ContentTabID()
+        let otherAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Other")
+        let currentAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
+        let otherRecord = Self.pinnedRecord(
+            id: otherID,
+            anchor: otherAnchor,
+            title: "Other",
+            iconName: "folder",
+        )
+        let currentRecord = Self.pinnedRecord(
+            id: currentID,
+            anchor: currentAnchor,
+            title: "Documents",
+            iconName: "folder",
+        )
+        let recorder = PinnedRecordStoreRecorder()
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [ContentTabItem(
+                    id: currentID,
+                    page: .directory,
+                    anchor: currentAnchor,
+                    isPinned: false,
+                    title: "Documents",
+                    iconName: "folder",
+                )],
+                activeTabID: currentID,
+                recentlyClosed: nil,
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                ContentTabPinnedRecordStore(records: [otherRecord])
+            }
+            $0.contentTabPinnedRecordClient.saveStore = { savedStore, _ in
+                _ = recorder.record(savedStore)
+            }
+        }
+
+        await store.send(.pin(currentID)) {
+            $0.tabs[id: currentID]?.isPinned = true
+            $0.pinnedRecords[currentID] = currentRecord
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.finish()
+
+        XCTAssertEqual(recorder.stores(), [
+            ContentTabPinnedRecordStore(records: [otherRecord, currentRecord]),
+        ])
+    }
+
+    /// CTM-003-unpin_content_tab_s: 현재 window unpin 저장은 다른 window pinned record를 보존
+    /// app-global pinned store에서 현재 window record만 제거하고 다른 window record는 유지함을 검증한다.
+    /// - 검증 내용: 기존 store에 other + current record가 있을 때 unpin 저장 결과가 other record만 포함
+    /// - 사전 조건: 현재 window pinned tab 1개와 다른 window persisted record 1개
+    /// - 기대 결과: saveStore가 current record만 제거한 merged store를 저장
+    func testUnpin_preservesOtherWindowPinnedRecordsInGlobalStore() async {
+        let otherID = ContentTabID()
+        let currentID = ContentTabID()
+        let otherAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Other")
+        let currentAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
+        let otherRecord = Self.pinnedRecord(
+            id: otherID,
+            anchor: otherAnchor,
+            title: "Other",
+            iconName: "folder",
+        )
+        let currentRecord = Self.pinnedRecord(
+            id: currentID,
+            anchor: currentAnchor,
+            title: "Documents",
+            iconName: "folder",
+        )
+        let recorder = PinnedRecordStoreRecorder()
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [ContentTabItem(
+                    id: currentID,
+                    page: .directory,
+                    anchor: currentAnchor,
+                    isPinned: true,
+                    title: "Documents",
+                    iconName: "folder",
+                )],
+                activeTabID: currentID,
+                recentlyClosed: nil,
+                pinnedRecords: [currentID: currentRecord],
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                ContentTabPinnedRecordStore(records: [otherRecord, currentRecord])
+            }
+            $0.contentTabPinnedRecordClient.saveStore = { savedStore, _ in
+                _ = recorder.record(savedStore)
+            }
+        }
+
+        await store.send(.unpin(currentID)) {
+            $0.tabs[id: currentID]?.isPinned = false
+            $0.pinnedRecords.removeAll()
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.finish()
+
+        XCTAssertEqual(recorder.stores(), [
+            ContentTabPinnedRecordStore(records: [otherRecord]),
+        ])
+    }
+
     /// CTM-003-pin_content_tab_s: 메뉴/shortcut toggle command는 active unpinned tab을 pin함
     /// Cmd+P 메뉴 command가 Window request를 통해 active tab pin 액션으로 라우팅되는지 검증한다.
     /// - 검증 내용: .request(.toggleActiveContentTabPin) → .contentTabs(.pin(activeID)) → persistence 성공

@@ -199,11 +199,18 @@ extension ContentTabFeature {
         state.pinnedRecordPersistenceError = nil
 
         let store = derivePinnedRecordStore(from: state)
+        let currentWindowRecordIDs = currentWindowRecordIDs(from: state)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
         return .run { send in
             do {
-                try client.saveStore(store, defaults)
+                let existingStore = try client.loadStore(defaults)
+                let mergedStore = mergePinnedRecordStore(
+                    existingStore,
+                    currentWindowStore: store,
+                    currentWindowRecordIDs: currentWindowRecordIDs,
+                )
+                try client.saveStore(mergedStore, defaults)
                 await send(.pinnedRecordSaveSucceeded)
             } catch {
                 await send(.pinnedRecordSaveFailed(tabID: id, previousIsPinned: false, previousPinnedRecord: nil))
@@ -222,11 +229,18 @@ extension ContentTabFeature {
         state.pinnedRecordPersistenceError = nil
 
         let store = derivePinnedRecordStore(from: state)
+        let currentWindowRecordIDs = currentWindowRecordIDs(from: state)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
         return .run { send in
             do {
-                try client.saveStore(store, defaults)
+                let existingStore = try client.loadStore(defaults)
+                let mergedStore = mergePinnedRecordStore(
+                    existingStore,
+                    currentWindowStore: store,
+                    currentWindowRecordIDs: currentWindowRecordIDs,
+                )
+                try client.saveStore(mergedStore, defaults)
                 await send(.pinnedRecordSaveSucceeded)
             } catch {
                 await send(.pinnedRecordSaveFailed(
@@ -309,6 +323,22 @@ extension ContentTabFeature {
             .aiChat
         }
     }
+}
+
+private func currentWindowRecordIDs(from state: ContentTabState) -> Set<String> {
+    Set(state.tabs.map(\.id.rawValue))
+}
+
+private func mergePinnedRecordStore(
+    _ existingStore: ContentTabPinnedRecordStore,
+    currentWindowStore: ContentTabPinnedRecordStore,
+    currentWindowRecordIDs: Set<String>,
+) -> ContentTabPinnedRecordStore {
+    let retainedRecords = existingStore.records.filter { !currentWindowRecordIDs.contains($0.id) }
+    return ContentTabPinnedRecordStore(
+        schemaVersion: existingStore.schemaVersion,
+        records: retainedRecords + currentWindowStore.records,
+    )
 }
 
 private extension String {
