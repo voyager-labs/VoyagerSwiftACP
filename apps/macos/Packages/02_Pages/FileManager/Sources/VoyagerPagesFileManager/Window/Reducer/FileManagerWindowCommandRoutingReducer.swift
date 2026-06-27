@@ -121,7 +121,11 @@ struct FileManagerWindowCommandRoutingReducer {
         case .goBack,
              .goForward,
              .goToEnclosingDirectory:
-            handleNavigationRequest(command)
+            if state.pendingContentTabClose != nil {
+                .none
+            } else {
+                handleNavigationRequest(command)
+            }
 
         case .toggleSidebar,
              .setViewLayout,

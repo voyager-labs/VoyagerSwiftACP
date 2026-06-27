@@ -1629,6 +1629,129 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-444-collection_dirty_close: pending close 중 직접 navigation 요청은 무시됨
+    /// 저장 완료 전 외부 coordinator/toolbar가 navigation view action을 보내도 target content를 변경하지 않는지 검증한다.
+    func testPendingDirtyCollectionCloseIgnoresDirectNavigationUntilCompletion() async {
+        let tabID = ContentTabID()
+        let closingPath = "/Users/test/Closing"
+        var content = makeDirtyCollectionContent()
+        content.navigation.seedInitialFolderPath(closingPath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.navigation(.view(.navigateToPath("/Users/test/Other"))))
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, closingPath)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: pending close 중 sidebar navigation은 무시됨
+    /// Sidebar location 선택이 저장 중인 closing target의 navigation state를 오염시키지 않는지 검증한다.
+    func testPendingDirtyCollectionCloseIgnoresSidebarNavigationUntilCompletion() async {
+        let tabID = ContentTabID()
+        let closingPath = "/Users/test/Closing"
+        let otherLocation = SidebarItems.LocationItem(
+            name: "Other",
+            url: URL(fileURLWithPath: "/Users/test/Other"),
+            iconName: "folder",
+        )
+        var content = makeDirtyCollectionContent()
+        content.navigation.seedInitialFolderPath(closingPath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.sidebar.locations = [otherLocation]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.sidebar(.delegate(.openLocation(otherLocation))))
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, closingPath)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: pending close 중 toolbar history command는 무시됨
+    /// Back/Forward 계열 command가 저장 중인 closing target에 pending navigation을 만들지 않는지 검증한다.
+    func testPendingDirtyCollectionCloseIgnoresToolbarNavigationCommandUntilCompletion() async {
+        let tabID = ContentTabID()
+        let closingPath = "/Users/test/Closing"
+        var content = makeDirtyCollectionContent()
+        content.navigation.seedInitialFolderPath(closingPath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/test.voycoll")),
+                isPinned: false,
+                title: "Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.pendingContentTabClose = PendingContentTabClose(tabID: tabID)
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+
+        await store.send(.request(.goBack))
+
+        XCTAssertEqual(store.state.content.navigation.currentPath, closingPath)
+        XCTAssertEqual(store.state.pendingContentTabClose?.tabID, tabID)
+        await store.finish()
+    }
+
     /// CTM-444-collection_dirty_close: 단일 dirty collection tab close 시 Cancel/Discard 전환
     /// 마지막 tab이 dirty collection인 경우 Cancel/Discard 각각의 결과를 검증한다.
     /// Cancel: collection 유지. Discard: close.

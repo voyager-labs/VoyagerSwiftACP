@@ -34,6 +34,9 @@ private struct FileManagerNavigationBridgeReducer {
                 return .none
 
             case let .sidebar(.delegate(.openFavorite(favorite))):
+                guard state.pendingContentTabClose == nil else {
+                    return .none
+                }
                 if favorite.url.pathExtension.lowercased() == CollectionConstants.fileExtension {
                     state.sidebar.pendingSidebarSelectionRestore = state.sidebar.selectedSidebarItem
                     state.sidebar.selectedSidebarItem = favorite.displayName
@@ -42,15 +45,27 @@ private struct FileManagerNavigationBridgeReducer {
                 return .send(.navigation(.view(.navigateToPath(favorite.url.path))))
 
             case let .sidebar(.delegate(.openLocation(location))):
+                guard state.pendingContentTabClose == nil else {
+                    return .none
+                }
                 return .send(.navigation(.view(.navigateToPath(location.url.path))))
 
             case let .sidebar(.delegate(.showTag(tagName))):
+                guard state.pendingContentTabClose == nil else {
+                    return .none
+                }
                 return .send(.navigation(.view(.showTag(tagName))))
 
             case .sidebar(.delegate(.showRecents)):
+                guard state.pendingContentTabClose == nil else {
+                    return .none
+                }
                 return .send(.navigation(.view(.showRecents)))
 
             case .sidebar(.delegate(.showComputer)):
+                guard state.pendingContentTabClose == nil else {
+                    return .none
+                }
                 return .send(.navigation(.view(.showComputer)))
 
             case let .content(.internal(.requestNavigation(navigationAction))):

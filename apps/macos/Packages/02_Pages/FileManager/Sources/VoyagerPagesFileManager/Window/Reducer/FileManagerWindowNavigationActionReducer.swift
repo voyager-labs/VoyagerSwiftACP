@@ -38,7 +38,11 @@ struct FileManagerNavigationActionReducer {
         _ action: ContentPageNavigationAction,
         state: inout State,
     ) -> Effect<Action> {
-        switch action {
+        guard state.pendingContentTabClose == nil || !action.isUserNavigationRequest else {
+            return .none
+        }
+
+        return switch action {
         case let .view(viewAction):
             handleViewAction(viewAction, state: &state)
 
@@ -496,4 +500,13 @@ private func handleEmptyCollectionFile(
             )
         },
     )
+}
+
+private extension ContentPageNavigationAction {
+    var isUserNavigationRequest: Bool {
+        if case .view = self {
+            return true
+        }
+        return false
+    }
 }
