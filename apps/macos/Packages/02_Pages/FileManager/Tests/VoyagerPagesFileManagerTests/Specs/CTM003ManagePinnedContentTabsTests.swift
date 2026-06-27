@@ -15,6 +15,12 @@ private final class PinnedRecordStoreRecorder: @unchecked Sendable {
         return savedStores.count
     }
 
+    func latestStore() -> ContentTabPinnedRecordStore {
+        lock.lock()
+        defer { lock.unlock() }
+        return savedStores.last ?? ContentTabPinnedRecordStore()
+    }
+
     func stores() -> [ContentTabPinnedRecordStore] {
         lock.lock()
         defer { lock.unlock() }
@@ -211,6 +217,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let pinnedID = ContentTabID()
         let unpinnedID = ContentTabID()
         let sameAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
+        let recorder = PinnedRecordStoreRecorder()
+        _ = recorder.record(ContentTabPinnedRecordStore(records: [Self.pinnedRecord(id: pinnedID, anchor: sameAnchor)]))
         let store = TestStore(
             initialState: ContentTabState(
                 tabs: [
@@ -240,7 +248,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
-                let savedStore = try transform(ContentTabPinnedRecordStore())
+                let savedStore = try transform(recorder.latestStore())
+                _ = recorder.record(savedStore)
                 XCTAssertEqual(savedStore.records.map(\.id), [pinnedID.rawValue, unpinnedID.rawValue])
                 XCTAssertEqual(savedStore.records.map(\.anchor), [sameAnchor, sameAnchor])
             }
@@ -374,6 +383,59 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-003-pin_content_tab_s: pinned 저장 완료/실패는 active close fallback을 지우지 않음
+    /// 저장 effect 완료가 tab 전환 후 늦게 도착해도 previousActiveTabID를 보존함을 검증한다.
+    /// - 검증 내용: save success/failure 액션 처리 후 previousActiveTabID 유지
+    /// - 사전 조건: active tab 전환으로 previousActiveTabID가 기록된 상태
+    /// - 기대 결과: persistence 완료/실패는 pinned 상태/error만 갱신하고 close fallback은 보존
+    func testPinnedRecordPersistenceResultsPreservePreviousActiveFallback() {
+        let activeID = ContentTabID()
+        let previousID = ContentTabID()
+        let anchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: previousID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: activeID,
+                    page: .directory,
+                    anchor: anchor,
+                    isPinned: true,
+                    title: "Documents",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: activeID,
+            previousActiveTabID: previousID,
+            recentlyClosed: nil,
+            pinnedRecords: [activeID: Self.pinnedRecord(id: activeID, anchor: anchor)],
+        )
+
+        let feature = ContentTabFeature()
+        _ = feature.reduce(into: &state, action: .pinnedRecordSaveSucceeded)
+        XCTAssertEqual(state.previousActiveTabID, previousID)
+        XCTAssertNil(state.pinnedRecordPersistenceError)
+
+        _ = feature.reduce(
+            into: &state,
+            action: .pinnedRecordSaveFailed(
+                tabID: activeID,
+                previousIsPinned: false,
+                previousPinnedRecord: nil,
+            ),
+        )
+        XCTAssertEqual(state.previousActiveTabID, previousID)
+        XCTAssertEqual(state.tabs[id: activeID]?.isPinned, false)
+        XCTAssertNil(state.pinnedRecords[activeID])
+        XCTAssertEqual(state.pinnedRecordPersistenceError, "pinned_record_save_failed")
+    }
+
     /// CTM-003-pin_content_tab_s: 첫 save가 in-flight인 동안 두 번째 save가 실패해도 앞선 record는 유실되지 않음
     /// 단일 cancel-in-flight 저장으로 앞선 pin 저장 요청이 취소되는 회귀를 방지한다.
     /// - 검증 내용: first pin save 대기 중 second pin save 실패 → first save success까지 수신
@@ -415,7 +477,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
             $0.contentTabPinnedRecordClient.updateStore = { _, transform in
-                let savedStore = try transform(ContentTabPinnedRecordStore())
+                let savedStore = try transform(recorder.latestStore())
                 switch recorder.record(savedStore) {
                 case 2:
                     throw SaveError()
@@ -457,6 +519,82 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(recorder.stores(), [
             ContentTabPinnedRecordStore(records: [firstRecord]),
             ContentTabPinnedRecordStore(records: [firstRecord, secondRecord]),
+        ])
+    }
+
+    /// CTM-003-pin_content_tab_s: 늦게 실행된 오래된 pin 저장 transform은 최신 record를 제거하지 않음
+    /// stale full-window replacement transform이 최신 persisted state를 되돌리는 회귀를 방지한다.
+    /// - 검증 내용: second pin transform이 먼저 저장된 store에 first pin transform을 나중 적용
+    /// - 사전 조건: unpinned Directory tab 2개, updateStore transform 실행 순서를 테스트에서 역전
+    /// - 기대 결과: 늦게 적용된 first transform 후 persisted store에 두 record 모두 존재
+    func testPin_delayedOlderPersistenceDoesNotRemoveNewerPinnedRecord() async {
+        let firstID = ContentTabID()
+        let secondID = ContentTabID()
+        let firstAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
+        let secondAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Downloads")
+        let firstRecord = Self.pinnedRecord(
+            id: firstID,
+            anchor: firstAnchor,
+            title: "Documents",
+            iconName: "folder",
+        )
+        let secondRecord = Self.pinnedRecord(
+            id: secondID,
+            anchor: secondAnchor,
+            title: "Downloads",
+            iconName: "folder",
+        )
+        let recorder = PinnedRecordStoreRecorder()
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: firstID,
+                        page: .directory,
+                        anchor: firstAnchor,
+                        isPinned: false,
+                        title: "Documents",
+                        iconName: "folder",
+                    ),
+                    ContentTabItem(
+                        id: secondID,
+                        page: .directory,
+                        anchor: secondAnchor,
+                        isPinned: false,
+                        title: "Downloads",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: firstID,
+                recentlyClosed: nil,
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, transform in
+                let existingStore = recorder.stores().isEmpty
+                    ? ContentTabPinnedRecordStore(records: [secondRecord])
+                    : ContentTabPinnedRecordStore()
+                _ = try recorder.record(transform(existingStore))
+            }
+        }
+
+        await store.send(.pin(firstID)) {
+            $0.tabs[id: firstID]?.isPinned = true
+            $0.pinnedRecords[firstID] = firstRecord
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.send(.pin(secondID)) {
+            $0.tabs[id: secondID]?.isPinned = true
+            $0.pinnedRecords[secondID] = secondRecord
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.finish()
+
+        XCTAssertEqual(recorder.stores().map { $0.records.map(\.id).sorted() }, [
+            [firstID.rawValue, secondID.rawValue].sorted(),
+            [secondID.rawValue],
         ])
     }
 

@@ -45,12 +45,10 @@ public struct ContentTabFeature {
                 return updateActivePageAnchor(id: id, newAnchor: newAnchor, state: &state)
 
             case .pinnedRecordSaveSucceeded:
-                state.previousActiveTabID = nil
                 state.pinnedRecordPersistenceError = nil
                 return .none
 
             case let .pinnedRecordSaveFailed(tabID, previousIsPinned, previousPinnedRecord):
-                state.previousActiveTabID = nil
                 state.tabs[id: tabID]?.isPinned = previousIsPinned
                 if let record = previousPinnedRecord {
                     state.pinnedRecords[tabID] = record
@@ -187,8 +185,7 @@ extension ContentTabFeature {
         state.previousActiveTabID = nil
         guard let tab = state.tabs[id: id], !tab.isPinned else { return .none }
 
-        state.tabs[id: id]?.isPinned = true
-        state.pinnedRecords[id] = ContentTabPinnedRecord(
+        let pinnedRecord = ContentTabPinnedRecord(
             id: id.rawValue,
             page: tab.page,
             anchor: tab.anchor,
@@ -196,20 +193,16 @@ extension ContentTabFeature {
             iconName: tab.iconName,
             pinnedAt: date(),
         )
+        state.tabs[id: id]?.isPinned = true
+        state.pinnedRecords[id] = pinnedRecord
         state.pinnedRecordPersistenceError = nil
 
-        let store = derivePinnedRecordStore(from: state)
-        let currentWindowRecordIDs = currentWindowRecordIDs(from: state)
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
         return .run { send in
             do {
                 try client.updateStore(defaults) { existingStore in
-                    mergePinnedRecordStore(
-                        existingStore,
-                        currentWindowStore: store,
-                        currentWindowRecordIDs: currentWindowRecordIDs,
-                    )
+                    upsertPinnedRecord(pinnedRecord, in: existingStore)
                 }
                 await send(.pinnedRecordSaveSucceeded)
             } catch {
@@ -228,18 +221,13 @@ extension ContentTabFeature {
         state.pinnedRecords.removeValue(forKey: id)
         state.pinnedRecordPersistenceError = nil
 
-        let store = derivePinnedRecordStore(from: state)
-        let currentWindowRecordIDs = currentWindowRecordIDs(from: state)
+        let recordID = id.rawValue
         let client = contentTabPinnedRecordClient
         let defaults = userDefaultsClient
         return .run { send in
             do {
                 try client.updateStore(defaults) { existingStore in
-                    mergePinnedRecordStore(
-                        existingStore,
-                        currentWindowStore: store,
-                        currentWindowRecordIDs: currentWindowRecordIDs,
-                    )
+                    removePinnedRecord(id: recordID, from: existingStore)
                 }
                 await send(.pinnedRecordSaveSucceeded)
             } catch {
@@ -250,20 +238,6 @@ extension ContentTabFeature {
                 ))
             }
         }
-    }
-
-    private func derivePinnedRecordStore(from state: ContentTabState) -> ContentTabPinnedRecordStore {
-        let records = state.tabs.filter(\.isPinned).map { tab -> ContentTabPinnedRecord in
-            state.pinnedRecords[tab.id] ?? ContentTabPinnedRecord(
-                id: tab.id.rawValue,
-                page: tab.page,
-                anchor: tab.anchor,
-                title: tab.title,
-                iconName: tab.iconName,
-                pinnedAt: date(),
-            )
-        }
-        return ContentTabPinnedRecordStore(records: records)
     }
 
     private func updateActivePageAnchor(id: ContentTabID, newAnchor: ContentTabPageAnchor,
@@ -325,19 +299,22 @@ extension ContentTabFeature {
     }
 }
 
-private func currentWindowRecordIDs(from state: ContentTabState) -> Set<String> {
-    Set(state.tabs.map(\.id.rawValue))
+private func upsertPinnedRecord(
+    _ record: ContentTabPinnedRecord,
+    in existingStore: ContentTabPinnedRecordStore,
+) -> ContentTabPinnedRecordStore {
+    var records = existingStore.records.filter { $0.id != record.id }
+    records.append(record)
+    return ContentTabPinnedRecordStore(schemaVersion: existingStore.schemaVersion, records: records)
 }
 
-private func mergePinnedRecordStore(
-    _ existingStore: ContentTabPinnedRecordStore,
-    currentWindowStore: ContentTabPinnedRecordStore,
-    currentWindowRecordIDs: Set<String>,
+private func removePinnedRecord(
+    id: String,
+    from existingStore: ContentTabPinnedRecordStore,
 ) -> ContentTabPinnedRecordStore {
-    let retainedRecords = existingStore.records.filter { !currentWindowRecordIDs.contains($0.id) }
-    return ContentTabPinnedRecordStore(
+    ContentTabPinnedRecordStore(
         schemaVersion: existingStore.schemaVersion,
-        records: retainedRecords + currentWindowStore.records,
+        records: existingStore.records.filter { $0.id != id },
     )
 }
 
