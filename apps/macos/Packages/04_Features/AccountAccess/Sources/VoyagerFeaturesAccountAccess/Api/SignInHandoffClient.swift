@@ -16,6 +16,8 @@ public struct SignInHandoffClient: Sendable {
 extension SignInHandoffClient: DependencyKey {
     nonisolated public static var liveValue: SignInHandoffClient {
         SignInHandoffClient {
+            @Dependency(\.appHandoffTarget) var appTarget
+
             // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
             guard let webBaseURL = ProcessInfo.processInfo.environment["PUBLIC_WEB_BASE_URL"],
                   !webBaseURL.isEmpty
@@ -31,7 +33,7 @@ extension SignInHandoffClient: DependencyKey {
                 gatewayURL: ProcessInfo.processInfo.environment["PUBLIC_GATEWAY_URL"] ?? "",
             )
 
-            guard let loginURL = builder.buildLoginURL(state: state, context: context) else {
+            guard let loginURL = builder.buildLoginURL(state: state, context: context, appTarget: appTarget) else {
                 return .failure
             }
 
