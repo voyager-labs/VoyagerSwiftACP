@@ -1,5 +1,6 @@
 // swiftlint:disable force_unwrapping
 
+import Clocks
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -10,7 +11,7 @@ import XCTest
  interaction_id: ACC-001-sign_out_account
 
  signOut은 AccountSessionClient.delete를 통해 로컬 token 파일 삭제 + best-effort 서버 무효화를 수행한다.
- Reducer에 signOut action이 없으므로, 클라이언트 레벨(FileStore) 및 상태 파생(state derivation) 테스트로 구성한다.
+  Reducer의 signOut action은 세션 삭제, 상태 초기화, in-flight/retry effect 취소, delegate(.signedOut) 전송을 수행한다.
  */
 
 @MainActor
@@ -180,7 +181,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             $0.accountSessionClient = AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: { deleteCalled = true },
+                delete: { _ in deleteCalled = true },
             )
             $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
                 load: { nil },
@@ -198,6 +199,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.snapshot = nil
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
+            state.fetchGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -226,6 +228,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.hasAccountSession = false
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
+            state.fetchGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -242,6 +245,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.hasAccountSession = false
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
+            state.fetchGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -260,7 +264,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             $0.accountSessionClient = AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: { throw TestError.deleteFailed },
+                delete: { _ in throw TestError.deleteFailed },
             )
             $0.accessStatusSnapshotClient = .testValue
             $0.authNetworkClient = .testValue
@@ -274,6 +278,7 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.snapshot = nil
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
+            state.fetchGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
@@ -294,10 +299,134 @@ final class ACC001SignOutAccountTests: XCTestCase {
             state.didSignInFail = false
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
+            state.fetchGeneration = 1
         }
 
         await store.receive(\.delegate.signedOut)
         await store.finish()
+    }
+
+    /// ACC-001-sign_out_account: signOut 후 늦게 도착한 accessStatusResponse는 폐기되고 delegate(.unlocked)를 내보내지 않는다.
+    /// - 사전 조건: fetchGeneration=5, hasAccountSession=true
+    /// - 기대 결과: signOut으로 fetchGeneration=6이 되고, generation=5 응답은 무시된다.
+    func testReducerSignOutDiscardsLateAccessStatusResponse() async {
+        let activeResponse = AccessStatusResponse(
+            status: .coreLicenseActive,
+            entitlements: [.coreLicense],
+        )
+
+        let store = makeTestStore(initialState: {
+            var state = signedInState()
+            state.fetchGeneration = 5
+            return state
+        }())
+
+        await store.send(.signOut) { state in
+            state.hasAccountSession = false
+            state.didSignInFail = false
+            state.status = nil
+            state.snapshot = nil
+            state.ttlTimerActive = false
+            state.sessionExpiresAt = nil
+            state.fetchGeneration = 6
+        }
+
+        await store.receive(\.delegate.signedOut)
+
+        await store.send(.accessStatusResponse(generation: 5, result: .success(activeResponse)))
+        await store.finish()
+    }
+
+    /// ACC-001-sign_out_account: signOut 후 예약된 retry backoff가 wake되어도 stale fetch를 시작하지 않는다.
+    /// - 사전 조건: fetchGeneration=5, retry effect 대기 중
+    /// - 기대 결과: signOut이 retry effect를 cancel하고, clock advance 후에도 fetch effect가 발생하지 않는다.
+    func testReducerSignOutCancelsRetryBackoffBeforeWake() async {
+        let clock = TestClock()
+        let store = TestStore(initialState: {
+            var state = signedInState()
+            state.fetchGeneration = 5
+            return state
+        }()) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: { _ in },
+            )
+            $0.accessStatusSnapshotClient = .testValue
+            $0.authNetworkClient = AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: {
+                    XCTFail("stale retry must not reach fetchAccessStatus")
+                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            )
+            $0.date = .constant(referenceDate)
+            $0.continuousClock = clock
+        }
+
+        await store.send(._fetchRetryScheduled(1))
+
+        await store.send(.signOut) { state in
+            state.hasAccountSession = false
+            state.didSignInFail = false
+            state.status = nil
+            state.snapshot = nil
+            state.ttlTimerActive = false
+            state.sessionExpiresAt = nil
+            state.fetchGeneration = 6
+        }
+
+        await store.receive(\.delegate.signedOut)
+
+        await clock.advance(by: .seconds(2))
+        await store.finish()
+    }
+
+    // MARK: - ACC-001-sign_out_account: session end reason contract (T2)
+
+    /// ACC-001: delete(reason:)가 .accountSessionDidEnd notification에 이유를 포함한다.
+    /// - 사전 조건: 유효한 token 파일이 저장되어 있음
+    /// - 기대 결과: notification의 userInfo에 explicitSignOut reason이 포함됨
+    func testDeleteEmitsSessionEndReasonInUserInfo() async throws {
+        let fixture = try TemporaryHomeFixture()
+        let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
+
+        let futureMs = Int64(Date().timeIntervalSince1970 * 1000) + 86_400_000
+        let tokens = AccountTokensFile(
+            updatedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+            accessToken: "access-abc",
+            accessTokenExpiresAtMs: futureMs,
+            accessTokenExpiresIn: 86_400_000,
+            refreshToken: "refresh-xyz",
+            refreshTokenExpiresAtMs: futureMs + 2_592_000_000,
+        )
+        try await store.write(tokens)
+
+        let client = AccountSessionClient.live(store: store)
+
+        let expectation = XCTestExpectation(description: "notification received")
+        nonisolated(unsafe) var capturedUserInfo: [AnyHashable: Any]?
+
+        let observer = NotificationCenter.default.addObserver(
+            forName: .accountSessionDidEnd,
+            object: nil,
+            queue: .main,
+        ) { notification in
+            capturedUserInfo = notification.userInfo
+            expectation.fulfill()
+        }
+
+        try await client.delete(.explicitSignOut)
+        await fulfillment(of: [expectation], timeout: 2.0)
+
+        NotificationCenter.default.removeObserver(observer)
+
+        XCTAssertNotNil(capturedUserInfo, "notification must include userInfo")
+        let reason = capturedUserInfo?[AccountSessionClient.sessionEndReasonUserInfoKey] as? String
+        XCTAssertEqual(reason, AccountSessionEndReason.explicitSignOut.rawValue)
     }
 }
 

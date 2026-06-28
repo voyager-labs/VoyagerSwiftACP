@@ -208,7 +208,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { ticket, state, context in
@@ -271,7 +271,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
@@ -326,7 +326,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in

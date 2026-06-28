@@ -44,6 +44,8 @@ private struct SessionLapseGuardObservedState: Equatable {
 /// - 단일 borderless NSPanel (SessionLapseGuardWindowClient)로 표시
 /// - AppLifecycleFeature의 `ifLet(\.sessionLapseGuard)` child scope와 연결
 /// - `accountSessionDidEnd` notification 수신 → sessionLapseGuard 표시
+///   (명시적 로그아웃의 `signOut`과 세션 만료 양쪽이 모두 동일한 notification을 post하므로
+///   두 원인은 같은 경로로 guard에 도달한다. 이는 PRESERVED 동작이다.)
 /// - ONB window 활성 시 AppLifecycleFeature에서 skip (ACC-003 skip_onboarding_window)
 ///
 /// ## Contract

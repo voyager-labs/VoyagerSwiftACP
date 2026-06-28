@@ -190,7 +190,7 @@ public enum SettingsHostSandbox {
             persist: { _ in
                 await maybeDelay(failureLatency)
             },
-            delete: {
+            delete: { _ in
                 await maybeDelay(failureLatency)
             },
         )

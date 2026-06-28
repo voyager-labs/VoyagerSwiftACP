@@ -1155,7 +1155,7 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
             $0.accountSessionClient = AccountSessionClient(
                 read: { AccountSession(accessToken: "test-token", status: .coreLicenseActive) },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             )
             $0.authNetworkClient = AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },

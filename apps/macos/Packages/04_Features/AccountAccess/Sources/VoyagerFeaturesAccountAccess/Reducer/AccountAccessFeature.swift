@@ -22,6 +22,9 @@ public struct AccountAccessFeature {
     @Dependency(\.date)
     var date
 
+    @Dependency(\.continuousClock)
+    var continuousClock
+
     @Dependency(\.checkoutURLClient)
     var checkoutURLClient
 
@@ -33,6 +36,7 @@ public struct AccountAccessFeature {
 
     private enum CancelID {
         static let fetchStatus = "accountAccessFetchStatus"
+        static let fetchRetry = "accountAccessFetchRetry"
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
         static let signInHandoff = "accountAccessSignInHandoff"
         static let ttlTimer = "accountAccessTtlTimer"
@@ -475,12 +479,28 @@ private extension AccountAccessFeature {
 
     private func handleFetchRetryScheduled(_ state: inout State, retryStep: Int) -> Effect<Action> {
         // fetchRetryCount는 handleAccessStatusResponse에서 이미 증가함
-        let delay = Double(1 << retryStep) // 1s, 2s, 4s
+        let delay = Duration.seconds(1 << retryStep) // 1s, 2s, 4s
         let generation = state.fetchGeneration
-        return .run { _ in
-            try? await Task.sleep(for: .seconds(delay))
+        return .run { [continuousClock, authNetwork] send in
+            do {
+                try await continuousClock.sleep(for: delay)
+
+                let result: Result<AccessStatusResponse, AccessError>
+                do {
+                    let response = try await authNetwork.fetchAccessStatus()
+                    result = .success(response)
+                } catch let error as AccessError {
+                    result = .failure(error)
+                } catch {
+                    result = .failure(.networkFailure)
+                }
+
+                await send(.accessStatusResponse(generation: generation, result: result))
+            } catch {
+                // retry effect cancelled
+            }
         }
-        .concatenate(with: fetchAccessStatusEffect(generation: generation))
+        .cancellable(id: CancelID.fetchRetry, cancelInFlight: true)
     }
 
     /// 캐시된 snapshot의 최대 허용 보관 기간.
@@ -612,13 +632,16 @@ private extension AccountAccessFeature {
         state.snapshot = nil
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
+        state.fetchGeneration += 1
         return .merge(
             .run { [sessionClient, snapshotClient] send in
-                try? await sessionClient.delete()
+                try? await sessionClient.delete(.explicitSignOut)
                 await snapshotClient.remove()
                 await send(.delegate(.signedOut))
             },
             .cancel(id: CancelID.ttlTimer),
+            .cancel(id: CancelID.fetchStatus),
+            .cancel(id: CancelID.fetchRetry),
         )
     }
 

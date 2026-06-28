@@ -261,10 +261,15 @@ struct AppLifecycleFeature {
                     },
                 )
 
-            case .sessionExpiredDetected:
+            case let .sessionExpiredDetected(reason):
+                // accountSessionDidEnd notification 수신. 명시적 로그아웃(signOut → AccountSessionClient.delete)
+                // 와 세션 만료(refresh/decoding 실패) 양쪽이 모두 이 notification을 post하므로
+                // 두 원인이 같은 경로로 전달된다. T5에서 reason 구분이 추가되었으며,
+                // 두 경우 모두 동일하게 guard를 표시한다 (PRESERVED 동작).
                 guard state.sessionLapseGuard == nil else { return .none }
-                // ACC-003: 온보딩 윈도우가 활성 상태이면 세션 만료 보호를 스킵한다
+                // ACC-003: 온보딩 윈도우가 활성 상태이면 세션 만료/로그아웃 보호를 스킵한다
                 guard !onboardingWindowClient.isRequired() else { return .none }
+                state.sessionEndReason = reason
                 state.sessionLapseGuard = AccountAccessFeature.State()
                 return .merge(
                     .send(.sessionLapseGuard(.onAppear)),
@@ -380,15 +385,20 @@ private func isRunningXCTest() -> Bool {
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }
 
+/// accountSessionDidEnd notification을 관찰한다. 이 notification은 명시적 로그아웃과
+/// 세션 만료 양쪽에서 post되므로, effect 이름(sessionExpiration)과 무관하게 두 경우를 모두 수신한다.
+/// notification userInfo에서 AccountSessionEndReason을 추출하여 action에 전달한다.
 private func observeSessionExpirationEffect(
     notificationCenterClient: NotificationCenterClient,
 ) -> Effect<AppLifecycleAction> {
     .run { send in
-        for await _ in notificationCenterClient.notifications(
+        for await notification in notificationCenterClient.notifications(
             .accountSessionDidEnd,
             nil,
         ) {
-            await send(.sessionExpiredDetected)
+            let reasonRaw = notification.userInfo?[AccountSessionClient.sessionEndReasonUserInfoKey] as? String
+            let reason = reasonRaw.flatMap(AccountSessionEndReason.init(rawValue:))
+            await send(.sessionExpiredDetected(reason: reason))
         }
     }
     .cancellable(id: "sessionExpirationObserver", cancelInFlight: true)

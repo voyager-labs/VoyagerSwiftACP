@@ -10,4 +10,5 @@ struct AppLifecycleState: Equatable {
     var lastAccessStatus: AccessStatus?
     var accountAccessGateResolved = false
     var sessionLapseGuard: AccountAccessFeature.State?
+    var sessionEndReason: AccountSessionEndReason?
 }

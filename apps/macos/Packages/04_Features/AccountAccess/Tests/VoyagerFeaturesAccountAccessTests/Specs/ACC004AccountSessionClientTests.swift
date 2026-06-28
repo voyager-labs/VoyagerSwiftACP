@@ -127,7 +127,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         var file = try await store.read()
         XCTAssertNotNil(file)
 
-        try await client.delete()
+        try await client.delete(.explicitSignOut)
 
         file = try await store.read()
         XCTAssertNil(file)
@@ -143,7 +143,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         let store = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
         let client = AccountSessionClient.live(store: store)
 
-        try await client.delete()
+        try await client.delete(.explicitSignOut)
     }
 
     /// ACC-004-account_session_client: testValue가 안전한 기본값(read=nil, persist=no-op, delete=no-op)을 제공한다.
@@ -160,7 +160,7 @@ final class ACC004AccountSessionClientTests: XCTestCase {
         let anySession = AccountSession(accessToken: "any-token", status: .none)
         try await client.persist(anySession)
 
-        try await client.delete()
+        try await client.delete(.explicitSignOut)
     }
 }
 

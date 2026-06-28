@@ -6,12 +6,15 @@ import Foundation
 public struct AccountSessionClient: Sendable {
     public var read: @Sendable () async throws -> AccountSession?
     public var persist: @Sendable (_ session: AccountSession) async throws -> Void
-    public var delete: @Sendable () async throws -> Void
+    public var delete: @Sendable (_ reason: AccountSessionEndReason) async throws -> Void
+
+    /// .accountSessionDidEnd notification userInfo key for the end reason.
+    public static let sessionEndReasonUserInfoKey = "accountSessionEndReason"
 
     nonisolated public init(
         read: @escaping @Sendable () async throws -> AccountSession?,
         persist: @escaping @Sendable (AccountSession) async throws -> Void,
-        delete: @escaping @Sendable () async throws -> Void,
+        delete: @escaping @Sendable (_ reason: AccountSessionEndReason) async throws -> Void,
     ) {
         self.read = read
         self.persist = persist
@@ -43,9 +46,15 @@ extension AccountSessionClient {
                 }
                 try await store.write(tokensFile)
             },
-            delete: {
+            delete: { reason in
                 try await store.delete()
-                NotificationCenter.default.post(name: .accountSessionDidEnd, object: nil)
+                NotificationCenter.default.post(
+                    name: .accountSessionDidEnd,
+                    object: nil,
+                    userInfo: [
+                        AccountSessionClient.sessionEndReasonUserInfoKey: reason.rawValue,
+                    ],
+                )
             },
         )
     }
@@ -62,7 +71,7 @@ extension AccountSessionClient: DependencyKey {
         AccountSessionClient(
             read: { nil },
             persist: { _ in },
-            delete: {},
+            delete: { _ in },
         )
     }
 

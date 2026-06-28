@@ -1,5 +1,6 @@
 // swiftlint:disable force_unwrapping
 
+import Clocks
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -28,7 +29,8 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         checkoutURLClient: CheckoutURLClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
-        TestStore(initialState: initialState) {
+        let clock = TestClock()
+        return TestStore(initialState: initialState) {
             AccountAccessFeature()
         } withDependencies: {
             $0.accountSessionClient = accountSessionClient
@@ -36,6 +38,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             $0.accessStatusSnapshotClient = snapshotClient
             $0.checkoutURLClient = checkoutURLClient
             $0.date = .constant(referenceDate)
+            $0.continuousClock = clock
         }
     }
 
@@ -54,7 +57,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                     AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
                 },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -547,7 +550,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
                     AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
                 },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },

@@ -8,7 +8,7 @@ enum AppLifecycleAction: CasePathable {
     case termination(Termination)
     case accountAccessGate(AccountAccessGate)
     case sessionLapseGuard(AccountAccessAction)
-    case sessionExpiredDetected
+    case sessionExpiredDetected(reason: AccountSessionEndReason?)
     case delegate(Delegate)
 
     @CasePathable

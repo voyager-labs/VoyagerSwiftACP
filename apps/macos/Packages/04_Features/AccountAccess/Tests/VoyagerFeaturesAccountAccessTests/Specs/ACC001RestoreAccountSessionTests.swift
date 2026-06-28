@@ -46,7 +46,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                     AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
                 },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -137,7 +137,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -187,7 +187,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },

@@ -127,7 +127,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             AccountSettingsFeature()
         } withDependencies: {
-            $0.accountSessionClient.delete = {}
+            $0.accountSessionClient.delete = { _ in }
             $0.accessStatusSnapshotClient.remove = {}
         }
 
@@ -159,7 +159,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         let store = TestStore(initialState: initialState) {
             AccountSettingsFeature()
         } withDependencies: {
-            $0.accountSessionClient.delete = {}
+            $0.accountSessionClient.delete = { _ in }
             $0.accessStatusSnapshotClient.remove = {}
         }
 
