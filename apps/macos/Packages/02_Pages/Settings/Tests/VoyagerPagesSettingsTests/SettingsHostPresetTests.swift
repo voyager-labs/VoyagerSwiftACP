@@ -39,6 +39,21 @@ final class SettingsHostPresetTests: XCTestCase {
         }
     }
 
+    func testSignedOutAndAuthExpiredRemainSemanticallyDistinct() {
+        let signedOut = SettingsHostPreset.allCases.first { $0.scenario.accountAuth == .signedOut }
+        let authExpired = SettingsHostPreset.allCases.first { $0.scenario.accountAuth == .authExpired }
+
+        XCTAssertNotNil(signedOut)
+        XCTAssertNotNil(authExpired)
+
+        if let signedOut, let authExpired {
+            XCTAssertFalse(signedOut.scenario.accountLoaded)
+            XCTAssertFalse(signedOut.scenario.sessionLapse)
+            XCTAssertFalse(authExpired.scenario.accountLoaded)
+            XCTAssertTrue(authExpired.scenario.sessionLapse)
+        }
+    }
+
     func testParseFallsBackToDefaultSandboxForInvalidValue() {
         XCTAssertEqual(SettingsHostPreset.parse("notARealPreset"), .defaultSandbox)
     }
