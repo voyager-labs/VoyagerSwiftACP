@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
@@ -56,6 +57,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
         } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
             $0.uuid = .incrementing
@@ -77,6 +79,8 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
         }
         store.exhaustivity = .off
 
@@ -167,6 +171,7 @@ final class AppRootFeatureContractTests: XCTestCase {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
         }
+        store.exhaustivity = .off
 
         await store.send(.settings(.general(.toggleAutomaticUpdate(true))))
         await store.receive { action in
@@ -187,19 +192,23 @@ final class AppRootFeatureContractTests: XCTestCase {
 
     // MARK: - FMW-003: Cold Start URL Buffering
 
-    /// Cold state(창 없음)에서 receiveExternalURL 수신 시 pendingExternalURL에 저장됨을 검증
-    func testReceiveExternalURLBuffersWhenNoWindows() async throws {
-        let url = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test"))
+    /// Cold state(창 없음)에서 receiveExternalURL 수신 시 pendingExternalURLs에 순서대로 저장됨을 검증
+    func testReceiveExternalURLBuffersAllWhenNoWindows() async throws {
+        let url1 = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-1"))
+        let url2 = try XCTUnwrap(URL(string: "voyager://open?url=file:///Users/test-2"))
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
         }
 
-        await store.send(.receiveExternalURL(url)) {
-            $0.pendingExternalURL = url
+        await store.send(.receiveExternalURL(url1)) {
+            $0.pendingExternalURLs = [url1]
+        }
+        await store.send(.receiveExternalURL(url2)) {
+            $0.pendingExternalURLs = [url1, url2]
         }
     }
 
-    /// Hot state(창 있음)에서 receiveExternalURL 수신 시 pendingExternalURL이 nil로 유지됨을 검증
+    /// Hot state(창 있음)에서 receiveExternalURL 수신 시 pendingExternalURLs가 비어 있음을 검증
     /// authCallback URL을 사용하여 ExternalFileRouter의 pathProbe 효과 없이 전달 여부만 검증
     func testReceiveExternalURLForwardsWhenWindowsExist() async throws {
         let windowID = UUID()
@@ -216,7 +225,57 @@ final class AppRootFeatureContractTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.receiveExternalURL(url))
-        XCTAssertNil(store.state.pendingExternalURL)
+        XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
+    }
+
+    /// Cold → flush: 창 없는 상태에서 2개 Deep Link를 적재한 뒤 첫 창을 열면 두 URL이 모두
+    /// receive로 flush되고(적재 순서 보존) pending 큐는 비어야 함을 검증.
+    func testReceiveExternalURLFlushesAllOnFirstWindow() async throws {
+        let url1 = try XCTUnwrap(URL(string: "voyager://open?url=file:///tmp/voyager-flush-1"))
+        let url2 = try XCTUnwrap(URL(string: "voyager://open?url=file:///tmp/voyager-flush-2"))
+        let windowID = UUID()
+
+        var initialState = AppRootFeature.State()
+        // helper bridge .run(observeChangedPaths)이 호출되지 않도록 사전에 started 상태로 설정
+        initialState.isHelperExternalFileBridgeStarted = true
+
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.receiveExternalURL(url1))
+        await store.send(.receiveExternalURL(url2))
+        XCTAssertEqual(store.state.pendingExternalURLs, [url1, url2])
+
+        await store.send(.windowManager(.file(.newWindow(path: nil))))
+
+        await store.receive { action in
+            if case .startHelperExternalFileBridge = action { return true }
+            return false
+        }
+        await store.receive { action in
+            if case .flushPendingReplay = action { return true }
+            return false
+        }
+        await store.receive { action in
+            guard case let .externalFileRouter(.receive(url)) = action else { return false }
+            return url == url1
+        }
+        await store.receive { action in
+            guard case let .externalFileRouter(.receive(url)) = action else { return false }
+            return url == url2
+        }
+
+        XCTAssertTrue(store.state.pendingExternalURLs.isEmpty, "flush 후 pending Deep Link 큐는 비어야 한다")
     }
 
     // MARK: - FMW-003: receiveExternalFileURL Hot/Cold/Flush
@@ -283,6 +342,7 @@ final class AppRootFeatureContractTests: XCTestCase {
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
             $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             // flush된 receiveFileURL 각각이 pathProbe를 호출하므로 stub 필요
             $0.pathProbeClient.probeExistence = { _ in
                 PathProbeResult(exists: false, isDirectory: false)
@@ -324,6 +384,28 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
 
         XCTAssertTrue(store.state.pendingExternalFileRoutes.isEmpty, "flush 후 pending 큐는 비어야 한다")
+    }
+
+    func testExternalFileRouterPermissionDeniedDelegateShowsAlert() async {
+        let path = "/Users/test/protected"
+        let capturedAlert = LockIsolated<(title: String, message: String)?>(nil)
+
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                capturedAlert.withValue { $0 = (title: title, message: message) }
+            }
+        }
+
+        await store.send(.externalFileRouter(.delegate(.showPermissionDeniedError(path: path))))
+        await store.finish()
+
+        XCTAssertEqual(capturedAlert.value?.title, "Voyager에서 위치를 열 수 없습니다")
+        XCTAssertEqual(
+            capturedAlert.value?.message,
+            "접근 권한이 없어 \(path)를 열 수 없습니다. macOS 시스템 설정에서 Voyager의 파일 및 폴더 접근 권한을 확인해 주세요.",
+        )
     }
 
     /// Proves AppRoot's Settings forwarding does NOT route through MenuCommands.

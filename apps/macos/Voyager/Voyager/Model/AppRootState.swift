@@ -17,8 +17,8 @@ struct AppRootState: Equatable {
     var isHelperExternalFileBridgeStarted = false
     var lastHelperReady = false
     var windowPresenceBeforeWindowManagerAction: Bool?
-    /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 URL (Deep Link)
-    var pendingExternalURL: URL?
+    /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 URL (Deep Link) 큐
+    var pendingExternalURLs: [URL] = []
     /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 file:// URL 큐
     struct PendingExternalFileRoute: Equatable {
         var url: URL

@@ -25,6 +25,8 @@ struct AppRootFeature {
     private var helperStateClient
     @Dependency(\.collectionStalenessClient)
     private var collectionStalenessClient
+    @Dependency(\.collectionAlertClient)
+    private var collectionAlertClient
     @Dependency(\.onboardingWindowClient)
     private var onboardingWindowClient
     @Dependency(\.userDefaultsClient)
@@ -310,31 +312,45 @@ struct AppRootFeature {
         case let .settings(.general(.toggleAutomaticUpdate(enabled))):
             return .send(.updater(.setAutomaticUpdate(enabled)))
 
-            // MARK: - ExternalFileRouter Delegate
-
-        case let .externalFileRouter(.delegate(.openFolder(path))):
-            // ExternalFileRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
-            return .send(.windowManager(.file(.newWindow(path: path))))
-
-        case let .externalFileRouter(.delegate(.openParentFolder(path, selectEntryPath))):
-            // ExternalFileRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
-            return .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
-
-        case .externalFileRouter(.delegate(.routeToAuthCallback)):
-            // ACC-001 소유의 OAuth callback — FMW-003가 가로채지 않음
-            // TODO: ACC 핸드오프 seam 확인 후 실제 전달 로직 추가
-            return .none
-
-        case let .externalFileRouter(.delegate(.showInvalidPathError)):
-            // TODO: 실제 앱 notification/alert 패턴에 맞게 사용자 오류 표시 연결
-            return .none
-
-        case let .externalFileRouter(.delegate(.showPermissionDeniedError)):
-            // TODO: TCC 권한 요청 flow 또는 안내 alert 연결
-            return .none
+        case let .externalFileRouter(.delegate(delegateAction)):
+            return reduceExternalFileRouterDelegate(delegateAction)
 
         default:
             return .none
+        }
+    }
+
+    private func reduceExternalFileRouterDelegate(
+        _ action: ExternalFileRouterAction.Delegate,
+    ) -> Effect<Action> {
+        switch action {
+        case let .openFolder(path):
+            // ExternalFileRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
+            .send(.windowManager(.file(.newWindow(path: path))))
+
+        case let .openParentFolder(path, selectEntryPath):
+            // ExternalFileRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
+            .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
+
+        case .routeToAuthCallback:
+            // ACC-001 소유의 OAuth callback — FMW-003가 가로채지 않음
+            // TODO: ACC 핸드오프 seam 확인 후 실제 전달 로직 추가
+            .none
+
+        case .showInvalidPathError:
+            showExternalFileOpenError(
+                title: "Voyager에서 위치를 열 수 없습니다",
+                message: "선택한 위치를 찾을 수 없습니다. 경로를 확인한 뒤 다시 시도해 주세요.",
+            )
+
+        case let .showPermissionDeniedError(path):
+            showExternalFileOpenError(
+                title: "Voyager에서 위치를 열 수 없습니다",
+                message: "접근 권한이 없어 \(path)를 열 수 없습니다. macOS 시스템 설정에서 Voyager의 파일 및 폴더 접근 권한을 확인해 주세요.",
+            )
+
+        case .selectEntryCompleted:
+            .none
         }
     }
 
@@ -346,7 +362,7 @@ struct AppRootFeature {
         case let .receiveExternalURL(url):
             // 창이 없으면 버퍼링, 창이 열리면 ExternalFileRouter로 URL 전달
             guard !state.windowManager.windows.isEmpty else {
-                state.pendingExternalURL = url
+                state.pendingExternalURLs.append(url)
                 return .none
             }
             // 창이 열려 있는 상태에서 ExternalFileRouter로 URL 전달
@@ -374,12 +390,15 @@ struct AppRootFeature {
         }
     }
 
-    /// didOpenFirstWindow 분기에서 버퍼링된 외부 URL을 소비하고 nil로 리셋
+    /// didOpenFirstWindow 분기에서 버퍼링된 외부 URL 큐를 소비하고 리셋
     private func flushPendingExternalURL(state: inout State) -> Effect<Action> {
-        guard let url = state.pendingExternalURL else { return .none }
-        state.pendingExternalURL = nil
-        // 버퍼링된 URL을 ExternalFileRouter로 전달
-        return .send(.externalFileRouter(.receive(url)))
+        let urls = state.pendingExternalURLs
+        guard !urls.isEmpty else { return .none }
+        state.pendingExternalURLs = []
+        // 버퍼링된 URL을 적재 순서대로 ExternalFileRouter에 전달
+        return .concatenate(urls.map { url in
+            .send(.externalFileRouter(.receive(url)))
+        })
     }
 
     /// Cold state에서 버퍼링된 file:// URL 큐를 flush
@@ -387,7 +406,7 @@ struct AppRootFeature {
         let routes = state.pendingExternalFileRoutes
         guard !routes.isEmpty else { return .none }
         state.pendingExternalFileRoutes = []
-        return .merge(routes.map { route in
+        return .concatenate(routes.map { route in
             .send(.externalFileRouter(.receiveFileURL(route.url, source: route.source, mode: route.mode)))
         })
     }
@@ -409,6 +428,12 @@ struct AppRootFeature {
             didOpenFirstWindow ? flushPendingExternalURL(state: &state) : .none,
             didOpenFirstWindow ? flushPendingExternalFileRoutes(state: &state) : .none,
         )
+    }
+
+    private func showExternalFileOpenError(title: String, message: String) -> Effect<Action> {
+        .run { [collectionAlertClient] _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(title, message)
+        }
     }
 }
 
