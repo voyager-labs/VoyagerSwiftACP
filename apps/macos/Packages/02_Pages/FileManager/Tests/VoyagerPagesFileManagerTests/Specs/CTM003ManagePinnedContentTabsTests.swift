@@ -598,6 +598,25 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         ])
     }
 
+    /// CTM-003-unpin_content_tab_s: 같은 tab의 이전 persistence intent는 최신 intent가 거부
+    /// 빠른 Pin→Unpin에서 오래된 pin intent가 늦게 저장되어 restart restore 후보를 남기는 회귀를 방지한다.
+    /// - 검증 내용: 같은 tab의 이전 intent token은 최신 token 발급 후 CancellationError
+    /// - 사전 조건: 동일 ContentTabID에 연속 persistence intent 발급
+    /// - 기대 결과: 오래된 intent는 거부되고 최신 intent만 통과
+    func testPinThenUnpin_rejectsOlderPinPersistenceIntentForSameTab() throws {
+        let tabID = ContentTabID()
+        let olderIntent = PinnedRecordPersistenceIntent.markLatest(tabID: tabID)
+        let latestIntent = PinnedRecordPersistenceIntent.markLatest(tabID: tabID)
+
+        XCTAssertThrowsError(try PinnedRecordPersistenceIntent.checkCurrent(
+            tabID: tabID,
+            intentID: olderIntent,
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertNoThrow(try PinnedRecordPersistenceIntent.checkCurrent(tabID: tabID, intentID: latestIntent))
+    }
+
     /// CTM-003-pin_content_tab_s: 다른 window의 persisted pinned record를 보존하며 현재 window pin 저장
     /// app-global pinned store 저장 시 현재 window tab 범위만 교체하고 다른 window record를 유지함을 검증한다.
     /// - 검증 내용: 기존 store에 다른 window record가 있을 때 pin 저장 결과가 other + current record로 merge

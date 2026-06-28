@@ -7,7 +7,7 @@ public struct ContentTabPinnedRecordClient: Sendable {
     public var saveStore: @Sendable (ContentTabPinnedRecordStore, UserDefaultsClient) throws -> Void
     public var updateStore: @Sendable (
         UserDefaultsClient,
-        @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
+        @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
     ) throws -> Void
 
     nonisolated public init(
@@ -15,7 +15,7 @@ public struct ContentTabPinnedRecordClient: Sendable {
         saveStore: @escaping @Sendable (ContentTabPinnedRecordStore, UserDefaultsClient) throws -> Void,
         updateStore: (@Sendable (
             UserDefaultsClient,
-            @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
+            @escaping @Sendable (ContentTabPinnedRecordStore) throws -> ContentTabPinnedRecordStore,
         ) throws -> Void)? = nil,
     ) {
         self.loadStore = loadStore
@@ -41,8 +41,11 @@ extension ContentTabPinnedRecordClient: DependencyKey {
             updateStore: { userDefaultsClient, transform in
                 Self.storageLock.lock()
                 defer { Self.storageLock.unlock() }
+                try Task.checkCancellation()
                 let store = try Self.loadStoreValue(userDefaultsClient)
+                try Task.checkCancellation()
                 let updatedStore = try transform(store)
+                try Task.checkCancellation()
                 let data = try JSONEncoder().encode(updatedStore)
                 userDefaultsClient.setObject(data, Self.storageKey)
             },
