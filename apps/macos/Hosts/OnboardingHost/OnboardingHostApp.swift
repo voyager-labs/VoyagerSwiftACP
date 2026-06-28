@@ -199,7 +199,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
-        guard url.scheme == "voyager",
+        guard url.scheme == "voyager-onboarding-host",
               url.host == "auth",
               url.path == "/callback"
         else {
@@ -272,7 +272,7 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 status: .coreLicenseActive,
             )
             sessionHolder.setSession(mockSession)
-            guard let callbackURL = URL(string: "voyager://auth/callback") else {
+            guard let callbackURL = URL(string: "voyager-onboarding-host://auth/callback") else {
                 return .failure
             }
             return .success(callbackURL: callbackURL)

@@ -25,7 +25,7 @@
 			<string>fm.voyager.onboarding-host</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>voyager</string>
+				<string>voyager-onboarding-host</string>
 			</array>
 		</dict>
 	</array>
