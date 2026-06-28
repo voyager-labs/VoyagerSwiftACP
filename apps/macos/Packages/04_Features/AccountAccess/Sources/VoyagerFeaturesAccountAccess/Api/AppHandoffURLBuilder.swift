@@ -11,7 +11,8 @@ struct AppHandoffURLBuilder {
         self.gatewayURL = gatewayURL
     }
 
-    /// `{webBaseURL}/auth/login?mode=app&state={state}&context={context.rawValue}&app_target={appTarget.rawValue}` 형식의 로그인 URL을 생성한다.
+    /// `{webBaseURL}/auth/login?mode=app&state={state}&context={context.rawValue}&app_target={appTarget.rawValue}` 형식의
+    /// 로그인 URL을 생성한다.
     /// webBaseURL이 유효하지 않으면 nil을 반환한다.
     func buildLoginURL(state: String, context: AppHandoffContext, appTarget: AppHandoffTarget = .voyager) -> URL? {
         guard let base = URL(string: webBaseURL) else { return nil }

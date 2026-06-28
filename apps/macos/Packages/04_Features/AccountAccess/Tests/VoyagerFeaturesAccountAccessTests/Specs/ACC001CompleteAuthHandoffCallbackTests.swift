@@ -361,8 +361,11 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     }
 
     /// voyager-onboarding-host:// scheme 콜백이 올바르게 파싱되는지 검증한다.
-    func testOnboardingHostSchemeParsesSuccessfully() {
-        let url = URL(string: "voyager-onboarding-host://auth/callback?ticket=abc&state=xyz&context=onboarding")!
+    func testOnboardingHostSchemeParsesSuccessfully() throws {
+        let url =
+            try XCTUnwrap(
+                URL(string: "voyager-onboarding-host://auth/callback?ticket=abc&state=xyz&context=onboarding"),
+            )
         let callback = AppHandoffCallback(url: url, expectedScheme: "voyager-onboarding-host")
         XCTAssertEqual(callback?.ticket, "abc")
         XCTAssertEqual(callback?.state, "xyz")
@@ -370,19 +373,22 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     }
 
     /// voyager:// URL이 voyager-onboarding-host expectedScheme에서 거부되는지 검증한다.
-    func testCrossSchemeVoyagerUrlRejectedByOnboardingHostScheme() {
-        let url = URL(string: "voyager://auth/callback?ticket=abc&state=xyz&context=onboarding")!
+    func testCrossSchemeVoyagerUrlRejectedByOnboardingHostScheme() throws {
+        let url = try XCTUnwrap(URL(string: "voyager://auth/callback?ticket=abc&state=xyz&context=onboarding"))
         XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager-onboarding-host"))
     }
 
     /// voyager-onboarding-host:// URL이 voyager expectedScheme에서 거부되는지 검증한다.
-    func testCrossSchemeOnboardingHostUrlRejectedByVoyagerScheme() {
-        let url = URL(string: "voyager-onboarding-host://auth/callback?ticket=abc&state=xyz&context=onboarding")!
+    func testCrossSchemeOnboardingHostUrlRejectedByVoyagerScheme() throws {
+        let url =
+            try XCTUnwrap(
+                URL(string: "voyager-onboarding-host://auth/callback?ticket=abc&state=xyz&context=onboarding"),
+            )
         XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// onboardingHost target 환경에서 voyager-onboarding-host:// callback이 정상 처리되는지 검증한다.
-    func testOnboardingHostTargetAcceptsOnboardingHostCallback() async {
+    func testOnboardingHostTargetAcceptsOnboardingHostCallback() async throws {
         nonisolated(unsafe) var exchangeCalled = false
         let store = makeTestStore(
             accountSessionClient: AccountSessionClient(
@@ -396,7 +402,13 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "obh-token", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(hasAccess: true, status: "active", reason: "active_entitlement", productKey: "core", source: "polar")
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),
@@ -404,7 +416,10 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             appHandoffTarget: .onboardingHost,
         )
 
-        let obhURL = URL(string: "voyager-onboarding-host://auth/callback?ticket=abc123&state=xyz789&context=onboarding")!
+        let obhURL =
+            try XCTUnwrap(
+                URL(string: "voyager-onboarding-host://auth/callback?ticket=abc123&state=xyz789&context=onboarding"),
+            )
 
         await store.send(.loginCallbackReceived(obhURL)) { state in
             state.handoffPendingState = nil
@@ -440,7 +455,13 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     return AccountSession(accessToken: "should-not-reach", status: .coreLicenseActive)
                 },
                 fetchAccessStatus: {
-                    AccessStatusResponse(hasAccess: true, status: "active", reason: "active_entitlement", productKey: "core", source: "polar")
+                    AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             ),

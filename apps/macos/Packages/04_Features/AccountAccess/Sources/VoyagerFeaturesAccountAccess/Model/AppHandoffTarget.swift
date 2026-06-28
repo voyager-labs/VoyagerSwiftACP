@@ -7,6 +7,19 @@ public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
     case voyager
     case onboardingHost
 
+    nonisolated public static var liveValue: AppHandoffTarget {
+        let bundleId = Bundle.main.bundleIdentifier ?? ""
+        return bundleId.contains("OnboardingHost") ? .onboardingHost : .voyager
+    }
+
+    nonisolated public static var testValue: AppHandoffTarget {
+        .voyager
+    }
+
+    nonisolated public static var previewValue: AppHandoffTarget {
+        .voyager
+    }
+
     /// docs 계약의 app_target query 값.
     public var rawValue: String {
         switch self {
@@ -22,15 +35,6 @@ public enum AppHandoffTarget: Sendable, Equatable, DependencyKey {
         case .onboardingHost: "voyager-onboarding-host"
         }
     }
-
-    nonisolated public static var liveValue: AppHandoffTarget {
-        let bundleId = Bundle.main.bundleIdentifier ?? ""
-        return bundleId.contains("OnboardingHost") ? .onboardingHost : .voyager
-    }
-
-    nonisolated public static var testValue: AppHandoffTarget { .voyager }
-
-    nonisolated public static var previewValue: AppHandoffTarget { .voyager }
 }
 
 public extension DependencyValues {
