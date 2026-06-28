@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
@@ -30,6 +31,32 @@ private final class PinnedRecordStoreRecorder: @unchecked Sendable {
 
 @MainActor
 final class CTM003ManagePinnedContentTabsTests: XCTestCase {
+    private func temporaryCollectionWindowState(tabID: ContentTabID) -> FileManagerFeature.State {
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .directory(path: "/Users/test/Previous"),
+                isPinned: false,
+                title: "Temporary Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.navigation.navigationState = .collection(.init(
+            kind: .temporary,
+            context: .init(),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+        state.syncActiveTabContentState()
+        return state
+    }
+
     private static let pinnedAt = Date(timeIntervalSince1970: 443)
 
     private static func pinnedRecord(
@@ -774,6 +801,46 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.syncContentTabSidebarItems()
         }
         await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
+        await store.finish()
+    }
+
+    /// CTM-003-pin_content_tab_s: 임시 collection 화면에서는 Cmd+P pin 요청이 무시됨
+    /// 저장 가능한 collectionFile anchor가 확정되기 전 이전 tab anchor를 pinned record로 영구화하지 않는지 검증한다.
+    /// - 검증 내용: temporary collection active 상태에서 toggle pin command no-op
+    /// - 사전 조건: active Collection tab의 현재 navigation이 temporary collection 상태
+    /// - 기대 결과: tab isPinned=false 유지, pinnedRecords 미생성
+    func testToggleActiveContentTabPinCommand_ignoresTemporaryCollection() async {
+        let tabID = ContentTabID()
+        var state = temporaryCollectionWindowState(tabID: tabID)
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        XCTAssertNil(store.state.contentTabs.pinnedRecords[tabID])
+        await store.finish()
+    }
+
+    /// CTM-003-pin_content_tab_s: 임시 collection 화면에서는 Sidebar Pin 요청이 무시됨
+    /// Sidebar context menu 경로도 저장 가능한 collectionFile anchor 확정 전에는 pin을 생성하지 않음을 검증한다.
+    /// - 검증 내용: temporary collection active 상태에서 Sidebar pin delegate no-op
+    /// - 사전 조건: active Collection tab의 현재 navigation이 temporary collection 상태
+    /// - 기대 결과: tab isPinned=false 유지, pinnedRecords 미생성
+    func testSidebarPinContentTab_ignoresTemporaryCollection() async {
+        let tabID = ContentTabID()
+        var state = temporaryCollectionWindowState(tabID: tabID)
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(.sidebar(.delegate(.pinContentTab(tabID))))
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        XCTAssertNil(store.state.contentTabs.pinnedRecords[tabID])
         await store.finish()
     }
 

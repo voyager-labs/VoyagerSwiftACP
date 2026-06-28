@@ -25,7 +25,9 @@ struct FileManagerWindowRoutingReducer {
                 return .send(.closeContentTabRequested(tabID))
 
             case let .sidebar(.delegate(.pinContentTab(tabID))):
-                guard state.pendingContentTabClose == nil else { return .none }
+                guard state.pendingContentTabClose == nil,
+                      state.canPinContentTab(tabID)
+                else { return .none }
                 return .send(.contentTabs(.pin(tabID)))
 
             case let .sidebar(.delegate(.unpinContentTab(tabID))):

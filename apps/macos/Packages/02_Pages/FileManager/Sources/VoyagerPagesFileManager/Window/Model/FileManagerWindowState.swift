@@ -158,6 +158,18 @@ extension FileManagerWindowState {
     mutating func syncContentTabSidebarItems() {
         sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
     }
+
+    func canPinContentTab(_ tabID: ContentTabID) -> Bool {
+        guard contentTabs.tabs[id: tabID]?.page == .collection else { return true }
+        let contentState = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
+        guard let contentState else { return true }
+        if case let .collection(navigation) = contentState.navigation.navigationState,
+           case .temporary = navigation.kind
+        {
+            return false
+        }
+        return !contentState.isCollectionMode || contentState.openedCollectionURLExists
+    }
 }
 
 extension FileManagerContentFeature.State {
