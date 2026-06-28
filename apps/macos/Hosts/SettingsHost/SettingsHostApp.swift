@@ -308,7 +308,12 @@ private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let rootView = SettingsHostDebugPanel(store: storeContainer.debugStore)
+        let rootView = SettingsHostDebugPanel(
+            store: storeContainer.debugStore,
+            selectPreset: { [storeContainer] preset in
+                storeContainer.select(preset)
+            },
+        )
         let hostingController = NSHostingController(rootView: rootView)
         let panel = NSPanel(contentViewController: hostingController)
         panel.title = "Settings Debug"
@@ -360,8 +365,6 @@ private enum SettingsHostDebugMenu {
 private final class SettingsHostDebugStore: ObservableObject, @unchecked Sendable {
     @Published private(set) var preset: SettingsHostPreset
 
-    var onPresetChanged: (@MainActor (SettingsHostPreset) -> Void)?
-
     private let lock = NSLock()
     nonisolated(unsafe) private var lockedPreset: SettingsHostPreset
 
@@ -383,7 +386,6 @@ private final class SettingsHostDebugStore: ObservableObject, @unchecked Sendabl
         lock.unlock()
 
         self.preset = preset
-        onPresetChanged?(preset)
     }
 }
 
@@ -391,6 +393,7 @@ private final class SettingsHostDebugStore: ObservableObject, @unchecked Sendabl
 
 private struct SettingsHostDebugPanel: View {
     @ObservedObject var store: SettingsHostDebugStore
+    let selectPreset: @MainActor (SettingsHostPreset) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -406,7 +409,7 @@ private struct SettingsHostDebugPanel: View {
                 VStack(spacing: 8) {
                     ForEach(SettingsHostPreset.allCases, id: \.self) { preset in
                         Button {
-                            store.select(preset)
+                            selectPreset(preset)
                         } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
                                 Image(systemName: store.preset == preset ? "checkmark.circle.fill" : "circle")
