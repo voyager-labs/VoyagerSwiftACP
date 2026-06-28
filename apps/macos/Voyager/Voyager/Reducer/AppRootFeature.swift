@@ -79,6 +79,9 @@ struct AppRootFeature {
             reducePreferencesAndCommands(into: &state, action: action)
         }
         Reduce { state, action in
+            reduceAuthCallback(into: &state, action: action)
+        }
+        Reduce { state, action in
             reduceExternalURL(into: &state, action: action)
         }
         Reduce { state, action in
@@ -104,6 +107,9 @@ struct AppRootFeature {
         case let .lifecycle(.delegate(delegateAction)):
             switch delegateAction {
             case .openInitialWindowIfNeeded:
+                if hasPendingExternalRoutes(state) {
+                    return flushPendingExternalRoutes(state: &state)
+                }
                 return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
             case let .reopenWindowIfNeeded(hasVisibleWindows):
@@ -332,10 +338,9 @@ struct AppRootFeature {
             // ExternalFileRouter가 부모 폴더 열기 요청 — 새 File Manager Window로 라우팅
             .send(.windowManager(.file(.newWindow(path: path, selectEntryID: selectEntryPath))))
 
-        case .routeToAuthCallback:
+        case let .routeToAuthCallback(url):
             // ACC-001 소유의 OAuth callback — FMW-003가 가로채지 않음
-            // TODO: ACC 핸드오프 seam 확인 후 실제 전달 로직 추가
-            .none
+            .send(.receiveAuthCallbackURL(url))
 
         case .showInvalidPathError:
             showExternalFileOpenError(
@@ -350,6 +355,22 @@ struct AppRootFeature {
             )
 
         case .selectEntryCompleted:
+            .none
+        }
+    }
+
+    private func reduceAuthCallback(
+        into _: inout State,
+        action: Action,
+    ) -> Effect<Action> {
+        switch action {
+        case .receiveAuthCallbackURL:
+            showExternalFileOpenError(
+                title: "Voyager 로그인 복귀를 완료할 수 없습니다",
+                message: "인증 callback을 계정 인증 흐름으로 전달하는 경로가 아직 연결되어 있지 않습니다. 다시 로그인해 주세요.",
+            )
+
+        default:
             .none
         }
     }
@@ -411,6 +432,17 @@ struct AppRootFeature {
         })
     }
 
+    private func hasPendingExternalRoutes(_ state: State) -> Bool {
+        !state.pendingExternalURLs.isEmpty || !state.pendingExternalFileRoutes.isEmpty
+    }
+
+    private func flushPendingExternalRoutes(state: inout State) -> Effect<Action> {
+        .concatenate(
+            flushPendingExternalURL(state: &state),
+            flushPendingExternalFileRoutes(state: &state),
+        )
+    }
+
     private func reduceWindowPostAction(
         into state: inout State,
         action: Action,
@@ -425,8 +457,7 @@ struct AppRootFeature {
             didOpenFirstWindow ? .send(.startHelperExternalFileBridge) : .none,
             didOpenFirstWindow ? .send(.flushPendingReplay) : .none,
             (didOpenFirstWindow && state.lastHelperReady) ? .send(.registerHelperWatchRootsIfNeeded) : .none,
-            didOpenFirstWindow ? flushPendingExternalURL(state: &state) : .none,
-            didOpenFirstWindow ? flushPendingExternalFileRoutes(state: &state) : .none,
+            didOpenFirstWindow ? flushPendingExternalRoutes(state: &state) : .none,
         )
     }
 

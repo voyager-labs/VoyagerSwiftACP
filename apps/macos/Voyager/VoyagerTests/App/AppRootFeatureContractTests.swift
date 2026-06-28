@@ -209,10 +209,9 @@ final class AppRootFeatureContractTests: XCTestCase {
     }
 
     /// Hot state(창 있음)에서 receiveExternalURL 수신 시 pendingExternalURLs가 비어 있음을 검증
-    /// authCallback URL을 사용하여 ExternalFileRouter의 pathProbe 효과 없이 전달 여부만 검증
     func testReceiveExternalURLForwardsWhenWindowsExist() async throws {
         let windowID = UUID()
-        let url = try XCTUnwrap(URL(string: "voyager://auth/callback?code=test"))
+        let url = try XCTUnwrap(URL(string: "voyager://open?url=file%3A%2F%2F%2Ftmp%2Fvoyager-hot"))
         var state = AppRootFeature.State()
         state.windowManager.windows = [
             WindowSessionState(id: windowID, window: .makeInitial(path: "/tmp")),
@@ -220,12 +219,75 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         let store = TestStore(initialState: state) {
             AppRootFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
         }
         // store.exhaustivity = .off: Hot state에서 URL 수신 시 ExternalFileRouter로 effect가 전달되므로 핵심 state만 검증
         store.exhaustivity = .off
 
         await store.send(.receiveExternalURL(url))
         XCTAssertTrue(store.state.pendingExternalURLs.isEmpty)
+    }
+
+    func testAuthCallbackDelegateRoutesToExplicitAuthBoundary() async throws {
+        let url = try XCTUnwrap(URL(string: "voyager://auth/callback?ticket=test&state=state"))
+        let capturedAlert = LockIsolated<(title: String, message: String)?>(nil)
+
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                capturedAlert.withValue { $0 = (title, message) }
+            }
+        }
+
+        await store.send(.externalFileRouter(.delegate(.routeToAuthCallback(url))))
+        await store.receive(\.receiveAuthCallbackURL)
+        await store.finish()
+
+        XCTAssertEqual(capturedAlert.value?.title, "Voyager 로그인 복귀를 완료할 수 없습니다")
+    }
+
+    func testLifecycleDelegateFlushesPendingExternalFileRouteWithoutOpeningBlankInitialWindow() async {
+        let url = URL(fileURLWithPath: "/tmp/voyager-cold-file.txt")
+        var state = AppRootFeature.State()
+        state.pendingExternalFileRoutes = [
+            .init(url: url, source: .systemOpenEvent, mode: .open),
+        ]
+
+        let store = TestStore(initialState: state) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+        }
+
+        await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))) {
+            $0.pendingExternalFileRoutes = []
+        }
+        await store.receive(\.externalFileRouter.receiveFileURL) {
+            $0.externalFileRouter.currentStatus = .pathReceived
+            $0.externalFileRouter.currentRequest = ExternalFileRouterRequest(
+                originalURL: url,
+                source: .systemOpenEvent,
+                mode: .open,
+            )
+        }
+        await store.receive(\.externalFileRouter.failed) {
+            $0.externalFileRouter.currentStatus = .invalidPathError
+            $0.externalFileRouter.currentRequest = ExternalFileRouterRequest(
+                originalURL: url,
+                source: .systemOpenEvent,
+                mode: .open,
+            )
+        }
+        await store.receive(\.externalFileRouter.delegate.showInvalidPathError)
+        await store.finish()
+
+        XCTAssertTrue(store.state.windowManager.windows.isEmpty)
     }
 
     /// Cold → flush: 창 없는 상태에서 2개 Deep Link를 적재한 뒤 첫 창을 열면 두 URL이 모두

@@ -40,17 +40,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_: NSApplication, open urls: [URL]) {
         withAppRootStore {
             for url in urls {
-                switch url.scheme {
-                case "voyager":
-                    $0.send(.receiveExternalURL(url))
-                case "file":
-                    // System Open Event — 항상 폴더, mode=open
-                    $0.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open))
-                default:
-                    break
-                }
+                routeOpenedURL(url, to: $0)
             }
         }
+    }
+
+    func application(_: NSApplication, openFile filename: String) -> Bool {
+        let url = URL(fileURLWithPath: filename)
+        routeSystemOpenFileURLs([url])
+        return true
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        routeSystemOpenFileURLs(filenames.map(URL.init(fileURLWithPath:)))
+        sender.reply(toOpenOrPrint: .success)
     }
 
     /// NSServices "Voyager로 열기" 핸들러
@@ -60,7 +63,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         userData _: String,
         error _: NSErrorPointer,
     ) {
-        guard let urls = pboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] else { return }
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = pboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL] else { return }
         withAppRootStore {
             for url in urls {
                 let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
@@ -68,6 +72,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 $0.send(.receiveExternalFileURL(url, source: .nsservices, mode: mode))
             }
         }
+    }
+
+    private func routeSystemOpenFileURLs(_ urls: [URL]) {
+        withAppRootStore {
+            for url in urls {
+                $0.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open))
+            }
+        }
+    }
+
+    private func routeOpenedURL(_ url: URL, to store: StoreOf<AppRootFeature>) {
+        switch url.scheme?.lowercased() {
+        case "voyager":
+            if isAuthCallback(url) {
+                store.send(.receiveAuthCallbackURL(url))
+            } else {
+                store.send(.receiveExternalURL(url))
+            }
+        case "file":
+            // System Open Event — 항상 폴더, mode=open
+            store.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open))
+        default:
+            break
+        }
+    }
+
+    private func isAuthCallback(_ url: URL) -> Bool {
+        url.host?.lowercased() == "auth" && url.path.lowercased() == "/callback"
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
