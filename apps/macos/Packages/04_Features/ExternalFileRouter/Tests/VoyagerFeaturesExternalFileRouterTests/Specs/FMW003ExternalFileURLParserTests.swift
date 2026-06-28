@@ -41,17 +41,16 @@ final class FMW003ExternalFileURLParserTests: XCTestCase {
 
     // MARK: - 실패 케이스
 
-    /// url 파라미터가 누락되면 missingURLParameter 에러가 반환되는지 검증
-    func testMissingURLParameterReturnsError() throws {
+    /// url 파라미터가 없으면 일반 앱 열기 fallback으로 파싱되는지 검증
+    func testBareOpenURLReturnsOpenAppFallback() throws {
         let url = try XCTUnwrap(URL(string: "voyager://open"))
         let result = ExternalFileURLParser.parse(url)
 
-        XCTAssertEqual(result, .error(.missingURLParameter))
+        XCTAssertEqual(result, .openAppFallback(url))
     }
 
-    /// url 파라미터의 percent-encoding이 올바르지 않으면 invalidPercentEncoding 에러가 반환되는지 검증
-    func testInvalidPercentEncodingReturnsError() throws {
-        // url 값이 비어 있으면 URL 생성에 실패해야 함
+    /// url 파라미터가 있지만 값이 비어 있으면 invalidPercentEncoding 에러가 반환되는지 검증
+    func testEmptyURLParameterReturnsError() throws {
         let url = try XCTUnwrap(URL(string: "voyager://open?url="))
         let result = ExternalFileURLParser.parse(url)
 

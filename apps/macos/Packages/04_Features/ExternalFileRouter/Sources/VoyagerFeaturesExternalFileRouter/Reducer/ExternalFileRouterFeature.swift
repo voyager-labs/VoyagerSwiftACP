@@ -66,6 +66,10 @@ private extension ExternalFileRouterFeature {
         let result = ExternalFileURLParser.parse(url)
 
         switch result {
+        case .openAppFallback:
+            // WEBSITE/Auth의 Return to Voyager fallback: 파일 라우팅 오류가 아니라 기본 앱 열기로 위임
+            return .send(.delegate(.openAppFallback))
+
         case .authCallback:
             // ACC-001 소유의 OAuth callback route, FMW-003가 가로채지 않음
             return .send(.delegate(.routeToAuthCallback(url)))

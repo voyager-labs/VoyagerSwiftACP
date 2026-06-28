@@ -4,6 +4,8 @@ import Foundation
 
 /// `ExternalFileURLParser.parse(_:)`의 반환 타입
 public enum DeepLinkParserResult: Equatable, Sendable {
+    /// 일반 앱 열기 fallback (`voyager://open`, url 파라미터 없음)
+    case openAppFallback(URL)
     /// 정상 파싱된 Deep Link 요청
     case request(DeepLinkRequest)
     /// 인증 콜백 (`voyager://auth/callback`, ACC 라우팅용)
@@ -86,16 +88,18 @@ public enum ExternalFileURLParser {
             return .error(.invalidSchemeOrHost)
         }
 
-        // query items 파싱
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let percentEncodedItems = components.percentEncodedQueryItems
-        else {
-            return .error(.missingURLParameter)
+        // query items 파싱. url 파라미터가 없으면 일반 앱 열기 fallback으로 처리한다.
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return .openAppFallback(url)
         }
+        let percentEncodedItems = components.percentEncodedQueryItems ?? []
 
         // url 파라미터 추출 (percent-encoded raw value 사용)
-        guard let rawURLValue = percentEncodedItems.first(where: { $0.name == "url" })?.value else {
-            return .error(.missingURLParameter)
+        guard let urlItem = percentEncodedItems.first(where: { $0.name == "url" }) else {
+            return .openAppFallback(url)
+        }
+        guard let rawURLValue = urlItem.value, !rawURLValue.isEmpty else {
+            return .error(.invalidPercentEncoding)
         }
 
         // percent-decode 검증

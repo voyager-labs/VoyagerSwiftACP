@@ -127,6 +127,8 @@ public enum ExternalFileRouterAction: CasePathable {
 
     @CasePathable
     public enum Delegate: CasePathable {
+        /// 일반 앱 열기 fallback (`voyager://open`, url 파라미터 없음)
+        case openAppFallback
         /// windowManager로 폴더 열기 위임 (windowRouted)
         case openFolder(path: String)
         /// 파일의 부모 폴더 열기 위임 (parentFolderOpened)

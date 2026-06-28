@@ -170,10 +170,10 @@ extension FMW003HandleExternalFileOpenRequestsTests {
 // MARK: - URL 검증 오류
 
 extension FMW003HandleExternalFileOpenRequestsTests {
-    /// `url` 파라미터가 누락된 Deep Link → urlValidationError
+    /// `url` 파라미터가 없는 Deep Link → 일반 앱 열기 fallback delegate
     ///
-    /// AC: `url` 파라미터가 누락된 상황에서, URL 형식 오류가 표시되어야 한다.
-    func test_missingURLParameter_urlValidationError() async throws {
+    /// AC: bare `voyager://open`은 URL 형식 오류가 아니라 기본 File Manager Window 열기로 위임되어야 한다.
+    func test_bareOpenURL_routesToOpenAppFallback() async throws {
         let missingURL = try XCTUnwrap(URL(string: "voyager://open"))
 
         let store = TestStore(initialState: ExternalFileRouterState()) {
@@ -181,6 +181,19 @@ extension FMW003HandleExternalFileOpenRequestsTests {
         }
 
         await store.send(.receive(missingURL))
+        await store.receive(\.delegate.openAppFallback)
+        await store.finish()
+    }
+
+    /// `url` 파라미터가 있지만 값이 비어 있으면 urlValidationError
+    func test_emptyURLParameter_urlValidationError() async throws {
+        let emptyURL = try XCTUnwrap(URL(string: "voyager://open?url="))
+
+        let store = TestStore(initialState: ExternalFileRouterState()) {
+            ExternalFileRouterFeature()
+        }
+
+        await store.send(.receive(emptyURL))
         await store.receive(\.failed) {
             $0.currentStatus = .urlValidationError
         }
