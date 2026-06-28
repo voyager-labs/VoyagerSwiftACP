@@ -10,10 +10,11 @@ struct AppHandoffCallback: Equatable {
     /// URL에서 ticket, state, context를 추출해 콜백을 생성한다.
     /// - Parameters:
     ///   - url: `voyager://auth/callback?ticket=...&state=...&context=onboarding` 형식의 deep link
+    ///   - expectedScheme: 허용할 callback scheme
     /// - Returns: scheme/host/path가 일치하고, 필수 파라미터가 모두 존재하며,
     ///   context가 allowlist에 포함되고, 민감 파라미터가 없으면 생성된 콜백. 그 외에는 nil.
-    init?(url: URL) {
-        guard url.scheme == "voyager",
+    init?(url: URL, expectedScheme: String) {
+        guard url.scheme == expectedScheme,
               url.host == "auth",
               url.path == "/callback"
         else { return nil }

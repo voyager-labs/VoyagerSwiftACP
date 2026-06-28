@@ -28,6 +28,9 @@ public struct AccountAccessFeature {
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
 
+    @Dependency(\.appHandoffTarget)
+    var appHandoffTarget
+
     private enum CancelID {
         static let fetchStatus = "accountAccessFetchStatus"
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
@@ -217,12 +220,12 @@ public struct AccountAccessFeature {
 
     private func handleLoginCallbackReceived(_ state: inout State, url: URL) -> Effect<Action> {
         // real handoff callback: AppHandoffCallback이 파싱되면 exchange 경로
-        if let callback = AppHandoffCallback(url: url) {
+        if let callback = AppHandoffCallback(url: url, expectedScheme: appHandoffTarget.callbackScheme) {
             return handleRealHandoffCallback(&state, callback: callback)
         }
 
         // legacy mock callback: 기존 scheme/host/path + query 없음 → restoreSession 경로
-        guard isValidAuthCallback(url), !hasQueryItems(url) else {
+        guard isValidAuthCallback(url, expectedScheme: appHandoffTarget.callbackScheme), !hasQueryItems(url) else {
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.handoffPendingState = nil
@@ -309,8 +312,8 @@ public struct AccountAccessFeature {
         }
     }
 
-    private func isValidAuthCallback(_ url: URL) -> Bool {
-        guard url.scheme == "voyager" else { return false }
+    private func isValidAuthCallback(_ url: URL, expectedScheme: String) -> Bool {
+        guard url.scheme == expectedScheme else { return false }
         guard url.host == "auth" else { return false }
         guard url.path == "/callback" else { return false }
         return true

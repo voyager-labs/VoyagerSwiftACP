@@ -41,6 +41,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         accountSessionClient: AccountSessionClient = .testValue,
         authNetworkClient: AuthNetworkClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
+        appHandoffTarget: AppHandoffTarget = .voyager,
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
             AccountAccessFeature()
@@ -48,6 +49,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
             $0.date = .constant(referenceDate)
+            $0.appHandoffTarget = appHandoffTarget
         }
     }
 
@@ -69,7 +71,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 사전 조건: 유효한 scheme(voyager://), host(auth), path(callback), query에 ticket/state/context가 포함된 URL
     /// - 기대 결과: AppHandoffCallback이 nil이 아니며 각 프로퍼티가 올바른 값과 일치한다.
     func testValidCallbackParsesIntegrity() {
-        let callback = AppHandoffCallback(url: Self.validCallbackURL)
+        let callback = AppHandoffCallback(url: Self.validCallbackURL, expectedScheme: "voyager")
         XCTAssertEqual(callback?.ticket, Self.validTicket)
         XCTAssertEqual(callback?.state, Self.validState)
         XCTAssertEqual(callback?.context, .onboarding)
@@ -82,7 +84,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsWrongScheme() throws {
         let url = try XCTUnwrap(URL(string: "https://auth/callback?ticket=abc&state=xyz&context=onboarding"))
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: 잘못된 host의 callback URL을 파싱 거부한다.
@@ -92,7 +94,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsWrongHost() throws {
         let url = try XCTUnwrap(URL(string: "voyager://other/callback?ticket=abc&state=xyz&context=onboarding"))
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: 잘못된 path의 callback URL을 파싱 거부한다.
@@ -102,7 +104,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsWrongPath() throws {
         let url = try XCTUnwrap(URL(string: "voyager://auth/other?ticket=abc&state=xyz&context=onboarding"))
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: access_token 파라미터가 포함된 callback을 보안상 거부한다.
@@ -112,7 +114,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsAccessTokenParam() {
         let url = callbackURL(extraParams: "access_token=secret")
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: refresh_token 파라미터가 포함된 callback을 보안상 거부한다.
@@ -122,7 +124,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsRefreshTokenParam() {
         let url = callbackURL(extraParams: "refresh_token=secret")
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: code 파라미터가 포함된 callback을 보안상 거부한다.
@@ -132,7 +134,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsCodeParam() {
         let url = callbackURL(extraParams: "code=oauth_code")
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: 알 수 없는 context 값의 callback을 파싱 거부한다.
@@ -142,7 +144,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsUnknownContext() {
         let url = callbackURL(context: "malicious")
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: ticket 파라미터가 누락된 callback을 파싱 거부한다.
@@ -152,7 +154,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsMissingTicket() throws {
         let url = try XCTUnwrap(URL(string: "voyager://auth/callback?state=xyz&context=onboarding"))
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: state 파라미터가 누락된 callback을 파싱 거부한다.
@@ -162,7 +164,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsMissingState() throws {
         let url = try XCTUnwrap(URL(string: "voyager://auth/callback?ticket=abc&context=onboarding"))
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: context 파라미터가 누락된 callback을 파싱 거부한다.
@@ -172,7 +174,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsMissingContext() throws {
         let url = try XCTUnwrap(URL(string: "voyager://auth/callback?ticket=abc&state=xyz"))
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: 빈 ticket 값의 callback을 파싱 거부한다.
@@ -182,7 +184,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsEmptyTicket() {
         let url = callbackURL(ticket: "")
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: 빈 state 값의 callback을 파싱 거부한다.
@@ -192,7 +194,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     /// - 기대 결과: AppHandoffCallback이 nil이다.
     func testRejectsEmptyState() {
         let url = callbackURL(state: "")
-        XCTAssertNil(AppHandoffCallback(url: url))
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
     }
 
     /// ACC-001-complete_auth_handoff_callback: 유효한 callback 수신 시 exchangeAppHandoff가 자동 호출된다.
@@ -355,6 +357,106 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
         }
 
         XCTAssertFalse(exchangeCalled, "무효화된 흐름의 callback → exchange 미호출")
+        await store.finish()
+    }
+
+    /// voyager-onboarding-host:// scheme 콜백이 올바르게 파싱되는지 검증한다.
+    func testOnboardingHostSchemeParsesSuccessfully() {
+        let url = URL(string: "voyager-onboarding-host://auth/callback?ticket=abc&state=xyz&context=onboarding")!
+        let callback = AppHandoffCallback(url: url, expectedScheme: "voyager-onboarding-host")
+        XCTAssertEqual(callback?.ticket, "abc")
+        XCTAssertEqual(callback?.state, "xyz")
+        XCTAssertEqual(callback?.context, .onboarding)
+    }
+
+    /// voyager:// URL이 voyager-onboarding-host expectedScheme에서 거부되는지 검증한다.
+    func testCrossSchemeVoyagerUrlRejectedByOnboardingHostScheme() {
+        let url = URL(string: "voyager://auth/callback?ticket=abc&state=xyz&context=onboarding")!
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager-onboarding-host"))
+    }
+
+    /// voyager-onboarding-host:// URL이 voyager expectedScheme에서 거부되는지 검증한다.
+    func testCrossSchemeOnboardingHostUrlRejectedByVoyagerScheme() {
+        let url = URL(string: "voyager-onboarding-host://auth/callback?ticket=abc&state=xyz&context=onboarding")!
+        XCTAssertNil(AppHandoffCallback(url: url, expectedScheme: "voyager"))
+    }
+
+    /// onboardingHost target 환경에서 voyager-onboarding-host:// callback이 정상 처리되는지 검증한다.
+    func testOnboardingHostTargetAcceptsOnboardingHostCallback() async {
+        nonisolated(unsafe) var exchangeCalled = false
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
+                    exchangeCalled = true
+                    return AccountSession(accessToken: "obh-token", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: {
+                    AccessStatusResponse(hasAccess: true, status: "active", reason: "active_entitlement", productKey: "core", source: "polar")
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+            appHandoffTarget: .onboardingHost,
+        )
+
+        let obhURL = URL(string: "voyager-onboarding-host://auth/callback?ticket=abc123&state=xyz789&context=onboarding")!
+
+        await store.send(.loginCallbackReceived(obhURL)) { state in
+            state.handoffPendingState = nil
+        }
+
+        await store.receive(\._handoffExchangeCompleted) { state in
+            state.isSignInInProgress = false
+            state.hasAccountSession = true
+            state.didSignInFail = false
+            state.ttlTimerActive = true
+            state.fetchGeneration = 1
+        }
+
+        XCTAssertTrue(exchangeCalled, "onboardingHost target + onboardingHost callback → exchange 호출")
+        store.exhaustivity = .off
+        await store.receive(\.accessStatusResponse)
+        await store.receive(\.delegate.unlocked)
+        await store.finish()
+    }
+
+    /// onboardingHost target 환경에서 voyager:// callback이 거부되는지 검증한다.
+    func testOnboardingHostTargetRejectsVoyagerCallback() async {
+        nonisolated(unsafe) var exchangeCalled = false
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in
+                    exchangeCalled = true
+                    return AccountSession(accessToken: "should-not-reach", status: .coreLicenseActive)
+                },
+                fetchAccessStatus: {
+                    AccessStatusResponse(hasAccess: true, status: "active", reason: "active_entitlement", productKey: "core", source: "polar")
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: awaitingCallbackState(),
+            appHandoffTarget: .onboardingHost,
+        )
+
+        let voyagerURL = Self.validCallbackURL
+
+        await store.send(.loginCallbackReceived(voyagerURL)) { state in
+            state.isSignInInProgress = false
+            state.didSignInFail = true
+            state.handoffPendingState = nil
+        }
+
+        XCTAssertFalse(exchangeCalled, "onboardingHost target + voyager callback → 거부")
         await store.finish()
     }
 }
