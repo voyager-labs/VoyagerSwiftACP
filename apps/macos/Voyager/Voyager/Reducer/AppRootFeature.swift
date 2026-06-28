@@ -330,6 +330,9 @@ struct AppRootFeature {
         _ action: ExternalFileRouterAction.Delegate,
     ) -> Effect<Action> {
         switch action {
+        case .openAppFallback:
+            .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
+
         case let .openFolder(path):
             // ExternalFileRouter가 폴더 열기 요청 — 새 File Manager Window로 라우팅
             .send(.windowManager(.file(.newWindow(path: path))))

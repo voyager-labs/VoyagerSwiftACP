@@ -250,6 +250,28 @@ final class AppRootFeatureContractTests: XCTestCase {
         XCTAssertEqual(capturedAlert.value?.title, "Voyager 로그인 복귀를 완료할 수 없습니다")
     }
 
+    func testOpenAppFallbackDelegateRoutesToInitialWindowIfNeeded() async {
+        let windowID = UUID()
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.uuid = .constant(windowID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.externalFileRouter(.delegate(.openAppFallback)))
+        await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
+        await store.receive { action in
+            guard case .windowManager(.file(.newWindow(path: nil, selectEntryID: nil))) = action else {
+                return false
+            }
+            return true
+        }
+    }
+
     func testLifecycleDelegateFlushesPendingExternalFileRouteWithoutOpeningBlankInitialWindow() async {
         let url = URL(fileURLWithPath: "/tmp/voyager-cold-file.txt")
         var state = AppRootFeature.State()
