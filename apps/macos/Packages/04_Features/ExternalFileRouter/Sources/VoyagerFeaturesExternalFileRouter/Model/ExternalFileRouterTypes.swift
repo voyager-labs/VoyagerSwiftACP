@@ -38,7 +38,7 @@ public enum RouteSource: Equatable, Sendable {
 // MARK: - ExternalFileRouter Request
 
 /// ExternalFileRouter가 처리 중인 단일 경로 요청 정보
-public struct ExternalFileRouterRequest: Equatable {
+public struct ExternalFileRouterRequest: Equatable, Sendable {
     /// 원본 URL (Deep Link의 `voyager://open?url=...` 또는 시스템 이벤트 URL)
     public let originalURL: URL
     /// 파일 시스템 경로 (URL 정규화 후 채워짐)
@@ -52,10 +52,10 @@ public struct ExternalFileRouterRequest: Equatable {
 
     public init(
         originalURL: URL,
-        resolvedPath: String? = nil,
-        isDirectory: Bool? = nil,
         source: RouteSource,
         mode: DeepLinkMode,
+        resolvedPath: String? = nil,
+        isDirectory: Bool? = nil,
     ) {
         self.originalURL = originalURL
         self.resolvedPath = resolvedPath
@@ -65,10 +65,36 @@ public struct ExternalFileRouterRequest: Equatable {
     }
 }
 
+/// 비동기 path probe 결과가 어떤 외부 요청에 속하는지 식별하는 context
+public struct ExternalFileRouterRequestContext: Equatable, Sendable {
+    public let requestID: URL
+    public let source: RouteSource
+    public let mode: DeepLinkMode
+
+    public init(requestID: URL, source: RouteSource, mode: DeepLinkMode) {
+        self.requestID = requestID
+        self.source = source
+        self.mode = mode
+    }
+}
+
+/// 정규화된 path probe 성공 결과
+public struct ExternalFileRouterNormalizationResult: Equatable, Sendable {
+    public let path: String
+    public let isDirectory: Bool
+    public let context: ExternalFileRouterRequestContext
+
+    public init(path: String, isDirectory: Bool, context: ExternalFileRouterRequestContext) {
+        self.path = path
+        self.isDirectory = isDirectory
+        self.context = context
+    }
+}
+
 // MARK: - ExternalFileRouter Error
 
 /// ExternalFileRouter 처리 중 발생 가능한 오류
-public enum ExternalFileRouterError: Error, Equatable {
+public enum ExternalFileRouterError: Error, Equatable, Sendable {
     /// 유효하지 않은 경로
     case invalidPath(String)
     /// 접근 권한 없음
@@ -89,12 +115,13 @@ public enum ExternalFileRouterAction: CasePathable {
     /// ExternalFileURLParser를 거치지 않고 직접 요청을 생성한다.
     case receiveFileURL(URL, source: RouteSource, mode: DeepLinkMode)
     /// URL 정규화 완료 (pathReceived → pathNormalized)
-    /// 동시 요청 겹침 시 state pollution 방지를 위해 source/mode를 payload로 전달
-    case normalizeCompleted(path: String, isDirectory: Bool, source: RouteSource, mode: DeepLinkMode)
+    /// 동시 요청 겹침 시 state pollution 방지를 위해 요청 context를 payload로 전달
+    case normalizeCompleted(ExternalFileRouterNormalizationResult)
     /// 라우팅 완료 (windowRouted / parentFolderOpened / entrySelected)
     case routeCompleted(ExternalFileRouterStatus)
     /// 오류 발생
-    case failed(ExternalFileRouterError)
+    /// 동시 요청 겹침 시 오류도 해당 요청의 source/mode를 유지한다.
+    case failed(ExternalFileRouterError, context: ExternalFileRouterRequestContext? = nil)
     /// 부모 reducer로 위임
     case delegate(Delegate)
 

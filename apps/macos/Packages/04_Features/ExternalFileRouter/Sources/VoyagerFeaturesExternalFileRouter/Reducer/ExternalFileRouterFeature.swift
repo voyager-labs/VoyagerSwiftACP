@@ -23,6 +23,10 @@ public struct ExternalFileRouterFeature {
     @Dependency(\.pathProbeClient)
     private var pathProbeClient
 
+    private enum CancelID: Hashable {
+        case pathProbe(URL)
+    }
+
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -32,21 +36,15 @@ public struct ExternalFileRouterFeature {
             case let .receiveFileURL(url, source, mode):
                 return handleReceiveFileURL(url: url, source: source, mode: mode, state: &state)
 
-            case let .normalizeCompleted(path, isDirectory, source, mode):
-                return handleNormalizeCompleted(
-                    path: path,
-                    isDirectory: isDirectory,
-                    source: source,
-                    mode: mode,
-                    state: &state,
-                )
+            case let .normalizeCompleted(result):
+                return handleNormalizeCompleted(result: result, state: &state)
 
             case let .routeCompleted(status):
                 state.currentStatus = status
                 return .none
 
-            case let .failed(error):
-                return handleFailed(error: error, state: &state)
+            case let .failed(error, context):
+                return handleFailed(error: error, context: context, state: &state)
 
             case .delegate:
                 return .none
@@ -80,8 +78,6 @@ private extension ExternalFileRouterFeature {
             state.currentStatus = .pathReceived
             state.currentRequest = ExternalFileRouterRequest(
                 originalURL: request.url,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .deepLink,
                 mode: request.mode,
             )
@@ -90,20 +86,25 @@ private extension ExternalFileRouterFeature {
             let fileURL = request.url
             return .run { [pathProbeClient, fileURL, request] send in
                 let normalizedPath = FilePathNormalizer.normalize(fileURL.path)
+                let context = ExternalFileRouterRequestContext(
+                    requestID: fileURL,
+                    source: .deepLink,
+                    mode: request.mode,
+                )
                 let result = pathProbeClient.probeExistence(normalizedPath)
                 if result.permissionDenied {
-                    await send(.failed(.permissionDenied(normalizedPath)))
+                    await send(.failed(.permissionDenied(normalizedPath), context: context))
                 } else if result.exists {
-                    await send(.normalizeCompleted(
+                    await send(.normalizeCompleted(.init(
                         path: normalizedPath,
                         isDirectory: result.isDirectory,
-                        source: .deepLink,
-                        mode: request.mode,
-                    ))
+                        context: context,
+                    )))
                 } else {
-                    await send(.failed(.invalidPath(normalizedPath)))
+                    await send(.failed(.invalidPath(normalizedPath), context: context))
                 }
             }
+            .cancellable(id: CancelID.pathProbe(fileURL), cancelInFlight: false)
         }
     }
 
@@ -121,8 +122,6 @@ private extension ExternalFileRouterFeature {
         state.currentStatus = .pathReceived
         state.currentRequest = ExternalFileRouterRequest(
             originalURL: url,
-            resolvedPath: nil,
-            isDirectory: nil,
             source: source,
             mode: mode,
         )
@@ -130,20 +129,21 @@ private extension ExternalFileRouterFeature {
         // file URL의 path를 정규화하고 파일시스템 존재 확인
         return .run { [pathProbeClient, url, source, mode] send in
             let normalizedPath = FilePathNormalizer.normalize(url.path)
+            let context = ExternalFileRouterRequestContext(requestID: url, source: source, mode: mode)
             let result = pathProbeClient.probeExistence(normalizedPath)
             if result.permissionDenied {
-                await send(.failed(.permissionDenied(normalizedPath)))
+                await send(.failed(.permissionDenied(normalizedPath), context: context))
             } else if result.exists {
-                await send(.normalizeCompleted(
+                await send(.normalizeCompleted(.init(
                     path: normalizedPath,
                     isDirectory: result.isDirectory,
-                    source: source,
-                    mode: mode,
-                ))
+                    context: context,
+                )))
             } else {
-                await send(.failed(.invalidPath(normalizedPath)))
+                await send(.failed(.invalidPath(normalizedPath), context: context))
             }
         }
+        .cancellable(id: CancelID.pathProbe(url), cancelInFlight: false)
     }
 
     /// path 정규화 완료 후 라우팅을 결정한다.
@@ -154,23 +154,26 @@ private extension ExternalFileRouterFeature {
     ///   selectEntryPath:) → entrySelected + delegate .selectEntryCompleted
     /// - isDirectory == false (파일, mode=open) → parentFolderOpened + delegate .openParentFolder(
     ///   selectEntryPath: nil)
-    func handleNormalizeCompleted(
-        path: String,
-        isDirectory: Bool,
-        source _: RouteSource,
-        mode: DeepLinkMode,
-        state: inout State,
-    ) -> Effect<Action> {
+    func handleNormalizeCompleted(result: ExternalFileRouterNormalizationResult, state: inout State) -> Effect<Action> {
+        let path = result.path
+        let isDirectory = result.isDirectory
+        let context = result.context
+
         state.currentStatus = .pathNormalized
-        state.currentRequest?.resolvedPath = path
-        state.currentRequest?.isDirectory = isDirectory
+        state.currentRequest = ExternalFileRouterRequest(
+            originalURL: context.requestID,
+            source: context.source,
+            mode: context.mode,
+            resolvedPath: path,
+            isDirectory: isDirectory,
+        )
 
         if isDirectory {
             state.currentStatus = .windowRouted
             return .send(.delegate(.openFolder(path: path)))
         } else {
             let parentPath = (path as NSString).deletingLastPathComponent
-            if mode == .reveal {
+            if context.mode == .reveal {
                 state.currentStatus = .parentFolderOpened
                 return .concatenate(
                     .send(.delegate(.openParentFolder(path: parentPath, selectEntryPath: path))),
@@ -189,7 +192,19 @@ private extension ExternalFileRouterFeature {
     /// - permissionDenied → permissionDeniedError terminal + delegate .showPermissionDeniedError
     /// - urlValidationError → urlValidationError terminal (delegate 없음, ExternalFileRouter 내부 파싱 문제)
     /// - unknown → invalidPathError fallback (delegate 없음)
-    func handleFailed(error: ExternalFileRouterError, state: inout State) -> Effect<Action> {
+    func handleFailed(
+        error: ExternalFileRouterError,
+        context: ExternalFileRouterRequestContext?,
+        state: inout State,
+    ) -> Effect<Action> {
+        if let context {
+            state.currentRequest = ExternalFileRouterRequest(
+                originalURL: context.requestID,
+                source: context.source,
+                mode: context.mode,
+            )
+        }
+
         switch error {
         case let .invalidPath(path):
             state.currentStatus = .invalidPathError

@@ -4,7 +4,7 @@ import XCTest
 
 // MARK: - ExternalFileRouterFeature 계약 테스트
 
-/// ExternalFileRouter 상태 기계(open_router_contract.toml)를 1:1로 검증하는 TestStore 기반 테스트.
+/// ExternalFileRouter 상태 기계(external_file_router_contract.toml)를 1:1로 검증하는 TestStore 기반 테스트.
 ///
 /// 전환 흐름: path_received → path_normalized → {window_routed | parent_folder_opened | invalid_path_error |
 /// url_validation_error}
@@ -34,8 +34,6 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentStatus = .pathReceived
             $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .deepLink,
                 mode: .open,
             )
@@ -70,8 +68,6 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentStatus = .pathReceived
             $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .deepLink,
                 mode: .reveal,
             )
@@ -111,8 +107,6 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentStatus = .pathReceived
             $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .deepLink,
                 mode: .open,
             )
@@ -151,8 +145,6 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentStatus = .pathReceived
             $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .deepLink,
                 mode: .reveal,
             )
@@ -254,8 +246,6 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentStatus = .pathReceived
             $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .deepLink,
                 mode: .open,
             )
@@ -295,8 +285,6 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentStatus = .pathReceived
             $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .deepLink,
                 mode: .open,
             )
@@ -335,8 +323,6 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentStatus = .pathReceived
             $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .systemOpenEvent,
                 mode: .open,
             )
@@ -372,8 +358,6 @@ extension FMW003HandleExternalFileOpenRequestsTests {
             $0.currentStatus = .pathReceived
             $0.currentRequest = ExternalFileRouterRequest(
                 originalURL: fileURL,
-                resolvedPath: nil,
-                isDirectory: nil,
                 source: .nsservices,
                 mode: .reveal,
             )
@@ -450,6 +434,46 @@ extension FMW003HandleExternalFileOpenRequestsTests {
 
         // exhaustivity = .off: 두 .run effect의 인터리빙이 비결정적이므로
         // 나머지 액션(delegate/routeCompleted)의 순서 검증 생략, finish로 잔여 효과 처리
+        await store.finish()
+    }
+
+    /// 이전 요청의 late normalizeCompleted도 유효한 요청이면 drop하지 않고 라우팅해야 한다.
+    func test_lateNormalizeCompleted_routesOriginalRequestWithoutCurrentRequestGuard() async throws {
+        let folderURL = try XCTUnwrap(URL(string: "file:///Users/test/folder1"))
+        let fileURL = try XCTUnwrap(URL(string: "file:///Users/test/doc.txt"))
+
+        var state = ExternalFileRouterState()
+        state.currentStatus = .pathReceived
+        state.currentRequest = ExternalFileRouterRequest(
+            originalURL: fileURL,
+            source: .nsservices,
+            mode: .reveal,
+        )
+
+        let store = TestStore(initialState: state) {
+            ExternalFileRouterFeature()
+        }
+
+        await store.send(ExternalFileRouterAction.normalizeCompleted(ExternalFileRouterNormalizationResult(
+            path: "/Users/test/folder1",
+            isDirectory: true,
+            context: ExternalFileRouterRequestContext(requestID: folderURL, source: .systemOpenEvent, mode: .open),
+        ))) {
+            $0.currentStatus = .windowRouted
+            $0.currentRequest = ExternalFileRouterRequest(
+                originalURL: folderURL,
+                source: .systemOpenEvent,
+                mode: .open,
+                resolvedPath: "/Users/test/folder1",
+                isDirectory: true,
+            )
+        }
+
+        await store.receive { action in
+            guard case let .delegate(.openFolder(path)) = action else { return false }
+            return path == "/Users/test/folder1"
+        }
+
         await store.finish()
     }
 }
