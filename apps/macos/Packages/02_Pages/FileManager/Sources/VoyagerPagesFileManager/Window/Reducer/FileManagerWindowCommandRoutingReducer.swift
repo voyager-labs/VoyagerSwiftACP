@@ -97,6 +97,9 @@ struct FileManagerWindowCommandRoutingReducer {
                 .map { .send(.closeContentTabRequested($0)) }
                 ?? .none
 
+        case .toggleActiveContentTabPin:
+            toggleActiveContentTabPin(state: state)
+
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
@@ -138,6 +141,16 @@ struct FileManagerWindowCommandRoutingReducer {
              .requestRedo:
             handleUndoRedoRequest(command)
         }
+    }
+
+    private func toggleActiveContentTabPin(state: State) -> Effect<Action> {
+        guard state.pendingContentTabClose == nil,
+              let activeTabID = state.contentTabs.activeTabID,
+              let activeTab = state.contentTabs.tabs[id: activeTabID],
+              activeTab.isPinned || state.canPinContentTab(activeTabID)
+        else { return .none }
+
+        return .send(.contentTabs(activeTab.isPinned ? .unpin(activeTabID) : .pin(activeTabID)))
     }
 
     private func handleEntryRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {

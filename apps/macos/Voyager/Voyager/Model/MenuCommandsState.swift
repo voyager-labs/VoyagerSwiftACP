@@ -18,6 +18,19 @@ struct MenuCommandsState: Equatable {
     var canGoToEnclosingDirectory: Bool
 
     var canSaveCollection: Bool
+    var isActiveContentTabPinned: Bool
+
+    var closeTabTitle: String {
+        "Close Tab"
+    }
+
+    var showsCloseTabCommand: Bool {
+        !isActiveContentTabPinned
+    }
+
+    var pinTabTitle: String {
+        isActiveContentTabPinned ? "Unpin Tab" : "Pin Tab"
+    }
 
     var sidebarVisible: Bool
     var showHiddenFiles: Bool
@@ -41,6 +54,7 @@ struct MenuCommandsState: Equatable {
         canGoForward = false
         canGoToEnclosingDirectory = false
         canSaveCollection = false
+        isActiveContentTabPinned = false
         sidebarVisible = false
         showHiddenFiles = false
         viewLayout = .list
@@ -73,6 +87,7 @@ struct MenuCommandsState: Equatable {
         canGoForward = projection.canGoForward
         canGoToEnclosingDirectory = projection.canGoToEnclosingDirectory
         canSaveCollection = projection.canSaveCollection
+        isActiveContentTabPinned = projection.isActiveContentTabPinned
         sidebarVisible = projection.sidebarVisible
         showHiddenFiles = projection.showHiddenFiles
         viewLayout = projection.viewLayout

@@ -59,6 +59,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case copyURLs
         case openNewContentTab
         case closeActiveContentTab
+        case toggleActiveContentTabPin
     }
 
     @CasePathable

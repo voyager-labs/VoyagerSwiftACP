@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesTag
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -161,7 +161,11 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
     func testSidebarProjection_homeConvertedToDirectoryShowsDirectoryMetadata() {
         var state = ContentTabState.withHomeTab()
         let id = state.tabs[0].id
-        let reducer = ContentTabFeature()
+        let reducer = withDependencies {
+            $0.entryLoadingClient.displayName = { _ in "Desktop" }
+        } operation: {
+            ContentTabFeature()
+        }
 
         _ = reducer.reduce(into: &state, action: .updateActivePageAnchor(id, .directory(path: "/Users/test/Desktop")))
 
@@ -173,6 +177,28 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(sidebarItems[0].iconName, "folder")
         XCTAssertEqual(sidebarItems[0].pageType, .directory)
         XCTAssertTrue(sidebarItems[0].isActive)
+    }
+
+    /// CTM-004-sidebar_projection_content_tabs: Collection tab은 collection 파일 표시 이름을 사용함
+    /// 삭제된 FavoriteItem.displayName의 .voycoll 확장자 제거 표시 로직을 ContentTab metadata 생성 단계에서 유지한다.
+    func testSidebarProjection_collectionFileUsesCollectionDisplayName() {
+        var state = ContentTabState.withHomeTab()
+        let id = state.tabs[0].id
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .updateActivePageAnchor(
+                id,
+                .collectionFile(url: URL(fileURLWithPath: "/Users/test/Research.voycoll")),
+            ),
+        )
+
+        let sidebarItems = ContentTabProjection.sidebarItems(from: state)
+
+        XCTAssertEqual(sidebarItems.first?.title, "Research")
+        XCTAssertEqual(sidebarItems.first?.iconName, "rectangle.stack")
+        XCTAssertEqual(sidebarItems.first?.pageType, .collection)
     }
 
     /// CTM-004-sidebar_initial_sync: 초기 Sidebar Tabs 섹션은 기본 Home tab을 표시함
@@ -191,52 +217,35 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertTrue(item.isActive)
     }
 
-    /// CTM-004-sidebar_projection_content_tabs: Directory tab은 기존 Locations 항목의 name/iconName을 재사용함
-    /// Tabs row가 `/`, `.Trash` 같은 raw path 이름으로 표시되는 회귀를 방지한다.
-    func testContentTabSidebarItems_reuseLocationDisplayNameAndIconForMatchingDirectory() {
-        let rootID = ContentTabID()
-        let trashID = ContentTabID()
-        let rootURL = URL(fileURLWithPath: "/")
-        let trashURL = URL(fileURLWithPath: "/Users/test/.Trash")
+    /// CTM-004-sidebar_projection_content_tabs: Directory tab은 ContentTab 자체 metadata를 그대로 표시함
+    /// Sidebar legacy Locations 섹션 제거 후 Tabs row가 ContentTabProjection만 원천으로 사용하는 정책을 검증한다.
+    func testContentTabSidebarItems_useContentTabMetadataForDirectory() {
+        let directoryID = ContentTabID()
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
-            tabs: [
-                ContentTabItem(
-                    id: rootID,
-                    page: .directory,
-                    anchor: .directory(path: rootURL.path),
-                    isPinned: false,
-                    title: "/",
-                    iconName: "folder",
-                ),
-                ContentTabItem(
-                    id: trashID,
-                    page: .directory,
-                    anchor: .directory(path: trashURL.path),
-                    isPinned: false,
-                    title: ".Trash",
-                    iconName: "folder",
-                ),
-            ],
-            activeTabID: rootID,
+            tabs: [ContentTabItem(
+                id: directoryID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Desktop"),
+                isPinned: false,
+                title: "Desktop",
+                iconName: "folder",
+            )],
+            activeTabID: directoryID,
             recentlyClosed: nil,
         )
-        state.sidebar.locations = [
-            SidebarItems.LocationItem(name: "Macintosh HD", url: rootURL, iconName: "internaldrive"),
-            SidebarItems.LocationItem(name: "Trash", url: trashURL, iconName: "trash"),
-        ]
 
         state.syncContentTabSidebarItems()
 
-        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Macintosh HD", "Trash"])
-        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.iconName), ["internaldrive", "trash"])
-        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.targetURL), [rootURL, trashURL])
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.title), ["Desktop"])
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.map(\.iconName), ["folder"])
+        XCTAssertNil(state.sidebar.contentTabSidebarItems.first?.targetURL)
         XCTAssertTrue(state.sidebar.contentTabSidebarItems.allSatisfy { $0.tagColorCode == nil })
     }
 
-    /// CTM-004-sidebar_projection_content_tabs: Tag tab은 기존 Tags 섹션과 같은 tagColor를 재사용함
-    /// Tags row가 SF Symbol tag 아이콘으로 표시되는 회귀를 방지한다.
-    func testContentTabSidebarItems_reuseTagColorForMatchingTagVirtualCollection() throws {
+    /// CTM-004-sidebar_projection_content_tabs: virtual collection tab은 Sidebar Tags 섹션 상태 없이 ContentTab metadata만 사용함
+    /// Tags 섹션 제거 후 tagColor enrich가 사라지고 tab row metadata가 직접 투영되는 정책을 검증한다.
+    func testContentTabSidebarItems_useContentTabMetadataForVirtualCollection() throws {
         let tagID = ContentTabID()
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
@@ -251,13 +260,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             activeTabID: tagID,
             recentlyClosed: nil,
         )
-        state.sidebar.tags = [Tag(name: "Work", colorCode: TagColor.red.colorCode)]
 
         state.syncContentTabSidebarItems()
 
         let item = try XCTUnwrap(state.sidebar.contentTabSidebarItems.first)
         XCTAssertEqual(item.title, "Work")
-        XCTAssertEqual(item.tagColorCode, TagColor.red.colorCode)
+        XCTAssertEqual(item.iconName, "folder")
+        XCTAssertNil(item.tagColorCode)
     }
 
     // MARK: - CTM-004-sidebar_row_click_routing
@@ -328,5 +337,64 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(ContentTabProjection.activePageAnchor(from: store.state.contentTabs), .homeDefault)
         XCTAssertEqual(store.state.content.navigation.currentPath, homeSessionPath)
         XCTAssertEqual(store.state.tabContentStates[directoryID]?.navigation.currentPath, directoryPath)
+    }
+
+    /// CTM-004-sidebar_projection_content_tabs: Composer overlay는 Sidebar 섹션 제거 후에도 기본 scope favorites를 유지함
+    /// Favorites 섹션 state 삭제가 Composer scope picker의 Desktop/Documents/Downloads shortcut을 제거하지 않음을 검증한다.
+    func testContentOverlayProps_restoreDefaultComposerFavorites() {
+        let state = FileManagerFeature.State()
+        let client = FileManagerClient(
+            contentsOfDirectory: { _, _, _ in [] },
+            createDirectory: { _, _, _ in },
+            mountedVolumeURLs: { _, _ in nil },
+            urlsForDirectory: { directory, domain in
+                switch (directory, domain) {
+                case (.applicationDirectory, .localDomainMask):
+                    [URL(fileURLWithPath: "/Applications")]
+                case (.desktopDirectory, .userDomainMask):
+                    [URL(fileURLWithPath: "/Users/test/Desktop")]
+                case (.documentDirectory, .userDomainMask):
+                    [URL(fileURLWithPath: "/Users/test/Documents")]
+                case (.downloadsDirectory, .userDomainMask):
+                    [URL(fileURLWithPath: "/Users/test/Downloads")]
+                default:
+                    []
+                }
+            },
+            copyItem: { _, _ in },
+            moveItem: { _, _ in },
+            removeItem: { _ in },
+            trashItem: { _ in URL(fileURLWithPath: "/tmp/.Trash/test") },
+            fileExists: { _ in false },
+            fileExistsWithIsDirectory: { _, _ in false },
+            attributesOfItem: { _ in [:] },
+            displayName: { URL(fileURLWithPath: $0).lastPathComponent },
+            temporaryDirectory: { URL(fileURLWithPath: "/tmp") },
+            currentDirectoryPath: { "/" },
+        )
+
+        let overlayProps = FileManagerContentChromePropsBuilder.makeContentOverlayProps(
+            from: state,
+            fileManagerClient: client,
+        )
+
+        XCTAssertEqual(overlayProps.favorites.map(\.name), [
+            "Applications",
+            "Desktop",
+            "Documents",
+            "Downloads",
+        ])
+        XCTAssertEqual(overlayProps.favorites.map(\.url.path), [
+            "/Applications",
+            "/Users/test/Desktop",
+            "/Users/test/Documents",
+            "/Users/test/Downloads",
+        ])
+        XCTAssertEqual(overlayProps.favorites.map(\.iconName), [
+            "appstore",
+            "menubar.dock.rectangle",
+            "doc",
+            "arrow.down.circle",
+        ])
     }
 }

@@ -432,11 +432,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
             ),
         ) {
             ContentTabFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
 
         await store.send(.close(pinnedID)) {
             $0.tabs[id: pinnedID]?.isPinned = false
         }
+        await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
     }
 
@@ -666,6 +669,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.send(.setCurrent(invalidID))
         await store.send(.close(invalidID))
         await store.send(.pin(invalidID))
+        await store.send(.unpin(invalidID))
         await store.finish()
 
         var tabs = IdentifiedArrayOf<ContentTabItem>()

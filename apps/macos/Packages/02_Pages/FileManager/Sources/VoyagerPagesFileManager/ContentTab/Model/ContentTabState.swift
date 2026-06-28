@@ -47,17 +47,23 @@ public struct ContentTabState: Equatable {
     public var activeTabID: ContentTabID?
     public var previousActiveTabID: ContentTabID?
     public var recentlyClosed: ClosedContentTabSnapshot?
+    public var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
+    public var pinnedRecordPersistenceError: String?
 
     public init(
         tabs: IdentifiedArrayOf<ContentTabItem> = [],
         activeTabID: ContentTabID? = nil,
         previousActiveTabID: ContentTabID? = nil,
         recentlyClosed: ClosedContentTabSnapshot? = nil,
+        pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:],
+        pinnedRecordPersistenceError: String? = nil,
     ) {
         self.tabs = tabs
         self.activeTabID = activeTabID
         self.previousActiveTabID = previousActiveTabID
         self.recentlyClosed = recentlyClosed
+        self.pinnedRecords = pinnedRecords
+        self.pinnedRecordPersistenceError = pinnedRecordPersistenceError
     }
 }
 
