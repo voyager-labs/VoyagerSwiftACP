@@ -398,19 +398,15 @@ struct AppRootFeature {
     }
 
     private func reduceExternalFileURL(
-        into state: inout State,
+        into _: inout State,
         action: Action,
     ) -> Effect<Action> {
         switch action {
         case let .receiveExternalFileURL(url, source, mode):
-            guard !state.windowManager.windows.isEmpty else {
-                state.pendingExternalFileRoutes.append(.init(url: url, source: source, mode: mode))
-                return .none
-            }
-            return .send(.externalFileRouter(.receiveFileURL(url, source: source, mode: mode)))
+            .send(.externalFileRouter(.receiveFileURL(url, source: source, mode: mode)))
 
         default:
-            return .none
+            .none
         }
     }
 

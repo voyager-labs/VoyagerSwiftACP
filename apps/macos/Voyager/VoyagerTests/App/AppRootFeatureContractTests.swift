@@ -395,21 +395,29 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
     }
 
-    /// Cold path: 창이 없을 때 receiveExternalFileURL 수신 → pendingExternalFileRoutes에 적재되고 effect는 없음을 검증.
-    func testReceiveExternalFileURLBuffersWhenNoWindows() async {
-        let url = URL(fileURLWithPath: "/tmp/voyager-cold.txt")
+    /// No-window hot path: 열린 FMW 창이 없어도 receiveExternalFileURL 수신 → ExternalFileRouter로 즉시 전달을 검증.
+    func testReceiveExternalFileURLForwardsWhenNoWindows() async {
+        let url = URL(fileURLWithPath: "/tmp/voyager-no-window.txt")
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
+        } withDependencies: {
+            $0.pathProbeClient.probeExistence = { _ in
+                PathProbeResult(exists: false, isDirectory: false)
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
         }
+        store.exhaustivity = .off
 
-        await store.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open)) {
-            $0.pendingExternalFileRoutes = [
-                .init(url: url, source: .systemOpenEvent, mode: .open),
-            ]
+        await store.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open))
+        await store.receive { action in
+            guard case let .externalFileRouter(.receiveFileURL(receivedURL, source, mode)) = action else {
+                return false
+            }
+            return receivedURL == url && source == .systemOpenEvent && mode == .open
         }
     }
 
-    /// Cold → flush: 창 없는 상태에서 2개 URL을 적재한 뒤 첫 창을 열면 두 URL이 모두 receiveFileURL로
+    /// Cold → flush: 앱 준비 전 2개 URL이 pending에 적재된 뒤 첫 창을 열면 두 URL이 모두 receiveFileURL로
     /// flush되고(적재 순서 보존) pending 큐는 비어야 함을 검증.
     func testReceiveExternalFileURLFlushesAllOnFirstWindow() async {
         let url1 = URL(fileURLWithPath: "/tmp/voyager-flush-1.txt")
@@ -419,6 +427,10 @@ final class AppRootFeatureContractTests: XCTestCase {
         var initialState = AppRootFeature.State()
         // helper bridge .run(observeChangedPaths)이 호출되지 않도록 사전에 started 상태로 설정
         initialState.isHelperExternalFileBridgeStarted = true
+        initialState.pendingExternalFileRoutes = [
+            .init(url: url1, source: .systemOpenEvent, mode: .open),
+            .init(url: url2, source: .nsservices, mode: .reveal),
+        ]
 
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
@@ -435,11 +447,6 @@ final class AppRootFeatureContractTests: XCTestCase {
         // store.exhaustivity = .off: 첫 창 오픈 시 helper bridge/replay/ExternalFileRouter 후속 effect가 다수 발생하므로
         // flush 대상 receiveFileURL 2건과 pending 큐 소진 여부만 검증
         store.exhaustivity = .off
-
-        // Cold state에서 2개 URL 적재
-        await store.send(.receiveExternalFileURL(url1, source: .systemOpenEvent, mode: .open))
-        await store.send(.receiveExternalFileURL(url2, source: .nsservices, mode: .reveal))
-        XCTAssertEqual(store.state.pendingExternalFileRoutes.count, 2)
 
         // 첫 창 오픈 → didOpenFirstWindow → flush
         await store.send(.windowManager(.file(.newWindow(path: nil))))
