@@ -664,8 +664,13 @@ private extension AccountAccessFeature {
         state.consecutiveRefreshFailures = 0
 
         return .merge(
+            .run { [sessionClient, snapshotClient] _ in
+                try? await sessionClient.delete(.sessionExpired)
+                await snapshotClient.remove()
+            },
             .cancel(id: CancelID.fetchStatus),
             .cancel(id: CancelID.ttlTimer),
+            .cancel(id: CancelID.fetchRetry),
         )
     }
 
