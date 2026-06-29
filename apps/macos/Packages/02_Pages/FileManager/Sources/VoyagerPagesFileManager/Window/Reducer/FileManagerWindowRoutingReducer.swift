@@ -183,8 +183,15 @@ struct FileManagerWindowRoutingReducer {
                 return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case let .applyPinnedContentTabs(contentTabs):
+                let activeTabIDBeforeSync = state.contentTabs.activeTabID
+                let activeAnchorBeforeSync = activeTabIDBeforeSync.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
                 state.applyPinnedContentTabs(contentTabs)
-                return .none
+                let activeAnchorAfterSync = state.contentTabs.activeTabID
+                    .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+                let shouldResyncContentNavigation = state.contentTabs.activeTabID == activeTabIDBeforeSync
+                    && activeAnchorAfterSync != activeAnchorBeforeSync
+                    && activeAnchorAfterSync?.isCollectionFileAnchor == true
+                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case .contentTabs:
                 state.syncContentTabSidebarItems()
@@ -562,4 +569,14 @@ private func contentState(
     }
 
     return content
+}
+
+private extension ContentTabPageAnchor {
+    var isCollectionFileAnchor: Bool {
+        if case .collectionFile = self {
+            true
+        } else {
+            false
+        }
+    }
 }

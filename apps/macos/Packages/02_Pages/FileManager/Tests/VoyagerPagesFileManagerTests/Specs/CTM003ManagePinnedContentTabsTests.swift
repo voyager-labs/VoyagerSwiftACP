@@ -1668,6 +1668,70 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([duplicateID]))
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: active pinned tab sync가 collection file open effect를 실행
+    /// 다른 window에서 같은 pinned tab anchor가 collection file로 바뀌면 synthetic route 복원에 머물지 않고 실제 file load를 시작해야 한다.
+    /// - 검증 내용: applyPinnedContentTabs action 처리 후 navigation.view.openCollectionFile effect 수신
+    /// - 사전 조건: active pinned Directory tab이 있고 restored state는 같은 id의 collectionFile anchor를 보유
+    /// - 기대 결과: active tab은 유지되고 collection URL로 openCollectionFile 액션 전송
+    func testApplyPinnedContentTabsOpensCollectionFileWhenActivePinnedAnchorChangesToCollectionFile() async {
+        let pinnedID = ContentTabID(rawValue: "shared-pin")
+        let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Old")
+        let collectionURL = URL(fileURLWithPath: "/Users/test/Synced.voyagercollection")
+        let newAnchor: ContentTabPageAnchor = .collectionFile(url: collectionURL)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: oldAnchor,
+                    isPinned: true,
+                    title: "Old",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(id: pinnedID, anchor: oldAnchor, title: "Old", iconName: "folder"),
+            ],
+        )
+        state.content.navigation.seedInitialFolderPath("/Users/test/Old")
+        state.syncActiveTabContentState()
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .collection,
+                    anchor: newAnchor,
+                    isPinned: true,
+                    title: "Synced",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+            activeTabID: pinnedID,
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(
+                    id: pinnedID,
+                    page: .collection,
+                    anchor: newAnchor,
+                    title: "Synced",
+                    iconName: "rectangle.stack",
+                ),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 이 테스트는 applyPinnedContentTabs가 collection file open effect를 연결하는지만 검증하고,
+        // handoff 과정의 cancel/resync child action 전체 순서는 기존 tab handoff spec에 위임한다.
+        store.exhaustivity = .off
+
+        await store.send(.applyPinnedContentTabs(restoredState))
+        await store.receive(\.navigation.view.openCollectionFile, collectionURL)
+    }
+
     /// CTM-003-pin_content_tab_s: active pinned tab sync 시 content route 재동기화
     /// 다른 window에서 같은 pinned tab anchor가 변경되면 현재 active content도 새 anchor 기준으로 복원되어야 한다.
     /// - 검증 내용: applyPinnedContentTabs가 active pinned tab의 변경된 anchor를 content navigation에 반영
