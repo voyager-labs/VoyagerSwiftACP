@@ -7,9 +7,9 @@ import XCTest
 /// `toAccessStatus()`가 raw status + productKey 조합을 canonical AccessStatus로 변환하는지 검증한다.
 final class ACC002AccessStatusResponseCodingTests: XCTestCase {
     private var decoder: JSONDecoder = {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return d
+        let jsonDecoder = JSONDecoder()
+        jsonDecoder.dateDecodingStrategy = .iso8601
+        return jsonDecoder
     }()
 
     // MARK: - Backend camelCase decode
@@ -25,9 +25,10 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
             "currentPeriodEnd": "2026-07-05T00:00:00Z",
             "source": "polar"
         }
-        """.data(using: .utf8)!
+        """
+        let data = Data(json.utf8)
 
-        let response = try decoder.decode(AccessStatusResponse.self, from: json)
+        let response = try decoder.decode(AccessStatusResponse.self, from: data)
 
         XCTAssertTrue(response.hasAccess)
         XCTAssertEqual(response.status, "active")
@@ -44,9 +45,10 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
             "hasAccess": false,
             "status": "none"
         }
-        """.data(using: .utf8)!
+        """
+        let data = Data(json.utf8)
 
-        let response = try decoder.decode(AccessStatusResponse.self, from: json)
+        let response = try decoder.decode(AccessStatusResponse.self, from: data)
 
         XCTAssertFalse(response.hasAccess)
         XCTAssertEqual(response.status, "none")
@@ -64,9 +66,10 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
             "status": "active",
             "currentPeriodEnd": null
         }
-        """.data(using: .utf8)!
+        """
+        let data = Data(json.utf8)
 
-        let response = try decoder.decode(AccessStatusResponse.self, from: json)
+        let response = try decoder.decode(AccessStatusResponse.self, from: data)
 
         XCTAssertTrue(response.hasAccess)
         XCTAssertNil(response.currentPeriodEnd)
@@ -116,6 +119,24 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
             productKey: nil,
         )
         XCTAssertEqual(response.toAccessStatus(), .coreLicenseActive)
+    }
+
+    /// Backend canonical status는 hasAccess fallback보다 우선한다.
+    func testToAccessStatusCanonicalStatuses() {
+        let cases: [(String, AccessStatus)] = [
+            ("core_license_active", .coreLicenseActive),
+            ("internal_test_active", .internalTestActive),
+            ("trial_active", .trialActive),
+            ("trial_expired", .trialExpired),
+            ("revoked", .revoked),
+            ("refunded", .refunded),
+            ("none", .none),
+        ]
+
+        for (status, expected) in cases {
+            let response = AccessStatusResponse(hasAccess: false, status: status)
+            XCTAssertEqual(response.toAccessStatus(), expected)
+        }
     }
 
     /// revoked → .revoked
@@ -208,5 +229,29 @@ final class ACC002AccessStatusResponseCodingTests: XCTestCase {
         let decoded = try decoder.decode(AccessStatusResponse.self, from: data)
 
         XCTAssertEqual(original, decoded)
+    }
+
+    /// 기존 snapshot blob의 expiresAt 키를 currentPeriodEnd로 복원한다.
+    func testAccessStatusSnapshotDecodesLegacyExpiresAt() throws {
+        struct LegacySnapshot: Encodable {
+            let status: AccessStatus
+            let expiresAt: Date
+            let fetchedAt: Date
+        }
+
+        let expiresAt = Date(timeIntervalSince1970: 1_900_000_000)
+        let fetchedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let legacy = LegacySnapshot(
+            status: .coreLicenseActive,
+            expiresAt: expiresAt,
+            fetchedAt: fetchedAt,
+        )
+        let data = try JSONEncoder().encode(legacy)
+
+        let snapshot = try JSONDecoder().decode(AccessStatusSnapshot.self, from: data)
+
+        XCTAssertEqual(snapshot.status, .coreLicenseActive)
+        XCTAssertEqual(snapshot.currentPeriodEnd, expiresAt)
+        XCTAssertEqual(snapshot.fetchedAt, fetchedAt)
     }
 }

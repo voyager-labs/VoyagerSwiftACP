@@ -10,15 +10,6 @@ public struct AccessStatusResponse: Equatable, Sendable, Codable {
     public var currentPeriodEnd: Date?
     public var source: String?
 
-    private enum CodingKeys: String, CodingKey {
-        case hasAccess
-        case status
-        case reason
-        case productKey
-        case currentPeriodEnd
-        case source
-    }
-
     public init(
         hasAccess: Bool,
         status: String,
@@ -44,6 +35,10 @@ public struct AccessStatusResponse: Equatable, Sendable, Codable {
     /// - hasAccess=false + status="expired" + 그 외 → .none
     /// - 그 외 (inactive, past_due, none) → .none
     public func toAccessStatus() -> AccessStatus {
+        if let canonicalStatus = AccessStatus(rawValue: status) {
+            return canonicalStatus
+        }
+
         if hasAccess {
             switch productKey {
             case "trial": return .trialActive
