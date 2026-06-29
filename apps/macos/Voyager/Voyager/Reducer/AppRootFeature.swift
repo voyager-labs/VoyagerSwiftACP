@@ -405,6 +405,9 @@ struct AppRootFeature {
         case let .receiveExternalFileURL(url, source, mode):
             .send(.externalFileRouter(.receiveFileURL(url, source: source, mode: mode)))
 
+        case let .receiveCollectionFileURL(url):
+            .send(.windowManager(.file(.openCollectionFile(url))))
+
         default:
             .none
         }

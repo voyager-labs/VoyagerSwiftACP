@@ -1,5 +1,6 @@
 import ComposableArchitecture
 @testable import Voyager
+import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
@@ -128,5 +129,47 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         XCTAssertEqual(openedIDs.value.count, 1, "fileManagerWindowClient.open은 온보딩 완료 후 정확히 한 번 호출되어야 한다")
         XCTAssertEqual(openedIDs.value.first, newID, "open에 전달된 ID는 생성된 윈도우 ID와 일치해야 한다")
+    }
+
+    /// RCL-002-open_saved_collection: `.voycoll` 외부 문서 열기는 새 FMW를 만든 뒤 collection open navigation으로 연결된다.
+    func testOpenCollectionFileCreatesWindowAndRoutesCollectionNavigation() async {
+        let newID = UUID()
+        let collectionURL = URL(fileURLWithPath: "/tmp/Saved.voycoll")
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.collectionFileClient.load = { _ in throw CancellationError() }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.openCollectionFile(collectionURL))) {
+            $0.windows.append(.init(id: newID, window: .makeInitial(path: nil)))
+            $0.focusedWindowID = newID
+        }
+
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.content(.entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(receivedID)))))),
+            )) = action else {
+                return false
+            }
+            return id == newID && receivedID == newID
+        }
+
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.navigation(.view(.openCollectionFile(receivedURL)))),
+            )) = action else {
+                return false
+            }
+            return id == newID && receivedURL == collectionURL
+        }
     }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import VoyagerEntitiesCollection
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
 
@@ -69,7 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             for url in urls {
                 let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
                 let mode: DeepLinkMode = isDirectory ? .open : .reveal
-                $0.send(.receiveExternalFileURL(url, source: .nsservices, mode: mode))
+                routeFileURL(url, source: .nsservices, mode: mode, to: $0)
             }
         }
     }
@@ -77,7 +78,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func routeSystemOpenFileURLs(_ urls: [URL]) {
         withAppRootStore {
             for url in urls {
-                $0.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open))
+                routeFileURL(url, source: .systemOpenEvent, mode: .open, to: $0)
             }
         }
     }
@@ -91,11 +92,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 store.send(.receiveExternalURL(url))
             }
         case "file":
-            // System Open Event — 항상 폴더, mode=open
-            store.send(.receiveExternalFileURL(url, source: .systemOpenEvent, mode: .open))
+            routeFileURL(url, source: .systemOpenEvent, mode: .open, to: store)
         default:
             break
         }
+    }
+
+    private func routeFileURL(
+        _ url: URL,
+        source: RouteSource,
+        mode: DeepLinkMode,
+        to store: StoreOf<AppRootFeature>,
+    ) {
+        if CollectionFileUtils.isCollectionFile(url) {
+            store.send(.receiveCollectionFileURL(url))
+            return
+        }
+
+        store.send(.receiveExternalFileURL(url, source: source, mode: mode))
     }
 
     private func isAuthCallback(_ url: URL) -> Bool {

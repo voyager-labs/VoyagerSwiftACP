@@ -417,6 +417,28 @@ final class AppRootFeatureContractTests: XCTestCase {
         }
     }
 
+    /// RCL-002: 외부 `.voycoll` 문서는 generic ExternalFileRouter가 아니라 collection open window command로 전달된다.
+    func testReceiveCollectionFileURLRoutesToCollectionWindowCommand() async {
+        let url = URL(fileURLWithPath: "/tmp/saved.voycoll")
+        let store = TestStore(initialState: AppRootFeature.State()) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.uuid = .constant(UUID())
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.receiveCollectionFileURL(url))
+        await store.receive { action in
+            guard case let .windowManager(.file(.openCollectionFile(receivedURL))) = action else {
+                return false
+            }
+            return receivedURL == url
+        }
+    }
+
     /// Cold → flush: 앱 준비 전 2개 URL이 pending에 적재된 뒤 첫 창을 열면 두 URL이 모두 receiveFileURL로
     /// flush되고(적재 순서 보존) pending 큐는 비어야 함을 검증.
     func testReceiveExternalFileURLFlushesAllOnFirstWindow() async {

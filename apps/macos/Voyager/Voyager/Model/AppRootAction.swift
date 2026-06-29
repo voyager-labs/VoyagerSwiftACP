@@ -23,6 +23,8 @@ enum AppRootAction: CasePathable {
     case receiveAuthCallbackURL(URL)
     /// 외부 file:// URL 수신 (System Open Event, NSServices)
     case receiveExternalFileURL(URL, source: RouteSource, mode: DeepLinkMode)
+    /// 외부 `.voycoll` 문서 열기 수신. RCL collection open 경로로 분리한다.
+    case receiveCollectionFileURL(URL)
     case appPreferences(AppPreferencesFeature.Action)
     case windowManager(WindowManagerFeature.Action)
     case updater(UpdaterFeature.Action)
