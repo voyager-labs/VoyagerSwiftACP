@@ -120,6 +120,8 @@ extension ContentTabFeature {
             anchor: tab.anchor,
             wasPinned: tab.isPinned,
             closedAt: Date(),
+            title: tab.title,
+            iconName: tab.iconName,
         )
         state.recentlyClosed = snapshot
 
@@ -172,8 +174,8 @@ extension ContentTabFeature {
             page: snapshot.page,
             anchor: snapshot.anchor,
             isPinned: false,
-            title: title(for: snapshot.anchor),
-            iconName: iconName(for: snapshot.anchor),
+            title: snapshot.title ?? title(for: snapshot.anchor),
+            iconName: snapshot.iconName ?? iconName(for: snapshot.anchor),
         )
         state.tabs.append(item)
         state.previousActiveTabID = state.activeTabID

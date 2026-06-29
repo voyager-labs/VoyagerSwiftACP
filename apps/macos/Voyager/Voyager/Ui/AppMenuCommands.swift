@@ -90,6 +90,12 @@ struct AppMenuCommands: Commands {
             .keyboardShortcut("p", modifiers: .command)
             .disabled(!viewStore.hasFocusedWindow)
 
+            Button("Restore Last Closed Tab") {
+                send(.app(.restoreLastClosedTab))
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(!viewStore.canRestoreLastClosedTab)
+
             Button("Close All") {
                 send(.app(.closeAllWindows))
             }

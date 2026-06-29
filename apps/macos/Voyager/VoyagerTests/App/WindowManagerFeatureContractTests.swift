@@ -468,4 +468,59 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(window?.contentTabs.tabs[0].anchor, .directory(path: testPath))
         XCTAssertFalse(window?.contentTabs.tabs[0].isPinned ?? true, "명시적 path window의 tab은 unpinned")
     }
+
+    /// restoreLastClosedTab 코맨드가 포커스된 윈도우의 contentTabs.recentlyClosed로 라우팅되어
+    /// recentlyClosed snapshot을 소비하고 새 탭을 추가하는지 검증한다.
+    /// - 검증 내용: restore 후 recentlyClosed == nil, tabs.count 1 증가
+    /// - 사전 조건: 포커스된 FMW 1개, Directory recentlyClosed snapshot 1개, fileExistsWithIsDirectory true 응답
+    /// - 기대 결과: recentlyClosed 소비, tab count +1
+    func testRestoreLastClosedTabCommandRoutesToFocusedWindowContentTab() async {
+        let windowID = UUID()
+        let directoryPath = "/Users/test/Restored"
+        let directoryAnchor = ContentTabPageAnchor.directory(path: directoryPath)
+        let closedSnapshot = ClosedContentTabSnapshot(
+            page: .directory,
+            anchor: directoryAnchor,
+            wasPinned: false,
+            closedAt: Date(timeIntervalSince1970: 1_234_567_890),
+        )
+
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [
+            WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
+        ]
+        initialState.focusedWindowID = windowID
+        initialState.windows[id: windowID]?.window.contentTabs.recentlyClosed = closedSnapshot
+
+        let initialTabCount = initialState.windows[id: windowID]?.window.contentTabs.tabs.count ?? 0
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { path, isDirectory in
+                guard path == directoryPath else { return false }
+                isDirectory?.pointee = true
+                return true
+            }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // 비포괄적: file(.restoreLastClosedTab) → sendCommandToFocusedWindow → window(.request(.restoreLastClosedContentTab))
+        // → handleRestoreLastClosedContentTab → .contentTabs(.restore)로 이어지는 sync .send 체인을
+        // 명시적 receive로 처리한다. 각 receive는 forEach wrapper를 통과한 중첩 action을 소비한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.restoreLastClosedTab))
+        await store.receive(\.windows)
+        await store.receive(\.windows)
+
+        let window = store.state.windows[id: windowID]?.window
+        XCTAssertNotNil(window, "window가 존재해야 함")
+        XCTAssertNil(window?.contentTabs.recentlyClosed, "restore 후 recentlyClosed는 소비되어 nil이어야 함")
+        XCTAssertEqual(window?.contentTabs.tabs.count, initialTabCount + 1, "restore 후 tab count가 1 증가해야 함")
+        XCTAssertEqual(window?.contentTabs.tabs.last?.anchor, directoryAnchor, "복원된 tab의 anchor가 일치해야 함")
+    }
 }

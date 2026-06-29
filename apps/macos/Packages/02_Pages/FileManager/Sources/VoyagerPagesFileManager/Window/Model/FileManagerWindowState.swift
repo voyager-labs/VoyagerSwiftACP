@@ -161,6 +161,7 @@ extension FileManagerWindowState {
     }
 
     mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {
+        let recentlyClosed = contentTabs.recentlyClosed
         let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
         let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
         let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
@@ -182,7 +183,6 @@ extension FileManagerWindowState {
             .merging(pendingPinnedRecords) { restored, _ in restored }
         contentTabs.pendingPinnedRecordIDs = pendingPinnedIDs
         contentTabs.previousActiveTabID = nil
-        contentTabs.recentlyClosed = nil
 
         for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
             tabContentStates[removedID] = nil
@@ -214,6 +214,7 @@ extension FileManagerWindowState {
             restoreContentStateForActiveTab()
         }
 
+        contentTabs.recentlyClosed = recentlyClosed
         syncContentTabSidebarItems()
     }
 

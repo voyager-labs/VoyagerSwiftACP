@@ -2012,6 +2012,93 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.currentPath, "Home")
     }
 
+    /// CTM-003-pin_content_tab_s: pinned tab global sync가 recentlyClosed snapshot을 보존
+    /// VOY-440 fix 검증: applyPinnedContentTabs 호출 후 recentlyClosed restore candidate가 초기화되지 않아야 한다.
+    /// - 검증 내용: applyPinnedContentTabs 후 recentlyClosed가 nil이 아닌 동일 snapshot 유지
+    /// - 사전 조건: pinned directory tab + unpinned Home tab + .directory recentlyClosed snapshot
+    /// - 기대 결과: recentlyClosed의 page/anchor가 변경 전과 동일하고 pinned tab 갱신 및 unpinned tab 보존
+    func testApplyPinnedContentTabs_preservesRecentlyClosedSnapshot() {
+        let pinnedID = ContentTabID(rawValue: "pinned-dir")
+        let homeID = ContentTabID(rawValue: "home-tab")
+        let closedAnchor = ContentTabPageAnchor.directory(path: "/Users/test/ClosedDir")
+        let pinnedAnchor = ContentTabPageAnchor.directory(path: "/Users/test/PinnedDir")
+        let restoredAnchor = ContentTabPageAnchor.directory(path: "/Users/test/RestoredDir")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: pinnedAnchor,
+                    isPinned: true,
+                    title: "Pinned",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: ClosedContentTabSnapshot(
+                page: .directory,
+                anchor: closedAnchor,
+                wasPinned: false,
+                closedAt: Date(timeIntervalSince1970: 1000),
+            ),
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(
+                    id: pinnedID,
+                    anchor: pinnedAnchor,
+                    title: "Pinned",
+                    iconName: "folder",
+                ),
+            ],
+        )
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: restoredAnchor,
+                    isPinned: true,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(
+                    id: pinnedID,
+                    anchor: restoredAnchor,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        // recentlyClosed 보존 검증
+        XCTAssertEqual(state.contentTabs.recentlyClosed?.page, .directory)
+        XCTAssertEqual(state.contentTabs.recentlyClosed?.anchor, closedAnchor)
+        XCTAssertNotNil(state.contentTabs.recentlyClosed?.closedAt)
+
+        // pinned tab 갱신 검증
+        XCTAssertEqual(state.contentTabs.tabs.map(\.id), [pinnedID, homeID])
+        XCTAssertEqual(state.contentTabs.tabs[id: pinnedID]?.anchor, restoredAnchor)
+
+        // unpinned tab 보존 검증
+        XCTAssertEqual(state.contentTabs.tabs[id: homeID]?.isPinned, false)
+
+        // active tab 유지 검증
+        XCTAssertEqual(state.contentTabs.activeTabID, homeID)
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 저장된 pinned record store에서 pinned tab 복원
     /// Home과 Directory record가 있는 store를 복원하면 pinned tab과 focused Home tab이 함께 생성됨을 검증한다.
     /// - 검증 내용: pinned tabs 2개 + 기본 Home tab 1개, activeTabID는 기본 Home

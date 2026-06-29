@@ -43,6 +43,8 @@ public struct ClosedContentTabSnapshot: Equatable, Sendable, Codable {
     public var anchor: ContentTabPageAnchor
     public var wasPinned: Bool
     public var closedAt: Date
+    public var title: String?
+    public var iconName: String?
 }
 
 @ObservableState

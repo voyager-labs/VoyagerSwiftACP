@@ -62,6 +62,7 @@ struct MenuCommandsFeature {
         case .newTab: .send(.delegate(.windowManager(.file(.newTab))))
         case .closeTab: .send(.delegate(.windowManager(.file(.closeTab))))
         case .togglePinTab: .send(.delegate(.windowManager(.file(.togglePinTab))))
+        case .restoreLastClosedTab: .send(.delegate(.windowManager(.file(.restoreLastClosedTab))))
         case .newFolder: .send(.delegate(.windowManager(.file(.newFolder))))
         case .open: .send(.delegate(.windowManager(.file(.open))))
         case .quickLook: .send(.delegate(.windowManager(.file(.quickLook))))
