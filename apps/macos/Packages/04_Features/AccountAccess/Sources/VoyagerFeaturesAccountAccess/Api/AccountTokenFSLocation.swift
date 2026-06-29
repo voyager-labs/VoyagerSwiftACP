@@ -1,7 +1,7 @@
 import Foundation
-import VoyagerEntitiesAi
 
-// REFACTOR: 향후 VoyagerShared/CredentialStore로 AIConnectionFileStore와 통합 예정
+// ADR 001: 계정 토큰은 ~/.voyager/account_tokens.json에 저장 (home 고정).
+// AI connection 저장소와 달리 project-root resolver를 사용하지 않는다.
 enum AccountTokenFSLocation {
     static let directoryName = ".voyager"
     static let payloadFileName = "account_tokens.json"
@@ -14,14 +14,14 @@ enum AccountTokenFSLocation {
     }
 
     static func accountTokensFileURL(
-        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
+        homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser,
     ) -> URL {
         directoryURL(homeDirectoryURL: homeDirectoryURL)
             .appendingPathComponent(payloadFileName)
     }
 
     static func lockFileURL(
-        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
+        homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser,
     ) -> URL {
         directoryURL(homeDirectoryURL: homeDirectoryURL)
             .appendingPathComponent(lockFileName)

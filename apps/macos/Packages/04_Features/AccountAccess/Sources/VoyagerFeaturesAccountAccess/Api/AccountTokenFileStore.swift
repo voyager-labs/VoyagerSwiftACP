@@ -1,8 +1,8 @@
 @preconcurrency import Darwin
 @preconcurrency import Foundation
-import VoyagerEntitiesAi
 
-// REFACTOR: 향후 VoyagerShared/CredentialStore로 AIConnectionFileStore와 통합 예정
+// ADR 001: 계정 토큰은 ~/.voyager/account_tokens.json에 저장 (home 고정).
+// AI connection 저장소(VoyagerEntitiesAi.AiConnectionRootResolver)와 root를 분리한다.
 actor AccountTokenFileStore {
     private let fileManager = FileManager.default
     private let payloadURL: URL
@@ -17,7 +17,7 @@ actor AccountTokenFileStore {
     }
 
     static func withDefaultHome(
-        homeDirectoryURL: URL = AiConnectionRootResolver.resolveBaseRoot(),
+        homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser,
     ) -> AccountTokenFileStore {
         AccountTokenFileStore(
             payloadURL: AccountTokenFSLocation.accountTokensFileURL(homeDirectoryURL: homeDirectoryURL),
