@@ -5,6 +5,7 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
+import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
 typealias FileManagerWindowFeature = FileManagerFeature
@@ -33,6 +34,11 @@ struct WindowManagerFeature {
     private var fileManagerWindowClient
     @Dependency(\.attachmentPickerClient)
     private var attachmentPickerClient
+
+    @Dependency(\.contentTabPinnedRecordClient)
+    private var contentTabPinnedRecordClient
+    @Dependency(\.userDefaultsClient)
+    private var userDefaultsClient
 
     @Dependency(\.uuid)
     private var uuid
@@ -293,7 +299,43 @@ struct WindowManagerFeature {
 
     private func makeWindowSession(path: String?) -> WindowSessionState {
         let id = uuid()
-        let windowState = FileManagerWindowFeature.State.makeInitial(path: path)
+
+        if let path {
+            let windowState = FileManagerWindowFeature.State.makeInitial(path: path)
+            return .init(id: id, window: windowState)
+        }
+
+        let windowState: FileManagerWindowFeature.State
+        do {
+            let store = try contentTabPinnedRecordClient.loadStore(userDefaultsClient)
+            let restoreResult = ContentTabState.restoringPinnedRecords(from: store)
+
+            if restoreResult.didCompact {
+                let pinnedTabs = restoreResult.state.tabs.filter(\.isPinned)
+                let compactedStore = ContentTabPinnedRecordStore(
+                    schemaVersion: store.schemaVersion,
+                    records: pinnedTabs.map { tab in
+                        ContentTabPinnedRecord(
+                            id: tab.id.rawValue,
+                            page: tab.page,
+                            anchor: tab.anchor,
+                            title: tab.title,
+                            iconName: tab.iconName,
+                            pinnedAt: restoreResult.state.pinnedRecords[tab.id]?.pinnedAt ?? Date(),
+                        )
+                    },
+                )
+                try? contentTabPinnedRecordClient.saveStore(compactedStore, userDefaultsClient)
+            }
+
+            windowState = FileManagerWindowFeature.State.makeInitial(
+                path: nil,
+                contentTabs: restoreResult.state,
+            )
+        } catch {
+            windowState = FileManagerWindowFeature.State.makeInitial(path: nil)
+        }
+
         return .init(id: id, window: windowState)
     }
 }

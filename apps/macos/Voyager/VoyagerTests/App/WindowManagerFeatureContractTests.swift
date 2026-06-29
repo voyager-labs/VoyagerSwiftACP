@@ -30,6 +30,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { _ in }
         }
@@ -62,6 +64,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         let store = TestStore(initialState: initialState) {
             WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
         }
         store.exhaustivity = .off
 
@@ -112,6 +120,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowManagerFeature()
         } withDependencies: {
             $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in ContentTabPinnedRecordStore() }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
             $0.onboardingWindowClient.showIfNeeded = { false }
             $0.fileManagerWindowClient.open = { id in
                 openedIDs.withValue { $0.append(id) }
@@ -119,6 +130,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }
         store.exhaustivity = .off
 
+        // makeWindowSession에서 pinnedRecords가 없으므로 기본 Home tab으로 fallback
         await store.send(.file(.newWindow(path: nil))) {
             $0.windows.append(.init(id: newID, window: .makeInitial(path: nil)))
             $0.focusedWindowID = newID
@@ -128,5 +140,86 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         XCTAssertEqual(openedIDs.value.count, 1, "fileManagerWindowClient.open은 온보딩 완료 후 정확히 한 번 호출되어야 한다")
         XCTAssertEqual(openedIDs.value.first, newID, "open에 전달된 ID는 생성된 윈도우 ID와 일치해야 한다")
+    }
+
+    /// Default bootstrap(path == nil)에서 pinned record store가 로드되고
+    /// FileManagerFeature.State.makeInitial(path: nil, contentTabs:)에 전달되어
+    /// pinned tab이 포함된 window가 생성됨을 검증한다.
+    /// - 검증 내용: pinned record 1개 load → window에 pinned tab 1개 포함
+    /// - 사전 조건: contentTabPinnedRecordClient.loadStore가 1개 pinned record 반환
+    /// - 기대 결과: window state에 isPinned=true인 tab 1개 존재
+    func testDefaultWindowBootstrapRestoresPinnedRecords() async {
+        let newID = UUID()
+        let pinnedStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "dir-1",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Documents"),
+                title: "Documents",
+                iconName: "folder",
+                pinnedAt: Date(timeIntervalSince1970: 443),
+            ),
+        ])
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in pinnedStore }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // WindowManager bootstrap은 open/app-preference 등 부수 child action을 방출하므로,
+        // 이 테스트는 pinned restore 결과 상태만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.finish()
+
+        let window = store.state.windows.first?.window
+        XCTAssertNotNil(window, "window가 생성되어야 함")
+        XCTAssertEqual(window?.contentTabs.tabs.count, 1, "pinned tab 1개가 복원되어야 함")
+        XCTAssertTrue(window?.contentTabs.tabs[0].isPinned ?? false, "복원된 tab은 pinned 상태여야 함")
+        XCTAssertEqual(window?.contentTabs.tabs[0].page, .directory)
+        XCTAssertEqual(window?.contentTabs.tabs[0].title, "Documents")
+    }
+
+    /// 명시적 path가 있는 window(path != nil)에서는 pinned record restore가
+    /// 발생하지 않고 기존 makeInitial(path:) 동작을 유지함을 검증한다.
+    /// - 검증 내용: loadStore가 호출되지 않고 window가 정상 생성됨
+    /// - 사전 조건: path = "/Users/test/Documents"
+    /// - 기대 결과: loadStore 미호출, 생성된 window는 일반 directory tab 포함
+    func testExplicitPathWindowSkipsPinnedRestore() async {
+        let newID = UUID()
+        let storeLoadCalled = LockIsolated(false)
+
+        let store = TestStore(initialState: WindowManagerFeature.State()) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(newID)
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.contentTabPinnedRecordClient.loadStore = { _ in
+                storeLoadCalled.withValue { $0 = true }
+                return ContentTabPinnedRecordStore()
+            }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // 명시적 path window의 부수 window/open action은 완전히 검증하지 않으므로
+        // path bypass 조건만 검증한다.
+        store.exhaustivity = .off
+
+        let testPath = "/Users/test/Documents"
+        await store.send(.file(.newWindow(path: testPath)))
+        await store.finish()
+
+        XCTAssertFalse(storeLoadCalled.value, "명시적 path window에서는 loadStore가 호출되지 않아야 함")
+        let window = store.state.windows.first?.window
+        XCTAssertNotNil(window, "window가 생성되어야 함")
+        XCTAssertEqual(window?.contentTabs.tabs.count, 1, "기본 Home tab 1개")
+        XCTAssertEqual(window?.contentTabs.tabs[0].anchor, .directory(path: testPath))
+        XCTAssertFalse(window?.contentTabs.tabs[0].isPinned ?? true, "명시적 path window의 tab은 unpinned")
     }
 }
