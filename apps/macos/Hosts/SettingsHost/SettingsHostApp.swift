@@ -62,17 +62,17 @@ private enum SmokeMode {
         let initialSection = state.selectedSection.rawValue
         print("initialSection=\(initialSection)")
 
-        feature.reduce(into: &state, action: .onAppear)
+        _ = feature.reduce(into: &state, action: .onAppear)
         print("onAppearDispatched=true")
 
         let sectionBefore = state.selectedSection.rawValue
         print("selectedSectionBefore=\(sectionBefore)")
 
-        feature.reduce(into: &state, action: .selectSection(.appearance))
+        _ = feature.reduce(into: &state, action: .selectSection(.appearance))
         let sectionAfter = state.selectedSection.rawValue
         print("selectedSectionAfter=\(sectionAfter)")
 
-        feature.reduce(into: &state, action: .closeWindow)
+        _ = feature.reduce(into: &state, action: .closeWindow)
         print("closeActionDispatched=true")
 
         let sectionAfterClose = state.selectedSection.rawValue
@@ -152,6 +152,9 @@ struct SettingsHostApp: App {
     var body: some Scene {
         WindowGroup("Settings") {
             SettingsHostWindowContent(container: appDelegate.storeContainer)
+                .onAppear {
+                    appDelegate.showDebugPanel()
+                }
         }
         .commands {
             // 호스트 전용 debug surface — OnboardingHost 패리티.
