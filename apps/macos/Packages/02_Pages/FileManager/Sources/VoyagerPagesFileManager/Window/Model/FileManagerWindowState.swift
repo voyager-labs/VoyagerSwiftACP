@@ -57,6 +57,7 @@ public struct FileManagerWindowState: Equatable {
         state.contentTabs = contentTabs.map { ContentTabState.bootstrapping(
             restoredTabs: $0.tabs,
             activeTabID: $0.activeTabID,
+            pinnedRecords: $0.pinnedRecords,
         )
         } ?? .withHomeTab()
 
@@ -159,16 +160,104 @@ extension FileManagerWindowState {
         sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
     }
 
+    mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {
+        let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
+        let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
+        let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
+        let pendingPinnedTabs = currentPinnedTabs.filter {
+            contentTabs.pendingPinnedRecordIDs.contains($0.id) && !restoredTabIDs.contains($0.id)
+        }
+        let mergedPinnedTabs = restoredPinnedTabs + pendingPinnedTabs
+        let mergedPinnedIDs = Set(mergedPinnedTabs.map(\.id))
+        let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !mergedPinnedIDs.contains($0.id) }
+        let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
+        let previousPinnedAnchors = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0.anchor) })
+        let activeTabIDBeforeSync = contentTabs.activeTabID
+
+        let pendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
+        let pendingPinnedRecords = contentTabs.pinnedRecords.filter { pendingPinnedIDs.contains($0.key) }
+
+        contentTabs.tabs = IdentifiedArrayOf(uniqueElements: mergedPinnedTabs + currentUnpinnedTabs)
+        contentTabs.pinnedRecords = restoredPinnedState.pinnedRecords
+            .merging(pendingPinnedRecords) { restored, _ in restored }
+        contentTabs.pendingPinnedRecordIDs = pendingPinnedIDs
+        contentTabs.previousActiveTabID = nil
+        contentTabs.recentlyClosed = nil
+
+        for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
+            tabContentStates[removedID] = nil
+        }
+        let changedPinnedTabIDs = Set(
+            restoredPinnedTabs.compactMap { tab in
+                previousPinnedAnchors[tab.id].map { $0 != tab.anchor } == true ? tab.id : nil
+            },
+        )
+        for changedID in changedPinnedTabIDs {
+            tabContentStates[changedID] = nil
+        }
+
+        if contentTabs.tabs.isEmpty {
+            contentTabs = .withHomeTab()
+            restoreContentStateForActiveTab()
+        } else if let activeTabID = contentTabs.activeTabID,
+                  let activeTab = contentTabs.tabs[id: activeTabID]
+        {
+            let activePinnedAnchorDidChange = activeTab.isPinned
+                && activeTabID == activeTabIDBeforeSync
+                && changedPinnedTabIDs.contains(activeTabID)
+            if activePinnedAnchorDidChange {
+                tabContentStates[activeTabID] = nil
+                restoreContentStateForActiveTab()
+            }
+        } else {
+            contentTabs.activeTabID = mergedPinnedTabs.first?.id ?? currentUnpinnedTabs.first?.id
+            restoreContentStateForActiveTab()
+        }
+
+        syncContentTabSidebarItems()
+    }
+
     func canPinContentTab(_ tabID: ContentTabID) -> Bool {
-        guard contentTabs.tabs[id: tabID]?.page == .collection else { return true }
+        let tab = contentTabs.tabs[id: tabID]
+        if let tab {
+            let pinnedRecord = ContentTabPinnedRecord(
+                id: tab.id.rawValue,
+                page: tab.page,
+                anchor: tab.anchor,
+                title: tab.title,
+                iconName: tab.iconName,
+                pinnedAt: .distantPast,
+            )
+            guard pinnedRecord.isPageAnchorCompatible else { return false }
+        }
+
+        let tabPage = tab?.page
         let contentState = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
-        guard let contentState else { return true }
+
+        guard let contentState else { return tabPage != .collection }
+
+        let isShowingCollectionNavigation = if case .collection = contentState.navigation.navigationState {
+            true
+        } else {
+            false
+        }
+
+        guard tabPage == .collection || contentState.isCollectionMode || isShowingCollectionNavigation else {
+            return true
+        }
+
         if case let .collection(navigation) = contentState.navigation.navigationState,
            case .temporary = navigation.kind
         {
             return false
         }
-        return !contentState.isCollectionMode || contentState.openedCollectionURLExists
+        guard contentState.isCollectionMode else { return true }
+        guard contentState.collection.collectionSession.document?.url != nil,
+              contentState.collection.collectionSession.metadata.baseline != nil
+        else {
+            return false
+        }
+        return contentState.openedCollectionURLExists
     }
 }
 

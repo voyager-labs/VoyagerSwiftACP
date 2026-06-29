@@ -55,6 +55,7 @@ public struct ContentTabFeature {
                 } else {
                     state.pinnedRecords.removeValue(forKey: tabID)
                 }
+                state.pendingPinnedRecordIDs.remove(tabID)
                 state.pinnedRecordPersistenceError = "pinned_record_save_failed"
                 return .none
             }
@@ -193,8 +194,14 @@ extension ContentTabFeature {
             iconName: tab.iconName,
             pinnedAt: date(),
         )
+        guard pinnedRecord.isPageAnchorCompatible else {
+            state.pinnedRecordPersistenceError = nil
+            return .none
+        }
+
         state.tabs[id: id]?.isPinned = true
         state.pinnedRecords[id] = pinnedRecord
+        state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
         let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)
@@ -223,8 +230,12 @@ extension ContentTabFeature {
 
         let previousPinnedRecord = state.pinnedRecords[id]
 
-        state.tabs[id: id]?.isPinned = false
+        var unpinnedTab = tab
+        unpinnedTab.isPinned = false
+        state.tabs.remove(id: id)
+        state.tabs.append(unpinnedTab)
         state.pinnedRecords.removeValue(forKey: id)
+        state.pendingPinnedRecordIDs.remove(id)
         state.pinnedRecordPersistenceError = nil
 
         let recordID = id.rawValue
@@ -256,12 +267,54 @@ extension ContentTabFeature {
                                         state: inout ContentTabState) -> Effect<ContentTabAction>
     {
         state.previousActiveTabID = nil
-        guard state.tabs[id: id] != nil else { return .none }
+        guard let tab = state.tabs[id: id] else { return .none }
         state.tabs[id: id]?.anchor = newAnchor
         state.tabs[id: id]?.page = page(for: newAnchor)
         state.tabs[id: id]?.title = title(for: newAnchor)
         state.tabs[id: id]?.iconName = iconName(for: newAnchor)
-        return .none
+
+        guard tab.isPinned else { return .none }
+
+        let updatedRecord = ContentTabPinnedRecord(
+            id: id.rawValue,
+            page: page(for: newAnchor),
+            anchor: newAnchor,
+            title: title(for: newAnchor),
+            iconName: iconName(for: newAnchor),
+            pinnedAt: date(),
+        )
+        guard updatedRecord.isPageAnchorCompatible else {
+            state.pinnedRecordPersistenceError = nil
+            return .none
+        }
+
+        let previousPinnedRecord = state.pinnedRecords[id]
+        state.pinnedRecords[id] = updatedRecord
+        state.pendingPinnedRecordIDs.insert(id)
+        state.pinnedRecordPersistenceError = nil
+
+        let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)
+        let client = contentTabPinnedRecordClient
+        let defaults = userDefaultsClient
+        return .run { send in
+            do {
+                try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                try client.updateStore(defaults) { existingStore in
+                    try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                    return upsertPinnedRecord(updatedRecord, in: existingStore)
+                }
+                await send(.pinnedRecordSaveSucceeded)
+            } catch is CancellationError {
+                return
+            } catch {
+                await send(.pinnedRecordSaveFailed(
+                    tabID: id,
+                    previousIsPinned: true,
+                    previousPinnedRecord: previousPinnedRecord,
+                ))
+            }
+        }
+        .cancellable(id: PinnedRecordPersistenceCancelID(tabID: id), cancelInFlight: true)
     }
 }
 
@@ -342,8 +395,12 @@ func upsertPinnedRecord(
     _ record: ContentTabPinnedRecord,
     in existingStore: ContentTabPinnedRecordStore,
 ) -> ContentTabPinnedRecordStore {
-    var records = existingStore.records.filter { $0.id != record.id }
-    records.append(record)
+    var records = existingStore.records
+    if let existingIndex = records.firstIndex(where: { $0.id == record.id }) {
+        records[existingIndex] = record
+    } else {
+        records.append(record)
+    }
     return ContentTabPinnedRecordStore(schemaVersion: existingStore.schemaVersion, records: records)
 }
 

@@ -11,23 +11,68 @@ import VoyagerShared
 struct FileManagerWindowRoutingReducer {
     @Dependency(\.collectionAlertClient)
     var collectionAlertClient
+    @Dependency(\.fileManagerClient)
+    var fileManagerClient
 
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
+
+    private func cannotPinCollectionFeedbackEffect() -> Effect<Action> {
+        let collectionAlertClient = collectionAlertClient
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Cannot Pin Collection",
+                "Save the collection before pinning it as a tab.",
+            )
+        }
+    }
+
+    private func brokenPinnedTabFeedbackEffect(tabID: ContentTabID, state: State) -> Effect<Action> {
+        guard let tab = state.contentTabs.tabs[id: tabID], tab.isPinned else { return .none }
+        guard isBrokenPinnedAnchor(tab.anchor) else { return .none }
+
+        let collectionAlertClient = collectionAlertClient
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Pinned Location Unavailable",
+                "The pinned item no longer exists. Navigate to a valid location to update this pinned tab.",
+            )
+        }
+    }
+
+    private func isBrokenPinnedAnchor(_ anchor: ContentTabPageAnchor) -> Bool {
+        switch anchor {
+        case let .directory(path):
+            var isDirectory = ObjCBool(false)
+            return !fileManagerClient.fileExistsWithIsDirectory(path, &isDirectory) || !isDirectory.boolValue
+
+        case let .collectionFile(url):
+            return !fileManagerClient.fileExistsWithIsDirectory(url.path, nil)
+
+        case .homeDefault,
+             .virtualCollection,
+             .aiChat:
+            return false
+        }
+    }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case let .sidebar(.delegate(.selectContentTab(tabID))):
-                return .send(.contentTabs(.setCurrent(tabID)))
+                return .merge(
+                    .send(.contentTabs(.setCurrent(tabID))),
+                    brokenPinnedTabFeedbackEffect(tabID: tabID, state: state),
+                )
 
             case let .sidebar(.delegate(.closeContentTab(tabID))):
                 return .send(.closeContentTabRequested(tabID))
 
             case let .sidebar(.delegate(.pinContentTab(tabID))):
-                guard state.pendingContentTabClose == nil,
-                      state.canPinContentTab(tabID)
-                else { return .none }
+                guard state.pendingContentTabClose == nil else { return .none }
+                guard state.canPinContentTab(tabID) else {
+                    return cannotPinCollectionFeedbackEffect()
+                }
                 return .send(.contentTabs(.pin(tabID)))
 
             case let .sidebar(.delegate(.unpinContentTab(tabID))):
@@ -135,6 +180,17 @@ struct FileManagerWindowRoutingReducer {
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
+                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
+
+            case let .applyPinnedContentTabs(contentTabs):
+                let activeTabIDBeforeSync = state.contentTabs.activeTabID
+                let activeAnchorBeforeSync = activeTabIDBeforeSync.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+                state.applyPinnedContentTabs(contentTabs)
+                let activeAnchorAfterSync = state.contentTabs.activeTabID
+                    .flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+                let shouldResyncContentNavigation = state.contentTabs.activeTabID == activeTabIDBeforeSync
+                    && activeAnchorAfterSync != activeAnchorBeforeSync
+                    && activeAnchorAfterSync?.isCollectionFileAnchor == true
                 return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
 
             case .contentTabs:
@@ -416,6 +472,9 @@ private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowSta
 }
 
 private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
+    if let collectionURL = collectionFileURLRequiringOpen(state: state) {
+        return .send(.navigation(.view(.openCollectionFile(collectionURL))))
+    }
     guard let navigationState = resyncNavigationStateForActiveContentTab(state: state) else {
         return .none
     }
@@ -426,6 +485,30 @@ private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Eff
         )
     }
     return .send(.content(.internal(.applyNavigationState(navigationState))))
+}
+
+private func collectionFileURLRequiringOpen(state: FileManagerWindowState) -> URL? {
+    guard let activeTabID = state.contentTabs.activeTabID,
+          case let .collectionFile(url) = state.contentTabs.tabs[id: activeTabID]?.anchor
+    else { return nil }
+    guard state.content.collection.collectionSession.document?.url.standardizedFileURL != url.standardizedFileURL else {
+        return nil
+    }
+    if case let .collection(navigation) = state.content.navigation.navigationState,
+       case let .file(navigationURL, _) = navigation.kind,
+       navigationURL.standardizedFileURL == url.standardizedFileURL,
+       !isEmptyCollectionContext(navigation.context)
+    {
+        return nil
+    }
+    return url
+}
+
+private func isEmptyCollectionContext(_ context: CollectionContext) -> Bool {
+    context.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && context.scopes.isEmpty
+        && context.excludedScopes.isEmpty
+        && context.conditions.isEmpty
 }
 
 private func resyncNavigationStateForActiveContentTab(
@@ -486,4 +569,14 @@ private func contentState(
     }
 
     return content
+}
+
+private extension ContentTabPageAnchor {
+    var isCollectionFileAnchor: Bool {
+        if case .collectionFile = self {
+            true
+        } else {
+            false
+        }
+    }
 }
