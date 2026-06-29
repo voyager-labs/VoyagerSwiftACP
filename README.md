@@ -70,6 +70,20 @@ macOS 앱 검색 경로는 Helper/XPC + Gateway를 사용하며, 로컬 FastAPI 
                 - `SettingsHost Dev: Launch (Debug)` - 설정 호스트 Debug 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Release)` - 설정 호스트 Release 모드로 빌드 및 실행
             - 참고: 버튼을 통한 직접 실행은 비권장합니다. xcscheme의 환경변수가 제대로 주입되지 않을 수 있습니다. 태스크를 통한 실행을 사용하세요.
+    - Zed 에디터에서 실행 (`.zed/tasks.json`):
+        - 태스크 실행: `task: spawn` (단축키 `opt-shift-t`)으로 태스크 선택 모달 열기
+        - 재실행: `task: rerun` (단축키 `opt-t`)
+        - 사용 가능한 태스크 (VSCode Sweetpad와 동일):
+            - `Voyager Dev: Launch (Debug)` / `Voyager Dev: Launch (Release)`
+            - `Voyager Prod: Launch (Debug)` / `Voyager Prod: Launch (Release)`
+            - `VoyagerHelper Dev: Launch (Debug)` / `VoyagerHelper Dev: Launch (Release)`
+            - `OnboardingHost Dev: Launch (Debug)` / `OnboardingHost Dev: Launch (Release)`
+            - `SettingsHost Dev: Launch (Debug)` / `SettingsHost Dev: Launch (Release)`
+            - `FileManagerHost Dev: Launch (Debug)` / `FileManagerHost Dev: Launch (Release)`
+            - `Voyager Dev: Build Only (Debug)` - 빌드만 (런치 없음)
+            - `Voyager Dev: Test` - Voyager-Dev 스킴 테스트
+        - 내부 동작: `scripts/dev/macos-launch.sh`가 xcodebuild 빌드 → `.app` 산출물 해석 → 태스크별 launch 환경변수 주입 후 실행파일 직접 실행
+        - Zed 태스크의 환경변수는 `.zed/tasks.json`에서 명시적으로 전달합니다. 런타임 `.env` 표준화는 별도 이슈(VOY-432)에서 다룹니다.
     - Build (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug`
     - Prod build/archive (CLI): `xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Prod -configuration Release`
     - Tests (CLI): `xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj`
