@@ -357,6 +357,60 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-003-pin_content_tab_s: restore 불가 anchor로 pinned record 갱신 차단
+    /// Pinned Collection tab이 Recents 같은 restore 제외 anchor로 이동해도 저장된 pinned record를 오염시키지 않는다.
+    /// - 검증 내용: updateActivePageAnchor가 tab UI는 갱신하지만 incompatible pinned record 저장은 생략
+    /// - 사전 조건: collectionFile anchor를 가진 pinned Collection tab
+    /// - 기대 결과: tab anchor는 Recents로 바뀌고 persisted pinned record는 기존 collectionFile 유지
+    func testPin_pinnedTabNavigationSkipsIncompatiblePinnedRecordPersistence() async {
+        let tabID = ContentTabID()
+        let originalURL = URL(fileURLWithPath: "/Users/test/Saved.voyagercollection")
+        let originalAnchor: ContentTabPageAnchor = .collectionFile(url: originalURL)
+        let recentsAnchor: ContentTabPageAnchor = .virtualCollection(id: "Recents")
+        let originalRecord = Self.pinnedRecord(
+            id: tabID,
+            page: .collection,
+            anchor: originalAnchor,
+            title: "Saved",
+            iconName: "rectangle.stack",
+        )
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabID,
+                        page: .collection,
+                        anchor: originalAnchor,
+                        isPinned: true,
+                        title: "Saved",
+                        iconName: "rectangle.stack",
+                    ),
+                ],
+                activeTabID: tabID,
+                recentlyClosed: nil,
+                pinnedRecords: [tabID: originalRecord],
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in
+                XCTFail("restore 불가 anchor는 pinned record로 저장하지 않아야 함")
+            }
+        }
+
+        await store.send(ContentTabAction.updateActivePageAnchor(tabID, recentsAnchor)) {
+            $0.tabs[id: tabID]?.page = .collection
+            $0.tabs[id: tabID]?.anchor = recentsAnchor
+            $0.tabs[id: tabID]?.title = "Recents"
+            $0.tabs[id: tabID]?.iconName = "clock"
+            $0.pinnedRecordPersistenceError = nil
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.pinnedRecords[tabID], originalRecord)
+    }
+
     /// CTM-003-pin_content_tab_s: pin 시점 record snapshot은 이후 tab 변경과 다음 save에도 유지
     /// Pinned tab의 page/anchor/title/icon이 바뀐 뒤 다른 tab pin으로 저장이 다시 발생해도 최초 pinned record가 오염되지 않음을 검증한다.
     /// - 검증 내용: pin → active tab anchor 변경 → 다른 tab pin save 시 첫 record는 pin 시점 snapshot 유지
@@ -1510,6 +1564,121 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.activeTabID, unpinnedID)
         XCTAssertNil(state.tabContentStates[stalePinnedID])
         XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([firstPinnedID, secondPinnedID]))
+    }
+
+    /// CTM-003-pin_content_tab_s: active pinned tab sync 시 content route 재동기화
+    /// 다른 window에서 같은 pinned tab anchor가 변경되면 현재 active content도 새 anchor 기준으로 복원되어야 한다.
+    /// - 검증 내용: applyPinnedContentTabs가 active pinned tab의 변경된 anchor를 content navigation에 반영
+    /// - 사전 조건: active pinned tab이 old directory content를 표시 중이고 global store는 같은 id의 new directory anchor를 보유
+    /// - 기대 결과: active tab id는 유지되고 content/tabContentStates currentPath가 new directory로 갱신
+    func testApplyPinnedContentTabs_resyncsActivePinnedTabWhenAnchorChanges() {
+        let pinnedID = ContentTabID(rawValue: "shared-pin")
+        let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Old")
+        let newAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/New")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: oldAnchor,
+                    isPinned: true,
+                    title: "Old",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(id: pinnedID, anchor: oldAnchor, title: "Old", iconName: "folder"),
+            ],
+        )
+        state.content.navigation.seedInitialFolderPath("/Users/test/Old")
+        state.syncActiveTabContentState()
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: newAnchor,
+                    isPinned: true,
+                    title: "New",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(id: pinnedID, anchor: newAnchor, title: "New", iconName: "folder"),
+            ],
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.activeTabID, pinnedID)
+        XCTAssertEqual(state.contentTabs.tabs[id: pinnedID]?.anchor, newAnchor)
+        XCTAssertEqual(state.content.navigation.currentPath, "/Users/test/New")
+        XCTAssertEqual(state.tabContentStates[pinnedID]?.navigation.currentPath, "/Users/test/New")
+    }
+
+    /// CTM-003-pin_content_tab_s: inactive pinned tab sync 시 stale content state 제거
+    /// 다른 window에서 inactive pinned tab anchor가 변경되면 다음 선택 시 새 anchor 기준으로 복원되어야 한다.
+    /// - 검증 내용: applyPinnedContentTabs가 inactive pinned tab의 변경된 anchor에 대한 cached content state를 제거
+    /// - 사전 조건: active Home tab과 old directory content state를 가진 inactive pinned tab
+    /// - 기대 결과: pinned tab anchor는 new directory로 갱신되고 기존 tabContentStates entry는 제거
+    func testApplyPinnedContentTabsClearsInactivePinnedTabStateWhenAnchorChanges() {
+        let homeID = ContentTabID(rawValue: "home-tab")
+        let pinnedID = ContentTabID(rawValue: "shared-pin")
+        let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Old")
+        let newAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/New")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: oldAnchor,
+                    isPinned: true,
+                    title: "Old",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: homeID,
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(id: pinnedID, anchor: oldAnchor, title: "Old", iconName: "folder"),
+            ],
+        )
+        var stalePinnedContent = FileManagerContentFeature.State.initialContent(for: oldAnchor)
+        stalePinnedContent.navigation.seedInitialFolderPath("/Users/test/Old")
+        state.tabContentStates[pinnedID] = stalePinnedContent
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: newAnchor,
+                    isPinned: true,
+                    title: "New",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(id: pinnedID, anchor: newAnchor, title: "New", iconName: "folder"),
+            ],
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.activeTabID, homeID)
+        XCTAssertEqual(state.contentTabs.tabs[id: pinnedID]?.anchor, newAnchor)
+        XCTAssertNil(state.tabContentStates[pinnedID])
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 저장된 pinned record store에서 pinned tab 복원

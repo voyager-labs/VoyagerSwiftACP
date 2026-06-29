@@ -267,7 +267,6 @@ extension ContentTabFeature {
 
         guard tab.isPinned else { return .none }
 
-        let previousPinnedRecord = state.pinnedRecords[id]
         let updatedRecord = ContentTabPinnedRecord(
             id: id.rawValue,
             page: page(for: newAnchor),
@@ -276,6 +275,12 @@ extension ContentTabFeature {
             iconName: iconName(for: newAnchor),
             pinnedAt: date(),
         )
+        guard updatedRecord.isPageAnchorCompatible else {
+            state.pinnedRecordPersistenceError = nil
+            return .none
+        }
+
+        let previousPinnedRecord = state.pinnedRecords[id]
         state.pinnedRecords[id] = updatedRecord
         state.pinnedRecordPersistenceError = nil
 

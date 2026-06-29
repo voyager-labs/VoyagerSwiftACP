@@ -164,7 +164,10 @@ extension FileManagerWindowState {
         let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
         let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned }
         let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
-        let currentPinnedIDs = Set(contentTabs.tabs.filter(\.isPinned).map(\.id))
+        let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
+        let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
+        let previousPinnedAnchors = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0.anchor) })
+        let activeTabIDBeforeSync = contentTabs.activeTabID
 
         contentTabs.tabs = IdentifiedArrayOf(uniqueElements: restoredPinnedTabs + currentUnpinnedTabs)
         contentTabs.pinnedRecords = restoredPinnedState.pinnedRecords
@@ -174,13 +177,27 @@ extension FileManagerWindowState {
         for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
             tabContentStates[removedID] = nil
         }
+        let changedPinnedTabIDs = Set(
+            restoredPinnedTabs.compactMap { tab in
+                previousPinnedAnchors[tab.id].map { $0 != tab.anchor } == true ? tab.id : nil
+            },
+        )
+        for changedID in changedPinnedTabIDs {
+            tabContentStates[changedID] = nil
+        }
 
         if contentTabs.tabs.isEmpty {
             contentTabs = .withHomeTab()
         } else if let activeTabID = contentTabs.activeTabID,
-                  contentTabs.tabs[id: activeTabID] != nil
+                  let activeTab = contentTabs.tabs[id: activeTabID]
         {
-            // 기존 active tab이 아직 남아 있으면 사용자의 현재 컨텍스트를 유지한다.
+            let activePinnedAnchorDidChange = activeTab.isPinned
+                && activeTabID == activeTabIDBeforeSync
+                && changedPinnedTabIDs.contains(activeTabID)
+            if activePinnedAnchorDidChange {
+                tabContentStates[activeTabID] = nil
+                restoreContentStateForActiveTab()
+            }
         } else {
             contentTabs.activeTabID = restoredPinnedTabs.first?.id ?? currentUnpinnedTabs.first?.id
             restoreContentStateForActiveTab()
