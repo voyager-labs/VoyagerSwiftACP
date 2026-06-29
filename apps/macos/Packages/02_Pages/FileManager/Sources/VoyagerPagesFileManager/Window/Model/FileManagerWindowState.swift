@@ -162,8 +162,8 @@ extension FileManagerWindowState {
 
     mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {
         let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
-        let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned }
         let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
+        let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !restoredTabIDs.contains($0.id) }
         let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
         let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
         let previousPinnedAnchors = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0.anchor) })

@@ -1605,6 +1605,69 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([firstPinnedID, secondPinnedID]))
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: sync 중 같은 id의 optimistic unpinned tab 중복 제거
+    /// 다른 window의 store가 아직 pinned record를 보유한 동안 현재 window가 같은 id를 unpin한 경우 unique tab id 충돌을 막아야 한다.
+    /// - 검증 내용: restored pinned id와 같은 current unpinned tab을 병합 전 제외
+    /// - 사전 조건: 현재 window에는 same id unpinned tab이 있고 restored state에는 same id pinned tab이 있음
+    /// - 기대 결과: same id tab은 pinned 항목으로 한 번만 남고 기존 다른 unpinned tab은 보존
+    func testApplyPinnedContentTabs_filtersDuplicateUnpinnedTabIDsFromRestoredPinnedTabs() {
+        let duplicateID = ContentTabID(rawValue: "shared-pin")
+        let workingID = ContentTabID(rawValue: "working-tab")
+        let restoredAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Restored")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: duplicateID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/LocalUnpinned"),
+                    isPinned: false,
+                    title: "Local",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: workingID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: workingID,
+            pinnedRecords: [:],
+        )
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: duplicateID,
+                    page: .directory,
+                    anchor: restoredAnchor,
+                    isPinned: true,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: duplicateID,
+            pinnedRecords: [
+                duplicateID: Self.pinnedRecord(
+                    id: duplicateID,
+                    anchor: restoredAnchor,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs.map(\.id), [duplicateID, workingID])
+        XCTAssertEqual(state.contentTabs.tabs[id: duplicateID]?.isPinned, true)
+        XCTAssertEqual(state.contentTabs.tabs[id: duplicateID]?.anchor, restoredAnchor)
+        XCTAssertEqual(state.contentTabs.activeTabID, workingID)
+        XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([duplicateID]))
+    }
+
     /// CTM-003-pin_content_tab_s: active pinned tab sync 시 content route 재동기화
     /// 다른 window에서 같은 pinned tab anchor가 변경되면 현재 active content도 새 anchor 기준으로 복원되어야 한다.
     /// - 검증 내용: applyPinnedContentTabs가 active pinned tab의 변경된 anchor를 content navigation에 반영
