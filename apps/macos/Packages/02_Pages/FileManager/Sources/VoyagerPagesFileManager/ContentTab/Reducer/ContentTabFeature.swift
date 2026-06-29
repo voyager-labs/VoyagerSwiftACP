@@ -55,6 +55,7 @@ public struct ContentTabFeature {
                 } else {
                     state.pinnedRecords.removeValue(forKey: tabID)
                 }
+                state.pendingPinnedRecordIDs.remove(tabID)
                 state.pinnedRecordPersistenceError = "pinned_record_save_failed"
                 return .none
             }
@@ -200,6 +201,7 @@ extension ContentTabFeature {
 
         state.tabs[id: id]?.isPinned = true
         state.pinnedRecords[id] = pinnedRecord
+        state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
         let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)
@@ -233,6 +235,7 @@ extension ContentTabFeature {
         state.tabs.remove(id: id)
         state.tabs.append(unpinnedTab)
         state.pinnedRecords.removeValue(forKey: id)
+        state.pendingPinnedRecordIDs.remove(id)
         state.pinnedRecordPersistenceError = nil
 
         let recordID = id.rawValue
@@ -287,6 +290,7 @@ extension ContentTabFeature {
 
         let previousPinnedRecord = state.pinnedRecords[id]
         state.pinnedRecords[id] = updatedRecord
+        state.pendingPinnedRecordIDs.insert(id)
         state.pinnedRecordPersistenceError = nil
 
         let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)

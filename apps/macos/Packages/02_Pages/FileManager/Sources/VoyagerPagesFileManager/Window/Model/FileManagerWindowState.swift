@@ -163,14 +163,24 @@ extension FileManagerWindowState {
     mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {
         let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
         let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
-        let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !restoredTabIDs.contains($0.id) }
         let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
+        let pendingPinnedTabs = currentPinnedTabs.filter {
+            contentTabs.pendingPinnedRecordIDs.contains($0.id) && !restoredTabIDs.contains($0.id)
+        }
+        let mergedPinnedTabs = restoredPinnedTabs + pendingPinnedTabs
+        let mergedPinnedIDs = Set(mergedPinnedTabs.map(\.id))
+        let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !mergedPinnedIDs.contains($0.id) }
         let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
         let previousPinnedAnchors = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0.anchor) })
         let activeTabIDBeforeSync = contentTabs.activeTabID
 
-        contentTabs.tabs = IdentifiedArrayOf(uniqueElements: restoredPinnedTabs + currentUnpinnedTabs)
+        let pendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
+        let pendingPinnedRecords = contentTabs.pinnedRecords.filter { pendingPinnedIDs.contains($0.key) }
+
+        contentTabs.tabs = IdentifiedArrayOf(uniqueElements: mergedPinnedTabs + currentUnpinnedTabs)
         contentTabs.pinnedRecords = restoredPinnedState.pinnedRecords
+            .merging(pendingPinnedRecords) { restored, _ in restored }
+        contentTabs.pendingPinnedRecordIDs = pendingPinnedIDs
         contentTabs.previousActiveTabID = nil
         contentTabs.recentlyClosed = nil
 
@@ -200,7 +210,7 @@ extension FileManagerWindowState {
                 restoreContentStateForActiveTab()
             }
         } else {
-            contentTabs.activeTabID = restoredPinnedTabs.first?.id ?? currentUnpinnedTabs.first?.id
+            contentTabs.activeTabID = mergedPinnedTabs.first?.id ?? currentUnpinnedTabs.first?.id
             restoreContentStateForActiveTab()
         }
 

@@ -52,6 +52,7 @@ public struct ContentTabState: Equatable, Sendable {
     public var previousActiveTabID: ContentTabID?
     public var recentlyClosed: ClosedContentTabSnapshot?
     public var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
+    public var pendingPinnedRecordIDs: Set<ContentTabID> = []
     public var pinnedRecordPersistenceError: String?
 
     public init(
@@ -60,6 +61,7 @@ public struct ContentTabState: Equatable, Sendable {
         previousActiveTabID: ContentTabID? = nil,
         recentlyClosed: ClosedContentTabSnapshot? = nil,
         pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:],
+        pendingPinnedRecordIDs: Set<ContentTabID> = [],
         pinnedRecordPersistenceError: String? = nil,
     ) {
         self.tabs = tabs
@@ -67,6 +69,7 @@ public struct ContentTabState: Equatable, Sendable {
         self.previousActiveTabID = previousActiveTabID
         self.recentlyClosed = recentlyClosed
         self.pinnedRecords = pinnedRecords
+        self.pendingPinnedRecordIDs = pendingPinnedRecordIDs
         self.pinnedRecordPersistenceError = pinnedRecordPersistenceError
     }
 }

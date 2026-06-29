@@ -183,6 +183,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(tabID)) {
             $0.tabs[id: tabID]?.isPinned = true
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
@@ -228,6 +229,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 title: "Saved",
                 iconName: "rectangle.stack",
             )
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
@@ -429,6 +431,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(unpinnedID)) {
             $0.tabs[id: unpinnedID]?.isPinned = true
             $0.pinnedRecords[unpinnedID] = Self.pinnedRecord(id: unpinnedID, anchor: sameAnchor)
+            $0.pendingPinnedRecordIDs.insert(unpinnedID)
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
@@ -556,6 +559,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(firstID)) {
             $0.tabs[id: firstID]?.isPinned = true
             $0.pinnedRecords[firstID] = firstSnapshotAtPin
+            $0.pendingPinnedRecordIDs.insert(firstID)
             $0.pinnedRecordPersistenceError = nil
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
@@ -568,6 +572,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.tabs[id: firstID]?.title = "/Users/test/Desktop"
             $0.tabs[id: firstID]?.iconName = "folder"
             $0.pinnedRecords[firstID] = firstSnapshotAfterNav
+            $0.pendingPinnedRecordIDs.insert(firstID)
             $0.pinnedRecordPersistenceError = nil
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
@@ -578,6 +583,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(secondID)) {
             $0.tabs[id: secondID]?.isPinned = true
             $0.pinnedRecords[secondID] = secondSnapshot
+            $0.pendingPinnedRecordIDs.insert(secondID)
             $0.pinnedRecordPersistenceError = nil
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
@@ -621,10 +627,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(tabID)) {
             $0.tabs[id: tabID]?.isPinned = true
             $0.pinnedRecords[tabID] = Self.pinnedRecord(id: tabID, anchor: directoryAnchor)
+            $0.pendingPinnedRecordIDs.insert(tabID)
         }
         await store.receive(\.pinnedRecordSaveFailed) {
             $0.tabs[id: tabID]?.isPinned = false
             $0.pinnedRecords.removeAll()
+            $0.pendingPinnedRecordIDs.remove(tabID)
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
         }
         await store.finish()
@@ -750,15 +758,18 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(firstID)) {
             $0.tabs[id: firstID]?.isPinned = true
             $0.pinnedRecords[firstID] = firstRecord
+            $0.pendingPinnedRecordIDs.insert(firstID)
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.send(.pin(secondID)) {
             $0.tabs[id: secondID]?.isPinned = true
             $0.pinnedRecords[secondID] = secondRecord
+            $0.pendingPinnedRecordIDs.insert(secondID)
         }
         await store.receive(\.pinnedRecordSaveFailed) {
             $0.tabs[id: secondID]?.isPinned = false
             $0.pinnedRecords.removeValue(forKey: secondID)
+            $0.pendingPinnedRecordIDs.remove(secondID)
             $0.pinnedRecordPersistenceError = "pinned_record_save_failed"
         }
         await store.finish()
@@ -830,11 +841,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(firstID)) {
             $0.tabs[id: firstID]?.isPinned = true
             $0.pinnedRecords[firstID] = firstRecord
+            $0.pendingPinnedRecordIDs.insert(firstID)
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.send(.pin(secondID)) {
             $0.tabs[id: secondID]?.isPinned = true
             $0.pinnedRecords[secondID] = secondRecord
+            $0.pendingPinnedRecordIDs.insert(secondID)
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
@@ -913,6 +926,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.send(.pin(currentID)) {
             $0.tabs[id: currentID]?.isPinned = true
             $0.pinnedRecords[currentID] = currentRecord
+            $0.pendingPinnedRecordIDs.insert(currentID)
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
@@ -1018,6 +1032,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 title: "Documents",
                 iconName: "folder",
             )
+            $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
         }
         await store.receive(\.contentTabs.pinnedRecordSaveSucceeded)
@@ -1702,6 +1717,80 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(state.contentTabs.tabs[id: duplicateID]?.anchor, restoredAnchor)
         XCTAssertEqual(state.contentTabs.activeTabID, workingID)
         XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([duplicateID]))
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 저장 대기 중인 local pinned tab은 global sync에서 보존
+    /// local pin 저장 effect가 완료되기 전에 다른 window의 global store sync가 도착해도 optimistic pinned tab을 잃지 않아야 한다.
+    /// - 검증 내용: restored store에 없는 pending pinned tab과 record를 병합 결과에 유지
+    /// - 사전 조건: 현재 window에는 pending pinned tab이 있고 restored state에는 다른 pinned tab만 있음
+    /// - 기대 결과: restored pinned 뒤에 pending pinned가 유지되고 pending set과 local pinned record가 남음
+    func testApplyPinnedContentTabs_preservesPendingLocalPinnedTabMissingFromRestoredStore() {
+        let restoredID = ContentTabID(rawValue: "restored-pin")
+        let pendingID = ContentTabID(rawValue: "pending-pin")
+        let workingID = ContentTabID(rawValue: "working-tab")
+        let pendingAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Pending")
+        let restoredAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Restored")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pendingID,
+                    page: .directory,
+                    anchor: pendingAnchor,
+                    isPinned: true,
+                    title: "Pending",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: workingID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: workingID,
+            pinnedRecords: [
+                pendingID: Self.pinnedRecord(
+                    id: pendingID,
+                    anchor: pendingAnchor,
+                    title: "Pending",
+                    iconName: "folder",
+                ),
+            ],
+            pendingPinnedRecordIDs: [pendingID],
+        )
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: restoredID,
+                    page: .directory,
+                    anchor: restoredAnchor,
+                    isPinned: true,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: restoredID,
+            pinnedRecords: [
+                restoredID: Self.pinnedRecord(
+                    id: restoredID,
+                    anchor: restoredAnchor,
+                    title: "Restored",
+                    iconName: "folder",
+                ),
+            ],
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs.map(\.id), [restoredID, pendingID, workingID])
+        XCTAssertEqual(state.contentTabs.tabs[id: pendingID]?.isPinned, true)
+        XCTAssertEqual(state.contentTabs.tabs[id: pendingID]?.anchor, pendingAnchor)
+        XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([restoredID, pendingID]))
+        XCTAssertEqual(state.contentTabs.pendingPinnedRecordIDs, [pendingID])
+        XCTAssertEqual(state.contentTabs.activeTabID, workingID)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: active pinned tab sync가 collection file open effect를 실행
