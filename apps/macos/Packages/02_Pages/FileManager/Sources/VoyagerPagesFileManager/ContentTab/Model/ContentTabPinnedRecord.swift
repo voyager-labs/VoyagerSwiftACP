@@ -37,7 +37,7 @@ public extension ContentTabPinnedRecord {
         case (.collection, .virtualCollection):
             false
         case (.aiChat, .aiChat):
-            true
+            false
         default:
             false
         }

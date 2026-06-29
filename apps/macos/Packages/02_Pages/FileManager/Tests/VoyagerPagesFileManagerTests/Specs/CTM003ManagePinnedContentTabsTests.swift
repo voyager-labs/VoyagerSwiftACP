@@ -276,6 +276,44 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(store.state.pinnedRecords[tabID])
     }
 
+    /// CTM-003-pin_content_tab_s: restore 경로가 없는 AI Chat 최초 pin 차단
+    /// AI Chat session은 현재 content/inspector 복원 계약이 없으므로 persisted pinned record로 저장하지 않는다.
+    /// - 검증 내용: AI Chat anchor pin 시도 후 local pinned state와 UserDefaults 저장 미발생
+    /// - 사전 조건: unpinned AI Chat tab의 anchor == .aiChat(sessionID:)
+    /// - 기대 결과: tab은 unpinned 유지, pinnedRecords 비어 있음, updateStore 미호출
+    func testPin_aiChatAnchorDoesNotPersistPinnedRecord() async {
+        let tabID = ContentTabID(rawValue: "ai-chat-tab")
+        let aiChatAnchor: ContentTabPageAnchor = .aiChat(sessionID: "chat-1")
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabID,
+                        page: .aiChat,
+                        anchor: aiChatAnchor,
+                        isPinned: false,
+                        title: "AI Chat",
+                        iconName: "sparkles",
+                    ),
+                ],
+                activeTabID: tabID,
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in
+                XCTFail("복원 경로가 없는 AI Chat anchor는 최초 pin에서도 저장하지 않아야 함")
+            }
+        }
+
+        await store.send(.pin(tabID))
+        await store.finish()
+
+        XCTAssertEqual(store.state.tabs[id: tabID]?.isPinned, false)
+        XCTAssertNil(store.state.pinnedRecords[tabID])
+    }
+
     /// CTM-003-pin_content_tab_s: 이미 pinned tab에 pin은 idempotent no-op
     /// 이미 pinned 상태인 tab에 다시 pin 액션을 보내면 중복 record 생성 없이 no-op임을 검증한다.
     /// - 검증 내용: already-pinned tab pin → 상태 변화 없음, effect 없음
@@ -453,13 +491,13 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// CTM-003-pin_content_tab_s: pin 시점 record snapshot은 이후 tab 변경과 다음 save에도 유지
     /// Pinned tab의 page/anchor/title/icon이 바뀐 뒤 다른 tab pin으로 저장이 다시 발생해도 최초 pinned record가 오염되지 않음을 검증한다.
     /// - 검증 내용: pin → active tab anchor 변경 → 다른 tab pin save 시 첫 record는 pin 시점 snapshot 유지
-    /// - 사전 조건: unpinned Directory tab과 unpinned AI Chat tab
+    /// - 사전 조건: unpinned Directory tab 2개
     /// - 기대 결과: 첫 record page/anchor/title/iconName/pinnedAt이 pin 시점 값으로 유지
     func testPin_pinnedTabNavigationUpdatesPinnedRecordAndPersists() async {
         let firstID = ContentTabID()
         let secondID = ContentTabID()
         let originalAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Documents")
-        let changedAnchor: ContentTabPageAnchor = .aiChat(sessionID: "chat-1")
+        let changedAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Desktop")
         let secondAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Downloads")
         let firstSnapshotAtPin = Self.pinnedRecord(
             id: firstID,
@@ -469,10 +507,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         )
         let firstSnapshotAfterNav = Self.pinnedRecord(
             id: firstID,
-            page: .aiChat,
             anchor: changedAnchor,
-            title: "AI Chat",
-            iconName: "sparkles",
+            title: "/Users/test/Desktop",
+            iconName: "folder",
         )
         let secondSnapshot = Self.pinnedRecord(
             id: secondID,
@@ -527,10 +564,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         // Navigate within pinned tab → record should update and persist
         await store.send(.updateActivePageAnchor(firstID, changedAnchor)) {
-            $0.tabs[id: firstID]?.page = .aiChat
             $0.tabs[id: firstID]?.anchor = changedAnchor
-            $0.tabs[id: firstID]?.title = "AI Chat"
-            $0.tabs[id: firstID]?.iconName = "sparkles"
+            $0.tabs[id: firstID]?.title = "/Users/test/Desktop"
+            $0.tabs[id: firstID]?.iconName = "folder"
             $0.pinnedRecords[firstID] = firstSnapshotAfterNav
             $0.pinnedRecordPersistenceError = nil
         }
@@ -2118,12 +2154,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.droppedCount, 1)
     }
 
-    /// CTM-003-go_to_anchored_path_of_pinned_tab: virtual collection record 제외
-    /// Recents/Computer처럼 persisted restore 경로에서 안전하게 구분할 수 없는 virtual collection record는 보존 대상에서 제외한다.
-    /// - 검증 내용: virtualCollection record 제외, collectionFile + home record 유지
-    /// - 사전 조건: collectionFile, virtualCollection("Recents"), virtualCollection("Wonsik Mac"), home record
-    /// - 기대 결과: 복원 가능한 2개만 유지, droppedCount 2
-    func testPinnedRecordRestore_skipsVirtualCollectionRecords() {
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: restore 불가 lightweight record 제외
+    /// Recents/Computer virtual collection과 AI Chat처럼 content 복원 경로가 없는 record는 보존 대상에서 제외한다.
+    /// - 검증 내용: virtualCollection/aiChat record 제외, collectionFile + home record 유지
+    /// - 사전 조건: collectionFile, virtualCollection("Recents"), virtualCollection("Wonsik Mac"), aiChat, home record
+    /// - 기대 결과: 복원 가능한 2개만 유지, droppedCount 3
+    func testPinnedRecordRestore_skipsVirtualCollectionAndAIChatRecords() {
         let pinnedAt = Self.pinnedAt
         let store = ContentTabPinnedRecordStore(records: [
             ContentTabPinnedRecord(
@@ -2151,6 +2187,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedAt: pinnedAt,
             ),
             ContentTabPinnedRecord(
+                id: "skip-ai",
+                page: .aiChat,
+                anchor: .aiChat(sessionID: "chat-1"),
+                title: "AI Chat",
+                iconName: "sparkles",
+                pinnedAt: pinnedAt,
+            ),
+            ContentTabPinnedRecord(
                 id: "valid-2",
                 page: .home,
                 anchor: .homeDefault,
@@ -2168,14 +2212,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
         XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.isPinned, false)
         XCTAssertTrue(result.didCompact)
-        XCTAssertEqual(result.droppedCount, 2)
+        XCTAssertEqual(result.droppedCount, 3)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: record 순서와 메타데이터 보존
-    /// Directory, Collection, AI Chat record가 입력 순서대로 복원되고
+    /// Directory와 Collection record가 입력 순서대로 복원되고
     /// title/iconName/pinnedAt 메타데이터가 보존됨을 검증한다.
     /// - 검증 내용: 3개 record 순서 유지, 메타데이터 일치
-    /// - 사전 조건: 3개 record (directory, collection, aiChat)
+    /// - 사전 조건: 3개 record (directory 2개, collection 1개)
     /// - 기대 결과: 순서 및 메타데이터 보존
     func testPinnedRecordRestore_preservesRecordOrderAndMetadata() {
         let pinnedAt = Self.pinnedAt
@@ -2197,11 +2241,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 pinnedAt: pinnedAt,
             ),
             ContentTabPinnedRecord(
-                id: "ai-1",
-                page: .aiChat,
-                anchor: .aiChat(sessionID: "chat-1"),
-                title: "AI Chat",
-                iconName: "sparkles",
+                id: "dir-2",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Downloads"),
+                title: "Downloads",
+                iconName: "folder",
                 pinnedAt: pinnedAt,
             ),
         ])
@@ -2209,7 +2253,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let result = ContentTabState.restoringPinnedRecords(from: store)
 
         XCTAssertEqual(result.state.tabs.count, 4)
-        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["dir-1", "col-1", "ai-1"])
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["dir-1", "col-1", "dir-2"])
         XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
         XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.isPinned, false)
 
@@ -2229,12 +2273,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.state.tabs[1].iconName, "rectangle.stack")
         XCTAssertEqual(result.state.pinnedRecords[secondID]?.pinnedAt, pinnedAt)
 
-        // AI Chat (세 번째)
+        // Directory (세 번째)
         let thirdID = result.state.tabs[2].id
-        XCTAssertEqual(result.state.tabs[2].page, .aiChat)
-        XCTAssertEqual(result.state.tabs[2].anchor, .aiChat(sessionID: "chat-1"))
-        XCTAssertEqual(result.state.tabs[2].title, "AI Chat")
-        XCTAssertEqual(result.state.tabs[2].iconName, "sparkles")
+        XCTAssertEqual(result.state.tabs[2].page, .directory)
+        XCTAssertEqual(result.state.tabs[2].anchor, .directory(path: "/Users/test/Downloads"))
+        XCTAssertEqual(result.state.tabs[2].title, "Downloads")
+        XCTAssertEqual(result.state.tabs[2].iconName, "folder")
         XCTAssertEqual(result.state.pinnedRecords[thirdID]?.pinnedAt, pinnedAt)
     }
 
