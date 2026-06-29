@@ -46,7 +46,7 @@ public struct ClosedContentTabSnapshot: Equatable, Sendable, Codable {
 }
 
 @ObservableState
-public struct ContentTabState: Equatable {
+public struct ContentTabState: Equatable, Sendable {
     public var tabs: IdentifiedArrayOf<ContentTabItem> = []
     public var activeTabID: ContentTabID?
     public var previousActiveTabID: ContentTabID?
@@ -114,6 +114,7 @@ public extension ContentTabState {
     static func restoringPinnedRecords(
         from store: ContentTabPinnedRecordStore,
         maxTabs: Int = ContentTabConstants.maxTabs,
+        isRestorableAnchor: (ContentTabPageAnchor) -> Bool = { _ in true },
     ) -> (state: ContentTabState, didCompact: Bool, droppedCount: Int) {
         var seenIDs = Set<String>()
         var validRecords: [(record: ContentTabPinnedRecord, newID: ContentTabID)] = []
@@ -128,6 +129,12 @@ public extension ContentTabState {
             }
 
             guard record.isPageAnchorCompatible else {
+                didCompact = true
+                totalExcluded += 1
+                continue
+            }
+
+            guard isRestorableAnchor(record.anchor) else {
                 didCompact = true
                 totalExcluded += 1
                 continue
@@ -178,9 +185,19 @@ public extension ContentTabState {
             tabs.append(item)
         }
 
+        let homeID = ContentTabID()
+        tabs.append(ContentTabItem(
+            id: homeID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        ))
+
         let state = ContentTabState(
             tabs: tabs,
-            activeTabID: tabs[0].id,
+            activeTabID: homeID,
             pinnedRecords: pinnedRecords,
         )
 

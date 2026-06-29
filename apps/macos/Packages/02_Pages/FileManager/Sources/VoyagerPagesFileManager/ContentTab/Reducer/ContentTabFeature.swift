@@ -223,7 +223,10 @@ extension ContentTabFeature {
 
         let previousPinnedRecord = state.pinnedRecords[id]
 
-        state.tabs[id: id]?.isPinned = false
+        var unpinnedTab = tab
+        unpinnedTab.isPinned = false
+        state.tabs.remove(id: id)
+        state.tabs.append(unpinnedTab)
         state.pinnedRecords.removeValue(forKey: id)
         state.pinnedRecordPersistenceError = nil
 
@@ -378,8 +381,12 @@ func upsertPinnedRecord(
     _ record: ContentTabPinnedRecord,
     in existingStore: ContentTabPinnedRecordStore,
 ) -> ContentTabPinnedRecordStore {
-    var records = existingStore.records.filter { $0.id != record.id }
-    records.append(record)
+    var records = existingStore.records
+    if let existingIndex = records.firstIndex(where: { $0.id == record.id }) {
+        records[existingIndex] = record
+    } else {
+        records.append(record)
+    }
     return ContentTabPinnedRecordStore(schemaVersion: existingStore.schemaVersion, records: records)
 }
 
