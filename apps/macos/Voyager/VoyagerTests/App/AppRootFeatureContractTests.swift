@@ -7,6 +7,7 @@ import VoyagerFeaturesUpdateVersion
 @testable import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
 import VoyagerPagesSettings
+import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -54,7 +55,15 @@ final class AppRootFeatureContractTests: XCTestCase {
 
     /// testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow 테스트 동작을 검증한다.
     func testLifecycleDelegateForwardsToWindowManagerOpenInitialWindow() async {
-        let store = TestStore(initialState: AppRootFeature.State()) {
+        var initialState = AppRootFeature.State()
+        initialState.windowManager.windows = [
+            WindowSessionState(
+                id: UUID(),
+                window: .makeInitial(path: "/tmp"),
+            ),
+        ]
+
+        let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
@@ -62,75 +71,9 @@ final class AppRootFeatureContractTests: XCTestCase {
             $0.fileManagerWindowClient.open = { _ in }
             $0.uuid = .incrementing
         }
-        store.exhaustivity = .off
 
         await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
         await store.receive(\.windowManager.lifecycle.openInitialWindowIfNeeded)
-    }
-
-    /// testHelperExternalFileChangeForwardsToWindowManager 테스트 동작을 검증한다.
-    func testHelperExternalFileChangeForwardsToWindowManager() async {
-        let windowID = UUID()
-        let paths = ["/tmp/demo"]
-        var initialState = AppRootFeature.State()
-        initialState.windowManager.windows = [
-            WindowSessionState(id: windowID, window: .makeInitial(path: "/tmp")),
-        ]
-
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
-        } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-        }
-        store.exhaustivity = .off
-
-        await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == windowID && receivedPaths == paths
-        }
-    }
-
-    /// testHelperExternalFileChangeFansOutToAllOpenWindows 테스트 동작을 검증한다.
-    func testHelperExternalFileChangeFansOutToAllOpenWindows() async {
-        let firstID = UUID()
-        let secondID = UUID()
-        let paths = ["/tmp/demo"]
-
-        var initialState = AppRootFeature.State()
-        initialState.windowManager.windows = [
-            WindowSessionState(id: firstID, window: .makeInitial(path: "/tmp/one")),
-            WindowSessionState(id: secondID, window: .makeInitial(path: "/tmp/two")),
-        ]
-
-        let store = TestStore(initialState: initialState) {
-            AppRootFeature()
-        }
-
-        await store.send(.helperExternalFileChanged(.init(paths: paths, source: .live)))
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == firstID && receivedPaths == paths
-        }
-        await store.receive { action in
-            guard case let .windowManager(.windows(.element(
-                id: id,
-                action: .window(.content(.externalFileSystemChanged(receivedPaths))),
-            ))) = action else {
-                return false
-            }
-            return id == secondID && receivedPaths == paths
-        }
     }
 
     /// testMenuCommandsStateIsRecomputedAfterWindowManagerChanges 테스트 동작을 검증한다.
@@ -170,7 +113,12 @@ final class AppRootFeatureContractTests: XCTestCase {
     func testSettingsGeneralToggleAutomaticUpdateForwardsToUpdater() async {
         let store = TestStore(initialState: AppRootFeature.State()) {
             AppRootFeature()
+        } withDependencies: {
+            $0.userDefaultsClient.setBool = { _, _ in }
+            $0.updaterClient.setAutomaticUpdate = { _ in }
         }
+        store.exhaustivity = .off
+
         store.exhaustivity = .off
 
         await store.send(.settings(.general(.toggleAutomaticUpdate(true))))
@@ -320,9 +268,6 @@ final class AppRootFeatureContractTests: XCTestCase {
         let windowID = UUID()
 
         var initialState = AppRootFeature.State()
-        // helper bridge .run(observeChangedPaths)이 호출되지 않도록 사전에 started 상태로 설정
-        initialState.isHelperExternalFileBridgeStarted = true
-
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
@@ -342,14 +287,6 @@ final class AppRootFeatureContractTests: XCTestCase {
 
         await store.send(.windowManager(.file(.newWindow(path: nil))))
 
-        await store.receive { action in
-            if case .startHelperExternalFileBridge = action { return true }
-            return false
-        }
-        await store.receive { action in
-            if case .flushPendingReplay = action { return true }
-            return false
-        }
         await store.receive { action in
             guard case let .externalFileRouter(.receive(url)) = action else { return false }
             return url == url1
@@ -447,8 +384,6 @@ final class AppRootFeatureContractTests: XCTestCase {
         let windowID = UUID()
 
         var initialState = AppRootFeature.State()
-        // helper bridge .run(observeChangedPaths)이 호출되지 않도록 사전에 started 상태로 설정
-        initialState.isHelperExternalFileBridgeStarted = true
         initialState.pendingExternalFileRoutes = [
             .init(url: url1, source: .systemOpenEvent, mode: .open),
             .init(url: url2, source: .nsservices, mode: .reveal),
@@ -473,15 +408,6 @@ final class AppRootFeatureContractTests: XCTestCase {
         // 첫 창 오픈 → didOpenFirstWindow → flush
         await store.send(.windowManager(.file(.newWindow(path: nil))))
 
-        // reduceWindowPostAction이 동기적으로 발행하는 effect들을 발행 순서대로 수신
-        await store.receive { action in
-            if case .startHelperExternalFileBridge = action { return true }
-            return false
-        }
-        await store.receive { action in
-            if case .flushPendingReplay = action { return true }
-            return false
-        }
         // flush된 receiveFileURL 2건 (적재 순서 보존)
         await store.receive { action in
             guard case let .externalFileRouter(.receiveFileURL(url, source, mode)) = action else {

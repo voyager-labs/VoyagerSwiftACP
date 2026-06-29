@@ -267,6 +267,37 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         XCTAssertFalse(state.canSave(isCollectionMode: false))
     }
 
+    /// RCL-002-indicate_unsaved_collection_filter_changes: 비의미적 filter 표현 차이는 unsaved로 표시하지 않음
+    /// query 공백, scope 순서/표준화, condition label/value 공백 차이를 semantic dirty 비교에서 무시하는지 검증한다.
+    /// - 검증 내용: isDirty false와 collection mode save 비활성화
+    /// - 사전 조건: 의미상 동일하지만 Equatable로는 다른 baseline/current context
+    /// - 기대 결과: 저장되지 않은 변경 indicator가 켜지지 않음
+    func testIndicateUnsavedCollectionFilterChanges_withSemanticEquivalentContext_keepsSaveIndicatorDisabled() {
+        let baseline = CollectionContext(
+            query: "report",
+            scopes: ["/VoyagerFixtures/Documents/../Documents", "/VoyagerFixtures/Notes"],
+            excludedScopes: ["/VoyagerFixtures/Documents/Archive"],
+            conditions: [
+                makeSemanticCondition(propertyKey: "size", propertyLabel: "Size", values: [" 1024 "]),
+                makeSemanticCondition(propertyKey: "kind", propertyLabel: "Kind", values: [" pdf "]),
+            ],
+        )
+        var state = CollectionState()
+        state.collectionSession.metadata.baseline = CollectionBaseline(context: baseline)
+        state.collectionContext = CollectionContext(
+            query: " report ",
+            scopes: ["/VoyagerFixtures/Notes", "/VoyagerFixtures/Documents"],
+            excludedScopes: ["/VoyagerFixtures/Documents/./Archive"],
+            conditions: [
+                makeSemanticCondition(propertyKey: "kind", propertyLabel: "File Kind", values: ["pdf"]),
+                makeSemanticCondition(propertyKey: "size", propertyLabel: "File Size", values: ["1024"]),
+            ],
+        )
+
+        XCTAssertFalse(state.isDirty)
+        XCTAssertFalse(state.canSave(isCollectionMode: true))
+    }
+
     // MARK: - RCL-002-open_saved_collection_legacy
 
     /// RCL-002-open_saved_collection_legacy: legacy single-file `.voycoll` fixture는 호환 모드로 열어야 한다.
@@ -330,6 +361,25 @@ private func draftRestore(from actions: [CollectionAction]) -> CollectionDraftRe
         }
     }
     return nil
+}
+
+private func makeSemanticCondition(
+    propertyKey: String,
+    propertyLabel: String,
+    values: [String],
+) -> Condition {
+    Condition(
+        propertyKey: propertyKey,
+        propertyLabel: propertyLabel,
+        propertyType: "string",
+        operatorCode: "eq",
+        operatorLabel: "Equals",
+        operatorValueArity: 1,
+        operatorValueUIKind: "singleText",
+        valueType: "string",
+        values: values,
+        isActive: true,
+    )
 }
 
 private func makeSavePayload(

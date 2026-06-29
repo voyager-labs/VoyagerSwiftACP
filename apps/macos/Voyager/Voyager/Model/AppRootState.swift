@@ -14,8 +14,6 @@ struct AppRootState: Equatable {
     var menuCommands: MenuCommandsFeature.State = .init()
     /// ExternalFileRouter: 외부 URL/경로를 받아 File Manager Window로 라우팅
     var externalFileRouter: ExternalFileRouterState = .init()
-    var isHelperExternalFileBridgeStarted = false
-    var lastHelperReady = false
     var windowPresenceBeforeWindowManagerAction: Bool?
     /// Cold state에서 첫 창 오픈까지 버퍼링된 외부 URL (Deep Link) 큐
     var pendingExternalURLs: [URL] = []

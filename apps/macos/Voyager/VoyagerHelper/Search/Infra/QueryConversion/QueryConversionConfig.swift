@@ -29,8 +29,22 @@ enum QueryConversionConfig {
     private static let outputSchema: [String: JSONValue] = [
         "type": .string("object"),
         "additionalProperties": .bool(false),
-        "required": .array([.string("conditions"), .string("scopes"), .string("error")]),
+        "required": .array([
+            .string("outcome"),
+            .string("conditions"),
+            .string("scopes"),
+            .string("error"),
+        ]),
         "properties": .object([
+            "outcome": .object([
+                "type": .string("string"),
+                "enum": .array([
+                    .string("generated_change_set"),
+                    .string("unchanged_result"),
+                    .string("fallback_reuse"),
+                    .string("error"),
+                ]),
+            ]),
             "conditions": .object([
                 "type": .string("array"),
                 "items": .object([

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Logging
 import SwiftDotenv
@@ -6,8 +7,8 @@ import VoyagerShared
 @main
 class VoyagerHelperApp {
     private static var helperFolderAccessListener: HelperFolderAccessListener?
-    private static var helperExternalFileChangeBridge: HelperExternalFileChangeBridge?
-    private static var helperExternalFileSystemWatcher: HelperExternalFileSystemWatcher?
+    private static var fileChangeGateway: HelperFileChangeGateway?
+    private static var terminationSignalSource: DispatchSourceSignal?
 
     @MainActor
     static func main() {
@@ -18,27 +19,23 @@ class VoyagerHelperApp {
             appVersion: helperAppVersion(),
             userId: nil,
             component: "helper",
+            enableAppHangTracking: false,
         )
         let stateBroadcaster = HelperStateBroadcaster()
         let helperFolderAccessListener = HelperFolderAccessListener()
-        let helperExternalFileChangeBridge = HelperExternalFileChangeBridge()
-        let helperExternalFileSystemWatcher = HelperExternalFileSystemWatcher { paths in
-            await helperExternalFileChangeBridge.publishChangedPaths(paths)
-        }
-
+        let fileChangeGateway = HelperFileChangeGateway(logger: logger)
         logger.info(
             "Starting (APP_ENV=\(Dotenv.appEnv?.rawValue ?? "nil"))",
         )
         VoyagerHelperApp.helperFolderAccessListener = helperFolderAccessListener
-        VoyagerHelperApp.helperExternalFileChangeBridge = helperExternalFileChangeBridge
-        VoyagerHelperApp.helperExternalFileSystemWatcher = helperExternalFileSystemWatcher
+        VoyagerHelperApp.fileChangeGateway = fileChangeGateway
 
         // 마이그레이션 등 DB 초기화가 오래 걸려도 메인 앱 타임아웃 전에 상태를 한 번 보내서 재시작되지 않도록 한다.
         stateBroadcaster.startObservingRequests()
         stateBroadcaster.postCurrentState()
         helperFolderAccessListener.startObservingRequests()
-        helperExternalFileChangeBridge.startObservingReplayRequests()
-        helperExternalFileSystemWatcher.start()
+        fileChangeGateway.start()
+        installTerminationSignalHandler(logger: logger)
 
         Task {
             await runStartupTask(
@@ -46,6 +43,21 @@ class VoyagerHelperApp {
             )
         }
         RunLoop.current.run()
+    }
+
+    private static func installTerminationSignalHandler(logger: Logger) {
+        guard terminationSignalSource == nil else { return }
+        signal(SIGTERM, SIG_IGN)
+        let signalSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        signalSource.setEventHandler {
+            Task { @MainActor in
+                logger.info("Received SIGTERM; stopping FileChangeGateway and exiting helper")
+                fileChangeGateway?.stop()
+                Darwin.exit(0)
+            }
+        }
+        terminationSignalSource = signalSource
+        signalSource.resume()
     }
 
     private static func runStartupTask(

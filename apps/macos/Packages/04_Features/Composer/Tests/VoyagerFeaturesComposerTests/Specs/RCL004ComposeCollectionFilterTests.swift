@@ -87,12 +87,12 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
 
     // MARK: - RCL-004-apply_generated_filter_changes
 
-    /// RCL-004-apply_generated_filter_changes: generated scope 변경은 filter 실행 요청으로 이어짐
-    /// query 변환 결과의 scope 변경이 현재 composer 상태에 적용 대기되는지 검증한다.
-    /// - 검증 내용: 변경된 scope response 수락, filters in-flight 상태, active filters request 생성 확인
-    /// - 사전 조건: active search request가 있고 generated change set이 새 scope를 반환함
-    /// - 기대 결과: generated filter 적용 단계로 전환되고 즉시 execution request가 준비됨
-    func testApplyGeneratedFilterChanges_withGeneratedScope_startsFilterExecution() {
+    /// RCL-004-apply_generated_filter_changes: generated scope-only 변경은 filter 실행 요청으로 이어지지 않음
+    /// query 변환 결과가 condition 없이 scope만 변경할 때 검색 실행을 시작하지 않는지 검증한다.
+    /// - 검증 내용: 변경된 scope response 수락, filters in-flight 미시작, active filters request 정리 확인
+    /// - 사전 조건: active search request가 있고 generated change set이 condition 없는 새 scope를 반환함
+    /// - 기대 결과: scope 변경은 반영되지만 즉시 execution request는 준비되지 않음
+    func testApplyGeneratedFilterChanges_withGeneratedScopeOnly_doesNotStartFilterExecution() {
         let requestID = UUID()
         var state = makeSearchLoadingState(activeRequestID: requestID)
         let response = SearchResponsePayload(
@@ -111,10 +111,10 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         }
 
         XCTAssertFalse(state.isLoadingSearch)
-        XCTAssertTrue(state.isLoadingFilters)
-        XCTAssertTrue(state.isFilteringInFlight)
-        XCTAssertEqual(state.queryRenderPhase, .chipsAppliedPendingList)
-        XCTAssertNotNil(state.activeFiltersRequestID)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertNil(state.activeFiltersRequestID)
         XCTAssertEqual(
             state.lastSearchResponse?.appliedFilters?.scopes,
             ["/VoyagerFixtures/Documents", "/VoyagerFixtures/Notes"],

@@ -5,7 +5,13 @@
     ".agents/rules/10-routing/*.md",
     ".agents/rules/99-agent/01-agent-harness-artifacts.md"
   ],
-  "plugin": [".agents/skills/common/internal/sisyphus-wiki/plugins/sisyphus-wiki.js", "context-mode", "rtk"],
+  "plugin": [
+    ".agents/skills/common/internal/sisyphus-wiki/plugins/sisyphus-wiki.js",
+    ".agents/skills/common/vendor/ponytail/.opencode/plugins/ponytail.mjs",
+    ".agents/skills/common/vendor/caveman/.opencode/plugins/caveman/plugin.js",
+    "context-mode",
+    "rtk"
+  ],
   "lsp": {
       "sourcekit-lsp": {
         "disabled": true

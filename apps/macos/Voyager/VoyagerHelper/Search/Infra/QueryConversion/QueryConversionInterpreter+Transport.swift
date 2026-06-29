@@ -29,9 +29,17 @@ extension QueryConversionInterpreter {
 }
 
 struct QueryConversionOutput: Decodable {
+    let outcome: QueryConversionOutputOutcome?
     let conditions: [SearchConditionPayload]?
     let scopes: [String]?
     let error: String?
+}
+
+enum QueryConversionOutputOutcome: String, Decodable {
+    case generatedChangeSet = "generated_change_set"
+    case unchangedResult = "unchanged_result"
+    case fallbackReuse = "fallback_reuse"
+    case error
 }
 
 struct QueryConversionPromptPayload: Equatable {

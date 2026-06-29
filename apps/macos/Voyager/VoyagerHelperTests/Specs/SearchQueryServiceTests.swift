@@ -264,6 +264,62 @@ final class SearchQueryServiceTests: XCTestCase {
         XCTAssertEqual(result.scopes, ["/tmp/new-root"])
     }
 
+    func testQueryConversionInterpreterExplicitFallbackReuseKeepsExistingFilters() throws {
+        let converter = QueryConversionInterpreter()
+        let existingCondition = SearchConditionPayload(
+            propertyKey: "extension",
+            operator: "eq",
+            value: .string("pdf"),
+        )
+
+        let result = try converter.decodeAndNormalize(
+            content: #"""
+            {
+              "outcome":"fallback_reuse",
+              "conditions":[],
+              "scopes":null,
+              "error":null
+            }
+            """#,
+            existingFilters: SearchFiltersPayload(
+                scopes: ["/tmp/root"],
+                conditions: [existingCondition],
+            ),
+        )
+
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.outcome, QueryConversionResultOutcome.fallbackReuse)
+        XCTAssertEqual(result.conditions, [existingCondition])
+    }
+
+    func testQueryConversionInterpreterExplicitUnchangedResultKeepsNoOpOutcome() throws {
+        let converter = QueryConversionInterpreter()
+        let existingCondition = SearchConditionPayload(
+            propertyKey: "extension",
+            operator: "eq",
+            value: .string("pdf"),
+        )
+
+        let result = try converter.decodeAndNormalize(
+            content: #"""
+            {
+              "outcome":"unchanged_result",
+              "conditions":[{"propertyKey":"extension","operator":"eq","value":"pdf"}],
+              "scopes":["/tmp/root"],
+              "error":null
+            }
+            """#,
+            existingFilters: SearchFiltersPayload(
+                scopes: ["/tmp/root"],
+                conditions: [existingCondition],
+            ),
+        )
+
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.outcome, QueryConversionResultOutcome.unchangedResult)
+        XCTAssertEqual(result.conditions, [existingCondition])
+    }
+
     func testQueryConversionInterpreterInvalidGeneratedConditionsReturnConversionFailure() throws {
         let converter = QueryConversionInterpreter()
         let result = try converter.decodeAndNormalize(
