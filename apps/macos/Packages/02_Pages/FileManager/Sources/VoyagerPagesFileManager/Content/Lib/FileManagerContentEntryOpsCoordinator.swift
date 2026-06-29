@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 
@@ -8,8 +9,8 @@ enum FileManagerContentEntryOpsCoordinator {
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         switch action {
-        case .loading(.itemsLoaded):
-            .none
+        case let .loading(.itemsLoaded(entries)):
+            handleItemsLoaded(entries: entries, state: &state)
 
         case let .lifecycle(.entryActionCompleted(record)):
             handleEntryActionCompleted(record, state: state)
@@ -111,6 +112,22 @@ enum FileManagerContentEntryOpsCoordinator {
             return .none
         }
         return .send(.entryViewLayout(.internal(.removeCollectionPaths(paths))))
+    }
+
+    /// itemsLoaded 후 pendingSelectEntryID가 있으면 해당 엔트리를 선택 focus
+    private static func handleItemsLoaded(
+        entries: [EntryModel],
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard let selectID = state.pendingSelectEntryID else { return .none }
+        state.pendingSelectEntryID = nil
+        guard entries.contains(where: { $0.id == selectID }) else { return .none }
+        return .send(.entryViewLayout(.internal(.setSelectionState(
+            ids: Set([selectID]),
+            lastSelectedId: selectID,
+            rangeAnchorId: selectID,
+            shouldScrollToSelection: true,
+        ))))
     }
 
     private static func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<FileManagerContentAction> {

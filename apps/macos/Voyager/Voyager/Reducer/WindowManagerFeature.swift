@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerFeaturesAiChat
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
@@ -82,6 +83,7 @@ struct WindowManagerFeature {
                 )
 
             case .file(.newWindow),
+                 .file(.openCollectionFile),
                  .file(.newTab),
                  .window(.closeFocusedWindow),
                  .window(.closeAllWindows):
@@ -215,13 +217,16 @@ struct WindowManagerFeature {
 
     private func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
-        case let .file(.newWindow(path)):
-            return openWindowSession(path: path, state: &state) { id in
+        case let .file(.newWindow(path, selectEntryID)):
+            return openWindowSession(path: path, selectEntryID: selectEntryID, state: &state) { id in
                 await fileManagerWindowClient.open(id)
             }
 
+        case let .file(.openCollectionFile(url)):
+            return openCollectionWindowSession(url: url, state: &state)
+
         case let .file(.newTab(path)):
-            return openWindowSession(path: path, state: &state) { id in
+            return openWindowSession(path: path, selectEntryID: nil, state: &state) { id in
                 await fileManagerWindowClient.openTab(id)
             }
 
@@ -245,13 +250,14 @@ struct WindowManagerFeature {
 
     private func openWindowSession(
         path: String?,
+        selectEntryID: String?,
         state: inout State,
         open: @escaping @Sendable (UUID) async -> Void,
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() {
             return .none
         }
-        let windowSession = makeWindowSession(path: path)
+        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
 
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
@@ -261,6 +267,28 @@ struct WindowManagerFeature {
             appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
             .run { [id = windowSession.id] _ in
                 await open(id)
+            },
+        )
+    }
+
+    private func openCollectionWindowSession(url: URL, state: inout State) -> Effect<Action> {
+        if onboardingWindowClient.showIfNeeded() {
+            return .none
+        }
+        let windowSession = makeWindowSession(path: nil)
+
+        state.windows.append(windowSession)
+        state.focusedWindowID = windowSession.id
+
+        return .concatenate(
+            windowIDChangedEffect(for: windowSession.id),
+            .send(.windows(.element(
+                id: windowSession.id,
+                action: .window(.navigation(.view(.openCollectionFile(url)))),
+            ))),
+            appPreferencesEffect(for: windowSession.id, preferences: state.appPreferences),
+            .run { [fileManagerWindowClient, id = windowSession.id] _ in
+                await fileManagerWindowClient.open(id)
             },
         )
     }
@@ -290,9 +318,9 @@ struct WindowManagerFeature {
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 
-    private func makeWindowSession(path: String?) -> WindowSessionState {
+    private func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
         let id = uuid()
-        let windowState = FileManagerWindowFeature.State.makeInitial(path: path)
+        let windowState = FileManagerWindowFeature.State.makeInitial(path: path, selectEntryID: selectEntryID)
         return .init(id: id, window: windowState)
     }
 }

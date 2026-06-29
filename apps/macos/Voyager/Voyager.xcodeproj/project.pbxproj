@@ -53,6 +53,8 @@
 		F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */; };
 		F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
 		F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */ = {isa = PBXBuildFile; productRef = F2000000000000000000001D /* VoyagerFeaturesComposer */; };
+		F20000000000000000000062 /* VoyagerFeaturesExternalFileRouter in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */; };
+		F20000000000000000000063 /* VoyagerFeaturesExternalFileRouter in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */; };
 		A70000000000000000000010 /* VoyagerPagesOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000011 /* VoyagerPagesOnboarding */; };
 		A70000000000000000000011 /* VoyagerShared in Frameworks */ = {isa = PBXBuildFile; productRef = F20000000000000000000013 /* VoyagerShared */; };
 		7E1724A12EC5BA6600385F6E /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = 7E1724A02EC5BA6600385F6E /* SwiftUIIntrospect */; };
@@ -219,6 +221,7 @@
 				F2000000000000000000003F /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000041 /* VoyagerFeaturesUpdateVersion in Frameworks */,
 				F20000000000000000000042 /* VoyagerFeaturesComposer in Frameworks */,
+				F20000000000000000000062 /* VoyagerFeaturesExternalFileRouter in Frameworks */,
 				F20000000000000000000052 /* VoyagerFeaturesAiChat in Frameworks */,
 				F2000000000000000000003B /* VoyagerEntitiesEntry in Frameworks */,
 				F2000000000000000000003C /* Dependencies in Frameworks */,
@@ -255,6 +258,7 @@
 				F2000000000000000000003A /* Dependencies in Frameworks */,
 				F20000000000000000000040 /* VoyagerFeaturesContentPageNavigation in Frameworks */,
 				F20000000000000000000043 /* VoyagerFeaturesComposer in Frameworks */,
+				F20000000000000000000063 /* VoyagerFeaturesExternalFileRouter in Frameworks */,
 				F20000000000000000000053 /* VoyagerFeaturesAiChat in Frameworks */,
 				F20000000000000000000054 /* VoyagerEntitiesAi in Frameworks */,
 				F20000000000000000000055 /* VoyagerWidgetsEntryViewLayout in Frameworks */,
@@ -397,6 +401,7 @@
 				F20000000000000000000019 /* VoyagerFeaturesEntryThumbnail */,
 				F2000000000000000000001C /* VoyagerFeaturesUpdateVersion */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
+				F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */,
 				F2000000000000000000001E /* VoyagerPagesFileManager */,
 				F20000000000000000000051 /* VoyagerFeaturesAiChat */,
 				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
@@ -451,6 +456,7 @@
 				F21000000000000000000012 /* OrderedCollections */,
 				6CFB7B372E9D48B40005FDF6 /* ComposableArchitecture */,
 				F2000000000000000000001D /* VoyagerFeaturesComposer */,
+				F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */,
 				F20000000000000000000051 /* VoyagerFeaturesAiChat */,
 				F20000000000000000000047 /* VoyagerEntitiesAi */,
 				F2000000000000000000001F /* VoyagerWidgetsEntryViewLayout */,
@@ -634,6 +640,7 @@
 				F2000000000000000000000A /* XCLocalSwiftPackageReference "05_Entities/Entry" */,
 				F2000000000000000000000C /* XCLocalSwiftPackageReference "04_Features/UpdateVersion" */,
 				F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */,
+				F20000000000000000000060 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */,
 				F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */,
 				F20000000000000000000050 /* XCLocalSwiftPackageReference "04_Features/AiChat" */,
 				F2000000000000000000000F /* XCLocalSwiftPackageReference "03_Widgets/EntryViewLayout" */,
@@ -1558,6 +1565,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/Composer;
 		};
+		F20000000000000000000060 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/ExternalFileRouter;
+		};
 		F2000000000000000000000E /* XCLocalSwiftPackageReference "02_Pages/FileManager" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/02_Pages/FileManager;
@@ -1855,6 +1866,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F2000000000000000000000D /* XCLocalSwiftPackageReference "04_Features/Composer" */;
 			productName = VoyagerFeaturesComposer;
+		};
+		F20000000000000000000061 /* VoyagerFeaturesExternalFileRouter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000060 /* XCLocalSwiftPackageReference "04_Features/ExternalFileRouter" */;
+			productName = VoyagerFeaturesExternalFileRouter;
 		};
 		F2000000000000000000001E /* VoyagerPagesFileManager */ = {
 			isa = XCSwiftPackageProductDependency;
