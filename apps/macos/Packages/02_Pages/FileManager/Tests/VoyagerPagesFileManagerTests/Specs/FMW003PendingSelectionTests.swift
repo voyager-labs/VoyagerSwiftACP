@@ -15,40 +15,6 @@ import XCTest
 /// 4. 매칭 ID가 없으면 selection 발행 없이 pending만 clear
 @MainActor
 final class FMW003PendingSelectionTests: XCTestCase {
-    // MARK: - Bridge harness
-
-    /// EVM001FileManagerNavigationTests.LifecycleBridgeHarness와 동일한 패턴.
-    /// EntryOperationsAction을 coordinator로 전달하고 결과 action을 .forwarded로 노출하여
-    /// coordinator가 발행하는 Effect<FileManagerContentAction>을 TestStore로 검증 가능하게 함.
-    // swiftlint:disable:next nesting
-    private struct LifecycleBridgeHarness: @MainActor Reducer {
-        // swiftlint:disable:next nesting
-        struct State: Equatable {
-            var content: FileManagerContentState
-        }
-
-        // swiftlint:disable:next nesting
-        enum Action {
-            case bridge(EntryOperationsAction)
-            case forwarded(FileManagerContentAction)
-        }
-
-        var body: some Reducer<State, Action> {
-            Reduce { state, action in
-                switch action {
-                case let .bridge(entryAction):
-                    FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
-                        entryAction,
-                        state: &state.content,
-                    )
-                    .map(Action.forwarded)
-                case .forwarded:
-                    .none
-                }
-            }
-        }
-    }
-
     // MARK: - Helpers
 
     /// deterministic한 EntryModel 생성 (고정 timestamp로 테스트 안정성 확보).
@@ -146,5 +112,34 @@ final class FMW003PendingSelectionTests: XCTestCase {
         await store.send(.bridge(.loading(.itemsLoaded(entries))))
         // pendingSelectEntryID가 nil이므로 coordinator가 즉시 .none 반환
         await store.finish()
+    }
+}
+
+/// EVM001FileManagerNavigationTests.LifecycleBridgeHarness와 동일한 패턴.
+/// EntryOperationsAction을 coordinator로 전달하고 결과 action을 .forwarded로 노출하여
+/// coordinator가 발행하는 Effect<FileManagerContentAction>을 TestStore로 검증 가능하게 함.
+private struct LifecycleBridgeHarness: @MainActor Reducer {
+    struct State: Equatable {
+        var content: FileManagerContentState
+    }
+
+    enum Action {
+        case bridge(EntryOperationsAction)
+        case forwarded(FileManagerContentAction)
+    }
+
+    var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            switch action {
+            case let .bridge(entryAction):
+                FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+                    entryAction,
+                    state: &state.content,
+                )
+                .map(Action.forwarded)
+            case .forwarded:
+                .none
+            }
+        }
     }
 }
