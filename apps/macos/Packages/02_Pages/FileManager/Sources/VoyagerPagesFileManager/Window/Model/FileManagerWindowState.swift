@@ -160,16 +160,63 @@ extension FileManagerWindowState {
         sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
     }
 
+    mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {
+        let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
+        let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned }
+        let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
+        let currentPinnedIDs = Set(contentTabs.tabs.filter(\.isPinned).map(\.id))
+
+        contentTabs.tabs = IdentifiedArrayOf(uniqueElements: restoredPinnedTabs + currentUnpinnedTabs)
+        contentTabs.pinnedRecords = restoredPinnedState.pinnedRecords
+        contentTabs.previousActiveTabID = nil
+        contentTabs.recentlyClosed = nil
+
+        for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
+            tabContentStates[removedID] = nil
+        }
+
+        if contentTabs.tabs.isEmpty {
+            contentTabs = .withHomeTab()
+        } else if let activeTabID = contentTabs.activeTabID,
+                  contentTabs.tabs[id: activeTabID] != nil
+        {
+            // 기존 active tab이 아직 남아 있으면 사용자의 현재 컨텍스트를 유지한다.
+        } else {
+            contentTabs.activeTabID = restoredPinnedTabs.first?.id ?? currentUnpinnedTabs.first?.id
+            restoreContentStateForActiveTab()
+        }
+
+        syncContentTabSidebarItems()
+    }
+
     func canPinContentTab(_ tabID: ContentTabID) -> Bool {
-        guard contentTabs.tabs[id: tabID]?.page == .collection else { return true }
+        let tabPage = contentTabs.tabs[id: tabID]?.page
         let contentState = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
-        guard let contentState else { return true }
+
+        guard let contentState else { return tabPage != .collection }
+
+        let isShowingCollectionNavigation = if case .collection = contentState.navigation.navigationState {
+            true
+        } else {
+            false
+        }
+
+        guard tabPage == .collection || contentState.isCollectionMode || isShowingCollectionNavigation else {
+            return true
+        }
+
         if case let .collection(navigation) = contentState.navigation.navigationState,
            case .temporary = navigation.kind
         {
             return false
         }
-        return !contentState.isCollectionMode || contentState.openedCollectionURLExists
+        guard contentState.isCollectionMode else { return true }
+        guard contentState.collection.collectionSession.document?.url != nil,
+              contentState.collection.collectionSession.metadata.baseline != nil
+        else {
+            return false
+        }
+        return contentState.openedCollectionURLExists
     }
 }
 

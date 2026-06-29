@@ -19,6 +19,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case navigation(ContentPageNavigationFeature.Action)
     case contentTabs(ContentTabAction)
     case applyAppPreferences(AppPreferencesState)
+    case applyPinnedContentTabs(ContentTabState)
     case aiConnectionsFileUpdated(AIConnectionsFile)
 
     case closeContentTabRequested(ContentTabID)

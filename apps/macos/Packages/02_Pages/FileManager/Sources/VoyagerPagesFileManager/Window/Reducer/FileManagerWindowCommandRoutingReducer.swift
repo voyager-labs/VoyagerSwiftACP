@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
@@ -20,6 +21,8 @@ struct FileManagerWindowCommandRoutingReducer {
     private var aiConnectionsFileClient
     @Dependency(\.searchClient)
     private var searchClient
+    @Dependency(\.collectionAlertClient)
+    private var collectionAlertClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -146,11 +149,28 @@ struct FileManagerWindowCommandRoutingReducer {
     private func toggleActiveContentTabPin(state: State) -> Effect<Action> {
         guard state.pendingContentTabClose == nil,
               let activeTabID = state.contentTabs.activeTabID,
-              let activeTab = state.contentTabs.tabs[id: activeTabID],
-              activeTab.isPinned || state.canPinContentTab(activeTabID)
+              let activeTab = state.contentTabs.tabs[id: activeTabID]
         else { return .none }
 
-        return .send(.contentTabs(activeTab.isPinned ? .unpin(activeTabID) : .pin(activeTabID)))
+        if activeTab.isPinned {
+            return .send(.contentTabs(.unpin(activeTabID)))
+        }
+
+        guard state.canPinContentTab(activeTabID) else {
+            return cannotPinCollectionFeedbackEffect()
+        }
+
+        return .send(.contentTabs(.pin(activeTabID)))
+    }
+
+    private func cannotPinCollectionFeedbackEffect() -> Effect<Action> {
+        let collectionAlertClient = collectionAlertClient
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Cannot Pin Collection",
+                "Save the collection before pinning it as a tab.",
+            )
+        }
     }
 
     private func handleEntryRequest(_ command: Action.WindowCommand, state: inout State) -> Effect<Action> {
