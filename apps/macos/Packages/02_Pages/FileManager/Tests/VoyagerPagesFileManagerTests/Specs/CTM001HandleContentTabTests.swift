@@ -710,6 +710,50 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(alerts[0].message, "The recently closed tab is no longer available.")
     }
 
+    /// CTM-001-restore_last_closed_tab_routing: Virtual Collection restore candidate는 소비하지 않고 복원됨
+    /// Recents/Tags/Computer 계열 virtualCollection anchor는 기존 content 초기화 경로에서 `.tags(id)`로 복원 가능하므로 실패 feedback 대상이
+    /// 아니다.
+    /// - 검증 내용: restore command 실행 후 새 tab 생성, active 전환, recentlyClosed 소비
+    /// - 사전 조건: Home tab 하나, virtualCollection("Important") snapshot 1개
+    /// - 기대 결과: 새 tab이 `.virtualCollection(id: "Important")` anchor로 추가되고 alert 없이 복원됨
+    func testRestoreLastClosedTabCommand_virtualCollectionRestoresAndConsumesSnapshot() async {
+        let collectionAlertRecorder = LockIsolated<[(title: String, message: String)]>([])
+        let anchor = ContentTabPageAnchor.virtualCollection(id: "Important")
+        var state = FileManagerFeature.State()
+        state.contentTabs.recentlyClosed = ClosedContentTabSnapshot(
+            page: .collection,
+            anchor: anchor,
+            wasPinned: false,
+            closedAt: Date(),
+            title: "Important",
+            iconName: "tag",
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                collectionAlertRecorder.withValue { $0.append((title, message)) }
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 비포괄적: FileManagerFeature.onAppear와 restore 후 content handoff child action은
+        // 기존 lifecycle 테스트가 담당하므로 command-level candidate 소비/복원만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.request(.restoreLastClosedContentTab))
+        await store.receive(\.contentTabs)
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertEqual(store.state.contentTabs.activeTabID, store.state.contentTabs.tabs.last?.id)
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.page, .collection)
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.anchor, anchor)
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.title, "Important")
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.iconName, "tag")
+        XCTAssertNil(store.state.contentTabs.recentlyClosed)
+        XCTAssertTrue(collectionAlertRecorder.value.isEmpty)
+    }
+
     /// CTM-001-restore_last_closed_tab_routing: AI Chat anchor restore는 snapshot을 소비하고 feedback alert을 표시함
     /// AI Chat anchor(.aiChat)는 restoreFailureReason에서 .unsupportedAIChat으로 분류되어
     /// recentlyClosed가 소비되고 사용자에게 "AI Chat tabs cannot be restored yet." 피드백이 전달됨을 검증한다.

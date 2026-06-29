@@ -415,7 +415,6 @@ struct FileManagerWindowCommandRoutingReducer {
         case missingDirectory
         case missingCollection
         case unsupportedAIChat
-        case unsupportedVirtualCollection
     }
 
     private func handleRestoreLastClosedContentTab(state: inout State) -> Effect<Action> {
@@ -454,7 +453,7 @@ struct FileManagerWindowCommandRoutingReducer {
             return nil
 
         case .virtualCollection:
-            return .unsupportedVirtualCollection
+            return nil
 
         case .aiChat:
             return .unsupportedAIChat
@@ -468,8 +467,6 @@ struct FileManagerWindowCommandRoutingReducer {
             "The recently closed tab is no longer available."
         case .unsupportedAIChat:
             "AI Chat tabs cannot be restored yet."
-        case .unsupportedVirtualCollection:
-            "This type of tab cannot be restored."
         }
         return .run { _ in
             await collectionAlertClient.showCollectionOpenErrorAlert(
