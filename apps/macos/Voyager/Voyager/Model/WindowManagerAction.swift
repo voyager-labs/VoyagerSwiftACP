@@ -13,6 +13,7 @@ enum WindowManagerAction: CasePathable {
     case view(ViewCommand)
     case edit(EditCommand)
     case event(WindowEvent)
+    case pinnedContentTabsStoreChanged
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable

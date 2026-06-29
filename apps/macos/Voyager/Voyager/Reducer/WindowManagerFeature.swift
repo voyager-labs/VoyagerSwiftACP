@@ -37,6 +37,8 @@ struct WindowManagerFeature {
 
     @Dependency(\.contentTabPinnedRecordClient)
     private var contentTabPinnedRecordClient
+    @Dependency(\.fileManagerClient)
+    private var fileManagerClient
     @Dependency(\.userDefaultsClient)
     private var userDefaultsClient
 
@@ -203,6 +205,12 @@ struct WindowManagerFeature {
             case let .windows(.element(id: _, action: .window(.delegate(.openPathInNewWindow(path))))):
                 return .send(.file(.newWindow(path: path)))
 
+            case .windows(.element(id: _, action: .window(.contentTabs(.pinnedRecordSaveSucceeded)))):
+                return .send(.pinnedContentTabsStoreChanged)
+
+            case .pinnedContentTabsStoreChanged:
+                return syncPinnedContentTabsAcrossWindows(state: &state)
+
             case let .windows(.element(id: _, action: .window(.inspector(.setInspectorWidth(width))))):
                 state.appPreferences.inspectorWidth = max(FileManagerInspectorLayoutMetrics.minWidth, width)
                 return .none
@@ -297,6 +305,66 @@ struct WindowManagerFeature {
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
 
+    private func syncPinnedContentTabsAcrossWindows(state: inout State) -> Effect<Action> {
+        guard !state.windows.isEmpty else { return .none }
+        do {
+            let store = try contentTabPinnedRecordClient.loadStore(userDefaultsClient)
+            let restoreResult = ContentTabState.restoringPinnedRecords(
+                from: store,
+                isRestorableAnchor: { _ in true },
+            )
+            return .merge(
+                state.windows.ids.map { id in
+                    .send(.windows(.element(
+                        id: id,
+                        action: .window(.applyPinnedContentTabs(restoreResult.state)),
+                    )))
+                },
+            )
+        } catch {
+            return .none
+        }
+    }
+
+    private func restorePinnedContentTabs(
+        from store: ContentTabPinnedRecordStore,
+    ) -> (state: ContentTabState, didCompact: Bool, droppedCount: Int) {
+        ContentTabState.restoringPinnedRecords(
+            from: store,
+            isRestorableAnchor: { anchor in
+                isRestorablePinnedAnchor(anchor)
+            },
+        )
+    }
+
+    private func isRestorablePinnedAnchor(_ anchor: ContentTabPageAnchor) -> Bool {
+        switch anchor {
+        case let .directory(path):
+            var isDirectory = ObjCBool(false)
+            return fileManagerClient.fileExistsWithIsDirectory(path, &isDirectory) && isDirectory.boolValue
+        case let .collectionFile(url):
+            return fileManagerClient.fileExistsWithIsDirectory(url.path, nil)
+        case .homeDefault,
+             .virtualCollection,
+             .aiChat:
+            return true
+        }
+    }
+
+    private func compactPinnedStoreIfNeeded(
+        _ store: ContentTabPinnedRecordStore,
+        restoreResult: (state: ContentTabState, didCompact: Bool, droppedCount: Int),
+    ) {
+        guard restoreResult.didCompact else { return }
+        let compactedStore = ContentTabPinnedRecordStore(
+            schemaVersion: store.schemaVersion,
+            records: restoreResult.state.tabs.compactMap { tab in
+                restoreResult.state.pinnedRecords[tab.id]
+            },
+        )
+        try? contentTabPinnedRecordClient.saveStore(compactedStore, userDefaultsClient)
+    }
+
     private func makeWindowSession(path: String?) -> WindowSessionState {
         let id = uuid()
 
@@ -308,25 +376,8 @@ struct WindowManagerFeature {
         let windowState: FileManagerWindowFeature.State
         do {
             let store = try contentTabPinnedRecordClient.loadStore(userDefaultsClient)
-            let restoreResult = ContentTabState.restoringPinnedRecords(from: store)
-
-            if restoreResult.didCompact {
-                let pinnedTabs = restoreResult.state.tabs.filter(\.isPinned)
-                let compactedStore = ContentTabPinnedRecordStore(
-                    schemaVersion: store.schemaVersion,
-                    records: pinnedTabs.map { tab in
-                        ContentTabPinnedRecord(
-                            id: tab.id.rawValue,
-                            page: tab.page,
-                            anchor: tab.anchor,
-                            title: tab.title,
-                            iconName: tab.iconName,
-                            pinnedAt: restoreResult.state.pinnedRecords[tab.id]?.pinnedAt ?? Date(),
-                        )
-                    },
-                )
-                try? contentTabPinnedRecordClient.saveStore(compactedStore, userDefaultsClient)
-            }
+            let restoreResult = restorePinnedContentTabs(from: store)
+            compactPinnedStoreIfNeeded(store, restoreResult: restoreResult)
 
             windowState = FileManagerWindowFeature.State.makeInitial(
                 path: nil,
