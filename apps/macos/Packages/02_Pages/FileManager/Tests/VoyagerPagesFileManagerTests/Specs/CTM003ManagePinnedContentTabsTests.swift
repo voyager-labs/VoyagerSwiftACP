@@ -1681,7 +1681,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(state.tabContentStates[pinnedID])
     }
 
-
     /// CTM-003-pin_content_tab_s: sync 중 pinned tab이 모두 제거될 때 Home content 복원
     /// 다른 window의 unpin sync로 현재 window의 active pinned tab이 사라지면 Home fallback과 content pane이 함께 맞춰져야 한다.
     /// - 검증 내용: applyPinnedContentTabs가 빈 restored pinned state에서 Home tab을 만들고 content navigation을 Home 기준으로 초기화
