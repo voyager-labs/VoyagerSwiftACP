@@ -256,12 +256,48 @@ extension ContentTabFeature {
                                         state: inout ContentTabState) -> Effect<ContentTabAction>
     {
         state.previousActiveTabID = nil
-        guard state.tabs[id: id] != nil else { return .none }
+        guard let tab = state.tabs[id: id] else { return .none }
         state.tabs[id: id]?.anchor = newAnchor
         state.tabs[id: id]?.page = page(for: newAnchor)
         state.tabs[id: id]?.title = title(for: newAnchor)
         state.tabs[id: id]?.iconName = iconName(for: newAnchor)
-        return .none
+
+        guard tab.isPinned else { return .none }
+
+        let previousPinnedRecord = state.pinnedRecords[id]
+        let updatedRecord = ContentTabPinnedRecord(
+            id: id.rawValue,
+            page: page(for: newAnchor),
+            anchor: newAnchor,
+            title: title(for: newAnchor),
+            iconName: iconName(for: newAnchor),
+            pinnedAt: date(),
+        )
+        state.pinnedRecords[id] = updatedRecord
+        state.pinnedRecordPersistenceError = nil
+
+        let intentID = PinnedRecordPersistenceIntent.markLatest(tabID: id)
+        let client = contentTabPinnedRecordClient
+        let defaults = userDefaultsClient
+        return .run { send in
+            do {
+                try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                try client.updateStore(defaults) { existingStore in
+                    try PinnedRecordPersistenceIntent.checkCurrent(tabID: id, intentID: intentID)
+                    return upsertPinnedRecord(updatedRecord, in: existingStore)
+                }
+                await send(.pinnedRecordSaveSucceeded)
+            } catch is CancellationError {
+                return
+            } catch {
+                await send(.pinnedRecordSaveFailed(
+                    tabID: id,
+                    previousIsPinned: true,
+                    previousPinnedRecord: previousPinnedRecord,
+                ))
+            }
+        }
+        .cancellable(id: PinnedRecordPersistenceCancelID(tabID: id), cancelInFlight: true)
     }
 }
 

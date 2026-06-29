@@ -57,6 +57,7 @@ public struct FileManagerWindowState: Equatable {
         state.contentTabs = contentTabs.map { ContentTabState.bootstrapping(
             restoredTabs: $0.tabs,
             activeTabID: $0.activeTabID,
+            pinnedRecords: $0.pinnedRecords,
         )
         } ?? .withHomeTab()
 

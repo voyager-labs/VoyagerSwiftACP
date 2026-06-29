@@ -8,6 +8,10 @@ public struct ContentTabID: Hashable, Sendable, Codable {
     public init() {
         rawValue = UUID().uuidString
     }
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
 }
 
 public enum ContentTabPage: Equatable, Sendable, Codable {
@@ -88,6 +92,7 @@ public extension ContentTabState {
     static func bootstrapping(
         restoredTabs: IdentifiedArrayOf<ContentTabItem> = [],
         activeTabID: ContentTabID? = nil,
+        pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:],
     ) -> ContentTabState {
         guard let first = restoredTabs.first else { return .withHomeTab() }
 
@@ -102,6 +107,83 @@ public extension ContentTabState {
             activeTabID: active,
             previousActiveTabID: nil,
             recentlyClosed: nil,
+            pinnedRecords: pinnedRecords,
         )
+    }
+
+    static func restoringPinnedRecords(
+        from store: ContentTabPinnedRecordStore,
+        maxTabs: Int = ContentTabConstants.maxTabs,
+    ) -> (state: ContentTabState, didCompact: Bool, droppedCount: Int) {
+        var seenIDs = Set<String>()
+        var validRecords: [(record: ContentTabPinnedRecord, newID: ContentTabID)] = []
+        var didCompact = false
+        var totalExcluded = 0
+
+        for record in store.records {
+            if record.id.isEmpty {
+                didCompact = true
+                totalExcluded += 1
+                continue
+            }
+
+            guard record.isPageAnchorCompatible else {
+                didCompact = true
+                totalExcluded += 1
+                continue
+            }
+
+            guard seenIDs.insert(record.id).inserted else {
+                didCompact = true
+                totalExcluded += 1
+                continue
+            }
+
+            guard validRecords.count < maxTabs else {
+                didCompact = true
+                totalExcluded += 1
+                continue
+            }
+
+            let newID = ContentTabID(rawValue: record.id)
+            validRecords.append((record, newID))
+        }
+
+        guard !validRecords.isEmpty else {
+            return (state: .withHomeTab(), didCompact: didCompact, droppedCount: totalExcluded)
+        }
+
+        var pinnedRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
+        var tabs: IdentifiedArrayOf<ContentTabItem> = []
+
+        for (record, newID) in validRecords {
+            let normalizedRecord = ContentTabPinnedRecord(
+                id: newID.rawValue,
+                page: record.page,
+                anchor: record.anchor,
+                title: record.title,
+                iconName: record.iconName,
+                pinnedAt: record.pinnedAt,
+            )
+            pinnedRecords[newID] = normalizedRecord
+
+            let item = ContentTabItem(
+                id: newID,
+                page: record.page,
+                anchor: record.anchor,
+                isPinned: true,
+                title: record.title,
+                iconName: record.iconName,
+            )
+            tabs.append(item)
+        }
+
+        let state = ContentTabState(
+            tabs: tabs,
+            activeTabID: tabs[0].id,
+            pinnedRecords: pinnedRecords,
+        )
+
+        return (state: state, didCompact: didCompact, droppedCount: totalExcluded)
     }
 }

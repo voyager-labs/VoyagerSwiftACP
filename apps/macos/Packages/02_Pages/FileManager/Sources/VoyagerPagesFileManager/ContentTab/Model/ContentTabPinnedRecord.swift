@@ -26,18 +26,20 @@ public struct ContentTabPinnedRecord: Equatable, Sendable, Codable, Identifiable
 }
 
 public extension ContentTabPinnedRecord {
-    static func identity(for anchor: ContentTabPageAnchor) -> String {
-        switch anchor {
-        case .homeDefault:
-            "home"
-        case let .directory(path):
-            "directory:\(path)"
-        case let .collectionFile(url):
-            "collection:\(url.absoluteString)"
-        case let .virtualCollection(id):
-            "virtualCollection:\(id)"
-        case let .aiChat(sessionID):
-            "aiChat:\(sessionID)"
+    var isPageAnchorCompatible: Bool {
+        switch (page, anchor) {
+        case (.home, .homeDefault):
+            true
+        case (.directory, .directory):
+            true
+        case (.collection, .collectionFile):
+            true
+        case let (.collection, .virtualCollection(id)):
+            id != "Recents"
+        case (.aiChat, .aiChat):
+            true
+        default:
+            false
         }
     }
 }
