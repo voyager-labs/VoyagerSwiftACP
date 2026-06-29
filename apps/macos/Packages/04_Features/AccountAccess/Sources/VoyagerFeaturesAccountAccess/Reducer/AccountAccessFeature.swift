@@ -289,8 +289,11 @@ public struct AccountAccessFeature {
             )
 
         case .failure:
+            // sign-in 실패 (exchange/persist 오류). session expired와 구분한다.
             state.isSignInInProgress = false
-            return .send(._sessionExpiredDetected)
+            state.didSignInFail = true
+            state.hasAccountSession = false
+            return .none
         }
     }
 
@@ -325,14 +328,12 @@ public struct AccountAccessFeature {
     // Do NOT introduce a new DependencyKey for the coordinator.
 
     /// Handoff exchange → persist session (network + file I/O cross-seam).
-    /// TODO(VOY-XXX): persist failure handling — 현재 silent skip 보존 (기존 동작)
     private func performHandoffExchange(
         ticket: String, state: String, context: AppHandoffContext,
     ) -> Effect<Action> {
         .run { [authNetwork, sessionClient] send in
             let session = try await authNetwork.exchangeHandoff(ticket, state, context)
-            // Silent-skip on persist failure (preserves original behavior from AccountAccessClient:82-84)
-            try? await sessionClient.persist(session)
+            try await sessionClient.persist(session)
             await send(._handoffExchangeCompleted(.success(session)))
         } catch: { error, send in
             let mappedError: AppHandoffExchangeError = if let exchangeError = error as? AppHandoffExchangeError {
@@ -345,11 +346,10 @@ public struct AccountAccessFeature {
     }
 
     /// Token refresh → persist session (network + file I/O cross-seam).
-    /// TODO(VOY-XXX): persist failure handling — 현재 silent skip 보존
     private func performTokenRefresh() -> Effect<Action> {
         .run { [authNetwork, sessionClient] send in
             let session = try await authNetwork.refreshToken()
-            try? await sessionClient.persist(session)
+            try await sessionClient.persist(session)
             await send(._refreshTokenResult(.success(session)))
         } catch: { error, send in
             let mappedError: AccessError = if let accessError = error as? AccessError {
@@ -384,66 +384,69 @@ private extension AccountAccessFeature {
 
         switch result {
         case let .success(response):
-            let accessStatus = response.toAccessStatus()
-            state.status = accessStatus
-            state.trialExpiresAt = response.currentPeriodEnd
-            state.fetchRetryCount = 0
-
-            let snapshot = AccessStatusSnapshot(
-                status: accessStatus,
-                currentPeriodEnd: response.currentPeriodEnd,
-                fetchedAt: date(),
-            )
-            state.snapshot = snapshot
-
-            if accessStatus.isActive {
-                state.isComplete = true
-                state.errorMessage = nil
-                return .run { [snapshotClient] send in
-                    await snapshotClient.save(snapshot)
-                    await send(.delegate(.unlocked(snapshot)))
-                }
-            } else {
-                state.isComplete = false
-                state.errorMessage = errorMessageForStatus(accessStatus)
-                return .run { [snapshotClient] _ in
-                    await snapshotClient.save(snapshot)
-                }
-            }
+            return handleAccessStatusSuccess(&state, response: response)
 
         case let .failure(error):
-            state.isComplete = false
-            state.errorMessage = errorMessage(for: error)
+            return handleAccessStatusFailure(&state, error: error)
+        }
+    }
 
-            if error == .unauthorized {
-                // 401 → 즉시 session_expired 전환 (canonical: entitlement_check.md error table)
-                return .send(._sessionExpiredDetected)
+    private func handleAccessStatusSuccess(_ state: inout State, response: AccessStatusResponse) -> Effect<Action> {
+        let accessStatus = response.toAccessStatus()
+        state.status = accessStatus
+        state.trialExpiresAt = response.currentPeriodEnd
+        state.fetchRetryCount = 0
+
+        let snapshot = AccessStatusSnapshot(
+            status: accessStatus,
+            currentPeriodEnd: response.currentPeriodEnd,
+            fetchedAt: date(),
+        )
+        state.snapshot = snapshot
+
+        if accessStatus.isActive {
+            state.isComplete = true
+            state.errorMessage = nil
+            return .run { [snapshotClient] send in
+                await snapshotClient.save(snapshot)
+                await send(.delegate(.unlocked(snapshot)))
             }
+        }
 
-            // Permanent errors — no retry, use normal failure path
-            if error == .notConfigured || error == .decodingFailure {
-                return .none
-            }
+        state.isComplete = false
+        state.errorMessage = errorMessageForStatus(accessStatus)
+        return .run { [snapshotClient] _ in
+            await snapshotClient.save(snapshot)
+        }
+    }
 
-            if error == .networkFailure {
-                if state.fetchRetryCount >= 3 {
-                    // Retry budget exhausted → fall back to cached snapshot
-                    state.fetchRetryCount = 0
-                    return .run { [snapshotClient] send in
-                        let snapshot = await snapshotClient.load()
-                        await send(._cachedSnapshotRestored(snapshot))
-                    }
-                }
+    private func handleAccessStatusFailure(_ state: inout State, error: AccessError) -> Effect<Action> {
+        state.isComplete = false
+        state.errorMessage = errorMessage(for: error)
 
-                // Retry budget remaining → set network failure and schedule staggered retry
-                state.status = .networkFailure
-                let retryStep = state.fetchRetryCount
-                state.fetchRetryCount += 1
-                return .send(._fetchRetryScheduled(retryStep))
-            }
+        if error == .unauthorized {
+            // 401 → 즉시 session_expired 전환 (canonical: entitlement_check.md error table)
+            return .send(._sessionExpiredDetected)
+        }
 
+        if error == .notConfigured || error == .decodingFailure {
             return .none
         }
+
+        guard error == .networkFailure else { return .none }
+
+        if state.fetchRetryCount >= 3 {
+            state.fetchRetryCount = 0
+            return .run { [snapshotClient] send in
+                let snapshot = await snapshotClient.load()
+                await send(._cachedSnapshotRestored(snapshot))
+            }
+        }
+
+        state.status = .networkFailure
+        let retryStep = state.fetchRetryCount
+        state.fetchRetryCount += 1
+        return .send(._fetchRetryScheduled(retryStep))
     }
 
     private func handleFetchRetryScheduled(_ state: inout State, retryStep: Int) -> Effect<Action> {

@@ -128,9 +128,9 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
 
     /// ACC-001-exchange_handoff_token: 네트워크 오류 시 didSignInFail=true로 전환된다.
     /// exchangeAppHandoff가 networkFailure를 throw할 때 인증 실패 상태로 전환되는지 검증한다.
-    /// - 검증 내용: exchangeAppHandoff 실패 시 didSignInFail=true, _sessionExpiredDetected 수신
+    /// - 검증 내용: exchangeAppHandoff 실패 시 didSignInFail=true
     /// - 사전 조건: awaitingCallbackState에서 exchangeAppHandoff가 networkFailure throw
-    /// - 기대 결과: isSignInInProgress=false, didSignInFail=true, isSessionExpired=true
+    /// - 기대 결과: isSignInInProgress=false, didSignInFail=true, isSessionExpired=false (sign-in 실패이지 session 만료가 아님)
     func testNetworkErrorSetsSignInFail() async {
         let store = makeTestStore(
             accountSessionClient: .testValue,
@@ -150,15 +150,13 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
 
         await store.receive(\._handoffExchangeCompleted) { state in
             state.isSignInInProgress = false
-        }
-
-        await store.receive(\._sessionExpiredDetected) { state in
             state.didSignInFail = true
-            state.isSessionExpired = true
+            state.hasAccountSession = false
         }
 
         XCTAssertTrue(store.state.didSignInFail, "네트워크 오류 → 인증 실패")
         XCTAssertFalse(store.state.isSignInInProgress)
+        XCTAssertFalse(store.state.isSessionExpired, "네트워크 오류는 session expired가 아님")
         await store.finish()
     }
 
@@ -166,7 +164,7 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
     /// exchangeAppHandoff가 ticketAlreadyUsed를 throw할 때 재인증 가능 상태로 전환되는지 검증한다.
     /// - 검증 내용: ticketAlreadyUsed 에러 시 didSignInFail=true, canStartLogin=true
     /// - 사전 조건: awaitingCallbackState에서 exchangeAppHandoff가 ticketAlreadyUsed throw
-    /// - 기대 결과: isSignInInProgress=false, didSignInFail=true, isSessionExpired=true, canStartLogin=true
+    /// - 기대 결과: isSignInInProgress=false, didSignInFail=true, canStartLogin=true (session expired 아님)
     func testServerRejectionSetsSignInFailAndCanRestart() async {
         let store = makeTestStore(
             accountSessionClient: .testValue,
@@ -186,15 +184,13 @@ final class ACC001ExchangeHandoffTokenTests: XCTestCase {
 
         await store.receive(\._handoffExchangeCompleted) { state in
             state.isSignInInProgress = false
-        }
-
-        await store.receive(\._sessionExpiredDetected) { state in
             state.didSignInFail = true
-            state.isSessionExpired = true
+            state.hasAccountSession = false
         }
 
         XCTAssertTrue(store.state.didSignInFail, "서버 거부 → 즉시 실패")
         XCTAssertTrue(store.state.canStartLogin, "재인증 안내: Login CTA 활성화")
+        XCTAssertFalse(store.state.isSessionExpired, "서버 거부는 session expired가 아님")
         await store.finish()
     }
 
