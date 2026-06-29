@@ -30,6 +30,7 @@ final class MenuCommandsFeatureTests: XCTestCase {
             (.togglePinTab, .file(.togglePinTab)),
             (.open, .file(.open)),
             (.quickLook, .file(.quickLook)),
+            (.restoreLastClosedTab, .file(.restoreLastClosedTab)),
         ]
 
         for (command, expected) in appCases {
@@ -97,6 +98,39 @@ final class MenuCommandsFeatureTests: XCTestCase {
         XCTAssertFalse(MenuCommandsState(state: appState).isContextualAiChatPresented)
     }
 
+    /// testCanRestoreLastClosedTabReflectsFocusedWindowRecentlyClosedState 테스트 동작을 검증한다.
+    /// focused window의 contentTabs.recentlyClosed 상태에 따라
+    /// canRestoreLastClosedTab이 올바르게 반영되는지 검증한다.
+    func testCanRestoreLastClosedTabReflectsFocusedWindowRecentlyClosedState() {
+        let focusedID = makeUUID("00000000-0000-0000-0000-000000000044")
+
+        // Arrange: recentlyClosed가 nil인 focused window
+        var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
+        focusedWindow.contentTabs.recentlyClosed = nil
+
+        var appState = AppRootState()
+        appState.windowManager.windows = [
+            WindowSessionState(id: focusedID, window: focusedWindow),
+        ]
+        appState.windowManager.focusedWindowID = focusedID
+
+        XCTAssertFalse(MenuCommandsState(state: appState).canRestoreLastClosedTab)
+
+        // Arrange: recentlyClosed에 유효한 snapshot이 있는 focused window
+        let snapshot = ClosedContentTabSnapshot(
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Documents"),
+            wasPinned: false,
+            closedAt: Date(),
+            title: "Documents",
+            iconName: "folder",
+        )
+        focusedWindow.contentTabs.recentlyClosed = snapshot
+        appState.windowManager.windows[id: focusedID]?.window = focusedWindow
+
+        XCTAssertTrue(MenuCommandsState(state: appState).canRestoreLastClosedTab)
+    }
+
     func testCloseTabTitleReflectsActivePinnedContentTab() {
         let focusedID = makeUUID("00000000-0000-0000-0000-000000000043")
         var focusedWindow = FileManagerFeature.State.makeInitial(path: "/Users/test/Documents")
@@ -140,6 +174,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
         let store = TestStore(initialState: MenuCommandsFeature.State()) {
             MenuCommandsFeature()
         }
+        // 비포괄적: app command → delegate(.windowManager(action)) 단일 라우팅만 검증하며,
+        // MenuCommandsFeature가 delegate 외부로 방출하는 다른 부수 효과는 검증 범위 밖이다.
         store.exhaustivity = .off
 
         await store.send(.view(.app(command)))
@@ -149,7 +185,8 @@ final class MenuCommandsFeatureTests: XCTestCase {
             case (.file(.newTab), .file(.newTab)),
                  (.file(.togglePinTab), .file(.togglePinTab)),
                  (.file(.open), .file(.open)),
-                 (.file(.quickLook), .file(.quickLook)):
+                 (.file(.quickLook), .file(.quickLook)),
+                 (.file(.restoreLastClosedTab), .file(.restoreLastClosedTab)):
                 return true
             default:
                 return false
