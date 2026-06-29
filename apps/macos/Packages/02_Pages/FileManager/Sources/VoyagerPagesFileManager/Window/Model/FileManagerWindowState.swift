@@ -188,6 +188,7 @@ extension FileManagerWindowState {
 
         if contentTabs.tabs.isEmpty {
             contentTabs = .withHomeTab()
+            restoreContentStateForActiveTab()
         } else if let activeTabID = contentTabs.activeTabID,
                   let activeTab = contentTabs.tabs[id: activeTabID]
         {

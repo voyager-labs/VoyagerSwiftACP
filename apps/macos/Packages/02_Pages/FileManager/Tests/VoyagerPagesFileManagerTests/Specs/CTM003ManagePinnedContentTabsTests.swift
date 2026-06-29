@@ -1681,6 +1681,47 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(state.tabContentStates[pinnedID])
     }
 
+
+    /// CTM-003-pin_content_tab_s: sync 중 pinned tab이 모두 제거될 때 Home content 복원
+    /// 다른 window의 unpin sync로 현재 window의 active pinned tab이 사라지면 Home fallback과 content pane이 함께 맞춰져야 한다.
+    /// - 검증 내용: applyPinnedContentTabs가 빈 restored pinned state에서 Home tab을 만들고 content navigation을 Home 기준으로 초기화
+    /// - 사전 조건: active pinned directory tab만 있고 content pane은 old directory를 표시 중
+    /// - 기대 결과: active tab은 Home이고 content/tabContentStates는 directory path 없이 Home 상태로 복원
+    func testApplyPinnedContentTabsRestoresHomeContentWhenActivePinnedTabRemoved() throws {
+        let pinnedID = ContentTabID(rawValue: "removed-pin")
+        let oldAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Removed")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .directory,
+                    anchor: oldAnchor,
+                    isPinned: true,
+                    title: "Removed",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: pinnedID,
+            pinnedRecords: [
+                pinnedID: Self.pinnedRecord(id: pinnedID, anchor: oldAnchor, title: "Removed", iconName: "folder"),
+            ],
+        )
+        state.content.navigation.seedInitialFolderPath("/Users/test/Removed")
+        state.syncActiveTabContentState()
+        let restoredState = ContentTabState(tabs: [], activeTabID: nil, pinnedRecords: [:])
+
+        state.applyPinnedContentTabs(restoredState)
+
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        XCTAssertEqual(state.contentTabs.tabs.count, 1)
+        XCTAssertEqual(state.contentTabs.tabs[id: activeTabID]?.page, .home)
+        XCTAssertFalse(state.contentTabs.tabs[id: activeTabID]?.isPinned ?? true)
+        XCTAssertEqual(state.content.navigation.currentPath, "Home")
+        XCTAssertNil(state.tabContentStates[pinnedID])
+        XCTAssertEqual(state.tabContentStates[activeTabID]?.navigation.currentPath, "Home")
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 저장된 pinned record store에서 pinned tab 복원
     /// Home과 Directory record가 있는 store를 복원하면 pinned tab과 focused Home tab이 함께 생성됨을 검증한다.
     /// - 검증 내용: pinned tabs 2개 + 기본 Home tab 1개, activeTabID는 기본 Home
