@@ -10,6 +10,7 @@ public struct FileManagerWindowMenuCommandProjection: Equatable, Sendable {
     public let canGoToEnclosingDirectory: Bool
     public let canSaveCollection: Bool
     public let isActiveContentTabPinned: Bool
+    public let canRestoreLastClosedTab: Bool
     public let sidebarVisible: Bool
     public let showHiddenFiles: Bool
     public let viewLayout: EntryViewLayoutState.Mode
@@ -36,6 +37,8 @@ public extension FileManagerWindowState {
             canGoToEnclosingDirectory: content.navigation.canGoToEnclosingDirectory,
             canSaveCollection: content.canSaveCollection,
             isActiveContentTabPinned: activeContentTab?.isPinned == true,
+            canRestoreLastClosedTab: ContentTabProjection.restoreCandidate(from: contentTabs) != nil && contentTabs.tabs
+                .count < ContentTabConstants.maxTabs && pendingContentTabClose == nil,
             sidebarVisible: sidebar.sidebarVisible,
             showHiddenFiles: content.entryViewLayout.showHiddenFiles,
             viewLayout: content.entryViewLayout.mode,

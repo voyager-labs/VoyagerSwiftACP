@@ -7,6 +7,7 @@ import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
+import VoyagerShared
 
 @Reducer
 struct FileManagerWindowCommandRoutingReducer {
@@ -23,6 +24,8 @@ struct FileManagerWindowCommandRoutingReducer {
     private var searchClient
     @Dependency(\.collectionAlertClient)
     private var collectionAlertClient
+    @Dependency(\.fileManagerClient)
+    private var fileManagerClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -102,6 +105,9 @@ struct FileManagerWindowCommandRoutingReducer {
 
         case .toggleActiveContentTabPin:
             toggleActiveContentTabPin(state: state)
+
+        case .restoreLastClosedContentTab:
+            handleRestoreLastClosedContentTab(state: &state)
 
         case .newFolder,
              .openSelectedItem,
@@ -400,6 +406,76 @@ struct FileManagerWindowCommandRoutingReducer {
 
         default:
             .none
+        }
+    }
+
+    // MARK: - Restore Last Closed Content Tab
+
+    private enum RestoreFailureReason {
+        case missingDirectory
+        case missingCollection
+        case unsupportedAIChat
+        case unsupportedVirtualCollection
+    }
+
+    private func handleRestoreLastClosedContentTab(state: inout State) -> Effect<Action> {
+        guard state.pendingContentTabClose == nil else { return .none }
+
+        guard let snapshot = state.contentTabs.recentlyClosed else { return .none }
+
+        guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
+
+        if let reason = restoreFailureReason(for: snapshot, state: state) {
+            state.contentTabs.recentlyClosed = nil
+            return restoreFailureFeedbackEffect(reason)
+        }
+
+        return .send(.contentTabs(.restore))
+    }
+
+    private func restoreFailureReason(
+        for snapshot: ClosedContentTabSnapshot,
+        state _: State,
+    ) -> RestoreFailureReason? {
+        switch snapshot.anchor {
+        case .homeDefault:
+            return nil
+
+        case let .directory(path):
+            var isDirectory = ObjCBool(false)
+            guard fileManagerClient.fileExistsWithIsDirectory(path, &isDirectory),
+                  isDirectory.boolValue
+            else { return .missingDirectory }
+            return nil
+
+        case let .collectionFile(url):
+            guard fileManagerClient.fileExistsWithIsDirectory(url.path, nil)
+            else { return .missingCollection }
+            return nil
+
+        case .virtualCollection:
+            return .unsupportedVirtualCollection
+
+        case .aiChat:
+            return .unsupportedAIChat
+        }
+    }
+
+    private func restoreFailureFeedbackEffect(_ reason: RestoreFailureReason) -> Effect<Action> {
+        let collectionAlertClient = collectionAlertClient
+        let message = switch reason {
+        case .missingDirectory, .missingCollection:
+            "The recently closed tab is no longer available."
+        case .unsupportedAIChat:
+            "AI Chat tabs cannot be restored yet."
+        case .unsupportedVirtualCollection:
+            "This type of tab cannot be restored."
+        }
+        return .run { _ in
+            await collectionAlertClient.showCollectionOpenErrorAlert(
+                "Cannot Restore Tab",
+                message,
+            )
         }
     }
 }
