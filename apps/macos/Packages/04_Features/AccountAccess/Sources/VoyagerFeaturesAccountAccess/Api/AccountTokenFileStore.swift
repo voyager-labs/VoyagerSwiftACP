@@ -1,8 +1,8 @@
 @preconcurrency import Darwin
 @preconcurrency import Foundation
 
-// ADR 001: 계정 토큰은 ~/.voyager/account_tokens.json에 저장 (home 고정).
-// AI connection 저장소(VoyagerEntitiesAi.AiConnectionRootResolver)와 root를 분리한다.
+/// ADR 001: 계정 토큰은 ~/.voyager/account_tokens.json에 저장 (home 고정).
+/// AI connection 저장소(VoyagerEntitiesAi.AiConnectionRootResolver)와 root를 분리한다.
 actor AccountTokenFileStore {
     private let fileManager = FileManager.default
     private let payloadURL: URL

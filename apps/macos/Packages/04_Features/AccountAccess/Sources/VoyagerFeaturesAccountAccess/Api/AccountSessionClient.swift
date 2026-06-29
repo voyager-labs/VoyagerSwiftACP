@@ -19,7 +19,7 @@ public struct AccountSessionClient: Sendable {
     }
 }
 
-enum AccountSessionPersistenceError: Error, Equatable, Sendable {
+enum AccountSessionPersistenceError: Error, Equatable {
     case missingRefreshToken
 }
 
