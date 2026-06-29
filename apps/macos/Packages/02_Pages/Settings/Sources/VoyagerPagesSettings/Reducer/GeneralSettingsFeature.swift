@@ -13,6 +13,8 @@ struct GeneralSettingsFeature {
     var launchAtLoginClient
     @Dependency(\.directorySelectionClient)
     var directorySelectionClient
+    @Dependency(\.defaultFileViewerClient)
+    var defaultFileViewerClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -108,7 +110,86 @@ struct GeneralSettingsFeature {
 
             case .checkForUpdates:
                 return .none
+
+            case .defaultFileViewerSectionAppeared, .defaultFileViewerDiagnoseRequested:
+                state.isDiagnosingDefaultFileViewer = true
+                return .run { [defaultFileViewerClient] send in
+                    let status = await defaultFileViewerClient.diagnose()
+                    await send(.defaultFileViewerDiagnosisCompleted(status))
+                }
+
+            case let .defaultFileViewerDiagnosisCompleted(status):
+                state.isDiagnosingDefaultFileViewer = false
+                state.defaultFileViewerStatus = status
+                return .none
+
+            case .setAsDefaultFileViewerTapped:
+                guard !state.isSettingDefaultFileViewer else { return .none }
+                state.isSettingDefaultFileViewer = true
+                state.defaultFileViewerErrorMessage = nil
+                return .run { [defaultFileViewerClient] send in
+                    do {
+                        try await defaultFileViewerClient.setVoyagerAsDefault()
+                        await send(.setAsDefaultFileViewerSucceeded)
+                    } catch {
+                        await send(.setAsDefaultFileViewerFailed(
+                            error as? DefaultFileViewerError ?? .systemError("\(error)"),
+                        ))
+                    }
+                }
+
+            case .setAsDefaultFileViewerSucceeded:
+                state.isSettingDefaultFileViewer = false
+                state.isDiagnosingDefaultFileViewer = true
+                return .run { [defaultFileViewerClient] send in
+                    let status = await defaultFileViewerClient.diagnose()
+                    await send(.defaultFileViewerDiagnosisCompleted(status))
+                }
+
+            case let .setAsDefaultFileViewerFailed(error):
+                state.isSettingDefaultFileViewer = false
+                state.defaultFileViewerErrorMessage = errorMessage(for: error)
+                return .none
+
+            case .restoreDefaultFileViewerTapped:
+                guard !state.isRestoringDefaultFileViewer else { return .none }
+                state.isRestoringDefaultFileViewer = true
+                state.defaultFileViewerErrorMessage = nil
+                return .run { [defaultFileViewerClient] send in
+                    do {
+                        try await defaultFileViewerClient.restoreFinder()
+                        await send(.restoreDefaultFileViewerSucceeded)
+                    } catch {
+                        await send(.restoreDefaultFileViewerFailed(
+                            error as? DefaultFileViewerError ?? .systemError("\(error)"),
+                        ))
+                    }
+                }
+
+            case .restoreDefaultFileViewerSucceeded:
+                state.isRestoringDefaultFileViewer = false
+                state.isDiagnosingDefaultFileViewer = true
+                return .run { [defaultFileViewerClient] send in
+                    let status = await defaultFileViewerClient.diagnose()
+                    await send(.defaultFileViewerDiagnosisCompleted(status))
+                }
+
+            case let .restoreDefaultFileViewerFailed(error):
+                state.isRestoringDefaultFileViewer = false
+                state.defaultFileViewerErrorMessage = errorMessage(for: error)
+                return .none
             }
         }
+    }
+}
+
+private func errorMessage(for error: DefaultFileViewerError) -> String {
+    switch error {
+    case .permissionDenied:
+        "시스템 설정 변경 권한이 없습니다"
+    case let .systemError(msg):
+        "시스템 오류: \(msg)"
+    case let .partialWrite(message):
+        "부분적으로 설정되었습니다: \(message)"
     }
 }

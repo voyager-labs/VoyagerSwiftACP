@@ -144,9 +144,85 @@ struct GeneralSettingsView: View {
                         .foregroundColor(.red)
                 }
             }
+
+            // SET-010 Default File Viewer
+            Section("Default File Viewer") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(statusMessage)
+                        .accessibilityIdentifier("defaultFileViewerStatusText")
+
+                    Button(actionButtonTitle) {
+                        store.send(actionButtonAction)
+                    }
+                    .disabled(isActionDisabled)
+                    .accessibilityIdentifier("defaultFileViewerActionButton")
+
+                    if let error = store.defaultFileViewerErrorMessage {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+
+                    Text("변경 사항을 적용하려면 시스템 재시작이 필요할 수 있습니다.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .accessibilityIdentifier("defaultFileViewerRestartHint")
+                }
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .onAppear {
+            store.send(.defaultFileViewerSectionAppeared)
+        }
+    }
+}
+
+private extension GeneralSettingsView {
+    /// contract default_file_viewer_contract.toml L85-89 정확 매핑
+    var statusMessage: String {
+        switch store.defaultFileViewerStatus {
+        case .voyagerIsDefault:
+            "Voyager가 기본 파일 뷰어입니다"
+        case .finderIsDefault:
+            "Finder가 기본 파일 뷰어입니다. Voyager로 설정하시겠습니까?"
+        case let .otherIsDefault(_, appDisplayName):
+            "\(appDisplayName)이(가) 기본 파일 뷰어입니다. Voyager로 변경하시겠습니까?"
+        case .unknown:
+            "기본 파일 뷰어 상태를 확인할 수 없습니다"
+        }
+    }
+
+    var actionButtonTitle: String {
+        switch store.defaultFileViewerStatus {
+        case .voyagerIsDefault:
+            "Finder로 복구"
+        case .finderIsDefault:
+            "Voyager로 설정"
+        case .otherIsDefault:
+            "Voyager로 변경"
+        case .unknown:
+            "다시 확인"
+        }
+    }
+
+    // G16: unknown → retry만
+    var actionButtonAction: GeneralSettingsAction {
+        switch store.defaultFileViewerStatus {
+        case .voyagerIsDefault:
+            .restoreDefaultFileViewerTapped
+        case .finderIsDefault, .otherIsDefault:
+            .setAsDefaultFileViewerTapped
+        case .unknown:
+            .defaultFileViewerDiagnoseRequested
+        }
+    }
+
+    // G4: 진행 중 비활성화
+    var isActionDisabled: Bool {
+        store.isDiagnosingDefaultFileViewer
+            || store.isSettingDefaultFileViewer
+            || store.isRestoringDefaultFileViewer
     }
 }

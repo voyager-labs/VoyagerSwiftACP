@@ -12,5 +12,12 @@ public struct GeneralSettingsState: Equatable {
     var automaticUpdateError: String?
     var alertBeforeQuit: Bool = false
 
+    // SET-010 Default File Viewer
+    var defaultFileViewerStatus: DefaultFileViewerStatus = .unknown
+    var isDiagnosingDefaultFileViewer: Bool = false
+    var isSettingDefaultFileViewer: Bool = false
+    var isRestoringDefaultFileViewer: Bool = false
+    var defaultFileViewerErrorMessage: String?
+
     public init() {}
 }
