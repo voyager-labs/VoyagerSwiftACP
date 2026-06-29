@@ -68,6 +68,64 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-005-preserve_independent_content_tab_sessions: pinned Collection tab 전환 시 collection file open 경로 사용
+    /// 복원된 pinned Collection tab이 빈 synthetic collection route에 머물지 않고 실제 collection file load/hydration을 시작해야 한다.
+    /// - 검증 내용: Home active 상태에서 pinned Collection tab으로 전환하면 openCollectionFile 액션을 수신
+    /// - 사전 조건: pinned Collection tab anchor == .collectionFile(url), 해당 tabContentStates 없음
+    /// - 기대 결과: collection URL로 navigation.view.openCollectionFile 액션 전송
+    func testSwitchingToPinnedCollectionTabOpensCollectionFile() async {
+        let homeID = ContentTabID()
+        let collectionID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/Users/test/Saved.voyagercollection")
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.navigationState = .home
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: collectionID,
+                    page: .collection,
+                    anchor: .collectionFile(url: collectionURL),
+                    isPinned: true,
+                    title: "Saved",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+            pinnedRecords: [
+                collectionID: ContentTabPinnedRecord(
+                    id: collectionID.rawValue,
+                    page: .collection,
+                    anchor: .collectionFile(url: collectionURL),
+                    title: "Saved",
+                    iconName: "rectangle.stack",
+                    pinnedAt: Date(timeIntervalSince1970: 1234),
+                ),
+            ],
+        )
+        state.content = homeContent
+        state.tabContentStates = [homeID: homeContent]
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(collectionID)))
+        await store.receive(\.navigation.view.openCollectionFile, collectionURL)
+    }
+
     func testSwitchingDirectoryTabsSyncsLegacySidebarSelectionFromRestoredSession() async {
         let projectsID = ContentTabID()
         let downloadsID = ContentTabID()

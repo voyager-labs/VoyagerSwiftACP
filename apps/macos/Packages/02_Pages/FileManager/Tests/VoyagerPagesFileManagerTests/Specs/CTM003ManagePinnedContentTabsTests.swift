@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
@@ -26,6 +27,23 @@ private final class PinnedRecordStoreRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return savedStores
+    }
+}
+
+private final class CollectionPinAlertRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var alerts: [(title: String, message: String)] = []
+
+    func record(title: String, message: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        alerts.append((title: title, message: message))
+    }
+
+    func latestAlert() -> (title: String, message: String)? {
+        lock.lock()
+        defer { lock.unlock() }
+        return alerts.last
     }
 }
 
@@ -168,6 +186,55 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
+    }
+
+    /// CTM-003-pin_content_tab_s: Collection file tab pin 시 active tab과 persisted record 유지
+    /// Collection package를 파일처럼 pin할 때 tab이 제거되거나 Home으로 대체되지 않아야 한다.
+    /// - 검증 내용: collectionFile anchor tab pin 후 pinned record 저장 성공과 active tab 유지 검증
+    /// - 사전 조건: active tab page == .collection, anchor == .collectionFile(url), isPinned == false
+    /// - 기대 결과: 같은 tab id가 pinned로 전환되고 collection pinned record가 저장됨
+    func testPin_collectionFileTabStaysActiveAndPersists() async {
+        let tabID = ContentTabID()
+        let collectionURL = URL(fileURLWithPath: "/Users/test/Saved.voyagercollection")
+        let collectionAnchor: ContentTabPageAnchor = .collectionFile(url: collectionURL)
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabID,
+                        page: .collection,
+                        anchor: collectionAnchor,
+                        isPinned: false,
+                        title: "Saved",
+                        iconName: "rectangle.stack",
+                    ),
+                ],
+                activeTabID: tabID,
+                recentlyClosed: nil,
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+        }
+
+        await store.send(.pin(tabID)) {
+            $0.tabs[id: tabID]?.isPinned = true
+            $0.pinnedRecords[tabID] = Self.pinnedRecord(
+                id: tabID,
+                page: .collection,
+                anchor: collectionAnchor,
+                title: "Saved",
+                iconName: "rectangle.stack",
+            )
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.finish()
+
+        XCTAssertEqual(store.state.tabs.count, 1)
+        XCTAssertEqual(store.state.activeTabID, tabID)
+        XCTAssertEqual(store.state.tabs[id: tabID]?.anchor, collectionAnchor)
     }
 
     /// CTM-003-pin_content_tab_s: 이미 pinned tab에 pin은 idempotent no-op
@@ -837,6 +904,54 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let tabID = ContentTabID()
         var state = temporaryCollectionWindowState(tabID: tabID)
         state.syncContentTabSidebarItems()
+        let alertRecorder = CollectionPinAlertRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alertRecorder.record(title: title, message: message)
+            }
+        }
+
+        await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        XCTAssertNil(store.state.contentTabs.pinnedRecords[tabID])
+        await store.finish()
+        XCTAssertEqual(alertRecorder.latestAlert()?.title, "Cannot Pin Collection")
+        XCTAssertEqual(alertRecorder.latestAlert()?.message, "Save the collection before pinning it as a tab.")
+    }
+
+    /// CTM-003-pin_content_tab_s: directory tab에서 임시 collection UI로 전환된 상태도 pin 불가
+    /// temporary collection은 tab anchor/page가 아직 directory로 남을 수 있으므로 content state 기준으로 차단한다.
+    /// - 검증 내용: tab page가 .directory여도 active content가 temporary collection이면 toggle pin no-op
+    /// - 사전 조건: active Directory tab, navigationState=.collection(.temporary), collection mode=true
+    /// - 기대 결과: tab isPinned=false 유지, 이전 directory anchor pinned record 미생성
+    func testToggleActiveContentTabPinCommand_ignoresTemporaryCollectionInDirectoryTab() async {
+        let tabID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Desktop"),
+                isPinned: false,
+                title: "Desktop",
+                iconName: "folder",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.navigation.navigationState = .collection(.init(
+            kind: .temporary,
+            context: .init(),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .grid,
+        ))
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         }
@@ -857,11 +972,164 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let tabID = ContentTabID()
         var state = temporaryCollectionWindowState(tabID: tabID)
         state.syncContentTabSidebarItems()
+        let alertRecorder = CollectionPinAlertRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alertRecorder.record(title: title, message: message)
+            }
+        }
+
+        await store.send(.sidebar(.delegate(.pinContentTab(tabID))))
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        XCTAssertNil(store.state.contentTabs.pinnedRecords[tabID])
+        await store.finish()
+        XCTAssertEqual(alertRecorder.latestAlert()?.title, "Cannot Pin Collection")
+        XCTAssertEqual(alertRecorder.latestAlert()?.message, "Save the collection before pinning it as a tab.")
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 삭제된 Directory pinned tab 선택 시 피드백 표시
+    /// live sync 중에는 깨진 pin을 보존하되 사용자가 선택하면 대상 없음 안내를 표시하고 자동 삭제하지 않는다.
+    /// - 검증 내용: broken directory pinned tab 선택 시 unavailable alert와 record 보존 검증
+    /// - 사전 조건: pinned tab anchor == .directory(deleted path), fileExistsWithIsDirectory == false
+    /// - 기대 결과: Pinned Location Unavailable alert 표시, tab과 pinned record는 유지됨
+    func testSelectBrokenPinnedDirectoryTabShowsFeedbackWithoutRemovingTab() async {
+        let homeID = ContentTabID(rawValue: "home-tab")
+        let brokenID = ContentTabID(rawValue: "broken-pin")
+        let brokenAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Deleted")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+                ContentTabItem(
+                    id: brokenID,
+                    page: .directory,
+                    anchor: brokenAnchor,
+                    isPinned: true,
+                    title: "Deleted",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+            pinnedRecords: [brokenID: Self.pinnedRecord(id: brokenID, anchor: brokenAnchor)],
+        )
+        state.syncContentTabSidebarItems()
+        let alertRecorder = CollectionPinAlertRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = false
+                return false
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alertRecorder.record(title: title, message: message)
+            }
+        }
+
+        // broken pinned tab 선택은 content handoff/navigation child action을 동반하므로,
+        // 이 테스트는 feedback 표시와 pinned record 보존만 검증한다.
+        store.exhaustivity = .off
+        await store.send(.sidebar(.delegate(.selectContentTab(brokenID))))
+        await store.finish()
+
+        XCTAssertEqual(alertRecorder.latestAlert()?.title, "Pinned Location Unavailable")
+        XCTAssertEqual(
+            alertRecorder.latestAlert()?.message,
+            "The pinned item no longer exists. Navigate to a valid location to update this pinned tab.",
+        )
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: brokenID])
+        XCTAssertEqual(store.state.contentTabs.tabs[id: brokenID]?.isPinned, true)
+        XCTAssertNotNil(store.state.contentTabs.pinnedRecords[brokenID])
+    }
+
+    /// CTM-003-pin_content_tab_s: composer가 만든 미저장 collection context는 directory anchor가 남아 있어도 pin 불가
+    /// 임시 collection UI가 directory처럼 보이는 중간 상태에서 오래된 directory anchor를 pinned record로 저장하지 않음을 검증한다.
+    /// - 검증 내용: collectionContext != nil && openedCollectionURL == nil 상태에서 pin no-op
+    /// - 사전 조건: active Collection tab, unsaved collection context, directory anchor
+    /// - 기대 결과: tab isPinned=false 유지, pinnedRecords 미생성
+    func testToggleActiveContentTabPinCommand_ignoresUnsavedCollectionContextWithDirectoryAnchor() async {
+        let tabID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .directory(path: "/Users/test/ComposerSource"),
+                isPinned: false,
+                title: "Composer Result",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.collection.collectionContext = CollectionContext(
+            query: "report",
+            scopes: [],
+            conditions: [],
+        )
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         }
 
-        await store.send(.sidebar(.delegate(.pinContentTab(tabID))))
+        await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
+        XCTAssertNil(store.state.contentTabs.pinnedRecords[tabID])
+        await store.finish()
+    }
+
+    /// CTM-003-pin_content_tab_s: New Collection file route라도 opened document/baseline 전에는 pin 불가
+    /// 화면 제목이 New Collection으로 보이는 저장 전/열림 세션 미확정 상태를 pinned record로 저장하지 않음을 검증한다.
+    /// - 검증 내용: collection file navigation URL은 있지만 collectionSession document/baseline이 없으면 pin no-op
+    /// - 사전 조건: active Collection tab, .collection(.file) navigation, collectionContext 있음, opened document 없음
+    /// - 기대 결과: tab isPinned=false 유지, pinnedRecords 미생성
+    func testToggleActiveContentTabPinCommand_ignoresNewCollectionWithoutOpenedDocument() async {
+        let tabID = ContentTabID()
+        let url = URL(fileURLWithPath: "/Users/test/New Collection.voyagercollection")
+        let context = CollectionContext(query: "", scopes: ["/Users/test/Desktop"], conditions: [])
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: url),
+                isPinned: false,
+                title: "New Collection",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content.entryViewLayout.isCollectionMode = true
+        state.content.collection.collectionContext = context
+        state.content.navigation.navigationState = .collection(.init(
+            kind: .file(url: url, name: "New Collection"),
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .grid,
+        ))
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+
+        await store.send(FileManagerWindowAction.request(.toggleActiveContentTabPin))
 
         XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.isPinned, false)
         XCTAssertNil(store.state.contentTabs.pinnedRecords[tabID])
@@ -945,6 +1213,69 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
+    }
+
+    /// CTM-003-unpin_content_tab_s: pinned tab unpin 시 unpinned 영역 맨 아래로 이동
+    /// Sidebar projection이 pinned/unpinned를 분리하므로 unpin된 탭을 배열 끝으로 옮겨 normal section 하단에 배치한다.
+    /// - 검증 내용: unpin reducer가 pinned marker와 record를 제거하고 tab 배열 끝으로 이동하는지 검증
+    /// - 사전 조건: pinned tab 1개와 unpinned tab 2개가 같은 ContentTabState에 존재
+    /// - 기대 결과: unpinned tab 순서 뒤에 기존 pinned tab이 isPinned=false 상태로 append됨
+    func testUnpin_movesTabToBottomOfUnpinnedTabs() async {
+        let pinnedID = ContentTabID(rawValue: "pinned-tab")
+        let firstUnpinnedID = ContentTabID(rawValue: "first-unpinned")
+        let secondUnpinnedID = ContentTabID(rawValue: "second-unpinned")
+        let pinnedAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Pinned")
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: pinnedID,
+                        page: .directory,
+                        anchor: pinnedAnchor,
+                        isPinned: true,
+                        title: "Pinned",
+                        iconName: "folder",
+                    ),
+                    ContentTabItem(
+                        id: firstUnpinnedID,
+                        page: .directory,
+                        anchor: .directory(path: "/Users/test/First"),
+                        isPinned: false,
+                        title: "First",
+                        iconName: "folder",
+                    ),
+                    ContentTabItem(
+                        id: secondUnpinnedID,
+                        page: .directory,
+                        anchor: .directory(path: "/Users/test/Second"),
+                        isPinned: false,
+                        title: "Second",
+                        iconName: "folder",
+                    ),
+                ],
+                activeTabID: pinnedID,
+                recentlyClosed: nil,
+                pinnedRecords: [pinnedID: Self.pinnedRecord(id: pinnedID, anchor: pinnedAnchor)],
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
+        }
+
+        await store.send(.unpin(pinnedID)) {
+            var unpinnedTab = $0.tabs[id: pinnedID]!
+            unpinnedTab.isPinned = false
+            $0.tabs.remove(id: pinnedID)
+            $0.tabs.append(unpinnedTab)
+            $0.pinnedRecords.removeAll()
+        }
+        await store.receive(\.pinnedRecordSaveSucceeded)
+        await store.finish()
+
+        XCTAssertEqual(store.state.tabs.map(\.id), [firstUnpinnedID, secondUnpinnedID, pinnedID])
+        XCTAssertEqual(store.state.activeTabID, pinnedID)
+        XCTAssertEqual(store.state.tabs[id: pinnedID]?.isPinned, false)
     }
 
     /// CTM-003-unpin_content_tab_s: 이미 unpinned tab에 unpin은 idempotent no-op
@@ -1095,11 +1426,97 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
     // MARK: - CTM-003-go_to_anchored_path_of_pinned_tab
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 전역 pinned 동기화는 unpinned tab을 보존하고 pinned 순서를 store 기준으로 교체
+    /// 다른 window에서 변경된 pinned store를 적용해도 현재 window의 unpinned 작업 tab은 유지되어야 함을 검증한다.
+    /// - 검증 내용: restored pinned + 기존 unpinned 병합, stale pinned content state 제거
+    /// - 사전 조건: 오래된 pinned tab 1개 + unpinned tab 1개, restored pinned tab 2개
+    /// - 기대 결과: restored pinned 2개가 앞에 오고 unpinned tab이 뒤에 남음
+    func testApplyPinnedContentTabs_preservesUnpinnedTabsAndUsesRestoredOrder() {
+        let stalePinnedID = ContentTabID(rawValue: "stale-pin")
+        let unpinnedID = ContentTabID(rawValue: "working-tab")
+        let firstPinnedID = ContentTabID(rawValue: "first-pin")
+        let secondPinnedID = ContentTabID(rawValue: "second-pin")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: stalePinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Stale"),
+                    isPinned: true,
+                    title: "Stale",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: unpinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/Working"),
+                    isPinned: false,
+                    title: "Working",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: unpinnedID,
+            pinnedRecords: [
+                stalePinnedID: Self.pinnedRecord(
+                    id: stalePinnedID,
+                    anchor: .directory(path: "/Users/test/Stale"),
+                    title: "Stale",
+                    iconName: "folder",
+                ),
+            ],
+        )
+        state.tabContentStates[stalePinnedID] = .init()
+        state.tabContentStates[unpinnedID] = state.content
+        let restoredState = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstPinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/A"),
+                    isPinned: true,
+                    title: "A",
+                    iconName: "folder",
+                ),
+                ContentTabItem(
+                    id: secondPinnedID,
+                    page: .directory,
+                    anchor: .directory(path: "/Users/test/B"),
+                    isPinned: true,
+                    title: "B",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: firstPinnedID,
+            pinnedRecords: [
+                firstPinnedID: Self.pinnedRecord(
+                    id: firstPinnedID,
+                    anchor: .directory(path: "/Users/test/A"),
+                    title: "A",
+                    iconName: "folder",
+                ),
+                secondPinnedID: Self.pinnedRecord(
+                    id: secondPinnedID,
+                    anchor: .directory(path: "/Users/test/B"),
+                    title: "B",
+                    iconName: "folder",
+                ),
+            ],
+        )
+
+        state.applyPinnedContentTabs(restoredState)
+
+        XCTAssertEqual(state.contentTabs.tabs.map(\.id), [firstPinnedID, secondPinnedID, unpinnedID])
+        XCTAssertEqual(state.contentTabs.activeTabID, unpinnedID)
+        XCTAssertNil(state.tabContentStates[stalePinnedID])
+        XCTAssertEqual(Set(state.contentTabs.pinnedRecords.keys), Set([firstPinnedID, secondPinnedID]))
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 저장된 pinned record store에서 pinned tab 복원
-    /// Home과 Directory record가 있는 store를 복원하면 두 tab이 모두 pinned 상태로 복원됨을 검증한다.
-    /// - 검증 내용: tabs 2개, 모두 isPinned == true, pinnedRecords 2개, 첫 번째 record가 activeTabID
+    /// Home과 Directory record가 있는 store를 복원하면 pinned tab과 focused Home tab이 함께 생성됨을 검증한다.
+    /// - 검증 내용: pinned tabs 2개 + 기본 Home tab 1개, activeTabID는 기본 Home
     /// - 사전 조건: 유효한 Home + Directory record 2개
-    /// - 기대 결과: 2개 tab이 pinned 상태로 복원, pinnedRecords에 2개 entry
+    /// - 기대 결과: pinnedRecords에 2개 entry가 유지되고 기본 Home tab이 active
     func testPinnedRecordRestore_rehydratesPinnedTabs() {
         let pinnedAt = Self.pinnedAt
         let store = ContentTabPinnedRecordStore(records: [
@@ -1123,10 +1540,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let result = ContentTabState.restoringPinnedRecords(from: store)
 
-        XCTAssertEqual(result.state.tabs.count, 2)
-        XCTAssertTrue(result.state.tabs.allSatisfy(\.isPinned))
+        XCTAssertEqual(result.state.tabs.count, 3)
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["home-1", "dir-1"])
         XCTAssertEqual(result.state.pinnedRecords.count, 2)
-        XCTAssertEqual(result.state.activeTabID, result.state.tabs.first?.id)
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.isPinned, false)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 빈 store로 restore 시 withHomeTab()과 동일한 구조
@@ -1199,9 +1617,55 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let result = ContentTabState.restoringPinnedRecords(from: store)
 
-        XCTAssertEqual(result.state.tabs.count, 2)
-        XCTAssertTrue(result.state.tabs.allSatisfy(\.isPinned))
+        XCTAssertEqual(result.state.tabs.count, 3)
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["valid-1", "valid-2"])
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.isPinned, false)
         XCTAssertEqual(result.droppedCount, 3)
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 복원 불가능한 anchor record 필터링
+    /// WindowManager가 파일 존재 검증을 주입하면 삭제된 Directory/Collection file record가 제외됨을 검증한다.
+    /// - 검증 내용: isRestorableAnchor == false인 record 제외, didCompact true
+    /// - 사전 조건: valid 1개 + inaccessible directory 1개 + inaccessible collection file 1개
+    /// - 기대 결과: valid record만 복원되고 droppedCount 2
+    func testPinnedRecordRestore_filtersUnrestorableAnchors() {
+        let pinnedAt = Self.pinnedAt
+        let store = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "valid-dir",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Documents"),
+                title: "Documents",
+                iconName: "folder",
+                pinnedAt: pinnedAt,
+            ),
+            ContentTabPinnedRecord(
+                id: "deleted-dir",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Deleted"),
+                title: "Deleted",
+                iconName: "folder",
+                pinnedAt: pinnedAt,
+            ),
+            ContentTabPinnedRecord(
+                id: "deleted-collection",
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/Deleted.voyagercollection")),
+                title: "Deleted Collection",
+                iconName: "rectangle.stack",
+                pinnedAt: pinnedAt,
+            ),
+        ])
+
+        let result = ContentTabState.restoringPinnedRecords(from: store) { anchor in
+            anchor == .directory(path: "/Users/test/Documents")
+        }
+
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["valid-dir"])
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
+        XCTAssertTrue(result.didCompact)
+        XCTAssertEqual(result.droppedCount, 2)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: maxTabs 초과 record 제외
@@ -1240,7 +1704,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let result = ContentTabState.restoringPinnedRecords(from: store, maxTabs: 1)
 
-        XCTAssertEqual(result.state.tabs.count, 1)
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["rec-1"])
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
         XCTAssertEqual(result.droppedCount, 2)
     }
 
@@ -1272,7 +1737,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let result = ContentTabState.restoringPinnedRecords(from: store)
 
-        XCTAssertEqual(result.state.tabs.count, 1)
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["same-id"])
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
         XCTAssertTrue(result.didCompact)
         XCTAssertEqual(result.droppedCount, 1)
     }
@@ -1314,9 +1780,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let result = ContentTabState.restoringPinnedRecords(from: store)
 
-        XCTAssertEqual(result.state.tabs.count, 2)
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["valid-1", "valid-2"])
         XCTAssertEqual(result.state.tabs[0].anchor, .collectionFile(url: URL(fileURLWithPath: "/test")))
         XCTAssertEqual(result.state.tabs[1].page, .home)
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.isPinned, false)
         XCTAssertTrue(result.didCompact)
         XCTAssertEqual(result.droppedCount, 1)
     }
@@ -1358,7 +1826,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let result = ContentTabState.restoringPinnedRecords(from: store)
 
-        XCTAssertEqual(result.state.tabs.count, 3)
+        XCTAssertEqual(result.state.tabs.count, 4)
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["dir-1", "col-1", "ai-1"])
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.isPinned, false)
 
         // Directory (첫 번째)
         let firstID = result.state.tabs[0].id
@@ -1383,6 +1854,67 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.state.tabs[2].title, "AI Chat")
         XCTAssertEqual(result.state.tabs[2].iconName, "sparkles")
         XCTAssertEqual(result.state.pinnedRecords[thirdID]?.pinnedAt, pinnedAt)
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 기존 pinned record 갱신 시 저장 순서 보존
+    /// pinned tab에서 이동이 발생해 record가 갱신되어도 새 창 restore 순서가 아래로 밀리지 않음을 검증한다.
+    /// - 검증 내용: 기존 id 갱신은 원래 index를 유지, 신규 id만 끝에 추가
+    /// - 사전 조건: 3개 record 중 두 번째 record 갱신, 이후 신규 record 추가
+    /// - 기대 결과: 갱신 record는 두 번째 위치 유지, 신규 record는 마지막 위치
+    func testUpsertPinnedRecord_preservesExistingRecordOrder() {
+        let pinnedAt = Self.pinnedAt
+        let existingStore = ContentTabPinnedRecordStore(records: [
+            ContentTabPinnedRecord(
+                id: "dir-1",
+                page: .directory,
+                anchor: .directory(path: "/Users/test/Documents"),
+                title: "Documents",
+                iconName: "folder",
+                pinnedAt: pinnedAt,
+            ),
+            ContentTabPinnedRecord(
+                id: "col-1",
+                page: .collection,
+                anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/Photos")),
+                title: "Photos",
+                iconName: "rectangle.stack",
+                pinnedAt: pinnedAt,
+            ),
+            ContentTabPinnedRecord(
+                id: "ai-1",
+                page: .aiChat,
+                anchor: .aiChat(sessionID: "chat-1"),
+                title: "AI Chat",
+                iconName: "sparkles",
+                pinnedAt: pinnedAt,
+            ),
+        ])
+        let updatedCollection = ContentTabPinnedRecord(
+            id: "col-1",
+            page: .collection,
+            anchor: .collectionFile(url: URL(fileURLWithPath: "/Users/test/UpdatedPhotos")),
+            title: "Updated Photos",
+            iconName: "rectangle.stack",
+            pinnedAt: pinnedAt.addingTimeInterval(10),
+        )
+        let newDirectory = ContentTabPinnedRecord(
+            id: "dir-2",
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Downloads"),
+            title: "Downloads",
+            iconName: "folder",
+            pinnedAt: pinnedAt.addingTimeInterval(20),
+        )
+
+        let updatedStore = upsertPinnedRecord(updatedCollection, in: existingStore)
+        let appendedStore = upsertPinnedRecord(newDirectory, in: updatedStore)
+
+        XCTAssertEqual(updatedStore.records.map(\.id), ["dir-1", "col-1", "ai-1"])
+        XCTAssertEqual(
+            updatedStore.records[1].anchor,
+            .collectionFile(url: URL(fileURLWithPath: "/Users/test/UpdatedPhotos")),
+        )
+        XCTAssertEqual(appendedStore.records.map(\.id), ["dir-1", "col-1", "ai-1", "dir-2"])
     }
 
     // MARK: - CTM-003-pinned_record_restore_compaction
@@ -1416,7 +1948,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let result = ContentTabState.restoringPinnedRecords(from: store)
 
-        XCTAssertEqual(result.state.tabs.count, 1)
+        XCTAssertEqual(result.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["dup-id"])
+        XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
         XCTAssertTrue(result.didCompact)
         XCTAssertEqual(result.droppedCount, 1)
         // 유일하게 남은 record는 첫 번째 record의 메타데이터 유지
@@ -1454,7 +1987,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let restoreResult = ContentTabState.restoringPinnedRecords(from: store)
         XCTAssertTrue(restoreResult.didCompact)
-        XCTAssertEqual(restoreResult.state.tabs.count, 1)
+        XCTAssertEqual(restoreResult.state.tabs.filter(\.isPinned).map(\.id.rawValue), ["dup-id"])
 
         // saveStore가 throw해도 makeInitial은 계속됨을 확인
         // (실제 WindowManager에서는 try? saveStore로 처리되므로 실패해도 흐름은 유지됨)
@@ -1466,9 +1999,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         // 복원된 pinned tab이 window state에 포함되어야 함
         // (makeInitial의 bootstrapping이 pinnedRecords를 보존하므로
         // pinnedRecords dict도 함께 유지됨)
-        XCTAssertEqual(windowState.contentTabs.tabs.count, 1)
-        XCTAssertTrue(windowState.contentTabs.tabs[0].isPinned)
-        XCTAssertEqual(windowState.contentTabs.tabs[0].page, .home)
+        XCTAssertEqual(windowState.contentTabs.tabs.filter(\.isPinned).map(\.id.rawValue), ["dup-id"])
+        XCTAssertEqual(
+            windowState.contentTabs.tabs[id: windowState.contentTabs.activeTabID ?? ContentTabID(rawValue: "")]?.page,
+            .home,
+        )
+        XCTAssertEqual(
+            windowState.contentTabs.tabs[id: windowState.contentTabs.activeTabID ?? ContentTabID(rawValue: "")]?
+                .isPinned,
+            false,
+        )
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: restore 후 unpin이 원래 persisted record ID를 사용함
@@ -1520,7 +2060,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         // restore된 pinned tab unpin
         await testStore.send(.unpin(tabID)) { state in
-            state.tabs[id: tabID]?.isPinned = false
+            var unpinnedTab = state.tabs[id: tabID]!
+            unpinnedTab.isPinned = false
+            state.tabs.remove(id: tabID)
+            state.tabs.append(unpinnedTab)
             state.pinnedRecords[tabID] = nil
         }
         await testStore.receive(\.pinnedRecordSaveSucceeded)
