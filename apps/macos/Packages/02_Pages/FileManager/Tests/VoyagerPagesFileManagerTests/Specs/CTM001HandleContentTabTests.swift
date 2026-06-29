@@ -359,6 +359,36 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertNil(lastTabState.recentlyClosed)
     }
 
+    /// CTM-001-close_content_tab: pinned tab close는 restore snapshot을 생성하지 않음
+    /// pinned tab close는 unpin transition이며 recentlyClosed 후보를 남기지 않음을 검증한다.
+    /// - 검증 내용: close 후 recentlyClosed == nil, tab 유지, isPinned false 전환
+    /// - 사전 조건: active pinned Home tab 하나
+    /// - 기대 결과: pinned close가 unpin만 수행하고 snapshot 미생성
+    func testCloseContentTab_pinnedCloseDoesNotCreateRestoreCandidate() {
+        let pinnedID = ContentTabID()
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: pinnedID,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .close(pinnedID))
+
+        XCTAssertNil(state.recentlyClosed)
+        XCTAssertEqual(state.tabs.count, 1)
+        XCTAssertFalse(state.tabs.first?.isPinned ?? true)
+    }
+
     // MARK: - CTM-001-restore_last_closed_tab
 
     /// CTM-001-restore_last_closed_tab: 단일 recently closed snapshot을 fresh identity로 복원함
@@ -406,6 +436,120 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertNil(state.recentlyClosed)
     }
 
+    /// CTM-001-restore_last_closed_tab: candidate가 없으면 restore는 no-op
+    /// recentlyClosed가 nil일 때 restore가 tabs와 activeTabID를 변경하지 않음을 검증한다.
+    /// - 검증 내용: restore 후 tabs.count, activeTabID, recentlyClosed 불변
+    /// - 사전 조건: recentlyClosed == nil, Home tab 하나
+    /// - 기대 결과: restore 호출 후 tabs와 activeTabID가 변경되지 않고 recentlyClosed == nil 유지
+    func testRestoreLastClosedTab_noCandidateIsNoOp() {
+        let homeID = ContentTabID()
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .restore)
+
+        XCTAssertEqual(state.tabs.count, 1)
+        XCTAssertEqual(state.activeTabID, homeID)
+        XCTAssertNil(state.recentlyClosed)
+    }
+
+    /// CTM-001-restore_last_closed_tab: snapshot의 title/iconName metadata가 restore된 tab에 우선 사용됨
+    /// close 시 저장된 title과 iconName이 restore에서 title(for:)/iconName(for:)보다 우선 적용됨을 검증한다.
+    /// - 검증 내용: restore된 tab의 title == snapshot.title, iconName == snapshot.iconName
+    /// - 사전 조건: recentlyClosed에 title과 iconName이 설정된 snapshot
+    /// - 기대 결과: restore된 tab이 snapshot metadata를 그대로 사용함
+    func testRestoreLastClosedTab_preservesSnapshotMetadata() throws {
+        let homeID = ContentTabID()
+        let snapshot = ClosedContentTabSnapshot(
+            page: .directory,
+            anchor: .directory(path: "/custom"),
+            wasPinned: false,
+            closedAt: Date(),
+            title: "Custom Title",
+            iconName: "custom.icon",
+        )
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: snapshot,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .restore)
+
+        let restoredTab = try XCTUnwrap(state.tabs.last)
+        XCTAssertEqual(restoredTab.title, "Custom Title")
+        XCTAssertEqual(restoredTab.iconName, "custom.icon")
+    }
+
+    /// CTM-001-restore_last_closed_tab: close A → close B → restore는 B만 복원함
+    /// 연속 close 시 마지막 snapshot만 보존되고 restore가 가장 최근 snapshot을 소비함을 검증한다.
+    /// - 검증 내용: close(A) → close(B) → restore 후 restored tab의 anchor == B의 anchor
+    /// - 사전 조건: Home + A + B 세 tab, A와 B 순서로 close
+    /// - 기대 결과: B의 snapshot만 restore되고 A는 복원되지 않음
+    func testRestoreLastClosedTab_overwritesOnMultipleClose() throws {
+        let homeID = ContentTabID()
+        let tabA = ContentTabID()
+        let tabB = ContentTabID()
+        let anchorB = ContentTabPageAnchor.directory(path: "/b")
+        var state = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: tabA,
+                    page: .directory,
+                    anchor: .directory(path: "/a"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(id: tabB, page: .directory, anchor: anchorB, isPinned: false, title: nil, iconName: nil),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let reducer = ContentTabFeature()
+
+        _ = reducer.reduce(into: &state, action: .close(tabA))
+        _ = reducer.reduce(into: &state, action: .close(tabB))
+        _ = reducer.reduce(into: &state, action: .restore)
+
+        XCTAssertEqual(state.tabs.count, 2)
+        XCTAssertNil(state.recentlyClosed)
+        let restoredTab = try XCTUnwrap(state.tabs.last)
+        XCTAssertEqual(restoredTab.anchor, anchorB)
+        XCTAssertEqual(restoredTab.page, .directory)
+    }
+
     // MARK: - CTM-001-pin_content_tab_s
 
     /// CTM-001-pin_content_tab_s: pinned tab close는 제거가 아니라 unpin transition임
@@ -441,6 +585,168 @@ final class CTM001HandleContentTabTests: XCTestCase {
         }
         await store.receive(\.pinnedRecordSaveSucceeded)
         await store.finish()
+    }
+
+    // MARK: - CTM-001-restore_last_closed_tab_routing
+
+    /// CTM-001-restore_last_closed_tab_routing: 유효한 Directory anchor restore는 recentlyClosed snapshot을 소비하고 tab을 복원함
+    /// FileManagerWindowCommandRoutingReducer.handleRequestedCommand(.restoreLastClosedContentTab) 경로를 통해
+    /// anchor 유효성 검증 → ContentTabFeature.restore() 전달까지의 command-level routing을 검증한다.
+    /// - 검증 내용: tabs.count == 2 (기존 Home + 복원된 Directory), recentlyClosed == nil, 복원된 tab의 anchor와 page가 snapshot과 일치
+    /// - 사전 조건: Home tab 하나, 최근 닫힌 Directory tab snapshot, fileManagerClient.fileExistsWithIsDirectory → (true,
+    /// isDirectory=true)
+    /// - 기대 결과: restore 후 새 Directory tab이 active로 추가되고 recentlyClosed가 비워짐
+    func testRestoreLastClosedTabCommand_validDirectoryRestoresAndConsumesSnapshot() async throws {
+        let directoryAnchor = ContentTabPageAnchor.directory(path: "/Users/test/Documents")
+        var state = FileManagerFeature.State()
+        state.contentTabs.recentlyClosed = ClosedContentTabSnapshot(
+            page: .directory,
+            anchor: directoryAnchor,
+            wasPinned: false,
+            closedAt: Date(),
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 비포괄적: FileManagerFeature.onAppear가 여러 child action과 restore 후
+        // handoff/navigation child effect를 방출하므로 최종 상태 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let beforeCount = store.state.contentTabs.tabs.count
+
+        await store.send(.request(.restoreLastClosedContentTab))
+        await store.receive(\.contentTabs)
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, beforeCount + 1)
+        XCTAssertNil(store.state.contentTabs.recentlyClosed)
+        let restoredTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
+        XCTAssertEqual(restoredTab.anchor, directoryAnchor)
+        XCTAssertEqual(restoredTab.page, .directory)
+    }
+
+    /// CTM-001-restore_last_closed_tab_routing: 삭제된 Directory anchor restore는 snapshot을 소비하고 feedback alert을 표시함
+    /// handleRestoreLastClosedContentTab에서 fileManagerClient.fileExistsWithIsDirectory가 false를 반환하면
+    /// recentlyClosed를 초기화하고 collectionAlertClient로 사용자 피드백을 전송하는 경로를 검증한다.
+    /// - 검증 내용: tabs.count 불변 (1), recentlyClosed == nil,
+    ///   collectionAlertClient에 "Cannot Restore Tab" / "The recently closed tab is no longer available." alert 전송
+    /// - 사전 조건: Home tab 하나, 삭제된 경로의 Directory snapshot, fileManagerClient.fileExistsWithIsDirectory → false
+    /// - 기대 결과: recentlyClosed가 소비되고 alert이 표시되며 tab 목록은 변경되지 않음
+    func testRestoreLastClosedTabCommand_invalidDirectoryConsumesSnapshotAndShowsFeedback() async {
+        let collectionAlertRecorder = LockIsolated<[(title: String, message: String)]>([])
+        var state = FileManagerFeature.State()
+        state.contentTabs.recentlyClosed = ClosedContentTabSnapshot(
+            page: .directory,
+            anchor: .directory(path: "/Users/test/Deleted"),
+            wasPinned: false,
+            closedAt: Date(),
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, _ in false }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                collectionAlertRecorder.withValue { $0.append((title, message)) }
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 비포괄적: FileManagerFeature.onAppear 및 restore failure effect(.run)가
+        // 여러 action을 방출하므로 snapshot 소비와 alert 전송 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.request(.restoreLastClosedContentTab))
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
+        XCTAssertNil(store.state.contentTabs.recentlyClosed)
+        let alerts = collectionAlertRecorder.value
+        XCTAssertEqual(alerts.count, 1)
+        XCTAssertEqual(alerts[0].title, "Cannot Restore Tab")
+        XCTAssertEqual(alerts[0].message, "The recently closed tab is no longer available.")
+    }
+
+    /// CTM-001-restore_last_closed_tab_routing: 삭제된 CollectionFile anchor restore는 snapshot을 소비하고 feedback alert을 표시함
+    /// Directory와 동일한 실패 경로를 collectionFile anchor(.collectionFile)에서 검증한다.
+    /// - 검증 내용: tabs.count 불변, recentlyClosed == nil,
+    ///   collectionAlertClient에 "Cannot Restore Tab" / "The recently closed tab is no longer available." alert 전송
+    /// - 사전 조건: Home tab 하나, 존재하지 않는 collectionFile 경로의 snapshot, fileManagerClient.fileExistsWithIsDirectory → false
+    /// - 기대 결과: recentlyClosed가 소비되고 "Cannot Restore Tab" alert이 표시됨
+    func testRestoreLastClosedTabCommand_missingCollectionConsumesSnapshotAndShowsFeedback() async {
+        let collectionAlertRecorder = LockIsolated<[(title: String, message: String)]>([])
+        let collectionURL = URL(fileURLWithPath: "/Users/test/Deleted.voyagercollection")
+        var state = FileManagerFeature.State()
+        state.contentTabs.recentlyClosed = ClosedContentTabSnapshot(
+            page: .collection,
+            anchor: .collectionFile(url: collectionURL),
+            wasPinned: false,
+            closedAt: Date(),
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, _ in false }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                collectionAlertRecorder.withValue { $0.append((title, message)) }
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 비포괄적: FileManagerFeature.onAppear 및 restore failure effect 방출로 인해
+        // collection anchor missing 경로 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.request(.restoreLastClosedContentTab))
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
+        XCTAssertNil(store.state.contentTabs.recentlyClosed)
+        let alerts = collectionAlertRecorder.value
+        XCTAssertEqual(alerts.count, 1)
+        XCTAssertEqual(alerts[0].title, "Cannot Restore Tab")
+        XCTAssertEqual(alerts[0].message, "The recently closed tab is no longer available.")
+    }
+
+    /// CTM-001-restore_last_closed_tab_routing: AI Chat anchor restore는 snapshot을 소비하고 feedback alert을 표시함
+    /// AI Chat anchor(.aiChat)는 restoreFailureReason에서 .unsupportedAIChat으로 분류되어
+    /// recentlyClosed가 소비되고 사용자에게 "AI Chat tabs cannot be restored yet." 피드백이 전달됨을 검증한다.
+    /// - 검증 내용: tabs.count 불변, recentlyClosed == nil,
+    ///   collectionAlertClient에 "Cannot Restore Tab" / "AI Chat tabs cannot be restored yet." alert 전송
+    /// - 사전 조건: Home tab 하나, AI Chat session snapshot (sessionID: "chat-1")
+    /// - 기대 결과: snapshot이 소비되고 비활성 anchor에 대한 alert이 표시됨
+    func testRestoreLastClosedTabCommand_aiChatConsumesSnapshotAndShowsFeedback() async {
+        let collectionAlertRecorder = LockIsolated<[(title: String, message: String)]>([])
+        var state = FileManagerFeature.State()
+        state.contentTabs.recentlyClosed = ClosedContentTabSnapshot(
+            page: .aiChat,
+            anchor: .aiChat(sessionID: "chat-1"),
+            wasPinned: false,
+            closedAt: Date(),
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                collectionAlertRecorder.withValue { $0.append((title, message)) }
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // 비포괄적: FileManagerFeature.onAppear 및 restore failure effect 방출로 인해
+        // AI Chat anchor unsupported 경로 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.request(.restoreLastClosedContentTab))
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 1)
+        XCTAssertNil(store.state.contentTabs.recentlyClosed)
+        let alerts = collectionAlertRecorder.value
+        XCTAssertEqual(alerts.count, 1)
+        XCTAssertEqual(alerts[0].title, "Cannot Restore Tab")
+        XCTAssertEqual(alerts[0].message, "AI Chat tabs cannot be restored yet.")
     }
 
     // MARK: - CTM-001-close_restore_lifecycle
