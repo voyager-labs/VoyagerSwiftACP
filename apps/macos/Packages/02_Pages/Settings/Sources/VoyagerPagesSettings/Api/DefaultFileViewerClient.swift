@@ -5,15 +5,21 @@ import Foundation
 import UniformTypeIdentifiers
 
 public struct DefaultFileViewerClient: Sendable {
+    /// 이 클라이언트가 "기본 뷰어"로 다루어야 할 앱의 bundle ID.
+    /// 호스트 셸(`SettingsHost` 등)이 자신의 bundle ID로 오염되는 것을 막기 위해
+    /// `Bundle.main` 해석은 `liveValue`에서 한 번만 수행하고, 이후 클로저는 이 값을 참조.
+    public var appBundleID: String
     public var diagnose: @Sendable () async -> DefaultFileViewerStatus
     public var setVoyagerAsDefault: @Sendable () async throws -> Void
     public var restoreFinder: @Sendable () async throws -> Void
 
     public init(
+        appBundleID: String,
         diagnose: @escaping @Sendable () async -> DefaultFileViewerStatus,
         setVoyagerAsDefault: @escaping @Sendable () async throws -> Void,
         restoreFinder: @escaping @Sendable () async throws -> Void,
     ) {
+        self.appBundleID = appBundleID
         self.diagnose = diagnose
         self.setVoyagerAsDefault = setVoyagerAsDefault
         self.restoreFinder = restoreFinder
@@ -22,9 +28,13 @@ public struct DefaultFileViewerClient: Sendable {
 
 extension DefaultFileViewerClient: DependencyKey {
     nonisolated public static var liveValue: DefaultFileViewerClient {
-        DefaultFileViewerClient(
-            diagnose: { await DefaultFileViewerLive.diagnose() },
-            setVoyagerAsDefault: { try await DefaultFileViewerLive.setVoyagerAsDefault() },
+        // ponytail: Page 패키지 내부 로직이 Bundle.main을 직접 해석하지 않도록
+        // liveValue에서만 한 번 읽어 클로저에 주입. 호스트 셸에서 override 시 다른 값 사용 가능.
+        let appBundleID = Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager"
+        return DefaultFileViewerClient(
+            appBundleID: appBundleID,
+            diagnose: { await DefaultFileViewerLive.diagnose(appBundleID: appBundleID) },
+            setVoyagerAsDefault: { try await DefaultFileViewerLive.setVoyagerAsDefault(appBundleID: appBundleID) },
             restoreFinder: { try await DefaultFileViewerLive.restoreFinder() },
         )
     }
@@ -35,6 +45,7 @@ extension DefaultFileViewerClient: DependencyKey {
             fatalError("DefaultFileViewerClient test dependency not set.")
         }
         return DefaultFileViewerClient(
+            appBundleID: "fm.voyager.Voyager",
             diagnose: { unimplemented() },
             setVoyagerAsDefault: { unimplemented() },
             restoreFinder: { unimplemented() },
@@ -43,6 +54,7 @@ extension DefaultFileViewerClient: DependencyKey {
 
     nonisolated public static var previewValue: DefaultFileViewerClient {
         DefaultFileViewerClient(
+            appBundleID: "fm.voyager.Voyager",
             diagnose: { .finderIsDefault },
             setVoyagerAsDefault: {},
             restoreFinder: {},
@@ -58,7 +70,7 @@ public extension DependencyValues {
 }
 
 private enum DefaultFileViewerLive {
-    static func diagnose() async -> DefaultFileViewerStatus {
+    static func diagnose(appBundleID: String) async -> DefaultFileViewerStatus {
         let nsFileViewer = UserDefaults.standard.string(forKey: "NSFileViewer")
         let lsHandlerBundleID: String? = {
             guard let url = LSCopyDefaultApplicationURLForContentType(
@@ -69,7 +81,7 @@ private enum DefaultFileViewerLive {
             return Bundle(url: url)?.bundleIdentifier
         }()
 
-        let ourBundleID = Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager"
+        let ourBundleID = appBundleID
 
         // AND 일치 원칙: NSFileViewer와 LSHandler가 모두 같은 앱이어야 해당 상태. 불일치 시 unknown.
         if nsFileViewer == ourBundleID && lsHandlerBundleID == ourBundleID {
@@ -96,8 +108,8 @@ private enum DefaultFileViewerLive {
         return FileManager.default.displayName(atPath: url.path)
     }
 
-    static func setVoyagerAsDefault() async throws {
-        let bundleID = Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager"
+    static func setVoyagerAsDefault(appBundleID: String) async throws {
+        let bundleID = appBundleID
 
         // 1단계: NSFileViewer write. 실패 시 throw, LSHandler 건너뜀.
         try writeDefaults(key: "NSFileViewer", value: bundleID)

@@ -65,6 +65,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
             defaultHomePath: { homePath },
         )
         let defaultFileViewerClient = DefaultFileViewerClient(
+            appBundleID: "fm.voyager.Voyager",
             diagnose: diagnose,
             setVoyagerAsDefault: setVoyagerAsDefault,
             restoreFinder: restoreFinder,
