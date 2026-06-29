@@ -193,6 +193,11 @@ extension ContentTabFeature {
             iconName: tab.iconName,
             pinnedAt: date(),
         )
+        guard pinnedRecord.isPageAnchorCompatible else {
+            state.pinnedRecordPersistenceError = nil
+            return .none
+        }
+
         state.tabs[id: id]?.isPinned = true
         state.pinnedRecords[id] = pinnedRecord
         state.pinnedRecordPersistenceError = nil

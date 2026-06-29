@@ -34,8 +34,8 @@ public extension ContentTabPinnedRecord {
             true
         case (.collection, .collectionFile):
             true
-        case let (.collection, .virtualCollection(id)):
-            id != "Recents"
+        case (.collection, .virtualCollection):
+            false
         case (.aiChat, .aiChat):
             true
         default:

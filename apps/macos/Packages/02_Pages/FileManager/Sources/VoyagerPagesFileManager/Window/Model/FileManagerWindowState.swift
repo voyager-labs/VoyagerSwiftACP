@@ -208,7 +208,20 @@ extension FileManagerWindowState {
     }
 
     func canPinContentTab(_ tabID: ContentTabID) -> Bool {
-        let tabPage = contentTabs.tabs[id: tabID]?.page
+        let tab = contentTabs.tabs[id: tabID]
+        if let tab {
+            let pinnedRecord = ContentTabPinnedRecord(
+                id: tab.id.rawValue,
+                page: tab.page,
+                anchor: tab.anchor,
+                title: tab.title,
+                iconName: tab.iconName,
+                pinnedAt: .distantPast,
+            )
+            guard pinnedRecord.isPageAnchorCompatible else { return false }
+        }
+
+        let tabPage = tab?.page
         let contentState = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
 
         guard let contentState else { return tabPage != .collection }

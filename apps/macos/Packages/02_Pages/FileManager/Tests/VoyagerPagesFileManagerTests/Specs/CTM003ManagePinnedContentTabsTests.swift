@@ -237,6 +237,45 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.tabs[id: tabID]?.anchor, collectionAnchor)
     }
 
+    /// CTM-003-pin_content_tab_s: restore 불가 virtual collection anchor 최초 pin 차단
+    /// Recents/Computer처럼 persisted restore 경로에서 안전하게 구분할 수 없는 virtual collection은 pinned record로 저장하지 않는다.
+    /// - 검증 내용: pin 액션이 tab 상태와 pinnedRecords/UserDefaults store를 변경하지 않음
+    /// - 사전 조건: unpinned Collection tab의 anchor == .virtualCollection(id: "Recents")
+    /// - 기대 결과: isPinned=false 유지, pinned record 미생성, persistence save 미호출
+    func testPin_virtualCollectionAnchorDoesNotPersistPinnedRecord() async {
+        let tabID = ContentTabID()
+        let recentsAnchor: ContentTabPageAnchor = .virtualCollection(id: "Recents")
+        let store = TestStore(
+            initialState: ContentTabState(
+                tabs: [
+                    ContentTabItem(
+                        id: tabID,
+                        page: .collection,
+                        anchor: recentsAnchor,
+                        isPinned: false,
+                        title: "Recents",
+                        iconName: "clock",
+                    ),
+                ],
+                activeTabID: tabID,
+                recentlyClosed: nil,
+            ),
+        ) {
+            ContentTabFeature()
+        } withDependencies: {
+            $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.contentTabPinnedRecordClient.updateStore = { _, _ in
+                XCTFail("restore 불가 virtual collection anchor는 최초 pin에서도 저장하지 않아야 함")
+            }
+        }
+
+        await store.send(.pin(tabID))
+        await store.finish()
+
+        XCTAssertEqual(store.state.tabs[id: tabID]?.isPinned, false)
+        XCTAssertNil(store.state.pinnedRecords[tabID])
+    }
+
     /// CTM-003-pin_content_tab_s: 이미 pinned tab에 pin은 idempotent no-op
     /// 이미 pinned 상태인 tab에 다시 pin 액션을 보내면 중복 record 생성 없이 no-op임을 검증한다.
     /// - 검증 내용: already-pinned tab pin → 상태 변화 없음, effect 없음
@@ -1952,13 +1991,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.droppedCount, 1)
     }
 
-    /// CTM-003-go_to_anchored_path_of_pinned_tab: temporary virtual collection record 제외
-    /// ".virtualCollection(id: "Recents")"와 같은 temporary 가상 collection record는
-    /// 보존 대상에서 제외되고, ".collectionFile(url:)" record는 유지됨을 검증한다.
-    /// - 검증 내용: "Recents" record 제외, collectionFile + home record 유지
-    /// - 사전 조건: collectionFile, virtualCollection("Recents"), home 3개 record
-    /// - 기대 결과: 2개만 복원, droppedCount 1
-    func testPinnedRecordRestore_skipsTemporaryCollectionRecords() {
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: virtual collection record 제외
+    /// Recents/Computer처럼 persisted restore 경로에서 안전하게 구분할 수 없는 virtual collection record는 보존 대상에서 제외한다.
+    /// - 검증 내용: virtualCollection record 제외, collectionFile + home record 유지
+    /// - 사전 조건: collectionFile, virtualCollection("Recents"), virtualCollection("Wonsik Mac"), home record
+    /// - 기대 결과: 복원 가능한 2개만 유지, droppedCount 2
+    func testPinnedRecordRestore_skipsVirtualCollectionRecords() {
         let pinnedAt = Self.pinnedAt
         let store = ContentTabPinnedRecordStore(records: [
             ContentTabPinnedRecord(
@@ -1975,6 +2013,14 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 anchor: .virtualCollection(id: "Recents"),
                 title: "Recents",
                 iconName: "clock",
+                pinnedAt: pinnedAt,
+            ),
+            ContentTabPinnedRecord(
+                id: "skip-2",
+                page: .collection,
+                anchor: .virtualCollection(id: "Wonsik Mac"),
+                title: "Wonsik Mac",
+                iconName: "desktopcomputer",
                 pinnedAt: pinnedAt,
             ),
             ContentTabPinnedRecord(
@@ -1995,7 +2041,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.page, .home)
         XCTAssertEqual(result.state.tabs[id: result.state.activeTabID ?? ContentTabID(rawValue: "")]?.isPinned, false)
         XCTAssertTrue(result.didCompact)
-        XCTAssertEqual(result.droppedCount, 1)
+        XCTAssertEqual(result.droppedCount, 2)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: record 순서와 메타데이터 보존
