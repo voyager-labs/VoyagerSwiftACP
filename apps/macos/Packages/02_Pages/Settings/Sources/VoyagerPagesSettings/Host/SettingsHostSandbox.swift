@@ -16,6 +16,22 @@ import VoyagerShared
 /// - Note: `date` 의존성은 T0 분류에 따라 `must-remain-real`이므로 fake하지 않는다.
 ///   호스트 런타임에 실제 clock을 그대로 사용한다.
 public enum SettingsHostSandbox {
+    private actor SettingsHostAccountAuthBox {
+        private var accountAuth: AccountAuthScenario
+
+        init(accountAuth: AccountAuthScenario) {
+            self.accountAuth = accountAuth
+        }
+
+        func current() -> AccountAuthScenario {
+            accountAuth
+        }
+
+        func markSignedIn() {
+            accountAuth = .signedIn
+        }
+    }
+
     public static let suiteName = "group.com.voyager.app.settingshost"
 
     public static var defaultDependencies: DependencyValues {
@@ -33,6 +49,7 @@ public enum SettingsHostSandbox {
         for scenario: SettingsHostScenario,
     ) {
         let userDefaultsClient = makeUserDefaultsClient(persistence: scenario.persistence)
+        let accountAuthBox = SettingsHostAccountAuthBox(accountAuth: scenario.accountAuth)
 
         dependencies.userDefaultsClient = userDefaultsClient
         dependencies.launchAtLoginClient = .testValue
@@ -52,18 +69,21 @@ public enum SettingsHostSandbox {
             failureLatency: scenario.failureLatency,
         )
         dependencies.accountSessionClient = makeAccountSessionClient(
-            accountAuth: scenario.accountAuth,
+            accountAuthBox: accountAuthBox,
             failureLatency: scenario.failureLatency,
         )
         dependencies.accessStatusSnapshotClient = makeAccessStatusSnapshotClient(
-            accountAuth: scenario.accountAuth,
+            accountAuthBox: accountAuthBox,
             failureLatency: scenario.failureLatency,
         )
         dependencies.authNetworkClient = makeAuthNetworkClient(
-            accountAuth: scenario.accountAuth,
+            accountAuthBox: accountAuthBox,
             failureLatency: scenario.failureLatency,
         )
-        dependencies.signInHandoffClient = makeSignInHandoffClient(accountAuth: scenario.accountAuth)
+        dependencies.signInHandoffClient = makeSignInHandoffClient(
+            accountAuthBox: accountAuthBox,
+            failureLatency: scenario.failureLatency,
+        )
         dependencies.checkoutURLClient = .testValue
         dependencies.notificationCenterClient = .testValue
     }
@@ -160,12 +180,13 @@ public enum SettingsHostSandbox {
     }
 
     private static func makeAccountSessionClient(
-        accountAuth: AccountAuthScenario,
+        accountAuthBox: SettingsHostAccountAuthBox,
         failureLatency: FailureLatencyScenario,
     ) -> AccountSessionClient {
         AccountSessionClient(
             read: {
                 await maybeDelay(failureLatency)
+                let accountAuth = await accountAuthBox.current()
                 switch accountAuth {
                 case .signedOut, .loading:
                     return nil
@@ -197,12 +218,13 @@ public enum SettingsHostSandbox {
     }
 
     private static func makeAccessStatusSnapshotClient(
-        accountAuth: AccountAuthScenario,
+        accountAuthBox: SettingsHostAccountAuthBox,
         failureLatency: FailureLatencyScenario,
     ) -> AccessStatusSnapshotClient {
         AccessStatusSnapshotClient(
             load: {
                 await maybeDelay(failureLatency)
+                let accountAuth = await accountAuthBox.current()
                 switch accountAuth {
                 case .signedOut, .loading, .error:
                     return nil
@@ -232,12 +254,13 @@ public enum SettingsHostSandbox {
     }
 
     private static func makeAuthNetworkClient(
-        accountAuth: AccountAuthScenario,
+        accountAuthBox: SettingsHostAccountAuthBox,
         failureLatency: FailureLatencyScenario,
     ) -> AuthNetworkClient {
         AuthNetworkClient(
             exchangeHandoff: { _, _, _ in
                 await maybeDelay(failureLatency)
+                let accountAuth = await accountAuthBox.current()
                 if accountAuth == .error || failureLatency == .error {
                     throw AccessError.networkFailure
                 }
@@ -245,6 +268,7 @@ public enum SettingsHostSandbox {
             },
             fetchAccessStatus: {
                 await maybeDelay(failureLatency)
+                let accountAuth = await accountAuthBox.current()
                 if accountAuth == .error || failureLatency == .error {
                     throw AccessError.networkFailure
                 }
@@ -252,6 +276,7 @@ public enum SettingsHostSandbox {
             },
             refreshToken: {
                 await maybeDelay(failureLatency)
+                let accountAuth = await accountAuthBox.current()
                 if accountAuth == .error || failureLatency == .error {
                     throw AccessError.networkFailure
                 }
@@ -260,14 +285,21 @@ public enum SettingsHostSandbox {
         )
     }
 
-    private static func makeSignInHandoffClient(accountAuth: AccountAuthScenario) -> SignInHandoffClient {
+    private static func makeSignInHandoffClient(
+        accountAuthBox: SettingsHostAccountAuthBox,
+        failureLatency: FailureLatencyScenario,
+    ) -> SignInHandoffClient {
         SignInHandoffClient {
-            switch accountAuth {
-            case .signedIn:
-                .success(callbackURL: URL(string: "https://example.invalid/settingshost/signin")!)
-            case .signedOut, .authExpired, .loading, .error:
-                .failure
+            await maybeDelay(failureLatency)
+            let accountAuth = await accountAuthBox.current()
+            if accountAuth == .error || failureLatency == .error {
+                return .failure
             }
+            await accountAuthBox.markSignedIn()
+            guard let callbackURL = URL(string: "voyager://auth/callback") else {
+                return .failure
+            }
+            return .success(callbackURL: callbackURL)
         }
     }
 

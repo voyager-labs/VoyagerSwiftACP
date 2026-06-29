@@ -37,6 +37,23 @@ final class SettingsHostSandboxTests: XCTestCase {
         XCTAssertNil(session, "signedOut should yield no session")
     }
 
+    func testSignedOutSignInHandoffCreatesActiveSession() async throws {
+        let deps = SettingsHostSandbox.dependencies(for: scenario(accountAuth: .signedOut))
+
+        let result = await deps.signInHandoffClient.performHandoff()
+        guard case let .success(callbackURL) = result else {
+            XCTFail("signedOut sign-in handoff should succeed in SettingsHost sandbox")
+            return
+        }
+
+        XCTAssertEqual(callbackURL.absoluteString, "voyager://auth/callback")
+        let session = try await deps.accountSessionClient.read()
+        XCTAssertEqual(session?.status.isActive, true, "sign-in should make sandbox session active")
+
+        let status = try await deps.authNetworkClient.fetchAccessStatus()
+        XCTAssertTrue(status.status.isActive, "sign-in should make sandbox access status active")
+    }
+
     func testAuthExpiredProducesSessionWithPastExpiry() async throws {
         let deps = SettingsHostSandbox.dependencies(for: scenario(accountAuth: .authExpired))
         let session = try await deps.accountSessionClient.read()
