@@ -156,6 +156,9 @@ struct VoyagerApp: App {
                     appRootStore.send(.windowManager(.event(.windowClosed(id))))
                 },
             ),
+            resolveSessionLapseGuardStore: { [appRootStore] in
+                appRootStore.scope(state: \.lifecycle.sessionLapseGuard, action: \.lifecycle.sessionLapseGuard)
+            },
         )
     }
 

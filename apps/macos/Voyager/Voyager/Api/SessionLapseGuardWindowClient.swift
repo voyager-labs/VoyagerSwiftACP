@@ -1,17 +1,9 @@
-import AppKit
 import ComposableArchitecture
-
-// MARK: - SessionLapseGuardPanel (stored reference)
-
-/// ACC-003-guard_session_lapse: NSPanel reference stored at file scope so that
-/// `showWindow`/`closeWindow` closures share the same panel instance.
-@MainActor private var sessionLapseGuardPanel: NSPanel?
 
 // MARK: - SessionLapseGuardWindowClient
 
-/// TCA dependency that manages a borderless NSPanel overlay for the
-/// `SessionLapseGuardView`. The view's contentView is wired separately
-/// (C2/C3); this client only owns the panel lifecycle.
+/// ACC-003-guard_session_lapse: 과거 NSPanel 기반 클라이언트. SessionLapseGuardView가 FileManager 오버레이로 이관되어 no-op이나 기존 테스트 스텁
+/// 호환성을 위해 타입 보존.
 struct SessionLapseGuardWindowClient {
     var showWindow: @Sendable () async -> Void
     var closeWindow: @Sendable () async -> Void
@@ -22,31 +14,8 @@ struct SessionLapseGuardWindowClient {
 extension SessionLapseGuardWindowClient: DependencyKey {
     nonisolated static var liveValue: SessionLapseGuardWindowClient {
         .init(
-            showWindow: {
-                await MainActor.run {
-                    if sessionLapseGuardPanel == nil {
-                        let panel = NSPanel(
-                            contentRect: .zero,
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered,
-                            defer: false,
-                        )
-                        panel.level = .modalPanel
-                        panel.isFloatingPanel = true
-                        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-                        let frame = NSScreen.main?.frame ?? .zero
-                        panel.setFrame(frame, display: true)
-                        sessionLapseGuardPanel = panel
-                    }
-                    sessionLapseGuardPanel?.orderFrontRegardless()
-                }
-            },
-            closeWindow: {
-                await MainActor.run {
-                    sessionLapseGuardPanel?.orderOut(nil)
-                    sessionLapseGuardPanel = nil
-                }
-            },
+            showWindow: {},
+            closeWindow: {},
         )
     }
 

@@ -40,9 +40,11 @@ private struct SessionLapseGuardObservedState: Equatable {
 /// - `didSignInFail == true` (session_expired): "세션이 만료되었습니다" + 로그인 CTA
 /// - `!hasAccountSession && !isSignInInProgress` (logged_out): "로그인이 필요합니다" + 로그인 CTA
 ///
-/// ## Integration (AppLifecycleFeature)
-/// - 단일 borderless NSPanel (SessionLapseGuardWindowClient)로 표시
-/// - AppLifecycleFeature의 `ifLet(\.sessionLapseGuard)` child scope와 연결
+/// ## Integration (FileManager 윈도우 오버레이)
+/// - 각 FileManager 윈도우의 FileManagerWindowSplitCoordinator가 IfLetStore 기반 오버레이로
+///   윈도우 전체(sidebar + content + inspector)를 덮도록 마운트한다.
+/// - AppLifecycleFeature의 `ifLet(\.sessionLapseGuard)` child scope와 연결된 store를
+///   AppRoot에서 스코핑하여 전달한다 (단일 진실 공급원).
 /// - `accountSessionDidEnd` notification 수신 → sessionLapseGuard 표시
 ///   (명시적 로그아웃의 `signOut`과 세션 만료 양쪽이 모두 동일한 notification을 post하므로
 ///   두 원인은 같은 경로로 guard에 도달한다. 이는 PRESERVED 동작이다.)
@@ -52,7 +54,7 @@ private struct SessionLapseGuardObservedState: Equatable {
 /// - blur_opacity = semiopaque
 /// - dismissible = false (interactiveDismissDisabled)
 /// - skip_onboarding_window = true (AppLifecycleFeature에서 처리, 이 view와 무관)
-/// - covers_all_windows = true (SessionLapseGuardWindowClient가 관리)
+/// - covers_all_windows = true (각 FileManager 윈도우 오버레이로 동일 store에서 렌더)
 public struct SessionLapseGuardView: View {
     private let store: StoreOf<AccountAccessFeature>
 

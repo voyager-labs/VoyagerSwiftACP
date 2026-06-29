@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import ComposableArchitecture
 import SwiftUI
+import VoyagerFeaturesAccountAccess
 
 @MainActor
 final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDelegate {
@@ -11,6 +12,7 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
     let store: StoreOf<FileManagerFeature>
     let keyCommandFocusCoordinator = FileManagerKeyCommandFocusCoordinator()
+    let sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>?
 
     private var cancellables: Set<AnyCancellable> = []
     private var hasStarted = false
@@ -23,14 +25,20 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
     private var sidebarHosting: NSHostingController<AnyView>?
     private var mainContainerHosting: NSHostingController<FileManagerWindowMainContainerView>?
+    private var sessionLapseGuardHosting: NSHostingController<AnyView>?
 
     private weak var windowSplitView: NSSplitView?
     private weak var mainContainerView: NSView?
 
     private var mainContainerLeading: NSLayoutConstraint?
 
-    init(store: StoreOf<FileManagerFeature>, isDark: Bool) {
+    init(
+        store: StoreOf<FileManagerFeature>,
+        isDark: Bool,
+        sessionLapseGuardStore: Store<AccountAccessFeature.State?, AccountAccessAction>? = nil,
+    ) {
         self.store = store
+        self.sessionLapseGuardStore = sessionLapseGuardStore
         sidebarSync = FileManagerSidebarSync(storeSidebarWidth: store.sidebar.sidebarWidth)
         currentIsDark = isDark
         super.init(nibName: nil, bundle: nil)
@@ -62,6 +70,39 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
         addChild(components.mainContainerHosting)
 
         view = components.rootView
+
+        mountSessionLapseGuardOverlayIfNeeded()
+    }
+
+    /// ACC-003-guard_session_lapse: 윈도우 전체를 덮는 오버레이. state가 nil이면 IfLetStore가 EmptyView를 렌더하여 기저 상호작용을 차단하지 않는다.
+    private func mountSessionLapseGuardOverlayIfNeeded() {
+        guard let sessionLapseGuardStore else { return }
+
+        let overlayRoot = AnyView(
+            IfLetStore(sessionLapseGuardStore) { store in
+                SessionLapseGuardView(store: store)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity),
+        )
+
+        let overlayController = NSHostingController(rootView: overlayRoot)
+        if #available(macOS 13.3, *) {
+            overlayController.safeAreaRegions = []
+        }
+        overlayController.view.translatesAutoresizingMaskIntoConstraints = false
+        overlayController.view.wantsLayer = true
+
+        sessionLapseGuardHosting = overlayController
+        addChild(overlayController)
+
+        let overlayView = overlayController.view
+        view.addSubview(overlayView)
+        NSLayoutConstraint.activate([
+            overlayView.topAnchor.constraint(equalTo: view.topAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            overlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
     }
 
     override func viewDidLoad() {
@@ -123,9 +164,11 @@ final class FileManagerWindowSplitCoordinator: NSViewController, NSSplitViewDele
 
         sidebarHosting?.removeFromParent()
         mainContainerHosting?.removeFromParent()
+        sessionLapseGuardHosting?.removeFromParent()
 
         sidebarHosting = nil
         mainContainerHosting = nil
+        sessionLapseGuardHosting = nil
         store.send(.onDisappear)
     }
 

@@ -40,8 +40,6 @@ struct AppLifecycleFeature {
     var clock
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
-    @Dependency(\.sessionLapseGuardWindowClient)
-    var sessionLapseGuardWindowClient
 
     private enum CancelID {
         static let helperMonitor = "helperMonitor"
@@ -271,12 +269,7 @@ struct AppLifecycleFeature {
                 guard !onboardingWindowClient.isRequired() else { return .none }
                 state.sessionEndReason = reason
                 state.sessionLapseGuard = AccountAccessFeature.State()
-                return .merge(
-                    .send(.sessionLapseGuard(.onAppear)),
-                    .run { [sessionLapseGuardWindowClient] _ in
-                        await sessionLapseGuardWindowClient.showWindow()
-                    },
-                )
+                return .send(.sessionLapseGuard(.onAppear))
 
             case .termination(.willTerminate):
                 return .merge(
@@ -302,9 +295,7 @@ struct AppLifecycleFeature {
             switch action {
             case .sessionLapseGuard(.delegate(.unlocked)):
                 state.sessionLapseGuard = nil
-                return .run { [sessionLapseGuardWindowClient] _ in
-                    await sessionLapseGuardWindowClient.closeWindow()
-                }
+                return .none
             default:
                 return .none
             }
