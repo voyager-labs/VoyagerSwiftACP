@@ -15,7 +15,7 @@ struct AccountSettingsView: View {
                 Text("Account")
             }
 
-            if store.setAuthState == .signedIn {
+            if store.isManageAccountAvailable {
                 Section {
                     Button("Manage Account") {
                         store.send(.manageAccountTapped)

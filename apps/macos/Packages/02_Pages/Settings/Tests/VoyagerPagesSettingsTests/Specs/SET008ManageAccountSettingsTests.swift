@@ -189,6 +189,167 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         XCTAssertEqual(capture.value, expectedURL)
     }
 
+    // MARK: - Web Bridge Semantics
+
+    /// SET-008 web-bridge-only 계약 (T1 contract): AccountSettingsAction enum은
+    /// in-app renewal/paywall CTA case를 포함하지 않는다.
+    /// Account 탭은 외부 웹 포털 브리지(web bridge)만 허용하며,
+    /// 인앱 결제/갱신/업그레이드/복원 액션은 계약 위반이다.
+    /// T1 policy: entitlement_management_external_portal_is_web_bridge_only.
+    func testActionEnumContainsNoInAppRenewalOrPaymentCases() {
+        // AccountSettingsAction의 현재 계약상 노출된 모든 case.
+        // 새 결제/갱신 case가 추가되면 이 목록이 업데이트되어야 하며,
+        // 추가 즉시 아래 forbidden keyword 검사에 걸려 테스트가 실패한다.
+        let contractActions: [AccountSettingsAction] = [
+            .access(.onAppear),
+            .signOutTapped,
+            .signOutConfirmed,
+            .signOutCancelled,
+            .manageAccountTapped,
+            .openAccountURLCompleted(true),
+        ]
+        let caseDescriptions = contractActions.map { String(describing: $0).lowercased() }
+
+        let forbiddenKeywords = [
+            "renew", "upgrade", "payment", "subscribe", "purchase", "buy", "restore",
+        ]
+
+        for keyword in forbiddenKeywords {
+            XCTAssertFalse(
+                caseDescriptions.contains(where: { $0.contains(keyword) }),
+                "AccountSettingsAction에 forbidden keyword '\(keyword)' 포함. " +
+                    "Account 탭은 web-bridge-only (in-app renewal/paywall CTA 금지).",
+            )
+        }
+    }
+
+    /// T11 overlay ownership: session lapse recovery는 Settings/Account 탭이 소유하지 않는다.
+    /// T1 policy: entitlement_inactive_recovery_is_owned_outside_settings.
+    /// Recovery는 ACC overlay (ACC-003-guard_session_lapse)가 소유하며, Settings는
+    /// access_status를 display로 반영할 뿐 recovery action을 노출하지 않는다.
+    /// 본 테스트는 `testActionEnumContainsNoInAppRenewalOrPaymentCases`를 보완하여
+    /// session-lapse-recovery 용어(reauth, restartSession, dismissSessionLapse 등)도
+    /// AccountSettingsAction case name에 노출되지 않음을 검증한다.
+    /// - 사전 조건: AccountSettingsAction의 현재 계약 case 목록 (6개).
+    /// - 기대 결과: 어느 case name에도 session-lapse recovery keyword가 포함되지 않는다.
+    func testAccountSettingsActionHasNoSessionLapseRecoveryCases() {
+        let contractActions: [AccountSettingsAction] = [
+            .access(.onAppear),
+            .signOutTapped,
+            .signOutConfirmed,
+            .signOutCancelled,
+            .manageAccountTapped,
+            .openAccountURLCompleted(true),
+        ]
+        let caseDescriptions = contractActions.map { String(describing: $0).lowercased() }
+
+        let sessionLapseRecoveryKeywords = [
+            "reauth", "reauthenticate", "restartsession", "recoversession",
+            "unexpire", "dismisssessionlapse", "restoresession", "relogin",
+        ]
+
+        for keyword in sessionLapseRecoveryKeywords {
+            XCTAssertFalse(
+                caseDescriptions.contains(where: { $0.contains(keyword) }),
+                "AccountSettingsAction에 session-lapse recovery keyword '\(keyword)' 포함. " +
+                    "Recovery는 ACC overlay/session lapse guard가 소유 (Settings/Account 탭 소유 아님).",
+            )
+        }
+    }
+
+    /// SET-008 web-bridge-only 계약 (T1 contract): manageAccountTapped는
+    /// 외부 URL 열기(checkoutURLClient.openURL) 단일 호출만 수행하며,
+    /// in-app 결제/갱신 화면으로 전환하지 않는다.
+    /// 기존 testManageAccountTappedOpensURL을 보강: openURL이 정확히 한 번만 호출됨을 검증.
+    func testManageAccountTappedTriggersExternalURLBridgeOnly() async throws {
+        let expectedURL = try XCTUnwrap(URL(string: "https://voyager.test/account"))
+        final class OpenURLCapture: @unchecked Sendable {
+            var calls: [URL] = []
+        }
+        let capture = OpenURLCapture()
+        let store = TestStore(initialState: AccountSettingsState()) {
+            AccountSettingsFeature()
+        } withDependencies: {
+            $0.checkoutURLClient.openURL = { capture.calls.append($0) }
+            $0.checkoutURLClient.accountURL = { expectedURL }
+        }
+
+        // manageAccountTapped → 외부 URL 정확히 한 번 열기 (web bridge).
+        // 인앱 결제 화면 전환 액션은 전송되지 않는다.
+        await store.send(.manageAccountTapped)
+
+        XCTAssertEqual(capture.calls, [expectedURL])
+        XCTAssertEqual(capture.calls.count, 1, "manageAccountTapped는 외부 URL 단일 오픈만 수행 (web bridge)")
+    }
+
+    /// SET-008 web-bridge-only 계약 (T1 contract): setAuthState / setEntitlementState는
+    /// 읽기 전용 computed display 매핑이며, in-app recovery를 위한 writable state
+    /// (결제 진행/실패, 갱신 에러 등)를 노출하지 않는다.
+    /// T1 policy: entitlement_inactive_has_no_in_settings_recovery_cta.
+    func testSetAuthAndEntitlementStatesAreReadOnlyDisplayMappings() {
+        var state = AccountSettingsState()
+
+        // 초기 매핑
+        XCTAssertEqual(state.setAuthState, .signedOut)
+        XCTAssertEqual(state.setEntitlementState, .entitlementUnknown)
+
+        // 매핑 변경은 access 필드를 통해서만 가능 (computed property 직접 쓰기 불가).
+        state.access.hasAccountSession = true
+        state.access.status = .coreLicenseActive
+        XCTAssertEqual(state.setAuthState, .signedIn)
+        XCTAssertEqual(state.setEntitlementState, .entitlementActive)
+
+        // AccountSettingsState의 stored property 이름을 Mirror로 수집하여
+        // forbidden recovery 프로퍼티가 추가되지 않았는지 검증.
+        let propertyNames = Set(
+            Mirror(reflecting: state).children.compactMap(\.label),
+        )
+        let forbiddenRecoveryProperties: Set = [
+            "isRenewalInProgress", "renewalError",
+            "isUpgradeInProgress", "upgradeError",
+            "isPaymentInProgress", "paymentError",
+            "purchaseState", "isRestoreInProgress",
+        ]
+        XCTAssertTrue(
+            propertyNames.isDisjoint(with: forbiddenRecoveryProperties),
+            "AccountSettingsState에 in-app recovery 용 writable 프로퍼티가 존재: " +
+                "\(propertyNames.intersection(forbiddenRecoveryProperties)). " +
+                "Account 탭은 web-bridge-only.",
+        )
+    }
+
+    /// SET-008 web-bridge-only 계약 (T7 구현 주도):
+    /// T1 contract의 entitlement_management_action_for_entitlement = ["entitlement_active"]에 따라,
+    /// Manage Account CTA는 setEntitlementState == .entitlementActive일 때만 노출된다.
+    /// inactive/unknown 상태에서는 CTA가 노출되지 않는다.
+    /// T1 policy: entitlement_inactive_has_no_in_settings_recovery_cta,
+    ///             entitlement_inactive_recovery_is_owned_outside_settings.
+    /// RED: AccountSettingsState.isManageAccountAvailable 프로퍼티가 아직 구현되지 않음.
+    func testManageAccountCTAGatedByEntitlementActive() {
+        var state = AccountSettingsState()
+        state.access.hasAccountSession = true
+
+        state.access.status = .coreLicenseActive
+        XCTAssertTrue(
+            state.isManageAccountAvailable,
+            "entitlement_active일 때 Manage Account CTA 허용 (web bridge 진입점)",
+        )
+
+        state.access.status = .revoked
+        XCTAssertFalse(
+            state.isManageAccountAvailable,
+            "entitlement_inactive일 때 Manage Account CTA 금지 " +
+                "(entitlement_inactive_has_no_in_settings_recovery_cta; " +
+                "recovery는 Settings 외부에서 소유됨)",
+        )
+
+        state.access.status = nil
+        XCTAssertFalse(
+            state.isManageAccountAvailable,
+            "entitlement_unknown일 때 Manage Account CTA 금지",
+        )
+    }
+
     // MARK: - View Tests
 
     /// SET-008-manage_account_settings: signedOut 상태에서 Sign In 버튼이 표시된다.

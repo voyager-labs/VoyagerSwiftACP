@@ -40,4 +40,13 @@ public struct AccountSettingsState: Equatable {
         if status.isActive { return .entitlementActive }
         return .entitlementInactive
     }
+
+    /// SET-008 web-bridge CTA 게이트 (T1 contract).
+    /// entitlement_management_action_for_entitlement = ["entitlement_active"] 에 따라,
+    /// Manage Account CTA는 entitlementActive 상태에서만 노출된다.
+    /// inactive/unknown 상태에서는 Settings 내 recovery CTA가 존재하지 않는다
+    /// (entitlement_inactive_has_no_in_settings_recovery_cta).
+    public var isManageAccountAvailable: Bool {
+        setEntitlementState == .entitlementActive
+    }
 }
