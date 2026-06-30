@@ -231,15 +231,13 @@ public enum SettingsHostSandbox {
                 case .signedIn:
                     return AccessStatusSnapshot(
                         status: .coreLicenseActive,
-                        expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
-                        entitlements: [],
+                        currentPeriodEnd: Date(timeIntervalSince1970: 1_800_000_000),
                         fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
                     )
                 case .authExpired:
                     return AccessStatusSnapshot(
                         status: .trialExpired,
-                        expiresAt: Date(timeIntervalSince1970: -1),
-                        entitlements: [],
+                        currentPeriodEnd: Date(timeIntervalSince1970: -1),
                         fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
                     )
                 }
@@ -475,27 +473,25 @@ public enum SettingsHostSandbox {
         switch accountAuth {
         case .signedIn:
             AccessStatusResponse(
-                status: .coreLicenseActive,
-                expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
-                entitlements: [],
-                message: nil,
-                reasonCode: nil,
+                hasAccess: true,
+                status: "active",
+                reason: "active_entitlement",
+                productKey: "core",
+                currentPeriodEnd: Date(timeIntervalSince1970: 1_800_000_000),
+                source: "polar",
             )
         case .authExpired:
             AccessStatusResponse(
-                status: .trialExpired,
-                expiresAt: Date(timeIntervalSince1970: -1),
-                entitlements: [],
-                message: "sandbox session lapse",
-                reasonCode: "session_lapse",
+                hasAccess: false,
+                status: "expired",
+                reason: "sandbox session lapse",
+                productKey: "trial",
+                currentPeriodEnd: Date(timeIntervalSince1970: -1),
             )
         case .signedOut, .loading, .error:
             AccessStatusResponse(
-                status: .none,
-                expiresAt: nil,
-                entitlements: [],
-                message: nil,
-                reasonCode: nil,
+                hasAccess: false,
+                status: "none",
             )
         }
     }

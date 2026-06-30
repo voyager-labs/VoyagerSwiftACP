@@ -51,7 +51,7 @@ final class SettingsHostSandboxTests: XCTestCase {
         XCTAssertEqual(session?.status.isActive, true, "sign-in should make sandbox session active")
 
         let status = try await deps.authNetworkClient.fetchAccessStatus()
-        XCTAssertTrue(status.status.isActive, "sign-in should make sandbox access status active")
+        XCTAssertTrue(status.hasAccess, "sign-in should make sandbox access status active")
     }
 
     func testAuthExpiredProducesSessionWithPastExpiry() async throws {
