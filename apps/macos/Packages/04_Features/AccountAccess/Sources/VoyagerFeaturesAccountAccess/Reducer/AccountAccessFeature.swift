@@ -429,6 +429,12 @@ private extension AccountAccessFeature {
             return .send(._sessionExpiredDetected)
         }
 
+        // networkFailure는 source fact로 status에 기록 (error/retry projection의 source).
+        // retry budget과 무관하게 항상 기록하여 access_status가 pending/nil로 잘못 해석되지 않는다.
+        if error == .networkFailure {
+            state.status = .networkFailure
+        }
+
         if error == .notConfigured || error == .decodingFailure {
             return .none
         }
@@ -443,7 +449,6 @@ private extension AccountAccessFeature {
             }
         }
 
-        state.status = .networkFailure
         let retryStep = state.fetchRetryCount
         state.fetchRetryCount += 1
         return .send(._fetchRetryScheduled(retryStep))
@@ -464,21 +469,17 @@ private extension AccountAccessFeature {
     private static let cachedSnapshotMaxAge: TimeInterval = 7 * 24 * 60 * 60 // 7일
 
     private func handleCachedSnapshotRestored(_ state: inout State, snapshot: AccessStatusSnapshot?) -> Effect<Action> {
+        // 계약 (entitlement_access_flow.md): 조회 실패는 error 축에서 처리.
+        // failure handler가 이미 status=.networkFailure + errorMessage를 기록했으므로
+        // 캐시가 없거나 만료된 snapshot은 거부하고 state를 그대로 둔다.
         guard let snapshot else {
-            state.status = AccessStatus.none
-            state.errorMessage = "Access denied."
             return .none
         }
 
         let now = date.now
-        // 만료(explicit expiresAt) 또는 과도하게 오래된 snapshot(nil expiresAt 방어)은
-        // entitlement bypass로 이어질 수 있으므로 거부한다.
         let isStale = snapshot.isExpired(now: now)
             || now.timeIntervalSince(snapshot.fetchedAt) > Self.cachedSnapshotMaxAge
         if isStale {
-            state.status = AccessStatus.none
-            state.isComplete = false
-            state.errorMessage = "네트워크 오류로 인증을 확인할 수 없습니다."
             return .none
         }
 

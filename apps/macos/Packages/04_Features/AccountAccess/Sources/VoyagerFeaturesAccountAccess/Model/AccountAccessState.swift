@@ -60,7 +60,9 @@ public struct AccountAccessState: Equatable {
             return .blocked
         }
         guard let status else {
-            return .pending
+            // status를 아직 모르지만 조회 실패(decoding/notConfigured)가 발생했으면 error.
+            // entitlement_access_flow.md: 조회 실패는 access_status 값을 확정하지 않고 error 축에서 처리.
+            return errorMessage == nil ? .pending : .error
         }
         switch status {
         case .coreLicenseActive, .trialActive, .internalTestActive:
@@ -88,5 +90,27 @@ public struct AccountAccessState: Equatable {
 
     public var requiresAccountSession: Bool {
         !hasAccountSession
+    }
+
+    /// VOY-397: 화면에 표시할 primary CTA를 상태에서 도출.
+    /// direct checkout은 core ONB recovery 경로에서 숨김.
+    public var accessUnlockPrimaryCTA: AccessUnlockPrimaryCTA {
+        if isComplete {
+            return .next
+        }
+        if !hasAccountSession {
+            return .login
+        }
+        guard let status else {
+            return .pending
+        }
+        switch status {
+        case .coreLicenseActive, .trialActive, .internalTestActive:
+            return .next
+        case .networkFailure:
+            return .retry
+        case .none, .trialExpired, .revoked, .refunded:
+            return .webPricing
+        }
     }
 }
