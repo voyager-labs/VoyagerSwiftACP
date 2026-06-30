@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesUpdateVersion
 import VoyagerPagesFileManager
 import VoyagerPagesSettings
@@ -13,6 +14,9 @@ struct AppRootFeature {
 
     @Dependency(\.notificationCenterClient)
     private var notificationCenterClient
+
+    @Dependency(\.accessStatusSnapshotClient)
+    private var accessStatusSnapshotClient
 
     private enum CancelID {
         static let appDidBecomeActiveObserver = "appDidBecomeActiveObserver"
@@ -115,14 +119,17 @@ struct AppRootFeature {
             return .send(.openAISettings)
 
         case .openAISettings:
-            return .concatenate(
-                .send(.settings(.selectSection(.ai))),
-                .run { _ in
-                    await MainActor.run {
-                        openNativeSettingsScene()
-                    }
-                },
-            )
+            // Programmatic Settings gate: access_status != full이면 AI tab 딥링크를 차단한다.
+            // Native Settings window는 여전히 열리지만, content-level gate가 locked overlay를 보여준다.
+            return .run { [accessStatusSnapshotClient] send in
+                let snapshot = await accessStatusSnapshotClient.load()
+                if snapshot?.status.isActive == true {
+                    await send(.settings(.selectSection(.ai)))
+                }
+                await MainActor.run {
+                    openNativeSettingsScene()
+                }
+            }
 
         case let .settings(.delegate(.aiConnectionsFileUpdated(file))):
             return .send(.windowManager(.lifecycle(.aiConnectionsFileUpdated(file))))
