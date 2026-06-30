@@ -5,8 +5,8 @@ final class SettingsHostPresetTests: XCTestCase {
     func testDefaultSandboxExposesAllAxes() {
         let scenario = SettingsHostPreset.defaultSandbox.scenario
 
-        XCTAssertEqual(scenario.accountAuth, .signedOut)
-        XCTAssertEqual(scenario.aiConnection, .notConfigured)
+        XCTAssertEqual(scenario.accountAuth, .signedIn)
+        XCTAssertEqual(scenario.aiConnection, .connected)
         XCTAssertEqual(scenario.permissions, .allGranted)
         XCTAssertEqual(scenario.persistence, .clean)
         XCTAssertEqual(scenario.failureLatency, .none)
@@ -70,5 +70,49 @@ final class SettingsHostPresetTests: XCTestCase {
 
         XCTAssertEqual(SettingsHostPreset.defaultSandbox, SettingsHostPreset.defaultSandbox)
         XCTAssertNotEqual(SettingsHostPreset.defaultSandbox, SettingsHostPreset.signedIn)
+    }
+
+    // MARK: - Full-Access Gate Scenario Realignment
+
+    func testDefaultSandboxRepresentsFullAccessState() {
+        let scenario = SettingsHostPreset.defaultSandbox.scenario
+
+        XCTAssertEqual(
+            scenario.accountAuth,
+            .signedIn,
+            "defaultSandbox must be signed_in under full-access gate policy",
+        )
+        XCTAssertTrue(
+            scenario.entitlementActive,
+            "defaultSandbox must mark entitlement_active under full-access gate policy",
+        )
+        XCTAssertFalse(
+            scenario.requiresFloatingDebugPanel,
+            "scenario must not require a floating debug panel",
+        )
+    }
+
+    func testPresetListIncludesExplicitNamedFullAccessScenario() {
+        XCTAssertTrue(
+            SettingsHostPreset.allCases.contains(.fullAccess),
+            "Preset list must include an explicit .fullAccess scenario",
+        )
+    }
+
+    func testBlockedAndExpiredPresetsAreClassifiedAsNegativeGateScenarios() {
+        let negativePresets: [SettingsHostPreset] = [
+            .authExpired,
+            .accountError,
+            .permissionsDenied,
+            .errorStates,
+        ]
+
+        for preset in negativePresets {
+            XCTAssertEqual(
+                preset.scenario.gateClassification,
+                .negative,
+                "\(preset) must be classified as a negative gate scenario",
+            )
+        }
     }
 }

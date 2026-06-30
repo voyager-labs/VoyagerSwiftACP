@@ -85,6 +85,11 @@ public enum FailureLatencyScenario: String, Sendable, Equatable, CaseIterable {
     }
 }
 
+public enum SettingsHostGateClassification: Sendable, Equatable {
+    case fullAccess
+    case negative
+}
+
 public struct SettingsHostScenario: Sendable, Equatable {
     public let accountAuth: AccountAuthScenario
     public let aiConnection: AIConnectionScenario
@@ -150,10 +155,24 @@ public struct SettingsHostScenario: Sendable, Equatable {
     public var debugMenuWired: Bool {
         true
     }
+
+    /// ponytail: axis 파생 — 별도 entitlement 축 없이 기존 5축으로 정의.
+    public var entitlementActive: Bool {
+        accountAuth == .signedIn && permissions == .allGranted && failureLatency != .error
+    }
+
+    public var requiresFloatingDebugPanel: Bool {
+        false
+    }
+
+    public var gateClassification: SettingsHostGateClassification {
+        entitlementActive ? .fullAccess : .negative
+    }
 }
 
 public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
     case defaultSandbox
+    case fullAccess
     case signedOut
     case signedIn
     case authExpired
@@ -168,7 +187,23 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
 
     public var scenario: SettingsHostScenario {
         switch self {
-        case .defaultSandbox, .signedOut:
+        case .defaultSandbox:
+            SettingsHostScenario(
+                accountAuth: .signedIn,
+                aiConnection: .connected,
+                permissions: .allGranted,
+                persistence: .clean,
+                failureLatency: .none,
+            )
+        case .fullAccess:
+            SettingsHostScenario(
+                accountAuth: .signedIn,
+                aiConnection: .connected,
+                permissions: .allGranted,
+                persistence: .populated,
+                failureLatency: .none,
+            )
+        case .signedOut:
             SettingsHostScenario(
                 accountAuth: .signedOut,
                 aiConnection: .notConfigured,
@@ -259,6 +294,8 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
         switch self {
         case .defaultSandbox:
             "Default Sandbox"
+        case .fullAccess:
+            "Full Access"
         case .signedOut:
             "Signed Out"
         case .signedIn:
@@ -287,7 +324,9 @@ public enum SettingsHostPreset: String, Sendable, Equatable, CaseIterable {
     public var summary: String {
         switch self {
         case .defaultSandbox:
-            "Signed out, AI not configured, permissions granted, clean persistence, no failures."
+            "Signed in, AI connected, permissions granted, clean persistence, no failures."
+        case .fullAccess:
+            "Signed in, AI connected, permissions granted, populated persistence, no failures."
         case .signedOut:
             "Signed out, AI not configured, permissions granted, clean persistence, no failures."
         case .signedIn:
