@@ -152,21 +152,11 @@ struct SettingsHostApp: App {
     var body: some Scene {
         WindowGroup("Settings") {
             SettingsHostWindowContent(container: appDelegate.storeContainer)
-                .onAppear {
-                    appDelegate.showDebugPanel()
-                }
         }
         .commands {
-            // 호스트 전용 debug surface — OnboardingHost 패리티.
+            // 호스트 전용 시나리오 프리셋 메뉴 — in-window SettingsHostScenarioBar와 동일 경로.
             // 선택은 SettingsHostStoreContainer.select를 통해 Store를 새 시나리오 의존성으로 재생성한다.
             CommandMenu("Settings Debug") {
-                Button("Show Scenario Panel") {
-                    appDelegate.showDebugPanel()
-                }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
-
-                Divider()
-
                 Button("Default Sandbox") {
                     appDelegate.selectPreset(.defaultSandbox)
                 }
@@ -224,13 +214,13 @@ struct SettingsHostApp: App {
 private final class SettingsHostStoreContainer: ObservableObject {
     @Published private(set) var store: StoreOf<SettingsHostFeature>
     @Published private(set) var scenarioID: String
+    @Published private(set) var preset: SettingsHostPreset
 
-    let debugStore: SettingsHostDebugStore
     let authMode: SettingsHostAuthMode
 
     init(preset: SettingsHostPreset, authMode: SettingsHostAuthMode) {
-        debugStore = SettingsHostDebugStore(initialPreset: preset)
         self.authMode = authMode
+        self.preset = preset
         scenarioID = preset.id
         store = Self.makeStore(preset: preset, authMode: authMode)
     }
@@ -238,35 +228,31 @@ private final class SettingsHostStoreContainer: ObservableObject {
     /// 현재 preset의 시나리오를 호출 시점에 읽어 Store를 (재)생성한다.
     /// `.mock` → T2 SettingsHostSandbox가 5축 fake 의존성 주입.
     /// `.live` → 프로덕션 `.liveValue` 의존성 (명시적 opt-in). `date`는 양쪽 모두 real.
-    /// `initialNotice`는 시나리오 변경 직후 notice banner에 표시할 호스트 전용 메시지.
     private static func makeStore(
         preset: SettingsHostPreset,
         authMode: SettingsHostAuthMode,
-        initialNotice: String? = nil,
     ) -> StoreOf<SettingsHostFeature> {
         switch authMode {
         case .mock:
-            Store(initialState: SettingsHostState(notice: initialNotice)) {
+            Store(initialState: SettingsHostState()) {
                 SettingsHostFeature()
             } withDependencies: { dependencies in
                 SettingsHostSandbox.configure(&dependencies, for: preset.scenario)
             }
         case .live:
-            Store(initialState: SettingsHostState(notice: initialNotice)) {
+            Store(initialState: SettingsHostState()) {
                 SettingsHostFeature()
             }
         }
     }
 
-    /// 디버그 메뉴/패널에서 preset 선택 시 호출. debugStore를 갱신(패널 자동 refresh)하고
+    /// 디버그 메뉴/시나리오 바에서 preset 선택 시 호출.
     /// Store를 새 시나리오 의존성으로 재생성 → @Published가 window content remount 유발.
     /// 이전 Store는 deallocation으로 in-flight effect가 취소된다 (TCA lifecycle).
-    /// 새 Store의 initial state에 시나리오 변경 notice를 주입하여 banner로 가시성 제공.
     func select(_ preset: SettingsHostPreset) {
-        debugStore.select(preset)
+        self.preset = preset
         scenarioID = preset.id
-        let notice = "Switched to \(preset.title) scenario."
-        store = Self.makeStore(preset: preset, authMode: authMode, initialNotice: notice)
+        store = Self.makeStore(preset: preset, authMode: authMode)
     }
 }
 
@@ -278,15 +264,64 @@ private struct SettingsHostWindowContent: View {
     @ObservedObject var container: SettingsHostStoreContainer
 
     var body: some View {
-        SettingsHostRootView(store: container.store)
-            .id(container.scenarioID)
+        VStack(spacing: 0) {
+            SettingsHostScenarioBar(container: container)
+            SettingsHostRootView(store: container.store)
+                .id(container.scenarioID)
+        }
+    }
+}
+
+// MARK: - In-window scenario chrome (host-only)
+
+/// 플로팅 패널 없이도 시나리오 전환을 창 내에서 직접 수행 가능한 호스트 전용 상단 바.
+/// SettingsView 프로덕션 영역 바깥에 렌더링되므로 프로덕션 코드에 영향 없음.
+private struct SettingsHostScenarioBar: View {
+    @ObservedObject var container: SettingsHostStoreContainer
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wand.and.stars")
+                .foregroundStyle(.purple)
+                .accessibilityHidden(true)
+            Text("Scenario")
+                .font(.system(.body, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Picker("", selection: Binding(
+                get: { container.preset },
+                set: { container.select($0) },
+            )) {
+                ForEach(SettingsHostPreset.allCases, id: \.self) { preset in
+                    Text(preset.title).tag(preset)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: 280)
+
+            Spacer(minLength: 0)
+
+            Text(container.preset.scenario.title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Settings host scenario selector")
     }
 }
 
 @MainActor
 private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
     let storeContainer: SettingsHostStoreContainer
-    private var debugPanel: NSPanel?
 
     override init() {
         let preset = SmokeMode.resolvePreset()
@@ -297,42 +332,14 @@ private final class SettingsHostAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         // 시나리오 변경 시 Store 재생성은 SettingsHostStoreContainer.select가 담당.
-        // 패널 콘텐츠는 debugStore의 @Published로 자동 갱신됨.
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         true
     }
 
-    func showDebugPanel() {
-        if let debugPanel {
-            debugPanel.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        let rootView = SettingsHostDebugPanel(
-            store: storeContainer.debugStore,
-            selectPreset: { [storeContainer] preset in
-                storeContainer.select(preset)
-            },
-        )
-        let hostingController = NSHostingController(rootView: rootView)
-        let panel = NSPanel(contentViewController: hostingController)
-        panel.title = "Settings Debug"
-        panel.styleMask = [.titled, .closable, .utilityWindow]
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
-        panel.setContentSize(NSSize(width: 360, height: 420))
-        panel.center()
-        panel.makeKeyAndOrderFront(nil)
-        debugPanel = panel
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
     func selectPreset(_ preset: SettingsHostPreset) {
         storeContainer.select(preset)
-        showDebugPanel()
     }
 }
 
@@ -361,90 +368,4 @@ private enum SettingsHostDebugMenu {
     static let failureLatency: [SettingsHostPreset] = [
         .errorStates,
     ]
-}
-
-// MARK: - Debug store (host-only, OnboardingHost-parity)
-
-private final class SettingsHostDebugStore: ObservableObject, @unchecked Sendable {
-    @Published private(set) var preset: SettingsHostPreset
-
-    private let lock = NSLock()
-    nonisolated(unsafe) private var lockedPreset: SettingsHostPreset
-
-    init(initialPreset: SettingsHostPreset) {
-        preset = initialPreset
-        lockedPreset = initialPreset
-    }
-
-    nonisolated var currentPreset: SettingsHostPreset {
-        lock.lock()
-        defer { lock.unlock() }
-        return lockedPreset
-    }
-
-    @MainActor
-    func select(_ preset: SettingsHostPreset) {
-        lock.lock()
-        lockedPreset = preset
-        lock.unlock()
-
-        self.preset = preset
-    }
-}
-
-// MARK: - Debug panel (host-only, OnboardingHost-parity)
-
-private struct SettingsHostDebugPanel: View {
-    @ObservedObject var store: SettingsHostDebugStore
-    let selectPreset: @MainActor (SettingsHostPreset) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Scenario Presets")
-                    .font(.headline)
-                Text("SettingsHost는 샌드박스된 의존성으로 SettingsView를 마운트한다. 프리셋 선택은 활성 시나리오를 갱신한다.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(SettingsHostPreset.allCases, id: \.self) { preset in
-                        Button {
-                            selectPreset(preset)
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Image(systemName: store.preset == preset ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(store.preset == preset ? .blue : .secondary)
-                                    .accessibilityHidden(true)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(preset.title)
-                                        .font(.system(.body, weight: .semibold))
-                                    Text(preset.summary)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(store.preset == preset ? Color.blue.opacity(0.16) : Color.secondary
-                                    .opacity(0.08)),
-                        )
-                    }
-                }
-            }
-
-            Text("프리셋 선택 시 SettingsHostFeature Store를 해당 시나리오 의존성으로 재생성하여 window를 remount한다.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .padding(18)
-        .frame(width: 360)
-    }
 }

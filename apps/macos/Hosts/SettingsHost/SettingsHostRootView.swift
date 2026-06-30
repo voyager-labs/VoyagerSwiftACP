@@ -11,34 +11,7 @@ public struct SettingsHostRootView: View {
     }
 
     public var body: some View {
-        WithViewStore(store, observe: \.notice) { viewStore in
-            VStack(spacing: 0) {
-                if let notice = viewStore.state {
-                    noticeBanner(notice)
-                }
-                SettingsView(store: store.scope(state: \.settings, action: \.settings))
-            }
+        SettingsView(store: store.scope(state: \.settings, action: \.settings))
             .frame(width: 600, height: 400)
-        }
-    }
-
-    private func noticeBanner(_ notice: String) -> some View {
-        HStack {
-            Image(systemName: "info.circle.fill")
-                .accessibilityLabel("Notice")
-                .foregroundStyle(.blue)
-            Text(notice)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("Dismiss") {
-                store.send(.dismissNotice)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.blue)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 }
