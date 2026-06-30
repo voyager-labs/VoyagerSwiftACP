@@ -132,9 +132,18 @@ public struct AccountAccessFeature {
         state.hasAccountSession = session != nil
 
         guard let session else {
+            // VOY-397: 세션 없이 onAppear 복원 시 이전 persist된 active entitlement fact를 제거한다.
+            // 방치 시 Access Unlock 화면이 Active chip + Sign In 버튼 + Next CTA를 동시에 그리는 regression 발생.
+            clearStaleActiveAccessFacts(&state)
+            // VOY-397: 세션 축 소실 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
+            // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
+            state.fetchGeneration += 1
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
-            return .cancel(id: CancelID.ttlTimer)
+            return .merge(
+                .cancel(id: CancelID.fetchStatus),
+                .cancel(id: CancelID.ttlTimer),
+            )
         }
 
         state.sessionExpiresAt = session.expiresAt
@@ -590,11 +599,30 @@ private extension AccountAccessFeature {
         state.hasAccountSession = false
         state.didSignInFail = true
         state.isSessionExpired = true
+        // VOY-397: 세션 만료 시에도 이전 active entitlement fact를 제거한다.
+        // 방치 시 Active chip + Sign In 버튼 + Next CTA 동시 표시 regression (nil-session 복원과 동일 원인).
+        clearStaleActiveAccessFacts(&state)
+        // VOY-397: 세션 만료 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
+        // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
+        state.fetchGeneration += 1
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
         state.consecutiveRefreshFailures = 0
 
-        return .cancel(id: CancelID.ttlTimer)
+        return .merge(
+            .cancel(id: CancelID.fetchStatus),
+            .cancel(id: CancelID.ttlTimer),
+        )
+    }
+
+    /// VOY-397: 세션 부재/만료 시 이전 active entitlement fact를 제거한다.
+    /// 방치 시 Active chip + Login 버튼 + Next CTA 동시 표시 regression 방지.
+    private func clearStaleActiveAccessFacts(_ state: inout State) {
+        state.status = nil
+        state.snapshot = nil
+        state.trialExpiresAt = nil
+        state.isComplete = false
+        state.errorMessage = nil
     }
 
     // MARK: - 외부 URL 리다이렉트

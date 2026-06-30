@@ -132,6 +132,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             state.didSignInFail = true
             state.hasAccountSession = false
             state.isSessionExpired = true
+            state.fetchGeneration = 1
         }
 
         XCTAssertFalse(fetchCalled)
@@ -209,6 +210,102 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     /// - 기대 결과: 네트워크 오류 시에도 기존 session 유지
     func testNetworkErrorDuringRefreshMaintainsSession() throws {
         try XCTSkip("Requires T6 token refresh logic")
+    }
+
+    /// VOY-397 regression: onAppear에서 session 복원이 nil일 때 이전에 persist된 active entitlement fact가 모두 제거된다.
+    /// status=.coreLicenseActive + isComplete=true + snapshot/trialExpiresAt 보존 상태에서 session=nil 복원 시
+    /// stale fact가 방치되면 Access Unlock 화면이 Active chip + Sign In 버튼을 동시에 그리는 regression이 발생한다.
+    /// - 검증 내용: _onAppearSessionRestored(nil) → status/snapshot/trialExpiresAt/isComplete 초기화
+    /// - 사전 조건: initialState에 stale active facts 사전 주입
+    /// - 기대 결과: status=nil, snapshot=nil, trialExpiresAt=nil, isComplete=false,
+    ///   accountAccessAuthAxis=.signedOut, canStartLogin=true, accountAccessStepState=.blocked,
+    ///   accessUnlockPrimaryCTA=.login
+    func testNilSessionRestoreClearsStaleActiveFacts() async {
+        let staleSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate,
+            fetchedAt: referenceDate,
+        )
+        var initialState = AccountAccessFeature.State()
+        initialState.status = .coreLicenseActive
+        initialState.isComplete = true
+        initialState.snapshot = staleSnapshot
+        initialState.trialExpiresAt = referenceDate
+
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            initialState: initialState,
+        )
+        // exhaustivity=.off: reducer가 다수 필드를 갱신하나 검증 대상은 regression 스펙 필드만.
+        store.exhaustivity = .off
+
+        await store.send(._onAppearSessionRestored(nil))
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertNil(store.state.status)
+        XCTAssertNil(store.state.snapshot)
+        XCTAssertNil(store.state.trialExpiresAt)
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertEqual(store.state.accountAccessAuthAxis, .signedOut)
+        XCTAssertTrue(store.state.canStartLogin)
+        XCTAssertEqual(store.state.accountAccessStepState, .blocked)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .login)
+        await store.finish()
+    }
+
+    /// VOY-397 regression: nil session 복원 후 도착한 stale active access_status 응답이 거부된다.
+    /// _onAppearSessionRestored(nil)이 fetchGeneration을 무효화하므로, 복원 직전 세대의 success(active) 응답은
+    /// status/snapshot/isComplete를 재주입하지 못한다.
+    /// - 검증 내용: _onAppearSessionRestored(nil) → 이전 generation 응답 무시 → status=nil, isComplete=false 유지
+    /// - 사전 조건: fetchGeneration=1, active entitlement facts 보존 상태
+    /// - 기대 결과: stale 응답 후에도 status=nil, snapshot=nil, isComplete=false, accessUnlockPrimaryCTA=.login
+    func testNilSessionRestoreRejectsStaleGenerationActiveResponse() async {
+        let staleSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate,
+            fetchedAt: referenceDate,
+        )
+        var initialState = AccountAccessFeature.State()
+        initialState.fetchGeneration = 1
+        initialState.status = .coreLicenseActive
+        initialState.isComplete = true
+        initialState.snapshot = staleSnapshot
+        initialState.trialExpiresAt = referenceDate
+
+        let activeResponse = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
+
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            ),
+            initialState: initialState,
+        )
+        store.exhaustivity = .off
+
+        await store.send(._onAppearSessionRestored(nil))
+
+        // stale generation(1) 응답 → 현재 fetchGeneration(2)과 불일치 → 무시
+        await store.send(.accessStatusResponse(generation: 1, result: .success(activeResponse)))
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertNil(store.state.status, "stale generation 응답은 status를 재주입하지 못함")
+        XCTAssertNil(store.state.snapshot)
+        XCTAssertNil(store.state.trialExpiresAt)
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .login)
+        await store.finish()
     }
 
     /// ACC-001-restore_account_session: 앱 최초 실행 시 token 파일이 없으면 logged_out으로 진입한다.
