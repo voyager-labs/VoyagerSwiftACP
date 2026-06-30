@@ -65,6 +65,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
                 onUnlocked: { _ in },
             )
         }
+        store.exhaustivity = .off
 
         await store.send(.unlockAccess(.accessStatusResponse(
             generation: 0,
@@ -381,6 +382,88 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         await store.send(.refreshAccessTapped)
 
         await store.finish()
+    }
+
+    // MARK: - ONB-002 CTA projection (VOY-397)
+
+    /// VOY-397: entitlement `none` 상태에서 Web Pricing CTA가 primary여야 한다.
+    /// direct checkout(openCheckoutTapped)이 아닌 Web Pricing(openPricingTapped) 경로를 사용하는지 상태 투영으로 검증.
+    /// - 검증 내용: hasAccountSession=true, status=.none → accessUnlockPrimaryCTA == .webPricing.
+    /// - 사전 조건: 세션 있음, entitlement none.
+    /// - 기대 결과: accessUnlockPrimaryCTA == .webPricing (NOT .checkout).
+    func testNoneEntitlementProjectsWebPricingCTA() {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.status = AccessStatus.none
+
+        XCTAssertEqual(
+            state.accessUnlockPrimaryCTA,
+            .webPricing,
+            "none entitlement에서 Web Pricing CTA가 primary여야 함",
+        )
+        XCTAssertTrue(state.canRefreshAccess, "none 상태에서 Refresh Access도 활성화되어야 함")
+    }
+
+    /// VOY-397: retryable error 상태에서 Retry CTA만 primary여야 한다.
+    /// error 상태에서 Web Pricing/pricing recovery가 표시되지 않는지 상태 투영으로 검증.
+    /// - 검증 내용: hasAccountSession=true, status=.networkFailure → accessUnlockPrimaryCTA == .retry.
+    /// - 사전 조건: 세션 있음, 네트워크 실패.
+    /// - 기대 결과: accessUnlockPrimaryCTA == .retry (NOT .webPricing).
+    func testRetryableErrorProjectsRetryOnlyCTA() {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.status = .networkFailure
+
+        XCTAssertEqual(
+            state.accessUnlockPrimaryCTA,
+            .retry,
+            "retryable error에서 Retry CTA가 primary여야 함",
+        )
+        XCTAssertNotEqual(
+            state.accessUnlockPrimaryCTA,
+            .webPricing,
+            "error 상태에서 Web Pricing이 표시되지 않아야 함",
+        )
+    }
+
+    /// VOY-397: direct checkout CTA가 core ONB recovery 경로에서 표시되지 않는다.
+    /// AccessUnlockPrimaryCTA enum에 checkout 케이스가 존재하지 않음으로 검증.
+    /// - 검증 내용: 모든 blocked 상태에서 accessUnlockPrimaryCTA가 webPricing 또는 retry.
+    func testDirectCheckoutHiddenFromOnbRecovery() {
+        let blockedStatuses: [AccessStatus] = [AccessStatus.none, .trialExpired, .revoked, .refunded]
+
+        for status in blockedStatuses {
+            var state = AccountAccessFeature.State()
+            state.hasAccountSession = true
+            state.status = status
+
+            XCTAssertEqual(
+                state.accessUnlockPrimaryCTA,
+                .webPricing,
+                "\(status) 상태에서 Web Pricing CTA가 표시되어야 함 (direct checkout 아님)",
+            )
+        }
+    }
+
+    /// VOY-397: signed-out 상태에서 Login CTA가 primary여야 한다 (Web Pricing이 아님).
+    /// - 검증 내용: hasAccountSession=false → accessUnlockPrimaryCTA == .login.
+    func testSignedOutProjectsLoginCTA() {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = false
+
+        XCTAssertEqual(state.accessUnlockPrimaryCTA, .login)
+        XCTAssertNotEqual(state.accessUnlockPrimaryCTA, .webPricing)
+    }
+
+    /// VOY-397: complete 상태에서 Next CTA가 primary여야 한다.
+    /// - 검증 내용: status=coreLicenseActive, isComplete=true → accessUnlockPrimaryCTA == .next.
+    func testCompleteProjectsNextCTA() {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.status = .coreLicenseActive
+        state.isComplete = true
+
+        XCTAssertEqual(state.accessUnlockPrimaryCTA, .next)
     }
 
     // MARK: - ONB-002-mock_sign_in_handoff

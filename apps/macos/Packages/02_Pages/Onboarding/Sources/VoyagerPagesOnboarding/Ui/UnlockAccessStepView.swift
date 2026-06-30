@@ -127,17 +127,7 @@ struct UnlockAccessStepView: View {
     ) -> some View {
         VStack(spacing: 10) {
             switch status {
-            case .none:
-                Button {
-                    viewStore.send(.openCheckoutTapped)
-                } label: {
-                    Label("Get Access", systemImage: "lock.open")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-
-            case .trialExpired:
+            case .none, .trialExpired, .revoked, .refunded:
                 Button {
                     viewStore.send(.openPricingTapped)
                 } label: {
@@ -147,28 +137,9 @@ struct UnlockAccessStepView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
 
-            case .revoked, .refunded:
-                Button {
-                    viewStore.send(.openAccessHelpTapped)
-                } label: {
-                    Label("Get Help", systemImage: "questionmark.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-
             case .coreLicenseActive, .trialActive, .internalTestActive, .networkFailure:
                 EmptyView()
             }
-
-            Button {
-                viewStore.send(.openBetaCodeHelpTapped)
-            } label: {
-                Text("Have a beta code?")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
         }
     }
 
