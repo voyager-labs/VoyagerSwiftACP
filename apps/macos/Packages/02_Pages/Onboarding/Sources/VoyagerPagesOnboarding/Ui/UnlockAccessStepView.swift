@@ -121,7 +121,6 @@ struct UnlockAccessStepView: View {
 
     // MARK: - 차단 상태별 CTA 버튼
 
-    @ViewBuilder
     private func blockedStatusCTAs(
         viewStore: ViewStoreOf<AccountAccessFeature>,
         status: AccessStatus,
@@ -158,7 +157,7 @@ struct UnlockAccessStepView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
 
-            case .coreLicenseActive, .betaTrialActive, .internalTestActive, .networkFailure:
+            case .coreLicenseActive, .trialActive, .internalTestActive, .networkFailure:
                 EmptyView()
             }
 

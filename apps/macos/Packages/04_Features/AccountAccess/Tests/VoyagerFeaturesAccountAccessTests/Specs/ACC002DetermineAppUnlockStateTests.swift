@@ -20,15 +20,15 @@ final class ACC002DetermineAppUnlockStateTests: XCTestCase {
         XCTAssertFalse(state.showsRetry)
     }
 
-    /// ACC-002-determine_app_unlock_state: betaTrialActive에서 앱 잠금 해제 상태가 완료로 결정된다.
-    /// betaTrialActive 상태가 활성화되어 있을 때 unlock state가 complete로 평가되는지 검증한다.
-    /// - 검증 내용: hasAccountSession=true, status=.betaTrialActive에서 isActive 및 accountAccessStepState 확인
-    /// - 사전 조건: hasAccountSession==true, status==.betaTrialActive
+    /// ACC-002-determine_app_unlock_state: trialActive에서 앱 잠금 해제 상태가 완료로 결정된다.
+    /// trialActive 상태가 활성화되어 있을 때 unlock state가 complete로 평가되는지 검증한다.
+    /// - 검증 내용: hasAccountSession=true, status=.trialActive에서 isActive 및 accountAccessStepState 확인
+    /// - 사전 조건: hasAccountSession==true, status==.trialActive
     /// - 기대 결과: status.isActive==true, accountAccessStepState==.complete, showsRetry==false
-    func testBetaTrialActiveMapsToComplete() {
+    func testTrialActiveMapsToComplete() {
         var state = AccountAccessFeature.State()
         state.hasAccountSession = true
-        state.status = .betaTrialActive
+        state.status = .trialActive
 
         XCTAssertTrue(try XCTUnwrap(state.status).isActive)
         XCTAssertEqual(state.accountAccessStepState, .complete)
@@ -146,7 +146,7 @@ final class ACC002DetermineAppUnlockStateTests: XCTestCase {
     /// - 기대 결과: active status 3개는 true, non-active status 5개는 false
     func testAccessStatusIsActiveComputedProperty() {
         XCTAssertTrue(AccessStatus.coreLicenseActive.isActive)
-        XCTAssertTrue(AccessStatus.betaTrialActive.isActive)
+        XCTAssertTrue(AccessStatus.trialActive.isActive)
         XCTAssertTrue(AccessStatus.internalTestActive.isActive)
 
         XCTAssertFalse(AccessStatus.none.isActive)

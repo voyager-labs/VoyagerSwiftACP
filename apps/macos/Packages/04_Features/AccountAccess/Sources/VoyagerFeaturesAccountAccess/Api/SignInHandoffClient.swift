@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 /// 인증 handoff를 수행하는 dependency.
 /// Mock 경로에서는 즉시 callback URL을 반환하고,
@@ -16,9 +17,10 @@ public struct SignInHandoffClient: Sendable {
 extension SignInHandoffClient: DependencyKey {
     nonisolated public static var liveValue: SignInHandoffClient {
         SignInHandoffClient {
-            // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
-            guard let webBaseURL = ProcessInfo.processInfo.environment["PUBLIC_WEB_BASE_URL"],
-                  !webBaseURL.isEmpty
+            @Dependency(\.appHandoffTarget)
+            var appTarget
+
+            guard let webBaseURL = EnvironmentLoader.stringValue(forKey: "PUBLIC_WEB_BASE_URL")
             else {
                 return .failure
             }
@@ -28,10 +30,10 @@ extension SignInHandoffClient: DependencyKey {
 
             let builder = AppHandoffURLBuilder(
                 webBaseURL: webBaseURL,
-                gatewayURL: ProcessInfo.processInfo.environment["PUBLIC_GATEWAY_URL"] ?? "",
+                gatewayURL: EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL") ?? "",
             )
 
-            guard let loginURL = builder.buildLoginURL(state: state, context: context) else {
+            guard let loginURL = builder.buildLoginURL(state: state, context: context, appTarget: appTarget) else {
                 return .failure
             }
 

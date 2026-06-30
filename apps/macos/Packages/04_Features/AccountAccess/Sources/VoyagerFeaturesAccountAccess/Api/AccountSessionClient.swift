@@ -19,6 +19,10 @@ public struct AccountSessionClient: Sendable {
     }
 }
 
+enum AccountSessionPersistenceError: Error, Equatable {
+    case missingRefreshToken
+}
+
 // MARK: - Live Factory
 
 extension AccountSessionClient {
@@ -34,9 +38,10 @@ extension AccountSessionClient {
                 return AccountTokenSessionMapper.tokensFileToSession(file)
             },
             persist: { session in
-                if let tokensFile = AccountTokenSessionMapper.sessionToTokensFile(session) {
-                    try await store.write(tokensFile)
+                guard let tokensFile = AccountTokenSessionMapper.sessionToTokensFile(session) else {
+                    throw AccountSessionPersistenceError.missingRefreshToken
                 }
+                try await store.write(tokensFile)
             },
             delete: {
                 try await store.delete()

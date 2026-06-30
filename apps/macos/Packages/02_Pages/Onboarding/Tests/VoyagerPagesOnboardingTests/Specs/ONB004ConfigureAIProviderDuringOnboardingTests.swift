@@ -409,7 +409,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             currentStep: .aiProviderSetup,
             stepState: OnboardingStepState(
                 welcomeComplete: true,
-                betaAccessComplete: true,
+                accessUnlockComplete: true,
                 permissionsComplete: true,
                 aiProviderSetupComplete: true,
                 aiProviderSetupSkipped: true,
@@ -427,8 +427,8 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         }
 
         await store.send(.onAppear) { state in
-            state.betaAccess.isComplete = true
-            state.betaAccess.status = .coreLicenseActive
+            state.accessUnlock.isComplete = true
+            state.accessUnlock.status = .coreLicenseActive
             state.permissions.isComplete = true
             state.aiProviderSetup.choice = .setUpLater
             state.aiProviderSetup.status = .skipped

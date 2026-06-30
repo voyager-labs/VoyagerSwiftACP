@@ -1,8 +1,8 @@
 import Foundation
 
-public nonisolated enum AccessStatus: String, Equatable, Sendable, Codable {
+nonisolated public enum AccessStatus: String, Equatable, Sendable, Codable {
     case coreLicenseActive = "core_license_active"
-    case betaTrialActive = "beta_trial_active"
+    case trialActive = "trial_active"
     case internalTestActive = "internal_test_active"
     case none
     case trialExpired = "trial_expired"
@@ -12,7 +12,7 @@ public nonisolated enum AccessStatus: String, Equatable, Sendable, Codable {
 
     public var isActive: Bool {
         switch self {
-        case .coreLicenseActive, .betaTrialActive, .internalTestActive: true
+        case .coreLicenseActive, .trialActive, .internalTestActive: true
         case .none, .trialExpired, .revoked, .refunded, .networkFailure: false
         }
     }

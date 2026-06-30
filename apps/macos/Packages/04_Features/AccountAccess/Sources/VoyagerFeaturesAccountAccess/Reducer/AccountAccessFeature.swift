@@ -28,9 +28,13 @@ public struct AccountAccessFeature {
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
 
+    @Dependency(\.appHandoffTarget)
+    var appHandoffTarget
+
     private enum CancelID {
         static let fetchStatus = "accountAccessFetchStatus"
         static let appDidBecomeActiveObserver = "accountAccessAppDidBecomeActiveObserver"
+        static let signInHandoff = "accountAccessSignInHandoff"
         static let ttlTimer = "accountAccessTtlTimer"
     }
 
@@ -48,6 +52,9 @@ public struct AccountAccessFeature {
 
             case .loginTapped:
                 return handleLoginTapped(&state)
+
+            case .cancelSignIn:
+                return handleCancelSignIn(&state)
 
             case let .signInHandoffCompleted(result):
                 return handleSignInHandoffCompleted(&state, result: result)
@@ -172,6 +179,24 @@ public struct AccountAccessFeature {
             let result = await signInHandoffClient.performHandoff()
             await send(.signInHandoffCompleted(result))
         }
+        .cancellable(id: CancelID.signInHandoff, cancelInFlight: true)
+    }
+
+    private func handleCancelSignIn(_ state: inout State) -> Effect<Action> {
+        guard state.isSignInInProgress || state.handoffPendingState != nil else {
+            return .none
+        }
+
+        state.isSignInInProgress = false
+        state.didSignInFail = false
+        state.handoffPendingState = nil
+
+        return .merge(
+            .cancel(id: CancelID.signInHandoff),
+            .run { _ in
+                await AppHandoffStateStore.shared.clear()
+            },
+        )
     }
 
     private func handleSignInHandoffCompleted(
@@ -195,12 +220,12 @@ public struct AccountAccessFeature {
 
     private func handleLoginCallbackReceived(_ state: inout State, url: URL) -> Effect<Action> {
         // real handoff callback: AppHandoffCallback이 파싱되면 exchange 경로
-        if let callback = AppHandoffCallback(url: url) {
+        if let callback = AppHandoffCallback(url: url, expectedScheme: appHandoffTarget.callbackScheme) {
             return handleRealHandoffCallback(&state, callback: callback)
         }
 
         // legacy mock callback: 기존 scheme/host/path + query 없음 → restoreSession 경로
-        guard isValidAuthCallback(url), !hasQueryItems(url) else {
+        guard isValidAuthCallback(url, expectedScheme: appHandoffTarget.callbackScheme), !hasQueryItems(url) else {
             state.isSignInInProgress = false
             state.didSignInFail = true
             state.handoffPendingState = nil
@@ -264,8 +289,11 @@ public struct AccountAccessFeature {
             )
 
         case .failure:
+            // sign-in 실패 (exchange/persist 오류). session expired와 구분한다.
             state.isSignInInProgress = false
-            return .send(._sessionExpiredDetected)
+            state.didSignInFail = true
+            state.hasAccountSession = false
+            return .none
         }
     }
 
@@ -287,8 +315,8 @@ public struct AccountAccessFeature {
         }
     }
 
-    private func isValidAuthCallback(_ url: URL) -> Bool {
-        guard url.scheme == "voyager" else { return false }
+    private func isValidAuthCallback(_ url: URL, expectedScheme: String) -> Bool {
+        guard url.scheme == expectedScheme else { return false }
         guard url.host == "auth" else { return false }
         guard url.path == "/callback" else { return false }
         return true
@@ -300,14 +328,12 @@ public struct AccountAccessFeature {
     // Do NOT introduce a new DependencyKey for the coordinator.
 
     /// Handoff exchange → persist session (network + file I/O cross-seam).
-    /// TODO(VOY-XXX): persist failure handling — 현재 silent skip 보존 (기존 동작)
     private func performHandoffExchange(
         ticket: String, state: String, context: AppHandoffContext,
     ) -> Effect<Action> {
         .run { [authNetwork, sessionClient] send in
             let session = try await authNetwork.exchangeHandoff(ticket, state, context)
-            // Silent-skip on persist failure (preserves original behavior from AccountAccessClient:82-84)
-            try? await sessionClient.persist(session)
+            try await sessionClient.persist(session)
             await send(._handoffExchangeCompleted(.success(session)))
         } catch: { error, send in
             let mappedError: AppHandoffExchangeError = if let exchangeError = error as? AppHandoffExchangeError {
@@ -320,11 +346,10 @@ public struct AccountAccessFeature {
     }
 
     /// Token refresh → persist session (network + file I/O cross-seam).
-    /// TODO(VOY-XXX): persist failure handling — 현재 silent skip 보존
     private func performTokenRefresh() -> Effect<Action> {
         .run { [authNetwork, sessionClient] send in
             let session = try await authNetwork.refreshToken()
-            try? await sessionClient.persist(session)
+            try await sessionClient.persist(session)
             await send(._refreshTokenResult(.success(session)))
         } catch: { error, send in
             let mappedError: AccessError = if let accessError = error as? AccessError {
@@ -359,61 +384,69 @@ private extension AccountAccessFeature {
 
         switch result {
         case let .success(response):
-            state.status = response.status
-            state.trialExpiresAt = response.expiresAt
-            state.fetchRetryCount = 0
-
-            let snapshot = AccessStatusSnapshot(
-                status: response.status,
-                expiresAt: response.expiresAt,
-                entitlements: response.entitlements,
-                fetchedAt: date(),
-            )
-            state.snapshot = snapshot
-
-            if response.status.isActive {
-                state.isComplete = true
-                state.errorMessage = nil
-                return .run { [snapshotClient] send in
-                    await snapshotClient.save(snapshot)
-                    await send(.delegate(.unlocked(snapshot)))
-                }
-            } else {
-                state.isComplete = false
-                state.errorMessage = errorMessageForStatus(response.status)
-                return .run { [snapshotClient] _ in
-                    await snapshotClient.save(snapshot)
-                }
-            }
+            return handleAccessStatusSuccess(&state, response: response)
 
         case let .failure(error):
-            state.isComplete = false
-            state.errorMessage = errorMessage(for: error)
+            return handleAccessStatusFailure(&state, error: error)
+        }
+    }
 
-            // Permanent errors — no retry, use normal failure path
-            if error == .notConfigured || error == .decodingFailure {
-                return .none
+    private func handleAccessStatusSuccess(_ state: inout State, response: AccessStatusResponse) -> Effect<Action> {
+        let accessStatus = response.toAccessStatus()
+        state.status = accessStatus
+        state.trialExpiresAt = response.currentPeriodEnd
+        state.fetchRetryCount = 0
+
+        let snapshot = AccessStatusSnapshot(
+            status: accessStatus,
+            currentPeriodEnd: response.currentPeriodEnd,
+            fetchedAt: date(),
+        )
+        state.snapshot = snapshot
+
+        if accessStatus.isActive {
+            state.isComplete = true
+            state.errorMessage = nil
+            return .run { [snapshotClient] send in
+                await snapshotClient.save(snapshot)
+                await send(.delegate(.unlocked(snapshot)))
             }
+        }
 
-            if error == .networkFailure {
-                if state.fetchRetryCount >= 3 {
-                    // Retry budget exhausted → fall back to cached snapshot
-                    state.fetchRetryCount = 0
-                    return .run { [snapshotClient] send in
-                        let snapshot = await snapshotClient.load()
-                        await send(._cachedSnapshotRestored(snapshot))
-                    }
-                }
+        state.isComplete = false
+        state.errorMessage = errorMessageForStatus(accessStatus)
+        return .run { [snapshotClient] _ in
+            await snapshotClient.save(snapshot)
+        }
+    }
 
-                // Retry budget remaining → set network failure and schedule staggered retry
-                state.status = .networkFailure
-                let retryStep = state.fetchRetryCount
-                state.fetchRetryCount += 1
-                return .send(._fetchRetryScheduled(retryStep))
-            }
+    private func handleAccessStatusFailure(_ state: inout State, error: AccessError) -> Effect<Action> {
+        state.isComplete = false
+        state.errorMessage = errorMessage(for: error)
 
+        if error == .unauthorized {
+            // 401 → 즉시 session_expired 전환 (canonical: entitlement_check.md error table)
+            return .send(._sessionExpiredDetected)
+        }
+
+        if error == .notConfigured || error == .decodingFailure {
             return .none
         }
+
+        guard error == .networkFailure else { return .none }
+
+        if state.fetchRetryCount >= 3 {
+            state.fetchRetryCount = 0
+            return .run { [snapshotClient] send in
+                let snapshot = await snapshotClient.load()
+                await send(._cachedSnapshotRestored(snapshot))
+            }
+        }
+
+        state.status = .networkFailure
+        let retryStep = state.fetchRetryCount
+        state.fetchRetryCount += 1
+        return .send(._fetchRetryScheduled(retryStep))
     }
 
     private func handleFetchRetryScheduled(_ state: inout State, retryStep: Int) -> Effect<Action> {
@@ -461,6 +494,7 @@ private extension AccountAccessFeature {
         case .networkFailure: "Network error. Please check your connection and try again."
         case .notConfigured: "Access service is not configured."
         case .decodingFailure: "Failed to process the response."
+        case .unauthorized: "Session expired. Please sign in again."
         case .unknownGatewayCode: "An unexpected error occurred."
         }
     }
@@ -519,9 +553,10 @@ private extension AccountAccessFeature {
     }
 
     /// refresh token 결과 처리.
-    private func handleRefreshTokenResult(_ state: inout State,
-                                          result: Result<AccountSession, AccessError>) -> Effect<Action>
-    {
+    private func handleRefreshTokenResult(
+        _ state: inout State,
+        result: Result<AccountSession, AccessError>,
+    ) -> Effect<Action> {
         switch result {
         case let .success(session):
             state.consecutiveRefreshFailures = 0
@@ -531,6 +566,7 @@ private extension AccountAccessFeature {
         case let .failure(error):
             let isPermanent = error == .decodingFailure
                 || error == .notConfigured
+                || error == .unauthorized
 
             if isPermanent {
                 return .send(._sessionExpiredDetected)

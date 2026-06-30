@@ -158,6 +158,31 @@ final class ACC001ValidateAccountSessionTests: XCTestCase {
         XCTAssertTrue(store.state.isSessionExpired)
     }
 
+    /// ACC-001-validate_account_session: refreshToken 401 unauthorized → 즉시 _sessionExpiredDetected 전환, retry 없음.
+    /// refreshToken이 .unauthorized를 반환하면 3회 재시도 없이 즉시 세션 만료 처리되는지 검증한다.
+    /// - 검증 내용: .unauthorized → _sessionExpiredDetected 수신, consecutiveRefreshFailures==0 유지
+    /// - 사전 조건: 로그인된 세션 상태, near-expiry
+    /// - 기대 결과: _sessionExpiredDetected 수신, isSessionExpired=true, consecutiveRefreshFailures=0
+    func testUnauthorizedOnRefreshTriggersSessionExpiryImmediately() async {
+        let store = makeTestStore(
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: { throw AccessError.notConfigured },
+                refreshToken: { throw AccessError.unauthorized },
+            ),
+            initialState: sessionNearExpiryState(),
+        )
+        // store.exhaustivity = .off: _sessionExpiredDetected가 다수 상태를 동시 갱신하나 검증 대상은 최종 상태만 해당
+        store.exhaustivity = .off
+
+        await store.send(AccountAccessAction._ttlTimerTicked)
+        await store.receive(\._refreshTokenResult)
+        await store.receive(\._sessionExpiredDetected)
+
+        XCTAssertTrue(store.state.isSessionExpired, "unauthorized → isSessionExpired=true")
+        XCTAssertEqual(store.state.consecutiveRefreshFailures, 0, "unauthorized → retry 카운터 미증가")
+    }
+
     /// ACC-001-validate_account_session: 일시적 네트워크 오류(networkFailure) 발생 시 세션이 유지되고 재시도 카운터가 증가한다.
     /// refreshToken이 networkFailure를 throw할 때 세션이 유지되는지 검증한다.
     /// - 검증 내용: networkFailure → consecutiveRefreshFailures가 1 증가하고 세션 상태는 유지된다.

@@ -17,7 +17,7 @@ struct OnboardingFeature {
         Scope(state: \.welcome, action: \.welcome) {
             WelcomeFeature()
         }
-        Scope(state: \.betaAccess, action: \.betaAccess) {
+        Scope(state: \.accessUnlock, action: \.accessUnlock) {
             AccountAccessFeature()
         }
         Scope(state: \.permissions, action: \.permissions) {
@@ -58,37 +58,34 @@ struct OnboardingFeature {
 
             case let .success(snapshot):
                 state.applyStepState(snapshot.stepState)
-                if snapshot.stepState.betaAccessComplete, snapshot.accessSnapshot == nil {
-                    state.betaAccess = AccountAccessFeature.State()
-                    state.currentStep = .betaAccess
+                if snapshot.stepState.accessUnlockComplete, snapshot.accessSnapshot == nil {
+                    state.accessUnlock = AccountAccessFeature.State()
+                    state.currentStep = .accessUnlock
                     let updatedSnapshot = state.progressSnapshot
                     return .run { _ in
                         _ = progressClient.save(updatedSnapshot)
                     }
                 }
                 if let accessSnapshot = snapshot.accessSnapshot {
-                    state.betaAccess.snapshot = accessSnapshot
-                    state.betaAccess.status = accessSnapshot.status
+                    state.accessUnlock.snapshot = accessSnapshot
+                    state.accessUnlock.status = accessSnapshot.status
                 }
                 state.currentStep = state.lastValidStep(from: snapshot.currentStep)
                 let updatedSnapshot = state.progressSnapshot
                 let saveEffect: Effect<Action> = .run { _ in
                     _ = progressClient.save(updatedSnapshot)
                 }
-                guard snapshot.accessSnapshot != nil, state.betaAccess.isComplete else {
+                guard snapshot.accessSnapshot != nil, state.accessUnlock.isComplete else {
                     return saveEffect
                 }
                 return .concatenate(
                     saveEffect,
-                    .send(.betaAccess(.onAppear)),
+                    .send(.accessUnlock(.onAppear)),
                 )
             }
 
         case .backTapped:
-            guard let previous = state.currentStep.previous else { return .none }
-            state.currentStep = previous
-            let snapshot = state.progressSnapshot
-            return Self.saveEffect(snapshot, progressClient: progressClient)
+            return handleBackTapped(state: &state, progressClient: progressClient)
 
         case .nextTapped:
             guard state.canGoNext, let next = state.currentStep.next else { return .none }
@@ -132,17 +129,32 @@ struct OnboardingFeature {
             }
             return .none
 
-        case let .betaAccess(.accessStatusResponse(generation: _, result: .success(response))):
-            if !response.status.isActive {
-                state.currentStep = .betaAccess
+        case let .accessUnlock(.accessStatusResponse(generation: _, result: .success(response))):
+            if !response.toAccessStatus().isActive {
+                state.currentStep = .accessUnlock
             }
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
 
-        case .welcome, .betaAccess, .permissions, .aiProviderSetup, .complete:
+        case .welcome, .accessUnlock, .permissions, .aiProviderSetup, .complete:
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
         }
+    }
+
+    private func handleBackTapped(
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        guard let previous = state.currentStep.previous else { return .none }
+        let shouldCancelSignIn = state.currentStep == .accessUnlock
+            && (state.accessUnlock.isSignInInProgress || state.accessUnlock.handoffPendingState != nil)
+        state.currentStep = previous
+        guard shouldCancelSignIn else {
+            let snapshot = state.progressSnapshot
+            return Self.saveEffect(snapshot, progressClient: progressClient)
+        }
+        return .send(.accessUnlock(.cancelSignIn))
     }
 
     private static func saveEffect(

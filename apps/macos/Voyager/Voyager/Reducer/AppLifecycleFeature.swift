@@ -105,15 +105,15 @@ struct AppLifecycleFeature {
 
             case let .accountAccessGate(.accessStatusResponse(.success(response))):
                 state.isCheckingAccountAccess = false
-                state.lastAccessStatus = response.status
+                let accessStatus = response.toAccessStatus()
+                state.lastAccessStatus = accessStatus
                 state.accountAccessGateResolved = true
 
-                if response.status.isActive {
+                if accessStatus.isActive {
                     let now = date.now
                     let snapshot = AccessStatusSnapshot(
-                        status: response.status,
-                        expiresAt: response.expiresAt,
-                        entitlements: response.entitlements,
+                        status: accessStatus,
+                        currentPeriodEnd: response.currentPeriodEnd,
                         fetchedAt: now,
                     )
                     return .send(.accountAccessGate(.accountAccessGranted(snapshot: snapshot)))
@@ -131,7 +131,7 @@ struct AppLifecycleFeature {
                     guard let cached = await snapshotClient.load(),
                           cached.isActive,
                           dateNow.timeIntervalSince(cached.fetchedAt) <= 24 * 3600,
-                          cached.expiresAt.map({ dateNow < $0 }) ?? true
+                          cached.currentPeriodEnd.map({ dateNow < $0 }) ?? true
                     else {
                         await send(.accountAccessGate(.showUnlockSurface))
                         return

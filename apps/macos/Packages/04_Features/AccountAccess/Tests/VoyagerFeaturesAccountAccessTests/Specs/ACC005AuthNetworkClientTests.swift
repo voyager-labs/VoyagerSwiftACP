@@ -187,20 +187,42 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
         }
     }
 
+    /// ACC-005-refresh_token: refreshToken이 unauthorized를 throw한다.
+    /// mock refreshToken closure가 unauthorized를 throw할 때 전파되는지 검증한다.
+    /// - 검증 내용: AccessError.unauthorized 전파
+    /// - 사전 조건: mock refreshToken이 AccessError.unauthorized throw
+    /// - 기대 결과: 동일한 unauthorized 에러가 throw됨
+    func testRefreshTokenUnauthorizedThrows() async {
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.notConfigured },
+            refreshToken: { throw AccessError.unauthorized },
+        )
+
+        do {
+            _ = try await client.refreshToken()
+            XCTFail("unauthorized 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .unauthorized)
+        }
+    }
+
     // MARK: - ACC-005-fetch_access_status
 
     /// ACC-005-fetch_access_status: fetchAccessStatus 성공 시 AccessStatusResponse를 반환한다.
     /// mock fetchAccessStatus closure가 정상 응답을 반환할 때 호출자에게 응답이 전달되는지 검증한다.
-    /// - 검증 내용: 반환된 AccessStatusResponse의 status/expiresAt/entitlements 일치
+    /// - 검증 내용: 반환된 AccessStatusResponse의 hasAccess/status/currentPeriodEnd 일치
     /// - 사전 조건: AuthNetworkClient.fetchAccessStatus mock이 유효한 AccessStatusResponse 반환
     /// - 기대 결과: 반환된 응답이 mock이 설정한 값과 일치
     func testFetchAccessStatusSuccess() async throws {
+        let expectedDate = Date(timeIntervalSince1970: 1_800_000_000)
         let expectedResponse = AccessStatusResponse(
-            status: .coreLicenseActive,
-            expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
-            entitlements: [],
-            message: "welcome",
-            reasonCode: nil,
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            currentPeriodEnd: expectedDate,
+            source: "polar",
         )
         let client = AuthNetworkClient(
             exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -210,11 +232,12 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
 
         let response = try await client.fetchAccessStatus()
 
-        XCTAssertEqual(response.status, .coreLicenseActive)
-        XCTAssertEqual(response.expiresAt?.timeIntervalSince1970, 1_800_000_000)
-        XCTAssertEqual(response.entitlements, [])
-        XCTAssertEqual(response.message, "welcome")
-        XCTAssertNil(response.reasonCode)
+        XCTAssertTrue(response.hasAccess)
+        XCTAssertEqual(response.status, "active")
+        XCTAssertEqual(response.reason, "active_entitlement")
+        XCTAssertEqual(response.productKey, "core")
+        XCTAssertEqual(response.currentPeriodEnd?.timeIntervalSince1970, 1_800_000_000)
+        XCTAssertEqual(response.source, "polar")
     }
 
     /// ACC-005-fetch_access_status: fetchAccessStatus가 networkFailure를 throw한다.
@@ -274,6 +297,26 @@ final class ACC005AuthNetworkClientTests: XCTestCase {
             XCTFail("notConfigured 에러가 throw되어야 함")
         } catch {
             XCTAssertEqual(error as? AccessError, .notConfigured)
+        }
+    }
+
+    /// ACC-005-fetch_access_status: fetchAccessStatus가 unauthorized를 throw한다.
+    /// mock fetchAccessStatus closure가 unauthorized를 throw할 때 전파되는지 검증한다.
+    /// - 검증 내용: AccessError.unauthorized 전파
+    /// - 사전 조건: mock fetchAccessStatus가 AccessError.unauthorized throw
+    /// - 기대 결과: 동일한 unauthorized 에러가 throw됨
+    func testFetchAccessStatusUnauthorizedThrows() async {
+        let client = AuthNetworkClient(
+            exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+            fetchAccessStatus: { throw AccessError.unauthorized },
+            refreshToken: { throw AccessError.notConfigured },
+        )
+
+        do {
+            _ = try await client.fetchAccessStatus()
+            XCTFail("unauthorized 에러가 throw되어야 함")
+        } catch {
+            XCTAssertEqual(error as? AccessError, .unauthorized)
         }
     }
 

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 /// `/auth/app-handoff/exchange`, fetchAccessStatus, `/auth/token/refresh` 등
 /// auth 네트워크 호출을 담당하는 의존성 클라이언트.
@@ -51,15 +52,13 @@ public extension AuthNetworkClient {
         context: AppHandoffContext,
     ) async throws -> AccountSession {
         // extracted from AppHandoffExchangeClient.swift:21-67
-        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
-        guard let gatewayURLString = ProcessInfo.processInfo.environment["PUBLIC_GATEWAY_URL"],
-              !gatewayURLString.isEmpty
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
         else {
             throw AppHandoffExchangeError.networkFailure
         }
 
         let builder = AppHandoffURLBuilder(
-            webBaseURL: ProcessInfo.processInfo.environment["PUBLIC_WEB_BASE_URL"] ?? "",
+            webBaseURL: EnvironmentLoader.stringValue(forKey: "PUBLIC_WEB_BASE_URL") ?? "",
             gatewayURL: gatewayURLString,
         )
 
@@ -106,8 +105,7 @@ public extension AuthNetworkClient {
         let store = AccountTokenFileStore.withDefaultHome()
         let file = try await store.read()
         guard let file else { throw AccessError.notConfigured }
-        guard let gatewayURLString = ProcessInfo.processInfo.environment["PUBLIC_GATEWAY_URL"],
-              !gatewayURLString.isEmpty
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
         else {
             throw AccessError.networkFailure
         }
@@ -126,6 +124,9 @@ public extension AuthNetworkClient {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AccessError.networkFailure
         }
+        if httpResponse.statusCode == 401 {
+            throw AccessError.unauthorized
+        }
         guard httpResponse.statusCode == 200 else {
             throw AccessError.networkFailure
         }
@@ -139,8 +140,7 @@ public extension AuthNetworkClient {
         let store = AccountTokenFileStore.withDefaultHome()
         let file = try await store.read()
         guard let file else { throw AccessError.notConfigured }
-        guard let gatewayURLString = ProcessInfo.processInfo.environment["PUBLIC_GATEWAY_URL"],
-              !gatewayURLString.isEmpty
+        guard let gatewayURLString = EnvironmentLoader.stringValue(forKey: "PUBLIC_GATEWAY_URL")
         else {
             throw AccessError.networkFailure
         }
@@ -159,6 +159,9 @@ public extension AuthNetworkClient {
         }
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AccessError.networkFailure
+        }
+        if httpResponse.statusCode == 401 {
+            throw AccessError.unauthorized
         }
         guard httpResponse.statusCode == 200 else {
             throw AccessError.networkFailure

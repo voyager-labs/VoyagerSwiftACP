@@ -76,6 +76,26 @@ public struct EnvironmentLoader {
         try loadEnvFile(at: resources.appendingPathComponent(appEnv.envFileName))
     }
 
+    nonisolated public static func stringValue(
+        forKey key: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundle: Bundle = .main,
+    ) -> String? {
+        try? loadEnvFilesWithProjectRootInference(environment: environment, bundle: bundle)
+
+        if let dotenvValue = Dotenv[key] {
+            let value = dotenvValue.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty {
+                return value
+            }
+        }
+
+        guard let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
     nonisolated private static func resolveProjectRoot(
         environment: [String: String],
         bundle: Bundle,

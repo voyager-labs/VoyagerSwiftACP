@@ -8,13 +8,15 @@ import VoyagerFeaturesAccountAccess
 /// 테스트에서 반복 사용하는 상태 변이 패턴을 네임스페이스로 제공합니다.
 enum StateMutation {
     static let activeAccessResponse = AccessStatusResponse(
-        status: .coreLicenseActive,
-        entitlements: [.coreLicense],
+        hasAccess: true,
+        status: "active",
+        reason: "active_entitlement",
+        productKey: "core",
+        source: "polar",
     )
 
     static let activeAccessSnapshot = AccessStatusSnapshot(
         status: .coreLicenseActive,
-        entitlements: [.coreLicense],
         fetchedAt: Date(timeIntervalSince1970: 0),
     )
 
@@ -43,10 +45,10 @@ enum StateMutation {
 
     /// access 상태를 server-canonical active access 결과와 동일하게 설정합니다.
     static func applyActiveAccess(state: inout OnboardingFeature.State) {
-        state.betaAccess.status = .coreLicenseActive
-        state.betaAccess.snapshot = activeAccessSnapshot
-        state.betaAccess.isComplete = true
-        state.betaAccess.isSubmitting = false
+        state.accessUnlock.status = .coreLicenseActive
+        state.accessUnlock.snapshot = activeAccessSnapshot
+        state.accessUnlock.isComplete = true
+        state.accessUnlock.isSubmitting = false
     }
 
     static func applyPersistedCompletedAccessStep(state: inout OnboardingFeature.State) {

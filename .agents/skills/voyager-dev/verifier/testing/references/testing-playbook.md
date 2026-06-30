@@ -21,6 +21,7 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
     - First pass: fastest relevant unit/spec tests.
     - Second pass: package/module integration tests when behavior crosses boundaries.
     - Third pass: full suite only when shared reducers, package APIs, or broad dependencies changed.
+    - Do not create tests just to make verification evidence. If no existing focused test covers the change, report the proof gap instead of inventing a new suite.
 3. **Analyze failures**
     - Summarize the first failure log.
     - Classify as environment, test expectation, or product logic.
@@ -34,6 +35,22 @@ Voyager-dev owns test selection, execution, failure analysis, fix, and rerun loo
     - Record commands, pass/fail result, key failure summary, and any fix/next action.
 
 ## Test selection rules
+
+### Test creation gate
+
+This skill verifies with existing tests. It must not author new test files, helper files, or suites as a side effect of implementation verification.
+
+New or modified tests are allowed only when one of these is true:
+
+- The user explicitly asked for test authoring.
+- A feature/spec AC already owns the behavior and `spec-test-authoring` is loaded for that owning suite.
+- A failing existing test needs a minimal expectation update that preserves its original intent.
+
+If coverage is missing, prefer one of these outcomes instead of creating an ad-hoc test:
+
+1. Run the nearest existing focused test and state the remaining proof gap.
+2. Use compile/lint/build evidence when the change is mechanical or wiring-only.
+3. Route a separate explicit test-authoring task through `spec-test-authoring` with the owning spec/AC path.
 
 ### Split-target spec suites
 
@@ -53,13 +70,13 @@ If the spec ID is the same in both targets, a grep for the spec ID should find t
 ### Task-shape rules
 
 - `scaffold`
-    - Add at least one focused reducer test when new behavior is introduced.
+    - Prefer an existing focused reducer/spec test. Add one only through `spec-test-authoring` when the new behavior has an owning spec/AC or the user requested tests.
 - `decompose`
-    - Preserve existing tests and add focused tests for the new parent/child routing boundary.
+    - Preserve existing tests. Add boundary tests only through `spec-test-authoring` when the owning suite/AC is identified.
 - `observation-refactor`
-    - Add focused tests for start/stop lifecycle, routed semantic action, and cancellation behavior.
+    - Verify existing lifecycle tests first. Add lifecycle coverage only through `spec-test-authoring` when the owning interaction is explicit.
 - `reuse-guard`
-    - Prefer regression tests around the reused abstraction if behavior moved or widened.
+    - Prefer existing regression tests around the reused abstraction. Do not create infrastructure/helper tests solely for reuse proof.
 - For critical routed flows, keep at least one test that exercises the real downstream chain instead of proving routing only.
 - If a test intercepts a routed action and returns `.none`, treat that as routing coverage only and add a separate full-chain test when downstream execution is the real risk.
 - When behavior changes across lifecycle or callback boundaries, cover the meaningful success, failure, cancel, reload, and teardown variants rather than a single happy path.
