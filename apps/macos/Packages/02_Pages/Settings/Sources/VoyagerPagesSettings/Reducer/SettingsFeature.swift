@@ -1,11 +1,15 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesAccountAccess
 
 @Reducer
 public struct SettingsFeature {
     public typealias State = SettingsState
     public typealias Action = SettingsAction
+
+    @Dependency(\.accessStatusSnapshotClient)
+    private var accessStatusSnapshotClient
 
     public init() {}
 
@@ -30,6 +34,10 @@ public struct SettingsFeature {
                     .send(.appearance(.loadSettings)),
                     .send(.ai(.onAppear)),
                     .send(.account(.access(.onAppear))),
+                    .run { [accessStatusSnapshotClient] send in
+                        let snapshot = await accessStatusSnapshotClient.load()
+                        await send(.accessStatusLoaded(snapshot?.status ?? .none))
+                    },
                 )
             }
 
@@ -49,6 +57,11 @@ public struct SettingsFeature {
 
             if case .resetSectionForFreshOpen = action {
                 state.selectedSection = .general
+                return .none
+            }
+
+            if case let .accessStatusLoaded(status) = action {
+                state.accessStatus = status
                 return .none
             }
 

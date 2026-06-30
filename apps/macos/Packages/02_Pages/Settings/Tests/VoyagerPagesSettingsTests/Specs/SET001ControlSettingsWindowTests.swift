@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerFeaturesAccountAccess
 @testable import VoyagerPagesSettings
 import XCTest
 
@@ -106,4 +107,112 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
     // - 검증 내용: 실제 앱 런타임에서 close control/⌘W가 현재 Settings window를 닫는지 확인한다.
     // - 사전 조건: 실제 앱 런타임에서 Settings window가 key window로 열린 상태여야 한다.
     // - 기대 결과: 닫기 control 또는 ⌘W 입력 후 현재 Settings window가 닫히고 다음 fresh reopen은 General로 시작한다.
+
+    // MARK: - Settings Full-Access Content Gate
+
+    // 정책 참조: docs/voy-299/PRODUCT/05_FEATURE_SPECS/set/contracts/settings_window_contract.toml
+    //   [policy] usable_content_requires_access_status = "full"
+    // Native Cmd+, 경로는 AppKit 수준이라 reducer-gate 불가능 → SettingsView content 수준에서
+    // access_status != full일 때 locked overlay를 render해야 한다 (T6 구현 항목).
+
+    /// T2 RED: access_status != full일 때 SettingsView content가 locked 상태로 표시되어야 한다.
+    /// - 사전 조건: snapshot이 trialExpired → access_status != full.
+    /// - 기대: SettingsFeature가 snapshot을 읽어 state.accessStatus를 채우고,
+    ///   SettingsView body가 TabView 대신 locked overlay를 render한다.
+    /// - 현재 RED 이유:
+    ///   1) SettingsFeature.State에 `accessStatus` field가 없다.
+    ///   2) SettingsFeature가 accessStatusSnapshotClient를 읽지 않는다.
+    ///   3) SettingsView body에 조건부 gate render가 없다.
+    /// - T6에서 위 세 가지를 구현하면 아래 TODO 액션이 실제 assertion으로 전환된다.
+    func testSettingsContentLockedWhenAccessStatusNotFull() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
+            // T6에서 SettingsFeature가 access_status를 읽을 때 사용할 의존성 주입.
+            // 현재 SettingsFeature가 이 client를 읽지 않으므로 state 반영이 일어나지 않는다.
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: {
+                    AccessStatusSnapshot(
+                        status: .trialExpired,
+                        currentPeriodEnd: nil,
+                        fetchedAt: Date(timeIntervalSince1970: 0),
+                    )
+                },
+                save: { _ in },
+                remove: {},
+            )
+        }
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+        await store.finish()
+
+        XCTAssertEqual(store.state.accessStatus, .trialExpired)
+        XCTAssertTrue(store.state.isContentLocked)
+    }
+
+    // MARK: - T11 Already-Open / Access Lapse Integration
+
+    // 정책 참조: docs/voy-299/PRODUCT/05_FEATURE_SPECS/set/contracts/settings_window_contract.toml
+    //   [policy] usable_content_requires_access_status = "full"
+    // T11 시나리오: Settings 창이 이미 열려 있는 동안 access_status가 full → non-full로
+    // 바뀌는 경우(세션 만료, entitlement revoke 등) Settings content가 locked overlay로 전환된다.
+
+    /// T11 integration: Settings 창이 열려 있는 동안 access_status가 full → non-full로
+    /// 바뀌면 Settings content가 locked overlay로 전환된다.
+    /// - 시나리오: onAppear 시점 full access → 런타임 중 access lapse (session 만료 / entitlement revoke).
+    /// - 검증 내용: `.accessStatusLoaded(.trialExpired)` 도착 시 state.accessStatus가
+    ///   .trialExpired로 갱신되고 isContentLocked가 true로 전환된다.
+    /// - 계약: SettingsFeature는 onAppear 시점에만 snapshot을 읽는다. 런타임 lapse 전파는
+    ///   상위(AppRoot 등)가 `.accessStatusLoaded` 액션을 push하는 경로로만 이루어진다.
+    ///   본 테스트는 그 전파 경로의 끝단(state → isContentLocked → SettingsView gate)이
+    ///   올바르게 반응하는지 검증한다. 업스트림 구독 wiring은 본 태스크 범위 밖이며
+    ///   SessionLapseGuardWindowClient는 rewired하지 않는다 (MUST NOT).
+    /// - "이미 열려 있음"을 initialState.accessStatus = .coreLicenseActive로 모델링:
+    ///   onAppear 시점 snapshot load가 이미 완료된 상태를 시뮬레이션한다.
+    func testSettingsContentLocksWhenAccessStatusLapsesWhileOpen() async {
+        var initialState = SettingsFeature.State()
+        initialState.accessStatus = .coreLicenseActive
+        let store = TestStore(initialState: initialState) {
+            SettingsFeature()
+        }
+
+        XCTAssertFalse(store.state.isContentLocked, "초기 full access → content unlocked")
+
+        // 런타임 중 access lapse: 상위가 .accessStatusLoaded(.trialExpired)를 push.
+        // Settings는 재독기가 없으므로, 이 액션 도착이 유일한 lapse 전파 경로다.
+        await store.send(.accessStatusLoaded(.trialExpired)) { state in
+            state.accessStatus = .trialExpired
+        }
+
+        XCTAssertEqual(store.state.accessStatus, .trialExpired)
+        XCTAssertTrue(store.state.isContentLocked, "access lapse → content locked overlay 전환")
+    }
+
+    /// T11 integration (역방향): Settings 창이 열려 있는 동안 access_status가 non-full → full로
+    /// 회복하면 locked overlay가 해제된다.
+    /// - 검증 내용: `.accessStatusLoaded(.coreLicenseActive)` 도착 시 isContentLocked가 false로 전환.
+    /// - 계약: recovery 소유권은 Settings가 아닌 ACC overlay/session lapse guard에 있다
+    ///   (T1: entitlement_inactive_recovery_is_owned_outside_settings).
+    ///   Settings는 access_status가 full로 돌아오면 overlay를 내릴 뿐, recovery 자체를 수행하지 않는다.
+    func testSettingsContentUnlocksWhenAccessStatusReturnsToFullWhileOpen() async {
+        var initialState = SettingsFeature.State()
+        initialState.accessStatus = .trialExpired
+        let store = TestStore(initialState: initialState) {
+            SettingsFeature()
+        }
+
+        XCTAssertTrue(store.state.isContentLocked, "초기 trialExpired → locked")
+
+        // 상위로부터 full access 복귀 통지. Recovery는 외부(ACC overlay)가 소유.
+        await store.send(.accessStatusLoaded(.coreLicenseActive)) { state in
+            state.accessStatus = .coreLicenseActive
+        }
+
+        XCTAssertFalse(store.state.isContentLocked, "full 복귀 → overlay 해제")
+    }
 }
