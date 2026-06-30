@@ -16,6 +16,11 @@ struct GeneralSettingsFeature {
     @Dependency(\.defaultFileViewerClient)
     var defaultFileViewerClient
 
+    /// 진단 효과 중복 실행 방지 — AiSettingsFeature CancelID 패턴 차용.
+    private enum CancelID: Hashable {
+        case defaultFileViewerDiagnosis
+    }
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -117,6 +122,7 @@ struct GeneralSettingsFeature {
                     let status = await defaultFileViewerClient.diagnose()
                     await send(.defaultFileViewerDiagnosisCompleted(status))
                 }
+                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
 
             case let .defaultFileViewerDiagnosisCompleted(status):
                 state.isDiagnosingDefaultFileViewer = false
@@ -145,6 +151,7 @@ struct GeneralSettingsFeature {
                     let status = await defaultFileViewerClient.diagnose()
                     await send(.defaultFileViewerDiagnosisCompleted(status))
                 }
+                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
 
             case let .setAsDefaultFileViewerFailed(error):
                 state.isSettingDefaultFileViewer = false
@@ -173,6 +180,7 @@ struct GeneralSettingsFeature {
                     let status = await defaultFileViewerClient.diagnose()
                     await send(.defaultFileViewerDiagnosisCompleted(status))
                 }
+                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
 
             case let .restoreDefaultFileViewerFailed(error):
                 state.isRestoringDefaultFileViewer = false

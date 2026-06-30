@@ -128,8 +128,9 @@ private enum DefaultFileViewerLive {
     }
 
     static func restoreFinder() async throws {
-        // 1단계: NSFileViewer delete (이미 없어도 에러 아님)
-        deleteDefaults(key: "NSFileViewer")
+        // 1단계: NSFileViewer delete. 실패(권한/디스크 등) 시 즉시 throw — LSHandler는 건너뛴다.
+        // 키가 원래 없는 경우는 deleteDefaults 내부에서 정상으로 간주.
+        try deleteDefaults(key: "NSFileViewer")
 
         // 2단계: LSHandler → Finder
         let status = LSSetDefaultRoleHandlerForContentType(
@@ -165,13 +166,26 @@ private enum DefaultFileViewerLive {
         }
     }
 
-    /// `/usr/bin/defaults delete -g <key>` — 존재하지 않아도 에러 아님
-    private static func deleteDefaults(key: String) {
+    /// `/usr/bin/defaults delete -g <key>`. 키가 원래 없는 경우는 정상 종료.
+    /// 그 외 실패(권한/디스크/CFPreferences)는 throw — writeDefaults와 대칭.
+    private static func deleteDefaults(key: String) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
         process.arguments = ["delete", "-g", key]
-        do { try process.run() } catch { return }
+        let pipe = Pipe()
+        process.standardError = pipe
+        try process.run()
         process.waitUntilExit()
-        // ponytail: terminationStatus != 0 (pair does not exist) → 정상, 무시
+        guard process.terminationStatus != 0 else { return }
+        let errData = try pipe.fileHandleForReading.readToEnd()
+        let errMsg = String(data: errData ?? Data(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
+        // 정상 케이스: 키/도메인이 원래 없음 (이미 Finder 상태에서 복구 시도 등).
+        if errMsg.contains("does not exist") || errMsg.contains("Domain") { return }
+        // Sandbox/permission 감지
+        if errMsg.contains("Sandbox") || errMsg.contains("Operation not permitted") {
+            throw DefaultFileViewerError.permissionDenied
+        }
+        throw DefaultFileViewerError.systemError("defaults delete failed: \(errMsg)")
     }
 }
