@@ -5,6 +5,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerShared
 
 /// 체크아웃, 요금제, 고객지원 URL을 열거나 반환하는 TCA 의존성 클라이언트.
 public struct CheckoutURLClient: Sendable {
@@ -40,10 +41,10 @@ extension CheckoutURLClient: DependencyKey {
     private static let neutralBaseURL = URL(string: "https://example.invalid")!
 
     private static func stringValue(for key: String) -> String? {
-        // TODO(VOY-432): ProcessInfo 대신 Dotenv 사용 검토 — https://linear.app/voyager-fm/issue/VOY-432
-        let environment = ProcessInfo.processInfo.environment[key]
-        if let environment, !environment.isEmpty {
-            return environment
+        if let dotenvValue = EnvironmentLoader.stringValue(forKey: key),
+           !dotenvValue.isEmpty
+        {
+            return dotenvValue
         }
 
         let infoValue = Bundle.main.infoDictionary?[key] as? String
