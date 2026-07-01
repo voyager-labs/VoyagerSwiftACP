@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import UniformTypeIdentifiers
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
 @testable import VoyagerPagesSettings
@@ -13,12 +14,12 @@ import XCTest
 /// 비동기 테스트용 호출 카운터
 final class SET010Counter: @unchecked Sendable {
     private let lock = NSLock()
-    private var n = 0
+    private var count = 0
     func next() -> Int {
         lock.lock()
         defer { lock.unlock() }
-        n += 1
-        return n
+        count += 1
+        return count
     }
 }
 
@@ -153,8 +154,9 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
 
     /// permissionDenied 실패
     func testSetAsDefaultFailurePermissionDenied() async {
+        let counter = SET010Counter()
         let store = makeStore(
-            diagnose: { .finderIsDefault },
+            diagnose: { counter.next() == 1 ? .finderIsDefault : .unknown },
             setVoyagerAsDefault: { throw FileOpError.system(message: "Permission denied") },
         )
         store.exhaustivity = .off
@@ -163,14 +165,16 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
 
         await store.send(.setAsDefaultFileViewerTapped)
         await store.receive(.setAsDefaultFileViewerFailed(.system(message: "Permission denied")))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
 
     /// systemError 실패
     func testSetAsDefaultFailureSystemError() async {
+        let counter = SET010Counter()
         let store = makeStore(
-            diagnose: { .finderIsDefault },
+            diagnose: { counter.next() == 1 ? .finderIsDefault : .unknown },
             setVoyagerAsDefault: { throw FileOpError.system(message: "disk I/O") },
         )
         store.exhaustivity = .off
@@ -179,14 +183,16 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
 
         await store.send(.setAsDefaultFileViewerTapped)
         await store.receive(.setAsDefaultFileViewerFailed(.system(message: "disk I/O")))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
 
     /// system(LSHandler failed) 실패
     func testSetAsDefaultFailureSystemLSError() async {
+        let counter = SET010Counter()
         let store = makeStore(
-            diagnose: { .finderIsDefault },
+            diagnose: { counter.next() == 1 ? .finderIsDefault : .unknown },
             setVoyagerAsDefault: { throw FileOpError.system(message: "LSHandler failed") },
         )
         store.exhaustivity = .off
@@ -195,6 +201,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
 
         await store.send(.setAsDefaultFileViewerTapped)
         await store.receive(.setAsDefaultFileViewerFailed(.system(message: "LSHandler failed")))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
@@ -223,8 +230,9 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
 
     /// restore 실패
     func testRestoreFailure() async {
+        let counter = SET010Counter()
         let store = makeStore(
-            diagnose: { .voyagerIsDefault },
+            diagnose: { counter.next() == 1 ? .voyagerIsDefault : .unknown },
             restoreFinder: { throw FileOpError.system(message: "LS API fail") },
         )
         store.exhaustivity = .off
@@ -233,8 +241,58 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
 
         await store.send(.restoreDefaultFileViewerTapped)
         await store.receive(.restoreDefaultFileViewerFailed(.system(message: "LS API fail")))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
         XCTAssertFalse(store.state.isRestoringDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
+    }
+
+    // MARK: - P1 rollback: 부분 적용 방지
+
+    /// LSHandler 실패 시 NSFileViewer write를 이전 값으로 롤백한다.
+    func testSetAsDefaultRollsBackNSFileViewerWhenLSHandlerFails() async throws {
+        let values = SET010DefaultsRecorder(initialValue: "com.apple.finder")
+        let entryOpenClient = makeEntryOpenClient(
+            setDefaultApp: { _, _ in throw FileOpError.system(message: "LSHandler failed") },
+        )
+
+        do {
+            try await DefaultFileViewerLive.setVoyagerAsDefault(
+                appBundleID: "fm.voyager.Voyager",
+                entryOpenClient: entryOpenClient,
+                defaultsStore: values.store,
+            )
+            XCTFail("Expected LSHandler failure")
+        } catch let error as FileOpError {
+            XCTAssertEqual(error, .system(message: "LSHandler failed"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(values.currentValue, "com.apple.finder")
+        XCTAssertEqual(values.events, [.write("fm.voyager.Voyager"), .write("com.apple.finder")])
+    }
+
+    /// Finder 복구 중 LSHandler 실패 시 NSFileViewer delete를 이전 Voyager 값으로 롤백한다.
+    func testRestoreFinderRollsBackNSFileViewerWhenLSHandlerFails() async throws {
+        let values = SET010DefaultsRecorder(initialValue: "fm.voyager.Voyager")
+        let entryOpenClient = makeEntryOpenClient(
+            setDefaultApp: { _, _ in throw FileOpError.system(message: "LSHandler failed") },
+        )
+
+        do {
+            try await DefaultFileViewerLive.restoreFinder(
+                entryOpenClient: entryOpenClient,
+                defaultsStore: values.store,
+            )
+            XCTFail("Expected LSHandler failure")
+        } catch let error as FileOpError {
+            XCTAssertEqual(error, .system(message: "LSHandler failed"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(values.currentValue, "fm.voyager.Voyager")
+        XCTAssertEqual(values.events, [.delete, .write("fm.voyager.Voyager")])
     }
 
     // MARK: - 추가 AC 3: 진행 중 버튼 비활성화 (G4) (Tests 11-12)
@@ -285,4 +343,69 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .finderIsDefault)
     }
+}
+
+private enum SET010DefaultsEvent: Equatable {
+    case write(String)
+    case delete
+}
+
+private final class SET010DefaultsRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: String?
+    private var recordedEvents: [SET010DefaultsEvent] = []
+
+    init(initialValue: String?) {
+        value = initialValue
+    }
+
+    var currentValue: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    var events: [SET010DefaultsEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedEvents
+    }
+
+    var store: DefaultFileViewerDefaultsStore {
+        DefaultFileViewerDefaultsStore(
+            read: { [weak self] in self?.currentValue },
+            write: { [weak self] value in self?.write(value) },
+            delete: { [weak self] in self?.delete() },
+        )
+    }
+
+    private func write(_ value: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.value = value
+        recordedEvents.append(.write(value))
+    }
+
+    private func delete() {
+        lock.lock()
+        defer { lock.unlock() }
+        value = nil
+        recordedEvents.append(.delete)
+    }
+}
+
+private func makeEntryOpenClient(
+    setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
+) -> EntryOpenClient {
+    EntryOpenClient(
+        open: { _, _ in },
+        setDefaultApp: setDefaultApp,
+        openFinderInfo: { _ in },
+        shareItems: { _, _ in },
+        performService: { _, _ in },
+        revealInFinder: { _ in },
+        applicationsForFile: { _ in [] },
+        defaultApplication: { _ in nil },
+        trashDirectoryPath: { nil },
+    )
 }

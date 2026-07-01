@@ -35,6 +35,7 @@ extension DefaultFileViewerClient: DependencyKey {
         // ponytail: Settings Reducer는 EntryOpenClient를 직접 모르게.
         // folder default-app LS 작업은 EntryOpenClient.liveValue에 위임.
         let entryOpenClient = EntryOpenClient.liveValue
+        let defaultsStore = DefaultFileViewerDefaultsStore.live
         return DefaultFileViewerClient(
             appBundleID: appBundleID,
             diagnose: { await DefaultFileViewerLive.diagnose(
@@ -45,10 +46,12 @@ extension DefaultFileViewerClient: DependencyKey {
             setVoyagerAsDefault: { try await DefaultFileViewerLive.setVoyagerAsDefault(
                 appBundleID: appBundleID,
                 entryOpenClient: entryOpenClient,
+                defaultsStore: defaultsStore,
             )
             },
             restoreFinder: { try await DefaultFileViewerLive.restoreFinder(
                 entryOpenClient: entryOpenClient,
+                defaultsStore: defaultsStore,
             )
             },
         )
@@ -84,7 +87,29 @@ public extension DependencyValues {
     }
 }
 
-private enum DefaultFileViewerLive {
+struct DefaultFileViewerDefaultsStore {
+    var read: @Sendable () -> String?
+    var write: @Sendable (String) throws -> Void
+    var delete: @Sendable () throws -> Void
+
+    static let live = DefaultFileViewerDefaultsStore(
+        read: { UserDefaults.standard.string(forKey: defaultFileViewerDefaultsKey) },
+        write: { try writeDefaults(key: defaultFileViewerDefaultsKey, value: $0) },
+        delete: { try deleteDefaults(key: defaultFileViewerDefaultsKey) },
+    )
+
+    func restore(_ value: String?) throws {
+        if let value {
+            try write(value)
+        } else {
+            try delete()
+        }
+    }
+}
+
+private let defaultFileViewerDefaultsKey = "NSFileViewer"
+
+enum DefaultFileViewerLive {
     static func diagnose(
         appBundleID: String,
         entryOpenClient: EntryOpenClient,
@@ -122,66 +147,98 @@ private enum DefaultFileViewerLive {
     static func setVoyagerAsDefault(
         appBundleID: String,
         entryOpenClient: EntryOpenClient,
+        defaultsStore: DefaultFileViewerDefaultsStore = .live,
     ) async throws {
         let bundleID = appBundleID
+        let previousNSFileViewer = defaultsStore.read()
 
         // 1단계: NSFileViewer write. 실패 시 throw, LSHandler 건너뜀.
-        try writeDefaults(key: "NSFileViewer", value: bundleID)
+        try defaultsStore.write(bundleID)
 
         // 2단계: LSHandler set — EntryOpenClient에 위임. NSFileViewer는 이미 성공한 상태.
-        try await entryOpenClient.setDefaultApp(.folder, bundleID)
-    }
-
-    static func restoreFinder(entryOpenClient: EntryOpenClient) async throws {
-        // 1단계: NSFileViewer delete. 실패(권한/디스크 등) 시 즉시 throw — LSHandler는 건너뛴다.
-        // 키가 원래 없는 경우는 deleteDefaults 내부에서 정상으로 간주.
-        try deleteDefaults(key: "NSFileViewer")
-
-        // 2단계: LSHandler → Finder — EntryOpenClient에 위임.
-        try await entryOpenClient.setDefaultApp(.folder, "com.apple.finder")
-    }
-
-    /// `/usr/bin/defaults write -g <key> <value>` 동기 실행
-    private static func writeDefaults(key: String, value: String) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["write", "-g", key, value]
-        let pipe = Pipe()
-        process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let errData = try pipe.fileHandleForReading.readToEnd()
-            let errMsg = String(data: errData ?? Data(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
-            // Sandbox/permission 감지
-            if errMsg.contains("Sandbox") || errMsg.contains("Operation not permitted") {
-                throw FileOpError.system(message: "Permission denied: \(errMsg)")
-            }
-            throw FileOpError.system(message: "defaults write failed: \(errMsg)")
+        do {
+            try await entryOpenClient.setDefaultApp(.folder, bundleID)
+        } catch {
+            try rollbackNSFileViewer(defaultsStore, to: previousNSFileViewer, after: error)
+            throw error
         }
     }
 
-    /// `/usr/bin/defaults delete -g <key>`. 키가 원래 없는 경우는 정상 종료.
-    /// 그 외 실패(권한/디스크/CFPreferences)는 throw — writeDefaults와 대칭.
-    private static func deleteDefaults(key: String) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["delete", "-g", key]
-        let pipe = Pipe()
-        process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus != 0 else { return }
+    static func restoreFinder(
+        entryOpenClient: EntryOpenClient,
+        defaultsStore: DefaultFileViewerDefaultsStore = .live,
+    ) async throws {
+        let previousNSFileViewer = defaultsStore.read()
+
+        // 1단계: NSFileViewer delete. 실패(권한/디스크 등) 시 즉시 throw — LSHandler는 건너뛴다.
+        // 키가 원래 없는 경우는 deleteDefaults 내부에서 정상으로 간주.
+        try defaultsStore.delete()
+
+        // 2단계: LSHandler → Finder — EntryOpenClient에 위임.
+        do {
+            try await entryOpenClient.setDefaultApp(.folder, "com.apple.finder")
+        } catch {
+            try rollbackNSFileViewer(defaultsStore, to: previousNSFileViewer, after: error)
+            throw error
+        }
+    }
+
+    private static func rollbackNSFileViewer(
+        _ defaultsStore: DefaultFileViewerDefaultsStore,
+        to value: String?,
+        after originalError: Error,
+    ) throws {
+        do {
+            try defaultsStore.restore(value)
+        } catch {
+            throw FileOpError.system(
+                message: "Default file viewer update failed; rollback also failed: \(error)",
+                suggestion: "Original error: \(originalError)",
+            )
+        }
+    }
+}
+
+/// `/usr/bin/defaults write -g <key> <value>` 동기 실행
+private func writeDefaults(key: String, value: String) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+    process.arguments = ["write", "-g", key, value]
+    let pipe = Pipe()
+    process.standardError = pipe
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
         let errData = try pipe.fileHandleForReading.readToEnd()
         let errMsg = String(data: errData ?? Data(), encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
-        // 정상 케이스: 키/도메인이 원래 없음 (이미 Finder 상태에서 복구 시도 등).
-        if errMsg.contains("does not exist") || errMsg.contains("Domain") { return }
         // Sandbox/permission 감지
         if errMsg.contains("Sandbox") || errMsg.contains("Operation not permitted") {
             throw FileOpError.system(message: "Permission denied: \(errMsg)")
         }
-        throw FileOpError.system(message: "defaults delete failed: \(errMsg)")
+        throw FileOpError.system(message: "defaults write failed: \(errMsg)")
     }
+}
+
+/// `/usr/bin/defaults delete -g <key>`. 키가 원래 없는 경우는 정상 종료.
+/// 그 외 실패(권한/디스크/CFPreferences)는 throw — writeDefaults와 대칭.
+private func deleteDefaults(key: String) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+    process.arguments = ["delete", "-g", key]
+    let pipe = Pipe()
+    process.standardError = pipe
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus != 0 else { return }
+    let errData = try pipe.fileHandleForReading.readToEnd()
+    let errMsg = String(data: errData ?? Data(), encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
+    // 정상 케이스: 키/도메인이 원래 없음 (이미 Finder 상태에서 복구 시도 등).
+    if errMsg.contains("does not exist") || errMsg.contains("Domain") { return }
+    // Sandbox/permission 감지
+    if errMsg.contains("Sandbox") || errMsg.contains("Operation not permitted") {
+        throw FileOpError.system(message: "Permission denied: \(errMsg)")
+    }
+    throw FileOpError.system(message: "defaults delete failed: \(errMsg)")
 }

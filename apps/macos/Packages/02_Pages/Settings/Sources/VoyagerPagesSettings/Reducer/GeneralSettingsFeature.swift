@@ -157,7 +157,12 @@ struct GeneralSettingsFeature {
             case let .setAsDefaultFileViewerFailed(error):
                 state.isSettingDefaultFileViewer = false
                 state.defaultFileViewerErrorMessage = error.message
-                return .none
+                state.isDiagnosingDefaultFileViewer = true
+                return .run { [defaultFileViewerClient] send in
+                    let status = await defaultFileViewerClient.diagnose()
+                    await send(.defaultFileViewerDiagnosisCompleted(status))
+                }
+                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
 
             case .restoreDefaultFileViewerTapped:
                 guard !state.isRestoringDefaultFileViewer else { return .none }
@@ -186,7 +191,12 @@ struct GeneralSettingsFeature {
             case let .restoreDefaultFileViewerFailed(error):
                 state.isRestoringDefaultFileViewer = false
                 state.defaultFileViewerErrorMessage = error.message
-                return .none
+                state.isDiagnosingDefaultFileViewer = true
+                return .run { [defaultFileViewerClient] send in
+                    let status = await defaultFileViewerClient.diagnose()
+                    await send(.defaultFileViewerDiagnosisCompleted(status))
+                }
+                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
             }
         }
     }
