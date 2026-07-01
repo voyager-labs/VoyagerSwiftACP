@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -78,13 +76,49 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         XCTAssertTrue(fetchCalled)
     }
 
+    /// ACC-001-restore_account_session: 새 session 복원 시 이전 session의 access fetch retry budget을 초기화한다.
+    /// 이전 session에서 누적된 fetchRetryCount가 새 session의 첫 access status 조회에 누수되지 않는지 검증한다.
+    /// - 검증 내용: fetchRetryCount=3 상태에서 session 복원 → fetchRetryCount=0
+    /// - 사전 조건: 저장된 유효 session이 있고 이전 retry budget이 소진된 상태
+    /// - 기대 결과: 새 session boundary에서 retry budget이 0으로 재설정된다.
+    func testValidSessionRestoreResetsStaleFetchRetryCount() async {
+        var initialState = AccountAccessFeature.State()
+        initialState.fetchRetryCount = 3
+
+        let store = makeTestStore(
+            accountSessionClient: AccountSessionClient(
+                read: {
+                    AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
+                },
+                persist: { _ in },
+                delete: {},
+            ),
+            authNetworkClient: AuthNetworkClient(
+                exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
+                fetchAccessStatus: {
+                    throw AccessError.notConfigured
+                },
+                refreshToken: { throw AccessError.notConfigured },
+            ),
+            initialState: initialState,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+
+        await store.receive(\._onAppearSessionRestored) { state in
+            state.fetchRetryCount = 0
+        }
+        await store.receive(\.accessStatusResponse)
+    }
+
     /// ACC-001-restore_account_session: session 만료 후 자동 갱신 성공 시 logged_in을 유지한다.
     /// T6 token refresh logic 구현 후 활성화되는 테스트로 현재는 skip 처리한다.
     /// - 검증 내용: T6 refresh logic이 session 만료 후 자동 갱신 성공 시 logged_in 유지 확인
     /// - 사전 조건: T6 refresh logic 구현 완료
     /// - 기대 결과: 자동 갱신 성공 시 logged_in 유지
     func testExpiredSessionRefreshSuccessStaysLoggedIn() throws {
-        try XCTSkip("Requires T6 token refresh logic")
+        throw XCTSkip("Requires T6 token refresh logic")
     }
 
     /// ACC-001-restore_account_session: 만료된 session 복원 실패 시 session_expired로 전환된다.
@@ -193,12 +227,12 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let fixture = try TemporaryHomeFixture()
         let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
 
-        try try XCTUnwrap("{ invalid json }".data(using: .utf8)?.write(to: fixture.accountTokensFileURL))
+        try Data("{ invalid json }".utf8).write(to: fixture.accountTokensFileURL)
 
         let result = try await fileStore.read()
         XCTAssertNil(result, "손상된 session 파일은 nil 반환")
 
-        var state = AccountAccessFeature.State()
+        let state = AccountAccessFeature.State()
         XCTAssertEqual(state.accountAccessAuthAxis, .signedOut)
         XCTAssertFalse(state.hasAccountSession)
     }
@@ -209,7 +243,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
     /// - 사전 조건: T6 refresh logic 구현 완료
     /// - 기대 결과: 네트워크 오류 시에도 기존 session 유지
     func testNetworkErrorDuringRefreshMaintainsSession() throws {
-        try XCTSkip("Requires T6 token refresh logic")
+        throw XCTSkip("Requires T6 token refresh logic")
     }
 
     /// VOY-397 regression: onAppear에서 session 복원이 nil일 때 이전에 persist된 active entitlement fact가 모두 제거된다.
@@ -325,7 +359,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let result = try await fileStore.read()
         XCTAssertNil(result, "파일이 없으면 read()=nil")
 
-        var state = AccountAccessFeature.State()
+        let state = AccountAccessFeature.State()
         XCTAssertEqual(state.accountAccessAuthAxis, .signedOut)
         XCTAssertFalse(state.hasAccountSession)
     }
@@ -403,5 +437,3 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         XCTAssertEqual(dirPerms?.int16Value, 0o700, "디렉토리 권한은 0o700")
     }
 }
-
-// swiftlint:enable force_unwrapping

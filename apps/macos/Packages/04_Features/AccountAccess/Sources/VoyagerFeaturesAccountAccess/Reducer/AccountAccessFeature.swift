@@ -135,6 +135,7 @@ public struct AccountAccessFeature {
             // VOY-397: 세션 없이 onAppear 복원 시 이전 persist된 active entitlement fact를 제거한다.
             // 방치 시 Access Unlock 화면이 Active chip + Sign In 버튼 + Next CTA를 동시에 그리는 regression 발생.
             clearStaleActiveAccessFacts(&state)
+            resetSessionRetryBudget(&state)
             // VOY-397: 세션 축 소실 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
             // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
             state.fetchGeneration += 1
@@ -148,6 +149,7 @@ public struct AccountAccessFeature {
 
         state.sessionExpiresAt = session.expiresAt
         state.isSessionExpired = false
+        resetSessionRetryBudget(&state)
         state.fetchGeneration += 1
 
         // TTL 타이머 시작: 세션이 복원되면 access token 만료를 추적한다.
@@ -287,6 +289,7 @@ public struct AccountAccessFeature {
             state.hasAccountSession = true
             state.didSignInFail = false
             state.isSessionExpired = false
+            resetSessionRetryBudget(&state)
             // handoff 성공 시 sessionExpiresAt/ttlTimerActive를 설정하고 TTL 타이머를 시작한다.
             // handleOnAppearSessionRestored와 동일한 ownership path를 따른다.
             state.sessionExpiresAt = session.expiresAt
@@ -317,6 +320,7 @@ public struct AccountAccessFeature {
         if hasSession {
             state.hasAccountSession = true
             state.didSignInFail = false
+            resetSessionRetryBudget(&state)
             state.fetchGeneration += 1
             return fetchAccessStatusEffect(generation: state.fetchGeneration)
         } else {
@@ -602,6 +606,7 @@ private extension AccountAccessFeature {
         // VOY-397: 세션 만료 시에도 이전 active entitlement fact를 제거한다.
         // 방치 시 Active chip + Sign In 버튼 + Next CTA 동시 표시 regression (nil-session 복원과 동일 원인).
         clearStaleActiveAccessFacts(&state)
+        resetSessionRetryBudget(&state)
         // VOY-397: 세션 만료 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
         // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
         state.fetchGeneration += 1
@@ -623,6 +628,10 @@ private extension AccountAccessFeature {
         state.trialExpiresAt = nil
         state.isComplete = false
         state.errorMessage = nil
+    }
+
+    private func resetSessionRetryBudget(_ state: inout State) {
+        state.fetchRetryCount = 0
     }
 
     // MARK: - 외부 URL 리다이렉트
