@@ -293,7 +293,8 @@ struct AppLifecycleFeature {
 
         Reduce { state, action in
             switch action {
-            case .sessionLapseGuard(.delegate(.unlocked)):
+            case let .sessionLapseGuard(.delegate(.unlocked(snapshot))):
+                state.lastAccessStatus = snapshot.status
                 state.sessionLapseGuard = nil
                 return .none
             default:

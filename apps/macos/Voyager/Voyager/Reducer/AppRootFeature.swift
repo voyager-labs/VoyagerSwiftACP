@@ -77,6 +77,12 @@ struct AppRootFeature {
         case .lifecycle(.termination(.willTerminate)):
             .cancel(id: CancelID.appDidBecomeActiveObserver)
 
+        case .lifecycle(.sessionExpiredDetected):
+            .send(.settings(.accessStatusLoaded(.none)))
+
+        case let .lifecycle(.sessionLapseGuard(.delegate(.unlocked(snapshot)))):
+            .send(.settings(.accessStatusLoaded(snapshot.status)))
+
         case .appDidBecomeActive:
             .none
 
