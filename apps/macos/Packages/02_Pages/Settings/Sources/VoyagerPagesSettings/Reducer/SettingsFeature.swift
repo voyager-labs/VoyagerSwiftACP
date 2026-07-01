@@ -32,8 +32,6 @@ public struct SettingsFeature {
                 return .merge(
                     .send(.general(.loadSettings)),
                     .send(.appearance(.loadSettings)),
-                    .send(.ai(.onAppear)),
-                    .send(.account(.access(.onAppear))),
                     .run { [accessStatusSnapshotClient] send in
                         let snapshot = await accessStatusSnapshotClient.load()
                         await send(.accessStatusLoaded(snapshot?.status ?? .none))
@@ -62,6 +60,16 @@ public struct SettingsFeature {
 
             if case let .accessStatusLoaded(status) = action {
                 state.accessStatus = status
+                return .none
+            }
+
+            if case let .account(.access(.delegate(.unlocked(snapshot)))) = action {
+                state.accessStatus = snapshot.status
+                return .none
+            }
+
+            if case .account(.access(.delegate(.signedOut))) = action {
+                state.accessStatus = .none
                 return .none
             }
 

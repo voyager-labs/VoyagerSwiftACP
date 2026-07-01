@@ -40,6 +40,11 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
             $0.launchAtLoginClient = .testValue
             $0.directorySelectionClient = .testValue
             $0.appearanceSettingsClient = .testValue
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: {},
+            )
         }
         // store.exhaustivity = .off: loadSettings가 다수 필드를 동시 갱신하나 검증 대상은 일부 필드만 해당
         store.exhaustivity = .off
@@ -51,6 +56,31 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
         await store.receive(\.appearance.loadSettings) { state in
             state.appearanceSettings.theme = .system
         }
+        await store.receive(\.accessStatusLoaded)
+        await store.finish()
+    }
+
+    func testOpenSettingsWindowDoesNotEagerlyBootstrapHiddenTabs() async {
+        let store = TestStore(initialState: SettingsFeature.State()) {
+            SettingsFeature()
+        } withDependencies: {
+            $0.userDefaultsClient = .testValue
+            $0.launchAtLoginClient = .testValue
+            $0.directorySelectionClient = .testValue
+            $0.appearanceSettingsClient = .testValue
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: {},
+            )
+        }
+        store.exhaustivity = .off
+
+        await store.send(.onAppear)
+        await store.receive(\.general.loadSettings)
+        await store.receive(\.appearance.loadSettings)
+        await store.receive(\.accessStatusLoaded)
+        await store.finish()
     }
 
     /// SET-001-switch_setting_tabs: General/Appearance section 전환은 현재 선택 section만 바꾸고 child state를 보존한다.
@@ -149,6 +179,9 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.send(.onAppear)
+        await store.receive(\.accessStatusLoaded) { state in
+            state.accessStatus = .trialExpired
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.accessStatus, .trialExpired)
@@ -214,5 +247,25 @@ final class SET001ControlSettingsWindowTests: XCTestCase {
         }
 
         XCTAssertFalse(store.state.isContentLocked, "full 복귀 → overlay 해제")
+    }
+
+    func testSettingsContentUpdatesFromAccountAccessDelegatesWhileOpen() async {
+        var initialState = SettingsFeature.State()
+        initialState.accessStatus = .coreLicenseActive
+        let store = TestStore(initialState: initialState) {
+            SettingsFeature()
+        }
+
+        await store.send(.account(.access(.delegate(.signedOut)))) { state in
+            state.accessStatus = .none
+        }
+        XCTAssertTrue(store.state.isContentLocked)
+
+        await store.send(.account(.access(.delegate(.unlocked(
+            AccessStatusSnapshot(status: .coreLicenseActive),
+        ))))) { state in
+            state.accessStatus = .coreLicenseActive
+        }
+        XCTAssertFalse(store.state.isContentLocked)
     }
 }

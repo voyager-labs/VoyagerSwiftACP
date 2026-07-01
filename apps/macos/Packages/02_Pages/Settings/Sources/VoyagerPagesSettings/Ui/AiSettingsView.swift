@@ -124,6 +124,9 @@ struct AiSettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .onAppear {
+            store.send(.onAppear)
+        }
     }
 
     private static func thinkingTitle(for selection: AiThinkingSelection) -> String {

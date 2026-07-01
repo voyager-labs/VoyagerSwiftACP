@@ -410,7 +410,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
     func testSignInInProgressShowsSpinner() {
         var initialState = AccountSettingsState()
         initialState.access.isSignInInProgress = true
-        let store = TestStore(initialState: initialState) {
+        _ = TestStore(initialState: initialState) {
             AccountSettingsFeature()
         }
 
@@ -453,9 +453,9 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         }
     }
 
-    /// B6: Settings.onAppear가 AccountAccessFeature의 .onAppear로 라우팅된다.
-    /// Settings root가 열릴 때 account tab도 access 상태를 초기화한다.
-    func testSettingsOnAppearSendsAccountAccessOnAppear() async {
+    /// B6: Settings.onAppear는 AccountAccessFeature를 eager bootstrap 하지 않는다.
+    /// Account tab이 실제 표시될 때 AccountSettingsView가 access 상태를 초기화한다.
+    func testSettingsOnAppearDoesNotEagerlySendAccountAccessOnAppear() async {
         let store = TestStore(initialState: SettingsFeature.State()) {
             SettingsFeature()
         } withDependencies: {
@@ -463,13 +463,19 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
             $0.launchAtLoginClient = .testValue
             $0.directorySelectionClient = .testValue
             $0.appearanceSettingsClient = .testValue
-            $0.accountSessionClient.read = { nil }
-            $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: {},
+            )
         }
         store.exhaustivity = .off
 
         await store.send(.onAppear)
-        await store.receive(\.account.access.onAppear)
+        await store.receive(\.general.loadSettings)
+        await store.receive(\.appearance.loadSettings)
+        await store.receive(\.accessStatusLoaded)
+        await store.finish()
     }
 
     /// B6: SettingsSection의 allCases 순서는 [.general, .appearance, .ai, .account]이다.
