@@ -3,6 +3,7 @@ import ComposableArchitecture
 import CoreServices
 import Foundation
 import UniformTypeIdentifiers
+import VoyagerEntitiesEntry
 
 public struct DefaultFileViewerClient: Sendable {
     /// 이 클라이언트가 "기본 뷰어"로 다루어야 할 앱의 bundle ID.
@@ -31,11 +32,25 @@ extension DefaultFileViewerClient: DependencyKey {
         // ponytail: Page 패키지 내부 로직이 Bundle.main을 직접 해석하지 않도록
         // liveValue에서만 한 번 읽어 클로저에 주입. 호스트 셸에서 override 시 다른 값 사용 가능.
         let appBundleID = Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager"
+        // ponytail: Settings Reducer는 EntryOpenClient를 직접 모르게.
+        // folder default-app LS 작업은 EntryOpenClient.liveValue에 위임.
+        let entryOpenClient = EntryOpenClient.liveValue
         return DefaultFileViewerClient(
             appBundleID: appBundleID,
-            diagnose: { await DefaultFileViewerLive.diagnose(appBundleID: appBundleID) },
-            setVoyagerAsDefault: { try await DefaultFileViewerLive.setVoyagerAsDefault(appBundleID: appBundleID) },
-            restoreFinder: { try await DefaultFileViewerLive.restoreFinder() },
+            diagnose: { await DefaultFileViewerLive.diagnose(
+                appBundleID: appBundleID,
+                entryOpenClient: entryOpenClient,
+            )
+            },
+            setVoyagerAsDefault: { try await DefaultFileViewerLive.setVoyagerAsDefault(
+                appBundleID: appBundleID,
+                entryOpenClient: entryOpenClient,
+            )
+            },
+            restoreFinder: { try await DefaultFileViewerLive.restoreFinder(
+                entryOpenClient: entryOpenClient,
+            )
+            },
         )
     }
 
@@ -70,16 +85,12 @@ public extension DependencyValues {
 }
 
 private enum DefaultFileViewerLive {
-    static func diagnose(appBundleID: String) async -> DefaultFileViewerStatus {
+    static func diagnose(
+        appBundleID: String,
+        entryOpenClient: EntryOpenClient,
+    ) async -> DefaultFileViewerStatus {
         let nsFileViewer = UserDefaults.standard.string(forKey: "NSFileViewer")
-        let lsHandlerBundleID: String? = {
-            guard let url = LSCopyDefaultApplicationURLForContentType(
-                UTType.folder.identifier as CFString,
-                .all,
-                nil,
-            )?.takeRetainedValue() as URL? else { return nil }
-            return Bundle(url: url)?.bundleIdentifier
-        }()
+        let lsHandlerBundleID = await entryOpenClient.defaultApplication(.folder)?.bundleID
 
         let ourBundleID = appBundleID
 
@@ -108,41 +119,26 @@ private enum DefaultFileViewerLive {
         return FileManager.default.displayName(atPath: url.path)
     }
 
-    static func setVoyagerAsDefault(appBundleID: String) async throws {
+    static func setVoyagerAsDefault(
+        appBundleID: String,
+        entryOpenClient: EntryOpenClient,
+    ) async throws {
         let bundleID = appBundleID
 
         // 1단계: NSFileViewer write. 실패 시 throw, LSHandler 건너뜀.
         try writeDefaults(key: "NSFileViewer", value: bundleID)
 
-        // 2단계: LSHandler set. 실패 시 partialWrite throw (NSFileViewer는 성공했으므로).
-        let status = LSSetDefaultRoleHandlerForContentType(
-            UTType.folder.identifier as CFString,
-            .all,
-            bundleID as CFString,
-        )
-        guard status == noErr else {
-            throw DefaultFileViewerError.partialWrite(
-                message: "NSFileViewer was set but LSHandler registration failed (OSStatus: \(status))",
-            )
-        }
+        // 2단계: LSHandler set — EntryOpenClient에 위임. NSFileViewer는 이미 성공한 상태.
+        try await entryOpenClient.setDefaultApp(.folder, bundleID)
     }
 
-    static func restoreFinder() async throws {
+    static func restoreFinder(entryOpenClient: EntryOpenClient) async throws {
         // 1단계: NSFileViewer delete. 실패(권한/디스크 등) 시 즉시 throw — LSHandler는 건너뛴다.
         // 키가 원래 없는 경우는 deleteDefaults 내부에서 정상으로 간주.
         try deleteDefaults(key: "NSFileViewer")
 
-        // 2단계: LSHandler → Finder
-        let status = LSSetDefaultRoleHandlerForContentType(
-            UTType.folder.identifier as CFString,
-            .all,
-            "com.apple.finder" as CFString,
-        )
-        guard status == noErr else {
-            throw DefaultFileViewerError.systemError(
-                "Failed to set Finder as LSHandler (OSStatus: \(status))",
-            )
-        }
+        // 2단계: LSHandler → Finder — EntryOpenClient에 위임.
+        try await entryOpenClient.setDefaultApp(.folder, "com.apple.finder")
     }
 
     /// `/usr/bin/defaults write -g <key> <value>` 동기 실행
@@ -160,9 +156,9 @@ private enum DefaultFileViewerLive {
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown error"
             // Sandbox/permission 감지
             if errMsg.contains("Sandbox") || errMsg.contains("Operation not permitted") {
-                throw DefaultFileViewerError.permissionDenied
+                throw FileOpError.system(message: "Permission denied: \(errMsg)")
             }
-            throw DefaultFileViewerError.systemError("defaults write failed: \(errMsg)")
+            throw FileOpError.system(message: "defaults write failed: \(errMsg)")
         }
     }
 
@@ -184,8 +180,8 @@ private enum DefaultFileViewerLive {
         if errMsg.contains("does not exist") || errMsg.contains("Domain") { return }
         // Sandbox/permission 감지
         if errMsg.contains("Sandbox") || errMsg.contains("Operation not permitted") {
-            throw DefaultFileViewerError.permissionDenied
+            throw FileOpError.system(message: "Permission denied: \(errMsg)")
         }
-        throw DefaultFileViewerError.systemError("defaults delete failed: \(errMsg)")
+        throw FileOpError.system(message: "defaults delete failed: \(errMsg)")
     }
 }

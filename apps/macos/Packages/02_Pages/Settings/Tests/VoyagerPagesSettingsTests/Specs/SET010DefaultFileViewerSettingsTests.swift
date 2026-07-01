@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 @testable import VoyagerPagesSettings
 import VoyagerShared
 import XCTest
@@ -154,14 +155,14 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
     func testSetAsDefaultFailurePermissionDenied() async {
         let store = makeStore(
             diagnose: { .finderIsDefault },
-            setVoyagerAsDefault: { throw DefaultFileViewerError.permissionDenied },
+            setVoyagerAsDefault: { throw FileOpError.system(message: "Permission denied") },
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
         await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
 
         await store.send(.setAsDefaultFileViewerTapped)
-        await store.receive(.setAsDefaultFileViewerFailed(.permissionDenied))
+        await store.receive(.setAsDefaultFileViewerFailed(.system(message: "Permission denied")))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
@@ -170,30 +171,30 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
     func testSetAsDefaultFailureSystemError() async {
         let store = makeStore(
             diagnose: { .finderIsDefault },
-            setVoyagerAsDefault: { throw DefaultFileViewerError.systemError("disk I/O") },
+            setVoyagerAsDefault: { throw FileOpError.system(message: "disk I/O") },
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
         await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
 
         await store.send(.setAsDefaultFileViewerTapped)
-        await store.receive(.setAsDefaultFileViewerFailed(.systemError("disk I/O")))
+        await store.receive(.setAsDefaultFileViewerFailed(.system(message: "disk I/O")))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
 
-    /// partialWrite 실패
-    func testSetAsDefaultFailurePartialWrite() async {
+    /// system(LSHandler failed) 실패
+    func testSetAsDefaultFailureSystemLSError() async {
         let store = makeStore(
             diagnose: { .finderIsDefault },
-            setVoyagerAsDefault: { throw DefaultFileViewerError.partialWrite(message: "LSHandler failed") },
+            setVoyagerAsDefault: { throw FileOpError.system(message: "LSHandler failed") },
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
         await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
 
         await store.send(.setAsDefaultFileViewerTapped)
-        await store.receive(.setAsDefaultFileViewerFailed(.partialWrite(message: "LSHandler failed")))
+        await store.receive(.setAsDefaultFileViewerFailed(.system(message: "LSHandler failed")))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
@@ -224,14 +225,14 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
     func testRestoreFailure() async {
         let store = makeStore(
             diagnose: { .voyagerIsDefault },
-            restoreFinder: { throw DefaultFileViewerError.systemError("LS API fail") },
+            restoreFinder: { throw FileOpError.system(message: "LS API fail") },
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
         await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault))
 
         await store.send(.restoreDefaultFileViewerTapped)
-        await store.receive(.restoreDefaultFileViewerFailed(.systemError("LS API fail")))
+        await store.receive(.restoreDefaultFileViewerFailed(.system(message: "LS API fail")))
         XCTAssertFalse(store.state.isRestoringDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }

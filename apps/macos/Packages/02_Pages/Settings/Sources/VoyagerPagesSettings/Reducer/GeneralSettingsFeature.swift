@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 import VoyagerShared
 
 @Reducer
@@ -139,7 +140,7 @@ struct GeneralSettingsFeature {
                         await send(.setAsDefaultFileViewerSucceeded)
                     } catch {
                         await send(.setAsDefaultFileViewerFailed(
-                            error as? DefaultFileViewerError ?? .systemError("\(error)"),
+                            error as? FileOpError ?? .system(message: "\(error)"),
                         ))
                     }
                 }
@@ -155,7 +156,7 @@ struct GeneralSettingsFeature {
 
             case let .setAsDefaultFileViewerFailed(error):
                 state.isSettingDefaultFileViewer = false
-                state.defaultFileViewerErrorMessage = errorMessage(for: error)
+                state.defaultFileViewerErrorMessage = error.message
                 return .none
 
             case .restoreDefaultFileViewerTapped:
@@ -168,7 +169,7 @@ struct GeneralSettingsFeature {
                         await send(.restoreDefaultFileViewerSucceeded)
                     } catch {
                         await send(.restoreDefaultFileViewerFailed(
-                            error as? DefaultFileViewerError ?? .systemError("\(error)"),
+                            error as? FileOpError ?? .system(message: "\(error)"),
                         ))
                     }
                 }
@@ -184,20 +185,9 @@ struct GeneralSettingsFeature {
 
             case let .restoreDefaultFileViewerFailed(error):
                 state.isRestoringDefaultFileViewer = false
-                state.defaultFileViewerErrorMessage = errorMessage(for: error)
+                state.defaultFileViewerErrorMessage = error.message
                 return .none
             }
         }
-    }
-}
-
-private func errorMessage(for error: DefaultFileViewerError) -> String {
-    switch error {
-    case .permissionDenied:
-        "시스템 설정 변경 권한이 없습니다"
-    case let .systemError(msg):
-        "시스템 오류: \(msg)"
-    case let .partialWrite(message):
-        "부분적으로 설정되었습니다: \(message)"
     }
 }

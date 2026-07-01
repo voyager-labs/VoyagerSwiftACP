@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntitiesEntry
 
 @CasePathable
 public enum GeneralSettingsAction: CasePathable, Equatable, Sendable {
@@ -18,8 +19,8 @@ public enum GeneralSettingsAction: CasePathable, Equatable, Sendable {
     case defaultFileViewerDiagnosisCompleted(DefaultFileViewerStatus)
     case setAsDefaultFileViewerTapped
     case setAsDefaultFileViewerSucceeded
-    case setAsDefaultFileViewerFailed(DefaultFileViewerError)
+    case setAsDefaultFileViewerFailed(FileOpError)
     case restoreDefaultFileViewerTapped
     case restoreDefaultFileViewerSucceeded
-    case restoreDefaultFileViewerFailed(DefaultFileViewerError)
+    case restoreDefaultFileViewerFailed(FileOpError)
 }
