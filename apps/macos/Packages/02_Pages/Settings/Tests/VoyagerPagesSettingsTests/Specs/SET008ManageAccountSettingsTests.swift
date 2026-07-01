@@ -189,6 +189,23 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         XCTAssertEqual(capture.value, expectedURL)
     }
 
+    func testManageAccountTappedDoesNotOpenNeutralFallbackURL() async throws {
+        let fallbackURL = try XCTUnwrap(URL(string: "https://example.invalid/account"))
+        final class Capture: @unchecked Sendable {
+            var values: [URL] = []
+        }
+        let capture = Capture()
+        let store = TestStore(initialState: AccountSettingsState()) {
+            AccountSettingsFeature()
+        } withDependencies: {
+            $0.checkoutURLClient.openURL = { capture.values.append($0) }
+            $0.checkoutURLClient.accountURL = { fallbackURL }
+        }
+
+        await store.send(.manageAccountTapped)
+        XCTAssertTrue(capture.values.isEmpty)
+    }
+
     // MARK: - Web Bridge Semantics
 
     /// SET-008 web-bridge-only 계약 (T1 contract): AccountSettingsAction enum은

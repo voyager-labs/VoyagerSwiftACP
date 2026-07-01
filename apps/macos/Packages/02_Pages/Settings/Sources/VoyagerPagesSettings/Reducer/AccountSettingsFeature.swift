@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerFeaturesAccountAccess
 
 @Reducer
@@ -40,7 +41,8 @@ public struct AccountSettingsFeature {
             case .manageAccountTapped:
                 return .run { _ in
                     @Dependency(\.checkoutURLClient) var checkoutURLClient
-                    guard let url = try? checkoutURLClient.accountURL() else { return }
+                    let url = checkoutURLClient.accountURL()
+                    guard url.host != "example.invalid" else { return }
                     checkoutURLClient.openURL(url)
                 }
 
