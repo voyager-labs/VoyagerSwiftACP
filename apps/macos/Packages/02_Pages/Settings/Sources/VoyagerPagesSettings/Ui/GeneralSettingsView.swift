@@ -163,7 +163,7 @@ struct GeneralSettingsView: View {
                             .foregroundColor(.red)
                     }
 
-                    Text("변경 사항을 적용하려면 시스템 재시작이 필요할 수 있습니다.")
+                    Text("A system restart may be required for changes to take effect.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .accessibilityIdentifier("defaultFileViewerRestartHint")
@@ -184,26 +184,26 @@ private extension GeneralSettingsView {
     var statusMessage: String {
         switch store.defaultFileViewerStatus {
         case .voyagerIsDefault:
-            "Voyager가 기본 파일 뷰어입니다"
+            "Voyager is the default file viewer."
         case .finderIsDefault:
-            "Finder가 기본 파일 뷰어입니다. Voyager로 설정하시겠습니까?"
+            "Finder is the default file viewer. Set Voyager as default?"
         case let .otherIsDefault(_, appDisplayName):
-            "\(appDisplayName)이(가) 기본 파일 뷰어입니다. Voyager로 변경하시겠습니까?"
+            "\(appDisplayName) is the default file viewer. Switch to Voyager?"
         case .unknown:
-            "기본 파일 뷰어 상태를 확인할 수 없습니다"
+            "Could not determine the default file viewer status."
         }
     }
 
     var actionButtonTitle: String {
         switch store.defaultFileViewerStatus {
         case .voyagerIsDefault:
-            "Finder로 복구"
+            "Restore Finder"
         case .finderIsDefault:
-            "Voyager로 설정"
+            "Set Voyager as Default"
         case .otherIsDefault:
-            "Voyager로 변경"
+            "Switch to Voyager"
         case .unknown:
-            "다시 확인"
+            "Check Again"
         }
     }
 
