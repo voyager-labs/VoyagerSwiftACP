@@ -37,9 +37,6 @@ public struct CheckoutURLClient: Sendable {
 // MARK: - DependencyKey
 
 extension CheckoutURLClient: DependencyKey {
-    // swiftlint:disable:next force_unwrapping
-    private static let neutralBaseURL = URL(string: "https://example.invalid")!
-
     private static func stringValue(for key: String) -> String? {
         if let dotenvValue = EnvironmentLoader.stringValue(forKey: key),
            !dotenvValue.isEmpty
@@ -55,18 +52,44 @@ extension CheckoutURLClient: DependencyKey {
         return nil
     }
 
-    private static func directURL(for key: String) -> URL? {
-        stringValue(for: key).flatMap(URL.init(string:))
-    }
-
-    private static func fallbackURL(directKey: String, baseKey: String, path: String) -> URL {
-        if let directURL = directURL(for: directKey) {
-            return directURL
+    private static func requiredWebURL(for key: String) -> URL {
+        guard let value = stringValue(for: key) else {
+            fatalError("Missing required URL config: \(key)")
         }
 
-        let baseURL = stringValue(for: baseKey).flatMap(URL.init(string:)) ?? neutralBaseURL
+        return validatedWebURL(for: key, value: value)
+    }
+
+    private static func validatedWebURL(for key: String, value: String) -> URL {
+        guard let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host?.isEmpty == false
+        else {
+            fatalError("Invalid required URL config: \(key)")
+        }
+
+        return url
+    }
+
+    private static func webRouteURL(path: String) -> URL {
+        let baseKey = "PUBLIC_WEB_BASE_URL"
+        let baseURL = requiredWebURL(for: baseKey)
         let cleanPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return baseURL.appendingPathComponent(cleanPath)
+    }
+
+    private static func testURL(path: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = "test.test"
+        components.path = path
+
+        guard let url = components.url else {
+            fatalError("Invalid test URL path: \(path)")
+        }
+
+        return url
     }
 
     nonisolated public static var liveValue: CheckoutURLClient {
@@ -77,40 +100,25 @@ extension CheckoutURLClient: DependencyKey {
                 }
             },
             checkoutURL: {
-                fallbackURL(
-                    directKey: "VOYAGER_CHECKOUT_URL",
-                    baseKey: "VOYAGER_WEB_BASE_URL",
-                    path: "/checkout",
-                )
+                webRouteURL(path: "/checkout")
             },
             pricingURL: {
-                fallbackURL(
-                    directKey: "VOYAGER_PRICING_URL",
-                    baseKey: "VOYAGER_WEB_BASE_URL",
-                    path: "/pricing",
-                )
+                webRouteURL(path: "/pricing")
             },
             supportURL: {
-                fallbackURL(
-                    directKey: "VOYAGER_SUPPORT_URL",
-                    baseKey: "VOYAGER_WEB_BASE_URL",
-                    path: "/support",
-                )
+                webRouteURL(path: "/support")
             },
         )
     }
 
-    // swiftlint:disable force_unwrapping
     nonisolated public static var testValue: CheckoutURLClient {
         CheckoutURLClient(
             openURL: { _ in },
-            checkoutURL: { URL(string: "http://test.test/checkout")! },
-            pricingURL: { URL(string: "http://test.test/pricing")! },
-            supportURL: { URL(string: "http://test.test/support")! },
+            checkoutURL: { testURL(path: "/checkout") },
+            pricingURL: { testURL(path: "/pricing") },
+            supportURL: { testURL(path: "/support") },
         )
     }
-
-    // swiftlint:enable force_unwrapping
 
     nonisolated public static var previewValue: CheckoutURLClient {
         testValue
