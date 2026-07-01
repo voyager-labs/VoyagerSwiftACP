@@ -139,8 +139,6 @@ extension OnboardingProgressClient: DependencyKey {
            let data = try? JSONEncoder().encode(accessSnapshot)
         {
             userDefaultsClient.setObject(data, Keys.accessSnapshot)
-        } else {
-            userDefaultsClient.setObject(nil, Keys.accessSnapshot)
         }
         return .success
     }

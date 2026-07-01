@@ -474,14 +474,15 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
     /// accountAccessStepState=pending
     /// - 사전 조건: signed-out 상태 (hasAccountSession=false), signInHandoffClient가 지연 후 success 반환
     /// - 기대 결과: isSignInInProgress=true, accountAccessAuthAxis==.signInInProgress, accountAccessStepState==.pending
-    func testLoginCTAShowsPendingDuringMockSignInHandoff() async {
+    func testLoginCTAShowsPendingDuringMockSignInHandoff() async throws {
+        let callbackURL = try XCTUnwrap(URL(string: "voyager://auth/callback"))
+
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.noOp
             $0.signInHandoffClient = SignInHandoffClient {
-                // swiftlint:disable:next force_unwrapping
-                .success(callbackURL: URL(string: "voyager://auth/callback")!)
+                .success(callbackURL: callbackURL)
             }
         }
 
@@ -515,6 +516,7 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
             state.accessUnlock.didSignInFail = true
             state.accessUnlock.hasAccountSession = false
             state.accessUnlock.isSessionExpired = true
+            state.accessUnlock.fetchGeneration = 1
         }
 
         await store.finish()
