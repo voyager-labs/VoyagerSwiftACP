@@ -121,11 +121,15 @@ private enum SmokeMode {
 
 private enum OnboardingHostAuthMode: String, CaseIterable {
     case mock
+    case mockNoEntitlement
+    case mockRestoredAccess
     case live
 
     var title: String {
         switch self {
         case .mock: "Mock Account"
+        case .mockNoEntitlement: "Mock No Entitlement"
+        case .mockRestoredAccess: "Mock Restored Access"
         case .live: "Live Account"
         }
     }
@@ -133,7 +137,34 @@ private enum OnboardingHostAuthMode: String, CaseIterable {
     var summary: String {
         switch self {
         case .mock: "Hardcoded active access, no network calls."
+        case .mockNoEntitlement: "Account auth succeeds, entitlement check returns no access."
+        case .mockRestoredAccess: "Starts at AI Provider with a saved active access snapshot."
         case .live: "Real Gateway + Web auth flow."
+        }
+    }
+
+    var seedsRestoredAccessProgress: Bool {
+        self == .mockRestoredAccess
+    }
+
+    var mockAccessStatusResponse: AccessStatusResponse {
+        switch self {
+        case .mock, .mockRestoredAccess, .live:
+            AccessStatusResponse(
+                hasAccess: true,
+                status: "active",
+                reason: "active_entitlement",
+                productKey: "core",
+                source: "polar",
+            )
+        case .mockNoEntitlement:
+            AccessStatusResponse(
+                hasAccess: false,
+                status: "none",
+                reason: "no_active_entitlement",
+                productKey: nil,
+                source: "polar",
+            )
         }
     }
 }
@@ -234,9 +265,11 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeAuthClients() -> OnboardingHostAuthClients {
-        switch debugStore.currentAuthMode {
-        case .mock:
-            OnboardingHostAuthClients(
+        let authMode = debugStore.currentAuthMode
+        switch authMode {
+        case .mock, .mockNoEntitlement, .mockRestoredAccess:
+            let accessStatusResponse = authMode.mockAccessStatusResponse
+            return OnboardingHostAuthClients(
                 accountSessionClient: AccountSessionClient(
                     read: { self.sessionHolder.session },
                     persist: { _ in },
@@ -244,20 +277,13 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
                 ),
                 authNetworkClient: AuthNetworkClient(
                     exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
-                    fetchAccessStatus: { AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
-                    },
+                    fetchAccessStatus: { accessStatusResponse },
                     refreshToken: { throw AccessError.notConfigured },
                 ),
                 signInHandoffClient: makeMockSignInHandoffClient(),
             )
         case .live:
-            OnboardingHostAuthClients(
+            return OnboardingHostAuthClients(
                 accountSessionClient: .liveValue,
                 authNetworkClient: .liveValue,
                 signInHandoffClient: .liveValue,
@@ -307,6 +333,39 @@ final class OnboardingHostAppDelegate: NSObject, NSApplicationDelegate {
 
     private func resetOnboardingProgress() {
         OnboardingWindowClient.liveValue.resetStoredProgress()
+        if debugStore.currentAuthMode.seedsRestoredAccessProgress {
+            seedRestoredAccessProgress()
+        }
+    }
+
+    private func seedRestoredAccessProgress() {
+        let defaults = UserDefaults.standard
+        defaults.set(1.2, forKey: "onboardingProgressVersion")
+        defaults.set("aiProviderSetup", forKey: "onboardingCurrentStep")
+
+        let stepState: [String: Any] = [
+            "welcomeComplete": true,
+            "accessUnlockComplete": true,
+            "permissionsComplete": true,
+            "aiProviderSetupComplete": false,
+            "aiProviderSetupSkipped": false,
+            "aiProviderSetupChoice": "none",
+            "aiProviderSetupStatus": "pending",
+            "completeComplete": false,
+        ]
+
+        if let data = try? JSONSerialization.data(withJSONObject: stepState) {
+            defaults.set(data, forKey: "onboardingStepState")
+        }
+
+        let snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: Date(timeIntervalSinceNow: 86400),
+            fetchedAt: Date(),
+        )
+        if let data = try? JSONEncoder().encode(snapshot) {
+            defaults.set(data, forKey: "onboardingAccessSnapshot")
+        }
     }
 
     private func reloadOnboardingWindow() {
