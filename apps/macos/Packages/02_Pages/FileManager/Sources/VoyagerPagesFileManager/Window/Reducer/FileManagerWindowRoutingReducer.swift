@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -439,8 +440,22 @@ private func navigationRouteForClosingTab(
 
 private func prepareContentForActiveTabHandoff(state: inout FileManagerContentFeature.State) {
     clearInFlightComposerStateOnTabSwitch(state: &state.composer)
+    clearInFlightAiChatStateOnTabSwitch(state: &state.aiChat)
     state.entryViewLayout.entryOperations.isLoading = false
     state.entryViewLayout.entryOperations.isReloading = false
+}
+
+private func clearInFlightAiChatStateOnTabSwitch(state: inout AiChatState) {
+    state.pendingRequestStart = nil
+    state.streamingAssistantDraft = nil
+    state.lockedModelHandle = nil
+    state.executionPhase = .idle
+    state.restoreSessionID = nil
+    state.restoreOutcome = nil
+    state.restoreFailure = nil
+    if state.sessionStatus == .restoring {
+        state.sessionStatus = state.sessionID == nil ? .idle : .active
+    }
 }
 
 private func clearInFlightComposerStateOnTabSwitch(state: inout ComposerFeature.State) {
@@ -483,6 +498,9 @@ private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowSta
         )),
         .cancel(id: ComposerFeature.CancelID.search(ownerID: state.content.composer.cancellationOwnerID)),
         .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.content.composer.cancellationOwnerID)),
+        state.contentTabs.previousActiveTabID
+            .map { .cancel(id: HomeAiChatOpenCancelID(tabID: $0)) }
+            ?? .none,
         .send(.content(.aiChat(.cancelInFlightWork))),
     )
 }

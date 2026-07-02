@@ -2194,6 +2194,87 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    /// CTM-005-ai_chat_provider_forwarding: AI Chat 탭을 떠날 때 이전 탭의 in-flight restore 표시를 저장하지 않음
+    /// AI Chat 탭 전환 중 효과는 취소되므로 저장되는 이전 탭 state도 restoring UI 상태를 제거해야 한다.
+    /// - 검증 내용: AI Chat tab에서 Home tab으로 전환할 때 저장된 AI Chat state의 restore/draft 상태 정리
+    /// - 사전 조건: active AI Chat tab이 `.restoring` status와 streaming draft, pending restore를 가진 상태
+    /// - 기대 결과: tabContentStates에 저장된 이전 AI Chat state가 idle/active 상태로 정리되고 pending restore 필드를 비움
+    func testAiChatTabSwitchAwayClearsSavedInFlightRestoreState() async throws {
+        let sessionUUID = try XCTUnwrap(UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))
+        let restoringUUID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
+        let sessionID = sessionUUID.uuidString
+        let aiSessionID = AiChatSessionID(rawValue: sessionUUID)
+        let restoringSessionID = AiChatSessionID(rawValue: restoringUUID)
+        let aiChatID = ContentTabID()
+        let homeID = ContentTabID()
+        let homePath = "/Users/test/Home"
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.navigation.navigationState = .aiChat(sessionID)
+        aiChatContent.aiChat.mode = .chat
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .restoring
+        aiChatContent.aiChat.restoreSessionID = restoringSessionID
+        aiChatContent.aiChat.streamingAssistantDraft = "partial response"
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: sessionID),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        // store.exhaustivity = .off: tab handoff는 watcher/navigation 효과를 함께 방출하므로 저장된 이전 AI Chat state 정리에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(homeID)))
+        await store.receive(\.content.aiChat.cancelInFlightWork)
+
+        let savedAiChatState = try XCTUnwrap(store.state.tabContentStates[aiChatID]?.aiChat)
+        XCTAssertEqual(savedAiChatState.executionPhase, .idle)
+        XCTAssertNil(savedAiChatState.streamingAssistantDraft)
+        XCTAssertNil(savedAiChatState.restoreSessionID)
+        XCTAssertNil(savedAiChatState.restoreOutcome)
+        XCTAssertNil(savedAiChatState.restoreFailure)
+        XCTAssertEqual(savedAiChatState.sessionStatus, .active)
+        XCTAssertEqual(savedAiChatState.sessionID, aiSessionID)
+        await store.finish()
+    }
+
     /// CTM-005-ai_chat_provider_forwarding: Inspector가 보이지 않고 active tab이 .aiChat이 아닌 경우 전송 없음
     /// ContentPane과 Inspector 모두 forwarding 조건을 만족하지 않을 때 효과가 발생하지 않는지 검증한다.
     func testNoForwardingWhenInspectorNotOpenAndActiveTabNotAiChat() async {

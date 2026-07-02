@@ -9,6 +9,10 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
+struct HomeAiChatOpenCancelID: Hashable {
+    var tabID: ContentTabID
+}
+
 @Reducer
 struct FileManagerWindowCommandRoutingReducer {
     nonisolated private enum CancelID: Hashable {
@@ -110,9 +114,7 @@ struct FileManagerWindowCommandRoutingReducer {
                 sessionID: sessionUUID,
                 mode: .chat,
             )
-            return .run { [aiConnectionsFileClient, activeTabID, anchor, sessionID, setup] send in
-                await send(.content(.aiChat(.setup(setup))))
-
+            let providerLoadEffect: Effect<Action> = .run { [aiConnectionsFileClient] send in
                 let connectionsFile: AIConnectionsFile
                 do {
                     connectionsFile = try await aiConnectionsFileClient.load()
@@ -120,10 +122,15 @@ struct FileManagerWindowCommandRoutingReducer {
                     connectionsFile = .empty()
                 }
                 await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
-
-                await send(.navigation(.view(.showAiChat(sessionID))))
-                await send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
             }
+            .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
+
+            return .concatenate(
+                .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
+                .send(.navigation(.view(.showAiChat(sessionID)))),
+                .send(.content(.aiChat(.setup(setup)))),
+                providerLoadEffect,
+            )
         }
     }
 

@@ -1736,21 +1736,25 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let initialInspectorMode = store.state.inspector.activeMode
 
         await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
-        // AI Chat view가 기본 .sessions 상태로 먼저 렌더링되지 않도록 setup을 anchor 전환보다 먼저 적용한다.
+        // Home AI Chat 전환은 active tab anchor와 navigation route를 먼저 고정하고 provider load만 tab-scoped async로 처리한다.
         await store.receive { action in
-            guard case .content(.aiChat(.setup)) = action else { return false }
-            return true
-        }
-        await store.receive { action in
-            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
-            return true
+            guard case let .contentTabs(.updateActivePageAnchor(_, .aiChat(receivedSessionID))) = action else {
+                return false
+            }
+            return receivedSessionID == sessionID
         }
         await store.receive { action in
             guard case let .navigation(.view(.showAiChat(receivedSessionID))) = action else { return false }
             return receivedSessionID == sessionID
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else { return false }
+            guard case .content(.aiChat(.setup)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+                return false
+            }
             return receivedSessionID == sessionID
         }
         await store.receive { action in
@@ -1763,7 +1767,10 @@ final class CTM001HandleContentTabTests: XCTestCase {
             else { return false }
             return receivedSessionID == sessionID
         }
-        await store.receive(\.contentTabs)
+        await store.receive { action in
+            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
+            return true
+        }
 
         let expectedSessionUUID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
 
