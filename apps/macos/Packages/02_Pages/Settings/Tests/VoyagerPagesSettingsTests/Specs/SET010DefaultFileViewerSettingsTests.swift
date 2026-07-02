@@ -38,6 +38,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
     }
 
     private func makeStore(
+        initialState: GeneralSettingsFeature.State = .init(),
         launchAtLoginEnabled: Bool = false,
         launchAtLoginSetEnabled: @escaping @Sendable (Bool) throws -> Void = { _ in },
         homePath: String = "/",
@@ -67,12 +68,12 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
             defaultHomePath: { homePath },
         )
         let defaultFileViewerClient = DefaultFileViewerClient(
-            appBundleID: "fm.voyager.Voyager",
+            appBundleID: DefaultFileViewerClient.voyagerBundleID,
             diagnose: diagnose,
             setVoyagerAsDefault: setVoyagerAsDefault,
             restoreFinder: restoreFinder,
         )
-        return TestStore(initialState: GeneralSettingsFeature.State()) {
+        return TestStore(initialState: initialState) {
             GeneralSettingsFeature()
         } withDependencies: {
             $0.userDefaultsClient = userDefaultsClient
@@ -248,6 +249,65 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
 
     // MARK: - P1 rollback: 부분 적용 방지
 
+    /// SettingsHost 실행이어도 live client는 실제 Voyager bundle ID를 사용한다.
+    func testLiveValueUsesVoyagerBundleID() {
+        XCTAssertEqual(DefaultFileViewerClient.liveValue.appBundleID, DefaultFileViewerClient.voyagerBundleID)
+    }
+
+    /// 진단은 UserDefaults 캐시가 아니라 주입된 defaultsStore에서 NSFileViewer를 읽는다.
+    func testDiagnoseReadsNSFileViewerFromDefaultsStore() async {
+        let values = SET010DefaultsRecorder(initialValue: DefaultFileViewerClient.voyagerBundleID)
+        let entryOpenClient = makeEntryOpenClient(
+            defaultApplication: { _ in
+                ApplicationInfo(
+                    id: "voyager",
+                    name: "Voyager",
+                    bundleID: DefaultFileViewerClient.voyagerBundleID,
+                )
+            },
+        )
+
+        let status = await DefaultFileViewerLive.diagnose(
+            appBundleID: DefaultFileViewerClient.voyagerBundleID,
+            entryOpenClient: entryOpenClient,
+            defaultsStore: values.store,
+        )
+
+        XCTAssertEqual(status, .voyagerIsDefault)
+    }
+
+    /// NSFileViewer 읽기 실패처럼 모르는 값이면 Finder LSHandler만으로 정상 복구 상태로 오진하지 않는다.
+    func testDiagnoseUnknownWhenNSFileViewerReadIsIndeterminate() async {
+        let values = SET010DefaultsRecorder(initialValue: "__read_failed__")
+        let entryOpenClient = makeEntryOpenClient(
+            defaultApplication: { _ in
+                ApplicationInfo(id: "finder", name: "Finder", bundleID: "com.apple.finder")
+            },
+        )
+
+        let status = await DefaultFileViewerLive.diagnose(
+            appBundleID: DefaultFileViewerClient.voyagerBundleID,
+            entryOpenClient: entryOpenClient,
+            defaultsStore: values.store,
+        )
+
+        XCTAssertEqual(status, .unknown)
+    }
+
+    /// 실패 후 재진단이 정상 상태로 회복되면 stale 오류 배너를 지운다.
+    func testDiagnosisCompletedClearsErrorWhenStatusRecovers() async {
+        var initialState = GeneralSettingsFeature.State()
+        initialState.isDiagnosingDefaultFileViewer = true
+        initialState.defaultFileViewerErrorMessage = "Permission denied"
+        let store = makeStore(initialState: initialState)
+
+        await store.send(.defaultFileViewerDiagnosisCompleted(.finderIsDefault)) {
+            $0.isDiagnosingDefaultFileViewer = false
+            $0.defaultFileViewerStatus = .finderIsDefault
+            $0.defaultFileViewerErrorMessage = nil
+        }
+    }
+
     /// LSHandler 실패 시 NSFileViewer write를 이전 값으로 롤백한다.
     func testSetAsDefaultRollsBackNSFileViewerWhenLSHandlerFails() async throws {
         let values = SET010DefaultsRecorder(initialValue: "com.apple.finder")
@@ -395,7 +455,8 @@ private final class SET010DefaultsRecorder: @unchecked Sendable {
 }
 
 private func makeEntryOpenClient(
-    setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void,
+    setDefaultApp: @escaping @Sendable (UTType, String) async throws -> Void = { _, _ in },
+    defaultApplication: @escaping @Sendable (UTType) async -> ApplicationInfo? = { _ in nil },
 ) -> EntryOpenClient {
     EntryOpenClient(
         open: { _, _ in },
@@ -405,7 +466,7 @@ private func makeEntryOpenClient(
         performService: { _, _ in },
         revealInFinder: { _ in },
         applicationsForFile: { _ in [] },
-        defaultApplication: { _ in nil },
+        defaultApplication: defaultApplication,
         trashDirectoryPath: { nil },
     )
 }

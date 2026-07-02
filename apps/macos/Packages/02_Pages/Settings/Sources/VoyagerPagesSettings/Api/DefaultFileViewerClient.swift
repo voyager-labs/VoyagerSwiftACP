@@ -8,7 +8,9 @@ import VoyagerEntitiesEntry
 public struct DefaultFileViewerClient: Sendable {
     /// 이 클라이언트가 "기본 뷰어"로 다루어야 할 앱의 bundle ID.
     /// 호스트 셸(`SettingsHost` 등)이 자신의 bundle ID로 오염되는 것을 막기 위해
-    /// `Bundle.main` 해석은 `liveValue`에서 한 번만 수행하고, 이후 클로저는 이 값을 참조.
+    /// 기본값은 실제 Voyager 앱 bundle ID로 고정한다.
+    public static let voyagerBundleID = "fm.voyager.Voyager"
+
     public var appBundleID: String
     public var diagnose: @Sendable () async -> DefaultFileViewerStatus
     public var setVoyagerAsDefault: @Sendable () async throws -> Void
@@ -29,9 +31,8 @@ public struct DefaultFileViewerClient: Sendable {
 
 extension DefaultFileViewerClient: DependencyKey {
     nonisolated public static var liveValue: DefaultFileViewerClient {
-        // ponytail: Page 패키지 내부 로직이 Bundle.main을 직접 해석하지 않도록
-        // liveValue에서만 한 번 읽어 클로저에 주입. 호스트 셸에서 override 시 다른 값 사용 가능.
-        let appBundleID = Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager"
+        // ponytail: 호스트 셸 Bundle.main은 SettingsHost일 수 있어 실제 앱 ID를 고정.
+        let appBundleID = Self.voyagerBundleID
         // ponytail: Settings Reducer는 EntryOpenClient를 직접 모르게.
         // folder default-app LS 작업은 EntryOpenClient.liveValue에 위임.
         let entryOpenClient = EntryOpenClient.liveValue
@@ -41,6 +42,7 @@ extension DefaultFileViewerClient: DependencyKey {
             diagnose: { await DefaultFileViewerLive.diagnose(
                 appBundleID: appBundleID,
                 entryOpenClient: entryOpenClient,
+                defaultsStore: defaultsStore,
             )
             },
             setVoyagerAsDefault: { try await DefaultFileViewerLive.setVoyagerAsDefault(
@@ -63,7 +65,7 @@ extension DefaultFileViewerClient: DependencyKey {
             fatalError("DefaultFileViewerClient test dependency not set.")
         }
         return DefaultFileViewerClient(
-            appBundleID: "fm.voyager.Voyager",
+            appBundleID: Self.voyagerBundleID,
             diagnose: { unimplemented() },
             setVoyagerAsDefault: { unimplemented() },
             restoreFinder: { unimplemented() },
@@ -72,7 +74,7 @@ extension DefaultFileViewerClient: DependencyKey {
 
     nonisolated public static var previewValue: DefaultFileViewerClient {
         DefaultFileViewerClient(
-            appBundleID: "fm.voyager.Voyager",
+            appBundleID: voyagerBundleID,
             diagnose: { .finderIsDefault },
             setVoyagerAsDefault: {},
             restoreFinder: {},
@@ -93,7 +95,7 @@ struct DefaultFileViewerDefaultsStore {
     var delete: @Sendable () throws -> Void
 
     static let live = DefaultFileViewerDefaultsStore(
-        read: { UserDefaults.standard.string(forKey: defaultFileViewerDefaultsKey) },
+        read: { readDefaults(key: defaultFileViewerDefaultsKey) },
         write: { try writeDefaults(key: defaultFileViewerDefaultsKey, value: $0) },
         delete: { try deleteDefaults(key: defaultFileViewerDefaultsKey) },
     )
@@ -108,13 +110,15 @@ struct DefaultFileViewerDefaultsStore {
 }
 
 private let defaultFileViewerDefaultsKey = "NSFileViewer"
+private let defaultFileViewerReadFailedValue = "__voyager_default_file_viewer_read_failed__"
 
 enum DefaultFileViewerLive {
     static func diagnose(
         appBundleID: String,
         entryOpenClient: EntryOpenClient,
+        defaultsStore: DefaultFileViewerDefaultsStore = .live,
     ) async -> DefaultFileViewerStatus {
-        let nsFileViewer = UserDefaults.standard.string(forKey: "NSFileViewer")
+        let nsFileViewer = defaultsStore.read()
         let lsHandlerBundleID = await entryOpenClient.defaultApplication(.folder)?.bundleID
 
         let ourBundleID = appBundleID
@@ -196,6 +200,33 @@ enum DefaultFileViewerLive {
                 suggestion: "Original error: \(originalError)",
             )
         }
+    }
+}
+
+/// `/usr/bin/defaults read -g <key>` 동기 실행. 키가 없으면 Finder 기본 상태(nil)로 취급.
+private func readDefaults(key: String) -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+    process.arguments = ["read", "-g", key]
+    let pipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = errorPipe
+    do {
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let errData = try errorPipe.fileHandleForReading.readToEnd()
+            let errMsg = String(data: errData ?? Data(), encoding: .utf8) ?? ""
+            if errMsg.contains("does not exist") || errMsg.contains("Domain") { return nil }
+            return defaultFileViewerReadFailedValue
+        }
+        let data = try pipe.fileHandleForReading.readToEnd()
+        let value = String(data: data ?? Data(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
+    } catch {
+        return defaultFileViewerReadFailedValue
     }
 }
 

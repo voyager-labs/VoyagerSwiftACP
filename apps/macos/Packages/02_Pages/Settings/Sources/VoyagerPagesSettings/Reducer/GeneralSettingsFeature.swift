@@ -128,6 +128,12 @@ struct GeneralSettingsFeature {
             case let .defaultFileViewerDiagnosisCompleted(status):
                 state.isDiagnosingDefaultFileViewer = false
                 state.defaultFileViewerStatus = status
+                switch status {
+                case .voyagerIsDefault, .finderIsDefault, .otherIsDefault:
+                    state.defaultFileViewerErrorMessage = nil
+                case .unknown:
+                    break
+                }
                 return .none
 
             case .setAsDefaultFileViewerTapped:
