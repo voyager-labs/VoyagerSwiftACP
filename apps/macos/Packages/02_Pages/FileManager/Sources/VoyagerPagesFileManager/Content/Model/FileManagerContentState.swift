@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -12,6 +13,7 @@ public struct FileManagerContentState: Equatable {
     public var entryViewLayout: EntryViewLayoutFeature.State = .init()
     public var composer: ComposerFeature.State = .init()
     public var collection: CollectionFeature.State = .init()
+    public var aiChat: AiChatFeature.State = .init()
 
     var homeDirectoryItemCounts: [FileManagerHomeDirectory: Int] = [:]
 

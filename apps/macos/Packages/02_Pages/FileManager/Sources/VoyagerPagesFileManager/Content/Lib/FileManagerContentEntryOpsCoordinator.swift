@@ -56,7 +56,7 @@ enum FileManagerContentEntryOpsCoordinator {
             )))
         case .computer:
             sendEntryOperations(.loading(.loadComputerItems))
-        case .collection:
+        case .collection, .aiChat, .aiChatSessions:
             .none
         }
     }

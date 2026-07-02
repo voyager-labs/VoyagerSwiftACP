@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -44,6 +45,10 @@ public struct FileManagerContentFeature {
             EntryViewLayoutFeature()
         }
 
+        Scope(state: \.aiChat, action: \.aiChat) {
+            AiChatFeature()
+        }
+
         FileManagerContentComposerReducer()
 
         FileManagerContentNavigationBridgeReducer()
@@ -64,6 +69,9 @@ public struct FileManagerContentFeature {
             switch action {
             case .view(.openContextualAiChatTapped):
                 return .send(.delegate(.openContextualAiChat))
+
+            case .aiChat(.delegate(.openAISettings)):
+                return .send(.delegate(.openAISettings))
 
             case let .internal(.setAutomaticRefreshFeedbackSuppressed(isSuppressed)):
                 state.suppressAutomaticRefreshFeedback = isSuppressed
