@@ -22,6 +22,14 @@ struct GeneralSettingsFeature {
         case defaultFileViewerDiagnosis
     }
 
+    private func diagnoseDefaultFileViewerEffect(source: DefaultFileViewerDiagnosisSource) -> Effect<Action> {
+        .run { [defaultFileViewerClient] send in
+            let status = await defaultFileViewerClient.diagnose()
+            await send(.defaultFileViewerDiagnosisCompleted(status, source: source))
+        }
+        .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
+    }
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -117,20 +125,22 @@ struct GeneralSettingsFeature {
             case .checkForUpdates:
                 return .none
 
-            case .defaultFileViewerSectionAppeared, .defaultFileViewerDiagnoseRequested:
-                state.isDiagnosingDefaultFileViewer = true
-                return .run { [defaultFileViewerClient] send in
-                    let status = await defaultFileViewerClient.diagnose()
-                    await send(.defaultFileViewerDiagnosisCompleted(status))
-                }
-                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
+            case .defaultFileViewerSectionAppeared:
+                state.defaultFileViewerPhase = .diagnosing(.sectionAppeared)
+                return diagnoseDefaultFileViewerEffect(source: .sectionAppeared)
 
-            case let .defaultFileViewerDiagnosisCompleted(status):
-                state.isDiagnosingDefaultFileViewer = false
+            case let .defaultFileViewerDiagnoseRequested(source):
+                state.defaultFileViewerPhase = .diagnosing(source)
+                return diagnoseDefaultFileViewerEffect(source: source)
+
+            case let .defaultFileViewerDiagnosisCompleted(status, source):
+                state.defaultFileViewerPhase = .idle
                 state.defaultFileViewerStatus = status
                 switch status {
                 case .voyagerIsDefault, .finderIsDefault, .otherIsDefault:
-                    state.defaultFileViewerErrorMessage = nil
+                    if source.shouldClearErrorOnHealthyStatus {
+                        state.defaultFileViewerErrorMessage = nil
+                    }
                 case .unknown:
                     break
                 }
@@ -138,7 +148,7 @@ struct GeneralSettingsFeature {
 
             case .setAsDefaultFileViewerTapped:
                 guard !state.isSettingDefaultFileViewer else { return .none }
-                state.isSettingDefaultFileViewer = true
+                state.defaultFileViewerPhase = .setting
                 state.defaultFileViewerErrorMessage = nil
                 return .run { [defaultFileViewerClient] send in
                     do {
@@ -152,27 +162,17 @@ struct GeneralSettingsFeature {
                 }
 
             case .setAsDefaultFileViewerSucceeded:
-                state.isSettingDefaultFileViewer = false
-                state.isDiagnosingDefaultFileViewer = true
-                return .run { [defaultFileViewerClient] send in
-                    let status = await defaultFileViewerClient.diagnose()
-                    await send(.defaultFileViewerDiagnosisCompleted(status))
-                }
-                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
+                state.defaultFileViewerPhase = .diagnosing(.afterSetSucceeded)
+                return diagnoseDefaultFileViewerEffect(source: .afterSetSucceeded)
 
             case let .setAsDefaultFileViewerFailed(error):
-                state.isSettingDefaultFileViewer = false
                 state.defaultFileViewerErrorMessage = error.message
-                state.isDiagnosingDefaultFileViewer = true
-                return .run { [defaultFileViewerClient] send in
-                    let status = await defaultFileViewerClient.diagnose()
-                    await send(.defaultFileViewerDiagnosisCompleted(status))
-                }
-                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
+                state.defaultFileViewerPhase = .diagnosing(.afterSetFailed)
+                return diagnoseDefaultFileViewerEffect(source: .afterSetFailed)
 
             case .restoreDefaultFileViewerTapped:
                 guard !state.isRestoringDefaultFileViewer else { return .none }
-                state.isRestoringDefaultFileViewer = true
+                state.defaultFileViewerPhase = .restoring
                 state.defaultFileViewerErrorMessage = nil
                 return .run { [defaultFileViewerClient] send in
                     do {
@@ -186,23 +186,13 @@ struct GeneralSettingsFeature {
                 }
 
             case .restoreDefaultFileViewerSucceeded:
-                state.isRestoringDefaultFileViewer = false
-                state.isDiagnosingDefaultFileViewer = true
-                return .run { [defaultFileViewerClient] send in
-                    let status = await defaultFileViewerClient.diagnose()
-                    await send(.defaultFileViewerDiagnosisCompleted(status))
-                }
-                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
+                state.defaultFileViewerPhase = .diagnosing(.afterRestoreSucceeded)
+                return diagnoseDefaultFileViewerEffect(source: .afterRestoreSucceeded)
 
             case let .restoreDefaultFileViewerFailed(error):
-                state.isRestoringDefaultFileViewer = false
                 state.defaultFileViewerErrorMessage = error.message
-                state.isDiagnosingDefaultFileViewer = true
-                return .run { [defaultFileViewerClient] send in
-                    let status = await defaultFileViewerClient.diagnose()
-                    await send(.defaultFileViewerDiagnosisCompleted(status))
-                }
-                .cancellable(id: CancelID.defaultFileViewerDiagnosis, cancelInFlight: true)
+                state.defaultFileViewerPhase = .diagnosing(.afterRestoreFailed)
+                return diagnoseDefaultFileViewerEffect(source: .afterRestoreFailed)
             }
         }
     }

@@ -95,7 +95,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         let store = makeStore(diagnose: { .voyagerIsDefault })
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault, source: .sectionAppeared))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .voyagerIsDefault)
     }
 
@@ -104,7 +104,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         let store = makeStore(diagnose: { .finderIsDefault })
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .sectionAppeared))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .finderIsDefault)
     }
 
@@ -113,10 +113,13 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         let store = makeStore(diagnose: { .otherIsDefault(appBundleID: "com.test.app", appDisplayName: "TestApp") })
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.otherIsDefault(
-            appBundleID: "com.test.app",
-            appDisplayName: "TestApp",
-        )))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(
+            .otherIsDefault(
+                appBundleID: "com.test.app",
+                appDisplayName: "TestApp",
+            ),
+            source: .sectionAppeared,
+        ))
         XCTAssertEqual(
             store.state.defaultFileViewerStatus,
             .otherIsDefault(appBundleID: "com.test.app", appDisplayName: "TestApp"),
@@ -128,7 +131,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         let store = makeStore(diagnose: { .unknown })
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown, source: .sectionAppeared))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .unknown)
     }
 
@@ -143,12 +146,12 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .sectionAppeared))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .finderIsDefault)
 
         await store.send(.setAsDefaultFileViewerTapped)
         await store.receive(.setAsDefaultFileViewerSucceeded)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault, source: .afterSetSucceeded))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .voyagerIsDefault)
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
     }
@@ -164,11 +167,11 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .sectionAppeared))
 
         await store.send(.setAsDefaultFileViewerTapped)
         await store.receive(.setAsDefaultFileViewerFailed(.system(message: "Permission denied")))
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown, source: .afterSetFailed))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
@@ -182,11 +185,11 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .sectionAppeared))
 
         await store.send(.setAsDefaultFileViewerTapped)
         await store.receive(.setAsDefaultFileViewerFailed(.system(message: "disk I/O")))
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown, source: .afterSetFailed))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
@@ -200,11 +203,11 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .sectionAppeared))
 
         await store.send(.setAsDefaultFileViewerTapped)
         await store.receive(.setAsDefaultFileViewerFailed(.system(message: "LSHandler failed")))
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown, source: .afterSetFailed))
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
@@ -220,11 +223,11 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault, source: .sectionAppeared))
 
         await store.send(.restoreDefaultFileViewerTapped)
         await store.receive(.restoreDefaultFileViewerSucceeded)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .afterRestoreSucceeded))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .finderIsDefault)
         XCTAssertFalse(store.state.isRestoringDefaultFileViewer)
     }
@@ -240,11 +243,11 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault, source: .sectionAppeared))
 
         await store.send(.restoreDefaultFileViewerTapped)
         await store.receive(.restoreDefaultFileViewerFailed(.system(message: "LS API fail")))
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown, source: .afterRestoreFailed))
         XCTAssertFalse(store.state.isRestoringDefaultFileViewer)
         XCTAssertNotNil(store.state.defaultFileViewerErrorMessage)
     }
@@ -296,18 +299,50 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         XCTAssertEqual(status, .unknown)
     }
 
-    /// 실패 후 재진단이 정상 상태로 회복되면 stale 오류 배너를 지운다.
+    /// 수동 재진단이 정상 상태로 회복되면 stale 오류 배너를 지운다.
     func testDiagnosisCompletedClearsErrorWhenStatusRecovers() async {
         var initialState = GeneralSettingsFeature.State()
-        initialState.isDiagnosingDefaultFileViewer = true
+        initialState.defaultFileViewerPhase = .diagnosing(.manual)
         initialState.defaultFileViewerErrorMessage = "Permission denied"
         let store = makeStore(initialState: initialState)
 
-        await store.send(.defaultFileViewerDiagnosisCompleted(.finderIsDefault)) {
-            $0.isDiagnosingDefaultFileViewer = false
+        await store.send(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .manual)) {
+            $0.defaultFileViewerPhase = .idle
             $0.defaultFileViewerStatus = .finderIsDefault
             $0.defaultFileViewerErrorMessage = nil
         }
+    }
+
+    /// set 실패 후 자동 재진단이 정상 상태를 읽어도 실패 배너를 유지한다.
+    func testSetFailureFollowUpDiagnosisKeepsErrorWhenStatusStillHealthy() async {
+        let store = makeStore(
+            diagnose: { .finderIsDefault },
+            setVoyagerAsDefault: { throw FileOpError.system(message: "Permission denied") },
+        )
+        store.exhaustivity = .off
+        await store.send(.defaultFileViewerSectionAppeared)
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .sectionAppeared))
+
+        await store.send(.setAsDefaultFileViewerTapped)
+        await store.receive(.setAsDefaultFileViewerFailed(.system(message: "Permission denied")))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .afterSetFailed))
+        XCTAssertEqual(store.state.defaultFileViewerErrorMessage, "Permission denied")
+    }
+
+    /// restore 실패 후 자동 재진단이 정상 상태를 읽어도 실패 배너를 유지한다.
+    func testRestoreFailureFollowUpDiagnosisKeepsErrorWhenStatusStillHealthy() async {
+        let store = makeStore(
+            diagnose: { .voyagerIsDefault },
+            restoreFinder: { throw FileOpError.system(message: "LS API fail") },
+        )
+        store.exhaustivity = .off
+        await store.send(.defaultFileViewerSectionAppeared)
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault, source: .sectionAppeared))
+
+        await store.send(.restoreDefaultFileViewerTapped)
+        await store.receive(.restoreDefaultFileViewerFailed(.system(message: "LS API fail")))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault, source: .afterRestoreFailed))
+        XCTAssertEqual(store.state.defaultFileViewerErrorMessage, "LS API fail")
     }
 
     /// LSHandler 실패 시 NSFileViewer write를 이전 값으로 롤백한다.
@@ -412,7 +447,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .sectionAppeared))
 
         await store.send(.setAsDefaultFileViewerTapped)
         // 두 번째 탭 — isSetting=true이므로 reducer가 guard로 무시해야 함 (G4)
@@ -427,7 +462,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.voyagerIsDefault, source: .sectionAppeared))
 
         await store.send(.restoreDefaultFileViewerTapped)
         // 두 번째 탭 — isRestoring=true이므로 reducer가 guard로 무시해야 함 (G4)
@@ -444,10 +479,10 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         )
         store.exhaustivity = .off
         await store.send(.defaultFileViewerSectionAppeared)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.unknown, source: .sectionAppeared))
 
-        await store.send(.defaultFileViewerDiagnoseRequested)
-        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault))
+        await store.send(.defaultFileViewerDiagnoseRequested(.manual))
+        await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .manual))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .finderIsDefault)
     }
 }

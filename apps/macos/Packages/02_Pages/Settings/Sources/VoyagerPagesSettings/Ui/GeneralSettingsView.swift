@@ -215,7 +215,7 @@ private extension GeneralSettingsView {
         case .finderIsDefault, .otherIsDefault:
             .setAsDefaultFileViewerTapped
         case .unknown:
-            .defaultFileViewerDiagnoseRequested
+            .defaultFileViewerDiagnoseRequested(.manual)
         }
     }
 
