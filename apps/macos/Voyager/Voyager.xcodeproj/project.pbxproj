@@ -1060,7 +1060,7 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Voyager/Config/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Voyager (Debug)";
+				INFOPLIST_KEY_CFBundleDisplayName = "Voyager$(VOYAGER_APP_SUFFIX) (Debug)";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1074,7 +1074,7 @@
 					"-interposable",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "$(TARGET_NAME)$(VOYAGER_APP_SUFFIX)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
