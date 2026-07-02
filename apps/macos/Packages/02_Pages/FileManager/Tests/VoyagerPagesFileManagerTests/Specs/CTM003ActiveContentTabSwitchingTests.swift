@@ -129,6 +129,8 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
             )], activeTabID: homeID, recentlyClosed: nil),
         ) {
             ContentTabFeature()
+        } withDependencies: {
+            $0.entryLoadingClient.displayName = { URL(fileURLWithPath: $0).lastPathComponent }
         }
 
         await store.send(.updateActivePageAnchor(homeID, desktopAnchor)) {
@@ -220,6 +222,7 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
         ) {
             ContentTabFeature()
         } withDependencies: {
+            $0.entryLoadingClient.displayName = { URL(fileURLWithPath: $0).lastPathComponent }
             $0.fileManagerIconClient.iconNameForURL = { url, isDirectory, _ in
                 isDirectory && url.path == desktopPath ? "menubar.dock.rectangle" : "folder"
             }
@@ -260,6 +263,7 @@ final class CTM003ActiveContentTabSwitchingTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.displayName = { URL(fileURLWithPath: $0).lastPathComponent }
         }
         store.exhaustivity = .off
 

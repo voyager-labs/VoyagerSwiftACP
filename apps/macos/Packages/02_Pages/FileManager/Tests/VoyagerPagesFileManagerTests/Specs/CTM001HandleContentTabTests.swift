@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
@@ -1606,6 +1607,10 @@ final class CTM001HandleContentTabTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.homeAiChatClient.createSession = { .selected("session-123") }
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in nil }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
         }
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action과
         // HomeSelectionReducer의 session 생성 effect 결과를 방출하므로 최종 anchor 검증에 집중한다.
@@ -1698,5 +1703,113 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
         XCTAssertEqual(tab.anchor, .homeDefault)
         XCTAssertEqual(tab.page, .home)
+    }
+
+    // MARK: - CTM-001-home_selection_page_conversion: ContentPane AI Chat setup
+
+    /// Home Start AI Chat 선택 시 ContentPane AI Chat이 sessionID로 초기화되고 Inspector는 영향을 받지 않음
+    /// VOY-509 Task 2: 홈 화면 Start AI Chat 버튼 탭 시 ContentPane AI Chat state가 .setup과 .providerConnectionsUpdated를
+    /// 수신하고, Inspector(.openChat)는 호출되지 않음을 검증한다.
+    /// - 검증 내용: tab count 불변, active tab anchor/page가 .aiChat(sessionID:)로 전환,
+    ///   content.aiChat.restoreSessionID가 sessionID로 설정됨,
+    ///   inspector.inspectorVisible/inspector.activeMode/inspector.aiChat 미변경
+    /// - 사전 조건: homeAiChatClient.createSession → .selected("session-123"),
+    ///   aiConnectionsFileClient.load → .empty()
+    /// - 기대 결과: 새로운 tab 생성 없이 active tab이 AI Chat anchor로 변환되고 ContentPane AI Chat이 초기화되며 Inspector는 그대로 유지됨
+    func testHomeSelection_startAiChat_initializesContentPaneAiChat() async throws {
+        let sessionID = "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.homeAiChatClient.createSession = { .selected(sessionID) }
+            $0.aiConnectionsFileClient.load = { .empty() }
+            $0.aiChatSessionPersistenceClient.loadSession = { _ in nil }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+        }
+        // 비포괄적: FileManagerFeature.onAppear 및 다중 async effect가 여러 action을 방출하므로
+        // ContentPane AI Chat 초기화 검증에 집중한다.
+        store.exhaustivity = .off
+
+        let initialTabCount = store.state.contentTabs.tabs.count
+        let initialInspectorVisible = store.state.inspector.inspectorVisible
+        let initialInspectorMode = store.state.inspector.activeMode
+
+        await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
+        // AI Chat view가 기본 .sessions 상태로 먼저 렌더링되지 않도록 setup을 anchor 전환보다 먼저 적용한다.
+        await store.receive { action in
+            guard case .content(.aiChat(.setup)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .navigation(.view(.showAiChat(receivedSessionID))) = action else { return false }
+            return receivedSessionID == sessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else { return false }
+            return receivedSessionID == sessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.delegate(.navigateToState(.aiChat(receivedSessionID)))) = action
+            else { return false }
+            return receivedSessionID == sessionID
+        }
+        await store.receive { action in
+            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
+            else { return false }
+            return receivedSessionID == sessionID
+        }
+        await store.receive(\.contentTabs)
+
+        let expectedSessionUUID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+
+        // Tab count invariance — no new tab created
+        XCTAssertEqual(store.state.contentTabs.tabs.count, initialTabCount, "tab count must not change")
+
+        // Active tab anchor/page converted to .aiChat
+        let tab = try XCTUnwrap(store.state.contentTabs.tabs.first)
+        XCTAssertEqual(tab.anchor, .aiChat(sessionID: sessionID))
+        XCTAssertEqual(tab.page, .aiChat)
+
+        // ContentPane AI Chat은 .setup 수신 후 즉시 채팅 모드로 열리고 navigation history에 기록된다
+        XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(sessionID))
+        XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home])
+        XCTAssertTrue(store.state.content.navigation.canGoBack)
+        XCTAssertFalse(store.state.content.navigation.canGoForward)
+        XCTAssertEqual(
+            store.state.content.aiChat.mode,
+            .chat,
+            "Start AI Chat must open the chat input screen before history",
+        )
+        XCTAssertEqual(
+            store.state.content.aiChat.sessionID,
+            expectedSessionUUID,
+            "ContentPane aiChat must keep the fresh Start AI Chat sessionID",
+        )
+        XCTAssertNil(
+            store.state.content.aiChat.restoreSessionID,
+            "Fresh ContentPane AI Chat must skip restore to avoid first-frame layout jump",
+        )
+        XCTAssertEqual(
+            store.state.content.aiChat.sessionStatus,
+            .idle,
+            "Fresh ContentPane AI Chat must remain idle instead of entering restore",
+        )
+
+        // Inspector was NOT touched by Home Start AI Chat
+        XCTAssertEqual(store.state.inspector.inspectorVisible, initialInspectorVisible)
+        XCTAssertEqual(store.state.inspector.activeMode, initialInspectorMode)
+        XCTAssertNil(
+            store.state.inspector.aiChat.restoreSessionID,
+            "Inspector aiChat restoreSessionID must remain nil",
+        )
+        XCTAssertNil(
+            store.state.inspector.aiChat.sessionID,
+            "Inspector aiChat sessionID must remain nil",
+        )
     }
 }
