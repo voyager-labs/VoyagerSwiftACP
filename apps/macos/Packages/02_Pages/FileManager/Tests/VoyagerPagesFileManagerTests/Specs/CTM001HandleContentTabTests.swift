@@ -1707,18 +1707,23 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     // MARK: - CTM-001-home_selection_page_conversion: ContentPane AI Chat setup
 
-    /// Home Start AI Chat 선택 시 ContentPane AI Chat이 sessionID로 초기화되고 Inspector는 영향을 받지 않음
+    /// Home Start AI Chat 선택 시 ContentPane AI Chat이 sessionID로 초기화되고 Inspector Chat은 닫힘
     /// VOY-509 Task 2: 홈 화면 Start AI Chat 버튼 탭 시 ContentPane AI Chat state가 .setup과 .providerConnectionsUpdated를
-    /// 수신하고, Inspector(.openChat)는 호출되지 않음을 검증한다.
+    /// 수신하고, 기존 Inspector Chat은 닫히는지 검증한다.
     /// - 검증 내용: tab count 불변, active tab anchor/page가 .aiChat(sessionID:)로 전환,
     ///   content.aiChat.restoreSessionID가 sessionID로 설정됨,
-    ///   inspector.inspectorVisible/inspector.activeMode/inspector.aiChat 미변경
+    ///   열린 Inspector Chat을 닫고 inspector.aiChat 세션 상태는 오염시키지 않음
     /// - 사전 조건: homeAiChatClient.createSession → .selected("session-123"),
     ///   aiConnectionsFileClient.load → .empty()
-    /// - 기대 결과: 새로운 tab 생성 없이 active tab이 AI Chat anchor로 변환되고 ContentPane AI Chat이 초기화되며 Inspector는 그대로 유지됨
+    /// - 기대 결과: 새로운 tab 생성 없이 active tab이 AI Chat anchor로 변환되고 ContentPane AI Chat이 초기화되며 Inspector Chat은 닫힘
     func testHomeSelection_startAiChat_initializesContentPaneAiChat() async throws {
         let sessionID = "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"
-        let store = TestStore(initialState: FileManagerFeature.State()) {
+        var initialState = FileManagerFeature.State()
+        initialState.inspector.inspectorVisible = true
+        initialState.inspector.inspectorPaneExists = true
+        initialState.inspector.activeMode = .chat
+
+        let store = TestStore(initialState: initialState) {
             FileManagerFeature()
         } withDependencies: {
             $0.homeAiChatClient.createSession = { .selected(sessionID) }
@@ -1732,11 +1737,16 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         let initialTabCount = store.state.contentTabs.tabs.count
-        let initialInspectorVisible = store.state.inspector.inspectorVisible
-        let initialInspectorMode = store.state.inspector.activeMode
 
         await store.send(.content(.view(.homeSelectionTapped(.startAiChat))))
-        // Home AI Chat 전환은 active tab anchor와 navigation route를 먼저 고정하고 provider load만 tab-scoped async로 처리한다.
+        // Home AI Chat 전환은 same-tab handoff에서도 Inspector Chat을 먼저 닫고,
+        // active tab anchor와 navigation route를 고정한 뒤 provider load만 tab-scoped async로 처리한다.
+        await store.receive { action in
+            guard case .inspector(.closeChat) = action else { return false }
+            return true
+        } assert: { state in
+            state.inspector.inspectorVisible = false
+        }
         await store.receive { action in
             guard case let .contentTabs(.updateActivePageAnchor(_, .aiChat(receivedSessionID))) = action else {
                 return false
@@ -1807,9 +1817,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
             "Fresh ContentPane AI Chat must remain idle instead of entering restore",
         )
 
-        // Inspector was NOT touched by Home Start AI Chat
-        XCTAssertEqual(store.state.inspector.inspectorVisible, initialInspectorVisible)
-        XCTAssertEqual(store.state.inspector.activeMode, initialInspectorMode)
+        // Inspector Chat은 ContentPane AI Chat과 동시에 남지 않도록 닫힌다.
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
+        XCTAssertEqual(store.state.inspector.activeMode, .chat)
         XCTAssertNil(
             store.state.inspector.aiChat.restoreSessionID,
             "Inspector aiChat restoreSessionID must remain nil",

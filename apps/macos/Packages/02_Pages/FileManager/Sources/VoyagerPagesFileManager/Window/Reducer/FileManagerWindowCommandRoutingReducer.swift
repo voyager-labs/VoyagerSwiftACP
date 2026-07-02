@@ -126,6 +126,7 @@ struct FileManagerWindowCommandRoutingReducer {
             .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
 
             return .concatenate(
+                .send(.inspector(.closeChat)),
                 .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
                 .send(.navigation(.view(.showAiChat(sessionID)))),
                 .send(.content(.aiChat(.setup(setup)))),
