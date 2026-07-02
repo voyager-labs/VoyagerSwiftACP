@@ -2157,6 +2157,7 @@ extension CTM005IndependentContentTabSessionTests {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.uuid = .incrementing
+            $0.aiConnectionsFileClient.load = { .empty() }
             $0.entryWatchingClient.startWatchingDirectory = { _ in
                 AsyncStream { continuation in
                     continuation.finish()
@@ -2186,6 +2187,10 @@ extension CTM005IndependentContentTabSessionTests {
                 return false
             }
             return receivedSessionID == aiSessionID
+        }
+        await store.receive { action in
+            guard case .content(.aiChat(.providerConnectionsUpdated)) = action else { return false }
+            return true
         }
 
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(sessionID))
@@ -2811,7 +2816,6 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedSessionID == aiSessionID
         }
 
-        XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(sessionID))
         XCTAssertEqual(store.state.content.navigation.backHistory.map(\.navigationState), [.home])
         XCTAssertEqual(
             store.state.content.navigation.forwardHistory.map(\.navigationState),
@@ -3433,7 +3437,6 @@ extension CTM005IndependentContentTabSessionTests {
         await store.send(.contentTabs(.setCurrent(aiChatID)))
 
         XCTAssertEqual(store.state.content.aiChat.mode, .chat)
-        XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(sessionID))
         XCTAssertEqual(
             store.state.tabContentStates[aiChatID]?.navigation.navigationState,
             .aiChat(sessionID),
@@ -3507,6 +3510,69 @@ extension CTM005IndependentContentTabSessionTests {
             return true
         }
         XCTAssertEqual(store.state.content.aiChat.mode, .chat)
+        await store.finish()
+    }
+
+    /// CTM-005-ai_chat_provider_forwarding: navigation replay로 AI Chat route가 복원될 때 Inspector Chat을 닫음
+    /// Back/Forward replay는 tab handoff를 거치지 않고 active tab anchor만 갱신하므로 Inspector Chat close를 anchor sync 경로에서 보장해야
+    /// 한다.
+    /// - 검증 내용: `.aiChat` navigation delegate가 active tab anchor를 갱신하기 전에 Inspector Chat close를 방출함
+    /// - 사전 조건: Home tab에서 Inspector Chat이 열린 상태로 `.aiChat(sessionID)` route replay가 들어옴
+    /// - 기대 결과: Inspector Chat이 닫히고 active tab anchor가 AI Chat session으로 갱신됨
+    func testAiChatNavigationReplayClosesOpenInspectorChat() async {
+        let homeID = ContentTabID()
+        let sessionID = "inspector-replay-session"
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.content = homeContent
+        state.inspector.inspectorVisible = true
+        state.inspector.inspectorPaneExists = true
+        state.inspector.activeMode = .chat
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+        }
+        store.exhaustivity = .off
+
+        await store.send(.navigation(.delegate(.navigateToState(.aiChat(sessionID)))))
+        await store.receive { action in
+            guard case .inspector(.closeChat) = action else { return false }
+            return true
+        } assert: { state in
+            state.inspector.inspectorVisible = false
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.updateActivePageAnchor(receivedTabID, .aiChat(receivedSessionID))) = action
+            else { return false }
+            return receivedTabID == homeID && receivedSessionID == sessionID
+        }
+        await store.receive { action in
+            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
+            else { return false }
+            return receivedSessionID == sessionID
+        }
+        XCTAssertEqual(store.state.contentTabs.tabs[id: homeID]?.anchor, .aiChat(sessionID: sessionID))
+        XCTAssertFalse(store.state.inspector.inspectorVisible)
         await store.finish()
     }
 

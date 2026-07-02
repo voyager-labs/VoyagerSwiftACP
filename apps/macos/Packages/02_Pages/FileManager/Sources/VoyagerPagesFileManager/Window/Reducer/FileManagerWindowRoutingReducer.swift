@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
@@ -14,6 +15,8 @@ struct FileManagerWindowRoutingReducer {
     var collectionAlertClient
     @Dependency(\.fileManagerClient)
     var fileManagerClient
+    @Dependency(\.aiConnectionsFileClient)
+    var aiConnectionsFileClient
 
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
@@ -107,7 +110,11 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
-                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    activeTabHandoffEffect(
+                        shouldResyncContentNavigation,
+                        state: state,
+                        aiConnectionsFileClient: aiConnectionsFileClient,
+                    ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
 
@@ -130,7 +137,11 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
-                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    activeTabHandoffEffect(
+                        shouldResyncContentNavigation,
+                        state: state,
+                        aiConnectionsFileClient: aiConnectionsFileClient,
+                    ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
 
@@ -167,7 +178,11 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 let handoffEffect: Effect<Action> = .merge(
-                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    activeTabHandoffEffect(
+                        shouldResyncContentNavigation,
+                        state: state,
+                        aiConnectionsFileClient: aiConnectionsFileClient,
+                    ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
                 return shouldCloseWindow ? .merge(handoffEffect, .send(.closeWindow)) : handoffEffect
@@ -191,7 +206,11 @@ struct FileManagerWindowRoutingReducer {
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
                 return .merge(
-                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    activeTabHandoffEffect(
+                        shouldResyncContentNavigation,
+                        state: state,
+                        aiConnectionsFileClient: aiConnectionsFileClient,
+                    ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
 
@@ -205,7 +224,11 @@ struct FileManagerWindowRoutingReducer {
                     && activeAnchorAfterSync != activeAnchorBeforeSync
                     && activeAnchorAfterSync?.isCollectionFileAnchor == true
                 return .merge(
-                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    activeTabHandoffEffect(
+                        shouldResyncContentNavigation,
+                        state: state,
+                        aiConnectionsFileClient: aiConnectionsFileClient,
+                    ),
                     closeInspectorForActiveAiChatEffect(state: state),
                 )
 
@@ -487,6 +510,7 @@ private func clearInFlightComposerStateOnTabSwitch(state: inout ComposerFeature.
 private func activeTabHandoffEffect(
     _ shouldResyncContentNavigation: Bool,
     state: FileManagerWindowState,
+    aiConnectionsFileClient: AIConnectionsFileClient,
 ) -> Effect<FileManagerWindowAction> {
     guard shouldResyncContentNavigation else {
         return .none
@@ -494,6 +518,10 @@ private func activeTabHandoffEffect(
     return .merge(
         cancelInFlightContentEffectsOnTabSwitch(state: state),
         resyncContentNavigationEffect(state: state),
+        restartAiChatProviderLoadOnTabRestoreEffect(
+            state: state,
+            aiConnectionsFileClient: aiConnectionsFileClient,
+        ),
     )
 }
 
@@ -519,6 +547,29 @@ private func contentPaneAiChatCancelEffect(state: FileManagerWindowState) -> Eff
         return .none
     }
     return .send(.content(.aiChat(.cancelInFlightWork)))
+}
+
+private func restartAiChatProviderLoadOnTabRestoreEffect(
+    state: FileManagerWindowState,
+    aiConnectionsFileClient: AIConnectionsFileClient,
+) -> Effect<FileManagerWindowAction> {
+    guard let activeTabID = state.contentTabs.activeTabID,
+          case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
+    else { return .none }
+    if case .loaded = state.content.aiChat.modelListState {
+        return .none
+    }
+
+    return .run { send in
+        let connectionsFile: AIConnectionsFile
+        do {
+            connectionsFile = try await aiConnectionsFileClient.load()
+        } catch {
+            connectionsFile = .empty()
+        }
+        await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
+    }
+    .cancellable(id: HomeAiChatOpenCancelID(tabID: activeTabID), cancelInFlight: true)
 }
 
 private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
