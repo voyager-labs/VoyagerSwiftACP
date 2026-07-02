@@ -510,8 +510,15 @@ private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowSta
         state.contentTabs.previousActiveTabID
             .map { .cancel(id: HomeAiChatOpenCancelID(tabID: $0)) }
             ?? .none,
-        .send(.content(.aiChat(.cancelInFlightWork))),
+        contentPaneAiChatCancelEffect(state: state),
     )
+}
+
+private func contentPaneAiChatCancelEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
+    guard !state.inspector.inspectorVisible || state.inspector.activeMode != .chat else {
+        return .none
+    }
+    return .send(.content(.aiChat(.cancelInFlightWork)))
 }
 
 private func resyncContentNavigationEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
