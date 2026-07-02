@@ -73,6 +73,9 @@ public struct FileManagerContentFeature {
             case .aiChat(.delegate(.openAISettings)):
                 return .send(.delegate(.openAISettings))
 
+            case let .aiChat(.newChatCreated(snapshot)):
+                return .send(.delegate(.aiChatSessionCreated(snapshot.sessionID)))
+
             case let .internal(.setAutomaticRefreshFeedbackSuppressed(isSuppressed)):
                 state.suppressAutomaticRefreshFeedback = isSuppressed
                 return .none

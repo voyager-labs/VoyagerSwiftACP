@@ -2167,6 +2167,7 @@ extension CTM005IndependentContentTabSessionTests {
         store.exhaustivity = .off
 
         await store.send(.contentTabs(.setCurrent(aiChatID)))
+        await store.receive(\.content.aiChat.cancelInFlightWork)
 
         XCTAssertEqual(store.state.contentTabs.activeTabID, aiChatID)
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(sessionID))
@@ -2703,6 +2704,110 @@ extension CTM005IndependentContentTabSessionTests {
 
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(currentSessionID))
         XCTAssertEqual(store.state.content.aiChat.sessionID, currentAiSessionID)
+        await store.finish()
+    }
+
+    /// CTM-005-ai_chat_mode_switching: History 화면 New Chat 성공 후 active tab anchor를 새 session으로 갱신함
+    /// History 화면에서 New Chat 생성이 완료되면 parent navigation과 ContentTab anchor가 새 session route를 기준으로 갱신되어야 한다.
+    /// - 검증 내용: `.newChatCreated` 후 `.showAiChat(newSessionID)`와 active tab `.aiChat(newSessionID)` anchor 갱신
+    /// - 사전 조건: active AI Chat tab이 `.aiChatSessions(oldSessionID)` route와 old tab anchor를 가진 상태
+    /// - 기대 결과: 새 session route가 Back/Forward 및 tab handoff의 기준 anchor가 됨
+    func testAiChatHistoryNewChatCreatedUpdatesRouteAndActiveTabAnchor() async throws {
+        let oldUUID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let newUUID = try XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333"))
+        let oldSessionID = oldUUID.uuidString
+        let newSessionID = newUUID.uuidString
+        let oldAiSessionID = AiChatSessionID(rawValue: oldUUID)
+        let newAiSessionID = AiChatSessionID(rawValue: newUUID)
+        let tabID = ContentTabID()
+        let snapshot = AiChatSessionSnapshot(
+            sessionID: newAiSessionID,
+            status: .idle,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [],
+            updatedAtMs: 2,
+        )
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .aiChat,
+                anchor: .aiChat(sessionID: oldSessionID),
+                isPinned: false,
+                title: "AI Chat",
+                iconName: "message",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content.navigation.navigationState = .aiChatSessions(oldSessionID)
+        state.content.aiChat.mode = .sessions
+        state.content.aiChat.sessionID = oldAiSessionID
+        state.content.aiChat.sessionStatus = .active
+        state.tabContentStates = [tabID: state.content]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: newChatCreated는 parent delegate와 navigation bridge 효과를 연쇄 방출하므로 route/anchor 결과만
+        // 검증함
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.newChatCreated(snapshot)))) { state in
+            state.content.aiChat.mode = .chat
+            state.content.aiChat.sessionID = newAiSessionID
+            state.content.aiChat.emptyDraftSessionID = newAiSessionID
+            state.content.aiChat.restoreSessionID = newAiSessionID
+            state.content.aiChat.sessionList.selectedSessionID = newAiSessionID
+        }
+        await store.receive { action in
+            guard case let .content(.delegate(.aiChatSessionCreated(receivedSessionID))) = action else { return false }
+            return receivedSessionID == newAiSessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.view(.showAiChat(receivedSessionID))) = action else { return false }
+            return receivedSessionID == newSessionID
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.updateActivePageAnchor(receivedTabID, .aiChat(receivedSessionID))) = action
+            else {
+                return false
+            }
+            return receivedTabID == tabID && receivedSessionID == newSessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+                return false
+            }
+            return receivedSessionID == newSessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.delegate(.navigateToState(.aiChat(receivedSessionID)))) = action else {
+                return false
+            }
+            return receivedSessionID == newSessionID
+        }
+        await store.receive { action in
+            guard case let .content(.internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action else {
+                return false
+            }
+            return receivedSessionID == newSessionID
+        }
+        await store.receive { action in
+            guard case let .content(.aiChat(.routeToChatSession(receivedSessionID))) = action else {
+                return false
+            }
+            return receivedSessionID == newAiSessionID
+        }
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.anchor, .aiChat(sessionID: newSessionID))
+        XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(newSessionID))
+        XCTAssertEqual(store.state.content.aiChat.sessionID, newAiSessionID)
         await store.finish()
     }
 

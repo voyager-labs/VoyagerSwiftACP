@@ -80,6 +80,7 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case requestContextResolved(UUID, AiChatResolvedRequestContext)
     case cancelTapped
     case resetTapped
+    case cancelInFlightWork
     case teardownRequested
     case restoreOutcome(
         requestedSessionID: AiChatSessionID,

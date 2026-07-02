@@ -66,5 +66,6 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case openAISettings
         case currentContextChanged(AiChatCurrentContextSnapshot)
         case homePageAnchorSelected(ContentTabPageAnchor)
+        case aiChatSessionCreated(AiChatSessionID)
     }
 }

@@ -423,6 +423,9 @@ public struct AiChatFeature {
             case .resetTapped:
                 return handleResetTapped(state: &state)
 
+            case .cancelInFlightWork:
+                return cancelAllInFlightWork()
+
             case .teardownRequested:
                 return handleTeardownRequested(state: &state)
 

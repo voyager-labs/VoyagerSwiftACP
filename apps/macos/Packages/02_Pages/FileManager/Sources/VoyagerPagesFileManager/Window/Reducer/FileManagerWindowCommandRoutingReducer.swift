@@ -45,6 +45,16 @@ struct FileManagerWindowCommandRoutingReducer {
                 else { return .none }
                 return handleHomePageAnchorSelected(anchor, activeTabID: activeTabID)
 
+            case let .content(.delegate(.aiChatSessionCreated(sessionID))):
+                guard let activeTabID = state.contentTabs.activeTabID,
+                      case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
+                else { return .none }
+                let sessionIDString = sessionID.rawValue.uuidString
+                return .merge(
+                    .send(.navigation(.view(.showAiChat(sessionIDString)))),
+                    .send(.contentTabs(.updateActivePageAnchor(activeTabID, .aiChat(sessionID: sessionIDString)))),
+                )
+
             case .content(.delegate(.openContextualAiChat)):
                 return .send(.request(.openContextualAiChat))
 

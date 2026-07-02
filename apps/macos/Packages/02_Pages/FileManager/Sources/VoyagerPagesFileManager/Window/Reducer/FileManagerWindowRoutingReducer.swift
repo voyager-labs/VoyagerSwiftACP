@@ -483,6 +483,7 @@ private func cancelInFlightContentEffectsOnTabSwitch(state: FileManagerWindowSta
         )),
         .cancel(id: ComposerFeature.CancelID.search(ownerID: state.content.composer.cancellationOwnerID)),
         .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.content.composer.cancellationOwnerID)),
+        .send(.content(.aiChat(.cancelInFlightWork))),
     )
 }
 
