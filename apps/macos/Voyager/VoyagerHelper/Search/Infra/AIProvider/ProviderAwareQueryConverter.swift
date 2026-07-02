@@ -54,13 +54,16 @@ struct ProviderAwareQueryConverter {
 
         switch settings.model {
         case let .specific(providerRawValue, modelRawValue):
-            return await resolveExplicitModelSelection(
+            let context = ProviderAwareQueryConversionContext(
                 query: request.query,
                 existingFilters: request.filters,
+                file: file,
+                requestedThinking: settings.thinking.selection,
+            )
+            return await resolveExplicitModelSelection(
+                context: context,
                 providerRawValue: providerRawValue,
                 modelRawValue: modelRawValue,
-                requestedThinking: settings.thinking.selection,
-                file: file,
             )
         case .auto:
             return await resolveProviderPreference(
@@ -71,4 +74,11 @@ struct ProviderAwareQueryConverter {
             )
         }
     }
+}
+
+struct ProviderAwareQueryConversionContext {
+    let query: String
+    let existingFilters: SearchFiltersPayload
+    let file: AIConnectionsFile
+    let requestedThinking: AiThinkingSelection?
 }
