@@ -126,10 +126,12 @@ struct GeneralSettingsFeature {
                 return .none
 
             case .defaultFileViewerSectionAppeared:
+                guard !state.isSettingDefaultFileViewer, !state.isRestoringDefaultFileViewer else { return .none }
                 state.defaultFileViewerPhase = .diagnosing(.sectionAppeared)
                 return diagnoseDefaultFileViewerEffect(source: .sectionAppeared)
 
             case let .defaultFileViewerDiagnoseRequested(source):
+                guard !state.isSettingDefaultFileViewer, !state.isRestoringDefaultFileViewer else { return .none }
                 state.defaultFileViewerPhase = .diagnosing(source)
                 return diagnoseDefaultFileViewerEffect(source: source)
 

@@ -27,7 +27,7 @@ final class SET010Counter: @unchecked Sendable {
 
 @MainActor
 final class SET010DefaultFileViewerSettingsTests: XCTestCase {
-    nonisolated(unsafe) private var storage: InMemoryStorage!
+    nonisolated(unsafe) private var storage = InMemoryStorage()
 
     override func setUp() {
         super.setUp()
@@ -35,7 +35,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
     }
 
     override func tearDown() {
-        storage = nil
+        storage = InMemoryStorage()
         super.tearDown()
     }
 
@@ -51,8 +51,7 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         setVoyagerAsDefault: @escaping @Sendable () async throws -> Void = {},
         restoreFinder: @escaping @Sendable () async throws -> Void = {},
     ) -> TestStore<GeneralSettingsFeature.State, GeneralSettingsFeature.Action> {
-        // swiftlint:disable:next force_unwrapping
-        let storage = storage!
+        let storage = storage
         let userDefaultsClient = UserDefaultsClient(
             bool: { key in storage.getBool(key) ?? false },
             setBool: { value, key in storage.setBool(value, forKey: key) },
@@ -156,6 +155,16 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         XCTAssertFalse(store.state.isSettingDefaultFileViewer)
     }
 
+    /// 설정 진행 중 section 재등장은 진행 중인 mutation phase를 덮지 않는다.
+    func testSectionAppearedIgnoredWhileSettingDefaultFileViewer() async {
+        var state = GeneralSettingsFeature.State()
+        state.defaultFileViewerPhase = .setting
+        let store = makeStore(initialState: state)
+
+        await store.send(.defaultFileViewerSectionAppeared)
+        XCTAssertTrue(store.state.isSettingDefaultFileViewer)
+    }
+
     // MARK: - SET-010-set AC#5: 실패 시 set_failed (Tests 6-8)
 
     /// permissionDenied 실패
@@ -230,6 +239,16 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         await store.receive(.defaultFileViewerDiagnosisCompleted(.finderIsDefault, source: .afterRestoreSucceeded))
         XCTAssertEqual(store.state.defaultFileViewerStatus, .finderIsDefault)
         XCTAssertFalse(store.state.isRestoringDefaultFileViewer)
+    }
+
+    /// 복구 진행 중 수동 진단은 진행 중인 mutation phase를 덮지 않는다.
+    func testManualDiagnosisIgnoredWhileRestoringDefaultFileViewer() async {
+        var state = GeneralSettingsFeature.State()
+        state.defaultFileViewerPhase = .restoring
+        let store = makeStore(initialState: state)
+
+        await store.send(.defaultFileViewerDiagnoseRequested(.manual))
+        XCTAssertTrue(store.state.isRestoringDefaultFileViewer)
     }
 
     // MARK: - SET-010-restore AC#4: 실패 시 restore_failed
