@@ -48,6 +48,9 @@ struct FileManagerWindowCommandRoutingReducer {
             case .content(.delegate(.openContextualAiChat)):
                 return .send(.request(.openContextualAiChat))
 
+            case .content(.delegate(.openAISettings)):
+                return .send(.delegate(.openAISettings))
+
             case .inspector(.closeChat):
                 return .cancel(id: CancelID.contextualAiChatOpen)
 
@@ -78,18 +81,39 @@ struct FileManagerWindowCommandRoutingReducer {
     ) -> Effect<Action> {
         switch anchor {
         case let .directory(path):
-            .concatenate(
+            return .concatenate(
                 .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor))),
                 .send(.navigation(.view(.navigateToPath(path)))),
             )
 
         case let .collectionFile(url):
-            .send(.navigation(.view(.openCollectionFile(url))))
+            return .send(.navigation(.view(.openCollectionFile(url))))
 
         case .homeDefault,
-             .virtualCollection,
-             .aiChat:
-            .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+             .virtualCollection:
+            return .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+
+        case let .aiChat(sessionID):
+            let sessionUUID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+            let setup = AiChatSetupState(
+                restoreSessionID: sessionUUID,
+                sessionID: sessionUUID,
+                mode: .chat,
+            )
+            return .run { [aiConnectionsFileClient, activeTabID, anchor, sessionID, setup] send in
+                await send(.content(.aiChat(.setup(setup))))
+
+                let connectionsFile: AIConnectionsFile
+                do {
+                    connectionsFile = try await aiConnectionsFileClient.load()
+                } catch {
+                    connectionsFile = .empty()
+                }
+                await send(.content(.aiChat(.providerConnectionsUpdated(connectionsFile))))
+
+                await send(.navigation(.view(.showAiChat(sessionID))))
+                await send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+            }
         }
     }
 
@@ -333,12 +357,24 @@ struct FileManagerWindowCommandRoutingReducer {
         file: AIConnectionsFile,
         state: State,
     ) -> Effect<Action> {
-        guard state.inspector.inspectorVisible,
-              state.inspector.inspectorPaneExists,
-              state.inspector.activeMode == .chat
-        else { return .none }
+        var effects: [Effect<Action>] = []
 
-        return .send(.inspector(.aiChat(.providerConnectionsUpdated(file))))
+        // ContentPane AI Chat forwarding: active tab이 .aiChat일 때 전송
+        if let activeTabID = state.contentTabs.activeTabID,
+           case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
+        {
+            effects.append(.send(.content(.aiChat(.providerConnectionsUpdated(file)))))
+        }
+
+        // Inspector AI Chat forwarding (기존 동작 유지)
+        if state.inspector.inspectorVisible,
+           state.inspector.inspectorPaneExists,
+           state.inspector.activeMode == .chat
+        {
+            effects.append(.send(.inspector(.aiChat(.providerConnectionsUpdated(file)))))
+        }
+
+        return .merge(effects)
     }
 
     private func openContextualAiChatEffect(state: State) -> Effect<Action> {

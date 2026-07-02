@@ -105,7 +105,10 @@ struct FileManagerWindowRoutingReducer {
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
+                return .merge(
+                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    closeInspectorForActiveAiChatEffect(state: state),
+                )
 
             case .contentTabs(.open):
                 if keepPendingContentTabCloseFocusedAfterOpen(state: &state) {
@@ -125,7 +128,10 @@ struct FileManagerWindowRoutingReducer {
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
+                return .merge(
+                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    closeInspectorForActiveAiChatEffect(state: state),
+                )
 
             case let .contentTabs(.close(tabID)):
                 if keepPendingContentTabCloseFocused(state: &state) {
@@ -159,7 +165,10 @@ struct FileManagerWindowRoutingReducer {
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                let handoffEffect = activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
+                let handoffEffect: Effect<Action> = .merge(
+                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    closeInspectorForActiveAiChatEffect(state: state),
+                )
                 return shouldCloseWindow ? .merge(handoffEffect, .send(.closeWindow)) : handoffEffect
 
             case .contentTabs(.restore):
@@ -180,7 +189,10 @@ struct FileManagerWindowRoutingReducer {
                 }
                 state.syncContentTabSidebarItems()
                 syncSidebarSelectionForActiveContentTab(state: &state)
-                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
+                return .merge(
+                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    closeInspectorForActiveAiChatEffect(state: state),
+                )
 
             case let .applyPinnedContentTabs(contentTabs):
                 let activeTabIDBeforeSync = state.contentTabs.activeTabID
@@ -191,7 +203,10 @@ struct FileManagerWindowRoutingReducer {
                 let shouldResyncContentNavigation = state.contentTabs.activeTabID == activeTabIDBeforeSync
                     && activeAnchorAfterSync != activeAnchorBeforeSync
                     && activeAnchorAfterSync?.isCollectionFileAnchor == true
-                return activeTabHandoffEffect(shouldResyncContentNavigation, state: state)
+                return .merge(
+                    activeTabHandoffEffect(shouldResyncContentNavigation, state: state),
+                    closeInspectorForActiveAiChatEffect(state: state),
+                )
 
             case .contentTabs:
                 state.syncContentTabSidebarItems()
@@ -519,8 +534,15 @@ private func resyncNavigationStateForActiveContentTab(
     else { return nil }
 
     switch activeAnchor {
-    case .homeDefault, .aiChat:
+    case .homeDefault:
         return .home
+    case let .aiChat(sessionID):
+        if case let .aiChatSessions(restoredSessionID) = state.content.navigation.navigationState,
+           restoredSessionID == sessionID
+        {
+            return .aiChatSessions(sessionID)
+        }
+        return .aiChat(sessionID)
     case let .directory(path):
         return .folder(path)
     case .collectionFile:
@@ -538,6 +560,16 @@ private func resyncNavigationStateForActiveContentTab(
             return nil
         }
     }
+}
+
+private func closeInspectorForActiveAiChatEffect(state: FileManagerWindowState) -> Effect<FileManagerWindowAction> {
+    guard state.inspector.inspectorVisible,
+          let activeTabID = state.contentTabs.activeTabID,
+          case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
+    else {
+        return .none
+    }
+    return .send(.inspector(.closeChat))
 }
 
 private func syncSidebarSelectionForActiveContentTab(state _: inout FileManagerWindowState) {}
@@ -562,8 +594,10 @@ private func contentState(
         ))
     case let .virtualCollection(id):
         content.navigation.navigationState = .tags(id)
+    case let .aiChat(sessionID):
+        content.navigation.navigationState = .aiChat(sessionID)
+        content.aiChat.mode = .chat
     case .homeDefault,
-         .aiChat,
          .none:
         break
     }

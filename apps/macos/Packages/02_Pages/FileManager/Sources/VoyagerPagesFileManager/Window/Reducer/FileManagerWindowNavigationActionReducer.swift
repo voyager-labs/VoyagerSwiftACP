@@ -67,7 +67,9 @@ struct FileManagerNavigationActionReducer {
         case .navigateToPath,
              .showRecents,
              .showComputer,
-             .showTag:
+             .showTag,
+             .showAiChat,
+             .showAiChatSessions:
             handleDirectNavigationAction(action, state: &state)
 
         case .goBack,
@@ -105,6 +107,8 @@ struct FileManagerNavigationActionReducer {
              .performShowRecents,
              .performShowComputer,
              .performShowTag,
+             .performShowAiChat,
+             .performShowAiChatSessions,
              .prepareCollectionFileOpen,
              .rollbackBackHistoryOnce,
              .appendBackHistory,
@@ -135,6 +139,12 @@ struct FileManagerNavigationActionReducer {
 
         case let .showTag(tagName):
             return .send(.navigation(.internal(.performShowTag(tagName))))
+
+        case let .showAiChat(sessionID):
+            return .send(.navigation(.internal(.performShowAiChat(sessionID))))
+
+        case let .showAiChatSessions(sessionID):
+            return .send(.navigation(.internal(.performShowAiChatSessions(sessionID))))
 
         default:
             return .none

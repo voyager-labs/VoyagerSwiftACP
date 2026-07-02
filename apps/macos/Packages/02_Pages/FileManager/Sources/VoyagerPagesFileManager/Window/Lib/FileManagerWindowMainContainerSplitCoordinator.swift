@@ -140,7 +140,6 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
             ),
             store.publisher.map(\.contentTabs).removeDuplicates(),
         )
-        .receive(on: DispatchQueue.main)
         .sink { [weak self] _ in
             guard let self else { return }
             render(state: store.state)
@@ -195,6 +194,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
                     self?.store.send(.navigation(.view(.navigateToPath(path))))
                 },
             )
+            .id(chromeProps.renderIdentity)
             .environment(\.fileManagerKeyCommandFocusCoordinator, keyCommandFocusCoordinator),
         )
     }

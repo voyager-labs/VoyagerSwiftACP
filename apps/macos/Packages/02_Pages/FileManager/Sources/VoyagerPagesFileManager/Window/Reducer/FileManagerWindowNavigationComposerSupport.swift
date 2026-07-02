@@ -73,5 +73,11 @@ private func contentTabAnchor(
         case .temporary:
             nil
         }
+
+    case let .aiChat(sessionID):
+        .aiChat(sessionID: sessionID)
+
+    case let .aiChatSessions(sessionID):
+        .aiChat(sessionID: sessionID)
     }
 }
