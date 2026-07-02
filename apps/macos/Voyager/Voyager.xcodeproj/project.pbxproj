@@ -1074,6 +1074,7 @@
 					"-interposable",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = fm.voyager.Voyager;
+				PRODUCT_MODULE_NAME = Voyager;
 				PRODUCT_NAME = "$(TARGET_NAME)$(VOYAGER_APP_SUFFIX)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
