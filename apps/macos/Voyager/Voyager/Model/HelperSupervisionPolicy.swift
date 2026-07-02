@@ -16,13 +16,13 @@ public enum RestartDecision: Equatable, Sendable {
 /// 그레이스 윈도우(5초) 내 중복 실행을 방지한다.
 public struct HelperSupervisionPolicy: Equatable, Sendable {
     /// 60초 윈도우 내 허용 재시작 횟수
-    nonisolated(unsafe) public static let budgetLimit = 3
+    nonisolated public static let budgetLimit = 3
 
     /// 재시작 카운트 윈도우 (초)
-    nonisolated(unsafe) public static let windowDuration: TimeInterval = 60
+    nonisolated public static let windowDuration: TimeInterval = 60
 
     /// 시작 후 중복 실행 방지 그레이스 윈도우 (초)
-    nonisolated(unsafe) public static let graceWindow: TimeInterval = 5
+    nonisolated public static let graceWindow: TimeInterval = 5
 
     /// 윈도우 내 재시작 시각 기록
     public private(set) var restartAttempts: [Date] = []
