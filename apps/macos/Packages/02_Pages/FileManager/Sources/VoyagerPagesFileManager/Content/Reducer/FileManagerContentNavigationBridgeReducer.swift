@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -107,6 +108,12 @@ struct FileManagerContentNavigationBridgeReducer {
 
         case .computer:
             ""
+
+        case let .aiChat(sessionID):
+            "aiChat:\(sessionID)"
+
+        case let .aiChatSessions(sessionID):
+            "aiChatSessions:\(sessionID)"
         }
     }
 
@@ -161,7 +168,29 @@ struct FileManagerContentNavigationBridgeReducer {
 
         case .collection:
             .cancel(id: CancelID.folderWatcher)
+
+        case let .aiChat(sessionID):
+            aiChatRouteEffect(sessionID: sessionID)
+
+        case let .aiChatSessions(sessionID):
+            aiChatSessionsRouteEffect(sessionID: sessionID)
         }
+    }
+
+    private func aiChatRouteEffect(sessionID: String) -> Effect<Action> {
+        let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+        return .merge(
+            .cancel(id: CancelID.folderWatcher),
+            .send(.aiChat(.routeToChatSession(aiChatSessionID))),
+        )
+    }
+
+    private func aiChatSessionsRouteEffect(sessionID: String) -> Effect<Action> {
+        let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
+        return .merge(
+            .cancel(id: CancelID.folderWatcher),
+            .send(.aiChat(.showSessionsForChat(aiChatSessionID))),
+        )
     }
 
     private func observeFolderChangesEffect(path: String) -> Effect<Action> {
