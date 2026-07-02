@@ -81,6 +81,58 @@ extension AiChatFeature {
         .cancellable(id: CancelID.newChat, cancelInFlight: true)
     }
 
+    func routeToChatSession(_ sessionID: AiChatSessionID, state: inout State) -> Effect<Action> {
+        state.sessionList.cancelRenaming()
+        state.sessionList.errorMessage = nil
+
+        if state.sessionID == sessionID {
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.mode = .chat
+            return .cancel(id: CancelID.restore)
+        }
+
+        if state.restoreSessionID == sessionID {
+            return .none
+        }
+
+        if state.sessionList.allRows.contains(where: { $0.sessionID == sessionID }) {
+            if state.sessionID != sessionID {
+                state.currentContextFolderStructureModes = [:]
+            }
+            state.sessionList.selectedSessionID = sessionID
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.restoreSessionID = sessionID
+            state.mode = .sessions
+            return restoreSession(sessionID: sessionID, state: state)
+        }
+
+        state.sessionID = sessionID
+        state.emptyDraftSessionID = sessionID
+        state.sessionStatus = .idle
+        state.mode = .chat
+        state.restoreSessionID = nil
+        state.restoreOutcome = nil
+        state.restoreFailure = nil
+        state.currentSessionCustomTitle = nil
+        state.sessionList.selectedSessionID = sessionID
+        state.transcriptHistory = []
+        state.draftText = ""
+        state.streamingAssistantDraft = nil
+        state.lockedModelHandle = nil
+        state.lastExecutionFailure = nil
+        state.lastRequestContext = nil
+        state.lastRequestContextModelHandle = nil
+        state.addedAttachments = []
+        state.currentContextFolderStructureModes = [:]
+        state.executionPhase = .idle
+        state.selectedModelHandle = nil
+        state.selectedThinking = nil
+        state.unavailableSelectedModelHandle = nil
+        return .cancel(id: CancelID.restore)
+    }
+
     func renameSession(sessionID: AiChatSessionID, title: String) -> Effect<Action> {
         .run { [aiChatSessionPersistenceClient] send in
             do {
