@@ -189,8 +189,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
         XCTAssertEqual(capture.value, expectedURL)
     }
 
-    func testManageAccountTappedDoesNotOpenNeutralFallbackURL() async throws {
-        let fallbackURL = try XCTUnwrap(URL(string: "https://example.invalid/account"))
+    func testManageAccountTappedDoesNotOpenWhenAccountURLIsNotConfigured() async {
         final class Capture: @unchecked Sendable {
             var values: [URL] = []
         }
@@ -199,7 +198,7 @@ final class SET008ManageAccountSettingsTests: XCTestCase {
             AccountSettingsFeature()
         } withDependencies: {
             $0.checkoutURLClient.openURL = { capture.values.append($0) }
-            $0.checkoutURLClient.accountURL = { fallbackURL }
+            $0.checkoutURLClient.accountURL = { throw AccessError.notConfigured }
         }
 
         await store.send(.manageAccountTapped)

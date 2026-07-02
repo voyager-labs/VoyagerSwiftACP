@@ -7,6 +7,9 @@ public struct AccountSettingsFeature {
     public typealias State = AccountSettingsState
     public typealias Action = AccountSettingsAction
 
+    @Dependency(\.checkoutURLClient)
+    var checkoutURLClient
+
     public init() {}
 
     public var body: some Reducer<State, Action> {
@@ -39,10 +42,9 @@ public struct AccountSettingsFeature {
                 return .none
 
             case .manageAccountTapped:
+                let checkoutURLClient = checkoutURLClient
                 return .run { _ in
-                    @Dependency(\.checkoutURLClient) var checkoutURLClient
-                    let url = checkoutURLClient.accountURL()
-                    guard url.host != "example.invalid" else { return }
+                    guard let url = try? checkoutURLClient.accountURL() else { return }
                     checkoutURLClient.openURL(url)
                 }
 

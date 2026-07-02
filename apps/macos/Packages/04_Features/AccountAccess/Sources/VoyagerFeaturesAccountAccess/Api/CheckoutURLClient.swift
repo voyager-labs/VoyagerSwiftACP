@@ -22,14 +22,14 @@ public struct CheckoutURLClient: Sendable {
     public var supportURL: @Sendable () throws -> URL
 
     /// 계정(billing portal) 페이지 URL을 반환한다.
-    public var accountURL: @Sendable () -> URL
+    public var accountURL: @Sendable () throws -> URL
 
     nonisolated public init(
         openURL: @escaping @Sendable (URL) -> Void,
         checkoutURL: @escaping @Sendable () throws -> URL,
         pricingURL: @escaping @Sendable () throws -> URL,
         supportURL: @escaping @Sendable () throws -> URL,
-        accountURL: @escaping @Sendable () -> URL,
+        accountURL: @escaping @Sendable () throws -> URL,
     ) {
         self.openURL = openURL
         self.checkoutURL = checkoutURL
@@ -42,9 +42,6 @@ public struct CheckoutURLClient: Sendable {
 // MARK: - DependencyKey
 
 extension CheckoutURLClient: DependencyKey {
-    // swiftlint:disable:next force_unwrapping
-    private static let neutralBaseURL = URL(string: "https://example.invalid")!
-
     private static func stringValue(for key: String) -> String? {
         if let dotenvValue = EnvironmentLoader.stringValue(forKey: key),
            !dotenvValue.isEmpty
@@ -58,20 +55,6 @@ extension CheckoutURLClient: DependencyKey {
         }
 
         return nil
-    }
-
-    private static func directURL(for key: String) -> URL? {
-        stringValue(for: key).flatMap(URL.init(string:))
-    }
-
-    private static func fallbackURL(directKey: String, baseKey: String, path: String) -> URL {
-        if let directURL = directURL(for: directKey) {
-            return directURL
-        }
-
-        let baseURL = stringValue(for: baseKey).flatMap(URL.init(string:)) ?? neutralBaseURL
-        let cleanPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return baseURL.appendingPathComponent(cleanPath)
     }
 
     private static func requiredWebURL(for key: String) throws -> URL {
@@ -131,11 +114,7 @@ extension CheckoutURLClient: DependencyKey {
                 try webRouteURL(path: "/support")
             },
             accountURL: {
-                fallbackURL(
-                    directKey: "VOYAGER_ACCOUNT_URL",
-                    baseKey: "VOYAGER_WEB_BASE_URL",
-                    path: "/account",
-                )
+                try webRouteURL(path: "/account")
             },
         )
     }
