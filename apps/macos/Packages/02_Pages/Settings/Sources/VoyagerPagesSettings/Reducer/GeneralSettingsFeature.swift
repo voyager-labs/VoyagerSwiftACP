@@ -126,7 +126,10 @@ struct GeneralSettingsFeature {
                 return .none
 
             case .defaultFileViewerSectionAppeared:
-                guard !state.isSettingDefaultFileViewer, !state.isRestoringDefaultFileViewer else { return .none }
+                guard !state.isSettingDefaultFileViewer,
+                      !state.isRestoringDefaultFileViewer,
+                      !state.isDiagnosingFailureFollowUp
+                else { return .none }
                 state.defaultFileViewerPhase = .diagnosing(.sectionAppeared)
                 return diagnoseDefaultFileViewerEffect(source: .sectionAppeared)
 
@@ -196,6 +199,17 @@ struct GeneralSettingsFeature {
                 state.defaultFileViewerPhase = .diagnosing(.afterRestoreFailed)
                 return diagnoseDefaultFileViewerEffect(source: .afterRestoreFailed)
             }
+        }
+    }
+}
+
+private extension GeneralSettingsState {
+    var isDiagnosingFailureFollowUp: Bool {
+        switch defaultFileViewerPhase {
+        case .diagnosing(.afterSetFailed), .diagnosing(.afterRestoreFailed):
+            true
+        case .idle, .diagnosing, .setting, .restoring:
+            false
         }
     }
 }

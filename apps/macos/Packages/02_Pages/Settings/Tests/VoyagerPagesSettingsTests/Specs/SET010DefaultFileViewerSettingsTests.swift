@@ -165,6 +165,18 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         XCTAssertTrue(store.state.isSettingDefaultFileViewer)
     }
 
+    /// 실패 후 자동 재진단 중 section 재등장은 failure source를 덮지 않는다.
+    func testSectionAppearedIgnoredDuringSetFailureFollowUpDiagnosis() async {
+        var state = GeneralSettingsFeature.State()
+        state.defaultFileViewerPhase = .diagnosing(.afterSetFailed)
+        state.defaultFileViewerErrorMessage = "Permission denied"
+        let store = makeStore(initialState: state)
+
+        await store.send(.defaultFileViewerSectionAppeared)
+        XCTAssertTrue(store.state.isDiagnosingDefaultFileViewer)
+        XCTAssertEqual(store.state.defaultFileViewerErrorMessage, "Permission denied")
+    }
+
     // MARK: - SET-010-set AC#5: 실패 시 set_failed (Tests 6-8)
 
     /// permissionDenied 실패
@@ -249,6 +261,18 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
 
         await store.send(.defaultFileViewerDiagnoseRequested(.manual))
         XCTAssertTrue(store.state.isRestoringDefaultFileViewer)
+    }
+
+    /// 복구 실패 후 자동 재진단 중 section 재등장은 failure source를 덮지 않는다.
+    func testSectionAppearedIgnoredDuringRestoreFailureFollowUpDiagnosis() async {
+        var state = GeneralSettingsFeature.State()
+        state.defaultFileViewerPhase = .diagnosing(.afterRestoreFailed)
+        state.defaultFileViewerErrorMessage = "LS API fail"
+        let store = makeStore(initialState: state)
+
+        await store.send(.defaultFileViewerSectionAppeared)
+        XCTAssertTrue(store.state.isDiagnosingDefaultFileViewer)
+        XCTAssertEqual(store.state.defaultFileViewerErrorMessage, "LS API fail")
     }
 
     // MARK: - SET-010-restore AC#4: 실패 시 restore_failed
