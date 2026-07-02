@@ -80,6 +80,16 @@ set -o pipefail
 NSUnbufferedIO=YES xcodebuild -project apps/macos/Voyager/Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug -derivedDataPath build/dev/DerivedData -clonedSourcePackagesDirPath build/dev/SourcePackages -skipPackagePluginValidation -skipMacroValidation COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee build/dev/xcodebuild.log | mise exec -- xcbeautify --quiet --is-ci --report junit --report-path build/dev/reports
 """
 
+# macOS 앱/호스트 빌드 후 실행 (worktree 내부 DerivedData 사용)
+[tasks.macos-launch]
+description = "macOS 앱/호스트 빌드 후 실행 (기본: Voyager-Dev Debug)"
+run = """
+if [ "$#" -eq 0 ]; then
+  set -- --scheme Voyager-Dev --configuration Debug --env "VOYAGER_PROJECT_ROOT=$PWD"
+fi
+scripts/dev/macos-launch.sh "$@"
+"""
+
 # macOS 개발 앱 테스트 (worktree 내부 DerivedData 사용, xcbeautify 필터링)
 [tasks.macos-test]
 description = "macOS 개발 앱 테스트 (xcbeautify 필터링)"
