@@ -255,6 +255,54 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.sessionList.selectedSessionID, restoringSessionID)
     }
 
+    /// CBW-005-open_chat_conversation_session: current chat route 복귀는 다른 session restore tracking을 먼저 정리한다.
+    /// FileManager Back/Forward가 A chat route로 복귀할 때 B session restore가 늦게 도착해도 A chat을 덮지 않아야 합니다.
+    /// - 검증 내용: routeToChatSession(current)는 pending restoreSessionID/selectedSessionID를 정리하고 stale restoreOutcome을 무시
+    /// - 사전 조건: A chat이 열려 있고 B session restore가 pending이다.
+    /// - 기대 결과: late B restoreOutcome 이후에도 A session과 transcript가 유지된다.
+    func testRouteToCurrentChatCancelsPendingDifferentSessionRestore() async {
+        let currentSessionID = makeCBW005SessionID("16161616-1616-1616-1616-161616161616")
+        let restoringSessionID = makeCBW005SessionID("17171717-1717-1717-1717-171717171717")
+        let staleSnapshot = makeCBW005Snapshot(
+            sessionID: restoringSessionID,
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "stale restore")],
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: restoringSessionID,
+            mode: .sessions,
+            sessionList: .init(
+                allRows: [makeCBW005SessionSummary(sessionID: restoringSessionID)],
+                selectedSessionID: restoringSessionID,
+            ),
+            sessionID: currentSessionID,
+            sessionStatus: .active,
+            transcriptHistory: restoredTranscript,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.routeToChatSession(currentSessionID)) { state in
+            state.restoreSessionID = nil
+            state.sessionList.selectedSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.mode = .chat
+        }
+
+        await store.send(.restoreOutcome(
+            requestedSessionID: restoringSessionID,
+            .restored(snapshot: staleSnapshot),
+            restoreFailure: nil,
+        ))
+
+        XCTAssertEqual(store.state.mode, .chat)
+        XCTAssertEqual(store.state.sessionID, currentSessionID)
+        XCTAssertEqual(store.state.transcriptHistory, restoredTranscript)
+        XCTAssertNil(store.state.restoreSessionID)
+        XCTAssertNil(store.state.sessionList.selectedSessionID)
+    }
+
     // MARK: - CBW-005-open_chat_conversation_session
 
     /// CBW-005-open_chat_conversation_session: session row 선택은 저장 session을 열고 live context를 유지한다.

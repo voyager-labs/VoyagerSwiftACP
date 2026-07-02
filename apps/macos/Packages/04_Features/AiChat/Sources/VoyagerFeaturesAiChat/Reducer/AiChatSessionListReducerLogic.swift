@@ -86,6 +86,12 @@ extension AiChatFeature {
         state.sessionList.errorMessage = nil
 
         if state.sessionID == sessionID {
+            if let restoreSessionID = state.restoreSessionID, restoreSessionID != sessionID {
+                state.restoreSessionID = nil
+                if state.sessionList.selectedSessionID == restoreSessionID {
+                    state.sessionList.selectedSessionID = nil
+                }
+            }
             state.restoreOutcome = nil
             state.restoreFailure = nil
             state.mode = .chat
