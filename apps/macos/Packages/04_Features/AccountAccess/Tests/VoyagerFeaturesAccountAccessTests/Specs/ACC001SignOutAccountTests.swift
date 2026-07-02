@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 import Clocks
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
@@ -311,8 +309,11 @@ final class ACC001SignOutAccountTests: XCTestCase {
     /// - 기대 결과: signOut으로 fetchGeneration=6이 되고, generation=5 응답은 무시된다.
     func testReducerSignOutDiscardsLateAccessStatusResponse() async {
         let activeResponse = AccessStatusResponse(
-            status: .coreLicenseActive,
-            entitlements: [.coreLicense],
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
         )
 
         let store = makeTestStore(initialState: {
@@ -359,7 +360,13 @@ final class ACC001SignOutAccountTests: XCTestCase {
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
                 fetchAccessStatus: {
                     XCTFail("stale retry must not reach fetchAccessStatus")
-                    return AccessStatusResponse(status: .coreLicenseActive, entitlements: [.coreLicense])
+                    return AccessStatusResponse(
+                        hasAccess: true,
+                        status: "active",
+                        reason: "active_entitlement",
+                        productKey: "core",
+                        source: "polar",
+                    )
                 },
                 refreshToken: { throw AccessError.notConfigured },
             )
@@ -383,6 +390,44 @@ final class ACC001SignOutAccountTests: XCTestCase {
 
         await clock.advance(by: .seconds(2))
         await store.finish()
+    }
+
+    /// ACC-001: sessionExpired도 signOut과 동일하게 durable access snapshot을 제거한다.
+    /// - 사전 조건: hasAccountSession=true, persisted snapshot 존재
+    /// - 기대 결과: session delete reason은 .sessionExpired이고 snapshotClient.remove가 호출됨
+    func testReducerSessionExpiredRemovesPersistedAccessSnapshot() async {
+        nonisolated(unsafe) var deleteReason: AccountSessionEndReason?
+        nonisolated(unsafe) var removeCalled = false
+
+        let store = TestStore(initialState: signedInState()) {
+            AccountAccessFeature()
+        } withDependencies: {
+            $0.accountSessionClient = AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: { reason in deleteReason = reason },
+            )
+            $0.accessStatusSnapshotClient = AccessStatusSnapshotClient(
+                load: { nil },
+                save: { _ in },
+                remove: { removeCalled = true },
+            )
+            $0.authNetworkClient = .testValue
+            $0.date = .constant(referenceDate)
+        }
+
+        await store.send(._sessionExpiredDetected) { state in
+            state.hasAccountSession = false
+            state.didSignInFail = true
+            state.isSessionExpired = true
+            state.ttlTimerActive = false
+            state.sessionExpiresAt = nil
+            state.fetchGeneration = 1
+        }
+
+        await store.finish()
+        XCTAssertEqual(deleteReason, .sessionExpired)
+        XCTAssertTrue(removeCalled, "sessionExpired도 persisted access snapshot을 제거해야 함")
     }
 
     // MARK: - ACC-001-sign_out_account: session end reason contract (T2)
@@ -429,5 +474,3 @@ final class ACC001SignOutAccountTests: XCTestCase {
         XCTAssertEqual(reason, AccountSessionEndReason.explicitSignOut.rawValue)
     }
 }
-
-// swiftlint:enable force_unwrapping
