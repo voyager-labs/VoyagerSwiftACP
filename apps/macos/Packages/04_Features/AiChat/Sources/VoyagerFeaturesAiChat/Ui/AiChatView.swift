@@ -6,6 +6,8 @@ import VoyagerEntitiesAi
 
 public struct AiChatView: View {
     let store: StoreOf<AiChatFeature>
+    let centeredEmptyContent: AnyView?
+    let onSessionSelected: ((AiChatSessionID) -> Void)?
 
     @Environment(\.colorScheme)
     var colorScheme
@@ -17,8 +19,14 @@ public struct AiChatView: View {
     @State private var transcriptScrollRestoreRequest: AiChatTranscriptScrollRestoreRequest?
     @State private var transcriptScrollRestoreSequence = 0
 
-    public init(store: StoreOf<AiChatFeature>) {
+    public init(
+        store: StoreOf<AiChatFeature>,
+        centeredEmptyContent: AnyView? = nil,
+        onSessionSelected: ((AiChatSessionID) -> Void)? = nil,
+    ) {
         self.store = store
+        self.centeredEmptyContent = centeredEmptyContent
+        self.onSessionSelected = onSessionSelected
     }
 
     public var body: some View {
@@ -39,7 +47,19 @@ public struct AiChatView: View {
 
             Group {
                 if state.mode == .sessions {
-                    AiChatSessionsView(store: store, state: state, displayModel: sessions)
+                    AiChatSessionsView(
+                        store: store,
+                        state: state,
+                        displayModel: sessions,
+                        onSessionSelected: onSessionSelected,
+                    )
+                } else if let centeredEmptyContent, isCenteredEmptyChat(state: state) {
+                    centeredEmptyChatView(
+                        centeredEmptyContent: centeredEmptyContent,
+                        state: state,
+                        skeleton: skeleton,
+                        requestContext: requestContext,
+                    )
                 } else {
                     ScrollViewReader { scrollProxy in
                         VStack(spacing: 0) {
@@ -86,16 +106,10 @@ public struct AiChatView: View {
                                 scrollTranscriptToBottom(scrollProxy)
                             }
 
-                            AiChatInputBar(
-                                store: store,
+                            inputBar(
                                 state: state,
                                 input: skeleton.chatInput,
                                 requestContext: requestContext,
-                                colorScheme: colorScheme,
-                                isChatInputFocused: $isChatInputFocused,
-                                chatInputTextHeight: $chatInputTextHeight,
-                                isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
-                                isThinkingSelectorPresented: $isThinkingSelectorPresented,
                             )
                             .padding(.horizontal, 10)
                             .padding(.top, 8)
@@ -109,6 +123,128 @@ public struct AiChatView: View {
                 store.send(.onAppear)
             }
         }
+    }
+
+    private func isCenteredEmptyChat(state: AiChatState) -> Bool {
+        state.transcriptHistory.isEmpty
+            && state.streamingAssistantDraft == nil
+            && !state.executionPhase.isProcessing
+            && state.sessionStatus != .restoring
+    }
+
+    private func centeredEmptyChatView(
+        centeredEmptyContent: AnyView,
+        state: AiChatState,
+        skeleton: AiChatSkeletonDisplayModel,
+        requestContext: AiChatRequestContextDisplayModel,
+    ) -> some View {
+        VStack(spacing: 20) {
+            Spacer(minLength: 0)
+            centeredEmptyContent
+            compactConnectionCTA(for: skeleton.surface)
+            inputBar(
+                state: state,
+                input: skeleton.chatInput,
+                requestContext: requestContext,
+            )
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 40)
+    }
+
+    @ViewBuilder
+    private func compactConnectionCTA(for surface: AiChatSkeletonSurfaceDisplayModel) -> some View {
+        switch surface {
+        case let .unconnected(connection):
+            compactConnectionCTA(
+                title: connection.title,
+                detail: connection.detail,
+                actionLabel: connection.fixLabel,
+                action: { store.send(.openSettingsTapped) },
+            )
+        case let .error(connection):
+            compactConnectionCTA(
+                title: connection.title,
+                detail: connection.detail,
+                actionLabel: connection.fixLabel,
+                action: { store.send(.errorRecoveryTapped) },
+            )
+        case .empty, .ready, .processing:
+            EmptyView()
+        }
+    }
+
+    private func compactConnectionCTA(
+        title: String,
+        detail: String,
+        actionLabel: String,
+        action: @escaping () -> Void,
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "bolt.horizontal.circle")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: action) {
+                Text(actionLabel)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 10)
+                    .frame(height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.primary.opacity(0.06)),
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1),
+                    )
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.045)),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1),
+        )
+    }
+
+    private func inputBar(
+        state: AiChatState,
+        input: AiChatInputDisplayModel,
+        requestContext: AiChatRequestContextDisplayModel,
+    ) -> some View {
+        AiChatInputBar(
+            store: store,
+            state: state,
+            input: input,
+            requestContext: requestContext,
+            colorScheme: colorScheme,
+            isChatInputFocused: $isChatInputFocused,
+            chatInputTextHeight: $chatInputTextHeight,
+            isModelSelectorPopoverPresented: $isModelSelectorPopoverPresented,
+            isThinkingSelectorPresented: $isThinkingSelectorPresented,
+        )
     }
 
     private func requestTranscriptScrollOffsetRestore(for state: AiChatState) {
@@ -133,7 +269,7 @@ public struct AiChatView: View {
     }
 
     static let transcriptBottomAnchorID = "ai-chat-transcript-bottom"
-    static let chatInputMinTextHeight: CGFloat = 34
+    static let chatInputMinTextHeight: CGFloat = 46
     static let chatInputMaxTextHeight: CGFloat = 96
 }
 
