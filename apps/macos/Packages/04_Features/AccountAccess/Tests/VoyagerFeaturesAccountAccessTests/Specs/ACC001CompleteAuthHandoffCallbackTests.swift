@@ -14,6 +14,14 @@ import XCTest
  AppHandoffCallback 파식 테스트와 reducer 통합 테스트를 모두 포함한다.
  */
 
+private let activeAccessStatusResponse = AccessStatusResponse(
+    hasAccess: true,
+    status: "active",
+    reason: "active_entitlement",
+    productKey: "core",
+    source: "polar",
+)
+
 @MainActor
 final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
     private let referenceDate = Date(timeIntervalSince1970: 1_700_000_000)
@@ -218,15 +226,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
                     XCTAssertEqual(context, .onboarding)
                     return AccountSession(accessToken: "exchanged-token", status: .coreLicenseActive)
                 },
-                fetchAccessStatus: {
-                    AccessStatusResponse(
-                        hasAccess: true,
-                        status: "active",
-                        reason: "active_entitlement",
-                        productKey: "core",
-                        source: "polar",
-                    )
-                },
+                fetchAccessStatus: { activeAccessStatusResponse },
                 refreshToken: { throw AccessError.notConfigured },
             ),
             initialState: awaitingCallbackState(),
@@ -394,7 +394,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in
@@ -447,7 +447,7 @@ final class ACC001CompleteAuthHandoffCallbackTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in

@@ -91,7 +91,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
                     AccountSession(accessToken: "valid-token", status: .coreLicenseActive)
                 },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             authNetworkClient: AuthNetworkClient(
                 exchangeHandoff: { _, _, _ in throw AccessError.notConfigured },
@@ -227,7 +227,8 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
         let fixture = try TemporaryHomeFixture()
         let fileStore = AccountTokenFileStore.withCustomHome(homeURL: fixture.homeURL)
 
-        try Data("{ invalid json }".utf8).write(to: fixture.accountTokensFileURL)
+        let corruptedData = Data("{ invalid json }".utf8)
+        try corruptedData.write(to: fixture.accountTokensFileURL)
 
         let result = try await fileStore.read()
         XCTAssertNil(result, "손상된 session 파일은 nil 반환")
@@ -270,7 +271,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             initialState: initialState,
         )
@@ -322,7 +323,7 @@ final class ACC001RestoreAccountSessionTests: XCTestCase {
             accountSessionClient: AccountSessionClient(
                 read: { nil },
                 persist: { _ in },
-                delete: {},
+                delete: { _ in },
             ),
             initialState: initialState,
         )

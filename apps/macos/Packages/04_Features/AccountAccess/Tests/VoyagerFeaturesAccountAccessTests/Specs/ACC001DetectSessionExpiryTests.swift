@@ -1,5 +1,3 @@
-// swiftlint:disable force_unwrapping
-
 @preconcurrency import ComposableArchitecture
 @testable import VoyagerFeaturesAccountAccess
 import XCTest
@@ -103,6 +101,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
+            state.fetchGeneration = 1
         }
 
         XCTAssertFalse(store.state.hasAccountSession, "세션 무효화")
@@ -128,6 +127,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
+            state.fetchGeneration = 1
         }
 
         XCTAssertTrue(store.state.requiresAccountSession, "ACC-002 재평가 트리거: requiresAccountSession=true")
@@ -316,6 +316,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
+            state.fetchGeneration = 1
         }
 
         XCTAssertTrue(store.state.isSessionExpired)
@@ -330,5 +331,3 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
         XCTAssertTrue(store.state.didSignInFail)
     }
 }
-
-// swiftlint:enable force_unwrapping
