@@ -143,7 +143,7 @@ struct OnboardingView: View {
                 .tint(accentColor)
                 .keyboardShortcut(.return, modifiers: [])
                 .disabled(viewStore.accessUnlock.isSignInInProgress)
-            } else if viewStore.accessUnlock.canRefreshAccess, viewStore.accessUnlock.showsRetry {
+            } else if viewStore.accessUnlock.canRetry {
                 Button {
                     viewStore.send(.accessUnlock(.retryTapped))
                 } label: {

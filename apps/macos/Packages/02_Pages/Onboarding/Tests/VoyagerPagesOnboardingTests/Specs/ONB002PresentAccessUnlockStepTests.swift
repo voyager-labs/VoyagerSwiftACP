@@ -163,6 +163,21 @@ final class ONB002PresentAccessUnlockStepTests: XCTestCase {
         XCTAssertEqual(state.accountAccessStepState, .error)
     }
 
+    /// ONB-002 UI: status=nil + errorMessage error projection에서도 Retry CTA가 표시된다.
+    /// URL/env 구성 실패처럼 access_status를 확정하지 못한 오류는 Refresh가 아니라 Retry 경로를 제공해야 한다.
+    /// - 검증 내용: hasAccountSession=true, status=nil, errorMessage!=nil → canRetry=true.
+    /// - 사전 조건: 세션 있음, access_status 미확정 오류.
+    /// - 기대 결과: accountAccessStepState=error, top bar Retry 표시 대상.
+    func testSignedInNilStatusErrorShowsRetryCTA() {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.errorMessage = "Access service is not configured."
+
+        XCTAssertTrue(state.canRefreshAccess, "signed-in error 상태에서 canRefreshAccess가 true여야 함")
+        XCTAssertTrue(state.canRetry, "status=nil error 상태에서 canRetry가 true여야 함")
+        XCTAssertEqual(state.accountAccessStepState, .error)
+    }
+
     /// ONB-002 UI: complete 상태에서 Next가 활성화된다.
     /// 라이선스가 active로 확인되면 onboarding 다음 단계로 진행 가능한지 검증합니다.
     /// - 검증 내용: status=coreLicenseActive, isComplete=true → onboarding canGoNext=true.
