@@ -7,6 +7,8 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
+private let set010ReadFailedSentinel = "__voyager_default_file_viewer_read_failed__"
+
 // SET-010-set_default_file_viewer / SET-010-restore_default_file_viewer 증거 계약.
 // 기본 파일 뷰어 진단 상태 매핑, Finder ↔ Voyager 전환 성공/실패, 진행 중 버튼 비활성화(G4),
 // 성공 후 자동 재진단(G5), unknown 상태에서 "다시 확인" 버튼(G16)을 검증한다.
@@ -355,7 +357,52 @@ final class SET010DefaultFileViewerSettingsTests: XCTestCase {
         XCTAssertEqual(values.events, [.delete, .write("fm.voyager.Voyager")])
     }
 
-    // MARK: - 추가 AC 3: 진행 중 버튼 비활성화 (G4) (Tests 11-12)
+    /// 이전 NSFileViewer 읽기 실패 시 Voyager 설정은 전역 defaults를 건드리기 전에 중단한다.
+    func testSetAsDefaultStopsBeforeMutationWhenNSFileViewerReadFails() async throws {
+        let values = SET010DefaultsRecorder(initialValue: set010ReadFailedSentinel)
+        let entryOpenClient = makeEntryOpenClient(
+            setDefaultApp: { _, _ in throw FileOpError.system(message: "LSHandler failed") },
+        )
+
+        do {
+            try await DefaultFileViewerLive.setVoyagerAsDefault(
+                appBundleID: "fm.voyager.Voyager",
+                entryOpenClient: entryOpenClient,
+                defaultsStore: values.store,
+            )
+            XCTFail("Expected NSFileViewer read failure")
+        } catch let error as FileOpError {
+            XCTAssertEqual(error, .system(message: "Failed to read current default file viewer."))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(values.events.isEmpty)
+    }
+
+    /// 이전 NSFileViewer 읽기 실패 시 Finder 복구도 전역 defaults를 건드리기 전에 중단한다.
+    func testRestoreFinderStopsBeforeMutationWhenNSFileViewerReadFails() async throws {
+        let values = SET010DefaultsRecorder(initialValue: set010ReadFailedSentinel)
+        let entryOpenClient = makeEntryOpenClient(
+            setDefaultApp: { _, _ in throw FileOpError.system(message: "LSHandler failed") },
+        )
+
+        do {
+            try await DefaultFileViewerLive.restoreFinder(
+                entryOpenClient: entryOpenClient,
+                defaultsStore: values.store,
+            )
+            XCTFail("Expected NSFileViewer read failure")
+        } catch let error as FileOpError {
+            XCTAssertEqual(error, .system(message: "Failed to read current default file viewer."))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(values.events.isEmpty)
+    }
+
+    // MARK: - 추가 AC 3: 진행 중 버튼 비활성화 (G4)
 
     /// isSetting=true일 때 두 번째 setAsDefaultFileViewerTapped는 no-op (G4)
     func testButtonDisableDuringSetProgress() async {

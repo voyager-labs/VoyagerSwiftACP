@@ -154,7 +154,7 @@ enum DefaultFileViewerLive {
         defaultsStore: DefaultFileViewerDefaultsStore = .live,
     ) async throws {
         let bundleID = appBundleID
-        let previousNSFileViewer = defaultsStore.read()
+        let previousNSFileViewer = try readPreviousNSFileViewer(defaultsStore)
 
         // 1단계: NSFileViewer write. 실패 시 throw, LSHandler 건너뜀.
         try defaultsStore.write(bundleID)
@@ -172,7 +172,7 @@ enum DefaultFileViewerLive {
         entryOpenClient: EntryOpenClient,
         defaultsStore: DefaultFileViewerDefaultsStore = .live,
     ) async throws {
-        let previousNSFileViewer = defaultsStore.read()
+        let previousNSFileViewer = try readPreviousNSFileViewer(defaultsStore)
 
         // 1단계: NSFileViewer delete. 실패(권한/디스크 등) 시 즉시 throw — LSHandler는 건너뛴다.
         // 키가 원래 없는 경우는 deleteDefaults 내부에서 정상으로 간주.
@@ -200,6 +200,14 @@ enum DefaultFileViewerLive {
                 suggestion: "Original error: \(originalError)",
             )
         }
+    }
+
+    private static func readPreviousNSFileViewer(_ defaultsStore: DefaultFileViewerDefaultsStore) throws -> String? {
+        let value = defaultsStore.read()
+        guard value != defaultFileViewerReadFailedValue else {
+            throw FileOpError.system(message: "Failed to read current default file viewer.")
+        }
+        return value
     }
 }
 
