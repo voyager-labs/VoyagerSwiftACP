@@ -31,6 +31,10 @@ public enum AiChatAction: CasePathable, Equatable, Sendable {
     case onAppear
     case sessionsAppeared
     case newChatTapped
+    case showSessionsTapped
+    case showSessionsForChat(AiChatSessionID)
+    case returnToChatTapped
+    case routeToChatSession(AiChatSessionID)
     case sessionRowTapped(AiChatSessionID)
     case deleteSessionTapped(AiChatSessionID)
     case renameSessionTapped(AiChatSessionID)

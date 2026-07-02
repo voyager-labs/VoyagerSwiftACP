@@ -40,6 +40,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
     public var rows: [AiChatSessionSummary]
     public var query: String
     public var isLoading: Bool
+    public var hasLoadedRows: Bool
     public var errorMessage: String?
     public var selectedSessionID: AiChatSessionID?
     public var unreadCompletedSessionIDs: Set<AiChatSessionID>
@@ -52,6 +53,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         rows: [AiChatSessionSummary]? = nil,
         query: String = "",
         isLoading: Bool = false,
+        hasLoadedRows: Bool = false,
         errorMessage: String? = nil,
         selectedSessionID: AiChatSessionID? = nil,
         unreadCompletedSessionIDs: Set<AiChatSessionID> = [],
@@ -62,6 +64,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
         self.allRows = allRows
         self.query = query
         self.isLoading = isLoading
+        self.hasLoadedRows = hasLoadedRows
         self.errorMessage = errorMessage
         self.selectedSessionID = selectedSessionID
         self.unreadCompletedSessionIDs = unreadCompletedSessionIDs
@@ -72,6 +75,7 @@ public struct AiChatSessionListState: Equatable, Sendable {
     }
 
     public mutating func setLoadedRows(_ rows: [AiChatSessionSummary]) {
+        hasLoadedRows = true
         let visibleRows = rows.filter { !deletedSessionIDs.contains($0.sessionID) }
         allRows = visibleRows
         self.rows = Self.filteredRows(from: visibleRows, query: query)
