@@ -72,6 +72,43 @@ struct ToolbarHoverButtonLabel: View {
     }
 }
 
+struct ToolbarHoverPillButtonLabel: View {
+    let title: String
+    let isEnabled: Bool
+
+    @Environment(\.colorScheme)
+    private var colorScheme
+    @State private var isHovered = false
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(isEnabled ? .primary : .tertiary)
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(backgroundFill),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.primary.opacity(isHovered && isEnabled ? 0.14 : 0.10), lineWidth: 1),
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .onHover { hovering in
+                isHovered = hovering
+            }
+    }
+
+    private var backgroundFill: Color {
+        guard isEnabled else { return Color.primary.opacity(0.04) }
+        if isHovered {
+            return VoyagerDS.Interaction.controlHoverFill(for: colorScheme)
+        }
+        return Color.primary.opacity(0.06)
+    }
+}
+
 struct ToolbarMenuButton<Content: View>: View {
     let systemName: String
     let isEnabled: Bool
