@@ -628,8 +628,7 @@ private extension AccountAccessFeature {
         guard state.hasAccountSession else { return .none }
         state.hasAccountSession = false
         state.didSignInFail = false
-        state.status = nil
-        state.snapshot = nil
+        clearStaleActiveAccessFacts(&state)
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
         state.fetchGeneration += 1

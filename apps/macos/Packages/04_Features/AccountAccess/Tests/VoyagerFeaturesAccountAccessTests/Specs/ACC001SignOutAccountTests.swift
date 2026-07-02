@@ -289,12 +289,26 @@ final class ACC001SignOutAccountTests: XCTestCase {
     func testSignOutLeavesNoErrorState() async {
         var state = signedInState()
         state.didSignInFail = true
+        state.status = .coreLicenseActive
+        state.snapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate,
+            fetchedAt: referenceDate,
+        )
+        state.trialExpiresAt = referenceDate
+        state.isComplete = true
+        state.errorMessage = "stale error"
 
         let store = makeTestStore(initialState: state)
 
         await store.send(.signOut) { state in
             state.hasAccountSession = false
             state.didSignInFail = false
+            state.status = nil
+            state.snapshot = nil
+            state.trialExpiresAt = nil
+            state.isComplete = false
+            state.errorMessage = nil
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.fetchGeneration = 1
