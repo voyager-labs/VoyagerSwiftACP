@@ -142,6 +142,7 @@ mismatch and secret exposure:
 - Debug/release environment selection must stay deterministic and match the app/helper/XPC launch path.
 - Build scripts must copy only intended secret-free production templates and must not make local `.env.dev` values part of the app bundle.
 - `Info.plist`, entitlements, and scheme changes must not silently weaken sandboxing, helper lookup, network access, or release behavior.
+- Required app/web/checkout/pricing/support URLs must use canonical env keys or explicit error handling; placeholder fallbacks such as `example.invalid`, localhost defaults, empty strings, or made-up base URLs are concrete runtime mismatches.
 
 Treat leaked secrets as P0 and boot/runtime environment mismatches as P1 when the failure is concrete.
 

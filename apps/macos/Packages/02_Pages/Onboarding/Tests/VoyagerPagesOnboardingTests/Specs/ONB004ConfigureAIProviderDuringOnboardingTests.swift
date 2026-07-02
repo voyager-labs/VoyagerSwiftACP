@@ -416,6 +416,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
                 aiProviderSetupChoice: .setUpLater,
                 aiProviderSetupStatus: .skipped,
             ),
+            accessSnapshot: StateMutation.activeAccessSnapshot,
         )
         let store = TestStore(initialState: OnboardingFeature.State()) {
             OnboardingFeature()
@@ -425,10 +426,14 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
                 saveRecorder: saveRecorder,
             )
         }
+        // store.exhaustivity = .off: access snapshot 복원이 AccountAccess onAppear 장기 effect를 시작하지만
+        // 이 테스트의 검증 대상은 AI provider setup restore projection이다.
+        store.exhaustivity = .off
 
         await store.send(.onAppear) { state in
             state.accessUnlock.isComplete = true
             state.accessUnlock.status = .coreLicenseActive
+            state.accessUnlock.snapshot = StateMutation.activeAccessSnapshot
             state.permissions.isComplete = true
             state.aiProviderSetup.choice = .setUpLater
             state.aiProviderSetup.status = .skipped
@@ -439,7 +444,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         XCTAssertEqual(saveRecorder.value?.stepState.aiProviderSetupChoice, .setUpLater)
         XCTAssertEqual(saveRecorder.value?.stepState.aiProviderSetupStatus, .skipped)
 
-        await store.finish()
+        await store.skipInFlightEffects()
     }
 
     /// ONB-004-skip_ai_provider_setup_during_onboarding: connected provider가 Set up later보다 우선한다.

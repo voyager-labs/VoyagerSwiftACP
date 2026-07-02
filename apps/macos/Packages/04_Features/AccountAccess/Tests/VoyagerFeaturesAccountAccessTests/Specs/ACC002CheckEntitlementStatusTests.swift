@@ -25,6 +25,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         accountSessionClient: AccountSessionClient = .testValue,
         authNetworkClient: AuthNetworkClient = .testValue,
         snapshotClient: AccessStatusSnapshotClient = .testValue,
+        checkoutURLClient: CheckoutURLClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
@@ -33,6 +34,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
             $0.accessStatusSnapshotClient = snapshotClient
+            $0.checkoutURLClient = checkoutURLClient
             $0.date = .constant(referenceDate)
         }
     }
@@ -77,6 +79,59 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertTrue(store.state.hasAccountSession)
         XCTAssertEqual(store.state.fetchGeneration, 1)
         XCTAssertTrue(fetchCalled)
+    }
+
+    /// ACC-002-check_entitlement_status: pricing URL 설정 누락은 앱 crash가 아니라 error projection으로 처리된다.
+    /// PUBLIC_WEB_BASE_URL missing/invalid 상황에서 fatalError 없이 Retry 가능한 오류 상태로 남는지 검증한다.
+    /// - 검증 내용: `.openPricingTapped` → `._webURLResult(.failure(.notConfigured))`, status=nil, errorMessage 설정.
+    /// - 사전 조건: 세션 있음, entitlement none 상태에서 Web Pricing CTA 실행.
+    /// - 기대 결과: accountAccessStepState=.error, isComplete=false.
+    func testOpenPricingMissingURLConfigProjectsErrorWithoutCrash() async {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.status = AccessStatus.none
+
+        let store = makeTestStore(
+            checkoutURLClient: CheckoutURLClient(
+                openURL: { _ in XCTFail("URL 설정 실패 시 브라우저를 열면 안 됨") },
+                checkoutURL: { throw AccessError.notConfigured },
+                pricingURL: { throw AccessError.notConfigured },
+                supportURL: { throw AccessError.notConfigured },
+            ),
+            initialState: state,
+        )
+
+        await store.send(.openPricingTapped)
+        await store.receive(\._webURLResult) { state in
+            state.status = nil
+            state.isComplete = false
+            state.errorMessage = "Access service is not configured."
+        }
+
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
+        XCTAssertTrue(store.state.canRetry)
+    }
+
+    /// ACC-002-check_entitlement_status: invalid PUBLIC_WEB_BASE_URL 값은 fatalError가 아니라 구성 오류로 처리된다.
+    /// live URL validator가 잘못된 scheme/host를 process crash 없이 `AccessError.notConfigured`로 접는지 검증한다.
+    /// - 검증 내용: invalid web URL 값 → `AccessError.notConfigured` throw.
+    /// - 사전 조건: required public web URL 값이 http/https host URL이 아님.
+    /// - 기대 결과: fatalError 없이 구성 오류가 throw된다.
+    func testInvalidWebURLConfigThrowsNotConfiguredWithoutCrash() {
+        let invalidValues = [
+            "not a url",
+            "ftp://voyager.fm",
+            "https://",
+        ]
+
+        for value in invalidValues {
+            XCTAssertThrowsError(try CheckoutURLClient.validatedWebURL(
+                for: "PUBLIC_WEB_BASE_URL",
+                value: value,
+            )) { error in
+                XCTAssertEqual(error as? AccessError, .notConfigured)
+            }
+        }
     }
 
     /// ACC-002-check_entitlement_status: fetchAccessStatus 성공 시 status와 snapshot이 갱신된다.
@@ -284,6 +339,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         await store.send(.accessStatusResponse(generation: 1, result: .failure(.networkFailure))) { state in
             state.isComplete = false
             state.errorMessage = "Network error. Please check your connection and try again."
+            state.status = .networkFailure
             state.fetchRetryCount = 0
         }
         await store.receive(\._cachedSnapshotRestored) { state in
@@ -294,30 +350,86 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         }
     }
 
-    /// ACC-002: fetchAccessStatus 3회 실패 후 캐시된 snapshot이 없으면 conservative fallback한다.
-    /// networkFailure가 3회 누적되었지만 저장된 snapshot이 없으면 status=none, errorMessage="Access denied."로 fallback한다.
-    /// - 검증 내용: fetchRetryCount >= 3 + networkFailure + load()=nil → conservative fallback
+    /// ACC-002: fetchAccessStatus 3회 실패 후 캐시된 snapshot이 없으면 error 상태를 유지한다.
+    /// networkFailure가 3회 누적되었지만 저장된 snapshot이 없으면 status를 .networkFailure로 유지하고
+    /// errorMessage로 error projection을 제공한다. status가 .none으로 collapse되지 않음을 검증한다.
+    /// - 검증 내용: fetchRetryCount >= 3 + networkFailure + load()=nil → error 상태 유지 (status collapse 방지)
     /// - 사전 조건: fetchRetryCount=3, fetchGeneration=1, snapshotClient.load()=nil
-    /// - 기대 결과: status=none, errorMessage="Access denied.", isComplete=false
+    /// - 기대 결과: status=.networkFailure (NOT .none), isComplete=false, accountAccessStepState=.error
     func testConservativeFallbackAfterThreeFailuresNoCache() async {
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
         state.fetchRetryCount = 3
+        state.hasAccountSession = true
         let store = makeTestStore(initialState: state)
 
         await store.send(.accessStatusResponse(generation: 1, result: .failure(.networkFailure))) { state in
             state.isComplete = false
             state.errorMessage = "Network error. Please check your connection and try again."
+            state.status = .networkFailure
             state.fetchRetryCount = 0
         }
-        await store.receive(\._cachedSnapshotRestored) { state in
-            state.status = AccessStatus.none
-            state.errorMessage = "Access denied."
-        }
+        await store.receive(\._cachedSnapshotRestored)
+
+        XCTAssertEqual(store.state.status, .networkFailure)
+        XCTAssertNotEqual(store.state.status, AccessStatus.none)
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
+        XCTAssertTrue(store.state.canRetry)
+    }
+
+    /// ACC-002: retryable networkFailure는 status를 .none으로 collapse하지 않고 .networkFailure로 유지한다.
+    /// 첫 번째 networkFailure (retry budget 남음)가 error 상태를 정확히 도출하는지 검증한다.
+    /// - 검증 내용: networkFailure (retryCount=0) → status=.networkFailure, stepState=.error
+    /// - 사전 조건: fetchGeneration=1, fetchRetryCount=0, hasAccountSession=true
+    /// - 기대 결과: status=.networkFailure (NOT .none), accountAccessStepState=.error
+    func testRetryableNetworkFailureStaysErrorNotNone() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        state.fetchRetryCount = 0
+        state.hasAccountSession = true
+        let store = makeTestStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.accessStatusResponse(generation: 1, result: .failure(.networkFailure)))
+
+        XCTAssertEqual(store.state.status, .networkFailure)
+        XCTAssertNotEqual(store.state.status, AccessStatus.none)
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
+        XCTAssertTrue(store.state.canRetry)
+    }
+
+    /// ACC-002: trial_active 응답의 currentPeriodEnd가 trialExpiresAt로 보존된다.
+    /// trial entitlement가 full access로 평가될 때 trial 만료 시점 정보가 유지되는지 검증한다.
+    /// - 검증 내용: success(trial_active + currentPeriodEnd) → status=.trialActive, trialExpiresAt 보존
+    /// - 사전 조건: fetchGeneration=1
+    /// - 기대 결과: status=.trialActive, trialExpiresAt==응답의 currentPeriodEnd, isComplete=true
+    func testTrialActivePreservesTrialExpiresAtDetail() async {
+        var state = AccountAccessFeature.State()
+        state.fetchGeneration = 1
+        let store = makeTestStore(initialState: state)
+        store.exhaustivity = .off
+
+        let trialEndDate = Date(timeIntervalSince1970: 1_700_010_000)
+        let response = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "trial",
+            productKey: "trial",
+            currentPeriodEnd: trialEndDate,
+            source: "polar",
+        )
+        await store.send(.accessStatusResponse(generation: 1, result: .success(response)))
+
+        XCTAssertEqual(store.state.status, .trialActive)
+        XCTAssertEqual(store.state.trialExpiresAt, trialEndDate)
+        XCTAssertTrue(store.state.isComplete)
     }
 
     /// ACC-002: 만료된 snapshot은 복원 시 거부된다 (entitlement bypass 방지).
-    /// networkFailure 3회 + 캐시된 snapshot의 expiresAt이 과거 → isComplete=false, status=none.
+    /// networkFailure 3회 + 캐시된 snapshot의 expiresAt이 과거 → status는 .networkFailure로 유지 (error/retry).
+    /// - 검증 내용: 만료 snapshot + retry 소진 → status collapse 방지, error projection 유지
+    /// - 사전 조건: fetchRetryCount=3, fetchGeneration=1, snapshot 만료
+    /// - 기대 결과: status=.networkFailure (NOT .none), isComplete=false, accountAccessStepState=.error
     func testExpiredSnapshotRejectedOnRestore() async {
         let expiredSnapshot = AccessStatusSnapshot(
             status: .coreLicenseActive,
@@ -327,6 +439,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         var state = AccountAccessFeature.State()
         state.fetchGeneration = 1
         state.fetchRetryCount = 3
+        state.hasAccountSession = true
         let store = makeTestStore(
             snapshotClient: AccessStatusSnapshotClient(
                 load: { expiredSnapshot },
@@ -339,13 +452,14 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         await store.send(.accessStatusResponse(generation: 1, result: .failure(.networkFailure))) { state in
             state.isComplete = false
             state.errorMessage = "Network error. Please check your connection and try again."
+            state.status = .networkFailure
             state.fetchRetryCount = 0
         }
-        await store.receive(\._cachedSnapshotRestored) { state in
-            state.status = AccessStatus.none
-            state.isComplete = false
-            state.errorMessage = "네트워크 오류로 인증을 확인할 수 없습니다."
-        }
+        await store.receive(\._cachedSnapshotRestored)
+
+        XCTAssertEqual(store.state.status, .networkFailure)
+        XCTAssertNotEqual(store.state.status, AccessStatus.none)
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
     }
 
     /// ACC-002: 성공적인 fetch 후 fetchRetryCount가 0으로 리셋된다.

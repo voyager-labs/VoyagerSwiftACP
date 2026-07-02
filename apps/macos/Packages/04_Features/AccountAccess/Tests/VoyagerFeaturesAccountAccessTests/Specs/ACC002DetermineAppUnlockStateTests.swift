@@ -155,4 +155,50 @@ final class ACC002DetermineAppUnlockStateTests: XCTestCase {
         XCTAssertFalse(AccessStatus.refunded.isActive)
         XCTAssertFalse(AccessStatus.networkFailure.isActive)
     }
+
+    /// ACC-002-determine_app_unlock_state: access_status=.none일 때 blocked projection과 Refresh Access affordance가 제공된다.
+    /// entitlement_access_flow.md 계약: backend none → ONB blocked. 사용자가 refresh로 복구 시도할 수 있어야 한다.
+    /// - 검증 내용: status=.none + hasAccountSession=true → stepState=.blocked, canRefreshAccess=true
+    /// - 사전 조건: hasAccountSession=true, status=.none
+    /// - 기대 결과: accountAccessStepState=.blocked, canRefreshAccess=true, accountAccessAuthAxis=.signedIn
+    func testNoneStatusDerivesBlockedProjectionWithRefreshAccess() {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.status = AccessStatus.none
+
+        XCTAssertEqual(state.accountAccessStepState, .blocked)
+        XCTAssertEqual(state.accountAccessAuthAxis, .signedIn)
+        XCTAssertTrue(state.canRefreshAccess, "blocked projection에서 Refresh Access가 가능해야 함")
+        XCTAssertFalse(state.canRetry, "blocked는 retry가 아니라 refresh 복구 경로")
+    }
+
+    /// ACC-002-determine_app_unlock_state: status=nil + errorMessage!=nil (decode/notConfigured 실패) → error projection.
+    /// entitlement_access_flow.md: 조회 실패는 access_status 값을 확정하지 않고 error 축에서 처리한다.
+    /// - 검증 내용: status=nil, errorMessage!=nil → stepState=.error (pending이 아님)
+    /// - 사전 조건: hasAccountSession=true, status=nil, errorMessage 설정
+    /// - 기대 결과: accountAccessStepState=.error
+    func testErrorMessageWithNilStatusDerivesErrorProjection() {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.status = nil
+        state.errorMessage = "Failed to process the response."
+
+        XCTAssertEqual(state.accountAccessStepState, .error, "조회 실패(errorMessage 세팅)는 pending이 아니라 error여야 함")
+        XCTAssertTrue(state.canRetry, "error projection은 retry affordance를 제공해야 함")
+    }
+
+    /// ACC-002-determine_app_unlock_state: status=nil + errorMessage=nil (초기/대기) → pending projection.
+    /// fetch를 시작했지만 아직 응답을 받지 못한 상태가 pending으로 도출되는지 확인한다.
+    /// - 검증 내용: status=nil, errorMessage=nil → stepState=.pending
+    /// - 사전 조건: hasAccountSession=true, status=nil, errorMessage=nil
+    /// - 기대 결과: accountAccessStepState=.pending
+    func testNilStatusNoErrorMessageDerivesPendingProjection() {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.status = nil
+        state.errorMessage = nil
+
+        XCTAssertEqual(state.accountAccessStepState, .pending)
+        XCTAssertFalse(state.canRetry)
+    }
 }

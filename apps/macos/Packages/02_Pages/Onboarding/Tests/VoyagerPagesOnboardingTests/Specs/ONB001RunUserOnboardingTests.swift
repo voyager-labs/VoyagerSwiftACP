@@ -1051,6 +1051,66 @@ final class ONB001RunUserOnboardingTests: XCTestCase {
         XCTAssertNil(saveRecorder.value?.accessSnapshot)
     }
 
+    /// ONB-001-resume_onboarding_session: active snapshot이 있어도 세션이 없으면 후속 step에 머물지 않고 Access step으로 되돌린다.
+    /// 저장된 access completion만으로 후속 단계 진행을 허용하지 않는 VOY-299 계약을 검증합니다.
+    /// - 검증 내용: `currentStep=.aiProviderSetup`, active access snapshot 복원 후 session=nil이면 accessUnlock로 rollback 저장.
+    /// - 사전 조건: 저장 snapshot은 access/permissions 완료와 active access snapshot을 포함하지만 계정 세션은 없습니다.
+    /// - 기대 결과: `currentStep=.accessUnlock`, `accessUnlockComplete=false`, 저장 snapshot도 accessUnlock입니다.
+    func testResumeActiveSnapshotWithoutSessionReturnsToAccessStep() async {
+        let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        let snapshot = OnboardingProgressSnapshot(
+            currentStep: .aiProviderSetup,
+            stepState: OnboardingStepState(
+                welcomeComplete: true,
+                accessUnlockComplete: true,
+                permissionsComplete: true,
+                aiProviderSetupComplete: false,
+                completeComplete: false,
+            ),
+            accessSnapshot: StateMutation.activeAccessSnapshot,
+        )
+
+        let store = TestStore(initialState: OnboardingFeature.State()) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.onboardingProgressClient = ProgressClient.resumingAndRecording(
+                snapshot: snapshot,
+                saveRecorder: saveRecorder,
+            )
+            $0.accountSessionClient = AccountSessionClient(
+                read: { nil },
+                persist: { _ in },
+                delete: {},
+            )
+        }
+        // store.exhaustivity = .off: appDidBecomeActive 관찰 effect는 장기 수명이라 종료를 기다리지 않는다.
+        store.exhaustivity = .off
+
+        await store.send(.onAppear) { state in
+            state.currentStep = .aiProviderSetup
+            state.welcome.isComplete = true
+            StateMutation.applyPersistedCompletedAccessStep(state: &state)
+            state.permissions.isComplete = true
+            state.aiProviderSetup.status = .blocked
+            state.complete.isComplete = false
+        }
+
+        await store.receive(\.accessUnlock.onAppear)
+        await store.receive(\.accessUnlock._onAppearSessionRestored) { state in
+            state.currentStep = .accessUnlock
+            state.accessUnlock.status = nil
+            state.accessUnlock.snapshot = nil
+            state.accessUnlock.isComplete = false
+            state.accessUnlock.fetchGeneration = 1
+            state.accessUnlock.ttlTimerActive = false
+            state.accessUnlock.sessionExpiresAt = nil
+        }
+
+        XCTAssertEqual(saveRecorder.value?.currentStep, .accessUnlock)
+        XCTAssertEqual(saveRecorder.value?.stepState.accessUnlockComplete, false)
+        XCTAssertNil(saveRecorder.value?.accessSnapshot)
+    }
+
     // swiftlint:disable function_body_length
     /// ONB-001-resume_onboarding_session: stale access snapshot과 server-canonical blocked 결과가 충돌하면 blocked 결과를 세션에
     /// 반영한다.

@@ -99,6 +99,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.hasAccountSession = false
             state.didSignInFail = true
             state.isSessionExpired = true
+            state.fetchGeneration = 1
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
@@ -123,12 +124,94 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.hasAccountSession = false
             state.didSignInFail = true
             state.isSessionExpired = true
+            state.fetchGeneration = 1
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0
         }
 
         XCTAssertTrue(store.state.requiresAccountSession, "ACC-002 재평가 트리거: requiresAccountSession=true")
+    }
+
+    /// VOY-397 regression: 세션 만료 감지 시 이전에 보존된 active entitlement fact가 모두 제거된다.
+    /// hasAccountSession=true + status=.coreLicenseActive + isComplete=true + snapshot/trialExpiresAt 보존 상태에서
+    /// _sessionExpiredDetected 수신 시 stale fact가 방치되면 Active chip + Sign In 버튼이 동시에 표시되는 regression이 발생한다.
+    /// - 검증 내용: _sessionExpiredDetected → status/snapshot/trialExpiresAt/isComplete 초기화
+    /// - 사전 조건: signedInState에 active entitlement facts 사전 주입
+    /// - 기대 결과: hasAccountSession=false, didSignInFail=true, isSessionExpired=true,
+    ///   status=nil, snapshot=nil, trialExpiresAt=nil, isComplete=false, accessUnlockPrimaryCTA=.login
+    func testSessionExpiredClearsStaleActiveFacts() async {
+        let staleSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate,
+            fetchedAt: referenceDate,
+        )
+        var initialState = signedInState()
+        initialState.status = .coreLicenseActive
+        initialState.isComplete = true
+        initialState.snapshot = staleSnapshot
+        initialState.trialExpiresAt = referenceDate
+
+        let store = makeTestStore(initialState: initialState)
+        // exhaustivity=.off: reducer가 다수 필드를 갱신하나 검증 대상은 regression 스펙 필드만.
+        store.exhaustivity = .off
+
+        await store.send(AccountAccessAction._sessionExpiredDetected)
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertTrue(store.state.didSignInFail)
+        XCTAssertTrue(store.state.isSessionExpired)
+        XCTAssertNil(store.state.status)
+        XCTAssertNil(store.state.snapshot)
+        XCTAssertNil(store.state.trialExpiresAt)
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .login)
+        await store.finish()
+    }
+
+    /// VOY-397 regression: 세션 만료 후 도착한 stale active access_status 응답이 거부된다.
+    /// _sessionExpiredDetected가 fetchGeneration을 무효화하므로, 만료 직전 세대의 success(active) 응답은
+    /// status/snapshot/isComplete를 재주입하지 못한다.
+    /// - 검증 내용: _sessionExpiredDetected → 이전 generation 응답 무시 → status=nil, isComplete=false 유지
+    /// - 사전 조건: fetchGeneration=1, active entitlement facts 보존 상태
+    /// - 기대 결과: stale 응답 후에도 status=nil, snapshot=nil, isComplete=false, accessUnlockPrimaryCTA=.login
+    func testSessionExpiredRejectsStaleGenerationActiveResponse() async {
+        let staleSnapshot = AccessStatusSnapshot(
+            status: .coreLicenseActive,
+            currentPeriodEnd: referenceDate,
+            fetchedAt: referenceDate,
+        )
+        var initialState = signedInState()
+        initialState.fetchGeneration = 1
+        initialState.status = .coreLicenseActive
+        initialState.isComplete = true
+        initialState.snapshot = staleSnapshot
+        initialState.trialExpiresAt = referenceDate
+
+        let activeResponse = AccessStatusResponse(
+            hasAccess: true,
+            status: "active",
+            reason: "active_entitlement",
+            productKey: "core",
+            source: "polar",
+        )
+
+        let store = makeTestStore(initialState: initialState)
+        store.exhaustivity = .off
+
+        await store.send(AccountAccessAction._sessionExpiredDetected)
+
+        // stale generation(1) 응답 → 현재 fetchGeneration(2)과 불일치 → 무시
+        await store.send(.accessStatusResponse(generation: 1, result: .success(activeResponse)))
+
+        XCTAssertFalse(store.state.hasAccountSession)
+        XCTAssertTrue(store.state.isSessionExpired)
+        XCTAssertNil(store.state.status, "stale generation 응답은 status를 재주입하지 못함")
+        XCTAssertNil(store.state.snapshot)
+        XCTAssertNil(store.state.trialExpiresAt)
+        XCTAssertFalse(store.state.isComplete)
+        XCTAssertEqual(store.state.accessUnlockPrimaryCTA, .login)
+        await store.finish()
     }
 
     /// ACC-001-detect_session_expiry: 중복 만료 처리가 dedup guard에 의해 무시된다.
@@ -144,6 +227,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.hasAccountSession = false
             state.didSignInFail = true
             state.isSessionExpired = true
+            state.fetchGeneration = 1
         }
 
         let afterFirst = store.state.isSessionExpired
@@ -228,6 +312,7 @@ final class ACC001DetectSessionExpiryTests: XCTestCase {
             state.hasAccountSession = false
             state.didSignInFail = true
             state.isSessionExpired = true
+            state.fetchGeneration = 1
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
             state.consecutiveRefreshFailures = 0

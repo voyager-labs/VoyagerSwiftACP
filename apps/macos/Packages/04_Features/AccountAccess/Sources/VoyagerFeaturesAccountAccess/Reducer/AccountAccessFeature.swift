@@ -97,6 +97,9 @@ public struct AccountAccessFeature {
             case .openBetaCodeHelpTapped:
                 return handleOpenBetaCodeHelp(&state)
 
+            case let ._webURLResult(result):
+                return handleWebURLResult(&state, result: result)
+
             case ._ttlTimerTicked:
                 return handleTtlTimerTicked(&state)
 
@@ -132,13 +135,24 @@ public struct AccountAccessFeature {
         state.hasAccountSession = session != nil
 
         guard let session else {
+            // VOY-397: 세션 없이 onAppear 복원 시 이전 persist된 active entitlement fact를 제거한다.
+            // 방치 시 Access Unlock 화면이 Active chip + Sign In 버튼 + Next CTA를 동시에 그리는 regression 발생.
+            clearStaleActiveAccessFacts(&state)
+            resetSessionRetryBudget(&state)
+            // VOY-397: 세션 축 소실 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
+            // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
+            state.fetchGeneration += 1
             state.ttlTimerActive = false
             state.sessionExpiresAt = nil
-            return .cancel(id: CancelID.ttlTimer)
+            return .merge(
+                .cancel(id: CancelID.fetchStatus),
+                .cancel(id: CancelID.ttlTimer),
+            )
         }
 
         state.sessionExpiresAt = session.expiresAt
         state.isSessionExpired = false
+        resetSessionRetryBudget(&state)
         state.fetchGeneration += 1
 
         // TTL 타이머 시작: 세션이 복원되면 access token 만료를 추적한다.
@@ -278,6 +292,7 @@ public struct AccountAccessFeature {
             state.hasAccountSession = true
             state.didSignInFail = false
             state.isSessionExpired = false
+            resetSessionRetryBudget(&state)
             // handoff 성공 시 sessionExpiresAt/ttlTimerActive를 설정하고 TTL 타이머를 시작한다.
             // handleOnAppearSessionRestored와 동일한 ownership path를 따른다.
             state.sessionExpiresAt = session.expiresAt
@@ -308,6 +323,7 @@ public struct AccountAccessFeature {
         if hasSession {
             state.hasAccountSession = true
             state.didSignInFail = false
+            resetSessionRetryBudget(&state)
             state.fetchGeneration += 1
             return fetchAccessStatusEffect(generation: state.fetchGeneration)
         } else {
@@ -429,6 +445,12 @@ private extension AccountAccessFeature {
             return .send(._sessionExpiredDetected)
         }
 
+        // networkFailure는 source fact로 status에 기록 (error/retry projection의 source).
+        // retry budget과 무관하게 항상 기록하여 access_status가 pending/nil로 잘못 해석되지 않는다.
+        if error == .networkFailure {
+            state.status = .networkFailure
+        }
+
         if error == .notConfigured || error == .decodingFailure {
             return .none
         }
@@ -443,7 +465,6 @@ private extension AccountAccessFeature {
             }
         }
 
-        state.status = .networkFailure
         let retryStep = state.fetchRetryCount
         state.fetchRetryCount += 1
         return .send(._fetchRetryScheduled(retryStep))
@@ -464,21 +485,17 @@ private extension AccountAccessFeature {
     private static let cachedSnapshotMaxAge: TimeInterval = 7 * 24 * 60 * 60 // 7일
 
     private func handleCachedSnapshotRestored(_ state: inout State, snapshot: AccessStatusSnapshot?) -> Effect<Action> {
+        // 계약 (entitlement_access_flow.md): 조회 실패는 error 축에서 처리.
+        // failure handler가 이미 status=.networkFailure + errorMessage를 기록했으므로
+        // 캐시가 없거나 만료된 snapshot은 거부하고 state를 그대로 둔다.
         guard let snapshot else {
-            state.status = AccessStatus.none
-            state.errorMessage = "Access denied."
             return .none
         }
 
         let now = date.now
-        // 만료(explicit expiresAt) 또는 과도하게 오래된 snapshot(nil expiresAt 방어)은
-        // entitlement bypass로 이어질 수 있으므로 거부한다.
         let isStale = snapshot.isExpired(now: now)
             || now.timeIntervalSince(snapshot.fetchedAt) > Self.cachedSnapshotMaxAge
         if isStale {
-            state.status = AccessStatus.none
-            state.isComplete = false
-            state.errorMessage = "네트워크 오류로 인증을 확인할 수 없습니다."
             return .none
         }
 
@@ -589,44 +606,86 @@ private extension AccountAccessFeature {
         state.hasAccountSession = false
         state.didSignInFail = true
         state.isSessionExpired = true
+        // VOY-397: 세션 만료 시에도 이전 active entitlement fact를 제거한다.
+        // 방치 시 Active chip + Sign In 버튼 + Next CTA 동시 표시 regression (nil-session 복원과 동일 원인).
+        clearStaleActiveAccessFacts(&state)
+        resetSessionRetryBudget(&state)
+        // VOY-397: 세션 만료 시 in-flight access_status 응답이 stale active fact를 재주입하지 못하도록
+        // fetchGeneration을 무효화하고 진행 중 fetch effect를 취소한다.
+        state.fetchGeneration += 1
         state.ttlTimerActive = false
         state.sessionExpiresAt = nil
         state.consecutiveRefreshFailures = 0
 
-        return .cancel(id: CancelID.ttlTimer)
+        return .merge(
+            .cancel(id: CancelID.fetchStatus),
+            .cancel(id: CancelID.ttlTimer),
+        )
+    }
+
+    /// VOY-397: 세션 부재/만료 시 이전 active entitlement fact를 제거한다.
+    /// 방치 시 Active chip + Login 버튼 + Next CTA 동시 표시 regression 방지.
+    private func clearStaleActiveAccessFacts(_ state: inout State) {
+        state.status = nil
+        state.snapshot = nil
+        state.trialExpiresAt = nil
+        state.isComplete = false
+        state.errorMessage = nil
+    }
+
+    private func resetSessionRetryBudget(_ state: inout State) {
+        state.fetchRetryCount = 0
     }
 
     // MARK: - 외부 URL 리다이렉트
 
     /// 체크아웃(구매) 페이지를 브라우저에서 연다.
     private func handleOpenCheckout(_: inout State) -> Effect<Action> {
-        .run { [checkoutURLClient] _ in
-            let url = checkoutURLClient.checkoutURL()
-            checkoutURLClient.openURL(url)
-        }
+        openWebURL(makeURL: checkoutURLClient.checkoutURL)
     }
 
     /// 요금제 페이지를 브라우저에서 연다.
     private func handleOpenPricing(_: inout State) -> Effect<Action> {
-        .run { [checkoutURLClient] _ in
-            let url = checkoutURLClient.pricingURL()
-            checkoutURLClient.openURL(url)
-        }
+        openWebURL(makeURL: checkoutURLClient.pricingURL)
     }
 
     /// 접근 권한 도움 페이지를 브라우저에서 연다.
     private func handleOpenAccessHelp(_: inout State) -> Effect<Action> {
-        .run { [checkoutURLClient] _ in
-            let url = checkoutURLClient.supportURL()
-            checkoutURLClient.openURL(url)
-        }
+        openWebURL(makeURL: checkoutURLClient.supportURL)
     }
 
     /// 베타 코드 도움 페이지를 브라우저에서 연다.
     private func handleOpenBetaCodeHelp(_: inout State) -> Effect<Action> {
-        .run { [checkoutURLClient] _ in
-            let url = checkoutURLClient.supportURL()
-            checkoutURLClient.openURL(url)
+        openWebURL(makeURL: checkoutURLClient.supportURL)
+    }
+
+    private func openWebURL(makeURL: @escaping @Sendable () throws -> URL) -> Effect<Action> {
+        .run { [checkoutURLClient] send in
+            do {
+                let url = try makeURL()
+                checkoutURLClient.openURL(url)
+                await send(._webURLResult(.success(())))
+            } catch let error as AccessError {
+                await send(._webURLResult(.failure(error)))
+            } catch {
+                await send(._webURLResult(.failure(.notConfigured)))
+            }
+        }
+    }
+
+    private func handleWebURLResult(
+        _ state: inout State,
+        result: Result<Void, AccessError>,
+    ) -> Effect<Action> {
+        switch result {
+        case .success:
+            return .none
+
+        case let .failure(error):
+            state.status = nil
+            state.isComplete = false
+            state.errorMessage = errorMessage(for: error)
+            return .none
         }
     }
 }

@@ -19,6 +19,7 @@ public enum AccountAccessAction: CasePathable, Sendable {
     case openPricingTapped
     case openAccessHelpTapped
     case openBetaCodeHelpTapped
+    case _webURLResult(Result<Void, AccessError>)
     case _ttlTimerTicked
     case _refreshTokenResult(Result<AccountSession, AccessError>)
     case _sessionExpiredDetected

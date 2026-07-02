@@ -136,6 +136,11 @@ struct OnboardingFeature {
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
 
+        case .accessUnlock(._onAppearSessionRestored(nil)), .accessUnlock(._sessionExpiredDetected):
+            state.currentStep = .accessUnlock
+            let snapshot = state.progressSnapshot
+            return Self.saveEffect(snapshot, progressClient: progressClient)
+
         case .welcome, .accessUnlock, .permissions, .aiProviderSetup, .complete:
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
