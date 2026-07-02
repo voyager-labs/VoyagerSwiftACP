@@ -2195,10 +2195,11 @@ extension CTM005IndependentContentTabSessionTests {
     }
 
     /// CTM-005-ai_chat_provider_forwarding: AI Chat 탭을 떠날 때 이전 탭의 in-flight restore 표시를 저장하지 않음
-    /// AI Chat 탭 전환 중 효과는 취소되므로 저장되는 이전 탭 state도 restoring UI 상태를 제거해야 한다.
-    /// - 검증 내용: AI Chat tab에서 Home tab으로 전환할 때 저장된 AI Chat state의 restore/draft 상태 정리
-    /// - 사전 조건: active AI Chat tab이 `.restoring` status와 streaming draft, pending restore를 가진 상태
-    /// - 기대 결과: tabContentStates에 저장된 이전 AI Chat state가 idle/active 상태로 정리되고 pending restore 필드를 비움
+    /// AI Chat 탭 전환 중 효과는 취소되므로 저장되는 이전 탭 state도 restoring/model loading UI 상태를 제거해야 한다.
+    /// - 검증 내용: AI Chat tab에서 Home tab으로 전환할 때 저장된 AI Chat state의 restore/draft/model loading 상태 정리
+    /// - 사전 조건: active AI Chat tab이 `.restoring` status, streaming draft, pending restore, model loading tracking을 가진
+    /// 상태
+    /// - 기대 결과: tabContentStates에 저장된 이전 AI Chat state가 idle/active 상태로 정리되고 pending restore/model loading 필드를 비움
     func testAiChatTabSwitchAwayClearsSavedInFlightRestoreState() async throws {
         let sessionUUID = try XCTUnwrap(UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))
         let restoringUUID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
@@ -2216,6 +2217,15 @@ extension CTM005IndependentContentTabSessionTests {
         aiChatContent.aiChat.sessionStatus = .restoring
         aiChatContent.aiChat.restoreSessionID = restoringSessionID
         aiChatContent.aiChat.streamingAssistantDraft = "partial response"
+        aiChatContent.aiChat.modelListState = .loading
+        aiChatContent.aiChat.modelListRequestID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")
+        aiChatContent.aiChat.modelListProvider = .openai
+        aiChatContent.aiChat.modelListProviderOrder = [.openai, .anthropic]
+        aiChatContent.aiChat.modelListPendingProviders = [.openai, .anthropic]
+        aiChatContent.aiChat.modelListLoadedModelsByProvider = [.openai: []]
+        aiChatContent.aiChat.modelListFailedProviders = [
+            .anthropic: AiModelListFailure(message: "loading"),
+        ]
 
         var homeContent = FileManagerContentFeature.State()
         homeContent.navigation.seedInitialFolderPath(homePath)
@@ -2270,6 +2280,13 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertNil(savedAiChatState.restoreSessionID)
         XCTAssertNil(savedAiChatState.restoreOutcome)
         XCTAssertNil(savedAiChatState.restoreFailure)
+        XCTAssertEqual(savedAiChatState.modelListState, .idle)
+        XCTAssertNil(savedAiChatState.modelListRequestID)
+        XCTAssertNil(savedAiChatState.modelListProvider)
+        XCTAssertTrue(savedAiChatState.modelListProviderOrder.isEmpty)
+        XCTAssertTrue(savedAiChatState.modelListPendingProviders.isEmpty)
+        XCTAssertTrue(savedAiChatState.modelListLoadedModelsByProvider.isEmpty)
+        XCTAssertTrue(savedAiChatState.modelListFailedProviders.isEmpty)
         XCTAssertEqual(savedAiChatState.sessionStatus, .active)
         XCTAssertEqual(savedAiChatState.sessionID, aiSessionID)
         await store.finish()

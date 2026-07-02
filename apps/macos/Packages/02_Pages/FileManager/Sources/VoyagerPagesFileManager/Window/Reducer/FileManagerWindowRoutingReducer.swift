@@ -453,6 +453,13 @@ private func clearInFlightAiChatStateOnTabSwitch(state: inout AiChatState) {
     state.restoreSessionID = nil
     state.restoreOutcome = nil
     state.restoreFailure = nil
+    state.modelListState = .idle
+    state.modelListRequestID = nil
+    state.modelListProvider = nil
+    state.modelListProviderOrder = []
+    state.modelListPendingProviders = []
+    state.modelListLoadedModelsByProvider = [:]
+    state.modelListFailedProviders = [:]
     if state.sessionStatus == .restoring {
         state.sessionStatus = state.sessionID == nil ? .idle : .active
     }
