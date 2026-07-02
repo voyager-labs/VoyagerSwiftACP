@@ -50,14 +50,10 @@ struct FileManagerWindowCommandRoutingReducer {
                 return handleHomePageAnchorSelected(anchor, activeTabID: activeTabID)
 
             case let .content(.delegate(.aiChatSessionCreated(sessionID))):
-                guard let activeTabID = state.contentTabs.activeTabID,
-                      case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
-                else { return .none }
-                let sessionIDString = sessionID.rawValue.uuidString
-                return .merge(
-                    .send(.navigation(.view(.showAiChat(sessionIDString)))),
-                    .send(.contentTabs(.updateActivePageAnchor(activeTabID, .aiChat(sessionID: sessionIDString)))),
-                )
+                return routeActiveAiChatTab(to: sessionID, state: state)
+
+            case let .content(.delegate(.aiChatSessionRestored(sessionID))):
+                return routeActiveAiChatTab(to: sessionID, state: state)
 
             case .content(.delegate(.openContextualAiChat)):
                 return .send(.request(.openContextualAiChat))
@@ -87,6 +83,17 @@ struct FileManagerWindowCommandRoutingReducer {
                 return .none
             }
         }
+    }
+
+    private func routeActiveAiChatTab(to sessionID: AiChatSessionID, state: State) -> Effect<Action> {
+        guard let activeTabID = state.contentTabs.activeTabID,
+              case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
+        else { return .none }
+        let sessionIDString = sessionID.rawValue.uuidString
+        return .merge(
+            .send(.navigation(.view(.showAiChat(sessionIDString)))),
+            .send(.contentTabs(.updateActivePageAnchor(activeTabID, .aiChat(sessionID: sessionIDString)))),
+        )
     }
 
     private func handleHomePageAnchorSelected(

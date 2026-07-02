@@ -2909,11 +2909,68 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
-    /// CTM-005-ai_chat_mode_switching: AI Chat History에서 selected session 진입 route가 composite history에 기록됨
-    /// session row 선택은 AiChat restore와 ContentPageNavigation `.aiChat(sessionID)` route를 함께 기록해야 한다.
-    /// - 검증 내용: selected session 진입 후 Back/Back이 selected chat → History → 이전 chat 순서로 복원됨
+    /// CTM-005-ai_chat_mode_switching: selected session restore 실패 시 History route를 유지함
+    /// History row 선택 후 restore가 실패하면 실패한 session을 ContentPageNavigation `.aiChat(sessionID)` route로 확정하지 않아야 한다.
+    /// - 검증 내용: restore failure 처리 후 navigation route와 active tab anchor가 기존 History 기준으로 유지됨
+    /// - 사전 조건: `.aiChatSessions(current)` route에서 selected session restore가 pending인 상태
+    /// - 기대 결과: `.sessions` mode와 `.aiChatSessions(current)` route를 유지하고 session list error만 표시함
+    func testAiChatSelectedSessionRestoreFailureKeepsSessionsRoute() async throws {
+        let tabID = ContentTabID()
+        let currentUUID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let selectedUUID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        let currentSessionID = currentUUID.uuidString
+        let currentAiSessionID = AiChatSessionID(rawValue: currentUUID)
+        let selectedAiSessionID = AiChatSessionID(rawValue: selectedUUID)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .aiChat,
+                anchor: .aiChat(sessionID: currentSessionID),
+                isPinned: false,
+                title: "AI Chat",
+                iconName: "message",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content.navigation.navigationState = .aiChatSessions(currentSessionID)
+        state.content.aiChat.mode = .sessions
+        state.content.aiChat.sessionID = currentAiSessionID
+        state.content.aiChat.sessionStatus = .active
+        state.content.aiChat.restoreSessionID = selectedAiSessionID
+        state.content.aiChat.sessionList.selectedSessionID = selectedAiSessionID
+        state.tabContentStates = [tabID: state.content]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        }
+        // store.exhaustivity = .off: 실패 restore는 parent navigation delegate를 방출하지 않는 불변식만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.restoreOutcome(
+            requestedSessionID: selectedAiSessionID,
+            .failed(reason: .missingRecord),
+            restoreFailure: .missingRecord,
+        )))) { state in
+            state.content.aiChat.sessionList.selectedSessionID = nil
+            state.content.aiChat.sessionList.errorMessage = "That chat is no longer available."
+        }
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(currentSessionID))
+        XCTAssertEqual(store.state.contentTabs.tabs[id: tabID]?.anchor, .aiChat(sessionID: currentSessionID))
+        XCTAssertEqual(store.state.content.aiChat.mode, .sessions)
+        XCTAssertEqual(store.state.content.aiChat.sessionID, currentAiSessionID)
+        await store.finish()
+    }
+
+    /// CTM-005-ai_chat_mode_switching: AI Chat History에서 selected session restore 성공 후 route가 기록됨
+    /// session row 선택은 restore를 먼저 완료하고 성공한 session만 ContentPageNavigation `.aiChat(sessionID)` route로 확정해야 한다.
+    /// - 검증 내용: selected session restore 성공 후 Back/Back이 selected chat → History → 이전 chat 순서로 복원됨
     /// - 사전 조건: `.aiChatSessions(current)` route와 이전 `.aiChat(current)` history가 있는 상태
-    /// - 기대 결과: selected session route와 sessions route가 forward/back history에 시간순으로 남음
+    /// - 기대 결과: restore 성공 전에는 sessions route를 유지하고, 성공 후 selected session route와 sessions route가 history에 시간순으로 남음
     func testAiChatSelectedSessionRouteParticipatesInCompositeNavigationHistory() async throws {
         let tabID = ContentTabID()
         let currentUUID = try XCTUnwrap(UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))
@@ -2921,6 +2978,15 @@ extension CTM005IndependentContentTabSessionTests {
         let currentSessionID = currentUUID.uuidString
         let selectedSessionID = selectedUUID.uuidString
         let currentAiSessionID = AiChatSessionID(rawValue: currentUUID)
+        let selectedAiSessionID = AiChatSessionID(rawValue: selectedUUID)
+        let selectedSnapshot = AiChatSessionSnapshot(
+            sessionID: selectedAiSessionID,
+            status: .active,
+            provider: nil,
+            model: nil,
+            transcriptHistory: [AiChatMessage(role: .user, content: "selected")],
+            updatedAtMs: 2,
+        )
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
             tabs: [ContentTabItem(
@@ -2942,6 +3008,19 @@ extension CTM005IndependentContentTabSessionTests {
         state.content.aiChat.mode = .sessions
         state.content.aiChat.sessionID = currentAiSessionID
         state.content.aiChat.sessionStatus = .active
+        state.content.aiChat.sessionList.allRows = [
+            AiChatSessionSummary(
+                sessionID: selectedAiSessionID,
+                title: "Selected session",
+                messageCount: 1,
+                provider: nil,
+                model: nil,
+                createdAtMs: 1,
+                updatedAtMs: 2,
+                status: .active,
+            ),
+        ]
+        state.content.aiChat.sessionList.rows = state.content.aiChat.sessionList.allRows
         state.tabContentStates = [tabID: state.content]
         state.syncContentTabSidebarItems()
 
@@ -2949,11 +3028,48 @@ extension CTM005IndependentContentTabSessionTests {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.aiChatSessionPersistenceClient.loadSession = { sessionID in
+                sessionID == selectedAiSessionID ? selectedSnapshot : nil
+            }
         }
-        // store.exhaustivity = .off: selected session restore 효과와 navigation delegate가 함께 방출되므로 composite route 순서만 검증함
+        // store.exhaustivity = .off: selected session restore 성공 delegate와 navigation delegate가 함께 방출되므로 composite
+        // route 순서만 검증함
         store.exhaustivity = .off
 
-        await store.send(.navigation(.view(.showAiChat(selectedSessionID))))
+        await store.send(.content(.aiChat(.sessionRowTapped(selectedAiSessionID)))) { state in
+            state.content.aiChat.mode = .sessions
+            state.content.aiChat.restoreSessionID = selectedAiSessionID
+            state.content.aiChat.sessionList.selectedSessionID = selectedAiSessionID
+        }
+
+        XCTAssertEqual(store.state.content.navigation.navigationState, .aiChatSessions(currentSessionID))
+
+        await store.receive(\.content.aiChat.restoreOutcome)
+        XCTAssertEqual(store.state.content.aiChat.mode, .chat)
+        XCTAssertEqual(store.state.content.aiChat.sessionID, selectedAiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.sessionStatus, .active)
+        XCTAssertEqual(store.state.content.aiChat.restoreSessionID, selectedAiSessionID)
+        XCTAssertEqual(store.state.content.aiChat.restoreOutcome, .restored(snapshot: selectedSnapshot))
+        XCTAssertNil(store.state.content.aiChat.restoreFailure)
+        XCTAssertEqual(store.state.content.aiChat.transcriptHistory, selectedSnapshot.transcriptHistory)
+        XCTAssertNil(store.state.content.aiChat.emptyDraftSessionID)
+        XCTAssertNil(store.state.content.aiChat.sessionList.errorMessage)
+        await store.receive { action in
+            guard case let .content(.delegate(.aiChatSessionRestored(receivedSessionID))) = action else { return false }
+            return receivedSessionID == selectedAiSessionID
+        }
+        await store.receive { action in
+            guard case let .navigation(.view(.showAiChat(receivedSessionID))) = action else { return false }
+            return receivedSessionID == selectedSessionID
+        }
+        await store.receive { action in
+            guard case let .contentTabs(.updateActivePageAnchor(receivedTabID, .aiChat(receivedSessionID))) = action
+            else {
+                return false
+            }
+            return receivedTabID == tabID && receivedSessionID == selectedSessionID
+        }
         await store.receive { action in
             guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
                 return false
@@ -2976,7 +3092,7 @@ extension CTM005IndependentContentTabSessionTests {
             guard case let .content(.aiChat(.routeToChatSession(receivedSessionID))) = action else {
                 return false
             }
-            return receivedSessionID.rawValue == selectedUUID
+            return receivedSessionID == selectedAiSessionID
         }
 
         XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(selectedSessionID))

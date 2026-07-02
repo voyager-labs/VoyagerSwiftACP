@@ -62,7 +62,6 @@ struct FileManagerAiChatPageView: View {
                                 centeredEmptyContent: AnyView(AiChatEmptyStateContent()),
                                 onSessionSelected: { sessionID in
                                     store.send(.aiChat(.sessionRowTapped(sessionID)))
-                                    onNavigationAction(.showAiChat(sessionID.rawValue.uuidString))
                                 },
                             )
                             .padding(.horizontal, contentHorizontalPadding(for: proxy.size.width))
