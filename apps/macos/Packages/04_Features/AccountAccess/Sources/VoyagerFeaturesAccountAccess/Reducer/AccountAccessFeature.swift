@@ -97,6 +97,9 @@ public struct AccountAccessFeature {
             case .openBetaCodeHelpTapped:
                 return handleOpenBetaCodeHelp(&state)
 
+            case let ._webURLResult(result):
+                return handleWebURLResult(&state, result: result)
+
             case ._ttlTimerTicked:
                 return handleTtlTimerTicked(&state)
 
@@ -638,33 +641,51 @@ private extension AccountAccessFeature {
 
     /// 체크아웃(구매) 페이지를 브라우저에서 연다.
     private func handleOpenCheckout(_: inout State) -> Effect<Action> {
-        .run { [checkoutURLClient] _ in
-            let url = checkoutURLClient.checkoutURL()
-            checkoutURLClient.openURL(url)
-        }
+        openWebURL(makeURL: checkoutURLClient.checkoutURL)
     }
 
     /// 요금제 페이지를 브라우저에서 연다.
     private func handleOpenPricing(_: inout State) -> Effect<Action> {
-        .run { [checkoutURLClient] _ in
-            let url = checkoutURLClient.pricingURL()
-            checkoutURLClient.openURL(url)
-        }
+        openWebURL(makeURL: checkoutURLClient.pricingURL)
     }
 
     /// 접근 권한 도움 페이지를 브라우저에서 연다.
     private func handleOpenAccessHelp(_: inout State) -> Effect<Action> {
-        .run { [checkoutURLClient] _ in
-            let url = checkoutURLClient.supportURL()
-            checkoutURLClient.openURL(url)
-        }
+        openWebURL(makeURL: checkoutURLClient.supportURL)
     }
 
     /// 베타 코드 도움 페이지를 브라우저에서 연다.
     private func handleOpenBetaCodeHelp(_: inout State) -> Effect<Action> {
-        .run { [checkoutURLClient] _ in
-            let url = checkoutURLClient.supportURL()
-            checkoutURLClient.openURL(url)
+        openWebURL(makeURL: checkoutURLClient.supportURL)
+    }
+
+    private func openWebURL(makeURL: @escaping @Sendable () throws -> URL) -> Effect<Action> {
+        .run { [checkoutURLClient] send in
+            do {
+                let url = try makeURL()
+                checkoutURLClient.openURL(url)
+                await send(._webURLResult(.success(())))
+            } catch let error as AccessError {
+                await send(._webURLResult(.failure(error)))
+            } catch {
+                await send(._webURLResult(.failure(.notConfigured)))
+            }
+        }
+    }
+
+    private func handleWebURLResult(
+        _ state: inout State,
+        result: Result<Void, AccessError>,
+    ) -> Effect<Action> {
+        switch result {
+        case .success:
+            return .none
+
+        case let .failure(error):
+            state.status = nil
+            state.isComplete = false
+            state.errorMessage = errorMessage(for: error)
+            return .none
         }
     }
 }

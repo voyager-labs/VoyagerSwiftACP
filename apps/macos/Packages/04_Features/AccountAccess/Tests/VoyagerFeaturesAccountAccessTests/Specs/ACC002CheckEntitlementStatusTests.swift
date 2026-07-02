@@ -25,6 +25,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         accountSessionClient: AccountSessionClient = .testValue,
         authNetworkClient: AuthNetworkClient = .testValue,
         snapshotClient: AccessStatusSnapshotClient = .testValue,
+        checkoutURLClient: CheckoutURLClient = .testValue,
         initialState: AccountAccessFeature.State = AccountAccessFeature.State(),
     ) -> TestStore<AccountAccessFeature.State, AccountAccessFeature.Action> {
         TestStore(initialState: initialState) {
@@ -33,6 +34,7 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
             $0.accountSessionClient = accountSessionClient
             $0.authNetworkClient = authNetworkClient
             $0.accessStatusSnapshotClient = snapshotClient
+            $0.checkoutURLClient = checkoutURLClient
             $0.date = .constant(referenceDate)
         }
     }
@@ -77,6 +79,59 @@ final class ACC002CheckEntitlementStatusTests: XCTestCase {
         XCTAssertTrue(store.state.hasAccountSession)
         XCTAssertEqual(store.state.fetchGeneration, 1)
         XCTAssertTrue(fetchCalled)
+    }
+
+    /// ACC-002-check_entitlement_status: pricing URL 설정 누락은 앱 crash가 아니라 error projection으로 처리된다.
+    /// PUBLIC_WEB_BASE_URL missing/invalid 상황에서 fatalError 없이 Retry 가능한 오류 상태로 남는지 검증한다.
+    /// - 검증 내용: `.openPricingTapped` → `._webURLResult(.failure(.notConfigured))`, status=nil, errorMessage 설정.
+    /// - 사전 조건: 세션 있음, entitlement none 상태에서 Web Pricing CTA 실행.
+    /// - 기대 결과: accountAccessStepState=.error, isComplete=false.
+    func testOpenPricingMissingURLConfigProjectsErrorWithoutCrash() async {
+        var state = AccountAccessFeature.State()
+        state.hasAccountSession = true
+        state.status = AccessStatus.none
+
+        let store = makeTestStore(
+            checkoutURLClient: CheckoutURLClient(
+                openURL: { _ in XCTFail("URL 설정 실패 시 브라우저를 열면 안 됨") },
+                checkoutURL: { throw AccessError.notConfigured },
+                pricingURL: { throw AccessError.notConfigured },
+                supportURL: { throw AccessError.notConfigured },
+            ),
+            initialState: state,
+        )
+
+        await store.send(.openPricingTapped)
+        await store.receive(\._webURLResult) { state in
+            state.status = nil
+            state.isComplete = false
+            state.errorMessage = "Access service is not configured."
+        }
+
+        XCTAssertEqual(store.state.accountAccessStepState, .error)
+        XCTAssertTrue(store.state.canRetry)
+    }
+
+    /// ACC-002-check_entitlement_status: invalid PUBLIC_WEB_BASE_URL 값은 fatalError가 아니라 구성 오류로 처리된다.
+    /// live URL validator가 잘못된 scheme/host를 process crash 없이 `AccessError.notConfigured`로 접는지 검증한다.
+    /// - 검증 내용: invalid web URL 값 → `AccessError.notConfigured` throw.
+    /// - 사전 조건: required public web URL 값이 http/https host URL이 아님.
+    /// - 기대 결과: fatalError 없이 구성 오류가 throw된다.
+    func testInvalidWebURLConfigThrowsNotConfiguredWithoutCrash() {
+        let invalidValues = [
+            "not a url",
+            "ftp://voyager.fm",
+            "https://",
+        ]
+
+        for value in invalidValues {
+            XCTAssertThrowsError(try CheckoutURLClient.validatedWebURL(
+                for: "PUBLIC_WEB_BASE_URL",
+                value: value,
+            )) { error in
+                XCTAssertEqual(error as? AccessError, .notConfigured)
+            }
+        }
     }
 
     /// ACC-002-check_entitlement_status: fetchAccessStatus 성공 시 status와 snapshot이 갱신된다.

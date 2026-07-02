@@ -13,19 +13,19 @@ public struct CheckoutURLClient: Sendable {
     public var openURL: @Sendable (URL) -> Void
 
     /// 체크아웃(구매) 페이지 URL을 반환한다.
-    public var checkoutURL: @Sendable () -> URL
+    public var checkoutURL: @Sendable () throws -> URL
 
     /// 요금제 페이지 URL을 반환한다.
-    public var pricingURL: @Sendable () -> URL
+    public var pricingURL: @Sendable () throws -> URL
 
     /// 고객지원/도움 페이지 URL을 반환한다.
-    public var supportURL: @Sendable () -> URL
+    public var supportURL: @Sendable () throws -> URL
 
     nonisolated public init(
         openURL: @escaping @Sendable (URL) -> Void,
-        checkoutURL: @escaping @Sendable () -> URL,
-        pricingURL: @escaping @Sendable () -> URL,
-        supportURL: @escaping @Sendable () -> URL,
+        checkoutURL: @escaping @Sendable () throws -> URL,
+        pricingURL: @escaping @Sendable () throws -> URL,
+        supportURL: @escaping @Sendable () throws -> URL,
     ) {
         self.openURL = openURL
         self.checkoutURL = checkoutURL
@@ -52,29 +52,29 @@ extension CheckoutURLClient: DependencyKey {
         return nil
     }
 
-    private static func requiredWebURL(for key: String) -> URL {
+    private static func requiredWebURL(for key: String) throws -> URL {
         guard let value = stringValue(for: key) else {
-            fatalError("Missing required URL config: \(key)")
+            throw AccessError.notConfigured
         }
 
-        return validatedWebURL(for: key, value: value)
+        return try validatedWebURL(for: key, value: value)
     }
 
-    private static func validatedWebURL(for key: String, value: String) -> URL {
+    nonisolated static func validatedWebURL(for _: String, value: String) throws -> URL {
         guard let url = URL(string: value),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               url.host?.isEmpty == false
         else {
-            fatalError("Invalid required URL config: \(key)")
+            throw AccessError.notConfigured
         }
 
         return url
     }
 
-    private static func webRouteURL(path: String) -> URL {
+    private static func webRouteURL(path: String) throws -> URL {
         let baseKey = "PUBLIC_WEB_BASE_URL"
-        let baseURL = requiredWebURL(for: baseKey)
+        let baseURL = try requiredWebURL(for: baseKey)
         let cleanPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return baseURL.appendingPathComponent(cleanPath)
     }
@@ -100,13 +100,13 @@ extension CheckoutURLClient: DependencyKey {
                 }
             },
             checkoutURL: {
-                webRouteURL(path: "/checkout")
+                try webRouteURL(path: "/checkout")
             },
             pricingURL: {
-                webRouteURL(path: "/pricing")
+                try webRouteURL(path: "/pricing")
             },
             supportURL: {
-                webRouteURL(path: "/support")
+                try webRouteURL(path: "/support")
             },
         )
     }
