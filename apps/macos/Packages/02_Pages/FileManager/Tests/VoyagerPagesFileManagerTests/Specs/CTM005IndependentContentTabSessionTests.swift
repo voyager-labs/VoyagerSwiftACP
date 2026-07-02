@@ -2292,6 +2292,101 @@ extension CTM005IndependentContentTabSessionTests {
         await store.finish()
     }
 
+    /// CTM-005-ai_chat_provider_forwarding: AI Chat 탭을 떠날 때 로드 완료된 model catalog를 보존함
+    /// AI Chat 탭 전환 중 in-flight loading만 정리하고 이미 로드된 model catalog는 저장된 tab state에 유지해야 한다.
+    /// - 검증 내용: loaded modelListState와 catalog tracking이 tabContentStates에 그대로 저장됨
+    /// - 사전 조건: active AI Chat tab이 `.loaded` model list와 loaded provider catalog를 가진 상태
+    /// - 기대 결과: tab handoff 후 저장된 AI Chat state가 loaded model catalog와 provider metadata를 보존함
+    func testAiChatTabSwitchAwayPreservesLoadedModelCatalogState() async throws {
+        let sessionUUID = try XCTUnwrap(UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))
+        let requestUUID = try XCTUnwrap(UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"))
+        let sessionID = sessionUUID.uuidString
+        let aiSessionID = AiChatSessionID(rawValue: sessionUUID)
+        let aiChatID = ContentTabID()
+        let homeID = ContentTabID()
+        let homePath = "/Users/test/Home"
+        let model = AiProviderModel(
+            id: AiModelHandle(provider: .openai, rawValue: "gpt-test"),
+            provider: .openai,
+            rawModelID: "gpt-test",
+            displayName: "GPT Test",
+            providerDisplayName: "OpenAI",
+            thinkingCapability: .unsupported(reason: AiThinkingUnavailableReason(message: "unsupported")),
+        )
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.navigation.navigationState = .aiChat(sessionID)
+        aiChatContent.aiChat.mode = .chat
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.modelListState = .loaded([model])
+        aiChatContent.aiChat.modelListRequestID = requestUUID
+        aiChatContent.aiChat.modelListProvider = .openai
+        aiChatContent.aiChat.modelListProviderOrder = [.openai]
+        aiChatContent.aiChat.modelListPendingProviders = []
+        aiChatContent.aiChat.modelListLoadedModelsByProvider = [.openai: [model]]
+        aiChatContent.aiChat.modelListFailedProviders = [:]
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath(homePath)
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: sessionID),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        // store.exhaustivity = .off: tab handoff는 watcher/navigation 효과를 함께 방출하므로 저장된 loaded model catalog 보존만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.setCurrent(homeID)))
+        await store.receive(\.content.aiChat.cancelInFlightWork)
+
+        let savedAiChatState = try XCTUnwrap(store.state.tabContentStates[aiChatID]?.aiChat)
+        XCTAssertEqual(savedAiChatState.modelListState, .loaded([model]))
+        XCTAssertEqual(savedAiChatState.modelListRequestID, requestUUID)
+        XCTAssertEqual(savedAiChatState.modelListProvider, .openai)
+        XCTAssertEqual(savedAiChatState.modelListProviderOrder, [.openai])
+        XCTAssertTrue(savedAiChatState.modelListPendingProviders.isEmpty)
+        XCTAssertEqual(savedAiChatState.modelListLoadedModelsByProvider, [.openai: [model]])
+        XCTAssertTrue(savedAiChatState.modelListFailedProviders.isEmpty)
+        XCTAssertEqual(savedAiChatState.sessionStatus, .active)
+        XCTAssertEqual(savedAiChatState.sessionID, aiSessionID)
+        await store.finish()
+    }
+
     /// CTM-005-ai_chat_provider_forwarding: Inspector가 보이지 않고 active tab이 .aiChat이 아닌 경우 전송 없음
     /// ContentPane과 Inspector 모두 forwarding 조건을 만족하지 않을 때 효과가 발생하지 않는지 검증한다.
     func testNoForwardingWhenInspectorNotOpenAndActiveTabNotAiChat() async {
