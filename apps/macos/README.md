@@ -50,35 +50,34 @@ open apps/macos/Voyager/Voyager.xcworkspace
 
 ## 빌드 및 실행
 
-### CLI 빌드
+### 표준 launch 엔트리포인트
 
-**Voyager.xcodeproj**
-
-```bash
-# 프로젝트 빌드 (개발)
-xcodebuild -project Voyager.xcodeproj -scheme Voyager-Dev -configuration Debug build
-
-# 프로젝트 빌드/Archive (배포)
-xcodebuild -project Voyager.xcodeproj -scheme Voyager-Prod -configuration Release build
-
-# 테스트 실행 (개발)
-xcodebuild -project Voyager.xcodeproj -scheme Voyager-Dev test
-```
-
-**Host xcodeproj** (별도 프로젝트)
+Terminal, Zed, VSCode/Sweetpad task는 같은 build flag와 DerivedData 경로를 쓰도록 `scripts/dev/macos-launch.sh`를 표준 진입점으로 사용합니다.
 
 ```bash
-# 온보딩 호스트 빌드 (개발)
-xcodebuild -project apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj -scheme OnboardingHost-Dev -configuration Debug build
+# 기본 개발 앱 빌드 후 실행
+mise run macos-launch
 
-# 설정 호스트 빌드 (개발)
-xcodebuild -project apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj -scheme SettingsHost-Dev -configuration Debug build
+# 특정 scheme/configuration 빌드 후 실행
+mise run macos-launch -- --scheme SettingsHost-Dev --configuration Debug
 
-# File Manager mock-only fixture 호스트 빌드 (개발)
-xcodebuild -project apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj -scheme FileManagerHost-Dev -configuration Debug build
+# 빌드만 확인
+mise run macos-launch -- --scheme Voyager-Dev --configuration Debug --no-launch
 ```
 
-> 참고: Host 앱들은 독립적인 Xcode 프로젝트입니다. CLI에서는 `-project` 경로를 명시적으로 지정하는 것을 권장합니다.
+기본 build flag는 다음 경로로 고정됩니다.
+
+- `-derivedDataPath build/dev/DerivedData`
+- `-clonedSourcePackagesDirPath build/dev/SourcePackages`
+- `-skipPackagePluginValidation`
+- `-skipMacroValidation`
+- `COMPILER_INDEX_STORE_ENABLE=NO`
+
+### IDE별 실행 경로
+
+- Xcode: `apps/macos/Voyager/Voyager.xcworkspace`를 열고 scheme 선택 후 실행
+- Zed: `.zed/tasks.json`의 `Voyager Dev: Launch (Debug)` 등 launch task 실행
+- VSCode/Sweetpad: `.vscode/tasks.json`의 Sweetpad task 실행. Sweetpad build는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다.
 
 ## 테스트
 
