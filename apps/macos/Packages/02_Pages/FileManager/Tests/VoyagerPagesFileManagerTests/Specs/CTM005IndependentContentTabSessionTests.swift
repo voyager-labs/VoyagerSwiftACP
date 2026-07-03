@@ -976,7 +976,6 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.send(.closeContentTabRequested(tabID))
         await store.receive(\.contentTabCloseAlertResponse)
 
-        // discard handler: .content(.view(.discardCollectionChanges)) + .contentTabs(.close(tabID))
         XCTAssertNil(store.state.pendingContentTabClose)
         await store.receive(\.contentTabs)
         XCTAssertNil(store.state.tabContentStates[tabID])
@@ -1068,7 +1067,6 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         await store.send(.closeContentTabRequested(tabID))
 
-        // clean bypass → reducer가 .send(.contentTabs(.close(tabID))) 반환
         XCTAssertNil(store.state.pendingContentTabClose)
         await store.receive(\.contentTabs)
         XCTAssertNil(store.state.tabContentStates[tabID])
@@ -1114,7 +1112,6 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         await store.send(.closeContentTabRequested(tabID))
 
-        // non-collection bypass → reducer가 .send(.contentTabs(.close(tabID))) 반환
         XCTAssertNil(store.state.pendingContentTabClose)
         await store.receive(\.contentTabs)
         XCTAssertNil(store.state.tabContentStates[tabID])
@@ -1969,7 +1966,6 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
         await store.send(.closeContentTabRequested(tabID))
 
-        // pinned bypass: alert 없이 바로 .send(.contentTabs(.close(tabID)))
         // pinned tab의 close는 unpin 처리 → tab은 유지되지만 isPinned = false
         XCTAssertNil(store.state.pendingContentTabClose)
         await store.receive(\.contentTabs)
@@ -3798,6 +3794,323 @@ extension CTM005IndependentContentTabSessionTests {
         XCTAssertNotNil(restoredAiChatContent.aiChat.sessionID)
         await store.finish()
     }
+
+    func testActiveAiChatPageCloseDoesNotCancelGeneration() async throws {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let sessionUUID = try XCTUnwrap(UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))
+        let sessionID = sessionUUID.uuidString
+        let aiSessionID = AiChatSessionID(rawValue: sessionUUID)
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let catalogRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let requestID = try AiChatRequestID(
+            rawValue: XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")),
+        )
+        let runID = try AiChatRunID(
+            rawValue: XCTUnwrap(UUID(uuidString: "BBBBBBBB-CCCC-DDDD-EEEE-FFFFFFFFFFFF")),
+        )
+        let requestContext = AiChatRequestContextSnapshot(
+            sessionID: aiSessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: catalogRow,
+            sessionStatus: .active,
+            promptSummary: "test",
+            submittedAtMs: 0,
+        )
+        let request = AiChatRequest(
+            context: requestContext,
+            messages: [AiChatMessage(role: .user, content: "test")],
+        )
+        let requestLock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: requestContext,
+            request: request,
+            selectedModelHandle: modelHandle,
+            selectedModelRow: catalogRow,
+            assistantReplacementIndex: nil,
+        )
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.navigation.navigationState = .aiChat(sessionID)
+        aiChatContent.aiChat.mode = .chat
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .processing(requestLock)
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: sessionID),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "sparkles",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeTabID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(aiChatTabID)))
+
+        await store.receive(\.content.internal.applyNavigationState)
+
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let savedBackgroundState = store.state.backgroundAiChatStates[aiSessionID]
+        XCTAssertNotNil(savedBackgroundState, "processing AI Chat state should be saved to background")
+        XCTAssertEqual(savedBackgroundState?.aiChat.executionPhase, .processing(requestLock))
+    }
+}
+
+@MainActor
+extension CTM005IndependentContentTabSessionTests {
+    func testInspectorCloseCancelsInspectorGenerationWhileContentAiChatIsProcessing() async {
+        let contentSessionID = AiChatSessionID(rawValue: UUID())
+        let inspectorSessionID = AiChatSessionID(rawValue: UUID())
+        let contentLock = makeRequestLock(sessionID: contentSessionID)
+        let inspectorLock = makeRequestLock(sessionID: inspectorSessionID)
+
+        var contentState = FileManagerContentFeature.State()
+        contentState.aiChat.sessionID = contentSessionID
+        contentState.aiChat.sessionStatus = .active
+        contentState.aiChat.executionPhase = .processing(contentLock)
+
+        var state = FileManagerFeature.State()
+        state.content = contentState
+        state.inspector.inspectorVisible = true
+        state.inspector.inspectorPaneExists = true
+        state.inspector.activeMode = .chat
+        state.inspector.aiChat.sessionID = inspectorSessionID
+        state.inspector.aiChat.sessionStatus = .active
+        state.inspector.aiChat.executionPhase = .processing(inspectorLock)
+
+        let homeID = ContentTabID()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.inspector(.closeChat)) { state in
+            state.inspector.inspectorVisible = false
+        }
+
+        await store.receive { action in
+            guard case .inspector(.aiChat(.teardownRequested)) = action else { return false }
+            return true
+        } assert: { state in
+            state.inspector.aiChat.executionPhase = .idle
+            state.inspector.aiChat.lockedModelHandle = nil
+            state.inspector.aiChat.streamingAssistantDraft = nil
+        }
+
+        XCTAssertTrue(store.state.content.aiChat.executionPhase.isProcessing)
+        XCTAssertEqual(store.state.content.aiChat.sessionID, contentSessionID)
+
+        await store.finish()
+    }
+
+    func testExplicitCancelTappedCancelsContentAiChatGeneration() async {
+        let contentSessionID = AiChatSessionID(rawValue: UUID())
+        let contentLock = makeRequestLock(sessionID: contentSessionID)
+
+        var contentState = FileManagerContentFeature.State()
+        contentState.aiChat.sessionID = contentSessionID
+        contentState.aiChat.sessionStatus = .active
+        contentState.aiChat.executionPhase = .processing(contentLock)
+        contentState.aiChat.lockedModelHandle = contentLock.selectedModelHandle
+
+        var state = FileManagerFeature.State()
+        state.content = contentState
+
+        let homeID = ContentTabID()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.aiChat(.cancelTapped)))
+
+        guard case .cancelled = store.state.content.aiChat.executionPhase else {
+            XCTFail(
+                "Expected cancelled execution phase after cancelTapped, got \(store.state.content.aiChat.executionPhase)",
+            )
+            return
+        }
+        XCTAssertNil(store.state.content.aiChat.lockedModelHandle)
+        XCTAssertNil(store.state.content.aiChat.streamingAssistantDraft)
+
+        await store.finish()
+    }
+
+    func testClosedAiChatFinalEventSavesSnapshotThroughBackgroundState() async {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let aiSessionID = AiChatSessionID(rawValue: UUID())
+        let requestLock = makeRequestLock(sessionID: aiSessionID)
+        let savedSnapshots = LockIsolated<[AiChatSessionSnapshot]>([])
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .processing(requestLock)
+        aiChatContent.aiChat.lockedModelHandle = requestLock.selectedModelHandle
+
+        let homeContent = FileManagerContentFeature.State()
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: aiSessionID.rawValue.uuidString),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "message",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeTabID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+            $0.aiChatSessionPersistenceClient.saveSession = { snapshot in
+                savedSnapshots.withValue { $0.append(snapshot) }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(aiChatTabID)))
+        await store.receive(\.content.internal.applyNavigationState)
+        await store.skipReceivedActions()
+
+        XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertTrue(store.state.content.aiChat.sessionList.rows.isEmpty)
+
+        let response = AiChatResponse(
+            context: requestLock.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "done"),
+            completedAtMs: 1_234_567_891_000,
+        )
+
+        await store.send(.content(.aiChat(.executionEvent(.final(response: response)))))
+
+        await store.receive { action in
+            guard case let .backgroundAiChat(.sessionSnapshotSaved(summary)) = action else { return false }
+            return summary.sessionID == aiSessionID
+        } assert: { state in
+            state.backgroundAiChatStates.removeValue(forKey: aiSessionID)
+        }
+
+        await store.finish()
+
+        let snapshots = savedSnapshots.value
+        XCTAssertEqual(snapshots.count, 1)
+        XCTAssertEqual(snapshots.first?.sessionID, aiSessionID)
+        XCTAssertFalse(store.state.content.aiChat.sessionList.rows.contains { $0.sessionID == aiSessionID })
+        XCTAssertNil(store.state.backgroundAiChatStates[aiSessionID])
+    }
 }
 
 // MARK: - CTM-005-ai_chat_invalid_session
@@ -3938,6 +4251,205 @@ extension CTM005IndependentContentTabSessionTests {
     }
 }
 
+@MainActor
+extension CTM005IndependentContentTabSessionTests {
+    func testRestoringAiChatTabInitializesContentSessionFromRestoredAnchor() async {
+        let sessionID = "test-session-123"
+        let homeID = ContentTabID()
+        let currentPath = "/Users/test/Current"
+        var currentContent = FileManagerContentFeature.State()
+        currentContent.navigation.seedInitialFolderPath(currentPath)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: ClosedContentTabSnapshot(
+                page: .aiChat,
+                anchor: .aiChat(sessionID: sessionID),
+                wasPinned: false,
+                closedAt: Date(timeIntervalSince1970: 1_234_567_890),
+            ),
+        )
+        state.content = currentContent
+        state.tabContentStates = [homeID: currentContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.restore))
+
+        guard let activeTabID = store.state.contentTabs.activeTabID else {
+            XCTFail("restore should activate a restored tab")
+            return
+        }
+        XCTAssertNotEqual(activeTabID, homeID)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: activeTabID]?.anchor, .aiChat(sessionID: sessionID))
+        XCTAssertEqual(store.state.contentTabs.tabs[id: activeTabID]?.page, .aiChat)
+        XCTAssertEqual(store.state.content.navigation.navigationState, .aiChat(sessionID))
+        XCTAssertEqual(store.state.contentTabs.recentlyClosed, nil)
+        guard let restoredContent = store.state.tabContentStates[activeTabID] else {
+            XCTFail("restored AI Chat tab should have content state")
+            return
+        }
+        XCTAssertEqual(restoredContent.navigation.navigationState, .aiChat(sessionID))
+        await store.finish()
+    }
+
+    func testCloseAiChatTabAndReopenSameSessionDoesNotCorruptState() async throws {
+        let aiChatTabID = ContentTabID()
+        let homeTabID = ContentTabID()
+        let sessionUUID = try XCTUnwrap(UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))
+        let sessionID = sessionUUID.uuidString
+        let aiSessionID = AiChatSessionID(rawValue: sessionUUID)
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let catalogRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let requestID = try AiChatRequestID(
+            rawValue: XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")),
+        )
+        let runID = try AiChatRunID(
+            rawValue: XCTUnwrap(UUID(uuidString: "BBBBBBBB-CCCC-DDDD-EEEE-FFFFFFFFFFFF")),
+        )
+        let requestContext = AiChatRequestContextSnapshot(
+            sessionID: aiSessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: catalogRow,
+            sessionStatus: .active,
+            promptSummary: "test",
+            submittedAtMs: 0,
+        )
+        let request = AiChatRequest(
+            context: requestContext,
+            messages: [AiChatMessage(role: .user, content: "test")],
+        )
+        let requestLock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: requestContext,
+            request: request,
+            selectedModelHandle: modelHandle,
+            selectedModelRow: catalogRow,
+            assistantReplacementIndex: nil,
+        )
+
+        var aiChatContent = FileManagerContentFeature.State()
+        aiChatContent.navigation.navigationState = .aiChat(sessionID)
+        aiChatContent.aiChat.mode = .chat
+        aiChatContent.aiChat.sessionID = aiSessionID
+        aiChatContent.aiChat.sessionStatus = .active
+        aiChatContent.aiChat.executionPhase = .processing(requestLock)
+
+        var homeContent = FileManagerContentFeature.State()
+        homeContent.navigation.seedInitialFolderPath("/Users/test/Home")
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: aiChatTabID,
+                    page: .aiChat,
+                    anchor: .aiChat(sessionID: sessionID),
+                    isPinned: false,
+                    title: "AI Chat",
+                    iconName: "sparkles",
+                ),
+                ContentTabItem(
+                    id: homeTabID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: aiChatTabID,
+            recentlyClosed: nil,
+        )
+        state.content = aiChatContent
+        state.tabContentStates = [homeTabID: homeContent]
+        state.syncContentTabSidebarItems()
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
+            $0.entryWatchingClient.startWatchingDirectory = { _ in
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(aiChatTabID)))
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: aiChatTabID])
+        XCTAssertEqual(store.state.contentTabs.recentlyClosed?.anchor, .aiChat(sessionID: sessionID))
+        XCTAssertNotNil(store.state.backgroundAiChatStates[aiSessionID])
+        XCTAssertEqual(
+            store.state.backgroundAiChatStates[aiSessionID]?.aiChat.executionPhase,
+            .processing(requestLock),
+        )
+        XCTAssertEqual(store.state.contentTabs.activeTabID, homeTabID)
+
+        await store.skipReceivedActions()
+
+        await store.send(.contentTabs(.open(.aiChat(sessionID: sessionID))))
+
+        let newAIChatTabs = store.state.contentTabs.tabs.filter { $0.page == .aiChat }
+        XCTAssertEqual(newAIChatTabs.count, 1, "should have exactly one AI Chat tab")
+        XCTAssertEqual(newAIChatTabs[0].anchor, .aiChat(sessionID: sessionID))
+        XCTAssertNotEqual(newAIChatTabs[0].id, aiChatTabID, "reopened tab should get a new ContentTabID")
+
+        XCTAssertEqual(store.state.sidebar.contentTabSidebarItems.count, 2)
+        let sidebarAiChatItems = store.state.sidebar.contentTabSidebarItems.filter { $0.pageType == .aiChat }
+        XCTAssertEqual(sidebarAiChatItems.count, 1)
+
+        if let newTabID = newAIChatTabs.first?.id {
+            let newTabContentState = store.state.tabContentStates[newTabID]
+            XCTAssertNotEqual(
+                newTabContentState?.aiChat.executionPhase,
+                .processing(requestLock),
+                "new tab should not inherit the old background processing state",
+            )
+        }
+
+        XCTAssertEqual(store.state.contentTabs.recentlyClosed?.anchor, .aiChat(sessionID: sessionID))
+
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+}
+
 // MARK: - Helpers
 
 private extension CTM005IndependentContentTabSessionTests {
@@ -3975,6 +4487,48 @@ private extension CTM005IndependentContentTabSessionTests {
                 appVersion: nil,
             ),
             savedContext: nil,
+        )
+    }
+
+    func makeRequestLock(sessionID: AiChatSessionID) -> AiChatRequestLock {
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let catalogRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let requestID = AiChatRequestID(rawValue: UUID())
+        let runID = AiChatRunID(rawValue: UUID())
+        let requestContext = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: catalogRow,
+            sessionStatus: .active,
+            promptSummary: "test",
+            submittedAtMs: 0,
+        )
+        let request = AiChatRequest(context: requestContext, messages: [AiChatMessage(role: .user, content: "test")])
+        return AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: requestContext,
+            request: request,
+            selectedModelHandle: modelHandle,
+            selectedModelRow: catalogRow,
+            assistantReplacementIndex: nil,
         )
     }
 

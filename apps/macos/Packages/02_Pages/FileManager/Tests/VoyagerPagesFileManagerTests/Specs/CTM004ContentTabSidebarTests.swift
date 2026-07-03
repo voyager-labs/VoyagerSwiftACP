@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesAi
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
@@ -396,5 +397,31 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             "doc",
             "arrow.down.circle",
         ])
+    }
+
+    func testSidebarProjection_ignoresBackgroundAiChatStates() {
+        let homeID = ContentTabID()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: homeID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Home",
+                iconName: "house",
+            )],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+
+        let bgSessionID = AiChatSessionID(rawValue: UUID())
+        state.backgroundAiChatStates[bgSessionID] = FileManagerContentFeature.State()
+
+        state.syncContentTabSidebarItems()
+
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems.count, 1)
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems[0].id, homeID)
+        XCTAssertEqual(state.sidebar.contentTabSidebarItems[0].pageType, .home)
     }
 }
