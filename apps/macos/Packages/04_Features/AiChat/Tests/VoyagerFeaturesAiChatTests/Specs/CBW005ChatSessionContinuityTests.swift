@@ -144,6 +144,165 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(store.state.sessionList.selectedSessionID, selectedSessionID)
     }
 
+    /// CBW-005-continue_chat_conversation_session: ContentPane History 열기는 active chat을 정리하지 않고 보존한다.
+    /// AI Chat 페이지에서 목록을 열었다가 뒤로가면 직전 기존 채팅으로 즉시 복귀하는지 검증합니다.
+    /// - 검증 내용: showSessionsTapped는 transcript/sessionID를 보존하고 returnToChatTapped가 같은 chat으로 복귀
+    /// - 사전 조건: active chat에 transcript가 있다.
+    /// - 기대 결과: mode만 sessions/chat으로 전환되고 대화 state는 유지된다.
+    func testShowSessionsThenReturnPreservesExistingChat() async {
+        let sessionID = makeCBW005SessionID("12121212-1212-1212-1212-121212121212")
+        let transcript = restoredTranscript
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            mode: .chat,
+            sessionList: .init(
+                allRows: [makeCBW005SessionSummary(sessionID: sessionID, title: "Existing chat")],
+                rows: [makeCBW005SessionSummary(sessionID: sessionID, title: "Existing chat")],
+                selectedSessionID: sessionID,
+            ),
+            sessionID: sessionID,
+            sessionStatus: .active,
+            transcriptHistory: transcript,
+            draftText: "Follow up",
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.showSessionsTapped) { state in
+            state.mode = .sessions
+        }
+        await store.send(.returnToChatTapped) { state in
+            state.mode = .chat
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+        }
+
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.transcriptHistory, transcript)
+        XCTAssertEqual(store.state.draftText, "Follow up")
+    }
+
+    /// CBW-005-continue_chat_conversation_session: ContentPane History 열기는 빈 new chat draft도 보존한다.
+    /// 새 AI Chat 페이지에서 목록으로 갔다가 뒤로가면 직전 새 채팅 페이지로 돌아오는지 검증합니다.
+    /// - 검증 내용: showSessionsTapped는 emptyDraftSessionID를 삭제하지 않고 returnToChatTapped가 같은 draft로 복귀
+    /// - 사전 조건: untouched empty draft가 chat mode에 열려 있다.
+    /// - 기대 결과: draft session은 삭제되지 않고 sessionID/emptyDraftSessionID가 유지된다.
+    func testShowSessionsThenReturnPreservesNewChatDraft() async {
+        let sessionID = makeCBW005SessionID("13131313-1313-1313-1313-131313131313")
+        let deletedSessionIDs = LockIsolated<[AiChatSessionID]>([])
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: sessionID,
+            mode: .chat,
+            sessionList: .init(
+                allRows: [makeCBW005SessionSummary(sessionID: sessionID, status: .idle)],
+                selectedSessionID: sessionID,
+            ),
+            sessionID: sessionID,
+            emptyDraftSessionID: sessionID,
+            sessionStatus: .idle,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { _ in },
+                deleteSession: { sessionID in
+                    deletedSessionIDs.withValue { $0.append(sessionID) }
+                },
+            )
+        }
+
+        await store.send(.showSessionsTapped) { state in
+            state.mode = .sessions
+        }
+        await store.send(.returnToChatTapped) { state in
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.mode = .chat
+        }
+
+        XCTAssertEqual(store.state.sessionID, sessionID)
+        XCTAssertEqual(store.state.emptyDraftSessionID, sessionID)
+        XCTAssertEqual(deletedSessionIDs.value, [])
+    }
+
+    /// CBW-005-open_chat_conversation_session: 다른 row restore 중 뒤로가기는 진행 중인 restore를 취소하지 않는다.
+    /// 목록에서 기존 session을 선택한 직후 return action이 이전 chat으로 되돌리는 회귀를 막습니다.
+    /// - 검증 내용: pending restoreSessionID가 current session과 다르면 returnToChatTapped는 no-op
+    /// - 사전 조건: A chat이 열려 있고 B session restore가 pending이다.
+    /// - 기대 결과: sessions mode와 restore target이 유지된다.
+    func testReturnToChatDoesNotCancelPendingDifferentSessionRestore() async {
+        let currentSessionID = makeCBW005SessionID("14141414-1414-1414-1414-141414141414")
+        let restoringSessionID = makeCBW005SessionID("15151515-1515-1515-1515-151515151515")
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: restoringSessionID,
+            mode: .sessions,
+            sessionList: .init(selectedSessionID: restoringSessionID),
+            sessionID: currentSessionID,
+            sessionStatus: .active,
+            transcriptHistory: restoredTranscript,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.returnToChatTapped)
+
+        XCTAssertEqual(store.state.mode, .sessions)
+        XCTAssertEqual(store.state.sessionID, currentSessionID)
+        XCTAssertEqual(store.state.restoreSessionID, restoringSessionID)
+        XCTAssertEqual(store.state.sessionList.selectedSessionID, restoringSessionID)
+    }
+
+    /// CBW-005-open_chat_conversation_session: current chat route 복귀는 다른 session restore tracking을 먼저 정리한다.
+    /// FileManager Back/Forward가 A chat route로 복귀할 때 B session restore가 늦게 도착해도 A chat을 덮지 않아야 합니다.
+    /// - 검증 내용: routeToChatSession(current)는 pending restoreSessionID/selectedSessionID를 정리하고 stale restoreOutcome을 무시
+    /// - 사전 조건: A chat이 열려 있고 B session restore가 pending이다.
+    /// - 기대 결과: late B restoreOutcome 이후에도 A session과 transcript가 유지된다.
+    func testRouteToCurrentChatCancelsPendingDifferentSessionRestore() async {
+        let currentSessionID = makeCBW005SessionID("16161616-1616-1616-1616-161616161616")
+        let restoringSessionID = makeCBW005SessionID("17171717-1717-1717-1717-171717171717")
+        let staleSnapshot = makeCBW005Snapshot(
+            sessionID: restoringSessionID,
+            transcriptHistory: [AiChatMessage(role: .assistant, content: "stale restore")],
+        )
+
+        let store = TestStore(initialState: AiChatFeature.State(
+            restoreSessionID: restoringSessionID,
+            mode: .sessions,
+            sessionList: .init(
+                allRows: [makeCBW005SessionSummary(sessionID: restoringSessionID)],
+                selectedSessionID: restoringSessionID,
+            ),
+            sessionID: currentSessionID,
+            sessionStatus: .active,
+            transcriptHistory: restoredTranscript,
+        )) {
+            AiChatFeature()
+        }
+
+        await store.send(.routeToChatSession(currentSessionID)) { state in
+            state.restoreSessionID = nil
+            state.sessionList.selectedSessionID = nil
+            state.restoreOutcome = nil
+            state.restoreFailure = nil
+            state.mode = .chat
+        }
+
+        await store.send(.restoreOutcome(
+            requestedSessionID: restoringSessionID,
+            .restored(snapshot: staleSnapshot),
+            restoreFailure: nil,
+        ))
+
+        XCTAssertEqual(store.state.mode, .chat)
+        XCTAssertEqual(store.state.sessionID, currentSessionID)
+        XCTAssertEqual(store.state.transcriptHistory, restoredTranscript)
+        XCTAssertNil(store.state.restoreSessionID)
+        XCTAssertNil(store.state.sessionList.selectedSessionID)
+    }
+
     // MARK: - CBW-005-open_chat_conversation_session
 
     /// CBW-005-open_chat_conversation_session: session row 선택은 저장 session을 열고 live context를 유지한다.
@@ -336,6 +495,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             state.sessionList.allRows = [first, second]
             state.sessionList.rows = [first, second]
             state.sessionList.isLoading = false
+            state.sessionList.hasLoadedRows = true
             state.sessionList.errorMessage = nil
         }
 
@@ -1862,7 +2022,9 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         await store.send(.sessionSnapshotUpdated(summaries.start, requestID: requestID, runID: runID))
         await store.send(.sessionSnapshotSaved(summaries.final))
-        await store.send(.sessionListLoaded([summaries.final]))
+        await store.send(.sessionListLoaded([summaries.final])) { state in
+            state.sessionList.hasLoadedRows = true
+        }
 
         assertProcessingSessionDeleted(store.state, sessionID: sessionID, deletedIDs: deletedIDs.value)
     }

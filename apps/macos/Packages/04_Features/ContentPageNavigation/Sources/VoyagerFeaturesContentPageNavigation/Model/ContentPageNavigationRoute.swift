@@ -9,6 +9,8 @@ public enum ContentPageNavigationRoute: Equatable, Sendable {
     case tags(String)
     case computer
     case collection(ContentPageCollectionNavigation)
+    case aiChat(String)
+    case aiChatSessions(String)
 
     public var isCollection: Bool {
         if case .collection = self {

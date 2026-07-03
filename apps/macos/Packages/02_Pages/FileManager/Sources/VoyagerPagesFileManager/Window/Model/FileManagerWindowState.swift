@@ -286,8 +286,10 @@ extension FileManagerContentFeature.State {
             ))
         case let .virtualCollection(id):
             content.navigation.navigationState = .tags(id)
+        case let .aiChat(sessionID):
+            content.navigation.navigationState = .aiChat(sessionID)
+            content.aiChat.mode = .chat
         case .homeDefault,
-             .aiChat,
              .none:
             break
         }

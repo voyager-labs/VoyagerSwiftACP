@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -44,6 +45,10 @@ public struct FileManagerContentFeature {
             EntryViewLayoutFeature()
         }
 
+        Scope(state: \.aiChat, action: \.aiChat) {
+            AiChatFeature()
+        }
+
         FileManagerContentComposerReducer()
 
         FileManagerContentNavigationBridgeReducer()
@@ -64,6 +69,28 @@ public struct FileManagerContentFeature {
             switch action {
             case .view(.openContextualAiChatTapped):
                 return .send(.delegate(.openContextualAiChat))
+
+            case .aiChat(.delegate(.openAISettings)):
+                return .send(.delegate(.openAISettings))
+
+            case let .aiChat(.newChatCreated(snapshot)):
+                return .send(.delegate(.aiChatSessionCreated(snapshot.sessionID)))
+
+            case let .aiChat(.restoreOutcome(requestedSessionID, _, restoreFailure)):
+                guard restoreFailure == nil,
+                      state.aiChat.mode == .chat,
+                      state.aiChat.sessionID == requestedSessionID,
+                      case .aiChatSessions = state.navigation.navigationState
+                else { return .none }
+                return .send(.delegate(.aiChatSessionRestored(requestedSessionID)))
+
+            case let .aiChat(.sessionRowTapped(sessionID)):
+                guard state.aiChat.executionPhase.isProcessing,
+                      state.aiChat.mode == .chat,
+                      state.aiChat.sessionID == sessionID,
+                      case .aiChatSessions = state.navigation.navigationState
+                else { return .none }
+                return .send(.delegate(.aiChatSessionRestored(sessionID)))
 
             case let .internal(.setAutomaticRefreshFeedbackSuppressed(isSuppressed)):
                 state.suppressAutomaticRefreshFeedback = isSuppressed

@@ -124,6 +124,9 @@ extension AiChatFeature {
         state.restoreOutcome = nil
         state.restoreFailure = nil
         state.sessionID = setup.sessionID
+        if let mode = setup.mode {
+            state.mode = mode
+        }
         state.sessionStatus = setup.sessionStatus
         state.currentSessionCustomTitle = nil
         state.currentContext = setup.currentContext

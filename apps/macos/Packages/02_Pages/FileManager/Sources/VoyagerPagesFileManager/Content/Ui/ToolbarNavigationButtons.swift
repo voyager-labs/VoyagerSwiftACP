@@ -10,6 +10,37 @@ struct ToolbarNavigationButtons: View {
     let canGoBack: Bool
     let canGoForward: Bool
     let canGoToEnclosingDirectory: Bool
+    let backPrimaryAction: () -> Void
+    let backIsEnabled: Bool
+    let enclosingDirectorySystemName: String
+    let enclosingDirectoryHelp: String
+    let enclosingDirectoryAction: () -> Void
+
+    init(
+        onNavigationAction: @escaping (ContentPageNavigationAction.View) -> Void,
+        backHistoryItems: [ToolbarHistoryItem],
+        forwardHistoryItems: [ToolbarHistoryItem],
+        canGoBack: Bool,
+        canGoForward: Bool,
+        canGoToEnclosingDirectory: Bool,
+        backPrimaryAction: (() -> Void)? = nil,
+        backIsEnabled: Bool? = nil,
+        enclosingDirectorySystemName: String = "chevron.up",
+        enclosingDirectoryHelp: String = "Go to Enclosing Folder",
+        enclosingDirectoryAction: (() -> Void)? = nil,
+    ) {
+        self.onNavigationAction = onNavigationAction
+        self.backHistoryItems = backHistoryItems
+        self.forwardHistoryItems = forwardHistoryItems
+        self.canGoBack = canGoBack
+        self.canGoForward = canGoForward
+        self.canGoToEnclosingDirectory = canGoToEnclosingDirectory
+        self.backPrimaryAction = backPrimaryAction ?? { onNavigationAction(.goBack) }
+        self.backIsEnabled = backIsEnabled ?? canGoBack
+        self.enclosingDirectorySystemName = enclosingDirectorySystemName
+        self.enclosingDirectoryHelp = enclosingDirectoryHelp
+        self.enclosingDirectoryAction = enclosingDirectoryAction ?? { onNavigationAction(.goToEnclosingDirectory) }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -22,10 +53,10 @@ struct ToolbarNavigationButtons: View {
     private func backButton() -> some View {
         ToolbarMenuButton(
             systemName: "chevron.left",
-            isEnabled: canGoBack,
+            isEnabled: backIsEnabled,
             font: IconButtonStyle.toolbar.font,
             menuID: backHistoryItems.count,
-            primaryAction: { onNavigationAction(.goBack) },
+            primaryAction: backPrimaryAction,
             menuContent: {
                 if backHistoryItems.isEmpty {
                     Text("No history")
@@ -73,10 +104,10 @@ struct ToolbarNavigationButtons: View {
 
     private func enclosingDirectoryButton() -> some View {
         Button(
-            action: { onNavigationAction(.goToEnclosingDirectory) },
+            action: enclosingDirectoryAction,
             label: {
                 ToolbarHoverButtonLabel(
-                    systemName: "chevron.up",
+                    systemName: enclosingDirectorySystemName,
                     isEnabled: canGoToEnclosingDirectory,
                     font: IconButtonStyle.toolbar.font,
                 )
@@ -85,6 +116,8 @@ struct ToolbarNavigationButtons: View {
         .fixedSize()
         .disabled(!canGoToEnclosingDirectory)
         .buttonStyle(.borderless)
+        .help(enclosingDirectoryHelp)
+        .accessibilityLabel(enclosingDirectoryHelp)
     }
 
     private func historyMenuLabel(for item: ToolbarHistoryItem) -> some View {

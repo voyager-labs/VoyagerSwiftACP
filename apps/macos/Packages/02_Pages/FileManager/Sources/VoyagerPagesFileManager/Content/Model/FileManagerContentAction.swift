@@ -4,6 +4,7 @@ import Foundation
 import SwiftUI
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
@@ -18,6 +19,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case entryViewLayout(EntryViewLayoutFeature.Action)
     case composer(ComposerFeature.Action)
     case collection(CollectionFeature.Action)
+    case aiChat(AiChatFeature.Action)
     case externalFileSystemChanged([String])
 
     @CasePathable
@@ -61,7 +63,10 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case openPathInNewWindow(String)
         case closeWindow
         case openContextualAiChat
+        case openAISettings
         case currentContextChanged(AiChatCurrentContextSnapshot)
         case homePageAnchorSelected(ContentTabPageAnchor)
+        case aiChatSessionCreated(AiChatSessionID)
+        case aiChatSessionRestored(AiChatSessionID)
     }
 }

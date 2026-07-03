@@ -35,6 +35,7 @@ enum FileManagerContentChromePropsBuilder {
             specialDirectoryIconNames: specialDirectoryIconNames,
             isContextualAiChatPresented: state.inspector.inspectorVisible
                 && state.inspector.activeMode == .chat,
+            activeTabID: contentTabState.activeTabID,
             activePageAnchor: activePageAnchor,
         )
     }
@@ -122,7 +123,7 @@ enum FileManagerContentChromePropsBuilder {
                 paths.insert(path)
             case .computer:
                 paths.insert("/")
-            case .home, .recents, .tags, .collection:
+            case .home, .recents, .tags, .collection, .aiChat, .aiChatSessions:
                 break
             }
         }

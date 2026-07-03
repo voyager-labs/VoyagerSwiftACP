@@ -72,6 +72,54 @@ public struct AiChatFeature {
                 preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
                 return saveNewChat(snapshot)
 
+            case .showSessionsTapped:
+                state.sessionList.cancelRenaming()
+                state.sessionList.errorMessage = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.mode = .sessions
+                guard let restoreSessionID = state.restoreSessionID, restoreSessionID != state.sessionID else {
+                    return .none
+                }
+                state.restoreSessionID = nil
+                return .cancel(id: CancelID.restore)
+
+            case let .showSessionsForChat(sessionID):
+                state.sessionList.cancelRenaming()
+                state.sessionList.errorMessage = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.mode = .sessions
+                state.sessionID = sessionID
+                state.sessionList.selectedSessionID = sessionID
+                guard let restoreSessionID = state.restoreSessionID, restoreSessionID != sessionID else {
+                    return .none
+                }
+                state.restoreSessionID = nil
+                return .cancel(id: CancelID.restore)
+
+            case .returnToChatTapped:
+                if let restoreSessionID = state.restoreSessionID,
+                   restoreSessionID != state.sessionID
+                {
+                    return .none
+                }
+                guard state.sessionID != nil else {
+                    let preservedExecutionPhase = state.executionPhase
+                    let snapshot = startNewUnselectedChat(state: &state)
+                    preserveNavigationExecutionPhase(preservedExecutionPhase, state: &state)
+                    return saveNewChat(snapshot)
+                }
+                state.sessionList.cancelRenaming()
+                state.sessionList.errorMessage = nil
+                state.restoreOutcome = nil
+                state.restoreFailure = nil
+                state.mode = .chat
+                return .cancel(id: CancelID.restore)
+
+            case let .routeToChatSession(sessionID):
+                return routeToChatSession(sessionID, state: &state)
+
             case .startNewChatFromRebindTapped:
                 let preservedExecutionPhase = state.executionPhase
                 let snapshot = startNewUnselectedChat(state: &state)
@@ -200,6 +248,14 @@ public struct AiChatFeature {
                 apply(setup: setup, to: &state)
                 normalizeSelectionIfNeeded(&state)
                 guard let restoreSessionID = state.restoreSessionID else { return .none }
+                if restoreSessionID == state.sessionID,
+                   state.transcriptHistory.isEmpty,
+                   state.sessionStatus == .idle
+                {
+                    // 새 ContentPane 채팅은 아직 저장된 세션이 없으므로 restore를 타지 않는다.
+                    state.restoreSessionID = nil
+                    return .none
+                }
                 state.sessionStatus = .restoring
                 return restoreSession(sessionID: restoreSessionID, state: state)
 
@@ -366,6 +422,9 @@ public struct AiChatFeature {
 
             case .resetTapped:
                 return handleResetTapped(state: &state)
+
+            case .cancelInFlightWork:
+                return cancelAllInFlightWork()
 
             case .teardownRequested:
                 return handleTeardownRequested(state: &state)

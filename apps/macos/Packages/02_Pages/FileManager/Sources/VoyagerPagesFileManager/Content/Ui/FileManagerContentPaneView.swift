@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import SwiftUI
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
@@ -14,32 +15,16 @@ struct FileManagerContentPaneView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                if activePageAnchor == .homeDefault {
-                    FileManagerHomePageView(store: store)
-                } else {
-                    ToolbarView(
-                        store: store,
-                        chromeProps: chromeProps,
-                        onNavigationAction: onNavigationAction,
-                    )
-                    ContentPageView(
-                        store: store,
-                    )
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.12))
-                        .frame(height: 1)
-                    ContentPaneBreadcrumbBarView(
-                        store: store,
-                        chromeProps: chromeProps,
-                        onNavigate: onNavigate,
-                    )
+            contentBody
+                .id(chromeProps.renderIdentity)
+                .transaction { transaction in
+                    transaction.animation = nil
                 }
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: VoyagerDS.Radius.contentPane, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.03), lineWidth: 1),
-            )
+                .overlay(
+                    RoundedRectangle(cornerRadius: VoyagerDS.Radius.contentPane, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.03), lineWidth: 1)
+                        .allowsHitTesting(false),
+                )
 
             if overlayProps.isComposerPresented {
                 Color.clear
@@ -80,6 +65,37 @@ struct FileManagerContentPaneView: View {
         .overlay(FileManagerContentMaterialTint())
         .ignoresSafeArea(.all, edges: .top)
     }
+
+    private var contentBody: some View {
+        VStack(spacing: 0) {
+            if activePageAnchor == .homeDefault {
+                FileManagerHomePageView(store: store)
+            } else if activePageAnchor.isAiChat {
+                FileManagerAiChatPageView(
+                    store: store,
+                    chromeProps: chromeProps,
+                    onNavigationAction: onNavigationAction,
+                )
+            } else {
+                ToolbarView(
+                    store: store,
+                    chromeProps: chromeProps,
+                    onNavigationAction: onNavigationAction,
+                )
+                ContentPageView(
+                    store: store,
+                )
+                Rectangle()
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(height: 1)
+                ContentPaneBreadcrumbBarView(
+                    store: store,
+                    chromeProps: chromeProps,
+                    onNavigate: onNavigate,
+                )
+            }
+        }
+    }
 }
 
 struct FileManagerContentChromeProps: Equatable {
@@ -88,7 +104,13 @@ struct FileManagerContentChromeProps: Equatable {
     let pathDisplayNames: [String: String]
     let specialDirectoryIconNames: [String: String]
     let isContextualAiChatPresented: Bool
+    let activeTabID: ContentTabID?
     let activePageAnchor: ContentTabPageAnchor
+
+    var renderIdentity: String {
+        let tabIdentity = activeTabID?.rawValue ?? "no-active-tab"
+        return "\(tabIdentity)::\(activePageAnchor.renderIdentity)"
+    }
 }
 
 struct FileManagerContentOverlayProps: Equatable {
@@ -98,6 +120,28 @@ struct FileManagerContentOverlayProps: Equatable {
     let isDiscardEnabled: Bool
     let canSaveCollection: Bool
     let isTemporaryCollection: Bool
+}
+
+private extension ContentTabPageAnchor {
+    /// AI Chat 페이지 앵커 여부 (연관값 무관)
+    var isAiChat: Bool {
+        if case .aiChat = self { true } else { false }
+    }
+
+    var renderIdentity: String {
+        switch self {
+        case .homeDefault:
+            "home"
+        case let .directory(path):
+            "directory:\(path)"
+        case let .collectionFile(url):
+            "collectionFile:\(url.absoluteString)"
+        case let .virtualCollection(id):
+            "virtualCollection:\(id)"
+        case let .aiChat(sessionID):
+            "aiChat:\(sessionID)"
+        }
+    }
 }
 
 private struct FileManagerContentMaterialTint: View {

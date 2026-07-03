@@ -34,6 +34,10 @@ public struct ContentPageNavigationState: Equatable {
             case let .file(_, name):
                 name
             }
+        case .aiChat:
+            "AI Chat"
+        case .aiChatSessions:
+            "AI Chat Sessions"
         }
     }
 
@@ -61,7 +65,7 @@ public struct ContentPageNavigationState: Equatable {
             guard case let .file(url, _) = navigation.kind else { return nil }
             return url.deletingLastPathComponent().path
 
-        case .home, .recents, .tags, .computer:
+        case .home, .recents, .tags, .computer, .aiChat, .aiChatSessions:
             return nil
         }
     }

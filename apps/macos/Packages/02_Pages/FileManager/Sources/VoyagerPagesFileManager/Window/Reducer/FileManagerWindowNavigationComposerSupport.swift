@@ -43,7 +43,19 @@ func syncActiveContentTabEffect(
           state.contentTabs.tabs[id: activeTabID]?.anchor != anchor
     else { return .none }
 
-    return .send(.contentTabs(.updateActivePageAnchor(activeTabID, anchor)))
+    let updateActiveTabAnchorEffect: Effect<FileManagerWindowAction> = .send(
+        .contentTabs(.updateActivePageAnchor(activeTabID, anchor)),
+    )
+    guard case .aiChat = anchor,
+          state.inspector.inspectorVisible,
+          state.inspector.activeMode == .chat
+    else {
+        return updateActiveTabAnchorEffect
+    }
+    return .concatenate(
+        .send(.inspector(.closeChat)),
+        updateActiveTabAnchorEffect,
+    )
 }
 
 private func contentTabAnchor(
@@ -73,5 +85,11 @@ private func contentTabAnchor(
         case .temporary:
             nil
         }
+
+    case let .aiChat(sessionID):
+        .aiChat(sessionID: sessionID)
+
+    case let .aiChatSessions(sessionID):
+        .aiChat(sessionID: sessionID)
     }
 }

@@ -102,7 +102,7 @@ struct ContentPaneBreadcrumbBarView: View {
 
     private func resolvedBreadcrumbItems() -> [BreadcrumbItem] {
         switch store.navigation.navigationState {
-        case .home, .recents, .tags, .collection:
+        case .home, .recents, .tags, .collection, .aiChat, .aiChatSessions:
             return []
         case .computer:
             guard store.navigation.currentPath != "/" else {
